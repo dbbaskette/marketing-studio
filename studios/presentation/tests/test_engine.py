@@ -774,14 +774,14 @@ class OlderSlidesToolTests(StudioCase):
         with self.too_old():
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
-                      "Acme Brand's own installer brings 0.15.1. Update it, then try again.",
+                      "Acme Brand's own installer brings 0.15.1. Update Harness Slides, then try again.",
                       missing)
         self.assertEqual(self.engine.brought_by('0.15.1'), 'Acme Brand')
         self.brand_bringing('0.16.0')
         with self.too_old():
             missing = self.engine.deck_needs(fresh=True)['missing']
         self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
-                      'Update it, then try again.', missing)
+                      'Update Harness Slides, then try again.', missing)
         self.assertIsNone(self.engine.brought_by('0.15.1'))
 
     def test_a_brand_skill_older_than_the_floor_is_said_and_holds_a_new_deck(self):
@@ -824,7 +824,7 @@ class OlderSlidesToolTests(StudioCase):
             view = self.view(root)
         self.assertIn(view['state'], ('stopped', 'failed'))
         self.assertIn('harness-slides 0.15.1 is installed, and a deck needs 0.16.0 or newer. '
-                      'Update it, then try again.', json.dumps(view))
+                      'Update Harness Slides, then try again.', json.dumps(view))
         after = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         self.assertLessEqual(set(before), set(after), 'nothing it had is lost')
 
@@ -1451,10 +1451,10 @@ class SuppliedPictureTests(StudioCase):
         added = [call for call in self.slides.run.calls if call[:2] == ['assets', 'add-supplied']]
         self.assertEqual(len(added), 1)
         call = added[0]
-        self.assertEqual((call[call.index('--alt') + 1], call[call.index('--source') + 1],
-                          call[call.index('--project') + 1], call[call.index('--id') + 1]),
-                         ('A rack of servers in our lab.', 'Our own photograph.',
-                          str(root / build.ASSETS), f"pic-{content['id']}"))
+        self.assertIn('--alt=A rack of servers in our lab.', call)
+        self.assertIn('--source=Our own photograph.', call)
+        self.assertEqual((call[call.index('--project') + 1], call[call.index('--id') + 1]),
+                         (str(root / build.ASSETS), f"pic-{content['id']}"))
         self.assertEqual(build.pictures(root)[content['id']]['asset'], f"pic-{content['id']}")
         self.assertEqual((build.pictures(root)[content['id']]['kind'],
                           build.pictures(root)[content['id']]['title']),
@@ -1487,6 +1487,115 @@ class SuppliedPictureTests(StudioCase):
             self.add(root, gate, content['id'])
         self.assertEqual(str(refused.exception),
                          'Add a picture while the outline is waiting for you.')
+
+    def remove(self, root, gate, slide, expected='seen'):
+        return self.engine.remove_picture(root, slide,
+                                          gate.get('expected') if expected == 'seen' else expected)
+
+    def test_a_picture_is_removed_and_one_given_again_takes_a_new_asset(self):
+        from runner.steps import build
+        root, gate, slides = self.at_outline()
+        content = next(slide for slide in slides if slide.get('kind') == 'content')
+        self.add(root, gate, content['id'])
+        gate = self.view(root)['gate']
+        self.assertEqual(self.remove(root, gate, content['id']), {'slide': content['id']})
+        self.assertEqual(build.pictures(root), {})
+        gate = self.view(root)['gate']
+        self.assertEqual(gate['pictures'], {})
+        # The slides tool's record is never rewritten: a picture given again is a new asset,
+        # even with other bytes, and no asset-conflict is met.
+        made = self.add(root, gate, content['id'], data=PNG_BYTES + b'another picture')
+        self.assertEqual(made['asset'], f"pic-{content['id']}-2")
+        self.assertEqual(build.pictures(root)[content['id']]['asset'], f"pic-{content['id']}-2")
+        self.assertFalse(any(call[:2] == ['images', 'generate'] for call in self.slides.run.calls))
+
+    def test_each_refusal_to_remove_a_picture_says_what_to_do(self):
+        root, gate, slides = self.at_outline()
+        content = next(slide for slide in slides if slide.get('kind') == 'content')
+        other = next(slide for slide in slides if slide.get('id') != content['id'])
+        with self.assertRaises(WorkspaceError) as refused:
+            self.remove(root, gate, content['id'])
+        self.assertEqual(str(refused.exception),
+                         f"“{content['title']}” has no picture to remove.")
+        self.add(root, gate, content['id'])
+        gate = self.view(root)['gate']
+        for slide, expected, said in (
+                ('no-such-slide', 'seen', 'no-such-slide is not a slide of this outline.'),
+                (other['id'], 'seen', f"“{other['title']}” has no picture to remove."),
+                (content['id'], 'an older outline',
+                 'The outline changed. Reload it before removing a picture.')):
+            with self.subTest(said=said):
+                with self.assertRaises(WorkspaceError) as refused:
+                    self.remove(root, gate, slide, expected)
+                self.assertEqual(str(refused.exception), said)
+        self.decide(root, 'gate:outline')
+        with self.assertRaises(WorkspaceError) as refused:
+            self.remove(root, gate, content['id'])
+        self.assertEqual(str(refused.exception),
+                         'Remove a picture while the outline is waiting for you.')
+
+    def test_a_retry_after_a_record_that_failed_part_way_is_not_an_asset_conflict(self):
+        from runner.steps import build
+        root, gate, slides = self.at_outline()
+        content = next(slide for slide in slides if slide.get('kind') == 'content')
+        # The slides tool recorded a first attempt, and then the record failed before the deck
+        # kept it: the asset ID is taken in the tool's manifest but not in the deck.
+        original = type(self.slides).asset_supplied
+
+        def records_then_fails(tool, *args, **kwargs):
+            original(tool, *args, **kwargs)
+            raise WorkspaceError('The slides tool stopped answering.')
+
+        with mock.patch.object(type(self.slides), 'asset_supplied', autospec=True,
+                               side_effect=records_then_fails):
+            with self.assertRaises(WorkspaceError):
+                self.add(root, gate, content['id'], data=PNG_BYTES + b'first try')
+        self.assertEqual(build.pictures(root), {})
+        made = self.add(root, gate, content['id'])
+        self.assertEqual(made['asset'], f"pic-{content['id']}-2")
+        self.assertEqual(build.pictures(root)[content['id']]['asset'], f"pic-{content['id']}-2")
+
+    def test_names_the_slides_tool_holds_are_passed_by_and_not_tried_twice(self):
+        from runner import slides as slides_tool
+        from runner.steps import build
+        root, gate, slides = self.at_outline()
+        content = next(slide for slide in slides if slide.get('kind') == 'content')
+        taken = slides_tool.Refused(['Asset taken'], {'problems': [{'code': 'asset-conflict'}]})
+        tried = []
+
+        def holds_every_name(tool, project, file, ident, *args, **kwargs):
+            tried.append(ident)
+            raise taken
+
+        with mock.patch.object(type(self.slides), 'asset_supplied', autospec=True,
+                               side_effect=holds_every_name):
+            with self.assertRaises(WorkspaceError) as refused:
+                self.add(root, gate, content['id'])
+        self.assertEqual(len(tried), build.PICTURE_TRIES)
+        self.assertEqual(str(refused.exception), 'The slides tool already holds every name '
+                         'tried for this picture. Give it again, and the next names are tried.')
+        self.assertEqual(build.pictures(root), {}, 'nothing is shown as given')
+        # Given again, the next names are tried, and the first free one is taken.
+        made = self.add(root, gate, content['id'])
+        self.assertEqual(made['asset'], f"pic-{content['id']}-{build.PICTURE_TRIES + 1}")
+
+    def test_alt_and_source_text_may_begin_with_a_dash(self):
+        from runner.steps import build
+        root, gate, slides = self.at_outline()
+        content = next(slide for slide in slides if slide.get('kind') == 'content')
+        self.add(root, gate, content['id'], alt='-40 °C at the edge of the rack.',
+                 source='--from our own lab notebook')
+        call, = [call for call in self.slides.run.calls if call[:2] == ['assets', 'add-supplied']]
+        self.assertIn('--alt=-40 °C at the edge of the rack.', call)
+        self.assertIn('--source=--from our own lab notebook', call)
+        self.assertNotIn('--alt', call)
+        self.assertNotIn('--source', call)
+        kept = build.pictures(root)[content['id']]
+        self.assertEqual((kept['alt'], kept['source']),
+                         ('-40 °C at the edge of the rack.', '--from our own lab notebook'))
+        recorded = self.slides.asset_status(root / build.ASSETS)['assets'][0]
+        self.assertEqual((recorded['alt'], recorded['source']),
+                         ('-40 °C at the edge of the rack.', '--from our own lab notebook'))
 
 
 class DocumentTests(StudioCase):

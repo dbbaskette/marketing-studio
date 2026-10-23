@@ -1373,12 +1373,14 @@ class StandIn:
         if name in SUBJECT and rest and not rest[0].startswith('--'):
             options['subject'] = rest.pop(0)
         while rest:
-            key = rest.pop(0).removeprefix('--')
+            # `--key value`, or `--key=value` joined, as a value that begins with "-" is sent.
+            key, joined, value = rest.pop(0).removeprefix('--').partition('=')
             if key in NEWER and not self.design:
                 raise _Said(UNKNOWN.format(key, key))   # 0.13.1 parses no such option
             if key not in allowed:
                 raise _Said(f'--{key} is not valid for this command')
-            options[key] = True if key in FLAGS else rest.pop(0) if rest else None
+            options[key] = value if joined else True if key in FLAGS \
+                else rest.pop(0) if rest else None
         if name in self.fails and name != 'compose render':
             raise _Said(self.fails[name])
         if name.startswith('design '):

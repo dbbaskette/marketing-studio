@@ -431,8 +431,20 @@ def sharing_limits(text, original, original_name):
     return text_problem, original_note
 
 
+def lone_messaging(purposes, outcome):
+    """Approved messaging marks a library reference or one blog's file. On its own it would
+    be saved and never read, so it is refused in a plain sentence."""
+    if 'messaging' in (purposes or []) and not {'reference', 'material'} & set(purposes):
+        raise ValueError(
+            'Approved messaging is a role for a source, not a source on its own. Use '
+            '--purpose reference --purpose messaging for the library, or --purpose material '
+            "--purpose messaging for one blog's file. " + outcome
+        )
+
+
 def source_command(root, args):
     if args.action == 'add':
+        lone_messaging(args.purpose, 'Nothing was saved.')
         original = Path(args.file).read_bytes() if args.file else None
         text = getattr(args, 'content', None)
         if text is None:
@@ -828,6 +840,7 @@ def article_command(root, args):
                     + ' --text-file …).'
                 )
         roles = args.purpose or source['purposes']
+        lone_messaging(roles, 'Nothing was changed.')
         entry = {'source_id': args.source, 'purposes': roles, 'revision': source['revision']}
         record['sources'] = [s for s in record['sources'] if s['source_id'] != args.source] + [
             entry

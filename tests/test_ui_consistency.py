@@ -190,6 +190,23 @@ class SharedLookTests(unittest.TestCase):
         self.assertTrue(tags)
         self.assertEqual([tag for tag in tags if missing_classes(tag, (('dialog',),))], [])
 
+    def test_a_choice_set_straight_in_a_card_fits_it_at_phone_width(self):
+        # Training Studio's "Where this training stops" puts its three levels straight in a
+        # card; at 390px they spilled 24px past the screen. They now fit as a field's do.
+        kit = uncommented(KIT.read_text())
+        wide = {selector.strip(): block for selector, block in rules(kit)}
+        fitted = next((block for selector, block in wide.items()
+                       if '.card > .segmented' in selector and 'max-width' in block), '')
+        self.assertIn('max-width: 100%', fitted)
+        wrapped = next((block for selector, block in wide.items()
+                        if '.card > .segmented > .seg-option' in selector
+                        and 'white-space' in block), '')
+        self.assertIn('white-space: normal', wrapped)
+        phone = re.search(r'@media \(max-width: 52rem\) \{(.*?)\n\}', kit, flags=re.S)
+        narrow = {selector.strip(): block for selector, block in rules(phone.group(1))}
+        self.assertTrue(any('.card > .segmented' in selector and 'display: grid' in block
+                            for selector, block in narrow.items()), narrow.keys())
+
 
 if __name__ == '__main__':
     unittest.main()

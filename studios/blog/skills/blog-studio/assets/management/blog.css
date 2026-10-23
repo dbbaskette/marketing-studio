@@ -89,3 +89,10 @@
 
 .check-items .check-detail{margin:.35rem 0 0 1.5rem;padding-left:1rem;font-size:.9rem}
 .check-items .check-detail>li+li{margin-top:.2rem}
+
+/* Needs you before publishing: what the author must still supply, read on the aside's opaque
+   paper. One gap a line, quiet separators, and a long gap (a pasted link) wraps in the pane. */
+.gap-items{margin:0;padding-left:1.15rem}
+.gap-items>li{padding:.45rem 0;min-width:0;overflow-wrap:anywhere;line-height:1.45}
+.gap-items>li+li{border-top:1px solid var(--hair)}
+.gap-items>li::marker{color:var(--yours)}

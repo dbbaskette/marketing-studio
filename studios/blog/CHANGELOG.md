@@ -5,6 +5,19 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Small things put right.** **Checked for you** now also catches `[TODO]`, `[TBD]` and
+  `[Placeholder: …]` in any case, and no longer mistakes a link's own text, such as
+  `[source-available](https://…)`, for a source ID. `source add --purpose messaging` on
+  its own is refused in a plain sentence, because approved messaging marks a library
+  reference or one blog's file and on its own would never be read. **Length** is offered
+  only for new writing (write, outline, from an outline, from your files), reads "The usual
+  length", "Short (about half)" and "In depth (about twice)", and names no style or
+  capability that may not apply; `run create --length` for a review, a revision or ideas is
+  refused. `run submit --gap` outside a draft or a handoff is refused in a sentence instead
+  of being dropped, and a worker's refused result names evidence and gaps beside content
+  and notes. **Needs you before publishing** lists each gap on its own line with quiet
+  separators on opaque paper, and a long gap wraps at phone width.
+
 - **Announcements that read like announcements.** A file can be **Approved messaging
   (the product's own claims)**, beside facts and examples: a messaging document, launch
   brief or release notes is written in the product's voice and the present tense, with

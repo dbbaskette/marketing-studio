@@ -2058,8 +2058,9 @@ async function wizardVoiceAndKind(){
   // Length sits beside Kind of post: the style's own by default.
   assert.ok(ids.indexOf('new-length')>ids.indexOf('new-style'),'Length is beside Kind of post');
   assert.equal(nodes().find(e=>e.tagName==='label'&&e.htmlFor==='new-length').textContent,'Length');
-  assert.deepEqual(texts(byId('new-length')),['The style’s own','Short (about half)','In depth (about twice, with an example for each capability)']);
-  assert.equal(chosen('new-length'),'The style’s own');
+  assert.deepEqual(texts(byId('new-length')),['The usual length','Short (about half)','In depth (about twice)'],'Length names no style or capability that may not apply');
+  assert.equal(chosen('new-length'),'The usual length');
+  assert.equal(byId('new-length-hint').textContent,'For the kind of post, or for a post like this one. In depth gives each main point a worked example or proof point from your material.');
   // Step two keeps tone, author and brand, with the tone as a nudge.
   await submit();
   assert.ok(nodes().some(e=>e.textContent==='Tone, author and brand'));
@@ -2077,8 +2078,15 @@ async function wizardVoiceAndKind(){
   // A chosen voice and kind are sent as chosen.
   await f.run("newBlog('',null,'write')");fill();choose('new-profile','Guest Writer · provisional');choose('new-style','Field notes · provisional');
   sent=await start();assert.equal(sent.profile,'guest');assert.equal(sent.style,'field-notes');assert.equal(Object.hasOwn(sent,'length'),false,'the style’s own length sends nothing');
-  await f.run("newBlog('',null,'write')");fill();choose('new-length','In depth (about twice, with an example for each capability)');
+  await f.run("newBlog('',null,'write')");fill();choose('new-length','In depth (about twice)');
   sent=await start();assert.equal(sent.length,'deep','a chosen length is sent');
+  // Length appears only where an outline or a draft is written new.
+  for(const mode of ['outline','from-outline']){await f.run("newBlog('',null,'"+mode+"')");assert.ok(byId('new-length'),'Length is offered for '+mode);}
+  for(const mode of ['ideas','revise','review']){await f.run("newBlog('',null,'"+mode+"')");assert.equal(byId('new-length'),undefined,'no Length for '+mode);}
+  // A length chosen for new writing is not sent once the flow writes nothing new.
+  await f.run("newBlog('',null,'write')");fill();choose('new-length','Short (about half)');f.run("studio.draft.mode='review';studio.draft.stop='review';studio.draft.manuscript='m1';sWizard()");
+  assert.equal(byId('new-length'),undefined,'switching to review hides Length');
+  sent=await start();assert.equal(Object.hasOwn(sent,'length'),false,'a review sends no length');
   await f.run("newBlog('',null,'write')");fill();choose('new-profile','No particular voice (use the described tone)');
   sent=await start();assert.equal(sent.profile,'','no particular voice uses the described tone');
   // With no default voice, nothing is left to a default that may be missing or in conflict.

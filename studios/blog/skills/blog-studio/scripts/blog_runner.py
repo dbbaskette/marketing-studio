@@ -96,14 +96,21 @@ DEFAULTS = {
     'author': '',
 }
 MODES = ('write', 'outline', 'from-outline', 'ideas', 'revise', 'review', 'from-files')
-# How long the post runs, beside its kind of post: the style's own length by default.
+# How long new writing runs, beside its kind of post: the usual length by default. It names
+# no style and no capability, so it reads true for any kind of post, chosen or not.
 LENGTHS = {
     'style': '',
-    'short': 'Length: about half the style’s usual length. Keep each capability’s what and '
-    'why; cut secondary detail before any qualifier.',
-    'deep': 'Length: about twice the style’s usual length, with one worked example or proof '
-    'point from the material for each capability. Develop; do not pad or invent.',
+    'short': 'Length: about half the usual length for this kind of post. Keep each main '
+    'point’s what and why; cut secondary detail before any qualifier.',
+    'deep': 'Length: about twice the usual length for this kind of post, with one worked '
+    'example or proof point from the material for each main point. Develop; do not pad or '
+    'invent.',
 }
+# Length takes effect only where an outline or a draft is written new.
+NO_LENGTH = (
+    'Length is for new writing, so a review, a revision or three ideas takes none. '
+    'Nothing was started.'
+)
 MATERIAL_ELSEWHERE = (
     'This blog’s uploaded files stay on the computer that added them. Continue it there, '
     'or start it again here from your files.'
@@ -1139,7 +1146,9 @@ def create(root, data, approval='conversation'):
         raise ValueError('Choose outline, draft, review or the handoff.')
     length = data.get('length', 'style')
     if length not in LENGTHS:
-        raise ValueError('Choose a length: the style’s own, short or in depth.')
+        raise ValueError('Choose a length: the usual length, short or in depth.')
+    if length != 'style' and (mode in ('revise', 'review', 'ideas') or manuscript):
+        raise ValueError(NO_LENGTH)
     from_files = mode == 'from-files'
     angles_first = from_files and not point
     brief = {
@@ -1200,6 +1209,8 @@ def create(root, data, approval='conversation'):
             raise ValueError('This blog has no saved manuscript to revise or review.')
         if existing and stop in ('outline', 'draft') and mode != 'revise':
             raise ValueError('An existing draft starts at review. Choose review or the handoff.')
+        if existing and length != 'style':
+            raise ValueError(NO_LENGTH)
     else:
         # No profile key: the default voice applies. An empty one is "No particular voice":
         # the described tone. An ID pins that voice.
@@ -3195,6 +3206,12 @@ def command(root, args):
                 data['library'] = library
             return create(root, data)
         if args.action == 'submit':
+            if args.gap and args.stage not in NOTED:
+                # Only a draft and a handoff keep gaps; elsewhere one would be dropped unsaid.
+                raise ValueError(
+                    'A gap goes with a draft or a handoff, where it is listed under Needs you '
+                    'before publishing. Put it in --notes for this step. Nothing was submitted.'
+                )
             return submit(
                 root,
                 args.id,

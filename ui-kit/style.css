@@ -1227,12 +1227,15 @@ code,
   font-weight: 650;
 }
 
-/* A choice too wide for its card breaks its words over two lines rather than spilling out. */
-.field > .segmented {
+/* A choice too wide for its card breaks its words over two lines rather than spilling out,
+   in a field or set straight in the card. */
+.field > .segmented,
+.card > .segmented {
   max-width: 100%;
 }
 
-.field .seg-option {
+.field .seg-option,
+.card > .segmented > .seg-option {
   line-height: 1.2;
   white-space: normal;
 }
@@ -2351,11 +2354,13 @@ p.fact > .bead {
     bottom: calc(5rem + env(safe-area-inset-bottom));
   }
 
-  .field > .segmented {
+  .field > .segmented,
+  .card > .segmented {
     display: grid;
   }
 
-  .field .seg-option {
+  .field .seg-option,
+  .card > .segmented > .seg-option {
     padding-inline: 0.4rem;
     line-height: 1.2;
     white-space: normal;

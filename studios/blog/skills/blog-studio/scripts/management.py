@@ -482,6 +482,8 @@ def upload_files(root, data, staging, ledger, fingerprint):
         else:
             found = (checked_google if 'google' in entry else checked_upload)(root, entry)
             found['purposes'] = [purpose] + ([role] if role != 'material' else [])
+            # Refused here, before the upload is begun, as `source add` refuses it.
+            studio.lone_messaging(found['purposes'], 'Nothing was saved.')
             checked.append(found)
     if len({entry['filename'] for entry in checked}) != len(checked):
         raise ValueError('Upload each file once.')

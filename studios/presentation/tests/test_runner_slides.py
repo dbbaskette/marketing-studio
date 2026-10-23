@@ -183,7 +183,7 @@ class FindingTheRuntimeTests(unittest.TestCase):
         for version in ('0.12.9', '0.9.0'):
             with self.assertRaisesRegex(WorkspaceError, f'harness-slides {version} is '
                                         f'installed, and a deck needs {slides.MINIMUM} or '
-                                        'newer. Update it, then try again.'):
+                                        'newer. Update Harness Slides, then try again.'):
                 slides.Slides(run=says(version))
         with self.assertRaisesRegex(WorkspaceError, 'did not say which version it is'):
             slides.Slides(run=lambda command, cwd=None: (0, 'Usage: ...\n', ''))
@@ -212,7 +212,7 @@ class FindingTheRuntimeTests(unittest.TestCase):
         with self.assertRaises(WorkspaceError) as refused:
             slides.Slides(run=says('0.15.1'))
         self.assertEqual(str(refused.exception), 'harness-slides 0.15.1 is installed, and a '
-                         'deck needs 0.16.0 or newer. Update it, then try again.')
+                         'deck needs 0.16.0 or newer. Update Harness Slides, then try again.')
         self.assertEqual(refused.exception.version, '0.15.1')
 
 
@@ -2091,11 +2091,13 @@ class AssetTests(Deck):
         self.assertEqual(asked, [
             ['assets', 'status', '--project', project, '--json'],
             ['assets', 'check', '--project', project, '--brand', str(self.contract), '--json'],
+            # The person's words go joined to their option, so words that begin with "-"
+            # stay words.
             ['assets', 'icon', 'ex-database', '--project', project, '--id', 'icon_data',
-             '--alt', 'Data', '--brand', str(self.contract), '--json'],
+             '--alt=Data', '--brand', str(self.contract), '--json'],
             ['assets', 'add-supplied', str(picture), '--project', project, '--id',
-             'console_view', '--alt', 'A console', '--source', 'Course author', '--kind',
-             'screenshot', '--restrictions', 'Internal only', '--json'],
+             'console_view', '--alt=A console', '--source=Course author', '--kind',
+             'screenshot', '--restrictions=Internal only', '--json'],
             ['images', 'status', '--json'],
             ['images', 'generate', '--project', project, '--id', 'hero_art', '--prompt-file',
              brief, '--output', 'assets/generated/hero_art.png', '--design-project', project,

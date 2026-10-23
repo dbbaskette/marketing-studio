@@ -3650,6 +3650,54 @@ class ReaderFacingNotesTests(RunnerCase):
         )
         self.assertEqual(reader_facing_notes('A clean paragraph about sources.'), [])
 
+    def test_reader_facing_notes_finds_todo_tbd_and_placeholder_in_any_case(self):
+        from text_checks import reader_facing_notes
+
+        text = (
+            'Ships in [TODO].\n'
+            'Priced at [tbd].\n'
+            '[Placeholder: the launch quote]\n'
+            '[todo: confirm the region list]\n'
+            'An unclosed [PLACEHOLDER: the date\n'
+        )
+        self.assertEqual(
+            [f['target'] for f in reader_facing_notes(text)],
+            [
+                '[TODO]',
+                '[tbd]',
+                '[Placeholder: the launch quote]',
+                '[todo: confirm the region list]',
+                '[PLACEHOLDER: the date',
+            ],
+        )
+        self.assertEqual([f['line'] for f in reader_facing_notes(text)], [1, 2, 3, 4, 5])
+
+    def test_reader_facing_notes_leaves_markdown_link_text_alone(self):
+        from text_checks import reader_facing_notes
+
+        text = (
+            'The core is [source-available](https://example.com/license) under a '
+            'community licence, see [source-code][1] and [TODO list](https://example.com/todo).\n'
+            'A todo, a TBD and a placeholder named in prose are fine.\n\n'
+            '[1]: https://example.com/code\n'
+        )
+        self.assertEqual(reader_facing_notes(text), [])
+        # A note still counts beside a link on the same line.
+        self.assertEqual(
+            [
+                f['target']
+                for f in reader_facing_notes(
+                    'See [source-available](https://example.com) [source-abc123].'
+                )
+            ],
+            ['[source-abc123]'],
+        )
+        # Two notes side by side are two notes, not link text and its reference.
+        self.assertEqual(
+            [f['target'] for f in reader_facing_notes('It retries [source-1][Source-2][TBD].')],
+            ['[source-1]', '[Source-2]', '[TBD]'],
+        )
+
     def test_the_gate_check_fails_on_a_note_in_the_draft(self):
         found = self.at_draft()
         found = self.submit(found, '# Draft\n\nIt retries twice [source-abc123].\n')
@@ -3747,6 +3795,63 @@ class ReaderFacingNotesTests(RunnerCase):
         )
         self.assertEqual(runner.document(self.root, chat['id'], 'draft')['gaps'], [])
 
+    def test_a_gap_outside_a_draft_or_handoff_is_refused(self):
+        found = self.create()
+        self.assertEqual(found['next'], 'outline')
+        self.file.write_text('# Outline\n\nOne section.\n')
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'run', 'submit', '--id', found['id']]
+            + ['--expected', found['expected'], '--stage', 'outline', '--file', str(self.file)]
+            + ['--gap', 'A launch link.']
+        )
+        with self.assertRaisesRegex(
+            ValueError,
+            r'^A gap goes with a draft or a handoff, where it is listed under Needs you before '
+            r'publishing\. Put it in --notes for this step\. Nothing was submitted\.$',
+        ):
+            runner.command(self.root, args)
+        self.assertEqual(runner.survey(self.root, found['id'])['next'], 'outline')
+        self.assertFalse((runner.load(self.root, found['id'])[0] / 'OUTLINE.md').exists())
+
+    def test_the_gap_list_has_its_own_styles_on_opaque_paper(self):
+        import re
+
+        assets = Path(runner.__file__).resolve().parents[1] / 'assets/management'
+        script = (assets / 'runner.js').read_text()
+        # The list sits in the aside's opaque paper section, never on material.
+        self.assertIn(
+            "sAdd(sNode('section','paper aside-part'),sNode('h2','aside-title','Needs you before "
+            "publishing'),sAdd(sNode('ul','gap-items')",
+            script,
+        )
+        css = re.sub(r'/\*.*?\*/', '', (assets / 'blog.css').read_text(), flags=re.S)
+        rules = {
+            selector.strip(): body
+            for selector, body in re.findall(r'([^{}]+)\{([^{}]*)\}', css)
+            if 'gap-items' in selector
+        }
+        self.assertEqual(
+            sorted(rules),
+            ['.gap-items', '.gap-items>li', '.gap-items>li+li', '.gap-items>li::marker'],
+        )
+        self.assertIn('padding-left:', rules['.gap-items'])
+        # A long gap, such as a pasted link, wraps inside the pane at phone width.
+        self.assertIn('overflow-wrap:anywhere', rules['.gap-items>li'])
+        self.assertIn('min-width:0', rules['.gap-items>li'])
+        # Quiet separators and the "needs you" colour, both from tokens; no glass.
+        self.assertIn('border-top:1px solid var(--hair)', rules['.gap-items>li+li'])
+        self.assertIn('color:var(--yours)', rules['.gap-items>li::marker'])
+        self.assertNotIn('backdrop-filter', ''.join(rules.values()))
+        self.assertNotIn('background', ''.join(rules.values()))
+
+    def test_a_workers_extra_field_is_refused_in_the_current_words(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            r'^A worker returns content and notes, and with a draft or a handoff its evidence '
+            r'and gaps; nothing else\.$',
+        ):
+            blog_worker.validate({'content': 'A draft', 'notes': '', 'approve': True})
+
 
 class LengthAndQualificationTests(RunnerCase):
     """Qualify once, and write to the depth asked for."""
@@ -3776,6 +3881,45 @@ class LengthAndQualificationTests(RunnerCase):
         )
         chat = runner.command(self.root, args)
         self.assertEqual(runner.load(self.root, chat['id'])[2]['length'], 'deep')
+
+    def test_length_names_only_what_applies(self):
+        # No kind of post is chosen here: the guidance names no style and no capability.
+        _, guidance = self.guidance_at('draft', length='deep', title='Deep')
+        self.assertIn('about twice the usual length for this kind of post', guidance)
+        self.assertIn('for each main point', guidance)
+        line = next(p for p in guidance.split('\n') if p.startswith('Length:'))
+        self.assertNotIn('style', line)
+        self.assertNotIn('capabilit', line)
+        _, outline = self.guidance_at('outline', length='short', title='Short')
+        line = next(p for p in outline.split('\n') if p.startswith('Length:'))
+        self.assertIn('about half the usual length for this kind of post', line)
+        self.assertNotIn('capabilit', line)
+
+    def test_length_is_refused_where_it_has_no_effect(self):
+        # A review, a revision and three ideas write no new outline or draft to a length.
+        source = self.source('# A supplied manuscript\nA fictional gateway routes requests.')
+        for mode, extra in (
+            ('review', {'manuscript': source['id']}),
+            ('revise', {'manuscript': source['id']}),
+            ('ideas', {}),
+        ):
+            with self.subTest(mode=mode):
+                before = sorted((self.root / 'articles').iterdir())
+                with self.assertRaisesRegex(
+                    ValueError,
+                    r'^Length is for new writing, so a review, a revision or three ideas '
+                    r'takes none\. Nothing was started\.$',
+                ):
+                    self.create(mode=mode, length='deep', title='No ' + mode, **extra)
+                self.assertEqual(sorted((self.root / 'articles').iterdir()), before)
+                # The usual length is accepted, as the page sends nothing for it.
+                self.create(mode=mode, length='style', title='Usual ' + mode, **extra)
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
+            + ['--title', 'Ideas', '--mode', 'ideas', '--length', 'short']
+        )
+        with self.assertRaisesRegex(ValueError, 'Length is for new writing'):
+            runner.command(self.root, args)
 
     def test_the_writer_qualifies_once_and_builds_each_capability(self):
         _, guidance = self.guidance_at('draft')

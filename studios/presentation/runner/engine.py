@@ -1252,7 +1252,7 @@ class Engine(Jobs, Researching):
         if not said or not version or not self._older(version, slides_tool.MINIMUM):
             return said
         name = self.brought_by(version)
-        before, cut, after = said.rpartition('Update it')
+        before, cut, after = said.rpartition('Update Harness Slides')
         return f"{before}{name}'s own installer brings {version}. {cut}{after}" \
             if name and cut else said
 
@@ -1269,7 +1269,7 @@ class Engine(Jobs, Researching):
         dated = None if seen['tool'] or not seen['version'] \
             or not self._older(seen['version'], slides_tool.MINIMUM) else (
             f"The slides tool on this computer is version {seen['version']}, and a deck needs "
-            f'{slides_tool.MINIMUM} or newer. Update it.')
+            f'{slides_tool.MINIMUM} or newer. Update Harness Slides.')
         dated = self._with_installer(dated, seen)
         seen = {**seen, 'tool': self._with_installer(seen['tool'], seen)}
         # The brand skill is not a need of drawing: a deck without one stops at its brand.
@@ -2975,6 +2975,31 @@ class Engine(Jobs, Researching):
                                             Path(str(filename or '')).name[:120] or None,
                                             kind=kinds[slide], title=titles.get(slide))
             self._commit(root, f'give slide {slide} a picture')
+        return made
+
+    def remove_picture(self, path, slide: str, expected: str | None) -> dict:
+        """Take the picture the person gave a slide off it, while the outline waits for them.
+        The deck is drawn without it; the slides tool's record of it stays, as a recorded
+        asset is never rewritten. `expected` is the outline gate's `expected`, as the page
+        read it. Returns {'slide'}."""
+        root = self._held(path)
+        with self.files:
+            record = self._load(root)
+            gate = self._gate_view(root, record)
+            if not gate or gate.get('name') != 'gate:outline':
+                raise WorkspaceError('Remove a picture while the outline is waiting for you.')
+            if gate.get('expected') != expected:
+                raise WorkspaceError('The outline changed. Reload it before removing a '
+                                     'picture.')
+            titles = {one.get('id'): one.get('title') for one in gate.get('slides') or ()
+                      if isinstance(one, dict)}
+            if slide not in titles:
+                raise WorkspaceError(f'{slide} is not a slide of this outline.')
+            try:
+                made = build.remove_picture(root, slide)
+            except KeyError:
+                raise WorkspaceError(f'“{titles[slide]}” has no picture to remove.') from None
+            self._commit(root, f'take the picture off slide {slide}')
         return made
 
     def _show_look(self, root: Path, record: dict) -> dict:

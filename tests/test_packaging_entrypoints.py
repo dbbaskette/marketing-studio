@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
+from interpreter import python_path  # noqa: E402  python3 is the Python running the tests
 spec = importlib.util.spec_from_file_location('product_installer', ROOT / 'scripts/local_bundle/install-local.py')
 installer = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(installer)
@@ -26,7 +27,7 @@ class PackagingEntryTests(unittest.TestCase):
         self.home = self.root / 'disposable home'
         self.home.mkdir()
         self.env = {'HOME': str(self.home), 'STUDIOS_CONFIG': str(self.home / 'settings.json'),
-                    'PATH': str(Path(sys.executable).parent) + ':/usr/bin:/bin',
+                    'PATH': python_path(self.root, '/usr/bin', '/bin'),
                     'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}
 
     def folder(self, product):

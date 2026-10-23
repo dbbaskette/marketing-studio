@@ -4250,9 +4250,34 @@ function pictureParts(gate, one, title) {
   toggle.setAttribute('aria-label', (open ? 'Keep it without a picture: “' : 'Add a picture to “')
     + title + '”');
   found.buttons.push(toggle);
+  if (given && !open) {
+    // Taking a picture off: the deck is drawn without it, and one can be given again.
+    const failed = make('p', 'problem');
+    failed.setAttribute('role', 'alert');   // read out, as focus stays on the button
+    failed.hidden = true;
+    const off = capsule('Remove the picture', 'quiet', async () => {
+      say(failed, '');
+      off.disabled = true;
+      const path = view.path;
+      try {
+        await send('picture-remove', { path, slide: one.id, expected: gate.expected });
+        if (path !== view.path) return;
+        toast('The picture is taken off “' + title + '”. The deck is drawn without it.');
+        await refresh();
+        focusKey('slide-picture ' + one.id);
+      } catch (failure) {
+        say(failed, failure.message);
+        off.disabled = false;
+      }
+    }, 'picture-remove ' + one.id);
+    off.setAttribute('aria-label', 'Remove the picture from “' + title + '”');
+    found.buttons.push(off);
+    found.shown.push(failed);
+  }
   if (!open) return found;
   const fill = held.picture || (held.picture = { alt: '', source: '', file: null });
   const problem = make('p', 'problem');
+  problem.setAttribute('role', 'alert');
   problem.hidden = true;
   const send_ = capsule('Add the picture', '', async () => {
     say(problem, '');

@@ -44,7 +44,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decid
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
          '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
-         '/api/note', '/api/review-level', '/api/picture')
+         '/api/note', '/api/review-level', '/api/picture', '/api/picture-remove')
 BOTH = ('/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard')
 LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None,
            'about': 'Previous generation workhorse model.', 'default_level': 'medium',
@@ -282,6 +282,29 @@ class RuleTests(PageCase):
                                      'source': 'Our photo.'}, 400)
         self.assertEqual(said['error'], 'The picture did not arrive whole. Choose the file '
                                         'again.')
+
+
+class PictureRemovalTests(PageCase):
+    """A picture taken off a slide at the outline, with the same key and checks as every
+    change (RuleTests holds /api/picture-remove to them too)."""
+
+    def test_a_picture_is_taken_off_a_slide(self):
+        path = self.started()
+        gate = self.run_of(path)['gate']
+        self.assertEqual(gate['name'], 'gate:outline')
+        content = next(one for one in gate['slides'] if one.get('kind') == 'content')
+        sent = {'path': path, 'slide': content['id'], 'expected': gate.get('expected')}
+        said = self.post('picture-remove', sent, 409)
+        self.assertEqual(said['error'], f"“{content['title']}” has no picture to remove.")
+        with mock.patch.object(self.engine, 'remove_picture',
+                               return_value={'slide': content['id']}) as removed:
+            self.assertEqual(self.post('picture-remove', sent), {'slide': content['id']})
+            said = self.post('picture-remove', sent, 403, token=False)
+            self.assertIn('needs the key', said['error'])
+        removed.assert_called_once()
+        self.assertEqual(removed.call_args.args[1:], (content['id'], gate.get('expected')))
+        said = self.post('picture-remove', {'path': path, 'expected': 'x'}, 400)
+        self.assertIn('slide', said['error'])
 
 
 class AgentTests(PageCase):

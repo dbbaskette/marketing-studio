@@ -1167,6 +1167,42 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(base64.b64decode(body['content']), picture)
         self.assertIn('Pictures you give a slide stay on this computer', shots['form']['text'])
 
+    def test_a_picture_is_taken_off_a_slide_at_the_outline(self):
+        path = self.started()
+        run = self.run_of(path)
+        gate = run['gate']
+        content = next(one for one in gate['slides'] if one.get('kind') == 'content')
+        other = next(one for one in gate['slides'] if one.get('kind') == 'content'
+                     and one['id'] != content['id'])
+        title = content['title']
+        pictured = {**run, 'gate': {**gate, 'pictures': {content['id']: {
+            'asset': f"pic-{content['id']}", 'alt': 'A rack of servers in our lab.',
+            'source': 'Our own photograph.', 'name': 'rack.png'}}}}
+        result = self.deck_screen(path, [
+            {'snapshot': 'gate'}, {'click': f'Remove the picture from “{title}”'},
+            {'snapshot': 'after'}],
+            **{'GET /api/run': [ok(pictured), ok(run)],
+               'POST /api/picture-remove': [ok({'slide': content['id']})]})
+        shots = result['snapshots']
+        self.assertIn('Picture: A rack of servers in our lab.', shots['gate']['text'])
+        self.assertIn(f'Remove the picture from “{title}”', shots['gate']['buttons'])
+        self.assertNotIn(f"Remove the picture from “{other['title']}”", shots['gate']['buttons'])
+        (address, body), = [(address, body) for address, body in self.posts(result)
+                            if address == '/api/picture-remove']
+        self.assertEqual(body, {'path': path, 'slide': content['id'],
+                                'expected': gate.get('expected')})
+        self.assertNotIn('Picture: A rack of servers in our lab.', shots['after']['text'])
+        # A removal refused says why beside the picture, and the picture stays.
+        said = 'The outline changed. Reload it before removing a picture.'
+        result = self.deck_screen(path, [
+            {'click': f'Remove the picture from “{title}”'}, {'snapshot': 'refused'}],
+            **{'GET /api/run': [ok(pictured)],
+               'POST /api/picture-remove': [{'status': 409, 'body': {'error': said}}]})
+        refused = result['snapshots']['refused']
+        self.assertIn(said, refused['text'])
+        self.assertIn('Picture: A rack of servers in our lab.', refused['text'])
+        self.assertNotIn(f'Remove the picture from “{title}”', refused['off'])
+
     def test_a_slide_added_and_moved_on_the_page_is_an_outline_the_slides_tool_takes(self):
         path = self.started(delivery='reading')   # a handout: an added slide needs no notes
         drafted = self.run_of(path)['gate']['slides']

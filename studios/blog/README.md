@@ -77,7 +77,7 @@ Once the page is open, use its controls to drive the work:
    them or paste Google Doc links and say what each is for: facts that may be quoted,
    approved messaging (a messaging document, launch brief or release notes, written as
    the product's own claims), or an example of the kind of post you want (its shape,
-   never its facts). **Length** asks for the style's own length, short or in depth. Then pick one
+   never its facts). **Length** asks for the usual length, short or in depth. Then pick one
    of three suggested angles, or give the title, the point and the reader yourself, and
    the usual outline and draft follow. **Write as** chooses the voice there too: your
    default voice, a saved profile, or no particular voice with a tone.
