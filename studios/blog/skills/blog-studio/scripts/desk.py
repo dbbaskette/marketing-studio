@@ -990,6 +990,9 @@ ROUTES = {
     'outline-save': {'id', 'seen', 'sections'},
     'draft': {'id', 'seen'},
     'sources': {'id', 'sources', 'library', 'keep'},
+    # Finishing (desk_finish.py): apply or skip what a tool proposed.
+    'apply': {'id', 'seen', 'job', 'items'},
+    'skip': {'id', 'job', 'items'},
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
 
@@ -1110,4 +1113,12 @@ def dispatch(root, action, data):
         desk_jobs.draft_job(root, ident, seen)
     elif action == 'sources':
         add_sources(root, ident, data)
+    elif action in ('apply', 'skip'):
+        import desk_finish
+
+        if action == 'apply':
+            done = desk_finish.apply(root, ident, seen, data.get('job'), data.get('items'))
+        else:
+            done = desk_finish.skip(root, ident, data.get('job'), data.get('items'))
+        return {**desk_jobs.view(root, ident), 'finished': done}
     return desk_jobs.view(root, ident)

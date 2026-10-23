@@ -1566,6 +1566,7 @@ def _row(job):
 
 def view(root, ident):
     """The desk as the page reads it: the draft, its Markdown, its jobs and version counts."""
+    import desk_finish
     import editorial
     import styles
 
@@ -1624,6 +1625,8 @@ def view(root, ident):
         ],
         # A start under way: the page shows its progress until the draft (or outline) opens.
         'start': _start_view(root, ident, rows),
+        # Finishing: the newest suggestions from each tool, waiting on this computer.
+        'finishing': desk_finish.summary(root, ident, draft),
         # The blog record's version, for Mark as published and Delete.
         'expected': studio.digest((directory / 'session.json').read_bytes()),
     }

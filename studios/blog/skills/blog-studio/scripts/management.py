@@ -2110,6 +2110,10 @@ def _dispatch(root, route, data):
     raise ValueError('Unknown management action.')
 
 
+# Desk requests that change only what this computer keeps: the driver check, nothing shared.
+DESK_LOCAL = ('desk-save', 'desk-skip')
+
+
 def dispatch(root, route, data):
     from team_workspace import space, before, saved, status, refresh, action, join
 
@@ -2191,8 +2195,9 @@ def dispatch(root, route, data):
             from team_workspace import keep_desk
 
             keep_desk(root, data.get('id'))
-        if route == 'desk-save':
-            # Typing is an edit, not a decision: no fetch, only the driver check.
+        if route in DESK_LOCAL:
+            # Typing, or setting a suggestion aside, is not a decision: no fetch, only the
+            # driver check.
             from team_workspace import guard
 
             guard(root, data.get('id'))
@@ -2210,7 +2215,7 @@ def dispatch(root, route, data):
         from team_workspace import kept_locally
 
         result['team_sync'] = kept_locally(root, result['id'], data.get('session'))
-    elif space(root) and route not in ('run-settings', 'review-level', 'desk-angles'):
+    elif space(root) and route not in ('run-settings', 'review-level', 'desk-angles', 'desk-skip'):
         if route == 'tool-action':
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.
