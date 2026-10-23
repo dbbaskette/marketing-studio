@@ -2311,6 +2311,11 @@ class Engine:
             # The last lines the assistant's CLI wrote, kept on this computer only.
             'said': read_said(self.root, ident) if status == 'failed' else None,
             'research': research,
+            # A finished blog may be opened on the writing desk; one already there says so.
+            'desk_open': bool(
+                found['complete'] and (Path(found['directory']) / 'DRAFT.md').is_file()
+            ),
+            'on_desk': (Path(found['directory']) / 'desk' / 'draft.json').is_file(),
             'enabled': local.get('enabled', False),
             'observation': 'Saved locally. Workers use your selected CLI sign-in. Public research links need review; no publishing is automatic.',
         }

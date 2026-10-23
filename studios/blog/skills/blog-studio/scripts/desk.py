@@ -224,7 +224,7 @@ def create(root, data):
         'style': record.get('style') if style else None,
         'tone': tone,
         'length': length,
-        'sources': list(record['sources']),
+        'sources': _citable(record['sources']),
         'gaps': [],
         'created_at': now,
         'updated_at': now,
@@ -236,6 +236,46 @@ def create(root, data):
     studio.write_json(studio.inside(directory, DESK, 'draft.json'), draft)
     studio.persist(directory, 'articles', record)
     studio.write_json(studio.inside(root, '.active-article.json'), {'id': ident})
+    return draft
+
+
+def _citable(sources):
+    """The sources a desk job reads: the blog's own manuscript is the draft, not a source."""
+    return [dict(entry) for entry in sources if 'manuscript' not in entry['purposes']]
+
+
+def open_run(root, ident):
+    """A finished step-by-step blog on the desk: its DRAFT.md split into a desk draft with
+    the run's kind of post, tone (never its voice) and length. The run's own state and files
+    stay as they are, so it remains readable; opening again returns the same desk."""
+    import blog_runner
+
+    directory, record, run = blog_runner.load(root, ident)
+    target = studio.inside(directory, DESK, 'draft.json')
+    if target.is_file() and not target.is_symlink():
+        return read(root, ident)
+    if (
+        not blog_runner.survey(root, ident, listing=True)['complete']
+        or not (directory / 'DRAFT.md').is_file()
+    ):
+        raise ValueError('Finish this blog, then open it on the desk.')
+    draft = split((directory / 'DRAFT.md').read_text(), title=record['title'])
+    now = studio.now()
+    draft = {
+        'schema': 1,
+        'id': ident,
+        'revision': 1,
+        **draft,
+        'style': record.get('style'),
+        'tone': ((record.get('voice') or {}).get('tone') or '').strip(),
+        'length': run.get('length', 'style') if run.get('length') in LENGTHS else 'style',
+        'sources': _citable(record.get('sources', [])),
+        'gaps': [],
+        'from_run': True,
+        'created_at': now,
+        'updated_at': now,
+    }
+    studio.write_json(target, draft)
     return draft
 
 
@@ -417,6 +457,7 @@ ROUTES = {
     'selection': {'id', 'seen', 'part', 'text', 'action', 'instruction'},
     'first-pass': {'id', 'seen', 'choice'},
     'stop': {'id', 'job'},
+    'open': {'id'},
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
 
@@ -464,8 +505,11 @@ def dispatch(root, action, data):
     ident = data.get('id')
     if not isinstance(ident, str):
         raise ValueError('Choose a blog on the desk.')
-    read(root, ident)
     guard(root, ident)
+    if action == 'open':
+        open_run(root, ident)
+        return desk_jobs.view(root, ident)
+    read(root, ident)
     seen = data.get('seen')
     if action == 'save':
         session = data.get('session')
