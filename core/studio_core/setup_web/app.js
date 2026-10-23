@@ -201,28 +201,12 @@ function fill() {
   efforts(shared.assistant?.effort); storage(); fillProfiles();
   for (const picker of modelPickers.values()) renderModelPicker(picker);
 }
-// Research sites: canonical https://host[/path], shown as host/path. The server checks
-// each again (core/studio_core/research_sites.py) and refuses what it cannot use.
+// Research sites: canonical https://host[/path], shown as host/path. Each site is checked
+// by the server when it is added (core/studio_core/research_sites.py), and again on save:
+// one rule everywhere.
 let researchSites = [];
 const MOST_SITES = 50;
 function siteShown(site) { return site.replace(/^https:\/\//, ''); }
-function canonicalSite(typed) {
-  const given = typed.trim();
-  if (!given || /\s/.test(given)) throw new Error('Give a site as an https address, such as docs.example.com/guide.');
-  const text = given.includes('://') ? given : 'https://' + given;
-  let url;
-  try { url = new URL(text); } catch (error) { throw new Error(`“${given}” is not a web address.`); }
-  if (url.protocol !== 'https:') throw new Error(`“${given}”: research sites use https only.`);
-  if (url.username || url.password) throw new Error(`“${given}” carries a name or password. Give the address without them.`);
-  if (url.search || url.hash || /[?#]$/.test(given)) throw new Error(`“${given}”: leave out the part after ? or #. A site is a host and an optional path.`);
-  if (url.port) throw new Error(`“${given}”: research sites use the standard https port.`);
-  const host = url.hostname.toLowerCase().replace(/\.$/, '');
-  const privateName = host === 'localhost' || !host.includes('.') || /\.(local|localhost|internal|lan|home\.arpa|test|intranet|corp|private)$/.test(host);
-  const privateAddress = /^(10|127|0)\./.test(host) || /^192\.168\./.test(host) || /^169\.254\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host) || host.startsWith('[');
-  if (privateName || privateAddress) throw new Error(`“${given}” is not a public site. Research never reads this computer or a private network.`);
-  if (url.pathname.split('/').some(part => part === '.' || part === '..') || /%2f|%5c/i.test(url.pathname)) throw new Error(`“${given}”: the path may not hold "." or ".." parts or encoded slashes.`);
-  return 'https://' + host + url.pathname.replace(/\/+$/, '');
-}
 function renderSites() {
   const list = $('#research-site-list'); list.replaceChildren();
   researchSites.forEach((site, index) => {
@@ -237,15 +221,19 @@ function renderSites() {
   });
   $('#research-site-empty').hidden = researchSites.length > 0;
 }
-function addSite() {
-  const input = $('#research-site-input');
+async function addSite() {
+  const input = $('#research-site-input'), button = $('#research-site-add');
+  const typed = input.value.trim();
+  if (!typed) { $('#research-site-hint').textContent = 'Type a site first, such as docs.example.com/guide.'; input.focus(); return; }
+  button.disabled = true;
   try {
-    const site = canonicalSite(input.value);
+    const {site} = await api('research-site', {site: typed});
     if (researchSites.includes(site)) throw new Error(`${siteShown(site)} is already in your list.`);
     if (researchSites.length >= MOST_SITES) throw new Error(`Keep at most ${MOST_SITES} research sites.`);
     researchSites.push(site); renderSites(); input.value = '';
     $('#research-site-hint').textContent = `${siteShown(site)} added. Save settings to keep the list.`;
   } catch (error) { $('#research-site-hint').textContent = error.message; }
+  finally { button.disabled = false; }
   input.focus();
 }
 $('#research-site-add').addEventListener('click', addSite);

@@ -180,6 +180,118 @@ class RefusedTests(unittest.TestCase):
         self.assertEqual(rs.Scope.load(scope.dump()).choice, scope.choice)
 
 
+def server_view(url):
+    """(host, path) as urllib sends a URL and a lenient server would act on it: once
+    decoded, backslashes as slashes, ;-parameters dropped from each segment, dot segments
+    resolved. Nothing is fetched."""
+    import posixpath
+    import re
+    import urllib.request
+    from urllib.parse import unquote
+    request = urllib.request.Request(url.strip())
+    host = re.sub(r':0*443$|:$', '', request.host.lower().rsplit('@', 1)[-1]).rstrip('.')
+    path = unquote(request.selector.split('?', 1)[0]).replace('\\', '/')
+    path = '/'.join(segment.split(';', 1)[0] for segment in path.split('/'))
+    path = posixpath.normpath(path) if path else '/'
+    return host, '/' + path.lstrip('/') if path.startswith('//') else path
+
+
+def really_under(host, path, listed):
+    from urllib.parse import urlsplit
+    for base in listed:
+        target = urlsplit(base)
+        prefix = target.path.rstrip('/')
+        if target.hostname == host and (not prefix or path == prefix or path.startswith(prefix + '/')):
+            return True
+    return False
+
+
+class ReviewTests(unittest.TestCase):
+    """Cases from the review of the first version: none may pass under() and land
+    outside the sites as a lenient server reads the request."""
+
+    SITES = [TANZU, DOCS]
+    CASES = (
+        'https://blogs.vmware.com/tanzu/a', 'https://BLOGS.VMWARE.COM/tanzu/a', 'https://blogs.vmware.com./tanzu/a',
+        'https://blogs.vmware.com:443/tanzu/a', 'https://blogs.vmware.com:0443/tanzu/a', 'https://blogs.vmware.com:8443/tanzu/a',
+        'https://user@blogs.vmware.com/tanzu/a', 'https://@blogs.vmware.com/tanzu/a', 'https://blogs.vmware.com@evil.com/tanzu/a',
+        'https://evil.com@blogs.vmware.com/tanzu/a', 'https://evil.com#@blogs.vmware.com/tanzu', 'https://evil.com?@blogs.vmware.com/tanzu',
+        'https://blogs.vmware.com/tanzu/%2e%2e/admin', 'https://blogs.vmware.com/tanzu/%252e%252e/admin', 'https://blogs.vmware.com/tanzu/.%2e/admin',
+        'https://blogs.vmware.com/tanzu/..%2fadmin', 'https://blogs.vmware.com/tanzu/..%252fadmin', 'https://blogs.vmware.com/tanzu/..;/admin',
+        'https://blogs.vmware.com/tanzu/..\\admin', 'https://blogs.vmware.com/tanzu%2f..%2fadmin', 'https://blogs.vmware.com/tanzu/../admin',
+        'https://blogs.vmware.com//tanzu/a', 'https://blogs.vmware.com/tanzu//a', 'https://blogs.vmware.com/tanzu-other/a', 'https://blogs.vmware.com/Tanzu/a',
+        'https://blogs.vmware.com/tanzu?x=/../admin', 'https://blogs.vmware.com/admin?/tanzu', 'https://blogs.vmware.com/admin#/tanzu',
+        'https://blogs.vmware.com/', 'https://blogs.vmware.com', 'https://blogs.vmware.com/tanzu', 'https://blogs.vmware.com/tanz%75/a',
+        'http://blogs.vmware.com/tanzu/a', 'HTTPS://blogs.vmware.com/tanzu/a', 'https:/blogs.vmware.com/tanzu/a', 'https:blogs.vmware.com/tanzu/a',
+        'https://blogs.vmware.com.evil.example/tanzu/a', 'https://evilblogs.vmware.com/tanzu', 'https://x.blogs.vmware.com/tanzu',
+        'https://blogs.vmwаre.com/tanzu', 'https://blogs.vmware.com\\@evil.com/tanzu', 'https://blogs.vmware.com%2f@evil.com/tanzu',
+        'https://blogs.vmware.com%40evil.com/tanzu', ' https://blogs.vmware.com/tanzu/a', 'https://blogs.vmware.com/tanzu/a\n',
+        'https://blogs.vmware.com/tanzu/%00', 'https://blogs.vmware.com/tanzu/%0d%0aHost:evil', 'https://[::1]/tanzu', 'https://127.0.0.1/tanzu',
+        'https://docs.example.com/anything', 'https://docs.example.com:443@evil.com/', 'https://docs.example.com../', 'https://docs.example.com/%2e%2e/%2e%2e/x',
+        'https://blogs.vmware.com/tanzu/a/../../admin', 'https://blogs.vmware.com/tanzu/a/%2e%2e/%2e%2e/admin', 'https://blogs.vmware.com/tanzu/a/.%252e/admin',
+        'https://blogs.vmware.com/%74anzu/../admin', 'https://blogs.vmware.com/tanzu/..%00/admin', 'https://blogs.vmware.com/tanzu/..%20/admin',
+        'https://blogs.vmware.com/tanzu/...', 'https://blogs.vmware.com/tanzu/a?b', 'https://blogs.vmware.com/tanzu/a#..',
+        'https://blogs.vmware.com:/tanzu/a', 'https://blogs.vmware.com:443:443/tanzu', 'https://[blogs.vmware.com]/tanzu',
+        'https://blogs.vmware.com/tanzu#/x/../../admin#z', 'https://blogs.vmware.com/tanzu/x/..;/..;/admin',
+        'https://blogs.vmware.com/tanzu/x/.;a/..;b/..;c/admin', 'https://blogs.vmware.com/tanzu/%2e%2e;/admin',
+    )
+
+    def check(self, url):
+        if not rs.under(url, self.SITES):
+            return
+        try:
+            host, path = server_view(rs.fetchable(url))
+        except Exception:
+            return
+        self.assertTrue(really_under(host, path, self.SITES), f'{url!r} reaches {host} {path}')
+
+    def test_table(self):
+        for url in self.CASES:
+            with self.subTest(url=url):
+                self.check(url)
+        for url in ('https://blogs.vmware.com/tanzu#/x/../../admin#z', 'https://blogs.vmware.com/tanzu/x/..;/..;/admin',
+                    'https://blogs.vmware.com/tanzu/..;/admin'):
+            self.assertIsNone(rs.under(url, self.SITES), url)
+        self.assertIsNotNone(rs.under('https://blogs.vmware.com/tanzu/a;jsessionid=1', self.SITES))
+
+    def test_fuzz(self):
+        import random
+        chance = random.Random(1)
+        alphabet = ['/', '.', '..', '%2e', '%2E', '%25', '%2f', ';', '\\', '@', ':', '#', '?', 'tanzu',
+                    'admin', 'a', '%00', '%5c', '//', '%252e', ' ', '\t', '%3b', '%2e%2e']
+        for _ in range(40000):
+            url = TANZU + ''.join(chance.choice(alphabet) for _ in range(chance.randint(1, 8)))
+            self.check(url)
+
+    def test_fetchable_drops_the_fragment(self):
+        self.assertEqual(rs.fetchable('https://blogs.vmware.com/tanzu/a?b=1#c#d'), 'https://blogs.vmware.com/tanzu/a?b=1')
+        self.assertEqual(rs.fetchable('https://blogs.vmware.com/tanzu'), 'https://blogs.vmware.com/tanzu')
+
+    def test_numeric_hex_and_unicode_hosts(self):
+        for given in ('https://127.1', 'https://0x7f.1', 'https://2130706433', 'https://1.2.3.04',
+                      'https://10.0x1', 'https://100.64.0.1', 'https://0.0.0.0', 'https://[::ffff:127.0.0.1]',
+                      'https://foo.home.arpa', 'https://metadata.google.internal', 'https://169.254.169.254'):
+            with self.subTest(given=given), self.assertRaises(ValueError):
+                rs.site(given)
+        self.assertEqual(rs.site('bücher.de'), 'https://xn--bcher-kva.de')
+        self.assertEqual(rs.site('xn--bcher-kva.de/a'), 'https://xn--bcher-kva.de/a')
+        self.assertTrue(rs.under('https://bücher.de/a/b', ['https://xn--bcher-kva.de/a']))
+        self.assertTrue(rs.under('https://xn--bcher-kva.de/a', [rs.site('bücher.de/a')]))
+        self.assertIsNone(rs.under('https://blogs.vmwаre.com/tanzu', [TANZU]))
+        self.assertEqual(rs.site('https://[2606:4700::1111]/x'), 'https://[2606:4700::1111]/x')
+        self.assertTrue(rs.under('https://[2606:4700::1111]/x/y', ['https://[2606:4700::1111]/x']))
+
+    def test_outside_sentence(self):
+        self.assertIsNone(rs.outside(0, [TANZU]))
+        self.assertIsNone(rs.outside(2, []))
+        self.assertEqual(rs.outside(1, [TANZU]),
+                         '1 page was outside your sites (blogs.vmware.com/tanzu) and was not saved.')
+        self.assertEqual(rs.outside(2, [TANZU, DOCS]),
+                         '2 pages were outside your sites (blogs.vmware.com/tanzu, docs.example.com) and were not saved.')
+        many = [f'https://s{n}.example.com' for n in range(7)]
+        self.assertIn('and 2 more)', rs.outside(3, many))
+
+
 class SharedSitesTests(IsolatedHome):
     def test_save_canonicalizes_and_preserves_unrelated_values(self):
         shared.path().write_text('{"schema": 1, "unrelated": {"keep": [1, 2]}, "output": "pptx"}')
@@ -217,6 +329,27 @@ class SharedSitesTests(IsolatedHome):
         shared.path().write_text('{"schema": 1, "research": ["x"]}')
         self.assertTrue(shared.read()[1])
 
+    def test_one_site_is_checked_by_the_server_at_add_and_nothing_is_saved(self):
+        from email.message import Message
+        from marketing_studio.errors import WorkspaceError
+        shared.path().write_text('{"schema": 1}')
+        self.assertEqual(self.write('/api/research-site', {'site': 'Blogs.VMware.com/tanzu/'}), {'site': TANZU})
+        for wrong in ('https://127.1/', 'http://docs.example.com', 42):
+            with self.subTest(wrong=wrong), self.assertRaises(WorkspaceError):
+                self.write('/api/research-site', {'site': wrong})
+        page = onboarding.Controller(8000, 'a' * 40, 'Training Studio', 'X-Test-Token', lambda _: None, shared)
+        headers = Message()
+        for key, value in {'Host': '127.0.0.1:8000', 'Origin': 'http://127.0.0.1:8000',
+                           'Content-Type': 'application/json', 'X-Test-Token': 'a' * 40}.items():
+            headers[key] = value
+        for sent, status, wanted in (({'site': 'docs.example.com'}, 200, {'site': DOCS}),
+                                     ({'site': 'https://[::1]/'}, 409, None)):
+            answer = page.answer('/onboarding/api/research-site', headers, 'POST', json.dumps(sent).encode())
+            self.assertEqual(answer[0], status)
+            if wanted:
+                self.assertEqual(json.loads(answer[2]), wanted)
+        self.assertEqual(json.loads(shared.path().read_text()), {'schema': 1})
+
     def test_marketing_and_standalone_pages_round_trip_the_list(self):
         shared.path().write_text('{"schema": 1}')
         self.write('/api/shared', {'changes': {'research': {'sites': [TANZU]}}, 'seen': {}})
@@ -249,7 +382,14 @@ class SettingsPageJourneyTests(unittest.TestCase):
         from pathlib import Path
         with tempfile.TemporaryDirectory() as temp:
             plan = Path(temp) / 'steps.json'
-            plan.write_text(json.dumps(steps))
+            typed = [step['type'] for step in steps if 'type' in step]
+            answers = {}
+            for text in typed:
+                try:
+                    answers[text] = {'site': rs.site(text)}
+                except ValueError as error:
+                    answers[text] = {'error': str(error)}
+            plan.write_text(json.dumps({'steps': steps, 'answers': answers}))
             done = subprocess.run(['node', str(Path(__file__).with_name('settings_page_harness.js')), str(plan)],
                                   capture_output=True, text=True, timeout=60)
         self.assertEqual(done.returncode, 0, done.stderr)
@@ -263,6 +403,8 @@ class SettingsPageJourneyTests(unittest.TestCase):
             {'type': 'http://plain.example.com'}, {'click': 'add'}, {'snapshot': 'http'},
             {'type': 'https://10.1.2.3/wiki'}, {'click': 'add'}, {'snapshot': 'private'},
             {'type': 'https://example.com/a?b=1'}, {'click': 'add'}, {'snapshot': 'query'},
+            {'type': 'https://127.1/'}, {'click': 'add'}, {'snapshot': 'numeric'},
+            {'type': ''}, {'click': 'add'}, {'snapshot': 'blank'},
             {'click': 'remove', 'index': 0}, {'snapshot': 'removed'},
             {'click': 'remove', 'index': 0}, {'snapshot': 'empty'}])
         self.assertEqual(shots['shown']['rows'], ['blogs.vmware.com/tanzu'])
@@ -278,6 +420,11 @@ class SettingsPageJourneyTests(unittest.TestCase):
         self.assertIn('not a public site', shots['private']['hint'])
         self.assertIn('after ? or #', shots['query']['hint'])
         self.assertEqual(shots['query']['rows'], ['blogs.vmware.com/tanzu', 'docs.example.com'])
+        self.assertIn('not a public site', shots['numeric']['hint'])
+        # Every typed site was checked by the server; a blank box asks nothing.
+        self.assertEqual(shots['numeric']['asked'], 6)
+        self.assertEqual(shots['blank']['asked'], 6)
+        self.assertIn('Type a site first', shots['blank']['hint'])
         self.assertEqual(shots['removed']['rows'], ['docs.example.com'])
         self.assertEqual(shots['removed']['change'], {'sites': [DOCS]})
         self.assertEqual(shots['empty']['rows'], [])

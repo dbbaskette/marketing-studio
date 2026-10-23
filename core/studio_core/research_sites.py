@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from urllib.parse import unquote, urlsplit
+from urllib.parse import unquote, urlsplit, urlunsplit
 
 MOST = 50                  # sites in one list
 LONGEST = 2000             # characters in one site
 SHOWN = 5                  # sites a summary names before "and N more"
 LABEL = re.compile(r'^(?!-)[a-z0-9-]{1,63}(?<!-)$')
+# A last label of digits or 0x-hex makes a browser or resolver read the name as an IPv4
+# address (127.1, 0x7f.1), so such a name is never a site.
+NUMERIC = re.compile(r'^(?:0x[0-9a-f]*|[0-9]+)$')
 PRIVATE_SUFFIXES = ('.local', '.localhost', '.internal', '.lan', '.home.arpa', '.test',
                     '.intranet', '.corp', '.private')
 EMPTY = 'Choose where research may look: your documents, your sites or the public web.'
@@ -40,7 +43,27 @@ def _public_host(host: str) -> bool:
         return (getattr(address, 'ipv4_mapped', None) or address).is_global
     if host == 'localhost' or host.endswith(PRIVATE_SUFFIXES) or '.' not in host:
         return False
+    if NUMERIC.match(host.rsplit('.', 1)[-1]):
+        return False
     return all(LABEL.match(label) for label in host.split('.'))
+
+
+def _ascii_host(host: str) -> str | None:
+    """The host as it is looked up: lowercased, without a trailing dot, a Unicode name in
+    its punycode form. None when it cannot be encoded."""
+    host = host.lower().rstrip('.')
+    if host.isascii():
+        return host
+    try:
+        return host.encode('idna').decode('ascii').lower()
+    except UnicodeError:
+        return None
+
+
+def fetchable(url: str) -> str:
+    """The address as it is fetched: without its fragment, which is never sent. Fetchers
+    check and request this form, so a '#' cannot hide a path from the check."""
+    return urlunsplit(urlsplit(url)._replace(fragment=''))
 
 
 def _clean_path(path: str) -> str | None:
@@ -50,8 +73,9 @@ def _clean_path(path: str) -> str | None:
     if '%2f' in lowered or '%5c' in lowered or '\\' in path:
         return None
     decoded = unquote(path)
+    # A segment such as '..;x' is a dot segment to servers that drop ;-parameters.
     if any(ord(c) < 32 for c in decoded) or any(
-            segment in ('.', '..') for segment in decoded.split('/')):
+            segment.split(';', 1)[0] in ('.', '..') for segment in decoded.split('/')):
         return None
     return path.rstrip('/')
 
@@ -82,7 +106,9 @@ def site(value) -> str:
                          'an optional path.')
     if port not in (None, 443):
         raise ValueError(f'"{named}": research sites use the standard https port.')
-    host = (parts.hostname or '').lower().rstrip('.')
+    host = _ascii_host(parts.hostname or '')
+    if host is None:
+        raise ValueError(f'"{named}" has a host name that cannot be used.')
     if not host:
         raise ValueError(f'"{named}" has no host name.')
     if not _public_host(host):
@@ -137,24 +163,29 @@ def under(url, listed) -> str | None:
     """The listed site a URL is under, or None. The URL must be https on the site's own
     host (no subdomain, no lookalike) and its path the site's path or one continuing it at
     a segment boundary."""
-    if not isinstance(url, str) or not url or len(url) > 8000:
+    # Two '#' are read differently by URL parsers (the first) and urllib (the last).
+    # Whitespace too: urllib strips it from the ends, so '..%20#' would become '..'.
+    if not isinstance(url, str) or not url or len(url) > 8000 or url.count('#') > 1 \
+            or any(c.isspace() or ord(c) < 32 for c in url):
         return None
     try:
-        parts = urlsplit(url.strip())
+        parts = urlsplit(url)
         port = parts.port
     except ValueError:
         return None
     if parts.scheme.lower() != 'https' or parts.username or parts.password \
             or port not in (None, 443) or not parts.hostname:
         return None
-    host = parts.hostname.lower().rstrip('.')
+    host = _ascii_host(parts.hostname)
+    if host is None:
+        return None
     path = _clean_path(parts.path)
     if path is None:
         return None
     path = unquote(path)
     for base in listed or ():
         target = urlsplit(base)
-        if (target.hostname or '').lower() != host:
+        if _ascii_host(target.hostname or '') != host:
             continue
         prefix = unquote(target.path.rstrip('/'))
         if not prefix or path == prefix or path.startswith(prefix + '/'):
@@ -231,6 +262,16 @@ def parts(value) -> list[str]:
     if value.get('web'):
         found.append('the public web')
     return found
+
+
+def outside(count, listed) -> str | None:
+    """What a research stop says of the pages refused for being outside your sites, or
+    None when none was."""
+    if not count or not listed:
+        return None
+    if count == 1:
+        return f'1 page was outside your sites ({_named(listed)}) and was not saved.'
+    return f'{count} pages were outside your sites ({_named(listed)}) and were not saved.'
 
 
 def summary(value) -> str:

@@ -6,6 +6,7 @@
 // what is set on it and its children, and remembers its listeners. STEPS is a list of
 // {sites: [...]} (the saved list the page was shown), {type: text} into the Add a site box,
 // {click: 'add'} or {click: 'remove', index}, {key: 'Enter'} in the box, and {snapshot: name}.
+// The plan is {steps, answers}: what the server's one-site check answers for each typed text.
 // A snapshot prints the rows shown, the hint, whether the empty line is hidden, and the
 // research change Save settings would send.
 'use strict';
@@ -37,6 +38,8 @@ class El {
   }
 }
 let focused = null;
+let answers = {};
+const asked = [];
 const byId = new Map();
 function find(selector) {
   if (!byId.has(selector)) byId.set(selector, new El());
@@ -57,16 +60,26 @@ const context = {
   location: { hash: '', pathname: '/', origin: 'http://127.0.0.1:1', hostname: '127.0.0.1' },
   history: { replaceState() {} }, sessionStorage: { getItem: () => '', setItem() {} },
   navigator: {}, Option: class extends El { constructor(text, value) { super('option'); this.text = text; this.value = value; } },
-  fetch: async () => { throw new Error('No network in this harness.'); },
+  // Only the one-site check is answered, from the plan's {answers: {typed: {site} or {error}}}.
+  fetch: async (url, options) => {
+    const sent = JSON.parse(options.body || '{}');
+    asked.push({ url, sent });
+    const answer = answers[sent.site] || { error: 'Not in this plan.' };
+    return { ok: !answer.error, json: async () => answer };
+  },
 };
 context.window = { addEventListener() {}, matchMedia: () => ({ matches: false }), scrollTo() {}, open() {} };
 vm.createContext(context);
 const script = fs.readFileSync(path.join(__dirname, '..', 'core', 'studio_core', 'setup_web', 'app.js'), 'utf8');
 vm.runInContext(script, context, { filename: 'app.js' });
 
-const steps = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const plan = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+const steps = plan.steps;
+answers = plan.answers || {};
+const settle = () => new Promise(resolve => setImmediate(resolve));
 const shots = {};
 const run = code => vm.runInContext(code, context);
+(async () => {
 for (const step of steps) {
   if (step.sites) {
     context.shownSites = step.sites;
@@ -75,11 +88,11 @@ for (const step of steps) {
   } else if ('type' in step) {
     find('#research-site-input').value = step.type;
   } else if (step.click === 'add') {
-    find('#research-site-add').fire('click');
+    find('#research-site-add').fire('click'); await settle(); await settle();
   } else if (step.click === 'remove') {
     find('#research-site-list').children[step.index].children[1].fire('click');
   } else if (step.key) {
-    find('#research-site-input').fire('keydown', { key: step.key });
+    find('#research-site-input').fire('keydown', { key: step.key }); await settle(); await settle();
   } else if (step.snapshot) {
     let change;
     try { change = run('changesForStep()').research ?? null; } catch (error) { change = 'error: ' + error.message; }
@@ -90,7 +103,9 @@ for (const step of steps) {
       emptyHidden: find('#research-site-empty').hidden,
       input: find('#research-site-input').value,
       change,
+      asked: asked.length,
     };
   }
 }
 process.stdout.write(JSON.stringify(shots));
+})();

@@ -3,7 +3,7 @@ import threading
 from pathlib import Path
 
 from studio_core import preferences as shared_preferences
-from studio_core import brand_catalog, runtime
+from studio_core import brand_catalog, research_sites, runtime
 from studio_core.model_catalog import Catalog
 
 from . import catalog, server, shared, state, validation, workspaces
@@ -12,7 +12,7 @@ from .errors import WorkspaceError
 
 class Home(server.Page):
     reads = ('/api/home', '/api/computer', '/api/models')
-    writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/brands')
+    writes = ('/api/shared', '/api/setup', '/api/open', '/api/connect', '/api/computer', '/api/paths', '/api/models', '/api/brands', '/api/research-site')
 
     def __init__(self, port, launcher):
         super().__init__(port)
@@ -65,6 +65,12 @@ class Home(server.Page):
                                   else {'computer': self.computer(False)})
 
     def write(self, path, sent):
+        if path == '/api/research-site':
+            # One site checked as a save would check it; nothing is saved.
+            try:
+                return server.as_json(200, {'site': research_sites.site(sent.get('site'))})
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from error
         if path == '/api/brands':
             skill = sent.get('skill')
             if skill is not None and (not isinstance(skill, str) or len(skill) > 2000
