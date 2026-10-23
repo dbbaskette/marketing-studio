@@ -321,5 +321,5 @@ function sRunOnDesk(found){
   const open=sButton('Open on the desk',()=>sRoute('desk',found.id),'filled');
   sFrame(found.title,[open],'Writing run',()=>sRoute('blogs'));
   const steps=sNode('ol','rows');for(const row of found.stages||[])steps.append(sAdd(sNode('li','row step'),sBead('done'),sAdd(sNode('div','row-text'),sNode('h3','step-name',row.label))));
-  sPage(sCard('This blog is on the writing desk',sNode('p','','It was finished here and then opened on the desk, where its notes, selection edits and versions are. This run is kept as it ended, to read.'),sAdd(sNode('div','bar'),sButton('Open on the desk',()=>sRoute('desk',found.id),'filled'))),disclosure('How it was written',steps));
+  sPage(sCard('This blog is on the writing desk',sNode('p','','It was finished here and then opened on the desk, where its notes, selection edits and versions are. This run is kept as it ended, to read.')),disclosure('How it was written',steps));
 }
