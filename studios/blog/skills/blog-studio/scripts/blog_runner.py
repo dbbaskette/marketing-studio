@@ -96,6 +96,14 @@ DEFAULTS = {
     'author': '',
 }
 MODES = ('write', 'outline', 'from-outline', 'ideas', 'revise', 'review', 'from-files')
+# How long the post runs, beside its kind of post: the style's own length by default.
+LENGTHS = {
+    'style': '',
+    'short': 'Length: about half the style’s usual length. Keep each capability’s what and '
+    'why; cut secondary detail before any qualifier.',
+    'deep': 'Length: about twice the style’s usual length, with one worked example or proof '
+    'point from the material for each capability. Develop; do not pad or invent.',
+}
 MATERIAL_ELSEWHERE = (
     'This blog’s uploaded files stay on the computer that added them. Continue it there, '
     'or start it again here from your files.'
@@ -1065,6 +1073,7 @@ def create(root, data, approval='conversation'):
         'review_level',
         'review_seen',
         'review_default',
+        'length',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
@@ -1128,6 +1137,9 @@ def create(root, data, approval='conversation'):
         raise ValueError('A revision starts at draft. Choose draft, review or the handoff.')
     if stop not in ('outline', 'draft', 'review', 'package'):
         raise ValueError('Choose outline, draft, review or the handoff.')
+    length = data.get('length', 'style')
+    if length not in LENGTHS:
+        raise ValueError('Choose a length: the style’s own, short or in depth.')
     from_files = mode == 'from-files'
     angles_first = from_files and not point
     brief = {
@@ -1277,6 +1289,7 @@ def create(root, data, approval='conversation'):
         'mode': mode,
         'pipeline': pipeline,
         'stages': {},
+        'length': length,
     }
     if from_files:
         run['angles'] = angles_first
@@ -1818,8 +1831,12 @@ def job(root, ident):
             + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
             'structure, moves, length, headings and register. The selected voice says how its '
             'author sounds. Where they conflict on wording, the voice wins; where they conflict '
-            'on structure, the style wins. Neither invents facts, experience or sources.'
+            'on structure, the style wins. Neither invents facts, experience or sources. Where '
+            'the style’s register differs from the house guide’s tone defaults, the style wins; '
+            'the house guide still decides mechanics.'
         )
+    if LENGTHS.get(run.get('length')) and stage in ('outline', 'draft') and not edit:
+        guidance += '\n\n' + LENGTHS[run['length']]
     if stage in ('draft', 'review'):
         requested = run.get('editor_check')
         guides = ['modules/blog-voice-check.md', 'style/software.md']
@@ -3054,6 +3071,7 @@ def add_parser(groups):
     create_cmd.add_argument(
         '--stop', choices=('outline', 'draft', 'review', 'package'), default='package'
     )
+    create_cmd.add_argument('--length', choices=tuple(LENGTHS), default=None)
     create_cmd.add_argument('--engine', choices=('codex', 'claude'))
     create_cmd.add_argument('--seconds', type=int, default=600)
     create_cmd.add_argument('--source', action='append', default=[])

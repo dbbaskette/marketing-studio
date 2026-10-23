@@ -249,9 +249,9 @@
       "sha256": "f2b2c03e92df5e8051b7d2744266107e7cfccf5348c68d00dc1d18f8493ef948"
     },
     "references/modules/blog-argument-outline.md": {
-      "characters": 1736,
-      "estimated_tokens": 434,
-      "sha256": "5175e34ad5b99094d42470ffce25d1489902fc3b04f4dc66fcf16ce3821a5367"
+      "characters": 1936,
+      "estimated_tokens": 484,
+      "sha256": "cf8aad5699ae4f0a14543bbcd6355087e67bf05fd8b2343c31963c27182217b7"
     },
     "references/modules/blog-author-interview.md": {
       "characters": 1659,
@@ -319,14 +319,14 @@
       "sha256": "72e0dc0d106e868be01644a85128cec1cde6bc44d65020964e3fb354f79c1707"
     },
     "references/modules/blog-repurpose.md": {
-      "characters": 1711,
-      "estimated_tokens": 428,
-      "sha256": "856b24f92ce573f6f715231ebe737136a009533ba1d86cd474eafc57501fe755"
+      "characters": 1858,
+      "estimated_tokens": 465,
+      "sha256": "5799fbd10f37d7e42f24decadd7c144cfcebcab83035262cc2290ef57968d50a"
     },
     "references/modules/blog-research-plan.md": {
-      "characters": 993,
-      "estimated_tokens": 249,
-      "sha256": "57b36c74fde53f493c9cf2286989ae20d35925ac308991387721425d1d52e65c"
+      "characters": 1030,
+      "estimated_tokens": 258,
+      "sha256": "c7d183786eecb73440d3761f5c39011d89412d348e7077a05bf266fa4c15a5e5"
     },
     "references/modules/blog-source-intake.md": {
       "characters": 1480,
@@ -344,9 +344,9 @@
       "sha256": "8085a149033db0bcf85824140a5277929b1bb1f31fafdce47b80324922f30c6a"
     },
     "references/modules/blog-write.md": {
-      "characters": 6820,
-      "estimated_tokens": 1705,
-      "sha256": "547226a179b9449ad2a68ff78b6fc80539a269abdb26cfceb29cb20ad24c1385"
+      "characters": 7351,
+      "estimated_tokens": 1838,
+      "sha256": "89e08d21c86569cf3567c988c19a9f5208de88d7d2f76d34c3a97a430b48b47f"
     },
     "references/modules/blog.md": {
       "characters": 2324,
@@ -359,9 +359,9 @@
       "sha256": "209081f4d89b97f25543d1c9f6a3be23961094602562c264b53055d67c8dba7d"
     },
     "references/modules/copy-editing.md": {
-      "characters": 6018,
-      "estimated_tokens": 1505,
-      "sha256": "d1c5675fc2d446f88af88343cce0103f549e4e4781f4906937c1109c91287626"
+      "characters": 6151,
+      "estimated_tokens": 1538,
+      "sha256": "969620f5320a8950e50eb9b517f935dbce0b2c8208e7573cd7b8d2522248d20a"
     },
     "references/modules/copywriting.md": {
       "characters": 3388,
@@ -794,7 +794,7 @@
       "sha256": "4c95901507d60239adadfec8ddd4001a409a52b5c5f7bf20b49bb10a79890142"
     }
   },
-  "library_tokens": 225183,
+  "library_tokens": 225445,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -809,7 +809,7 @@
         "references/modules/blog-argument-outline.md"
       ],
       "scenario": "New local outline-only article from readable supplied notes and an explicit tone; no voice profile or hub.",
-      "estimated_tokens": 4730
+      "estimated_tokens": 4780
     },
     "first_draft_with_sources": {
       "files": [
@@ -825,7 +825,7 @@
         "references/modules/blog-write.md"
       ],
       "scenario": "New local draft from supplied notes and explicit tone; internal outline, no specialized template or extra composition reference.",
-      "estimated_tokens": 6435
+      "estimated_tokens": 6618
     },
     "quick_edit": {
       "files": [
@@ -841,7 +841,7 @@
         "references/modules/blog-voice-check.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 5737
+      "estimated_tokens": 5770
     },
     "voice_setup": {
       "files": [
@@ -887,7 +887,7 @@
         "references/modules/copy-editing.md"
       ],
       "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
-      "estimated_tokens": 4521
+      "estimated_tokens": 4554
     }
   },
   "team_hub_routes": {
@@ -1043,13 +1043,13 @@
       "files": [
         "references/modules/blog-write.md"
       ],
-      "estimated_tokens": 1705
+      "estimated_tokens": 1838
     },
     "editing": {
       "files": [
         "references/modules/copy-editing.md"
       ],
-      "estimated_tokens": 1505
+      "estimated_tokens": 1538
     },
     "strategy": {
       "files": [
@@ -1077,7 +1077,7 @@
       "files": [
         "references/modules/blog-research-plan.md"
       ],
-      "estimated_tokens": 249,
+      "estimated_tokens": 258,
       "note": "Tool-less plan for one synthesis investigation."
     },
     "legacy_research": {

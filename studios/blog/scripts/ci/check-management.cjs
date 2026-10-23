@@ -1588,6 +1588,8 @@ async function filesJourney(){
   await how().children.find(e=>e.textContent==='I know the point').listeners.click();
   assert.ok(byId('files-title')&&byId('files-point')&&byId('files-audience'),'the point path asks for the title, the point and the reader: '+text().join('|'));
   assert.equal(byId('files-goal'),undefined);
+  assert.match(byId('files-point-hint').textContent,/For example: “/,'the point has an example of a specific point');
+  assert.ok(byId('files-length'),'Length is on the files screen too');
   assert.equal(start().textContent,'Start writing');
   assert.ok(text().some(t=>/^Balanced: it stops for the outline and the handoff$/.test(t)),'no angles on the point path: '+text().join('|'));
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
@@ -2053,6 +2055,11 @@ async function wizardVoiceAndKind(){
   assert.deepEqual(texts(byId('new-profile')),['My voice — Synthetic Author · confirmed','Guest Writer · provisional','No particular voice (use the described tone)','Learn a new voice…']);
   assert.equal(chosen('new-profile'),'My voice — Synthetic Author · confirmed','the default voice is chosen by default');
   assert.deepEqual(texts(byId('new-style')),['No particular kind of post','Product announcement (starter)','Field notes · provisional'],'retired kinds are left out');
+  // Length sits beside Kind of post: the style's own by default.
+  assert.ok(ids.indexOf('new-length')>ids.indexOf('new-style'),'Length is beside Kind of post');
+  assert.equal(nodes().find(e=>e.tagName==='label'&&e.htmlFor==='new-length').textContent,'Length');
+  assert.deepEqual(texts(byId('new-length')),['The style’s own','Short (about half)','In depth (about twice, with an example for each capability)']);
+  assert.equal(chosen('new-length'),'The style’s own');
   // Step two keeps tone, author and brand, with the tone as a nudge.
   await submit();
   assert.ok(nodes().some(e=>e.textContent==='Tone, author and brand'));
@@ -2069,7 +2076,9 @@ async function wizardVoiceAndKind(){
   options={...options,default_voice:mine};
   // A chosen voice and kind are sent as chosen.
   await f.run("newBlog('',null,'write')");fill();choose('new-profile','Guest Writer · provisional');choose('new-style','Field notes · provisional');
-  sent=await start();assert.equal(sent.profile,'guest');assert.equal(sent.style,'field-notes');
+  sent=await start();assert.equal(sent.profile,'guest');assert.equal(sent.style,'field-notes');assert.equal(Object.hasOwn(sent,'length'),false,'the style’s own length sends nothing');
+  await f.run("newBlog('',null,'write')");fill();choose('new-length','In depth (about twice, with an example for each capability)');
+  sent=await start();assert.equal(sent.length,'deep','a chosen length is sent');
   await f.run("newBlog('',null,'write')");fill();choose('new-profile','No particular voice (use the described tone)');
   sent=await start();assert.equal(sent.profile,'','no particular voice uses the described tone');
   // With no default voice, nothing is left to a default that may be missing or in conflict.

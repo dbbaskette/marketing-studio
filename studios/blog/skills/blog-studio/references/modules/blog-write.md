@@ -44,8 +44,7 @@ None automatically proves a factual claim. A source's `stance` says how to write
 | Facts (`evidence`) | Evidence to cite; attributed when a claim is contested or measured |
 | Approved messaging | The post's own claims: the product's voice, present tense, no attribution; a limit the document marks (target, preview, planned) stays that limit |
 
- Keep private source names/passages out
-of public queries. Supplied-only work stays within supplied evidence.
+Keep private source names/passages out of public queries. Supplied-only work stays within supplied evidence.
 
 For a material claim, inspect the supporting passage and retain its source ID or
 verified URL. Keep population, period, units, method, uncertainty, and causal limits
@@ -71,6 +70,13 @@ Give important sections a clear point early, then explanation, evidence, and the
 practical implication the reader needs. Define unfamiliar terms where introduced.
 Use accurate descriptive headings and a coherent hierarchy. Make claims intelligible
 in their context without repeating the thesis at every section boundary.
+
+State a limitation once, where it decides something for the reader (usually
+availability), not in every section. On approved messaging, drop attribution hedges
+("is described as", "is designed to", "the messaging describes", "intended to");
+"in preview" and "planned for" stay, because they are facts. A capability section
+says what it does, how it works in a sentence or two, what the reader can now do,
+and one concrete example or proof point from the material.
 
 Apply the selected voice guide and explicit author rules: vocabulary, point of
 view, rhythm, degree of formality, and tolerated promotional language. Preserve

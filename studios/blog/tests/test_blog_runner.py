@@ -3746,3 +3746,51 @@ class ReaderFacingNotesTests(RunnerCase):
             )
         )
         self.assertEqual(runner.document(self.root, chat['id'], 'draft')['gaps'], [])
+
+
+class LengthAndQualificationTests(RunnerCase):
+    """Qualify once, and write to the depth asked for."""
+
+    def guidance_at(self, stage, **extra):
+        found = self.create(**extra)
+        while found['next'] != stage:
+            found = self.approve(self.submit(found))
+        return runner.load(self.root, found['id'])[2], runner.job(self.root, found['id'])[2]
+
+    def test_length_is_chosen_pinned_and_written_to(self):
+        run, guidance = self.guidance_at('draft')
+        self.assertEqual(run['length'], 'style')
+        self.assertNotIn('about twice', guidance)
+        self.assertNotIn('about half', guidance)
+        run, guidance = self.guidance_at('draft', length='deep', title='Deep')
+        self.assertEqual(run['length'], 'deep')
+        self.assertIn('about twice', guidance)
+        self.assertIn('one worked example or proof point', guidance)
+        _, outline = self.guidance_at('outline', length='short', title='Short')
+        self.assertIn('about half', outline)
+        with self.assertRaisesRegex(ValueError, 'length'):
+            self.create(length='long', title='Refused')
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
+            + ['--title', 'Chat', '--research', 'none', '--length', 'deep']
+        )
+        chat = runner.command(self.root, args)
+        self.assertEqual(runner.load(self.root, chat['id'])[2]['length'], 'deep')
+
+    def test_the_writer_qualifies_once_and_builds_each_capability(self):
+        _, guidance = self.guidance_at('draft')
+        self.assertIn('State a limitation once', guidance)
+        self.assertIn('what it does, how it works', guidance)
+        self.assertIn('"is described as"', guidance)
+        _, outline = self.guidance_at('outline', title='Outline')
+        self.assertIn('State a limitation once', outline)
+        _, review = self.guidance_at('review', title='Review')
+        self.assertIn('repeated in three or more sections', review)
+
+    def test_the_point_is_the_angle_and_the_style_sets_the_register(self):
+        _, plan = self.guidance_at(
+            'research-plan', research='web-allowed', sources=[self.source()['id']], title='Plan'
+        )
+        self.assertIn('Read the point to make as the angle', plan)
+        _, draft = self.guidance_at('draft', style='product-announcement', title='Styled')
+        self.assertIn('the house guide still decides mechanics', draft)
