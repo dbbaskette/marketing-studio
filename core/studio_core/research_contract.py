@@ -33,6 +33,12 @@ NAMED_OR = re.compile(r'\b[A-Z][\w.+-]* or [A-Z][\w.+-]*')
 # What the author is handed of Harness Research's references: its own stage references, not
 # the one addressed to a studio.
 AUTHOR_GUIDES = ('investigate.md', 'synthesize.md')
+# Bringing research up to date: Harness Research's own section of synthesis-reuse.md, and
+# what the author is asked to do.
+REUSE = 'synthesis-reuse.md'
+REFRESH_SECTION = '## Refresh selected evidence'
+REFRESHED = ('Bring the evidence up to date: re-read each source, save new captures with the '
+             'date you read them, and update what changed.')
 CAPTURED = ("The studio's tools have saved every capture for you: that is the capture "
             '`investigate.md` asks for. Cite each source by the file path the tools gave it, '
             'exactly. Write no files yourself.')
@@ -46,6 +52,16 @@ def compares(goal) -> bool:
     if not isinstance(goal, str) or not goal.strip():
         return False
     return bool(COMPARING.search(goal.lower()) or NAMED_OR.search(goal))
+
+
+def refresh_section(text: str) -> str:
+    """The "Refresh selected evidence" section of synthesis-reuse.md, from its heading to the
+    next of the same level, or nothing."""
+    at = text.find(REFRESH_SECTION)
+    if at < 0:
+        return ''
+    end = text.find('\n## ', at + len(REFRESH_SECTION))
+    return text[at:end if end >= 0 else len(text)].strip()
 
 
 def purpose(kind: str, goal, priorities: str) -> str:
@@ -339,6 +355,11 @@ class Workflow:
                 worker = 'author-' + secrets.token_hex(12)
                 guide = '\n\n'.join((self.runtime / 'references' / name).read_text()
                                       for name in AUTHOR_GUIDES)
+                refreshing = task.get('refresh') is True
+                if refreshing:   # its stage references, and the refresh section of reuse
+                    reuse = self.runtime / 'references' / REUSE
+                    section = refresh_section(reuse.read_text()) if reuse.is_file() else ''
+                    guide += '\n\n' + section if section else ''
                 payload = {'task': task, 'worker': worker,
                            'return': 'A complete schema-2 dossier as JSON, including authored brief sections. '
                                      + CAPTURED + ' Copy each source\'s origin exactly as the capture showed it. '
@@ -347,6 +368,8 @@ class Workflow:
                                      'Set every fact author to this worker ID. Do not write finished studio content.'}
                 if any(isinstance(q, dict) and q.get('id') for q in task.get('planning_questions') or ()):
                     payload['return'] += ' ' + IDS_FOR_QUESTIONS
+                if refreshing:
+                    payload['return'] += ' ' + REFRESHED
                 previous = case / '.harness-research/synthesis.json'
                 if previous.is_file():
                     state = json.loads(previous.read_text())

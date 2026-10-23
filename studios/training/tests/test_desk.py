@@ -3236,6 +3236,25 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Review the research plan'}, {'click': 'Ask for changes'}, {'snapshot': 'price'}])
         self.assertIn('Asking for changes runs the research again: up to 3 rounds of writing and checking.', result['snapshots']['price']['sheet'])
 
+    def test_the_research_sheet_offers_to_bring_the_evidence_up_to_date(self):
+        self.started(); self.at_the_questions_gate()
+        gate = self.read('gate', path=str(self.root), artifact='research-plan')
+        said = ('Re-reads the sources and checks the report again: about as long and as '
+                'costly as the research was.')
+        gate['body'].update(artifact='research', label='The research report', research_price={
+            'words': 'Asking for changes runs the research again: up to 3 rounds of writing '
+                     'and checking.', 'refresh': said})
+        result = self.run_page(self.answers(**{'GET /api/gate': [gate]}), [
+            {'click': 'Review the research plan'}, {'click': 'Ask for changes'},
+            {'snapshot': 'sheet'}, {'click': 'Bring the evidence up to date'},
+            {'click': 'Send for changes'}])
+        sheet = result['snapshots']['sheet']
+        self.assertIn('Bring the evidence up to date', sheet['sheet'])
+        self.assertIn(said, sheet['sheet'])
+        self.assertNotIn('Bring the evidence up to date', sheet['pressed'], 'off unless asked')
+        decided = [body for address, body in self.posts(result) if address == '/api/decide']
+        self.assertEqual((decided[-1]['decision'], decided[-1]['refresh']), ('revise', True))
+
     def test_the_research_stop_reads_every_objection_where_it_stops(self):
         self.started()
         stopped = 'The independent check still objected.'

@@ -1972,7 +1972,7 @@ class Engine(Jobs, Researching):
             record = self._approve(root, record, gate, note, extra, marked)
             gated = record['gates'].get(gate) or {}
             # What the last request for changes marked is not kept past the approval.
-            cleared = {'again': None, 'added': None, 'free': None} \
+            cleared = {'again': None, 'added': None, 'free': None, 'refresh': None} \
                 if gate == 'gate:research' else {'saying': None} \
                 if gate == 'gate:outline' else {}
             record['gates'][gate] = {**gated, 'state': 'approved', 'note': note,
@@ -1981,7 +1981,7 @@ class Engine(Jobs, Researching):
             self._store(root, record)
             return f'approve the {it}', ()
         gated = record['gates'].get(gate) or {}
-        more = {'again': None, 'added': None, 'free': None} \
+        more = {'again': None, 'added': None, 'free': None, 'refresh': None} \
             if gate == 'gate:research' else {'saying': None} \
             if gate == 'gate:outline' else {}
         # An outline that came back from the deck is redrafted in the brand the deck was
@@ -2307,7 +2307,8 @@ class Engine(Jobs, Researching):
                                       'left_out': marked['left_out']}
             added = self._add_questions(root, record, marked.get('add') or [])
             again = {**(marked.get('again') or {}), **{ident: '' for ident in added}}
-            more = {'again': again, 'added': added, 'free': note}
+            more = {'again': again, 'added': added, 'free': note,
+                    'refresh': True if marked.get('refresh') else None}
         return record, marks.note(gate, marked, note), more
 
     def act(self, path, action: str) -> dict:

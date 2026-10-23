@@ -273,6 +273,9 @@ class Researching:
                     'planning_questions': plan.get('items', []),
                     'notes': form.get('notes') or '',
                     'requested_changes': record.get('gates', {}).get('gate:research', {}),
+                    # Asked for at the research stop: the sources read again.
+                    'refresh': ((record.get('gates') or {}).get('gate:research') or {})
+                    .get('refresh') is True,
                     'source_mode': ('selected' if plan.get('scope') == 'supplied-only'
                                     else 'mixed' if offered else 'public')}
             try:

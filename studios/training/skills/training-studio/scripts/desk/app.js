@@ -1379,11 +1379,22 @@ function noteSheet(kind) {
   const hint = make('p', 'quiet', (runOf(view.path) ? spec.hint.replace('Your assistant makes',
     'Training Studio makes') : spec.hint) + redo);
   hint.id = 'note-hint';
+  // At the research stop, the sources may be read again: the whole research, brought up to
+  // date. It is off unless asked for, and says what it costs.
+  const refreshing = kind === 'revise' && researchPrice ? { on: false } : null;
+  const refresh = refreshing ? add(make('div', 'field'),
+    chip('Bring the evidence up to date', false, (on) => { refreshing.on = on; }, 'refresh'),
+    make('p', 'quiet field-hint', researchPrice.refresh || 'Re-reads the sources and checks '
+      + 'the report again: about as long and as costly as the research was.')) : null;
   const problem = problemLine();
   const submit = submitButton(spec.send, 'send');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const text = field.value.trim();
+    if (refreshing && refreshing.on) {
+      decide(kind, text, problem, submit, { refresh: true });
+      return;
+    }
     if (spec.needed && !text) {
       // Refused here, beside the control, before anything is sent.
       problem.textContent = spec.needed;
@@ -1394,7 +1405,7 @@ function noteSheet(kind) {
     }
     decider()(kind, text, problem, submit);
   });
-  add(form, label, field, hint, problem,
+  add(form, label, field, hint, refresh, problem,
     add(make('div', 'bar'), submit, capsule('Cancel', 'quiet', closeSheet, 'cancel')));
   return [sheetTitle(spec.title), form];
 }
@@ -1455,14 +1466,15 @@ function drawSheet() {
   holder.replaceChildren(...body);
 }
 
-async function decide(decision, note, problem, pressed) {
+async function decide(decision, note, problem, pressed, more) {
   if (view.busy) return;
   const turn = view.turn;
   const noted = noteKey(decision);
   view.busy = true;
   pressed.disabled = true;
   // At a gate, what is decided is what is being read. A sheet opened from a run names it.
-  const body = { path: view.path, artifact: view.deciding || view.artifact, decision };
+  const body = { path: view.path, artifact: view.deciding || view.artifact, decision,
+    ...(more || {}) };
   if (note) body.note = note;
   if (view.gate && view.gate.sha256) body.seen = view.gate.sha256;
   let done;

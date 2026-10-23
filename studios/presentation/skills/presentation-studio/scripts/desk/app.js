@@ -1276,11 +1276,25 @@ function noteSheet(kind) {
       && view.run.mine && !view.run.driver
       ? ' It runs from this computer again, and your team sees that.' : ''));
   hint.id = 'note-hint';
+  // At the research stop, the sources may be read again: the whole research, brought up to
+  // date. It is off unless asked for, and says what it costs.
+  const refreshing = kind === 'changes' && gate && gate.name === 'gate:research'
+    && gate.research_price ? { on: false } : null;
+  const refresh = refreshing ? add(make('div', 'field'),
+    chip('Bring the evidence up to date', false, (on) => { refreshing.on = on; }, 'refresh'),
+    make('p', 'quiet field-hint', gate.research_price.refresh
+      || 'Re-reads the sources and checks the report again: about as long and as costly as '
+        + 'the research was.')) : null;
   const problem = problemLine();
   const submit = submitButton(spec.send, 'send');
   form.addEventListener('submit', (event) => {
     event.preventDefault();
     const text = box.value.trim();
+    if (refreshing && refreshing.on) {
+      decide('changes', text, problem, submit,
+        { ...(extraFor(gate, 'changes') || {}), refresh: true });
+      return;
+    }
     if (spec.needed && !text) {
       // Refused here, beside the control, before anything is sent.
       problem.textContent = spec.needed;
@@ -1291,7 +1305,7 @@ function noteSheet(kind) {
     }
     decide('changes', text, problem, submit);
   });
-  add(form, label, box, hint, problem,
+  add(form, label, box, hint, refresh, problem,
     add(make('div', 'bar'), submit, capsule('Cancel', 'quiet', closeSheet, 'cancel')));
   return [sheetTitle(spec.title), form];
 }

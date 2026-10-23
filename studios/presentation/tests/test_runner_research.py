@@ -631,6 +631,24 @@ class SynthesisBriefTests(DeckCase):
             self.assertEqual(captured[0]['purpose'].endswith(research_contract.COMPARISON),
                              goal.startswith('Redis'))
 
+    def test_bringing_the_research_up_to_date_reaches_the_author(self):
+        from runner.engine import Engine
+        from studio_core import research_contract
+        self.write('research/plan.json', json.dumps(PLAN))
+        captured = []
+
+        def native(engine, root, run, task, sources, product):
+            captured.append(task)
+            raise RuntimeError('captured before workers')
+        for gated in ({}, {'gate:research': {'state': 'changes', 'refresh': True}},
+                      {'gate:research': {'state': 'changes', 'refresh': None}}):
+            record = {'research_contract': {'schema': 2}, 'form': {}, 'gates': gated}
+            with mock.patch.object(research_contract, 'native', side_effect=native), \
+                    mock.patch.object(Engine, '_load', return_value=record):
+                with self.assertRaisesRegex(RuntimeError, 'captured before workers'):
+                    Engine()._research(self.root, None, None)
+        self.assertEqual([task['refresh'] for task in captured], [False, True, False])
+
     def test_a_contract_plan_job_uses_the_one_investigation_brief(self):
         from runner.engine import Engine
         from runner import briefs

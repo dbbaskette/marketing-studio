@@ -3102,6 +3102,73 @@ class ResearchAccountTests(RunnerCase):
         self.assertIn('49 minutes and $10.80', price['words'])
 
 
+class RefreshResearchTests(RunnerCase):
+    """The research, asked for again with its evidence brought up to date."""
+
+    def test_a_change_request_may_bring_the_research_up_to_date(self):
+        import synthesis_research
+
+        found = self.create(research='web-allowed', page=True)
+        directory, record, run = runner.load(self.root, found['id'])
+        run['pipeline'] = [stage for stage in run['pipeline'] if stage != 'research-plan']
+        studio.write_json(directory / runner.STATE, run)
+        found = runner.survey(self.root, found['id'])
+        self.assertEqual(found['next'], 'research')
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            '',
+            page=True,
+            target='research',
+            refresh=True,
+        )
+        _, _, run = runner.load(self.root, found['id'])
+        self.assertIs(run['stages']['research']['refresh'], True)
+        self.assertEqual(run['stages']['research']['request'], 'Bring the evidence up to date.')
+        _, payload, _ = runner.job(self.root, found['id'])
+        self.assertIs(payload['refresh'], True)
+        tasks = []
+
+        def workflow(root, task, invoke, sources):
+            tasks.append(task)
+            raise ValueError('Stopped by the test.')
+
+        with (
+            patch.object(
+                synthesis_research.research_contract, 'runtime_for', return_value=self.root
+            ),
+            patch.object(
+                synthesis_research.research_contract.Workflow, 'run', side_effect=workflow
+            ),
+        ):
+            with self.assertRaises(ValueError):
+                synthesis_research.generate(
+                    self.root / 'scratch',
+                    run,
+                    payload,
+                    lambda engine, data, guidance, **kwargs: {
+                        'content': '{"urls": []}',
+                        'notes': '',
+                    },
+                    seconds=30,
+                    stop=__import__('threading').Event(),
+                )
+        self.assertIs(tasks[0]['refresh'], True)
+        with self.assertRaisesRegex(ValueError, 'Only the research'):
+            runner.decide(
+                self.root,
+                found['id'],
+                found['expected'],
+                'changes',
+                'Shorter.',
+                page=True,
+                target='outline',
+                refresh=True,
+            )
+
+
 class ResearchPlanningTests(RunnerCase):
     def test_the_research_plan_job_uses_its_own_module(self):
         found = self.create(research='web-allowed')

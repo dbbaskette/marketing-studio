@@ -1611,6 +1611,24 @@ class WalkthroughRowTests(TrainingCase):
                       ['walkthrough'], True)
 
 
+class RefreshRequestTests(PlainCase):
+    """Asked on the page, the research is brought up to date: its request says so."""
+
+    def test_a_research_request_may_bring_the_evidence_up_to_date(self):
+        self.approved('intake', 'research-plan')
+        self.build('research')
+        session = workspace.load(self.root)
+        session['settings']['approval'] = 'page'
+        workspace.store(self.root, session)
+        outcome = workspace.decide(self.root, 'research', 'revise', None, by='page',
+                                   refresh=True)
+        self.assertIs(outcome['request']['refresh'], True)
+        self.assertEqual(outcome['request']['note'], 'Bring the evidence up to date.')
+        with self.assertRaisesRegex(WorkspaceError, 'Only the research'):
+            workspace.decide(self.root, 'intake', 'revise', 'Shorter.', by='page',
+                             refresh=True)
+
+
 class DownstreamTests(LevelCase):
     def test_downstream_lists_what_is_built_from_research(self):
         session = workspace.load(self.root)

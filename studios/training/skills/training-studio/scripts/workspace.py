@@ -1012,7 +1012,7 @@ DECIDED = {'approve': 'approved', 'accept': 'accepted as it is',
 
 @mutating
 def decide(root: Path, target: str, decision: str, note: str | None = None,
-           by: str = 'chat', seen: str | None = None) -> dict:
+           by: str = 'chat', seen: str | None = None, refresh: bool = False) -> dict:
     """Record what the user decided about an artifact, at a gate or after it.
 
     `approve`, `accept`, `revise` and `rebuild` are about one artifact. `skip` and `restore`
@@ -1069,9 +1069,14 @@ def decide(root: Path, target: str, decision: str, note: str | None = None,
             state = statuses(root, session)[target]
             if state in ('not-started', 'skipped', 'unavailable'):
                 raise WorkspaceError(f'Nothing to change in {target}: it is {state}.')
+            if refresh and (target != 'research' or decision != 'revise'):
+                raise WorkspaceError('Only the research is brought up to date.')
+            # Bringing the research up to date reads its sources again: it needs no words.
+            note = note or ('Bring the evidence up to date.' if refresh else None)
             if decision == 'revise' and not note:
                 raise WorkspaceError('Say what should change.')
-            request = {'artifact': target, 'kind': decision, 'note': note, 'at': now()}
+            request = {'artifact': target, 'kind': decision, 'note': note, 'at': now(),
+                       **({'refresh': True} if refresh else {})}
             session['requests'].append(request)
             log(session, 'request', artifact=target, kind=decision, by=by)
             outcome['request'] = request

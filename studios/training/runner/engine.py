@@ -3390,6 +3390,8 @@ class Engine(Reviewing):
                     'scope': pipeline._about(root, found.session),
                     'planning_questions': found.research.questions,
                     'requested_changes': step.request,
+                    # Asked for at the research stop: the sources read again.
+                    'refresh': (step.request or {}).get('refresh') is True,
                     'source_mode': {'supplied-only': 'selected', 'both': 'mixed'}.get(scope, 'public')}
             try:
                 research_contract.native(self, root, run, task, offered, 'training')

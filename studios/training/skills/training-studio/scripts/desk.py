@@ -566,7 +566,8 @@ def next_up(listed: list[dict] | None = None) -> dict | None:
 
 # --- what the page changes ------------------------------------------------------
 
-def decide(path: str, target: str, decision: str, note: str | None, seen: str | None) -> dict:
+def decide(path: str, target: str, decision: str, note: str | None, seen: str | None,
+           refresh: bool = False) -> dict:
     """Record a decision made on the page, through the function the command line uses."""
     registered(path)
     root = Path(path)
@@ -582,7 +583,8 @@ def decide(path: str, target: str, decision: str, note: str | None, seen: str | 
                       'conversation. Move them to the page first.')
     if decision in ('approve', 'accept') and not seen:
         raise Refusal(HTTPStatus.BAD_REQUEST, 'Say which version was read, as `seen`.')
-    outcome = assess.decide(root, target, decision, note, by='page', seen=seen)
+    outcome = assess.decide(root, target, decision, note, by='page', seen=seen,
+                            refresh=refresh)
     return {'decided': outcome, 'said': f'{SAID[decision]} {BACK_TO_CHAT}', 'next': next_up()}
 
 
@@ -656,8 +658,8 @@ class Page(_security.Page):
         return detail(path)
 
     def decide(self, path: str, target: str, decision: str, note: str | None,
-               seen: str | None) -> dict:
-        return decide(path, target, decision, note, seen)
+               seen: str | None, refresh: bool = False) -> dict:
+        return decide(path, target, decision, note, seen, refresh)
 
     def move_approval(self, path: str, mode: str) -> dict:
         return move_approval(path, mode)
@@ -682,9 +684,13 @@ class Page(_security.Page):
     def write(self, path: str, sent: dict) -> tuple[int, str, bytes]:
         """Answer one POST that passed every rule. `sent` is its JSON object."""
         if path == '/api/decide':
+            if sent.get('refresh', False) not in (True, False):
+                raise Refusal(HTTPStatus.BAD_REQUEST, 'Say whether to bring the evidence up '
+                              'to date with true or false.')
             return as_json(HTTPStatus.OK, self.decide(
                 text(sent, 'path'), text(sent, 'artifact'), text(sent, 'decision'),
-                text(sent, 'note', False), text(sent, 'seen', False)))
+                text(sent, 'note', False), text(sent, 'seen', False),
+                **({'refresh': True} if sent.get('refresh') else {})))
         if path == '/api/approval':
             return as_json(HTTPStatus.OK, self.move_approval(text(sent, 'path'),
                                                              text(sent, 'mode')))

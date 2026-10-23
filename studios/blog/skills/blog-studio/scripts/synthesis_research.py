@@ -207,6 +207,7 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             'manuscript': payload['documents'].get('manuscript'),
             'planning_document': payload['documents'].get('research-plan'),
             'requested_changes': payload.get('changes'),
+            'refresh': payload.get('refresh') is True,
             'source_mode': ('mixed' if sources else 'public') if allowed else 'selected',
         }
         from blog_runner import planning_questions

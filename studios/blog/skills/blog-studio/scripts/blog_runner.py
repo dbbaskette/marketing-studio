@@ -1464,11 +1464,13 @@ def _accept(directory, run, stage, by):
     run.setdefault('approved', {})[stage] = approved_hash
 
 
-def decide(root, ident, expected, action, request='', page=False, target=None):
+def decide(root, ident, expected, action, request='', page=False, target=None, refresh=False):
     found = guard(root, ident, expected, page)
     directory, record, run = load(root, ident)
     kept = None  # What Finish did with the library, said in the decision.
     stage = target if action == 'changes' and target else found['next']
+    if refresh and (action != 'changes' or stage != 'research'):
+        raise ValueError('Only the research is brought up to date.')
     if (
         action == 'changes'
         and target == 'draft'
@@ -1503,9 +1505,17 @@ def decide(root, ident, expected, action, request='', page=False, target=None):
     elif action == 'changes':
         if not stage:
             raise ValueError('This run is complete. Start a new revision in chat.')
-        request = text(request, 'change request', 8000, required=True)
+        # Bringing the research up to date reads its sources again: it needs no words.
+        request = text(
+            request or ('Bring the evidence up to date.' if refresh else ''),
+            'change request',
+            8000,
+            required=True,
+        )
         run['stages'].setdefault(stage, {})['status'] = 'pending'
         run['stages'][stage]['request'] = request
+        if refresh:
+            run['stages'][stage]['refresh'] = True
         run['stages'][stage]['model_purpose'] = (
             'repair' if stage == 'draft' and found['next'] == 'review' else stage
         )
@@ -1718,6 +1728,8 @@ def job(root, ident):
     # one never changes the version a worker is checked against.
     note = (engine(root).local(ident).get('notes') or {}).get(stage, '')
     payload['changes'] = '\n'.join(part for part in (request, note) if part)
+    # The research, asked for again with its sources read again.
+    payload['refresh'] = stage == 'research' and saved.get('refresh') is True
     if len(json.dumps(payload)) > 600_000:
         raise ValueError('This job needs smaller source excerpts. Continue it in chat.')
     # A request against a version the author has already seen, or their own manuscript,
@@ -2846,6 +2858,8 @@ def dispatch(root, action, data):
             page=True,
         )
         return runner.describe(ident)
+    if data.get('refresh', False) not in (True, False):
+        raise ValueError('Say whether to bring the evidence up to date with true or false.')
     result = decide(
         root,
         ident,
@@ -2854,6 +2868,7 @@ def dispatch(root, action, data):
         data.get('request', ''),
         page=True,
         target=data.get('stage'),
+        refresh=data.get('refresh') is True,
     )
     if action == 'handoff':
         state = runner.local(ident)

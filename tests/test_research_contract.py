@@ -683,6 +683,46 @@ class AuthorGuideTests(WorkflowCase):
         self.assertNotIn('research/sources/', said)
 
 
+class RefreshTests(AuthorGuideTests):
+    """Bringing the research up to date hands the author Harness Research's own refresh
+    section, and asks it to read its sources again."""
+
+    def setUp(self):
+        super().setUp()
+        (self.runtime / 'references' / 'synthesis-reuse.md').write_text(
+            '# Resume, reuse and refresh synthesis\n\nIntro.\n\n'
+            '## Resume the saved work\n\nResume words.\n\n'
+            '## Use the report as source material\n\nReuse words.\n\n'
+            '## Refresh selected evidence\n\nSave new captures with access dates.\n')
+
+    def test_refresh_hands_the_refresh_section(self):
+        self.task['refresh'] = True
+        guide, said = self.authored_once()
+        self.assertIn('## Refresh selected evidence\n\nSave new captures with access dates.',
+                      guide)
+        self.assertNotIn('Resume words.', guide)
+        self.assertNotIn('Reuse words.', guide)
+        self.assertIn('Bring the evidence up to date: re-read each source, save new captures '
+                      'with the date you read them, and update what changed.', said)
+
+    def test_without_refresh_no_reuse_section_is_handed(self):
+        guide, said = self.authored_once()
+        self.assertNotIn('Refresh selected evidence', guide)
+        self.assertNotIn('Bring the evidence up to date', said)
+
+    def test_refresh_is_never_a_dossier_field(self):
+        self.assertNotIn('refresh', contract.TASK_FIELDS)
+
+    def test_refresh_words(self):
+        from studio_core import research_view
+        self.assertEqual(research_view.refresh_words(None), 'Re-reads the sources and checks '
+                         'the report again: about as long and as costly as the research was.')
+        self.assertEqual(research_view.refresh_words({'seconds': 2880, 'dollars': 9.8}),
+                         'Re-reads the sources and checks the report again: its last try took '
+                         '48 minutes and $9.80.')
+        self.assertEqual(research_view.price({})['refresh'], research_view.refresh_words(None))
+
+
 class HandoffAndPurposeTests(unittest.TestCase):
     """What every writer is told of the research, and the purpose every studio asks for."""
 

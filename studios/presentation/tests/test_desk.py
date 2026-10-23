@@ -394,6 +394,33 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Asking for changes runs the research again', result['snapshots']['sheet']['sheet'])
         self.assertIn('up to 3 rounds of writing and checking.', result['snapshots']['sheet']['sheet'])
 
+    def test_the_research_sheet_offers_to_bring_the_evidence_up_to_date(self):
+        from synthesis_fixture import research_stop
+        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        result = self.deck_screen(path, [
+            {'click': 'Ask for changes'}, {'snapshot': 'sheet'},
+            {'click': 'Bring the evidence up to date'}, {'click': 'Send for changes'}],
+            **{'POST /api/decide': [ok(self.run_of(path))]})
+        sheet = result['snapshots']['sheet']
+        self.assertIn('Bring the evidence up to date', sheet['sheet'])
+        self.assertIn('Re-reads the sources and checks the report again: about as long and as '
+                      'costly as the research was.', sheet['sheet'])
+        self.assertNotIn('Bring the evidence up to date', sheet['pressed'], 'off unless asked')
+        posted = [r['body'] for r in result['requests'] if r['address'] == '/api/decide']
+        self.assertEqual(posted[-1]['decision'], 'changes')
+        self.assertIs(posted[-1]['extra']['refresh'], True)
+        # What the page sent is taken by the runner, with no note of its own.
+        from studio_core import research_contract
+        from workspace import WorkspaceError
+        with mock.patch.object(research_contract, 'native', side_effect=WorkspaceError(
+                'Stopped by the test before any job.')) as native:
+            self.post('decide', posted[-1])
+        self.assertIs(self.engine._load(Path(path))['gates']['gate:research']['refresh'], True)
+        self.assertIs(native.call_args[0][3]['refresh'], True)
+
     def test_sending_a_marked_finding_shows_the_research_price_before_it_posts(self):
         from synthesis_fixture import research_stop
         path = self.started(research=True); self.decided(path, 'gate:research-plan')

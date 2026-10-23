@@ -1014,6 +1014,27 @@ class ResearchTests(StudioCase):
         self.assertIn('Prioritize learner tasks', priorities)
         self.assertEqual(captured[0]['purpose'], research_contract.purpose(kind, goal, priorities))
 
+    def test_bringing_the_research_up_to_date_reaches_the_author(self):
+        from types import SimpleNamespace
+        from runner import engine as engine_module
+        root = self.start()
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        found = self.engine._survey(root, self.engine._load(root))
+        captured = []
+
+        def native(engine, root_, run, task, sources, product):
+            captured.append(task)
+            raise WorkspaceError('Stopped here by the test.')
+        for request in (None, {'artifact': 'research', 'kind': 'revise', 'note': 'Newer.',
+                               'refresh': True, 'at': 'now'}):
+            step = SimpleNamespace(id='research', request=request, questions=[])
+            with mock.patch.object(engine_module.research_contract, 'native',
+                                   side_effect=native), self.assertRaises(WorkspaceError):
+                self.engine._research(root, None, found, step)
+        self.assertEqual([task['refresh'] for task in captured], [False, True])
+
     def test_a_check_that_still_objects_stops_at_research_and_says_what_it_objected_to(self):
         from runner import engine as engine_module
         root = self.start()

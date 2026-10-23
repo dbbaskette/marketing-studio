@@ -454,7 +454,7 @@ class RunnerPage(desk.Page):
     # --- the desk's changes --------------------------------------------------------------
 
     def decide(self, path: str, target: str, decision: str, note: str | None,
-               seen: str | None) -> dict:
+               seen: str | None, refresh: bool = False) -> dict:
         """Record a decision as the desk does. For a training a run is driving it is then
         committed, shared if that is wanted, and the run is woken."""
         with self.engine.files:
@@ -464,7 +464,7 @@ class RunnerPage(desk.Page):
                 self.engine.deck_decided(path, target, decision, note, seen)
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
-            reply = super().decide(path, target, decision, note, seen)
+            reply = super().decide(path, target, decision, note, seen, refresh)
             driven = self.engine.decided(path, reply['decided'])
         if not driven:
             return reply
