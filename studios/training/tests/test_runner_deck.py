@@ -1721,6 +1721,15 @@ class BrandEntryTests(DeckCase):
         self.engine._guide(work, ('example-co', 'dark'), told, kept)
         self.assertEqual(self.brand.guided[-1][:2], ('start', None), 'another brand starts anew')
 
+    def test_the_outline_writer_gets_the_brands_worker_guidance_without_a_walkthrough(self):
+        self.brand.entry = 'brand'
+        root = self.begin()
+        self.to_outline(root)
+        spec = [spec for kind, _, spec in self.workers.jobs if kind == 'outline'][-1]
+        names = [entry['name'] for entry in spec['inputs']]
+        self.assertIn(pipeline.BRAND_WORKER, names)
+        self.assertNotIn('design guidance', names)
+
     def test_reviewer_reads_the_review_guidance(self):
         self.brand.entry = 'brand'
         self.workers.found = [[]]
@@ -3463,6 +3472,18 @@ class TroubleTests(DeckCase):
             json.dumps({'slides': {'version': brings}}), encoding='utf-8')
         self.brand.runtime, self.brand.name = folder, 'Acme Brand'
 
+    def test_a_begun_deck_carries_on_with_an_old_brand_skill(self):
+        root = self.begin()
+        self.to_outline(root)
+        self.brand.version = '0.13.2'
+        self.engine.look_again()
+        self.assertEqual(self.engine.deck_needs(fresh=True)['missing'], [],
+                         'an old brand skill holds up only a deck not begun')
+        self.assertIn(brand_skill.too_old('0.13.2'), self.engine.deck_needs()['old_brand'])
+        view = self.engine.outline(root, None, 'approve')
+        self.assertNotEqual(view['state'], 'failed', view.get('problem'))
+        self.assertIsNone(view['deck_left'])
+
     def test_status_names_the_brand_installer_that_kept_an_old_tool(self):
         self.acme_brand('0.15.1')
         with mock.patch.object(Slides, 'VERSION', '0.15.1'):
@@ -3536,12 +3557,12 @@ class TroubleTests(DeckCase):
     def test_a_brand_skill_older_than_the_floor_is_said_and_holds_a_new_deck(self):
         said = brand_skill.too_old('0.13.2')
         self.brand.version = '0.13.2'
-        self.assertIn(said, self.engine.deck_needs(fresh=True)['missing'])
+        self.assertEqual(self.engine.deck_needs(fresh=True)['old_brand'], said)
         root = self.begin()
         self.to_end(root)
         self.assertEqual(self.view(root)['deck_left']['says'], left(pipeline.DECK_LEFT, said))
         self.brand.version = '0.14.0'
-        self.assertNotIn(said, self.engine.deck_needs(fresh=True)['missing'])
+        self.assertIsNone(self.engine.deck_needs(fresh=True)['old_brand'])
         self.assertEqual(self.engine.deck_needs()['missing'], [])
 
     def test_status_says_when_arial_is_missing(self):

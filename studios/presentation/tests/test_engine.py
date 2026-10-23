@@ -788,7 +788,10 @@ class OlderSlidesToolTests(StudioCase):
         from runner import brand as brand_skill
         said = brand_skill.too_old('0.13.2')
         self.brand.version = '0.13.2'
-        self.assertIn(said, self.engine.deck_needs(fresh=True)['missing'])
+        needs = self.engine.deck_needs(fresh=True)
+        self.assertNotIn(said, needs['missing'], 'it holds up no deck already exported')
+        [item] = [item for item in needs['items'] if item['id'] == 'deck-brand']
+        self.assertEqual((item['state'], item['fix']), ('problem', said))
         root = self.start()
         for _ in range(10):
             view = self.view(root)
@@ -799,7 +802,17 @@ class OlderSlidesToolTests(StudioCase):
         self.assertIn(said, view['sentence'])
         self.assertEqual(self.workers.of('outline'), [], 'nothing that needs the brand ran')
         self.brand.version = '0.14.0'
-        self.assertNotIn(said, self.engine.deck_needs(fresh=True)['missing'])
+        self.assertNotIn(said, json.dumps(self.engine.deck_needs(fresh=True)['items']))
+
+    def test_a_begun_deck_carries_on_with_an_old_brand_skill(self):
+        root = self.start()
+        self.to_gate(root, 'gate:outline')
+        self.brand.version = '0.13.2'
+        self.engine.deck_needs(fresh=True)
+        self.decide(root, 'gate:outline')
+        view = self.view(root)
+        self.assertNotEqual(view['state'], 'stopped', view.get('problem'))
+        self.assertNotEqual(view['state'], 'failed', view.get('problem'))
 
     def test_a_deck_begun_on_an_older_tool_stops_at_its_next_step_and_keeps_its_files(self):
         root = self.start()
@@ -1443,6 +1456,9 @@ class SuppliedPictureTests(StudioCase):
                          ('A rack of servers in our lab.', 'Our own photograph.',
                           str(root / build.ASSETS), f"pic-{content['id']}"))
         self.assertEqual(build.pictures(root)[content['id']]['asset'], f"pic-{content['id']}")
+        self.assertEqual((build.pictures(root)[content['id']]['kind'],
+                          build.pictures(root)[content['id']]['title']),
+                         ('content', content['title']))
         shown = self.view(root)['gate']['pictures']
         self.assertEqual(shown[content['id']]['alt'], 'A rack of servers in our lab.')
         self.assertFalse(any(call[:2] == ['images', 'generate'] for call in self.slides.run.calls),

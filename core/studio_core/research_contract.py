@@ -37,8 +37,13 @@ AUTHOR_GUIDES = ('investigate.md', 'synthesize.md')
 # what the author is asked to do.
 REUSE = 'synthesis-reuse.md'
 REFRESH_SECTION = '## Refresh selected evidence'
-REFRESHED = ('Bring the evidence up to date: re-read each source, save new captures with the '
-             'date you read them, and update what changed.')
+REFRESHED = ("Bring the evidence up to date: re-read each source with the studio's capture "
+             'tool, so that each new capture is saved with the date it was read; then update '
+             'what changed. The studio saves the dossier you hand back and arranges its '
+             'independent review.')
+# Said after the refresh section, which speaks of saving and arranging a review itself.
+REFRESH_HERE = ("The studio's tools save every capture and the studio arranges the review: "
+                'write no files yourself.')
 CAPTURED = ("The studio's tools have saved every capture for you: that is the capture "
             '`investigate.md` asks for. Cite each source by the file path the tools gave it, '
             'exactly. Write no files yourself.')
@@ -57,10 +62,12 @@ def compares(goal) -> bool:
 def refresh_section(text: str) -> str:
     """The "Refresh selected evidence" section of synthesis-reuse.md, from its heading to the
     next of the same level, or nothing."""
-    at = text.find(REFRESH_SECTION)
+    heading = re.search(r'^' + re.escape(REFRESH_SECTION) + r'\s*$', text, re.MULTILINE)
+    at = heading.start() if heading else -1
     if at < 0:
         return ''
-    end = text.find('\n## ', at + len(REFRESH_SECTION))
+    found = re.search(r'^## ', text[at + len(REFRESH_SECTION):], re.MULTILINE)
+    end = at + len(REFRESH_SECTION) + found.start() if found else -1
     return text[at:end if end >= 0 else len(text)].strip()
 
 
@@ -359,7 +366,7 @@ class Workflow:
                 if refreshing:   # its stage references, and the refresh section of reuse
                     reuse = self.runtime / 'references' / REUSE
                     section = refresh_section(reuse.read_text()) if reuse.is_file() else ''
-                    guide += '\n\n' + section if section else ''
+                    guide += '\n\n' + section + '\n\n' + REFRESH_HERE if section else ''
                 payload = {'task': task, 'worker': worker,
                            'return': 'A complete schema-2 dossier as JSON, including authored brief sections. '
                                      + CAPTURED + ' Copy each source\'s origin exactly as the capture showed it. '

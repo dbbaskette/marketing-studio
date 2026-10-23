@@ -3156,6 +3156,21 @@ class RefreshResearchTests(RunnerCase):
                     stop=__import__('threading').Event(),
                 )
         self.assertIs(tasks[0]['refresh'], True)
+        found = runner.survey(self.root, found['id'])
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Shorter.',
+            page=True,
+            target='research',
+        )
+        self.assertIs(
+            runner.job(self.root, found['id'])[1]['refresh'],
+            False,
+            'a later change asks for no refresh',
+        )
         with self.assertRaisesRegex(ValueError, 'Only the research'):
             runner.decide(
                 self.root,

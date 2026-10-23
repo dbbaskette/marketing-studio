@@ -1824,6 +1824,20 @@ class TurnTests(unittest.TestCase):
         with worker_tools.one_at_a_time(self.lock, wait=1):
             self.assertTrue(self.lock.is_file())
 
+    def test_google_turns_are_kept_apart_from_the_local_one(self):
+        class Pooled:
+            def has(self, name):
+                return name == 'google-preview-pool'
+
+        local = worker_tools.turn_file({'renderer': 'local', 'lock': str(self.lock)}, Pooled())
+        google = worker_tools.turn_file({'renderer': 'drive', 'lock': str(self.lock)}, Pooled())
+        self.assertEqual(local, self.lock)
+        self.assertNotEqual(google, self.lock)
+        self.assertEqual(google.parent, self.lock.parent)
+        with worker_tools.turn(local, 1, wait=1):   # a local render holds its turn
+            with worker_tools.turn(google, 4, wait=1):   # and a Google one still takes its own
+                pass
+
     def test_slots(self):
         class Tool:
             def __init__(self, pooled):

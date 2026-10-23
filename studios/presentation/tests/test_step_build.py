@@ -1191,8 +1191,10 @@ class SuppliedPictureBuildTests(Deck):
     def picture(self, slide):
         file = self.base / 'rack.png'
         file.write_bytes(PNG_ONE)
+        kind = next((one['kind'] for one in OUTLINE['slides'] if one['id'] == slide), None)
         return build.record_picture(self.root, self.slides, slide, file,
-                                    'A rack of servers in our lab.', 'Our own photograph.')
+                                    'A rack of servers in our lab.', 'Our own photograph.',
+                                    kind=kind)
 
     def compiles(self):
         return [call for call in self.slides.run.calls if call[:2] == ['compose', 'compile']]
@@ -1212,6 +1214,15 @@ class SuppliedPictureBuildTests(Deck):
         self.assertEqual((image['type'], image['asset']), ('image', f'pic-{self.content}'))
         self.assertIn('picture', ' '.join(section.prepared['inputs']).lower()
                       + section.task.lower())
+
+    def test_a_picture_whose_slide_is_gone_or_changed_kind_is_left_out(self):
+        self.picture('no-such-slide')
+        closing = next(slide['id'] for slide in OUTLINE['slides'] if slide['kind'] == 'closing')
+        self.picture(closing)
+        self.assertEqual(build.pictures(self.root)[closing]['kind'], 'closing')
+        self.built()
+        self.assertEqual(build.read_state(self.root)['start']['pictures'], {})
+        self.assertFalse(any('--asset-project' in call for call in self.compiles()))
 
     def test_a_deck_without_a_picture_never_names_the_project(self):
         self.built()

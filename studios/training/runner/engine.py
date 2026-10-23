@@ -685,8 +685,10 @@ class Engine(Reviewing):
         needs = self.deck_needs()
         missing = list(needs['missing'])
         update = needs['design_update'] if pipeline.walkthrough_of(session) else needs['update']
-        if update and not pipeline.begun(session, record):
-            missing.append(update)
+        # A deck not begun waits for a slides tool and a brand skill new enough; one begun
+        # carries on with what it began with.
+        if not pipeline.begun(session, record):
+            missing += [said for said in (update, needs['old_brand']) if said]
         return {'missing': missing, 'brands': needs['brands']}
 
     @staticmethod
@@ -1028,7 +1030,8 @@ class Engine(Reviewing):
         self.wake(root)
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
-            and not needs['design_update' if form.get('walkthrough') else 'update']
+            and not needs['design_update' if form.get('walkthrough') else 'update'] \
+            and not needs['old_brand']
         # Balanced stops three times: the research plan, the direction, the finished materials;
         # Automatic draft once, at the finished materials. Each deck drawn here stops too.
         chosen = review_policy.level(record)
@@ -1526,8 +1529,7 @@ class Engine(Reviewing):
             release=slides_tool.RELEASE) if designing else None
         unwritten = NO_CONTRACTS.format(name=brand['name']) \
             if brand['found'] and seen['contracts'] is False else None
-        missing = [said for said in (seen['tool'], dated, brand['problem'],
-                                     brand.get('old'), unwritten) if said]
+        missing = [said for said in (seen['tool'], dated, brand['problem'], unwritten) if said]
         if not seen['tool']:
             if how is None:
                 renders = NOT_CHOSEN if seen['drive'] else NO_RENDERER
@@ -1571,7 +1573,7 @@ class Engine(Reviewing):
         return {'missing': missing, 'how': how, 'drive': seen['drive'], 'local': seen['local'],
                 'pool': bool(seen.get('pool')),
                 'brand': dict(brand), 'brands': list(brand['brands']), 'items': items,
-                'fonts': seen.get('fonts'),
+                'fonts': seen.get('fonts'), 'old_brand': brand.get('old'),
                 'lacks': lacks, 'update': update, 'design_lacks': designing,
                 'design_update': design_update}
 

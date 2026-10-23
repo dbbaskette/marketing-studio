@@ -1133,15 +1133,8 @@ def create(root, data, approval='conversation'):
     }
     import brand_skill
 
-    # The brand writes the chosen author voice beside its own naming rules, so the voice is
-    # read first. A tone-only run gives it none.
-    chosen_profile, chosen_revision = data.get('profile') or None, data.get('revision')
-    handoff = (
-        studio.voice_handoff(root, chosen_profile, chosen_revision)
-        if chosen_profile and (chosen_revision is None or type(chosen_revision) is int)
-        else None
-    )
-    selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''), handoff)
+    if not isinstance(data.get('brand', ''), str) or not isinstance(data.get('variant', ''), str):
+        raise ValueError('Choose a listed brand and variant.')
     title = text(
         data.get('title', ''), 'title', 500, required=not data.get('id') and not angles_first
     )
@@ -1319,6 +1312,15 @@ def create(root, data, approval='conversation'):
         assistant.get('model') if same_agent else None,
         assistant.get('effort') if same_agent else None,
     )
+    # The brand writes the run's author voice beside its own naming rules: the voice the form
+    # chose or the default one, once it is settled. A tone-only or preserved voice gives none.
+    pinned = record.get('voice') or {}
+    handoff = (
+        studio.voice_handoff(root, pinned['profile_id'], pinned.get('revision'))
+        if pinned.get('mode') == 'profile' and pinned.get('profile_id')
+        else None
+    )
+    selected_brand = brand_skill.snapshot(data.get('brand', ''), data.get('variant', ''), handoff)
     if selected_brand:
         run['brand'] = selected_brand
     inputs(root, record, run)  # Refuse unusable context before creating a partial blog.
@@ -1514,8 +1516,7 @@ def decide(root, ident, expected, action, request='', page=False, target=None, r
         )
         run['stages'].setdefault(stage, {})['status'] = 'pending'
         run['stages'][stage]['request'] = request
-        if refresh:
-            run['stages'][stage]['refresh'] = True
+        run['stages'][stage]['refresh'] = bool(refresh)
         run['stages'][stage]['model_purpose'] = (
             'repair' if stage == 'draft' and found['next'] == 'review' else stage
         )

@@ -98,7 +98,7 @@ REPAIRS = 2             # rounds of drawing again after a review
 # What a deck's reviewer reads beside "the review": the slides tool's review guidance and the
 # brand's review checklist, each when the deck's reading has it.
 REVIEW_READING = ('review guidance', brand_guidance.REVIEW_CHECKLIST)
-DELIVERY = 'reading'    # a deck is read alone as well as presented
+DELIVERY = 'reading'    # a deck whose form did not say how it is used
 DIRECTION = deck_direction.FALLBACK   # only until the brand gives one
 SEVERITIES = ('critical', 'major', 'minor')
 ABOUT = ('drawing', 'content')
@@ -567,7 +567,8 @@ def pictures(root) -> dict:
 
 
 def record_picture(root, slides, slide: str, file: Path, alt: str, source: str,
-                   name: str | None = None) -> dict:
+                   name: str | None = None, kind: str | None = None,
+                   title: str | None = None) -> dict:
     """Record a picture the person gave one slide in the deck's asset project, with the
     slides tool's `assets add-supplied`, and keep which slide shows it. A slide given
     another picture records it under a new asset ID, since a recorded asset is never
@@ -580,9 +581,18 @@ def record_picture(root, slides, slide: str, file: Path, alt: str, source: str,
     ident = f'pic-{slide}' if count == 1 else f'pic-{slide}-{count}'
     slides.asset_supplied(project, Path(file), ident, alt, source)
     kept[slide] = {'asset': ident, 'alt': alt, 'source': source, 'name': name,
-                   'at': home.now(), 'n': count}
+                   'kind': kind, 'title': title, 'at': home.now(), 'n': count}
     home.write_json(root / PICTURED, kept)
     return {'asset': ident, 'slide': slide}
+
+
+def pictures_for(root, outline: dict) -> dict:
+    """The asset of each picture given to a slide the outline still has, of a kind that takes
+    one, as {slide id: asset}. A picture whose slide was removed, or became a closing slide,
+    is left out of the deck; it stays recorded, and a slide of that ID given back has it."""
+    kinds = {slide.get('id'): slide.get('kind') for slide in slides_of(outline)}
+    return {ident: entry['asset'] for ident, entry in pictures(root).items()
+            if kinds.get(ident) in PICTURE_KINDS}
 
 
 def picture_layout(listed, kind: str, subtitle: bool = False) -> str | None:
@@ -954,7 +964,7 @@ def start(root, run: dict, slides, brand) -> dict:
         shutil.copyfile(source, folder / TOOL_OUTLINE)
         sections = []
         # The pictures the person gave, as they are when the deck starts.
-        given = {ident: entry['asset'] for ident, entry in pictures(root).items()}
+        given = pictures_for(root, outline)
         for part in home.read_json(folder / 'parts.json', {})['parts']:
             ident = Path(part).stem
             if not SECTION.match(ident):

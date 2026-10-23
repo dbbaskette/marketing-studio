@@ -743,6 +743,15 @@ def one_at_a_time(lock: Path, wait: float = RENDER_WAIT):
     return turn(lock, 1, wait)
 
 
+def turn_file(how: dict, slides) -> Path:
+    """The file a render's turns are taken from: `how['lock']` for LibreOffice and an unpooled
+    Drive, and one beside it for the Google preview pool, so that neither waits on the
+    other's turns."""
+    lock = Path(how['lock'])
+    return lock.with_name(lock.stem + '-google' + lock.suffix) if slots(how, slides) > 1 \
+        else lock
+
+
 def slots(how: dict, slides) -> int:
     """The turns a render may take side by side on this computer: the slides tool's Google
     preview pool for a render through Google Drive on a tool that has one, else one."""
@@ -766,7 +775,7 @@ def render(slides, compiled: Path, folder: Path, how: dict) -> dict:
     file says so in its refusal's `left`, as {'fileId', 'url'}, and the file is remembered
     all the same. Returns what the slides tool returned."""
     kept = Path(how['kept']) if how.get('kept') else None
-    with turn(Path(how['lock']), slots(how, slides)):
+    with turn(turn_file(how, slides), slots(how, slides)):
         known = home.read_json(kept, {}) if kept else {}
         known = known if isinstance(known, dict) else {}
         def remember(ident, url, receipt=None) -> None:

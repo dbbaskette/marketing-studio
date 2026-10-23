@@ -786,7 +786,7 @@ class Slides:
                 '--design-project', str(design)]
         if renderer == 'drive':
             args += ['--renderer', 'google', *(['--file-id', file_id] if file_id else [])]
-        with self.turn(renderer or 'local'):
+        with PREVIEWING:   # a review renders into the deck's one remembered file
             made = self._json(*args, '--json')
         return {**made, 'fileId': made.get('fileId'), 'url': made.get('url')}
 

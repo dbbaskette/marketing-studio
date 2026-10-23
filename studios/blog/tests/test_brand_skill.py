@@ -245,6 +245,39 @@ class BrandSkillTests(unittest.TestCase):
             )
             self.assertEqual(self.seen(), {'voice': None}, 'a tone-only run passes none')
 
+    def test_the_default_voice_is_exported_to_the_brand(self):
+        import writing_defaults
+
+        self.skill()
+        made = self.profile()
+        value = json.dumps({'profile_id': made['id'], 'revision': 1})
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'defaults',
+                'set',
+                '--scope',
+                'personal',
+                '--key',
+                'voice',
+                '--value',
+                value,
+            ]
+        )
+        writing_defaults.command(self.root, args)
+        start = {
+            'title': 'Default voice',
+            'goal': 'Explain a fictional system',
+            'audience': 'Authors',
+            'research': 'none',
+            'brand': 'fictional',
+            'variant': 'dark',
+        }
+        with patch.dict(os.environ, {'SYNTHETIC_VOICE_SEEN': str(self.base / 'voice-seen.json')}):
+            blog_runner.create(self.root, start)
+        self.assertEqual(self.seen()['voice']['id'], made['id'])
+
     def test_brand_refusal_of_a_profile_is_shown(self):
         self.skill()
         made = self.profile(guide='', status='provisional')

@@ -1273,7 +1273,7 @@ class Engine(Jobs, Researching):
         dated = self._with_installer(dated, seen)
         seen = {**seen, 'tool': self._with_installer(seen['tool'], seen)}
         # The brand skill is not a need of drawing: a deck without one stops at its brand.
-        missing = [said for said in (seen['tool'], dated, brand.get('old')) if said]
+        missing = [said for said in (seen['tool'], dated) if said]
         if not seen['tool']:
             if how is None:
                 renders = NOT_CHOSEN if seen['drive'] else NO_RENDERER
@@ -2950,6 +2950,8 @@ class Engine(Jobs, Researching):
                 raise WorkspaceError('The outline changed. Reload it before adding a picture.')
             kinds = {one.get('id'): one.get('kind') for one in gate.get('slides') or ()
                      if isinstance(one, dict)}
+            titles = {one.get('id'): one.get('title') for one in gate.get('slides') or ()
+                      if isinstance(one, dict)}
             if slide not in kinds:
                 raise WorkspaceError(f'{slide} is not a slide of this outline.')
             if kinds[slide] not in build.PICTURE_KINDS:
@@ -2970,7 +2972,8 @@ class Engine(Jobs, Researching):
                 file = Path(temporary) / f'picture{suffix}'
                 file.write_bytes(bytes(data))
                 made = build.record_picture(root, tool, slide, file, alt, source,
-                                            Path(str(filename or '')).name[:120] or None)
+                                            Path(str(filename or '')).name[:120] or None,
+                                            kind=kinds[slide], title=titles.get(slide))
             self._commit(root, f'give slide {slide} a picture')
         return made
 

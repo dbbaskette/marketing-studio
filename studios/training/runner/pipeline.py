@@ -1826,7 +1826,7 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
     inputs = {'handoff': _read(place(root, level, HANDOFF)) or '',
               'outline contract': _told(root, mine, 'outline-contract.txt')}
     _read_also(root, mine, inputs, [*DRAFTING, *(DESIGNING if designed else ()),
-                                    *(_brand_for_workers(root, mine) if designed else ())])
+                                    *_brand_for_workers(root, mine)])
     inputs['blueprint'] = blueprint
     guide = (_text(root, session, workspace.qualify('document', level))
              if 'document' in wanted(session) else None)

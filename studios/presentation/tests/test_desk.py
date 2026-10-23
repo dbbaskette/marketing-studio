@@ -1165,6 +1165,7 @@ class ScreenTests(ScriptedPage, PageCase):
                           'alt': 'A rack of servers in our lab.', 'source': 'Our own photograph.',
                           'expected': gate.get('expected')})
         self.assertEqual(base64.b64decode(body['content']), picture)
+        self.assertIn('Pictures you give a slide stay on this computer', shots['form']['text'])
 
     def test_a_slide_added_and_moved_on_the_page_is_an_outline_the_slides_tool_takes(self):
         path = self.started(delivery='reading')   # a handout: an added slide needs no notes

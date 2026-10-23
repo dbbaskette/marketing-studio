@@ -4286,6 +4286,8 @@ function pictureParts(gate, one, title) {
     field('picture-alt-' + one.id, 'What it shows', fill, 'alt', { limit: 300 }),
     field('picture-source-' + one.id, 'Where it came from', fill, 'source',
       { limit: 300, hint: 'Your own photograph, or who it belongs to and that you may use it.' }),
+    make('p', 'quiet', 'Pictures you give a slide stay on this computer, with the deck’s other '
+      + 'build files: teammates get the finished deck.'),
     problem, add(make('div', 'bar'), send_)));
   return found;
 }

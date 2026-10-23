@@ -693,7 +693,8 @@ class RefreshTests(AuthorGuideTests):
             '# Resume, reuse and refresh synthesis\n\nIntro.\n\n'
             '## Resume the saved work\n\nResume words.\n\n'
             '## Use the report as source material\n\nReuse words.\n\n'
-            '## Refresh selected evidence\n\nSave new captures with access dates.\n')
+            '## Refresh selected evidence\n\nSave new captures with access dates.\n\n'
+            'Not a heading: ## inside a line.\n')
 
     def test_refresh_hands_the_refresh_section(self):
         self.task['refresh'] = True
@@ -702,8 +703,13 @@ class RefreshTests(AuthorGuideTests):
                       guide)
         self.assertNotIn('Resume words.', guide)
         self.assertNotIn('Reuse words.', guide)
-        self.assertIn('Bring the evidence up to date: re-read each source, save new captures '
-                      'with the date you read them, and update what changed.', said)
+        self.assertIn("Bring the evidence up to date: re-read each source with the studio's "
+                      'capture tool, so that each new capture is saved with the date it was '
+                      'read; then update what changed. The studio saves the dossier you hand '
+                      'back and arranges its independent review.', said)
+        self.assertNotIn('Bring the evidence up to date: re-read each source, save', said)
+        self.assertIn("The studio's tools save every capture and the studio arranges the "
+                      'review: write no files yourself.', guide)
 
     def test_without_refresh_no_reuse_section_is_handed(self):
         guide, said = self.authored_once()
