@@ -147,6 +147,11 @@ def load(root: Path) -> dict:
     if session['settings'].setdefault('approval', 'chat') not in APPROVAL:
         raise WorkspaceError('The session record has no usable "settings.approval"; '
                              'refusing to change it.')
+    # A deck is walked through slide by slide only when that was asked for; a deck already
+    # written keeps the design it was written with, whatever this says.
+    if session['settings'].setdefault('walkthrough', False) not in (True, False):
+        raise WorkspaceError('The session record has no usable "settings.walkthrough"; '
+                             'refusing to change it.')
     # One started before its deck's delivery was asked was written for reading.
     if session['settings'].setdefault('delivery', DELIVERY_OF_OLD) not in DELIVERIES:
         raise WorkspaceError('The session record has no usable "settings.delivery"; '
@@ -261,11 +266,14 @@ def refuse_the_wrong_place(root: Path) -> None:
 def init(root: Path, title: str, levels=(), brief_kind: str = 'product',
          deck_target: str | None = None, brand: str | None = None,
          yoodli: bool = False, copies=(), approval: str = 'chat',
-         delivery: str = 'live') -> dict:
+         delivery: str = 'live', walkthrough: bool = False) -> dict:
     if not title.strip():
         raise WorkspaceError('A training needs a title.')
     if delivery not in DELIVERIES:
         raise WorkspaceError(NO_DELIVERY)
+    if walkthrough not in (True, False):
+        raise WorkspaceError('Say whether to walk through each slide\'s design with true or '
+                             'false.')
     levels = check_levels(levels)
     copies = check_copies(copies)
     check_choice(approval, APPROVAL, 'Approval')
@@ -294,6 +302,7 @@ def init(root: Path, title: str, levels=(), brief_kind: str = 'product',
         'requests': [],
         'settings': {'deck_target': deck_target, 'brand': brand, 'brief_kind': brief_kind,
                      'copies': copies, 'approval': approval, 'delivery': delivery,
+                     'walkthrough': walkthrough,
                      'stages': [stage for stage in SKIPPABLE
                                 if stage not in OPTIONAL or (stage == 'yoodli' and yoodli)]},
         'unavailable': {},

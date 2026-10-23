@@ -4241,6 +4241,7 @@ function newDraft() {
     // A deck needs a brand; without one shared, no deck is the default.
     deck: brand.brand ? (shared.output === 'google' ? 1 : 0) : DECKS.length - 1,
     brand: brand.brand || '', variant: brand.variant || '', copies: [], delivery: 0,
+    walkthrough: false,
     yoodli: false, materials: [], sources: 0, agent: agent.default === 'codex' ? 'codex' : 'claude',
     model: agent.model || '', other: false, effort: agent.effort || '', starting: false });
 }
@@ -4382,10 +4383,19 @@ function shapeStep(draft) {
     draft.delivery || 0, (index) => { draft.delivery = index; }, 'delivery',
     'A spoken session is presented live; choose Read on its own for self-study.');
   used.hidden = !able || DECKS[draft.deck][0] === null;
+  // A deck is approved on what it says and on its look, as the brand's checkpoints are. Its
+  // slides' designs are walked through one at a time only when asked for here.
+  const walk = add(make('div', 'field'),
+    chip('Walk through each slide’s design before it is built', draft.walkthrough,
+      (on) => { draft.walkthrough = on; }, 'walkthrough'),
+    make('p', 'quiet field-hint', 'Usually the deck is approved on what it says and on its '
+      + 'look. Choose this to approve how each slide is drawn, one at a time.'));
+  walk.hidden = used.hidden;
   const deck = choice('The slide deck', DECKS.map((kind) => kind[1]), draft.deck, (index) => {
     draft.deck = index;
     brand.hidden = DECKS[index][0] === null;
     used.hidden = !able || DECKS[index][0] === null;
+    walk.hidden = used.hidden;
   }, 'deck');
   for (const option of able ? [] : deck.querySelectorAll('.seg-option[aria-pressed="false"]')) {
     option.disabled = true;
@@ -4398,7 +4408,7 @@ function shapeStep(draft) {
       (level) => draft.levels.includes(level), toggle('levels'), 'level',
       '101 introduces the subject; 201 applies it; 301 handles trade-offs; 401 explores advanced cases. '
         + 'Each selected level gets its own materials, and its own cost. Choose none for one training without levels.'),
-    deck, used, brand,
+    deck, used, walk, brand,
     field('new-time', 'How long it should take (optional)', draft, 'time',
       { hint: 'The learner’s time, including examples and practice: “30 minutes” or “a half-day workshop”.' }),
     trainingOptions('Depth and reference brief', 'training-depth',
@@ -4620,7 +4630,8 @@ async function startTraining(pressed) {
     research_questions: (draft.researchQuestions || '').split('\n'),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
-    ...(deck ? { delivery: DELIVERIES[draft.delivery || 0][0] } : {}),
+    ...(deck ? { delivery: DELIVERIES[draft.delivery || 0][0],
+      walkthrough: Boolean(draft.walkthrough) } : {}),
     copies: COPIES.map((kind) => kind[0]).filter((kind) => draft.copies.includes(kind)),
     yoodli: draft.yoodli, materials: draft.materials,
     agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,

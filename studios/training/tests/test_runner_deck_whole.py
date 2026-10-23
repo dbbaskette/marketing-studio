@@ -93,9 +93,10 @@ class WholeCase(DeckCase):
     def setUp(self):
         super().setUp()
         if self.EARLIER:
-            patch = mock.patch.object(slides_tool, 'NEEDED', ())
-            patch.start()
-            self.addCleanup(patch.stop)
+            for name in ('NEEDED', 'DESIGN_NEEDED'):
+                patch = mock.patch.object(slides_tool, name, ())
+                patch.start()
+                self.addCleanup(patch.stop)
         self.slides, self.brand = self.stand_ins()
         self.tool, self.skill = self.slides.run, self.brand.run
         self.composers = Composers(self)
@@ -108,7 +109,8 @@ class WholeCase(DeckCase):
         return outcome[1]
 
     def begin(self, **changes) -> Path:
-        return self.start(**{'deck_target': 'pptx', 'brand': CHOSEN, **changes})
+        return self.start(**{'deck_target': 'pptx', 'brand': CHOSEN,
+                             'walkthrough': self.WALKTHROUGH, **changes})
 
     def asked(self, name: str) -> list[list[str]]:
         """Every call of one command the slides stand-in was given."""
@@ -230,6 +232,7 @@ class DesignedDeckTests(WholeCase):
     proposes how each slide is drawn, the tool keeps the proposal, and the person's one
     decision on the page is the tool's answer. That tool is a build before 0.14.0, without
     the asset manifest or the review against the design."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
     EARLIER = True
 
     def setUp(self):
@@ -291,6 +294,7 @@ class AssetDeckTests(WholeCase):
     """The same deck through a slides tool that keeps its assets and says what it has: the
     icons the approved design names are found in the brand's library and recorded before
     any section is drawn, and one the brand does not have keeps the deck waiting."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -342,6 +346,7 @@ class JudgedDeckTests(WholeCase):
     """The same deck through a slides tool that reviews a whole build against the approved
     design: it renders the deck it reviews, the reviewer answers its own criteria, and that
     rendered deck is the one kept."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -398,6 +403,7 @@ class CurrentDeckTests(WholeCase):
     recorded with no search; the tool says itself what the approved design still wants; the
     review's packets come in one call and its assessment takes each slide's sources; and the
     deck is put to the person with its review, whose approval at gate 6 is sent to it."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()

@@ -160,7 +160,7 @@ class FormTests(StudioCase):
             'brief_kind': 'product', 'deck_target': None, 'source_scope': 'public-web',
             'yoodli': False, 'materials': ['document', 'brief', 'scenario'],
             'agent': None, 'model': None, 'effort': None, 'research_questions': [],
-            'delivery': 'live'})
+            'delivery': 'live', 'walkthrough': False})
 
     def test_selected_materials_use_existing_skip_decisions_and_manual_gate_counts(self):
         form = pipeline.check_form({**FORM, 'materials': ['document', 'document']})
@@ -701,6 +701,18 @@ class WorkTests(StudioCase):
         self.assertEqual(Path(pipeline.PLAN), Path('.training-studio/research-plan.json'))
         self.assertEqual(Path(pipeline.REPORT), Path('.harness-research/research-report.md'))
 
+
+
+class WalkthroughFormTests(unittest.TestCase):
+    def test_form_walkthrough_is_off_unless_asked(self):
+        from runner_support import FORM
+        form = {key: value for key, value in FORM.items() if key != 'walkthrough'}
+        self.assertIs(pipeline.check_form(form)['walkthrough'], False)
+        self.assertIs(pipeline.check_form({**form, 'walkthrough': True})['walkthrough'], True)
+        with self.assertRaisesRegex(WorkspaceError, 'walk through'):
+            pipeline.check_form({**form, 'walkthrough': 'yes'})
+        self.assertIs(pipeline.walkthrough_of({'settings': {}}), False)
+        self.assertIs(pipeline.walkthrough_of({'settings': {'walkthrough': True}}), True)
 
 
 class DeliveryFormTests(unittest.TestCase):

@@ -185,9 +185,14 @@ from runner import companion
 VARIABLE = 'HARNESS_SLIDES_RUNTIME'
 MINIMUM = '0.16.0'      # the oldest runtime taken: the one the installer pins
 RELEASE = '0.16.0'      # what a person is told to update to, as the installer pins it
-# What a new deck needs of the slides tool, by the names its `version` lists.
-NEEDED = ('design-schema-2', 'design-batch', 'json-refusals', 'compose-section', 'assets',
-          'compose-review')
+# What a new deck needs of the slides tool, by the names its `version` lists: NEEDED for a
+# deck approved on its words and its look, as the brand's checkpoints are, and DESIGN_NEEDED
+# besides for one whose slides' designs are walked through first, when the person asks.
+NEEDED = ('json-refusals',)
+DESIGN_NEEDED = ('design-schema-2', 'design-batch', 'compose-section', 'assets',
+                 'compose-review')
+ORDER = ('design-schema-2', 'design-batch', 'json-refusals', 'compose-section', 'assets',
+         'compose-review')   # how what is lacking is said
 # Each capability, as a person reads it.
 NAMES = {'assets': 'an asset manifest for the pictures and icons a deck uses',
          'assets-approved-candidates': 'checking every asset an approved design names',
@@ -602,15 +607,17 @@ class Slides:
         none of them."""
         return name in (self.capabilities() or ())
 
-    def lacks(self) -> list[str]:
-        """Each capability a new deck needs that this tool lacks, in the order of NEEDED.
-        Read from what `version` lists; for a tool that lists nothing, the design session,
-        the section check and the asset manifest are asked as `designs`, `sections` and
-        `assets` ask, and a review against the design is lacking, since no such tool has
-        it."""
+    def lacks(self, design: bool = False) -> list[str]:
+        """Each capability a new deck needs that this tool lacks: those of NEEDED, and with
+        `design`, for a deck whose slides' designs are walked through, those of DESIGN_NEEDED,
+        in ORDER. Read from what `version` lists; for a tool that lists nothing, the design
+        session, the section check and the asset manifest are asked as `designs`,
+        `sections` and `assets` ask, and a review against the design is lacking, since no
+        such tool has it."""
+        wanted = (*NEEDED, *(DESIGN_NEEDED if design else ()))
         listed = self.capabilities()
         if listed is not None:
-            return [name for name in NEEDED if name not in listed]
+            return [name for name in ORDER if name in wanted and name not in listed]
         found = {'compose-review'}
         if not self.designs():
             found |= {'design-schema-2', 'design-batch', 'json-refusals'}
@@ -618,7 +625,7 @@ class Slides:
             found.add('compose-section')
         if not self.assets():
             found.add('assets')
-        return [name for name in NEEDED if name in found]
+        return [name for name in ORDER if name in wanted and name in found]
 
     def assets(self) -> bool:
         """Whether this tool keeps an asset manifest a deck's pictures and icons are recorded

@@ -2301,14 +2301,29 @@ class CurrentTests(unittest.TestCase):
         older = slides_stand_in.stand_in(assets=True)
         self.assertEqual((older.lacks(), older.has('review-packets')), ([], False))
         self.without('compose-review')
-        self.assertEqual(self.slides.lacks(), ['compose-review'])
+        self.assertEqual((self.slides.lacks(), self.slides.lacks(design=True)),
+                         ([], ['compose-review']), 'only a deck walked through needs it')
+
+    def test_lacks_by_design(self):
+        tool = slides_stand_in.stand_in(assets=True)
+        tool.run.listed = {'json-refusals'}
+        tool._capabilities, tool._asked_capabilities = None, False
+        self.assertEqual(tool.lacks(), [])
+        self.assertEqual(tool.lacks(design=True), ['design-schema-2', 'design-batch',
+                                                   'compose-section', 'assets',
+                                                   'compose-review'])
+        self.assertEqual((slides.NEEDED, slides.DESIGN_NEEDED),
+                         (('json-refusals',), ('design-schema-2', 'design-batch',
+                                               'compose-section', 'assets', 'compose-review')))
 
     def test_a_tool_that_lists_nothing_is_asked_what_a_new_deck_needs(self):
-        for tool, lacking in ((slides_stand_in.stand_in(), list(slides.NEEDED)),
-                              (slides_stand_in.stand_in(design=True),
-                               ['assets', 'compose-review'])):
+        for tool, lacking, plain in ((slides_stand_in.stand_in(), list(slides.ORDER),
+                                      ['json-refusals']),
+                                     (slides_stand_in.stand_in(design=True),
+                                      ['assets', 'compose-review'], [])):
             self.assertIsNone(tool.capabilities())
-            self.assertEqual(tool.lacks(), lacking)
+            self.assertEqual(tool.lacks(design=True), lacking)
+            self.assertEqual(tool.lacks(), plain)
             self.assertFalse(tool.has('design-batch'), 'it lists nothing, so it has none')
             asked = [call[:2] for call in tool.run.calls if call not in (['--version'],
                                                                          ['version'])]

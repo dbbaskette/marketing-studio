@@ -3930,6 +3930,26 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             self.assertNotIn(told, shots[shot]['text'])
             self.assertNotIn('Your other studios', shots[shot]['text'])
 
+    def test_the_deck_step_offers_a_walkthrough_of_each_slides_design(self):
+        shared = {'brand': {'brand': 'example-co', 'variant': 'dark'}, 'output': 'pptx'}
+        answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
+        result = self.run_page(answers, [
+            {'click': 'New training'},
+            {'fill': 'A short title', 'value': 'Rolling restarts'},
+            {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
+            {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
+            {'click': 'Continue'}, {'snapshot': 'two'},
+            {'click': 'Walk through each slide’s design before it is built'},
+            {'click': 'Continue'}, {'click': 'Start the training'}])
+        two = result['snapshots']['two']
+        label = 'Walk through each slide’s design before it is built'
+        self.assertIn(label, two['text'])
+        self.assertNotIn(label, two['chosen'], 'off unless asked')
+        self.assertIn('Usually the deck is approved on what it says and on its look. Choose '
+                      'this to approve how each slide is drawn, one at a time.', two['text'])
+        started = [body for address, body in self.posts(result) if address == '/api/trainings']
+        self.assertIs(started[0]['walkthrough'], True)
+
     def test_the_deck_step_asks_once_how_the_deck_is_used(self):
         shared = {'brand': {'brand': 'example-co', 'variant': 'dark'}, 'output': 'pptx'}
         answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
@@ -4285,6 +4305,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'levels': ['101', '301'], 'brief_kind': 'competitive', 'time_limit': '30 minutes',
             'source_scope': 'public-web', 'research_questions': [''], 'deck_target': 'google',
             'brand': {'brand': 'example-co', 'variant': 'dark'}, 'delivery': 'live',
+            'walkthrough': False,
             'copies': ['google'], 'yoodli': False, 'materials': ['document', 'brief', 'scenario'], 'agent': 'claude', 'model': None,
             'effort': None, 'review_level': 'step_by_step'})])
 

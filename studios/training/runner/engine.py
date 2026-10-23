@@ -333,11 +333,15 @@ REDESIGN_NOTHING = ('That deck is not one drawn without a design, so there is no
                     'draw again from one.')
 DESIGN_DIFFERS = ('The design you approved is not what the slides tool holds as approved, so '
                   'the deck cannot be started. {said}')
-UPDATE_SLIDES = ('A new deck is proposed with how each slide is drawn, and the slides tool on '
-                 'this computer, version {version}, lacks what that needs: {lacks}. Update '
-                 'Harness Slides to {release} or newer from Versions on the Status screen, '
-                 'then check this computer again. A deck already begun carries on as it '
-                 'began.')
+UPDATE_SLIDES = ('A deck whose slides you walk through is proposed with how each slide is '
+                 'drawn, and the slides tool on this computer, version {version}, lacks what '
+                 'that needs: {lacks}. Update Harness Slides to {release} or newer from '
+                 'Versions on the Status screen, then check this computer again. A deck '
+                 'already begun carries on as it began.')
+UPDATE_NEW = ('The slides tool on this computer, version {version}, lacks what a new deck '
+              'needs: {lacks}. Update Harness Slides to {release} or newer from Versions on '
+              'the Status screen, then check this computer again. A deck already begun '
+              'carries on as it began.')
 NO_CONTRACTS = ('The brand skill on this computer, {name}, cannot export a brand for a deck '
                 'and check it again: it has no `contract export` and `contract check`. Update '
                 'it, then check this computer again.')
@@ -680,8 +684,9 @@ class Engine(Reviewing):
             return None
         needs = self.deck_needs()
         missing = list(needs['missing'])
-        if needs['update'] and not pipeline.begun(session, record):
-            missing.append(needs['update'])
+        update = needs['design_update'] if pipeline.walkthrough_of(session) else needs['update']
+        if update and not pipeline.begun(session, record):
+            missing.append(update)
         return {'missing': missing, 'brands': needs['brands']}
 
     @staticmethod
@@ -1023,7 +1028,7 @@ class Engine(Reviewing):
         self.wake(root)
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
-            and not needs['update']
+            and not needs['design_update' if form.get('walkthrough') else 'update']
         # Balanced stops three times: the research plan, the direction, the finished materials;
         # Automatic draft once, at the finished materials. Each deck drawn here stops too.
         chosen = review_policy.level(record)
@@ -1431,7 +1436,7 @@ class Engine(Reviewing):
             if not fresh and seen and time.monotonic() - seen[0] < LOOKED_FOR:
                 return seen[1]
             found = {'tool': None, 'version': None, 'local': False, 'drive': False,
-                     'pictures': False, 'lacks': [], 'needs': [],
+                     'pictures': False, 'lacks': [], 'needs': [], 'design_needs': [],
                      'runtimes': {'slides': None, 'brand': None},
                      'brand': {'found': False, 'name': None, 'brands': [], 'problem': None},
                      'contracts': None, 'skills': []}
@@ -1445,6 +1450,7 @@ class Engine(Reviewing):
                 found['pool'] = bool(tool.has('google-preview-pool'))
                 if ready['tool']:   # read from what it lists; asked only when it lists none
                     found['needs'] = list(tool.lacks())
+                    found['design_needs'] = list(tool.lacks(design=True))
             except (WorkspaceError, OSError) as refusal:
                 found['tool'] = str(refusal)
                 found['version'] = getattr(refusal, 'version', None)
@@ -1507,8 +1513,14 @@ class Engine(Reviewing):
         seen = {**seen, 'tool': self._with_installer(seen['tool'], seen)}
         lacks = [] if seen['tool'] or dated else [slides_tool.NAMES.get(name, name)
                                                    for name in seen['needs']]
-        update = UPDATE_SLIDES.format(version=seen['version'], lacks='; '.join(lacks),
-                                      release=slides_tool.RELEASE) if lacks else None
+        update = UPDATE_NEW.format(version=seen['version'], lacks='; '.join(lacks),
+                                   release=slides_tool.RELEASE) if lacks else None
+        # A deck whose slides' designs are walked through needs the design session too.
+        designing = [] if seen['tool'] or dated else [
+            slides_tool.NAMES.get(name, name) for name in seen.get('design_needs') or ()]
+        design_update = UPDATE_SLIDES.format(
+            version=seen['version'], lacks='; '.join(designing),
+            release=slides_tool.RELEASE) if designing else None
         unwritten = NO_CONTRACTS.format(name=brand['name']) \
             if brand['found'] and seen['contracts'] is False else None
         missing = [said for said in (seen['tool'], dated, brand['problem'],
@@ -1553,7 +1565,8 @@ class Engine(Reviewing):
         return {'missing': missing, 'how': how, 'drive': seen['drive'], 'local': seen['local'],
                 'pool': bool(seen.get('pool')),
                 'brand': dict(brand), 'brands': list(brand['brands']), 'items': items,
-                'lacks': lacks, 'update': update}
+                'lacks': lacks, 'update': update, 'design_lacks': designing,
+                'design_update': design_update}
 
     def _skill(self):
         """The brand skill to use: the one the person named at set-up, else the first
@@ -2010,11 +2023,17 @@ class Engine(Reviewing):
         return {**brand_guidance.recorded(answer), 'brand': list(chosen),
                 'checkpoints': brand_guidance.checkpoints(answer)}
 
-    def _designed(self, mine: pipeline.Deck) -> bool | None:
+    def _designed(self, mine: pipeline.Deck, session: dict | None = None) -> bool | None:
         """Whether what a deck says is written with its design. A deck keeps what it was
-        first written with; a new one has a design when the slides tool can keep one. None
-        when it was written with a design and the tool here can no longer keep one."""
+        first written with. A new one is approved on its words and its look, as the brand's
+        checkpoints say, and has a design only when the person asked to walk through each
+        slide's design (or to draw a deck again from one), and the slides tool can keep
+        one. None when it was written with a design and the tool here can no longer keep
+        one."""
         if mine.designed is False:
+            return False
+        if mine.designed is None and not (pipeline.walkthrough_of(session or {})
+                                          or mine.kept.get('redesign')):
             return False
         try:
             can = self.slides().designs()
@@ -2807,9 +2826,10 @@ class Engine(Reviewing):
         if (self.brief(root) or {}).get('state') == 'working':
             raise WorkspaceError(REDESIGN_WORKING)
         needs = self.deck_needs()
-        if needs['missing'] or needs['update']:
+        if needs['missing'] or needs['design_update']:
             raise WorkspaceError(REDESIGN_CANNOT.format(said=' '.join(
-                [*needs['missing'], *([needs['update']] if needs['update'] else [])])))
+                [*needs['missing'], *([needs['design_update']] if needs['design_update']
+                                      else [])])))
         with self.files:
             record = self._load(root)
             found = self._survey(root, record)
@@ -3190,7 +3210,7 @@ class Engine(Reviewing):
         it, says = step.step, pipeline.bare(step.step.id) == 'deck-outline'
         if (says and not self._brand_holds(root, found, it)) or not self._may_go(root):
             return
-        designed = says and self._designed(found.decks[self._level(it)])
+        designed = says and self._designed(found.decks[self._level(it)], found.session)
         if designed is None:
             return self._problem(root, it.id, 'stopped', DESIGN_GONE, KEPT)
         record = self._load(root)
@@ -4531,7 +4551,8 @@ class Engine(Reviewing):
         if not older:
             return []
         needs = self.deck_needs()
-        why = ' '.join([*needs['missing'], *([needs['update']] if needs['update'] else [])])
+        why = ' '.join([*needs['missing'], *([needs['design_update']] if needs['design_update']
+                                            else [])])
         return [{'level': mine.level, 'artifact': mine.name,
                  'label': workspace.label(mine.name), 'may': not why, 'why': why or None}
                 for mine in older]

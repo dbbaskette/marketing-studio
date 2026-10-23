@@ -1593,6 +1593,24 @@ class DeliveryRowTests(TrainingCase):
         workspace.checkpoint(self.root, delivery='live')   # the same delivery is no change
 
 
+class WalkthroughRowTests(TrainingCase):
+    """Row 127: a deck is approved on its words and its look; walking through each slide's
+    design is asked for."""
+
+    def test_row_127_walkthrough(self):
+        session = workspace.init(self.root, 'Topic')
+        self.assertIs(session['settings']['walkthrough'], False)
+        path = workspace.session_path(self.root)
+        saved = json.loads(path.read_text())
+        del saved['settings']['walkthrough']
+        path.write_text(json.dumps(saved))
+        self.assertIs(workspace.load(self.root)['settings']['walkthrough'], False)
+        other = self.root / 'other'
+        other.mkdir()
+        self.assertIs(workspace.init(other, 'Topic', walkthrough=True)['settings']
+                      ['walkthrough'], True)
+
+
 class DownstreamTests(LevelCase):
     def test_downstream_lists_what_is_built_from_research(self):
         session = workspace.load(self.root)

@@ -1246,6 +1246,7 @@ class DeckCase(StudioCase):
     """A computer that can make a deck: the two stand-ins, and previews through Drive."""
 
     HOW = 'drive'
+    WALKTHROUGH = False   # whether its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -1253,7 +1254,8 @@ class DeckCase(StudioCase):
         settings.save(replace(settings.load(), previews=self.HOW))
 
     def begin(self, **changes) -> Path:
-        return self.start(**{'deck_target': 'pptx', 'brand': CHOSEN, **changes})
+        return self.start(**{'deck_target': 'pptx', 'brand': CHOSEN,
+                             'walkthrough': self.WALKTHROUGH, **changes})
 
     def to_outline(self, root: Path, level: str | None = None) -> dict:
         """Approve what is waiting until what a deck says is put to the person."""
@@ -1687,7 +1689,7 @@ class BrandEntryTests(DeckCase):
     def test_the_decks_slide_task_starts_through_the_brand_and_its_guidance_reaches_workers(self):
         self.brand.entry = 'brand'
         self.slides.design = True
-        root = self.begin()
+        root = self.begin(walkthrough=True)
         self.drawn(root)
         self.assertEqual(self.brand.guided[0][:1], ('start',))
         guided = self.built(root)['brand']['guidance']
@@ -2170,11 +2172,45 @@ class RepairTests(DeckCase):
                       self.workers.of('outline')[-1].task)
 
 
+class WalkthroughTests(DeckCase):
+    """A new deck is approved on what it says and on its look, as the brand says. Each
+    slide's design is walked through only when the person asks for it on the form."""
+
+    def setUp(self):
+        super().setUp()
+        self.slides.design = True   # a slides tool that keeps a design session
+
+    def test_new_deck_is_built_without_a_design_session(self):
+        root = self.begin()
+        self.to_outline(root)
+        job, spec = [(job, spec) for kind, job, spec in self.workers.jobs
+                     if kind == 'outline'][-1]
+        self.assertFalse(spec['artifacts']['outline']['design'])
+        self.assertEqual(job.guidance, briefs.guidance('deck-outline'))
+        self.assertNotIn('design_propose', [call[0] for call in self.slides.calls])
+
+    def test_walkthrough_runs_the_design_session(self):
+        root = self.begin(walkthrough=True)
+        self.assertIs(workspace.load(root)['settings']['walkthrough'], True)
+        self.to_outline(root)
+        job, spec = [(job, spec) for kind, job, spec in self.workers.jobs
+                     if kind == 'outline'][-1]
+        self.assertTrue(spec['artifacts']['outline']['design'])
+        self.assertEqual(job.guidance, briefs.guidance('deck-outline', design=True))
+        self.assertIn('design_propose', [call[0] for call in self.slides.calls])
+
+    def test_a_tool_without_the_design_session_holds_only_a_walkthrough(self):
+        self.slides.lacking = ['design-schema-2', 'compose-review']
+        self.assertEqual(self.engine.deck_needs(fresh=True)['update'], None)
+        self.assertIsNotNone(self.engine.deck_needs()['design_update'])
+
+
 class DesignTests(DeckCase):
     """A slides tool with a design session: what a deck says is proposed with how each slide
     is drawn, the person's one decision is the tool's answer, and the sections are drawn
     from and built against what was approved. Rows V01, V02, V03, V04, V13 and V14 of the
     state-transition matrix in docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -2491,6 +2527,7 @@ class JudgedTests(DeckCase):
     and one that needs other words or another concept takes what the deck says back to the
     person. Rows V04, V08 and V09 of the state-transition matrix in
     docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -2762,6 +2799,7 @@ class AssetTests(DeckCase):
     and recorded before any section is drawn, a picture is the person's to supply on the page,
     and what is drawn is made from what each asset is now. Rows V05, V06 and V07 of the
     state-transition matrix in docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -2920,6 +2958,7 @@ class AdoptionTests(DeckCase):
     """What Harness Slides 0.14.1 lists beyond 0.14.0, used where the slides tool lists it,
     and the way before it where it does not. Each is tried both ways: `listed` is what the
     tool says it has, and a name taken out of it plays a build without that one."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -3136,6 +3175,7 @@ class CompatibleTests(DeckCase):
     matrix in docs/superpowers/plans/2026-10-14-visual-teaching-in-decks.md: a deck begun
     without a design carries on as it began, is drawn again from one only when the person
     asks, and a new deck waits for a tool that has what it needs."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def test_a_tool_without_a_design_session_puts_the_words_alone_to_the_person(self):
         root = self.begin()
@@ -3312,20 +3352,24 @@ class CompatibleTests(DeckCase):
                                'compose-review']
         needs = self.engine.deck_needs(fresh=True)
         names = [slides_tool.NAMES[name] for name in self.slides.lacking]
-        self.assertEqual(needs['lacks'], names)
+        plain = [slides_tool.NAMES['json-refusals']]
+        # Every deck needs refusals it can read; one walked through needs the design too.
+        self.assertEqual((needs['lacks'], needs['design_lacks']), (plain, names))
         for words in (*names, f'Update Harness Slides to {slides_tool.RELEASE} or newer from '
                       'Versions on the Status screen', 'A deck already begun carries on'):
-            self.assertIn(words, needs['update'])
+            self.assertIn(words, needs['design_update'])
+        self.assertIn(plain[0], needs['update'])
         self.assertEqual(needs['missing'], [], 'a deck already begun has all it needs')
         [item] = [item for item in needs['items'] if item['id'] == 'deck-slides']
         self.assertEqual((item['state'], item['fix'], item['versions'], item['facts'][1]),
                          ('problem', needs['update'], True,
                           {'label': 'What a new deck needs', 'state': 'problem',
-                           'detail': 'missing ' + ', '.join(names)}))
+                           'detail': 'missing ' + ', '.join(plain)}))
         root = self.begin()
         self.to_end(root)
         view = self.view(root)
-        self.assertEqual(view['deck_left']['says'], left(pipeline.DECK_LEFT, needs['update']))
+        self.assertEqual(view['deck_left']['says'],
+                         left(pipeline.DECK_LEFT, needs['design_update']))
         self.assertEqual(self.kinds().count('outline'), 0, 'no new deck is begun without it')
         # A tool with what a new deck needs is installed, and the person checks again.
         self.slides.lacking, self.slides.design = [], True
@@ -3907,6 +3951,7 @@ class PageTests(PageCase):
 
 class DesignPageTests(PageCase):
     """The outline gate on the page, with a design proposed beside the words."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()
@@ -3967,6 +4012,7 @@ class DesignPageTests(PageCase):
 class AssetPageTests(PageCase):
     """A deck waiting for a picture: the run lists what its design uses, and the person
     supplies the picture on the page."""
+    WALKTHROUGH = True   # its decks walk through each slide's design
 
     def setUp(self):
         super().setUp()

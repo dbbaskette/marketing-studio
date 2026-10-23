@@ -437,6 +437,12 @@ DELIVERED = {'live': 'It is presented in a session: set `delivery` to "live".',
              'reading': 'It is read on its own: set `delivery` to "reading".'}
 
 
+def walkthrough_of(session: dict) -> bool:
+    """Whether a training's new decks walk through each slide's design before they are
+    built, as the person asked on the form. Off unless asked."""
+    return (session.get('settings') or {}).get('walkthrough') is True
+
+
 def delivery_of(session: dict) -> str:
     """How a training's deck is used: 'live', presented in a session, or 'reading', read
     on its own. A training saved before this was asked keeps 'reading'."""
@@ -483,6 +489,10 @@ def check_form(sent: dict, brands=None) -> dict:
     form['delivery'] = sent.get('delivery') or 'live'
     if form['delivery'] not in workspace.DELIVERIES:
         raise WorkspaceError(workspace.NO_DELIVERY)
+    form['walkthrough'] = sent.get('walkthrough', False)
+    if form['walkthrough'] not in (True, False):
+        raise WorkspaceError('Say whether to walk through each slide\'s design with true or '
+                             'false.')
     form['source_scope'] = sent.get('source_scope') or SCOPE
     workspace.check_choice(form['source_scope'], SCOPES, 'The source scope')
     if not isinstance(sent.get('yoodli', False), bool):
@@ -575,6 +585,7 @@ def create(space: gitstate.Workspace, form: dict) -> Path:
         workspace.init(root, form['title'], form['levels'], form['brief_kind'],
                        form['deck_target'], form['brand'], form['yoodli'], form['copies'],
                        delivery=form.get('delivery') or 'live',
+                       walkthrough=bool(form.get('walkthrough')),
                        approval='page')
         sync_guidance.adopt(root)
         if form['deck_target'] is None:

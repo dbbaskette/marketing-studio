@@ -539,8 +539,9 @@ class Slides:
         return frozenset(known for capability, known in deck.KNOWS.items()
                          if self.has(capability))
 
-    def lacks(self) -> list[str]:
-        return list(self.lacking)
+    def lacks(self, design: bool = False) -> list[str]:
+        from runner import slides
+        return [name for name in self.lacking if design or name in slides.NEEDED]
 
     def reading(self, brand=None) -> dict:
         self._asked('reading')
