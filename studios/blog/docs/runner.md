@@ -189,7 +189,11 @@ them for a guide you write yourself.
 
 **Create voices for every author** is for a whole team library at once. It lists every
 author whose posts are in the library, by exact name ("Dan" and "Dan Smith" are two
-people), with their post count, up to 100 ticked in one batch. An author with two or more
+people), with their post count, up to 100 ticked in one batch. A name that could be a
+fuller one ("Dan" beside "Dan Smith", or a voice named "Dan Baskette") shows "Might be the
+same person as …": **Same person as** names that author's posts by the fuller name once you
+confirm, and **Different person** stops the suggestion. Each post's author can also be
+changed in its **Review details**. An author with two or more
 readable posts is ticked; one with fewer is listed, unticked, with the reason; one who
 already has a voice is shown as **Update** their voice and gets a new provisional
 revision of it rather than a second voice. Every ticked author is checked before anything is marked or queued, so a

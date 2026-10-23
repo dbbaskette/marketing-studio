@@ -1127,9 +1127,9 @@ async function sLibrarySelection(action,ids,author=null){
 // an author who has a voice gets a new provisional revision of it. One permission for the
 // batch queues one learning job per ticked author; the sheet then follows each job.
 function sInBatch(ident){return !!studio.voiceBatch?.jobs?.some(row=>row.job.id===ident);}
-async function sVoicesForAuthors(){
-  if(studio.voiceBatch?.jobs?.length)return sVoicesBatch();
-  const found=await sTaskRead('Create voices for every author','library-authors');if(!found)return;
+async function sVoicesForAuthors(listing=null){
+  if(!listing&&studio.voiceBatch?.jobs?.length)return sVoicesBatch();
+  const found=listing||await sTaskRead('Create voices for every author','library-authors');if(!found)return;
   // A batch names at most the server's limit: the first that many ready authors are ticked.
   const most=found.batch_limit||100,ready=found.authors.filter(row=>row.ready);
   const held={operation:operationId(),ticked:new Set(ready.slice(0,most).map(row=>row.author))};
@@ -1142,7 +1142,7 @@ async function sVoicesForAuthors(){
     const box=sNode('input','');box.type='checkbox';box.id='voices-author-'+n;box.value=row.author;box.checked=held.ticked.has(row.author);box.disabled=!row.ready;
     box.addEventListener('change',()=>{if(box.checked)held.ticked.add(row.author);else held.ticked.delete(row.author);words();});
     const label=sNode('label','check author-pick');label.htmlFor=box.id;label.append(box,sAdd(sNode('span','row-text'),sNode('strong','row-title',row.profile?'Update '+row.profile.name+'’s voice':row.author),sNode('span','row-says',row.posts+(row.posts===1?' post':' posts')+' · '+row.readable+' readable'+(row.ready?' · reads '+Math.min(row.readable,20)+', newest first':' · '+row.reason))));
-    list.append(sAdd(sNode('li','row'+(row.ready?'':' row-needs')),label));});
+    list.append(sAdd(sNode('li','row author-row'+(row.ready?'':' row-needs')),label,(row.suggestions||[]).length?sAuthorClarify(row):null));});
   words();
   const check=sNode('input');check.type='checkbox';check.id='voices-permission';const confirm=sNode('label','check');confirm.append(check,sNode('span','','I have permission to analyze this writing with my selected assistant.'));
   sAdd(form,sNode('p','','A voice for each ticked author, from up to 20 of their readable posts in the team library, newest first. Those posts become the author’s voice samples. Each voice stays provisional until you review and confirm it.'),
@@ -1153,6 +1153,17 @@ async function sVoicesForAuthors(){
   form.addEventListener('submit',async event=>{event.preventDefault();if(!held.ticked.size)return;if(!check.checked){problem.textContent='Confirm you have permission to analyze this writing before creating the voices.';return;}
     await busy(submit,'Starting…',async()=>{try{const result=await api('library-voices',{operation:held.operation,authors:[...held.ticked],confirmed:true});studio.voiceBatch=result;await sVoicesBatch();}catch(error){problem.textContent=error.message;}});});
   sOpenSheet('Create voices for every author',form);
+}
+// A name that could be someone's fuller name: the person says whether it is. Same person
+// names this author's posts by the fuller name, once confirmed; Different person stops the
+// suggestion. Nothing changes until they choose, and each post's author stays editable in
+// Review details.
+function sAuthorClarify(row){
+  const says=row.suggestions.map(other=>other.name+(other.voice?' (a voice)':' ('+other.posts+(other.posts===1?' post)':' posts)'))),problem=sNode('p','problem');problem.setAttribute('role','alert');
+  const same=other=>sButton('Same person as '+other.name,()=>sOpenSheet('Same person?',sNode('p','','Name '+other.name+' as the author of '+row.author+'’s '+row.posts+(row.posts===1?' post':' posts')+'? '+(row.posts===1?'It then counts':'They then count')+' toward '+other.name+'’s voice.'),sNode('p','quiet','Each post’s author can be changed back in its Review details on the Team library.'),problem,
+    sAdd(sNode('div','bar create-foot'),sButton('Yes, same person',async button=>busy(button,'Saving…',async()=>{try{const listing=await api('library-author-same',{author:row.author,into:other.name,expected:row.expected});sToast(row.author+'’s posts now name '+other.name+'.');await sVoicesForAuthors(listing);}catch(error){problem.textContent=error.message;}}),'filled'),sButton('Cancel',()=>sVoicesForAuthors()))));
+  const different=sButton('Different person',async button=>busy(button,'Saving…',async()=>{let listing=null;try{for(const other of row.suggestions)listing=await api('library-author-different',{author:row.author,other:other.name});await sVoicesForAuthors(listing);}catch(error){problem.textContent=error.message;}}));
+  return sAdd(sNode('div','author-clarify'),sNode('p','quiet','Might be the same person as '+(says.length<2?says.join(''):says.slice(0,-1).join(', ')+' or '+says[says.length-1])+'.'),sAdd(sNode('div','bar'),...row.suggestions.map(same),different),problem);
 }
 function sJobWords(job){if(job.applied)return 'Saved: '+job.applied.status;return {queued:'Waiting to start',working:'Working with your selected assistant',ready:'Ready for your review',failed:'Stopped: '+(job.error||'something went wrong'),cancelled:'Cancelled'}[job.status]||job.status;}
 async function sVoicesBatch(){

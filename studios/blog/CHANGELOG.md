@@ -18,6 +18,14 @@ changes for authors first, then what changes for maintainers.
   a refusal for one changes nothing. Then one learning job per author on the usual queue,
   each reviewed and confirmed as before. A learning from library items now checks the same
   before it marks any item as a sample.
+- **Is "Dan" Dan Smith?** In Create voices for every author, a name whose words all appear
+  in a fuller author name or voice ("Dan" in "Dan Smith" or "Dan Baskette") shows "Might be
+  the same person as …", even when it is too small to learn alone. **Same person as Dan
+  Smith**, once confirmed, names that author's posts Dan Smith, one reference at a time, so
+  they count toward that voice; a list that changed since it was shown is refused.
+  **Different person** is remembered and the suggestion stops. Nothing is merged without
+  the person's choice, and **Review details** now has an Author field, so any post's author
+  can be corrected or changed back.
 - **Create a voice** and **Create a style** replace Learn a voice from samples, Import a
   LinkedIn export, Add links to posts, Upload an authored sample, Learn a style from
   examples, Add links to examples and Upload an example. One sheet each, in order: the
@@ -35,7 +43,10 @@ changes for authors first, then what changes for maintainers.
   and what is in progress before the ways to start; Blogs is titled Blogs and leads with
   New blog; Settings puts writing preferences first and has no back button.
 - **For maintainers:** `GET /api/library-matching` (the catalog's filters, up to 500 ids),
-  `GET /api/library-authors` and `POST /api/library-voices` in `library_add.py`;
+  `GET /api/library-authors` (with `suggestions` and an `expected` version per author),
+  `POST /api/library-voices`, `POST /api/library-author-same` and
+  `POST /api/library-author-different` (pairs kept in `.library/author-pairs.json`) in
+  `library_add.py`; `curate` takes `author`, recorded as a curation override;
   `library-selection` accepts up to 500 items for learning. The layout rules are in
   `docs/design/golden-gate.md`.
 

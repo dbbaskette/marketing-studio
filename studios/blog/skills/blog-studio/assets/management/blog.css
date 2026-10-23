@@ -165,3 +165,7 @@
 .author-pick .row-text{display:grid;gap:.15rem}
 .more-ways .button{flex:0 0 auto}
 .settings-part{margin-top:2rem}
+/* A name that might be one person: the suggestion and its choices sit under the author's row. */
+.author-row{flex-direction:column;align-items:stretch}
+.author-clarify{display:grid;gap:.4rem;margin-left:2rem;min-width:0}
+.author-clarify .bar{gap:.4rem}

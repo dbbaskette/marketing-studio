@@ -697,13 +697,87 @@ def _author_groups(root):
     return list(groups.values()), unnamed
 
 
+def _group_expected(group):
+    """The version of an author group as a sheet shows it: its posts and their revisions."""
+    return sha(
+        encoded(
+            sorted(
+                [row['id'], row['location'], row['record'].get('revision'), group['key']]
+                for row in group['rows']
+            )
+        )
+    )
+
+
+def _pairs_path(root):
+    return blog_library.folder(root) / 'author-pairs.json'
+
+
+def _different(root):
+    """Pairs of names the person said are different people, by their name keys."""
+    path = _pairs_path(root)
+    if not path.is_file() or path.is_symlink():
+        return set()
+    try:
+        saved = studio.read_json(path)
+    except (ValueError, OSError):
+        return set()
+    return {
+        tuple(pair)
+        for pair in saved.get('different', [])
+        if isinstance(pair, list) and len(pair) == 2 and all(isinstance(v, str) for v in pair)
+    }
+
+
+def _pair(left, right):
+    return tuple(sorted((name_key(left), name_key(right))))
+
+
+def _suggestions(group, groups, voices, different):
+    """Fuller names this group's name could be: another author or a voice whose name holds
+    every word of this one. Only suggested, never merged; a pair the person called different
+    is not suggested again. "Dan Smith" suggests nothing for "Dan"; "Dan" suggests both."""
+    words = set(group['key'].split())
+    found = []
+    for other in groups:
+        key = other['key']
+        if key != group['key'] and words < set(key.split()):
+            if _pair(group['key'], key) not in different:
+                found.append({'name': other['author'], 'posts': len(other['rows']), 'voice': None})
+    known = {s['name'] for s in found} | {g['author'] for g in groups}
+    for key, voice in voices.items():
+        if key != group['key'] and words < set(key.split()) and voice['name'] not in known:
+            if _pair(group['key'], key) not in different:
+                found.append(
+                    {
+                        'name': voice['name'],
+                        'posts': 0,
+                        'voice': {k: voice.get(k) for k in ('id', 'name', 'status', 'revision')},
+                    }
+                )
+    found.sort(key=lambda s: (-s['posts'], s['voice'] is not None, s['name'].casefold()))
+    return found
+
+
+def _voices_by_key(root):
+    import article_tools
+
+    voices = {}
+    for profile in article_tools.voices(root)['profiles']:
+        if profile.get('status') != 'retired' and name_key(profile.get('name')):
+            voices.setdefault(name_key(profile['name']), profile)
+    return voices
+
+
 def authors(root):
     """Every author in the team library, for Create voices for every author: their posts,
     the readable ones (up to twenty, newest first, become the samples), the voice of the
     same name they already have, and whether a voice can be learned. Authors are grouped by
-    exact name, case and spacing aside. Retired items and posts without an author count
-    for nobody."""
+    exact name, case and spacing aside. A name that could be someone's fuller name carries
+    suggestions for the person to decide; nothing is merged without them. Retired items and
+    posts without an author count for nobody."""
     groups, unnamed = _author_groups(root)
+    voices, different = _voices_by_key(root), _different(root)
     shown = [
         {
             'author': group['author'],
@@ -719,6 +793,8 @@ def authors(root):
             else None,
             'ready': group['ready'],
             'reason': group['reason'],
+            'expected': _group_expected(group),
+            'suggestions': _suggestions(group, groups, voices, different),
         }
         for group in groups
     ]
@@ -729,6 +805,48 @@ def authors(root):
         'minimum': AUTHOR_MINIMUM,
         'batch_limit': AUTHOR_BATCH_LIMIT,
     }
+
+
+def _suggested(root, author, other):
+    """The group named `author` and the suggestion named `other`, as authors() lists them."""
+    groups, _ = _author_groups(root)
+    group = next((g for g in groups if g['key'] == name_key(author)), None)
+    if group is None:
+        raise ValueError(' '.join(str(author).split()) + ' has no posts in the team library.')
+    suggestions = _suggestions(group, groups, _voices_by_key(root), _different(root))
+    chosen = next((s for s in suggestions if name_key(s['name']) == name_key(other)), None)
+    return group, chosen
+
+
+def same_person(root, author, into, expected):
+    """Check a Same person choice: the group is as the sheet showed it, and `into` is one of
+    its suggestions. Returns the group and the name its posts will take. Changes nothing;
+    the posts are renamed one reference at a time through the curation path."""
+    from management import CurationConflict
+
+    if not all(isinstance(v, str) for v in (author, into, expected)):
+        raise ValueError('Name the author, who they are, and the version shown.')
+    group, chosen = _suggested(root, author, into)
+    if _group_expected(group) != expected:
+        raise CurationConflict(
+            'The posts by ' + group['author'] + ' changed. Reload the authors before choosing.'
+        )
+    if chosen is None:
+        raise ValueError('Choose one of the suggested names for ' + group['author'] + '.')
+    return group, chosen['name']
+
+
+def mark_different(root, author, other):
+    """Remember that two suggested names are different people, so the pair is not suggested
+    again. Nothing about the posts changes."""
+    if not isinstance(author, str) or not isinstance(other, str):
+        raise ValueError('Name the two authors.')
+    group, chosen = _suggested(root, author, other)
+    if chosen is None:
+        raise ValueError(' '.join(other.split()) + ' is not suggested for ' + group['author'] + '.')
+    pairs = _different(root) | {_pair(group['key'], chosen['name'])}
+    studio.write_json(_pairs_path(root), {'schema': 1, 'different': sorted(map(list, pairs))})
+    _pairs_path(root).chmod(0o600)
 
 
 def _learnable(texts, voice):

@@ -1039,6 +1039,142 @@ class VoicesForEveryAuthorTests(RunnerCase):
         )
 
 
+class AuthorClarifyTests(RunnerCase):
+    """Names that might be one person are suggested, never merged; the person decides."""
+
+    items = SelectionTests.items
+
+    def setUp(self):
+        super().setUp()
+        self.dan = self.items('d1.md', author='Dan', operation='d')
+        self.smith = self.items('s1.md', 's2.md', author='Dan Smith', operation='e')
+        self.file.write_text('Short direct sentences.')
+        self.command(
+            'profile',
+            'create',
+            '--name',
+            'Dan Baskette',
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'confirmed',
+        )
+
+    def groups(self):
+        return {
+            g['author']: g for g in management.view(self.root, 'library-authors', {})['authors']
+        }
+
+    def record(self, ident):
+        return studio.item(self.root, 'sources', ident)[1]
+
+    def test_a_short_name_suggests_every_fuller_name_and_voice(self):
+        groups = self.groups()
+        self.assertEqual(
+            [s['name'] for s in groups['Dan']['suggestions']], ['Dan Smith', 'Dan Baskette']
+        )
+        self.assertEqual(
+            [(s['posts'], bool(s['voice'])) for s in groups['Dan']['suggestions']],
+            [(2, False), (0, True)],
+        )
+        self.assertFalse(groups['Dan']['ready'], 'a group too small to learn alone still shows')
+        self.assertEqual(groups['Dan Smith']['suggestions'], [], 'a fuller name suggests nothing')
+        self.assertEqual(self.record(self.dan[0])['author'], 'Dan', 'a suggestion changes nothing')
+
+    def test_same_person_names_the_posts_by_the_fuller_name_explicitly(self):
+        expected = self.groups()['Dan']['expected']
+        result = management.dispatch(
+            self.root,
+            'library-author-same',
+            {'author': 'Dan', 'into': 'Dan Smith', 'expected': expected},
+        )
+        groups = {g['author']: g for g in result['authors']}
+        self.assertNotIn('Dan', groups)
+        self.assertEqual((groups['Dan Smith']['posts'], groups['Dan Smith']['ready']), (3, True))
+        record = self.record(self.dan[0])
+        self.assertEqual((record['author'], record['revision']), ('Dan Smith', 2))
+        self.assertIn('author', record['curation_overrides'])
+        self.assertTrue(
+            (self.root / 'sources' / self.dan[0] / 'revisions' / '1' / 'record.json').is_file(),
+            'the earlier author is kept in the item’s history',
+        )
+        # The single-voice path reads the corrected author too.
+        candidates = management.view(self.root, 'voices', {})['candidates']
+        self.assertIn(('d1', 'Dan Smith'), [(c['name'], c.get('author')) for c in candidates])
+
+    def test_a_voice_name_can_take_the_posts_and_other_names_are_refused(self):
+        expected = self.groups()['Dan']['expected']
+        with self.assertRaisesRegex(ValueError, 'one of the suggested'):
+            management.dispatch(
+                self.root,
+                'library-author-same',
+                {'author': 'Dan', 'into': 'Zed Ray', 'expected': expected},
+            )
+        result = management.dispatch(
+            self.root,
+            'library-author-same',
+            {'author': 'Dan', 'into': 'Dan Baskette', 'expected': expected},
+        )
+        group = {g['author']: g for g in result['authors']}['Dan Baskette']
+        self.assertEqual(group['profile']['name'], 'Dan Baskette', 'and it now meets its voice')
+
+    def test_a_stale_choice_is_refused_and_changes_nothing(self):
+        expected = self.groups()['Dan']['expected']
+        self.items('d2.md', author='Dan', operation='f')  # Another post arrives meanwhile.
+        with self.assertRaisesRegex(management.CurationConflict, 'changed'):
+            management.dispatch(
+                self.root,
+                'library-author-same',
+                {'author': 'Dan', 'into': 'Dan Smith', 'expected': expected},
+            )
+        self.assertEqual(self.record(self.dan[0])['author'], 'Dan')
+
+    def test_different_person_is_remembered_and_keeps_the_groups_apart(self):
+        result = management.dispatch(
+            self.root, 'library-author-different', {'author': 'Dan', 'other': 'Dan Smith'}
+        )
+        groups = {g['author']: g for g in result['authors']}
+        self.assertEqual([s['name'] for s in groups['Dan']['suggestions']], ['Dan Baskette'])
+        self.assertEqual(
+            [s['name'] for s in self.groups()['Dan']['suggestions']],
+            ['Dan Baskette'],
+            'the choice holds for later reads',
+        )
+        self.assertEqual(self.record(self.dan[0])['author'], 'Dan')
+        with self.assertRaisesRegex(ValueError, 'not suggested'):
+            management.dispatch(
+                self.root, 'library-author-different', {'author': 'Dan', 'other': 'Zed Ray'}
+            )
+
+    def test_review_details_edits_an_items_author_both_ways(self):
+        ident = self.dan[0]
+        curate = lambda author: management.dispatch(  # noqa: E731
+            self.root,
+            'curate',
+            {
+                'id': ident,
+                'location': 'local',
+                'expected': management.source_detail(self.root, ident)['expected'],
+                'author': author,
+            },
+        )
+        curate('Dan Smith')
+        self.assertEqual(self.record(ident)['author'], 'Dan Smith')
+        curate('Dan')
+        self.assertEqual(self.record(ident)['author'], 'Dan')
+        curate('')
+        self.assertFalse(self.record(ident).get('author'), 'an author can be cleared')
+        stale = management.source_detail(self.root, ident)['expected']
+        curate('Dan')
+        with self.assertRaises(management.CurationConflict):
+            management.dispatch(
+                self.root,
+                'curate',
+                {'id': ident, 'location': 'local', 'expected': stale, 'author': 'Dan Smith'},
+            )
+        self.assertEqual(self.record(ident)['author'], 'Dan')
+
+
 class LibraryPickTests(RunnerCase):
     """Task 6: a run reads library items with a role for this blog only."""
 

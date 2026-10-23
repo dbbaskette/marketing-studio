@@ -429,7 +429,7 @@ async function curate(item) {
   const form=element('form',undefined,'narrow'),metadata=result.record.library||{},l=element('label','Curation','field'),select=element('select',undefined,'input');select.name='curation';
   for(const state of ['active','pending','retired']){const option=element('option',state);option.value=state;option.selected=state===(metadata.curation||'active');select.append(option);}l.append(select);form.append(l);
   const fields={curation:select};
-  for(const [key,label]of [['topics','Topics (comma separated)'],['products','Products (comma separated)'],['note','Source note']]){const field=element('label',label,'field'),input=element(key==='note'?'textarea':'input',undefined,'input');input.name=key;input.value=key==='note'?(result.record.note||''):(metadata[key]||[]).join(', ');fields[key]=input;field.append(input);form.append(field);}
+  for(const [key,label]of [['author','Author (whose writing this is)'],['topics','Topics (comma separated)'],['products','Products (comma separated)'],['note','Source note']]){const field=element('label',label,'field'),input=element(key==='note'?'textarea':'input',undefined,'input');input.name=key;input.value=key==='note'?(result.record.note||''):key==='author'?(result.record.author||''):(metadata[key]||[]).join(', ');if(key==='author')input.maxLength=200;fields[key]=input;field.append(input);form.append(field);}
   const save=element('button','Save curation','button button-filled');save.type='submit';const actions=element('div',undefined,'bar form-actions');actions.append(save);form.append(actions);
   let blocked=false;
   const conflict=element('div',undefined,'curation-conflict');conflict.hidden=true;
@@ -437,7 +437,7 @@ async function curate(item) {
   conflict.append(element('p','Your proposed changes are retained. Compare the latest saved reference before deciding what to submit.'),button('Reload and compare',async()=>{
     const latest=await api('source?'+new URLSearchParams({id:result.id,location:result.location}));
     const proposed=Object.fromEntries(new FormData(form));
-    const current={curation:latest.record.library?.curation||'active',topics:(latest.record.library?.topics||[]).join(', '),products:(latest.record.library?.products||[]).join(', '),note:latest.record.note||''};
+    const current={curation:latest.record.library?.curation||'active',author:latest.record.author||'',topics:(latest.record.library?.topics||[]).join(', '),products:(latest.record.library?.products||[]).join(', '),note:latest.record.note||''};
     comparison.replaceChildren(element('h3','Latest saved values'),element('pre',JSON.stringify(current,null,2),'source-excerpt'),element('h3','Your proposed values'),element('pre',JSON.stringify(proposed,null,2),'source-excerpt'),button('Keep my proposal for resubmission',()=>{result=latest;blocked=false;save.disabled=false;conflict.hidden=true;notice('Latest version selected. Review your retained proposal, then choose Save curation to submit it.');}),button('Use latest saved values',()=>{for(const [key,value]of Object.entries(current))fields[key].value=value;result=latest;blocked=false;save.disabled=false;conflict.hidden=true;notice('Latest saved values loaded. Edit them and choose Save curation when ready.');}));
   }),comparison);
   form.addEventListener('submit',async e=>{
@@ -446,9 +446,10 @@ async function curate(item) {
       const data=Object.fromEntries(new FormData(form));
       // Compare what the form holds now with what it would show for the saved reference, in the same shape.
       const tags=text=>text.split(',').map(v=>v.trim()).filter(Boolean),library=result.record.library||{};
-      const proposed={curation:data.curation,topics:tags(data.topics),products:tags(data.products),note:data.note};
+      const proposed={curation:data.curation,author:(data.author||'').trim(),topics:tags(data.topics),products:tags(data.products),note:data.note};
       const changes=changedFields(proposed,{
         curation:['active','pending','retired'].includes(library.curation)?library.curation:'active',
+        author:(result.record.author||'').trim(),
         topics:tags((library.topics||[]).join(', ')),products:tags((library.products||[]).join(', ')),
         note:(result.record.note||'').replace(/\r\n?/g,'\n')});
       if(!Object.keys(changes).length){notice('No changes to save.');return;}

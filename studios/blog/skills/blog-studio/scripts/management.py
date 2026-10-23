@@ -1652,10 +1652,97 @@ def curation_changes(record, values):
         'topics': library.get('topics', []),
         'products': library.get('products', []),
         'note': record.get('note') or '',
+        'author': record.get('author') or '',
     }
+    if isinstance(values.get('author'), str):
+        values = {**values, 'author': values['author'].strip()}
     return {
         key: value for key, value in values.items() if key not in current or value != current[key]
     }
+
+
+def curate_source(root, adapter, route, data):
+    """One reference's curation or analysis, checked against the version the form showed
+    and, for a Team Hub reference, the current shared head."""
+    if not isinstance(data.get('expected'), str) or not re.fullmatch(
+        r'[a-f0-9]{64}', data['expected']
+    ):
+        raise CurationConflict('Reload this reference before saving curation.')
+    if adapter:
+        adapter = authorize_write(root)  # Resolve current selection under the workspace lock.
+        if not adapter or not adapter.hub.refresh().get('fresh'):
+            raise HubError(
+                'Current Hub state could not be verified. Your proposed curation is retained; check access before retrying.'
+            )
+    current = source_detail(root, data['id'], data.get('location', 'local'))
+    if current['expected'] != data['expected']:
+        raise CurationConflict(
+            'This reference changed. Reload and compare before explicitly resubmitting your proposed curation.'
+        )
+    values = {k: v for k, v in data.items() if k not in ('id', 'confirmed', 'location', 'expected')}
+    if route == 'curate':
+        values = curation_changes(current['record'], values)
+        if not values:
+            return dict(UNCHANGED, id=current['id'])  # Before any checkout, revision or share.
+    if values.get('curation') == 'retired' and data.get('confirmed') is not True:
+        raise ValueError('Confirm retirement; earlier snapshots remain in Git history.')
+    ident = current['id']
+    if current['location'] == 'hub':
+        if not adapter:
+            raise ValueError('Select a Hub.')
+        # Existing unshared local edits must be reconciled in chat, not
+        # overwritten by a form displaying the shared version.
+        for key, saved in adapter.state['items'].items():
+            if key.startswith('sources/') and saved['item'] == ident:
+                payload = adapter._payload('sources', key.split('/', 1)[1], read_only=True)[0]
+                if sha(encoded(payload)) != saved['fingerprint']:
+                    raise CurationConflict(
+                        'This reference has unshared local edits. Compare them in chat before changing the shared reference.'
+                    )
+        ident = adapter._checkout(ident)
+    if route == 'analyze':
+        return source_curator.retry(root, [ident])
+    result = share(root, 'source', blog_library.curate(root, ident, values))
+    return {**result, 'receipts': [receipt(root, 'Reference curation', result, 'source')]}
+
+
+def clarify_author(root, adapter, route, data):
+    """Create voices for every author's suggestions, decided by the person. Same person names
+    every post of one author group by a suggested fuller name, one reference at a time through
+    the curation path, after checking the group is as the sheet showed it. Different person
+    keeps the two apart and stops suggesting them."""
+    import library_add
+
+    if route == 'library-author-different':
+        if set(data) != {'author', 'other'}:
+            raise ValueError('Name the two authors.')
+        library_add.mark_different(root, data['author'], data['other'])
+        return library_add.authors(root)
+    if set(data) != {'author', 'into', 'expected'}:
+        raise ValueError('Name the author, who they are, and the version shown.')
+    group, into = library_add.same_person(root, data['author'], data['into'], data['expected'])
+    changed, receipts = 0, []
+    for row in group['rows']:
+        current = source_detail(root, row['id'], row['location'])
+        try:
+            result = curate_source(
+                root,
+                adapter,
+                'curate',
+                {
+                    'id': row['id'],
+                    'location': row['location'],
+                    'expected': current['expected'],
+                    'author': into,
+                },
+            )
+        except ValueError as error:
+            raise type(error)(
+                '%d of %d posts now name %s. %s' % (changed, len(group['rows']), into, error)
+            ) from None
+        changed += 1
+        receipts += result.get('receipts', [])
+    return {**library_add.authors(root), 'changed': changed, 'receipts': receipts}
 
 
 def _dispatch(root, route, data):
@@ -1804,60 +1891,14 @@ def _dispatch(root, route, data):
                     'topics',
                     'products',
                     'note',
+                    'author',
                 }
             )
             if set(data) - allowed:
                 raise ValueError('Unknown curation field.')
-            if not isinstance(data.get('expected'), str) or not re.fullmatch(
-                r'[a-f0-9]{64}', data['expected']
-            ):
-                raise CurationConflict('Reload this reference before saving curation.')
-            if adapter:
-                adapter = authorize_write(
-                    root
-                )  # Resolve current selection under the workspace lock.
-                if not adapter or not adapter.hub.refresh().get('fresh'):
-                    raise HubError(
-                        'Current Hub state could not be verified. Your proposed curation is retained; check access before retrying.'
-                    )
-            current = source_detail(root, data['id'], data.get('location', 'local'))
-            if current['expected'] != data['expected']:
-                raise CurationConflict(
-                    'This reference changed. Reload and compare before explicitly resubmitting your proposed curation.'
-                )
-            values = {
-                k: v
-                for k, v in data.items()
-                if k not in ('id', 'confirmed', 'location', 'expected')
-            }
-            if route == 'curate':
-                values = curation_changes(current['record'], values)
-                if not values:
-                    return dict(
-                        UNCHANGED, id=current['id']
-                    )  # Before any checkout, revision or share.
-            if values.get('curation') == 'retired' and data.get('confirmed') is not True:
-                raise ValueError('Confirm retirement; earlier snapshots remain in Git history.')
-            ident = current['id']
-            if current['location'] == 'hub':
-                if not adapter:
-                    raise ValueError('Select a Hub.')
-                # Existing unshared local edits must be reconciled in chat, not
-                # overwritten by a form displaying the shared version.
-                for key, saved in adapter.state['items'].items():
-                    if key.startswith('sources/') and saved['item'] == ident:
-                        payload = adapter._payload('sources', key.split('/', 1)[1], read_only=True)[
-                            0
-                        ]
-                        if sha(encoded(payload)) != saved['fingerprint']:
-                            raise CurationConflict(
-                                'This reference has unshared local edits. Compare them in chat before changing the shared reference.'
-                            )
-                ident = adapter._checkout(ident)
-            if route == 'analyze':
-                return source_curator.retry(root, [ident])
-            result = share(root, 'source', blog_library.curate(root, ident, values))
-            return {**result, 'receipts': [receipt(root, 'Reference curation', result, 'source')]}
+            return curate_source(root, adapter, route, data)
+        if route in ('library-author-same', 'library-author-different'):
+            return clarify_author(root, adapter, route, data)
         if route == 'memory':
             if not adapter:
                 raise ValueError('Select a Team Hub to save shared memory.')

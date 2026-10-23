@@ -51,7 +51,21 @@ the library (local and Team Hub items, retired items left out) with their post c
 readable count. Authors are grouped by their exact name, case and spacing aside: "Dan" and
 "Dan Smith" are two people, and a group is linked to an existing voice only of exactly its
 name. A batch names at most 100 authors; with more ready, the first 100 are ticked and the
-sheet says so:
+sheet says so.
+
+Fuzzy matching only suggests. When every word of one author's name appears in another
+author's name or a voice's ("Dan" in "Dan Smith" and "Dan Baskette"), the shorter name's
+row says "Might be the same person as Dan Smith (2 posts) or Dan Baskette (a voice)", even
+when it is too small to learn alone, with **Same person as …** for each and **Different
+person**. Same person asks for confirmation, then names each of that author's posts by the
+chosen name through the reference curation path (`curate` with `author`: a new source
+revision, the same lock, Team Hub and conflict rules), after checking the author's posts
+are as the sheet showed them; the sheet then regroups. Different person is kept in
+`.library/author-pairs.json` and the pair is not suggested again. No author is ever changed
+without that choice, and **Review details** gains an Author field, so a post's author can be
+changed back. Create a voice reads the corrected author like any other.
+
+The list:
 
 - an author with two or more readable posts is ticked;
 - an author with fewer than two readable posts is listed, unticked and not tickable, with

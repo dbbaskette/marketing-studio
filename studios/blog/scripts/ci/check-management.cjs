@@ -99,6 +99,7 @@ async function check(){
   await librarySelectAll();
   await voicesForEveryAuthor();
   await voicesBatchLimit();
+  await authorClarify();
   await createVoiceSources();
   await movedControls();
   await libraryPicker();
@@ -116,7 +117,7 @@ async function check(){
   const checks=['keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: Outline only, Revise or review a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','research from your documents, your sites and/or the public web: the shared list prefilled, a site for one blog checked by the server, the shared sentences, and the sites named at the research gate','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','research from your documents, your sites and/or the public web: the shared list prefilled, a site for one blog checked by the server, the shared sentences, and the sites named at the research gate','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1233,6 +1234,49 @@ async function movedControls(){
   const titles=descendants(f.get('studio-page')).filter(e=>e.className==='card-title').map(e=>e.textContent);
   assert.ok(titles.indexOf('In progress')<titles.indexOf('What would you like to do?'),titles.join('|'));
   assert.ok(titles.indexOf('What would you like to do?')<titles.indexOf('Set up before you write'));
+}
+
+// A name that might be someone's fuller name: the sheet suggests, the person decides. Same
+// person is confirmed, then renames that author's posts; Different person stops suggesting.
+// Review details edits one post's author, sending only what changed.
+async function authorClarify(){
+  const requests=[];let state='suggest';
+  const dan={author:'Dan',posts:1,readable:1,samples:[],profile:null,ready:false,reason:'Only 1 readable post; a voice needs at least 2.',expected:'v1',suggestions:[{name:'Dan Smith',posts:2,voice:null},{name:'Dan Baskette',posts:0,voice:{id:'db',name:'Dan Baskette',status:'confirmed',revision:1}}]};
+  const smith=posts=>({author:'Dan Smith',posts,readable:posts,samples:[],profile:null,ready:true,reason:'',expected:'v2',suggestions:[]});
+  const listing=()=>state==='merged'?{authors:[smith(3)],unnamed:0,minimum:2,batch_limit:100}:state==='apart'?{authors:[smith(2),{...dan,suggestions:[]}],unnamed:0,minimum:2,batch_limit:100}:{authors:[smith(2),dan],unnamed:0,minimum:2,batch_limit:100};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    if(url==='/api/library-authors')return listing();
+    if(url==='/api/library-author-same'){state='merged';return listing();}
+    if(url==='/api/library-author-different'){state='apart';return listing();}
+    if(url.startsWith('/api/source?'))return {id:'d1',location:'local',expected:'e'.repeat(64),record:{author:'Dan',library:{curation:'active',topics:[],products:[]},note:''},excerpt:'Text'};
+    if(url==='/api/curate')return {receipts:[{label:'Reference curation',message:'Saved locally.'}]};
+    return {items:[],total:0};});
+  f.loadRunner();
+  const sheet=()=>descendants(f.get('sheet')),text=()=>sheet().map(e=>e.textContent),find=label=>sheet().find(e=>e.textContent===label);
+  await f.run('sVoicesForAuthors()');
+  assert.ok(text().includes('Might be the same person as Dan Smith (2 posts) or Dan Baskette (a voice).'),text().join('|'));
+  assert.equal(sheet().find(e=>e.value==='Dan').disabled,true,'too small to learn alone, still listed');
+  assert.ok(find('Same person as Dan Smith')&&find('Same person as Dan Baskette')&&find('Different person'));
+  await find('Same person as Dan Smith').listeners.click();
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Same person?');
+  assert.equal(requests.some(r=>r.url==='/api/library-author-same'),false,'nothing changes before the confirmation');
+  assert.ok(text().some(t=>/Name Dan Smith as the author of Dan’s 1 post\?/.test(t)));
+  await find('Yes, same person').listeners.click();
+  assert.deepEqual(requests.find(r=>r.url==='/api/library-author-same').data,{author:'Dan',into:'Dan Smith',expected:'v1'});
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Create voices for every author','the sheet regroups');
+  assert.ok(text().some(t=>/^3 posts · 3 readable/.test(t)));assert.equal(sheet().some(e=>e.value==='Dan'),false,'no Dan group remains');
+  // Different person, from a fresh list.
+  state='suggest';await f.run('sVoicesForAuthors()');
+  await find('Different person').listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/library-author-different').map(r=>r.data),[{author:'Dan',other:'Dan Smith'},{author:'Dan',other:'Dan Baskette'}]);
+  assert.equal(text().some(t=>/Might be the same person/.test(t)),false,'the suggestion stops');
+  // Review details: the author is a field, sent only when it changes.
+  f.set('item',{id:'d1',location:'local',title:'d1'});await f.run('curate(item)');
+  const form=descendants(f.get('detail-content')).find(e=>e.tagName==='form');
+  const author=descendants(form).find(e=>e.name==='author');assert.equal(author.value,'Dan');
+  author.value=' Dan Smith ';await form.listeners.submit({preventDefault(){}});
+  const sent=requests.filter(r=>r.url==='/api/curate').at(-1).data;
+  assert.deepEqual([sent.author,sent.expected,'topics' in sent],['Dan Smith','e'.repeat(64),false]);
 }
 
 function pageDefinesEveryElement(){
