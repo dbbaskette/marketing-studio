@@ -1944,6 +1944,15 @@ def dispatch(root, route, data):
         # A preview stages only the selected Doc on this computer; it does not
         # publish unrelated pending team work or start a writing job.
         return _dispatch(root, route, data)
+    if route == 'research-site':
+        # A site added on a start form for one blog only: checked here, saved nowhere. The
+        # shared list is changed in Shared settings.
+        from studio_core import research_sites
+
+        if set(data) != {'site'}:
+            raise ValueError('Give one site to check.')
+        found = research_sites.site(data['site'])
+        return {'site': found, 'shown': research_sites.shown(found)}
     if route in ('brand-configure', 'brand-install'):
         import brand_skill
 

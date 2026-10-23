@@ -12,21 +12,24 @@ a paragraph or draft.
 
 For the page, run `... manage --open`. Keep that process running. The page's
 **New blog** wizard selects the brief, mode, voice (**Write as**), style (**Kind of
-post**), sources, research scope, assistant, time limit and stop. **Home** groups work needing a
+post**), sources, where research looks, assistant, time limit and stop. **Home** groups work needing a
 decision, in progress and finished; **Blogs** opens saved runs. **Settings** saves
 defaults for future page runs on this computer. It runs the assistant through
 each stage and waits for the person's decision. Opening it does not turn on reference analysis.
 
 For a conversation, gather title, audience, goal, selected sources and voice,
-research scope and requested stop. Then use:
+where research may look and requested stop. Then use:
 
 ```sh
 ... run create --title "Title" --audience "Readers" --goal "Purpose" \
-  --research supplied-only --stop package
+  --research-from documents --stop package
 ```
 
-Use `--research web-allowed` only for authorized public research, or `none` to
-omit research. `supplied-only` with no selected sources also omits it. Add `--source <id>` for each chosen source.
+`--research-from` takes any of `documents`, `sites` and `web`, comma separated: the
+selected sources, your sites (the shared list, or each `--site <https address>` for
+this blog only) and the public web. With sites and not web, pages are saved only from
+under the sites. `--research none` omits research; documents with no selected sources
+also omit it. The older `supplied-only` and `web-allowed` still work. Add `--source <id>` for each chosen source.
 Without `--profile` the settings' default voice applies, and a revise or review of a
 `--manuscript` keeps that manuscript's own voice; `--profile <id>` pins a saved voice
 and `--profile ''` writes in no particular voice. `--tone "description"` is then a
@@ -53,7 +56,7 @@ is their one line about it, `--audience` may be empty): the run starts with an
 `audience · the point it makes · Leans on <file names>` (exactly three), and submit it;
 it always waits for the person and is never approved. Then `... run choose --id <id> --expected <latest> --angle
 "<heading>" --note "..."` makes that angle the title, point and reader and starts
-the outline onward (web research first only with `--research web-allowed`); `run
+the outline onward (research first only with your sites or the public web); `run
 changes --stage angles` with their note asks for three different ones. When the person
 already knows the point, add `--point` with `--title`, `--goal` (the point) and
 `--audience`: the run starts at the outline with no angles stage, and `run choose`
@@ -159,15 +162,17 @@ the same Google review helpers as the CLI. Conflicts remain local until reconcil
 
 ## Research stops and supplied material
 
-New supplied-only runs with selected facts/material map the claims in that material
+New runs from your documents only, with selected facts/material, map the claims in that material
 instead of running research. Each claim names a source ID and an exact passage. The runner
 checks words against that source (ignoring whitespace and line breaks), allows one
 correction and stops on another failure. Later writers receive the map and keep the
 claims within what the material says. Balanced and Automatic continue to the outline;
 Step by step reviews the map. Continue without research drops this stage too.
-From-files supplied-only runs remain unchanged: their files are read at every stage.
+From-files runs from your documents only are unchanged: their files are read at every stage.
 
-Web research uses a separate tool-less plan with at most eight questions, investigated
+Research from your sites or the web searches the sites first (`site:` queries) and
+saves a page only under them unless the web is chosen; a refused page, redirects
+included, becomes a source limit naming the sites. It uses a separate tool-less plan with at most eight questions, investigated
 together and checked independently. The research review leads with the authored brief,
 checker's note, gaps, source limitations and findings mapped to questions. Report and
 evidence are folded below. Ask for changes says before sending that the full research

@@ -240,15 +240,27 @@ def read_within(response, raw, deadline):
         chunks.append(chunk)
 
 
-def fetch(url, scope, redirects=3, deadline=None):
+class Outside(ValueError):
+    """A research page outside the sites its run may use; the sentence names them."""
+
+
+def fetch(url, scope, redirects=3, deadline=None, redirected_from=None):
     """Reject private addresses and pin the actual socket, including every redirect.
 
+    `scope` is a collection's https base (a string), or a research run's
+    `research_sites.Scope`, which is asked about the first address and every redirect
+    before any lookup: with your sites only, a page off them raises Outside naming them.
     One deadline covers the whole exchange, so a slow or stalled server cannot hold the
     workspace longer than FETCH_DEADLINE seconds. Network failures become plain messages.
     """
     deadline = deadline or time.monotonic() + FETCH_DEADLINE
-    if not in_scope(url, scope):
-        raise ValueError(OUT_OF_SCOPE)
+    if isinstance(scope, str):
+        if not in_scope(url, scope):
+            raise ValueError(OUT_OF_SCOPE)
+    else:
+        refused = scope.refuse(url, redirected_from=redirected_from)
+        if refused:
+            raise Outside(refused)
     parsed = urlsplit(canonical(url))
     try:
         found = socket.getaddrinfo(parsed.hostname, 443, type=socket.SOCK_STREAM)
@@ -275,7 +287,7 @@ def fetch(url, scope, redirects=3, deadline=None):
                 raise ValueError('Too many collection redirects.')
             destination = canonical(urljoin(url, response.getheader('Location', '')))
             connection.close()
-            return fetch(destination, scope, redirects - 1, deadline)
+            return fetch(destination, scope, redirects - 1, deadline, redirected_from=url)
         if response.status != 200:
             raise ValueError(
                 'Source returned HTTP '

@@ -5,9 +5,7 @@ import json
 from pathlib import Path
 import tempfile
 import time
-from urllib.parse import urlsplit
-
-from studio_core import model_profiles, research_contract, research_view
+from studio_core import model_profiles, research_contract, research_sites, research_view
 
 
 def offered(source):
@@ -24,6 +22,24 @@ def offered(source):
 KINDS = ('facts', 'findings', 'prose')
 # The run says how long a step may take; the research's limit covers all its rounds.
 OUT_OF_TIME = 'Research ran out of the time a step may take.'
+
+
+def research_from(payload):
+    """Where this research may look: the run's saved choice, or, for a run saved before
+    the choice had three parts, its research policy (supplied-only: your documents;
+    web-allowed: your documents and the public web)."""
+    chosen = payload.get('research_from')
+    if not isinstance(chosen, dict):
+        chosen = research_sites.legacy(payload.get('research_policy'))
+    return research_sites.effective(chosen or {})
+
+
+def outside(count, listed):
+    """What the research gate says about the pages your sites kept out."""
+    named = ', '.join(research_sites.shown(site) for site in listed)
+    if count == 1:
+        return f'1 page was outside your sites ({named}) and was not saved.'
+    return f'{count} pages were outside your sites ({named}) and were not saved.'
 
 
 def grouped(case):
@@ -182,7 +198,8 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
                 }
             )
 
-        for source in payload['sources']:
+        chosen = research_from(payload)
+        for source in payload['sources'] if chosen['documents'] else ():
             if offered(source):
                 capture(
                     'sources/' + source['id'] + '.txt',
@@ -191,7 +208,9 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
                     source['name'],
                     True,
                 )
-        allowed = payload['research_policy'] == 'web-allowed'
+        # Your documents count only when there are some to read.
+        chosen = research_sites.effective(chosen, bool(sources))
+        allowed = research_sites.fetches(chosen)
         brief = run['brief']
         task = {
             'topic': payload['title'],
@@ -202,13 +221,16 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
                 'Prioritize the central argument, mechanisms and strongest objections.',
             ),
             'scope': 'Evidence, objections and qualifications for the blog goal: '
-            + (brief.get('goal') or 'explain the topic'),
+            + (brief.get('goal') or 'explain the topic')
+            + '. '
+            + research_sites.scope_text(chosen),
             'brief': brief,
             'manuscript': payload['documents'].get('manuscript'),
             'planning_document': payload['documents'].get('research-plan'),
             'requested_changes': payload.get('changes'),
             'refresh': payload.get('refresh') is True,
-            'source_mode': ('mixed' if sources else 'public') if allowed else 'selected',
+            # Pages from your sites are public captures: documents and sites are mixed.
+            'source_mode': research_sites.source_mode(chosen) if allowed else 'selected',
         }
         from blog_runner import planning_questions
 
@@ -217,11 +239,14 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
         )
         gaps = []
         if allowed:
+            searching = research_sites.guidance(chosen)
             discovery = call(
                 'discovery',
                 {'task': task},
                 'Find primary public sources for this investigation using generic '
-                'nonconfidential queries. Return content as JSON {"urls": ["https://..."]}. '
+                'nonconfidential queries. '
+                + (searching + ' ' if searching else '')
+                + 'Return content as JSON {"urls": ["https://..."]}. '
                 'At most eight URLs. No invented citations. Do not return a report.',
                 True,
             )
@@ -232,15 +257,16 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
                 or any(not isinstance(v, str) for v in urls)
             ):
                 raise ValueError('Research source discovery returned an invalid source list.')
+            # Every address and every redirect is asked whether this research may save it.
+            scope, kept_out = research_sites.Scope(chosen), 0
             for url in dict.fromkeys(urls):
                 if stop.is_set():
                     raise ValueError('Research stopped. Saved work is kept.')
                 if time.monotonic() - started >= seconds:
                     raise blog_worker.WorkerFailure(OUT_OF_TIME, 'time-limit')
                 try:
-                    parsed = urlsplit(blog_library.canonical(url))
                     content, origin, kind = blog_library.fetch(
-                        url, 'https://' + parsed.netloc + '/', deadline=started + seconds
+                        url, scope, deadline=started + seconds
                     )
                     suffix = (
                         '.html' if 'html' in kind else '.txt' if kind.startswith('text/') else ''
@@ -257,7 +283,11 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
                         False,
                     )
                 except ValueError as error:
+                    # A page off your sites is a source limit whose reason names them.
+                    kept_out += isinstance(error, blog_library.Outside)
                     gaps.append({'url': url, 'reason': str(error)})
+            if chosen['sites']:
+                tell({'outside': {'count': kept_out, 'sites': list(chosen['sites'])}})
 
         def validate_author(value, data):
             # Validate with the actual pinned helper, in a disposable case. Never

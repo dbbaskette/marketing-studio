@@ -188,8 +188,15 @@ and an existing blog keeps the revision it was started with.
 
 ## Run and review
 
-Choose selected sources only, sources plus public research, or no research.
-Selected sources only, with no sources selected, skips the research steps. Pick
+**Research it first** turns research on or off. **Research from:** ticks any of
+**your documents** (the sources you selected), **your sites** and **the public web**.
+Your sites are the list in Marketing Studio's Shared settings, a tick for each; **Add a
+site for this piece of work** checks one https address and uses it for this blog only,
+leaving the shared list as it is. The line below says it: "Research from your documents
+and 2 of your sites (blogs.vmware.com/tanzu, docs.example.com)." With nothing ticked, or
+your sites with none ticked, the form says what to choose and does not start. Your
+documents with no source selected skip the research steps. The blog keeps the exact
+sites it started with. Pick
 Codex or Claude Code, already installed and signed in, and a time limit for each
 step. The runner uses your CLI account. It does not hold an API key. It has no
 spending limit; your account's usage charges or limits still apply.
@@ -336,18 +343,26 @@ existing create/join, intake, saves, reviews and cross-clone protections.
 
 ## Research stops and supplied material
 
-New supplied-only runs with selected facts/material map the claims in that material
+New runs that research your documents only, with selected facts/material, map the claims in that material
 instead of running research. Each claim names a source ID and an exact passage. The runner
 checks words against that source (ignoring whitespace and line breaks), allows one
 correction and stops on another failure. Later writers receive the map and keep the
 claims within what the material says. Balanced and Automatic continue to the outline;
 Step by step reviews the map. Continue without research drops this stage too.
-From-files supplied-only runs remain unchanged: their files are read at every stage.
+From-files runs with your documents only remain unchanged: their files are read at every stage.
 
-Web research uses a separate tool-less plan with at most eight questions, investigated
+Research from your sites or the public web uses a separate tool-less plan with at most eight questions, investigated
 together and checked independently. The research review leads with the authored brief,
 checker's note, gaps, source limitations and findings mapped to questions. Report and
 evidence are folded below. Ask for changes says before sending that the full research
 runs again, what its last try recorded and which saved later stages it will make again.
 Home keeps the saved research default, except Explore ideas, Revise and Review, which
-start with none. Saved older runs continue through their original research pipeline.
+start with none. Saved older runs continue through their original research pipeline:
+supplied-only reads as your documents, web-allowed as your documents and the public web.
+
+Source discovery searches your sites first, with `site:` queries, and uses the wider web
+only for gaps when the public web is ticked too. Every page and every redirect is checked
+before it is saved: with your sites and not the public web, only pages under a listed
+site (its own host, its path or one below it) are saved, and the rest become source limits
+that name the sites. Private and local addresses are refused whatever is ticked. The
+research review and a refusal say how many pages were outside your sites.

@@ -16,7 +16,14 @@ import studio
 import blog_worker
 import editorial
 import claims_map
-from studio_core import model_profiles, review_policy, research_contract, research_view, stops
+from studio_core import (
+    model_profiles,
+    research_contract,
+    research_sites,
+    research_view,
+    review_policy,
+    stops,
+)
 from studio_core.preferences import ready as shared_ready
 
 APPLY_REQUEST = (
@@ -90,7 +97,9 @@ ENGINES = {}
 DEFAULTS = {
     'engine': 'codex',
     'seconds': 600,
-    'research': 'supplied-only',
+    # Where research looks for a new blog: your documents, your sites (the shared list) and
+    # the public web. None ticked is no research.
+    'research': {'documents': True, 'sites': False, 'web': False},
     'stop': 'package',
     'tone': 'Clear, conversational and specific',
     'author': '',
@@ -204,6 +213,18 @@ def fitted(said, then='', limit=500):
     if len(said) > room:
         said = said[: max(0, room - 1)].rstrip() + '…'
     return (said + ' ' + then).strip() if then else said
+
+
+def outside_words(outside):
+    """'2 pages were outside your sites (...) and were not saved.', or None."""
+    import synthesis_research
+
+    if not isinstance(outside, dict) or type(outside.get('count')) is not int:
+        return None
+    listed = [site for site in outside.get('sites') or () if isinstance(site, str)]
+    if outside['count'] < 1 or not listed:
+        return None
+    return synthesis_research.outside(outside['count'], listed)
 
 
 def research_refusal(refusal, case):
@@ -332,6 +353,42 @@ def research_kept_words(kept, refused):
     return ''
 
 
+RESEARCH_DEFAULT = (
+    'Choose where research may look for new blogs: your documents, your sites and/or the '
+    'public web, or none of them for no research.'
+)
+# The words research used before it had three parts, for a writing default saved then.
+OLD_RESEARCH = ('none', 'supplied-only', 'web-allowed')
+
+
+def research_default(value):
+    """The writing default for research: whether a new blog researches your documents,
+    your sites and the public web. Older words read as they were meant."""
+    if value in OLD_RESEARCH:
+        found = research_sites.legacy(value) or {}
+        return {
+            'documents': bool(found.get('documents')),
+            'sites': False,
+            'web': bool(found.get('web')),
+        }
+    if (
+        not isinstance(value, dict)
+        or set(value) != {'documents', 'sites', 'web'}
+        or any(type(member) is not bool for member in value.values())
+    ):
+        raise ValueError(RESEARCH_DEFAULT)
+    return dict(value)
+
+
+def research_words():
+    """The sentences a start form says when its research choice is incomplete."""
+    return {
+        'empty': research_sites.EMPTY,
+        'no_documents': research_sites.NO_DOCUMENTS,
+        'no_sites': research_sites.NO_SITES,
+    }
+
+
 def settings(root, data=None):
     """Shared settings come only from studios config; writing limits stay local."""
     import studios_config
@@ -346,6 +403,10 @@ def settings(root, data=None):
         for key, value in saved.get('defaults', {}).items()
         if key in DEFAULTS and key not in ('engine', 'author')
     }
+    try:
+        private['research'] = research_default(private.get('research', DEFAULTS['research']))
+    except ValueError:
+        private['research'] = dict(DEFAULTS['research'])
     base = {**DEFAULTS, **private}
     agent = shared.get('assistant', {}).get('agent')
     name = shared.get('person', {}).get('name')
@@ -395,12 +456,9 @@ def settings(root, data=None):
             raise ValueError('Reload the displayed shared settings before saving.')
         if set(data) != set(DEFAULTS):
             raise ValueError('Save the displayed writing settings only.')
-        if data['engine'] not in ('codex', 'claude') or data['research'] not in (
-            'none',
-            'supplied-only',
-            'web-allowed',
-        ):
-            raise ValueError('Choose a listed assistant and research scope.')
+        if data['engine'] not in ('codex', 'claude'):
+            raise ValueError('Choose a listed assistant.')
+        data['research'] = research_default(data['research'])
         if data['stop'] not in ('outline', 'draft', 'review', 'package'):
             raise ValueError('Choose a listed stop point.')
         if type(data['seconds']) is not int or not 30 <= data['seconds'] <= 3600:
@@ -448,6 +506,10 @@ def settings(root, data=None):
         'shared_problem': shared_problem,
         'migration_notice': migration_notice,
         'workspace': str(root),
+        # Your sites: the shared list, edited in Shared settings. A start form offers it,
+        # and a site added there is for that blog only.
+        'research_sites': research_sites.defaults(shared),
+        'research_words': research_words(),
     }
 
 
@@ -603,6 +665,10 @@ def inputs(root, record, run):
     }
     if examples:
         payload['examples'] = examples  # Only when there are any, so saved pins hold.
+    if record.get('research_from') is not None:
+        # Where research may look, with the sites this blog pinned. A run saved before the
+        # choice had three parts has none, so its pins hold.
+        payload['research_from'] = record['research_from']
     if run.get('brand'):
         payload['brand'] = run['brand']
     if record.get('style'):
@@ -916,6 +982,7 @@ def survey(root, ident, listing=False):
                 ).encode()
             )
         )
+    where = research_from(record, run)
     return {
         'id': ident,
         'title': record['title'],
@@ -961,6 +1028,9 @@ def survey(root, ident, listing=False):
         'research_price': research_price(root, directory, run),
         # When and where the person continued without research, for chat and the page.
         'research_skipped': run.get('research_skipped'),
+        # Where its research may look, with the sites it pinned, and that said in words.
+        'research_from': where,
+        'research_says': research_says(where),
         # Whether Finish has a draft to keep in the team library (see keep_finished).
         'keeps_draft': None if listing else has_draft(directory, run),
         # What a kept research draft must still match: the research stage's input pin and
@@ -1045,6 +1115,47 @@ def research_scope(research, sources):
     return 'none' if research == 'supplied-only' and not sources else research
 
 
+def research_from(record, run):
+    """Where this blog's research may look: {'documents', 'sites', 'web'}, or None for no
+    research. A run saved before the choice had three parts reads its research policy:
+    supplied-only is your documents, web-allowed your documents and the public web."""
+    if run.get('research_skipped'):
+        return None
+    if 'research_from' in record:
+        value = record['research_from']
+        return research_sites.effective(value) if isinstance(value, dict) else None
+    stages = set(run.get('pipeline') or ())
+    if (run.get('after_angles') or {}).get('research') == 'web-allowed':
+        stages.add('research')
+    if not stages & set(RESEARCH_STAGES) and run.get('mode') != 'from-files':
+        return None
+    return research_sites.legacy(record.get('research_policy'))
+
+
+def research_says(value):
+    """'Research from your documents and 2 of your sites (...).', or 'No research.'"""
+    return 'Research ' + research_sites.summary(value) + '.' if value else 'No research.'
+
+
+def chosen_research(data, mode):
+    """(research, chosen): the research policy word this blog starts with, and where its
+    research may look in the shared shape before documents are counted, or None for no
+    research. A form sends research_from; the older research words are still read."""
+    if 'research_from' in data:
+        if 'research' in data:
+            raise ValueError('Choose where research may look, or no research, not both.')
+        chosen = research_sites.choice(data['research_from'])
+        return ('web-allowed' if research_sites.fetches(chosen) else 'supplied-only'), chosen
+    research = data.get(
+        'research', 'none' if mode in ('revise', 'review', 'ideas') else 'supplied-only'
+    )
+    if research not in OLD_RESEARCH:
+        raise ValueError('Choose supplied sources, public research, or no research.')
+    if mode == 'from-files' and research == 'none':
+        research = 'supplied-only'  # The files are the sources; the web is the only option.
+    return research, research_sites.legacy(research)
+
+
 def create(root, data, approval='conversation'):
     data = dict(data)
     defaults = settings(root)['defaults']
@@ -1081,6 +1192,7 @@ def create(root, data, approval='conversation'):
         'review_seen',
         'review_default',
         'length',
+        'research_from',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
@@ -1128,13 +1240,7 @@ def create(root, data, approval='conversation'):
     seconds = data.get('seconds', 600)
     if type(seconds) is not int or not 30 <= seconds <= 3600:
         raise ValueError('Choose a step time limit between 30 and 3600 seconds.')
-    research = data.get(
-        'research', 'none' if mode in ('revise', 'review', 'ideas') else 'supplied-only'
-    )
-    if research not in ('supplied-only', 'web-allowed', 'none'):
-        raise ValueError('Choose supplied sources, public research, or no research.')
-    if mode == 'from-files' and research == 'none':
-        research = 'supplied-only'  # The files are the sources; the web is the only option.
+    research, chosen = chosen_research(data, mode)
     stop = data.get('stop', 'package')
     if mode in ('outline', 'ideas'):
         stop = 'outline'
@@ -1263,10 +1369,27 @@ def create(root, data, approval='conversation'):
     if style:
         record['style'] = studio.style_check(root, style)
     record['research_policy'] = 'supplied-only' if research == 'none' else research
-    selected = record['sources']
-    if research == 'supplied-only' and not from_files:
-        selected = claims_map.material(inputs(root, record, {'brief': brief})['sources'])
-    research = research_scope(research, selected)
+    record.pop('research_from', None)
+    # Your documents count only when there are some: the files, or readable selected facts.
+    given = from_files or bool(
+        chosen
+        and chosen['documents']
+        and claims_map.material(inputs(root, record, {'brief': brief})['sources'])
+    )
+    found = research_sites.effective(chosen, given) if chosen else None
+    if found and not (found['documents'] or found['sites'] or found['web']):
+        found = None  # Only your documents, and none were given: no research, as before.
+    research = (
+        'none'
+        if found is None
+        else 'web-allowed'
+        if research_sites.fetches(found)
+        else 'supplied-only'
+    )
+    record['research_policy'] = 'supplied-only' if research == 'none' else research
+    # The run's choice, with the exact list of sites it uses: a later change to the shared
+    # list never changes a blog that has started.
+    record['research_from'] = found
     if from_files and research == 'supplied-only':
         research = 'none'  # The files are read at every step; only the web adds research stages.
     pipeline = (
@@ -1767,6 +1890,7 @@ def job(root, ident):
     payload.setdefault('style', None)
     if run.get('research_skipped'):
         payload['research_policy'] = 'none'  # The job payload is not hashed; pins hold.
+        payload.pop('research_from', None)
     evidence = payload['sources']  # What the carried-over check may still allow below.
     # The package works from the saved writing, and only evidence checks review against
     # sources. inputs() above still refuses a changed source pin for every step.
@@ -2045,6 +2169,9 @@ class Engine:
                 research = state.setdefault('research', {})
                 if 'job' in event:
                     research['jobs'] = (research.get('jobs') or [])[-59:] + [event['job']]
+                elif 'outside' in event:
+                    # How many found pages your sites kept out of this attempt, and which.
+                    research['outside'] = event['outside']
                 else:
                     research.update(round=event.get('round'), phase=event.get('phase'))
                 self.keep_local(ident, state)
@@ -2124,6 +2251,8 @@ class Engine:
                 'round': saved.get('round') if working else None,
                 'phase': saved.get('phase') if working else None,
                 'last': research_cost(saved.get('jobs')),
+                # Pages your sites kept out of the last attempt, named for the gate.
+                'outside': outside_words(saved.get('outside')),
             }
         return {
             **{key: value for key, value in found.items() if key != 'research_tie'},
@@ -3133,7 +3262,22 @@ def add_parser(groups):
     ):
         create_cmd.add_argument('--' + name, required=name in ('audience', 'goal'))
     create_cmd.add_argument(
-        '--research', choices=('none', 'supplied-only', 'web-allowed'), default=None
+        '--research',
+        choices=OLD_RESEARCH,
+        default=None,
+        help='Older words: none, supplied-only (your documents) or web-allowed (your '
+        'documents and the public web)',
+    )
+    create_cmd.add_argument(
+        '--research-from',
+        default=None,
+        help='Where research may look: documents, sites and/or web, comma separated',
+    )
+    create_cmd.add_argument(
+        '--site',
+        action='append',
+        default=[],
+        help='A site for this blog only (repeatable); with sites, replaces the shared list',
     )
     create_cmd.add_argument(
         '--stop', choices=('outline', 'draft', 'review', 'package'), default='package'
@@ -3186,6 +3330,24 @@ def add_parser(groups):
             cmd.add_argument('--stage', choices=tuple(STAGES))
 
 
+def research_from_words(words, sites):
+    """--research-from documents,sites,web and --site: the shared shape. Sites are the
+    shared list unless sites are given for this blog."""
+    import studios_config
+
+    named = [word.strip() for word in words.split(',') if word.strip()]
+    if not named or set(named) - {'documents', 'sites', 'web'}:
+        raise ValueError('Give --research-from as documents, sites or web, comma separated.')
+    if sites and 'sites' not in named:
+        named.append('sites')
+    listed = []
+    if 'sites' in named:
+        listed = list(sites) or research_sites.defaults(studios_config.read()[0])
+        if not listed:
+            raise ValueError(research_sites.NO_SITES)
+    return {'documents': 'documents' in named, 'sites': listed, 'web': 'web' in named}
+
+
 def command(root, args):
     if args.action == 'list':
         return catalog(root)
@@ -3196,10 +3358,25 @@ def command(root, args):
             data = {
                 k: v
                 for k, v in vars(args).items()
-                if k not in ('root', 'group', 'action', 'source', 'example', 'messaging', 'compact')
+                if k
+                not in (
+                    'root',
+                    'group',
+                    'action',
+                    'source',
+                    'example',
+                    'messaging',
+                    'compact',
+                    'research_from',
+                    'site',
+                )
                 and v is not None
             }
             data['sources'] = args.source
+            if args.research_from is not None or args.site:
+                data['research_from'] = research_from_words(
+                    args.research_from or 'sites', args.site
+                )
             library = [{'id': ident, 'role': 'example'} for ident in args.example]
             library += [{'id': ident, 'role': 'messaging'} for ident in args.messaging]
             if library:
