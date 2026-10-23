@@ -13,7 +13,7 @@ specific delivery.
 | A supplied outline | Home → Use my outline | Paste the outline; headings and order guide drafting |
 | An unclear angle | Home → Explore ideas | Read three angles, then choose Develop into a blog |
 | An outline to develop | Outline only → Develop into a blog | State which argument or structure to develop |
-| A saved or uploaded draft | Home → Polish a document → Paste text or Upload a file, or Your blogs → Continue editing | Choose the precise editing scope |
+| A saved or uploaded draft | Home → Polish a document → Paste text or Upload a file, or Blogs → Continue editing | Choose the precise editing scope |
 | Someone else's Google Doc | Home → Polish a document → Google Doc → Read Google Doc → Open for editing | Edit locally or select a focused review |
 
 The brief's audience and purpose matter for technical/product marketing: a

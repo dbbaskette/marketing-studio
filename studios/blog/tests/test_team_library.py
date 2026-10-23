@@ -848,12 +848,19 @@ class VoicesForEveryAuthorTests(RunnerCase):
         self.items('solo.md', author='Jordan Lee', operation='c')
         self.file.write_text('Short direct sentences.')
         existing = self.command(
-            'profile', 'create', '--name', 'Sam Rivera', '--guide-file', str(self.file),
-            '--status', 'confirmed',
+            'profile',
+            'create',
+            '--name',
+            'Sam Rivera',
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'confirmed',
         )
-        listed = {row['author']: row for row in management.view(self.root, 'library-authors', {})[
-            'authors'
-        ]}
+        listed = {
+            row['author']: row
+            for row in management.view(self.root, 'library-authors', {})['authors']
+        }
         self.assertEqual(listed['Sam Rivera']['profile']['id'], existing['id'])
         create = lambda **data: management.dispatch(self.root, 'library-voices', data)  # noqa: E731
         before = self.jobs()
@@ -864,7 +871,8 @@ class VoicesForEveryAuthorTests(RunnerCase):
         self.assertEqual(self.jobs(), before, 'a refusal queues nothing')
         for ident in avery:
             self.assertNotIn(
-                'voice-sample', studio.item(self.root, 'sources', ident)[1]['purposes'],
+                'voice-sample',
+                studio.item(self.root, 'sources', ident)[1]['purposes'],
                 'and marks nothing',
             )
         result = create(operation='a' * 32, authors=['Avery Quinn', 'Sam Rivera'], confirmed=True)

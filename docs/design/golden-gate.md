@@ -48,6 +48,24 @@ synthetic in-memory data. It shares this visual direction; its profile routing,
 global limits and override interactions do not imply those pending backend
 features are already implemented.
 
+## Layout rules
+
+These rules put each screen in the order a person works. Blog Studio follows them; apply
+the same rules to Presentation Studio, Training Studio and Marketing Studio.
+
+| Part | Rule |
+| --- | --- |
+| Toolbar | The screen's title (and Back only on a screen reached from another screen, never on a sidebar screen), then at most one filled primary action, then quiet secondary actions. A screen-specific action that is not the primary and has a long name goes under the lede instead. |
+| Page header | One sentence in `.lede` saying what the screen is for, then any view-specific secondary actions in a `.bar` beside it. No buttons in a page heading block otherwise. |
+| Order | What needs the person first, then work in progress, then ways to start something new, then setup, then finished or archived work. A form runs in the order it is filled; its submit sits at its end. |
+| Filters | One row: search first and widest, then choice filters of equal share, then a plain Search button. Rarely used filters go under a **More filters** disclosure. On a phone only search shows, with a **Filters** button that opens the rest and counts those set. Filters apply on change. |
+| Selection | A "Select all on this page" check sits on the list heading. A selection bar appears only while something is ticked: the count and how many are out of view, Select all on this page, Select all N matching (through the server, with the same filters), Clear, then the actions with the main one filled. It uses the toolbar material (`.glass`), stays in view below the toolbar on a desktop and sits above the tab bar on a phone. Ticks survive paging and filter changes; say so. |
+| Lists | Objects a person opens are opaque cards (`.card`, `.grid`); records compared by columns are a quiet `.table` with one action per row, which becomes a card per row on a phone with its title and action unlabelled. |
+| Sheets | The only transient material. A sheet that makes something runs in numbered steps (`1. Name`, `2. Add`, `3. Choose`), each separated by a hairline, and ends with its submit and Cancel together. Sources that open their own sheet return to the step they came from with what they added. |
+| Spacing | Cards and sections `1.1rem` apart; a step or field group `0.6rem` inside; one heading level per card (`.card-title`), `.sheet-part` for a section inside a sheet. |
+| Phone | Toolbar actions wrap under the title; long labels wrap inside their button; every control is at least 44px tall; fixed bars sit above the tab bar and the page leaves room for them. |
+| Glass | Sidebar, toolbar, sheets, selection bars and toasts only. Forms, lists, documents and reviews stay opaque. |
+
 ## Shared components and page stylesheets
 
 `ui-kit/style.css` holds every token, the shell and the controls used by Marketing Studio,

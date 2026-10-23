@@ -33,10 +33,11 @@ shaped, learn a [style](workspace/styles.md) from examples by anyone and keep it
 from the voice; a blog takes one of each, and the page offers them as **Write as** and
 **Kind of post**. Links to public posts arrive through `library voice-links` (add
 `--purpose style-sample` for a style, which skips the byline check) or the page's
-**Tools → Voices and styles → Add links to posts**. A LinkedIn export arrives through
+**Voices → Create a voice → Add links to posts**. A LinkedIn export arrives through
 the page's **Import a LinkedIn export** (the `upload` route), as `author-background` and
 `voice-sample` sources by the person it names. A post kept from another byline keeps
-its published byline in the library.
+its published byline in the library. **Create voices for every author** (`library-voices`)
+queues one learning per library author with two readable posts, after one permission.
 
 For a list of an author's published posts (a `.txt` file or pasted links, one per
 line; `#` comments and blanks ignored), confirm whose posts they are, then run

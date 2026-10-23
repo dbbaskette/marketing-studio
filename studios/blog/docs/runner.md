@@ -133,8 +133,8 @@ data folder. Only the selected contract travels with a blog.
 A **voice** is how one person sounds; a **style** is the shape of a kind of writing,
 such as a product announcement or a how-to. A blog takes one of each: the style decides
 the structure, the voice decides the wording. In **New blog** they are **Write as** and
-**Kind of post**. Open **Tools → Voices and styles** from a blog, or from **Library and
-team tools** and **Settings**.
+**Kind of post**. **Voices** in the sidebar opens the Voices and styles screen; from a
+blog, **Tools → Voices and styles** opens the same list where a voice can be applied.
 
 **Write as** offers your default voice, another saved voice, no particular voice (the
 tone you describe), or **Learn a new voice…**. A manuscript you revise or review keeps its
@@ -154,14 +154,18 @@ release notes and changelog, technical deep dive, how-to and tutorial, point of 
 customer story, comparison and evaluation guide, and postmortem and lessons learned.
 They are confirmed and ready to choose from the start. A starter is copied into your
 workspace only when you edit it, retire it or use it for a blog; you can also export
-it. **Learn a style from examples** reads examples of a kind of writing by anyone and
-proposes a guide, which stays provisional until you confirm it.
+it. **Create a style** reads examples of a kind of writing by anyone and proposes a
+guide, which stays provisional until you confirm it.
 
-Voices are learned from writing the author wrote. Bring samples in four ways:
+There are two ways to make voices.
 
-- **Upload an authored sample**, naming the author.
-- **Use as a sample.** A source already in your reference library becomes a voice
-  sample, with the author named; **Use as an example** does the same for a style.
+**Create a voice** makes one author's voice in one sheet, in order: name the author, add
+their writing, tick up to twenty samples, confirm you may analyze them, and build.
+Everything you add lands in the same list of samples, ticked, from any of:
+
+- **Upload their posts**: several files at once, each saved as that author's sample.
+- **Posts already in the library**, narrowed to this author and to posts with no
+  author; **Use as a sample** makes one a voice sample, with the author named.
 - **Import a LinkedIn export.** On LinkedIn, open Settings & Privacy, Data privacy,
   then Get a copy of your data; choose Profile and Articles and wait for the email.
   Choose the downloaded zip in the sheet. Only `Profile.csv` and the articles are
@@ -178,9 +182,20 @@ Voices are learned from writing the author wrote. Bring samples in four ways:
   Failed links can be tried again without fetching the rest. LinkedIn pages cannot be
   read this way; use the export.
 
-**Add links to examples** does the same for a style, without the byline check. From a
-terminal, `library voice-links` does the same work; see
-[commands](commands.md).
+**Create a style** has the same shape, with **Add links to examples** in place of the
+byline check. From a terminal, `library voice-links` does the same work; see
+[commands](commands.md). **Write a voice guide** and **Write a style guide** stay beside
+them for a guide you write yourself.
+
+**Create voices for every author** is for a whole team library at once. It lists every
+author whose posts are in the library, with their post count. An author with two or more
+readable posts is ticked; one with fewer is listed, unticked, with the reason; one who
+already has a voice is shown as **Update** their voice and gets a new provisional
+revision of it rather than a second voice. One permission confirms the batch, and one
+learning job per ticked author joins the queue, each reading up to twenty of the
+author's posts, newest first, which then become their voice samples. The sheet follows
+each job; **Review** opens a ready voice to save as provisional or confirm. It is offered
+on the Voices screen, the Team library and the result of **Add to library**.
 
 Every sample is a source in your reference library, so it follows the same sharing rules
 as any other source. Learned voices and styles stay provisional until you confirm them,
@@ -247,7 +262,25 @@ sheet; **Ask for changes** lets you select an earlier stage. A finished or
 paused run returns to **Resume** when you request a revision. A changed version
 stays separate from the document you are reading until you choose to reload it.
 The editorial pipeline, library, findings and memory tools remain available under
-**Editorial tools** on Blogs.
+**Library and team tools** on Blogs.
+
+## The Team library
+
+**Blogs → Library and team tools → Team library** lists every item your team writes
+from. Its toolbar holds one action, **Add to library**: files, a text file of links or
+pasted links, and a Google Doc, with each post's text, title, author and date read and
+kept. **Each post's own author** is the default, read from each page's byline; one typed
+author and no author remain choices. Under **More ways to add**, **Import a blog or site**
+previews a whole folder, website, feed, sitemap or export, and **Upload one file**
+summarizes and tags a file or starts an editable blog from it.
+
+Filters sit in one row (search, role, kind of post, author, status), with the collection
+under **More filters**; on a phone, **Filters** opens them. Tick rows, or **Select all on
+this page**; the selection bar then appears with **Select all N matching**, which ticks
+every item the filters match, through the server. Ticks stay as you page and change the
+filters, and the bar says how many are out of view. The bar's actions learn a style or a
+voice from the ticked items (up to twenty are read) or start a blog with them as
+examples (up to fifty). **Clear** empties the selection.
 
 Assistant notes are its judgment, not proof of completed checks. Public source
 links and quoted claims need review: the browser runner does not independently

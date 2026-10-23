@@ -44,8 +44,8 @@ buttons: import a whole blog, site, feed, sitemap or export (the existing import
 which replaces "Import old blogs"), and upload one file to summarize and tag it or to start
 an editable blog from it (the existing upload dialog, which replaces "Upload").
 
-**Create voices for every author** is a new action, offered on the Team library toolbar, on
-the Voices screen, and on the result of an Add to library. Its sheet lists every author in
+**Create voices for every author** is a new action, offered under the Team library's lede,
+on the Voices screen, and on the result of an Add to library. Its sheet lists every author in
 the library (local and Team Hub items, retired items left out, authors folded with the same
 name rules as the add's author groups) with their post count and readable count:
 
@@ -112,18 +112,19 @@ and the list.
 | --- | --- |
 | All blogs | New blog |
 | Review findings | none |
-| Team library | Add to library; secondary: Create voices for every author |
+| Team library | Add to library (Create voices for every author sits under the lede) |
 | Team memory | Add memory |
 
 Team library filter row: Search, Role, Kind of post, Author, Status, then Search (a plain
-button). "More filters" holds Collection ID. The list is a quiet table: the tick, the
+button). "More filters" holds Collection ID. On a phone only Search shows, with a Filters
+button that opens the rest. The list is a quiet table: the tick, the
 title (with the original post's link), author, role and kind, status, and one action
 (Review details). At phone width each row becomes a card.
 
 ### Other screens
 
-- **Home**: Needs you, In progress, What would you like to do?, Set up before you write,
-  Saved drafts, Finished drafts. The toolbar keeps one primary (New blog, or Review when
+- **Home**: Needs you, In progress, Saved drafts, What would you like to do?, Set up
+  before you write, Finished drafts. The toolbar keeps one primary (New blog, or Review when
   something waits).
 - **Blogs**: titled "Blogs" like its navigation item; a lede; primary New blog;
   secondary Library and team tools.
@@ -132,9 +133,10 @@ title (with the original post's link), author, role and kind, status, and one ac
   Styles, and Every author in the team library (Create voices for every author). The same
   content still opens as a sheet from a blog's Tools, where a voice can be applied to that
   blog.
-- **Settings**: writing preferences first, then workspace and step time limit, with Save
-  at the end of that form; then the other settings: Voices and styles (opens the screen),
-  Brand settings, Team sharing.
+- **Settings**: shared settings and where new work stops, then writing preferences, step
+  time limit and workspace, with Save at the end of that form; then "Elsewhere in Blog
+  Studio": Voices and styles (opens the screen), Brand settings, Team sharing. Settings is a
+  sidebar screen, so it has no Back button.
 - **Status** and **Settings**: Team sharing's card offers Refresh Hub when a Hub can be
   refreshed (it sat in the Team library header).
 - The run screen, the gate, the wizard and the files screen already follow the rules (one

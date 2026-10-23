@@ -66,7 +66,7 @@ collections, candidate lessons and conflicted memories have read-only details
 with focused continuation. Never convert them via the generic note editor.
 An access observation is informational, not a reusable write authorization.
 
-Reference library → Import old blogs brings in a collection. Folder and JSON-export
+Team library → Add to library → Import a blog or site brings in a collection. Folder and JSON-export
 pickers stage only selected files locally (500 files / 10 MiB total). Website,
 feed, sitemap and explicit links use approved HTTPS post scopes. Preview precedes
 explicit 25-post import batches; saved checkpoints survive desk restarts, retries
