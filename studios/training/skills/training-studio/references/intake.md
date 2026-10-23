@@ -15,7 +15,7 @@ In a single message, ask only for what the user has not already said. Offer a de
 | Brief kind | `product` for one technology or product; `competitive` for a comparison, with both sides named |
 | Audience | Their role and what they already know. Never infer an audience from a product name |
 | Purpose | Field enablement, technical upskilling or general knowledge |
-| Source scope | Public web, supplied documents only, or both |
+| Source scope | Any of: supplied documents, their sites (base URLs research keeps to), the public web |
 | Time limit or size | Optional: "30 minutes", "one lesson", "a full course" |
 | Deck target | Google Slides or PowerPoint, and any brand |
 | Stages | All by default. Ask only if they hinted at wanting fewer |
@@ -33,7 +33,7 @@ List the files, ignoring dot-directories.
 ## Record it
 
 1. `training.py init --title "<title>"`, adding `--levels 101 301`, `--brief-kind competitive`, `--deck-target pptx` or `google`, `--delivery reading` for a deck read on its own (a talk, `live`, is the default), `--brand "<brand>"`, `--yoodli` and `--copies google word` as they apply. If it refuses, show the user why and stop.
-2. Write `intake.md` with these `##` headings and nothing else: Topic, Levels, Brief, Audience, Purpose, Source scope, Time limit. Settings such as the deck target stay out of it, so changing them later does not mark the research stale.
+2. Write `intake.md` with these `##` headings and nothing else: Topic, Levels, Brief, Audience, Purpose, Source scope, Time limit. Under Source scope, name sites on a line `Sites: host/path, host/path`. Settings such as the deck target stay out of it, so changing them later does not mark the research stale.
 3. `training.py save intake --built`, then `training.py approve intake`. The user's answers are the approval for this stage, and the training moves on to `research-plan`.
 4. For each stage they do not want: `training.py skip <stage> --reason "<their words>"`.
 5. If they chose the page, `training.py checkpoint --approval page`, last of all: from then on only the page skips or approves.

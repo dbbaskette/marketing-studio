@@ -30,7 +30,7 @@ Write `.training-studio/research-plan.json` in the format `harness-research` acc
 ```
 
 - **`purpose`** is always `planning`. It is a `harness-research` field, not the training's purpose.
-- **`scope`** is `supplied-only` when intake allows supplied documents only, and `public-web` otherwise.
+- **`scope`** is `supplied-only` when intake allows supplied documents only, and `public-web` otherwise, sites included.
 - **`sources`** has one entry per selected document, as `harness-research` defines them, with paths relative to the training directory.
 - **`items`** holds 1 to 8 questions for synthesis; a saved legacy queue allows 30. Each `id` is lowercase letters, digits and hyphens. The blueprint and the brief cite these IDs, so name each for its subject: `instance-min`, not `q7`.
 - **`public_query`** uses non-confidential public terms only, and is `null` for supplied-only research.

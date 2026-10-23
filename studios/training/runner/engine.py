@@ -200,7 +200,7 @@ from pathlib import Path, PurePosixPath
 import runner  # noqa: F401  puts the core on the import path
 import computer
 import home
-from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, stops
+from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, research_sites, stops
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -222,6 +222,7 @@ RECORD = f'{workspace.STATE_DIR}/run.json'
 IN_HAND = f'{workspace.STATE_DIR}/step.lock'
 AT_ONCE = 3             # research questions worked on at the same time
 LINES = 6               # the last things a worker did that the page is shown
+OUTSIDE = 50            # addresses refused outside your sites that a run remembers
 READY_FOR = 60          # seconds a look at an agent is reused
 MODELS_FOR = 3600       # seconds a list of an agent's models is reused
 MODELS_MISSED = 60      # seconds before a list that could not be made is asked for again
@@ -395,10 +396,14 @@ def read_record(root: Path) -> dict | None:
 
 
 def new_record(agent: str, model: str | None, chosen: settings.Settings,
-               scope: str = pipeline.SCOPE, effort: str | None = None) -> dict:
+               scope: str = pipeline.SCOPE, effort: str | None = None,
+               research_from: dict | None = None) -> dict:
     """A run record for a training that is starting. `scope` is where its research may
     look: anything but the public web alone waits for the person's documents first.
-    `effort` is the reasoning level every worker is given; None for the agent's own."""
+    `research_from` is the same choice in full, with the exact sites, which the run pins:
+    a later change to the shared list of sites never changes it. Left out, it is read
+    from `scope`. `effort` is the reasoning level every worker is given; None for the
+    agent's own."""
     try:
         profiles = model_profiles.capture(agent, model, effort, settings.check_effort)
     except ValueError as error:
@@ -412,7 +417,8 @@ def new_record(agent: str, model: str | None, chosen: settings.Settings,
                        'training_dollars': chosen.training_dollars},
             'steps': {}, 'research': None, 'question': None, 'answers': {}, 'halt': None,
             'problem': None, 'cleared': 0.0, 'documents': supplied, 'drafted': [],
-            'copies': {'problems': {}, 'tried': {}}, 'deck': {}, 'driver': None}
+            'copies': {'problems': {}, 'tried': {}}, 'deck': {}, 'driver': None,
+            'research_from': research_from or pipeline.research_of({'documents': supplied})}
 
 
 def attempts(record: dict, step: str | None = None) -> list[dict]:
@@ -430,6 +436,21 @@ def spent(record: dict) -> tuple[float | None, int | None]:
     dollars = [attempt['dollars'] for attempt in tried if attempt.get('dollars') is not None]
     tokens = [attempt['tokens'] for attempt in tried if attempt.get('tokens') is not None]
     return (round(sum(dollars), 4) if dollars else None, sum(tokens) if tokens else None)
+
+
+def outside_words(record: dict) -> str | None:
+    """What the research stop says of the pages its tools refused for being outside your
+    sites, naming the sites: None when none was."""
+    refused = len(record.get('outside') or ())
+    sites = pipeline.research_of(record).get('sites') or []
+    if not refused or not sites:
+        return None
+    named = [research_sites.shown(site) for site in sites]
+    if len(named) > research_sites.SHOWN:
+        named = named[:research_sites.SHOWN] + [f'{len(sites) - research_sites.SHOWN} more']
+    were = 'was' if refused == 1 else 'were'
+    return (f"{refused} page{'' if refused == 1 else 's'} {were} outside your sites "
+            f"({', '.join(named)}) and {were} not saved.")
 
 
 def last_error(record: dict, step: str) -> str | None:
@@ -986,7 +1007,8 @@ class Engine(Reviewing):
         if not ready.ready:
             raise WorkspaceError(ready.problem)
         with self.files:
-            record = new_record(agent, model, chosen, form['source_scope'], effort)
+            record = new_record(agent, model, chosen, form['source_scope'], effort,
+                                form.get('research_from'))
             record['research_questions'] = form.get('research_questions') or []
             if form.get('review_default'):
                 # Use this for new work in every studio: written under the studios config's
@@ -3108,6 +3130,13 @@ class Engine(Reviewing):
         the next step goes with it, once."""
         work = self._noted(root, step, work)
         record = self._load(root)
+        if work.prepared.get('fetch'):
+            # A job that saves pages keeps to where the run says research may look: its
+            # tools refuse a page outside your sites, and it is told to search them first.
+            looks = pipeline.research_of(record)
+            said = research_sites.guidance(looks)
+            work = replace(work, guidance=work.guidance + ('\n\n' + said if said else ''),
+                           prepared={**work.prepared, 'research': looks})
         number = len(pipeline.tries(record, step.id).get('attempts', [])) + 1
         folder = self._folder(root, step.id, number)
         # A deck's worker is given the slides tool and the brand skill this engine uses.
@@ -3141,7 +3170,16 @@ class Engine(Reviewing):
             outcome = replace(outcome, seconds=round(time.monotonic() - clock, 1))
         if choice is not None:
             model_profiles.staged(self, choice, number, work.profile, started_at)
-        return outcome, worker_tools.collect(folder), started_at, folder
+        handed = worker_tools.collect(folder)
+        if handed.get('outside'):
+            # Pages the tools refused for being outside your sites, which the research
+            # stop names.
+            with self.files:
+                record = self._load(root)
+                record['outside'] = list(dict.fromkeys(
+                    [*(record.get('outside') or []), *handed['outside']]))[-OUTSIDE:]
+                self._store(root, record)
+        return outcome, handed, started_at, folder
 
     @staticmethod
     def _cost(outcome: agents.Outcome) -> dict:
@@ -3379,7 +3417,11 @@ class Engine(Reviewing):
         record = self._load(root)
         if record.get('research_contract'):
             offered = self.documents.sources(root)[1] if record.get('documents') else []
-            scope = (record.get('documents') or {}).get('scope', pipeline.SCOPE)
+            looks = pipeline.research_of(record)
+            # A run that pinned where its research may look names the allowed sites in the
+            # task's scope; one saved before keeps the scope it was researched under.
+            about = pipeline._about(root, found.session) + (
+                '\n' + research_sites.scope_text(looks) if record.get('research_from') else '')
             intake = pipeline.answers(root)
             depth = (' at levels ' + ', '.join(found.session['levels'])) if found.session['levels'] else ''
             task = {'topic': intake.get('topic') or found.session['title'],
@@ -3389,12 +3431,14 @@ class Engine(Reviewing):
                         'Prioritize learner tasks, prerequisites, misconceptions, grounded '
                         'worked examples and limits. Research supplies evidence; the teaching '
                         'plan and materials are authored afterward.'),
-                    'scope': pipeline._about(root, found.session),
+                    'scope': about,
                     'planning_questions': found.research.questions,
                     'requested_changes': step.request,
                     # Asked for at the research stop: the sources read again.
                     'refresh': (step.request or {}).get('refresh') is True,
-                    'source_mode': {'supplied-only': 'selected', 'both': 'mixed'}.get(scope, 'public')}
+                    # Pages from your sites are public captures: documents and sites are
+                    # 'mixed', sites alone 'public', documents alone 'selected'.
+                    'source_mode': research_sites.source_mode(looks)}
             try:
                 research_contract.native(self, root, run, task, offered, 'training')
             except WorkspaceError as refusal:
@@ -3773,7 +3817,9 @@ class Engine(Reviewing):
                 self._store(root, record)
                 self._commit(root, (f'the documents are all added: {len(readable)} to '
                                     'research from') if readable else
-                             'no documents were added; research uses the public web')
+                             'no documents were added; research uses ' + research_sites.summary(
+                                 research_sites.effective(pipeline.research_of(record), False))
+                             .removeprefix('from '))
         if action == 'done':
             self.wake(root)
         return self.view(root)
@@ -4433,6 +4479,7 @@ class Engine(Reviewing):
                          **self._research_tried(record, problem, root)}
                         if problem else None),
             'documents': self._supplied(root, record, found),
+            'research_from': self._research_view(record),
             'copies': self._copies(found),
             'outline': outline,
             'look': pipeline.look_view(root, found, level) if drawing else None,
@@ -4448,6 +4495,19 @@ class Engine(Reviewing):
                           'blocking': list(report['blocking']), 'index': report['file'],
                           'yoodli': self._yoodli(root, found.session)}
                          if report and not resting else None)}
+
+    @staticmethod
+    def _research_view(record: dict) -> dict:
+        """Where this training's research may look, as the page says it: the choice with
+        its exact sites, the line that names them, and what was refused outside them."""
+        looks = pipeline.research_of(record)
+        return {**looks, 'summary': 'Research ' + research_sites.summary(looks) + '.',
+                'outside': outside_words(record)}
+
+    def research_from(self, path) -> dict | None:
+        """`_research_view` for a training a run drives; None for any other."""
+        root = self.driven(path)
+        return None if root is None else self._research_view(self._load(root))
 
     @staticmethod
     def _yoodli(root, session):
@@ -4971,10 +5031,9 @@ class Engine(Reviewing):
         planned from are settled."""
         session = workspace.load(root)
         planned = workspace.statuses(root, session).get('research-plan', 'not-started')
-        said = pipeline.answers(root).get('source scope')
-        scope = next((name for name, label in pipeline.SOURCES.items() if label == said),
-                     pipeline.SCOPE)
-        record = new_record(chosen.agent, chosen.model, chosen, scope, chosen.effort)
+        looks = pipeline.intake_research(pipeline.answers(root).get('source scope'))
+        record = new_record(chosen.agent, chosen.model, chosen, pipeline.scope_of(looks),
+                            chosen.effort, looks)
         record.pop('review_policy', None)  # adopting existing work preserves its manual gates
         if session.get('research_contract'):
             record['research_contract'] = session['research_contract']

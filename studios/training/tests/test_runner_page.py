@@ -49,7 +49,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
 BOTH =('/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'ahead', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
-            'question', 'queue', 'redesign', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
+            'question', 'queue', 'redesign', 'research_from', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
 STEP_KEYS = ['attempts', 'dollars', 'error', 'id', 'kind', 'label', 'seconds', 'status']
 DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -2231,6 +2231,14 @@ class WireTests(WireCase):
         status, _, body = self.ask('/api/trainings', {**FORM, 'source_scope': 'the-moon'})
         self.assertEqual((status, json.loads(body)['error']), (400, 'The source scope is one '
                          'of: public-web, supplied-only, both'))
+        # Where research may look: something that applies, and sites that are sites.
+        for chosen, said in (({'documents': False, 'sites': [], 'web': False},
+                              'Choose where research may look: your documents, your sites or '
+                              'the public web.'),
+                             ({'sites': ['localhost/docs']}, '"localhost/docs" is not a public '
+                              'site. Research never reads this computer or a private network.')):
+            status, _, body = self.ask('/api/trainings', {**FORM, 'research_from': chosen})
+            self.assertEqual((status, json.loads(body)['error']), (400, said))
 
     def test_a_document_is_the_only_long_body_and_only_with_the_key(self):
         path = json.loads(self.ask('/api/trainings', {**FORM, 'source_scope': 'both'})[2])[

@@ -277,6 +277,12 @@ class Reviewing:
             self._store(root, record)
             self._commit(root, 'draw a sample for the combined direction review')
 
+    def _outside(self, record, account):
+        """The research's account, saying too which pages were refused for being outside
+        your sites, with the sites named."""
+        said = self._research_view(record)['outside']
+        return {**account, 'outside': said} if account and said else account
+
     def _review_view(self, root, record, found):
         if found.next.kind != 'review':
             return None
@@ -293,7 +299,8 @@ class Reviewing:
             items.append({'target': name, 'label': workspace.label(name),
                           'text': file.read_text(encoding='utf-8') if file.suffix == '.md' else '',
                           **({'document': document} if name == 'research-plan' else {}),
-                          **({'research': research_view.account(root / 'research', plan.get('questions') or []),
+                          **({'research': self._outside(record, research_view.account(
+                                  root / 'research', plan.get('questions') or [])),
                               'research_price': self.research_price(root)}
                              if name == 'research' else {}),
                           'deck': spec['stage'] == 'deck',

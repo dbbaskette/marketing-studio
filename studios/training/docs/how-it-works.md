@@ -139,6 +139,16 @@ The research stop shows its brief, independent assessment, gaps, source limitati
 question mapping. Research changes rerun the whole investigation and downstream made
 materials; the request says the scope and last recorded cost before it is sent.
 
+## Research from your sites
+
+A training may research from your documents, your sites and/or the public web. Your sites
+are base addresses; the form starts from the list every studio shares and may add one for
+that training only. The run pins the exact list. Its research task names the allowed sites,
+and its worker tools save a page only from under them, checking every redirect, unless the
+public web is chosen too. Pages from your sites are public captures, so documents and sites
+together are Harness Research's `mixed` source mode and sites alone `public`. See
+[Where the research looks](runner.md#where-the-research-looks).
+
 ## Finish from the page
 
 New combined-review runs prepare every level's guide and deck direction first. Balanced waits for the first review; Automatic draft continues under its saved policy. Briefs are written afterwards. Existing runs keep their saved review order. The first and final combined reviews have timeline beads, and the last decision stays visible while work continues.

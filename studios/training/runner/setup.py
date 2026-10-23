@@ -61,10 +61,12 @@ What a caller needs to know
   team repository written as for any join, and the refusal says so instead.
 - `shared` is what the file holds that Training Studio can use, in the file's own shape:
   `team` {repository, branch}, `assistant` {agent, model, effort}, `brand` {repository,
-  release, brand, variant}, `output` and `share`. A value that would be refused here is
-  left out, and so is anything Training Studio does not use. `shared_problem` is a sentence
-  when the file could not be read, which is then as if there were none. The page fills in
-  a first set-up's team repository and a new training's deck from `shared`.
+  release, brand, variant}, `output`, `share` and `research` {sites}, your sites as
+  canonical https addresses. A value that would be refused here is left out, and so is
+  anything Training Studio does not use. `shared_problem` is a sentence when the file could
+  not be read, which is then as if there were none. The page fills in a first set-up's
+  team repository, a new training's deck and the sites its research may keep to from
+  `shared`. Training Studio never writes your sites: they are changed in Shared settings.
 - `team_moved` is {"repository", "branch", "says"} when the file names a team repository
   that is not the one this computer's workspace is a copy of, which happens when it is
   changed in another studio, and None otherwise. The workspace is never moved by itself:
@@ -94,7 +96,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
-from studio_core import review_policy
+from studio_core import research_sites, review_policy
 import home
 import hub
 import workspace
@@ -224,7 +226,10 @@ def shared() -> tuple[dict, str | None]:
         'render': {'previews': settings.shared_now(found)['previews']},
         'models': {'mode': _group(found, 'models').get('mode')
                    if _group(found, 'models').get('mode') in ('single', 'by_task') else None},
-        'share': found.get('share') if found.get('share') in gitstate.SHARE else None}
+        'share': found.get('share') if found.get('share') in gitstate.SHARE else None,
+        # Your sites, which a new training's research may keep to. Read here and never
+        # written: the list is changed in Shared settings.
+        'research': {'sites': research_sites.defaults(found) or None}}
     kept = {}
     for key, value in values.items():
         if isinstance(value, dict):

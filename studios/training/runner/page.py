@@ -312,6 +312,11 @@ class RunnerPage(desk.Page):
         shown['redo'] = self.engine.redo(path, name)
         if name == 'research':
             shown['research_price'] = self.engine.research_price(path)
+            # Pages refused for being outside your sites, said with the sites named.
+            looks = self.engine.research_from(path)
+            shown['outside'] = looks['outside'] if looks else None
+            if shown.get('research') and shown['outside']:
+                shown['research'] = {**shown['research'], 'outside': shown['outside']}
         kind = workspace.split(name)[0].partition(':')[0]
         if kind == 'scenario':
             shown['whose'] = self.engine.whose(path, name)

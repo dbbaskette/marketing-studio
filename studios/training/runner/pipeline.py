@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import json
 from studio_core import brand_guidance, deck_direction, deck_flow, review_policy, research_contract
+from studio_core import research_sites
 import re
 import shutil
 from dataclasses import dataclass, field, replace
@@ -90,6 +91,9 @@ SCOPE = 'public-web'
 SCOPES = ('public-web', 'supplied-only', 'both')
 SOURCES = {'public-web': 'Public web', 'supplied-only': 'Your documents only',
            'both': 'The public web and your documents'}
+# Where research may look when nothing says otherwise: the public web, as before the choice.
+WEB_ONLY = {'documents': False, 'sites': [], 'web': True}
+SITES_LINE = 'Sites: '      # in intake.md, under Source scope: the sites research keeps to
 NO_DECK = 'No deck was chosen when this training was started.'
 DECK_LEFT = ('Everything but the slide deck is made. A deck cannot be made on this computer '
              'yet: {why} Put that right and check this computer again, make the deck in a '
@@ -380,6 +384,8 @@ class Survey:
     scope: str = SCOPE            # where its research may look
     decks: dict = field(default_factory=dict)      # each level's deck, when one is made here
     missing: tuple[str, ...] = ()   # why a deck that is wanted cannot be made here
+    # Where its research may look, as the run pinned it: {'documents', 'sites', 'web'}.
+    research_from: dict = field(default_factory=lambda: dict(WEB_ONLY))
 
 
 # --- the form ----------------------------------------------------------------------------
@@ -472,6 +478,72 @@ def research_questions(sent) -> list[str]:
     return lines
 
 
+def research_from(sent: dict) -> dict:
+    """Where the form says research may look: {'documents', 'sites', 'web'}, with the exact
+    sites, which the run pins. A form that sends only the older `source_scope` is read in
+    the new shape. Documents are always a choice here: they are added after the start."""
+    if sent.get('research_from') is not None:
+        try:
+            return research_sites.choice(sent['research_from'])
+        except ValueError as error:
+            raise WorkspaceError(str(error)) from None
+    scope = sent.get('source_scope') or SCOPE
+    workspace.check_choice(scope, SCOPES, 'The source scope')
+    return research_sites.effective(research_sites.legacy(scope), scope != SCOPE)
+
+
+def scope_of(chosen: dict) -> str:
+    """The older words for a choice, which the rest of the runner still reads: documents
+    alone are 'supplied-only', documents and pages 'both', pages alone 'public-web'."""
+    if chosen.get('documents'):
+        return 'both' if research_sites.fetches(chosen) else 'supplied-only'
+    return SCOPE
+
+
+def research_of(run: dict | None) -> dict:
+    """Where a training's research may look, as its run record pinned it. A record saved
+    before the choice was asked reads its older scope: the public web alone, documents
+    alone, or both."""
+    kept = (run or {}).get('research_from')
+    if isinstance(kept, dict):
+        return research_sites.effective(kept)
+    given = (run or {}).get('documents')
+    scope = (given or {}).get('scope') or SCOPE
+    return research_sites.effective(research_sites.legacy(scope), bool(given))
+
+
+def sources_words(chosen: dict) -> str:
+    """Where research may look, as intake.md says it under Source scope. Without sites it
+    is one of the older three; with them, what is chosen and then the sites on a line."""
+    if not chosen.get('sites'):
+        return SOURCES[scope_of(chosen)]
+    said = [words for words, on in (('your documents', chosen.get('documents')),
+                                    ('your sites', True),
+                                    ('the public web', chosen.get('web'))) if on]
+    line = ', '.join(said[:-1]) + ' and ' + said[-1] if len(said) > 1 else said[0]
+    return (line[0].upper() + line[1:] + '\n' + SITES_LINE
+            + ', '.join(research_sites.shown(site) for site in chosen['sites']))
+
+
+def intake_research(said: str | None) -> dict:
+    """The choice intake.md's Source scope says, read back for a training brought in from
+    a conversation. Anything it cannot read is the public web, as before."""
+    said = (said or '').strip()
+    named = next((name for name, label in SOURCES.items() if label == said), None)
+    if named is not None:
+        return research_sites.effective(research_sites.legacy(named), named != SCOPE)
+    first, _, rest = said.partition('\n')
+    listed = [line[len(SITES_LINE):] for line in rest.splitlines()
+              if line.startswith(SITES_LINE)]
+    try:
+        return research_sites.choice({
+            'documents': 'your documents' in first.lower(),
+            'sites': [site.strip() for site in ', '.join(listed).split(',') if site.strip()],
+            'web': 'public web' in first.lower()})
+    except ValueError:
+        return dict(WEB_ONLY)
+
+
 def check_form(sent: dict, brands=None) -> dict:
     """The form's answers, once each makes sense. Refuses with a sentence for a person.
     `brands` is what `brand.brands()` returned on this computer, or None with no brand
@@ -493,8 +565,8 @@ def check_form(sent: dict, brands=None) -> dict:
     if form['walkthrough'] not in (True, False):
         raise WorkspaceError('Say whether to walk through each slide\'s design with true or '
                              'false.')
-    form['source_scope'] = sent.get('source_scope') or SCOPE
-    workspace.check_choice(form['source_scope'], SCOPES, 'The source scope')
+    form['research_from'] = research_from(sent)
+    form['source_scope'] = scope_of(form['research_from'])
     if not isinstance(sent.get('yoodli', False), bool):
         raise WorkspaceError('Say whether Yoodli scenarios are wanted with true or false.')
     form['yoodli'] = sent.get('yoodli', False)
@@ -549,7 +621,8 @@ def intake_text(form: dict) -> str:
         'Brief': form['brief_kind'],
         'Audience': form['audience'],
         'Purpose': form['purpose'],
-        'Source scope': SOURCES[form['source_scope']],
+        'Source scope': sources_words(form.get('research_from') or research_sites.effective(
+            research_sites.legacy(form['source_scope']), form['source_scope'] != SCOPE)),
         'Time limit': form['time_limit'] or 'None given',
     }
     return '\n'.join(f'## {heading}\n\n{answers[heading]}\n' for heading in HEADINGS)
@@ -1154,7 +1227,8 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     first = next((step for step in listed if step.id not in done), None)
     return Survey(session, state, listed, done,
                   _next(first, session, state, asked, found, decks), found, asked, named,
-                  own, tuple(copies), (given or {}).get('scope') or SCOPE, decks, missing)
+                  own, tuple(copies), (given or {}).get('scope') or SCOPE, decks, missing,
+                  research_of(run))
 
 
 def _next(first: Step | None, session: dict, state: dict, asked: dict,
@@ -1333,9 +1407,19 @@ def plan_work(root: Path, found: Survey, request: dict | None, error: str | None
     told what they are, by title, and the plan it hands back lists them."""
     name, listed = 'research-plan', list((sources or ((), ()))[0])
     earlier = _read(root / PLAN)
+    chosen = found.research_from
     if found.scope == 'supplied-only':
         allowed = ('only the documents the person supplied. Ask what these can answer, and '
                    f'give no question any search words:\n{_titles(listed)}')
+    elif chosen.get('sites'):
+        # Pages only from under the person's sites, unless the public web is chosen too.
+        # Search words hold no slash, so a site: filter names the site's host alone.
+        host = research_sites.shown(chosen['sites'][0]).partition('/')[0]
+        allowed = (research_sites.scope_text(chosen) + ' Give each question search words '
+                   'with a site: filter for the host of the listed site most likely to answer '
+                   f'it, such as site:{host}.'
+                   + (f' These documents the person supplied may be used too:\n{_titles(listed)}'
+                      if listed else ''))
     elif listed:
         allowed = ('the public web, and these documents the person supplied. Ask what the '
                    f'documents can answer as well as what the web can:\n{_titles(listed)}')
@@ -1350,7 +1434,8 @@ def plan_work(root: Path, found: Survey, request: dict | None, error: str | None
     if asked and not request:
         task += ('\n\nThe person asked these questions. Keep each in the plan, in their words:\n'
                  + '\n'.join('- ' + q for q in asked))
-    scope = 'supplied-only' if found.scope == 'supplied-only' else SCOPE
+    scope = ('supplied-only' if found.scope == 'supplied-only'
+             else research_sites.plan_scope(chosen))
     prepared = {'inputs': {'intake': _read(root / 'intake.md') or ''},
                 'artifacts': {name: {'kind': 'research-plan', 'scope': scope,
                                      'sources': listed}},
@@ -1385,13 +1470,18 @@ def question_work(root: Path, found: Survey, ident: str, request: dict | None,
     fetch a page."""
     offered, only = list((sources or ((), ()))[1]), found.scope == 'supplied-only'
     query = found.research.queries.get(ident)
+    sites = found.research_from.get('sites')
     task = ('Research this question for a training.\n\n'
             f'Question ID: {ident}\n'
             f'Question: {found.research.questions[ident]}\n'
             + (f'Search words to start from: {query}\n' if query else '')
             + ('Work only from the documents the person supplied, which are saved for you '
                'already.\n' if only else 'The documents the person supplied are saved for '
-               'you already. Read them as well as the web.\n' if offered else '')
+               'you already. Read them as well as the '
+               + ('pages you save.\n' if sites else 'web.\n') if offered else '')
+            # Where pages may come from, with the sites named, so the worker keeps to them.
+            + (research_sites.scope_text(found.research_from) + '\n' if sites and not only
+               else '')
             + f'\nThe training:\n{_about(root, found.session)}'
             + _again(None, None, error, [], 'the research'))
     if request and request.get('note'):
