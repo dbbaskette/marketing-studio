@@ -1569,7 +1569,7 @@ def curate(root, ident, data):
     current value back, as a form does for untouched fields, changes nothing.
     """
     directory, record = studio.item(root, 'sources', ident)
-    if set(data) - {'curation', 'topics', 'products', 'note'}:
+    if set(data) - {'curation', 'topics', 'products', 'note', 'author'}:
         raise ValueError('Unknown curation field.')
     metadata = dict(record.get('library', {}))
     changed = []
@@ -1595,6 +1595,14 @@ def curate(root, ident, data):
             raise ValueError('Keep the source note under 4000 characters.')
         if data['note'] != (record.get('note') or ''):
             changed.append('note')
+    author = None
+    if 'author' in data:
+        # Whose writing this is, as the person says; empty for no author.
+        if not isinstance(data['author'], str):
+            raise ValueError('Use an author name between 1 and 200 characters.')
+        author = studio.checked_author(data['author']) if data['author'].strip() else ''
+        if author != (record.get('author') or ''):
+            changed.append('author')
     if not changed:
         return record
     save_revision(directory, record)
@@ -1603,6 +1611,8 @@ def curate(root, ident, data):
     record['revision'] += 1
     if 'note' in changed:
         record['note'] = data['note']
+    if 'author' in changed:
+        record['author'] = author or None
     studio.persist(directory, 'sources', record)
     return record
 

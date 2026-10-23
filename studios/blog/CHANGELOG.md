@@ -3,6 +3,56 @@
 Releases are published from `skills/blog-studio/VERSION`. Each entry says what
 changes for authors first, then what changes for maintainers.
 
+## Unreleased
+
+- **Select all in the Team library.** Tick **Select all on this page**, or, once anything
+  is ticked, **Select all N matching** to tick every item the filters match. Ticks stay as
+  you page and change the filters; the selection bar says how many are out of view. A
+  selection holds up to 500 items. Learning a style or a voice reads twenty of them; a blog
+  takes up to fifty.
+- **Create voices for every author.** From the Team library, the Voices screen or the
+  result of Add to library: every author in the library by exact name, case and spacing
+  aside, with their post count, ticked when they have two readable posts (up to 100 in a
+  batch); an existing voice of exactly that name is updated rather than duplicated. One
+  permission for the batch; every author is checked before anything is marked or queued, so
+  a refusal for one changes nothing. Then one learning job per author on the usual queue,
+  each reviewed and confirmed as before. An author whose voice is still waiting or being
+  learned keeps that one job: another batch shows it as Queued instead of starting a
+  second learning. A learning from library items now checks the same before it marks any
+  item as a sample.
+- **Is "Dan" Dan Smith?** In Create voices for every author, a name whose words all appear
+  in a fuller author name or voice ("Dan" in "Dan Smith" or "Dan Baskette") shows "Might be
+  the same person as …", even when it is too small to learn alone. **Same person as Dan
+  Smith**, once confirmed, names that author's posts Dan Smith, one reference at a time, so
+  they count toward that voice; a list that changed since it was shown is refused.
+  **Different person** is remembered for every suggested name at once, and the suggestion
+  stops. Nothing is merged without
+  the person's choice, and **Review details** now has an Author field, so any post's author
+  can be corrected or changed back.
+- **Create a voice** and **Create a style** replace Learn a voice from samples, Import a
+  LinkedIn export, Add links to posts, Upload an authored sample, Learn a style from
+  examples, Add links to examples and Upload an example. One sheet each, in order: the
+  name, the writing from any source (links, uploads, a LinkedIn export, posts already in
+  the library), up to twenty ticked samples, then build. Every source returns to the sheet.
+- **Add to library** reads each post's own author by default, and offers **Import a blog
+  or site** and **Upload one file** under **More ways to add** (they were the Team library's
+  Import old blogs and Upload buttons).
+- **Layout.** The library views (All blogs, Review findings, Team library, Team memory) use
+  the shell's toolbar: one primary action each, **Library and team tools** (was Editorial
+  tools) beside it, a one-sentence lede, one filter row with **More filters**, and on a
+  phone a **Filters** button and the selection bar above the screens bar. **Refresh Hub**
+  moved beside **Check access** and into Team sharing on Status and Settings. **Voices** is
+  a screen with Create a voice and Create a style in its toolbar. Home lists what needs you
+  and what is in progress before the ways to start; Blogs is titled Blogs and leads with
+  New blog; Settings puts writing preferences first and has no back button.
+- **For maintainers:** `GET /api/library-matching` (the catalog's filters, up to 500 ids),
+  `GET /api/library-authors` (with `suggestions` and an `expected` version per author),
+  `POST /api/library-voices`, `POST /api/library-author-same` and
+  `POST /api/library-author-different` (pairs kept in `.library/author-pairs.json`) in
+  `library_add.py`; `curate` takes `author`, recorded as a curation override;
+  `library-selection` accepts up to 500 items for learning. The layout rules are in
+  `docs/design/golden-gate.md`.
+
 ## 4.7.0 — 2026-10-23
 
 - **Released with Marketing Studio 4.5.0.** Installs pin Harness Research 1.0.1 and

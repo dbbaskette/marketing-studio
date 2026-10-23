@@ -786,6 +786,507 @@ class SelectionTests(RunnerCase):
         with self.assertRaisesRegex(ValueError, 'not a library item'):
             act(action='blog', ids=[material])
 
+    def test_select_all_matching_returns_every_match_and_a_learn_selection_takes_more(self):
+        ones = self.items(*['a%d.md' % n for n in range(20)], author='Avery')
+        twos = self.items(*['b%d.md' % n for n in range(20)], author='Avery', operation='b')
+        threes = self.items(*['c%d.md' % n for n in range(20)], author='Avery', operation='c')
+        jordan = self.items('j.md', author='Jordan', operation='d')
+        everything = management.view(self.root, 'library-matching', {})
+        self.assertEqual(everything['total'], 61, 'more than one page of fifty')
+        self.assertEqual(
+            sorted(row['id'] for row in everything['items']), sorted(ones + twos + threes + jordan)
+        )
+        self.assertEqual({row['location'] for row in everything['items']}, {'local'})
+        self.assertFalse(everything['capped'])
+        filtered = management.view(self.root, 'library-matching', {'author': ['Jordan']})
+        self.assertEqual([row['id'] for row in filtered['items']], jordan)
+        # More than fifty ticked can still be learned from; the first twenty are read.
+        many = [row['id'] for row in everything['items']]
+        learned = management.dispatch(
+            self.root, 'library-selection', {'action': 'style-learn', 'ids': many}
+        )
+        self.assertEqual(len(learned['candidates']), 20)
+        self.assertEqual(len(learned['left_out']), 41)
+        with self.assertRaisesRegex(ValueError, 'one to fifty'):
+            management.dispatch(
+                self.root, 'library-selection', {'action': 'blog', 'ids': many[:51]}
+            )
+
+
+class VoicesForEveryAuthorTests(RunnerCase):
+    """Create voices for every author: one learning job per ticked author, confirmed once."""
+
+    items = SelectionTests.items
+
+    def jobs(self):
+        folder = self.root / '.blog-runs' / 'tools'
+        return sorted(path.stem for path in folder.glob('*.json')) if folder.is_dir() else []
+
+    def test_authors_are_listed_with_counts_and_two_readable_posts_make_a_voice(self):
+        self.items('one.md', 'two.md', 'three.md', author='Avery Quinn')
+        self.items('solo.md', author='Jordan Lee', operation='b')
+        self.items('nobody.md', operation='c')
+        with patch.object(library.shutil, 'which', return_value=None):
+            self.items('scan.pdf', author='Avery Quinn', operation='d')
+        found = management.view(self.root, 'library-authors', {})
+        self.assertEqual(found['unnamed'], 1)
+        self.assertEqual(found['minimum'], 2)
+        avery, jordan = found['authors']
+        self.assertEqual(
+            (avery['author'], avery['posts'], avery['readable'], avery['ready'], avery['reason']),
+            ('Avery Quinn', 4, 3, True, ''),
+            'a scan without text is not readable',
+        )
+        self.assertEqual(len(avery['samples']), 3)
+        self.assertIsNone(avery['profile'])
+        self.assertEqual((jordan['author'], jordan['ready']), ('Jordan Lee', False))
+        self.assertEqual(jordan['reason'], 'Only 1 readable post; a voice needs at least 2.')
+
+    def test_one_confirmation_queues_one_job_per_author_and_updates_an_existing_voice(self):
+        avery = self.items('one.md', 'two.md', author='Avery Quinn')
+        sam = self.items('s1.md', 's2.md', 's3.md', author='Sam Rivera', operation='b')
+        self.items('solo.md', author='Jordan Lee', operation='c')
+        self.file.write_text('Short direct sentences.')
+        existing = self.command(
+            'profile',
+            'create',
+            '--name',
+            'Sam Rivera',
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'confirmed',
+        )
+        listed = {
+            row['author']: row
+            for row in management.view(self.root, 'library-authors', {})['authors']
+        }
+        self.assertEqual(listed['Sam Rivera']['profile']['id'], existing['id'])
+        create = lambda **data: management.dispatch(self.root, 'library-voices', data)  # noqa: E731
+        before = self.jobs()
+        with self.assertRaisesRegex(ValueError, 'permission'):
+            create(operation='a' * 32, authors=['Avery Quinn', 'Sam Rivera'])
+        with self.assertRaisesRegex(ValueError, 'Jordan Lee: Only 1 readable post'):
+            create(operation='a' * 32, authors=['Avery Quinn', 'Jordan Lee'], confirmed=True)
+        self.assertEqual(self.jobs(), before, 'a refusal queues nothing')
+        for ident in avery:
+            self.assertNotIn(
+                'voice-sample',
+                studio.item(self.root, 'sources', ident)[1]['purposes'],
+                'and marks nothing',
+            )
+        result = create(operation='a' * 32, authors=['Avery Quinn', 'Sam Rivera'], confirmed=True)
+        self.assertEqual([row['author'] for row in result['jobs']], ['Avery Quinn', 'Sam Rivera'])
+        self.assertEqual(len(self.jobs()), 2, 'one job per ticked author')
+        first, second = result['jobs']
+        self.assertEqual((first['update'], first['samples']), (False, 2))
+        self.assertEqual((second['update'], second['profile']['id']), (True, existing['id']))
+        for row in result['jobs']:
+            self.assertEqual((row['job']['kind'], row['job']['status']), ('voice-learn', 'queued'))
+        import tool_jobs
+
+        saved = tool_jobs.read(self.root, second['job']['id'])
+        self.assertEqual(saved['metadata']['profile'], existing['id'], 'an update, not a new voice')
+        self.assertEqual(sorted(saved['metadata']['samples']), sorted(sam))
+        self.assertIsNone(tool_jobs.read(self.root, first['job']['id'])['metadata']['profile'])
+        for ident in avery + sam:
+            self.assertIn('voice-sample', studio.item(self.root, 'sources', ident)[1]['purposes'])
+        again = create(operation='a' * 32, authors=['Avery Quinn', 'Sam Rivera'], confirmed=True)
+        self.assertEqual(
+            [row['job']['id'] for row in again['jobs']],
+            [row['job']['id'] for row in result['jobs']],
+            'sending the batch again returns the same jobs',
+        )
+        self.assertEqual(len(self.jobs()), 2)
+        self.assertEqual(again['failed'], [])
+
+    def test_another_batch_reuses_an_authors_queued_job(self):
+        self.items('a1.md', 'a2.md', author='Avery Quinn')
+        self.items('s1.md', 's2.md', author='Sam Rivera', operation='b')
+        create = lambda op, names: management.dispatch(  # noqa: E731
+            self.root, 'library-voices', {'operation': op * 32, 'authors': names, 'confirmed': True}
+        )
+        first = create('a', ['Avery Quinn'])
+        second = create('c', ['Avery Quinn', 'Sam Rivera'])
+        self.assertEqual(len(self.jobs()), 2, 'one new job, for Sam Rivera only')
+        avery, sam = second['jobs']
+        self.assertEqual(avery['job']['id'], first['jobs'][0]['job']['id'])
+        self.assertTrue(avery['already'], 'the queued job is shown, not doubled')
+        self.assertFalse(sam['already'])
+        import tool_jobs
+
+        saved = tool_jobs.read(self.root, avery['job']['id'])
+        saved['status'] = 'ready'
+        tool_jobs.write(self.root, saved)
+        third = create('d', ['Avery Quinn'])
+        self.assertFalse(
+            third['jobs'][0]['already'], 'a finished learning does not hold back a new one'
+        )
+        self.assertEqual(len(self.jobs()), 3)
+
+    def test_the_newest_first_order_keeps_a_hub_items_place_after_checkout(self):
+        import library_add
+
+        record = {'library': {'published': '2026-01-01'}, 'retrieved_at': 't'}
+        shared = {
+            'id': 'hub-item',
+            'location': 'hub',
+            'record': record,
+            'binding': {'item': 'hub-item'},
+        }
+        local = {
+            'id': 'local-1',
+            'location': 'local',
+            'record': record,
+            'binding': {'item': 'hub-item', 'revision': 'r'},
+        }
+        plain = {'id': 'local-2', 'location': 'local', 'record': record, 'binding': {}}
+        self.assertEqual(library_add._newest(shared), library_add._newest(local))
+        self.assertEqual(library_add._newest(plain)[-1], 'local-2')
+
+    def big(self, names, author, operation):
+        """Posts longer than a learning job reads, each about 250,000 characters."""
+        result = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': operation * 32,
+                'purpose': 'material',
+                'keep': True,
+                'analyze': False,
+                'author': author,
+                'files': [encoded_file(name, ('word ' * 50_000).encode()) for name in names],
+            },
+        )
+        return [row['source']['id'] for row in result['files']]
+
+    def purposes(self, idents):
+        return [studio.item(self.root, 'sources', ident)[1]['purposes'] for ident in idents]
+
+    def test_a_refusal_for_any_author_queues_nothing_and_marks_nothing(self):
+        avery = self.items('a1.md', 'a2.md', author='Avery Quinn')
+        bob = self.big(['b1.md', 'b2.md'], 'Bob Stone', 'b')
+        before = self.purposes(avery + bob)
+        with self.assertRaisesRegex(ValueError, 'Bob Stone: Use shorter authored voice samples'):
+            management.dispatch(
+                self.root,
+                'library-voices',
+                {'operation': 'c' * 32, 'authors': ['Avery Quinn', 'Bob Stone'], 'confirmed': True},
+            )
+        self.assertEqual(self.jobs(), [], 'not even the author checked first is queued')
+        self.assertEqual(self.purposes(avery + bob), before, 'and nobody’s posts are marked')
+
+    def test_one_voice_from_the_library_marks_nothing_when_its_learning_is_refused(self):
+        bob = self.big(['b1.md', 'b2.md'], 'Bob Stone', 'b')
+        before = self.purposes(bob)
+        with self.assertRaisesRegex(ValueError, 'shorter authored voice samples'):
+            management.dispatch(
+                self.root,
+                'tool-action',
+                {
+                    'action': 'job-create',
+                    'kind': 'voice-learn',
+                    'operation': 'd' * 32,
+                    'name': 'Bob Stone',
+                    'samples': bob,
+                    'confirmed': True,
+                    'mark': True,
+                },
+            )
+        self.assertEqual((self.jobs(), self.purposes(bob)), ([], before))
+
+    def test_a_failure_after_the_checks_says_which_authors_were_queued(self):
+        self.items('a1.md', 'a2.md', author='Avery Quinn')
+        self.items('s1.md', 's2.md', author='Sam Rivera', operation='b')
+        import article_tools
+
+        real = article_tools.request
+
+        def flaky(root, data):
+            if data['name'] == 'Sam Rivera':
+                raise OSError('The disk is full.')
+            return real(root, data)
+
+        with patch.object(article_tools, 'request', flaky):
+            result = management.dispatch(
+                self.root,
+                'library-voices',
+                {
+                    'operation': 'e' * 32,
+                    'authors': ['Avery Quinn', 'Sam Rivera'],
+                    'confirmed': True,
+                },
+            )
+        self.assertEqual([row['author'] for row in result['jobs']], ['Avery Quinn'])
+        self.assertEqual(
+            result['failed'], [{'author': 'Sam Rivera', 'reason': 'The disk is full.'}]
+        )
+        self.assertEqual(len(self.jobs()), 1)
+
+    def test_authors_group_and_match_voices_only_by_their_exact_name(self):
+        self.items('d1.md', author='Dan', operation='d')
+        smith = self.items('s1.md', author='Dan Smith', operation='e') + self.items(
+            's2.md', author='  dan   SMITH ', operation='f'
+        )
+        self.file.write_text('Short direct sentences.')
+        self.command(
+            'profile',
+            'create',
+            '--name',
+            'Dan Baskette',
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'confirmed',
+        )
+        groups = management.view(self.root, 'library-authors', {})['authors']
+        self.assertEqual(
+            [(g['author'], g['posts'], g['profile']) for g in groups],
+            [('Dan Smith', 2, None), ('Dan', 1, None)],
+            'a first name is not someone else’s full name, and no voice matches by a part of it',
+        )
+        result = management.dispatch(
+            self.root,
+            'library-voices',
+            {'operation': 'f' * 32, 'authors': ['Dan Smith'], 'confirmed': True},
+        )
+        import tool_jobs
+
+        saved = tool_jobs.read(self.root, result['jobs'][0]['job']['id'])
+        self.assertEqual(
+            (saved['metadata']['name'], saved['metadata']['profile']), ('Dan Smith', None)
+        )
+        self.assertEqual(sorted(saved['metadata']['samples']), sorted(smith))
+        with self.assertRaisesRegex(ValueError, 'Dan: Only 1 readable post'):
+            management.dispatch(
+                self.root,
+                'library-voices',
+                {'operation': '9' * 32, 'authors': ['Dan'], 'confirmed': True},
+            )
+
+    def test_a_batch_names_at_most_the_limit_of_authors(self):
+        import library_add
+
+        names = ['Author %d' % n for n in range(library_add.AUTHOR_BATCH_LIMIT + 1)]
+        with self.assertRaisesRegex(
+            ValueError, 'at most %d authors' % library_add.AUTHOR_BATCH_LIMIT
+        ):
+            management.dispatch(
+                self.root,
+                'library-voices',
+                {'operation': 'a' * 32, 'authors': names, 'confirmed': True},
+            )
+        self.assertEqual(
+            management.view(self.root, 'library-authors', {})['batch_limit'],
+            library_add.AUTHOR_BATCH_LIMIT,
+            'the page is told the same limit',
+        )
+
+
+class AuthorClarifyTests(RunnerCase):
+    """Names that might be one person are suggested, never merged; the person decides."""
+
+    items = SelectionTests.items
+
+    def setUp(self):
+        super().setUp()
+        self.dan = self.items('d1.md', author='Dan', operation='d')
+        self.smith = self.items('s1.md', 's2.md', author='Dan Smith', operation='e')
+        self.file.write_text('Short direct sentences.')
+        self.command(
+            'profile',
+            'create',
+            '--name',
+            'Dan Baskette',
+            '--guide-file',
+            str(self.file),
+            '--status',
+            'confirmed',
+        )
+
+    def groups(self):
+        return {
+            g['author']: g for g in management.view(self.root, 'library-authors', {})['authors']
+        }
+
+    def record(self, ident):
+        return studio.item(self.root, 'sources', ident)[1]
+
+    def test_a_short_name_suggests_every_fuller_name_and_voice(self):
+        groups = self.groups()
+        self.assertEqual(
+            [s['name'] for s in groups['Dan']['suggestions']], ['Dan Smith', 'Dan Baskette']
+        )
+        self.assertEqual(
+            [(s['posts'], bool(s['voice'])) for s in groups['Dan']['suggestions']],
+            [(2, False), (0, True)],
+        )
+        self.assertFalse(groups['Dan']['ready'], 'a group too small to learn alone still shows')
+        self.assertEqual(groups['Dan Smith']['suggestions'], [], 'a fuller name suggests nothing')
+        self.assertEqual(self.record(self.dan[0])['author'], 'Dan', 'a suggestion changes nothing')
+
+    def test_same_person_names_the_posts_by_the_fuller_name_explicitly(self):
+        expected = self.groups()['Dan']['expected']
+        result = management.dispatch(
+            self.root,
+            'library-author-same',
+            {'author': 'Dan', 'into': 'Dan Smith', 'expected': expected},
+        )
+        groups = {g['author']: g for g in result['authors']}
+        self.assertNotIn('Dan', groups)
+        self.assertEqual((groups['Dan Smith']['posts'], groups['Dan Smith']['ready']), (3, True))
+        record = self.record(self.dan[0])
+        self.assertEqual((record['author'], record['revision']), ('Dan Smith', 2))
+        self.assertIn('author', record['curation_overrides'])
+        self.assertTrue(
+            (self.root / 'sources' / self.dan[0] / 'revisions' / '1' / 'record.json').is_file(),
+            'the earlier author is kept in the item’s history',
+        )
+        # The single-voice path reads the corrected author too.
+        candidates = management.view(self.root, 'voices', {})['candidates']
+        self.assertIn(('d1', 'Dan Smith'), [(c['name'], c.get('author')) for c in candidates])
+
+    def test_a_voice_name_can_take_the_posts_and_other_names_are_refused(self):
+        expected = self.groups()['Dan']['expected']
+        with self.assertRaisesRegex(ValueError, 'one of the suggested'):
+            management.dispatch(
+                self.root,
+                'library-author-same',
+                {'author': 'Dan', 'into': 'Zed Ray', 'expected': expected},
+            )
+        result = management.dispatch(
+            self.root,
+            'library-author-same',
+            {'author': 'Dan', 'into': 'Dan Baskette', 'expected': expected},
+        )
+        group = {g['author']: g for g in result['authors']}['Dan Baskette']
+        self.assertEqual(group['profile']['name'], 'Dan Baskette', 'and it now meets its voice')
+
+    def test_a_stale_choice_is_refused_and_changes_nothing(self):
+        expected = self.groups()['Dan']['expected']
+        self.items('d2.md', author='Dan', operation='f')  # Another post arrives meanwhile.
+        with self.assertRaisesRegex(management.CurationConflict, 'changed'):
+            management.dispatch(
+                self.root,
+                'library-author-same',
+                {'author': 'Dan', 'into': 'Dan Smith', 'expected': expected},
+            )
+        self.assertEqual(self.record(self.dan[0])['author'], 'Dan')
+
+    def test_different_person_is_remembered_and_keeps_the_groups_apart(self):
+        with self.assertRaisesRegex(ValueError, 'Zed Ray is not suggested'):
+            management.dispatch(
+                self.root,
+                'library-author-different',
+                {'author': 'Dan', 'others': ['Dan Smith', 'Zed Ray']},
+            )
+        self.assertEqual(
+            [s['name'] for s in self.groups()['Dan']['suggestions']],
+            ['Dan Smith', 'Dan Baskette'],
+            'a refused request saves no pair at all',
+        )
+        result = management.dispatch(
+            self.root, 'library-author-different', {'author': 'Dan', 'others': ['Dan Smith']}
+        )
+        groups = {g['author']: g for g in result['authors']}
+        self.assertEqual([s['name'] for s in groups['Dan']['suggestions']], ['Dan Baskette'])
+        self.assertEqual(
+            [s['name'] for s in self.groups()['Dan']['suggestions']],
+            ['Dan Baskette'],
+            'the choice holds for later reads',
+        )
+        self.assertEqual(self.record(self.dan[0])['author'], 'Dan')
+        both = management.dispatch(
+            self.root,
+            'library-author-different',
+            {'author': 'Dan', 'others': ['Dan Baskette']},
+        )
+        self.assertEqual({g['author']: g for g in both['authors']}['Dan']['suggestions'], [])
+
+    def test_a_voice_named_like_a_group_but_for_case_is_not_suggested_twice(self):
+        self.file.write_text('Another guide.')
+        self.command(
+            'profile',
+            'create',
+            '--name',
+            'dan  SMITH',
+            '--guide-file',
+            str(self.file),
+        )
+        self.assertEqual(
+            [s['name'] for s in self.groups()['Dan']['suggestions']],
+            ['Dan Smith', 'Dan Baskette'],
+        )
+
+    def test_a_failure_partway_through_same_person_says_how_far_it_got(self):
+        from hub_store import HubError
+
+        more = self.items('d2.md', author='Dan', operation='f')
+        expected = self.groups()['Dan']['expected']
+        real, calls = management.curate_source, []
+
+        def flaky(root, adapter, route, data):
+            calls.append(data['id'])
+            if len(calls) == 2:
+                raise HubError('The Team Hub could not be reached.')
+            return real(root, adapter, route, data)
+
+        with patch.object(management, 'curate_source', flaky):
+            with self.assertRaisesRegex(
+                HubError, r'^1 of 2 posts now name Dan Smith\. The Team Hub could not be reached\.'
+            ):
+                management.dispatch(
+                    self.root,
+                    'library-author-same',
+                    {'author': 'Dan', 'into': 'Dan Smith', 'expected': expected},
+                )
+        with patch.object(
+            management, 'curate_source', lambda *a: (_ for _ in ()).throw(OSError('Disk full.'))
+        ):
+            with self.assertRaisesRegex(
+                ValueError, r'^0 of 1 posts now name Dan Smith\. Disk full\.'
+            ):
+                management.dispatch(
+                    self.root,
+                    'library-author-same',
+                    {
+                        'author': 'Dan',
+                        'into': 'Dan Smith',
+                        'expected': self.groups()['Dan']['expected'],
+                    },
+                )
+        self.assertEqual(
+            sorted(self.record(i)['author'] for i in self.dan + more), ['Dan', 'Dan Smith']
+        )
+
+    def test_review_details_edits_an_items_author_both_ways(self):
+        ident = self.dan[0]
+        curate = lambda author: management.dispatch(  # noqa: E731
+            self.root,
+            'curate',
+            {
+                'id': ident,
+                'location': 'local',
+                'expected': management.source_detail(self.root, ident)['expected'],
+                'author': author,
+            },
+        )
+        curate('Dan Smith')
+        self.assertEqual(self.record(ident)['author'], 'Dan Smith')
+        curate('Dan')
+        self.assertEqual(self.record(ident)['author'], 'Dan')
+        curate('')
+        self.assertFalse(self.record(ident).get('author'), 'an author can be cleared')
+        stale = management.source_detail(self.root, ident)['expected']
+        curate('Dan')
+        with self.assertRaises(management.CurationConflict):
+            management.dispatch(
+                self.root,
+                'curate',
+                {'id': ident, 'location': 'local', 'expected': stale, 'author': 'Dan Smith'},
+            )
+        self.assertEqual(self.record(ident)['author'], 'Dan')
+
 
 class LibraryPickTests(RunnerCase):
     """Task 6: a run reads library items with a role for this blog only."""

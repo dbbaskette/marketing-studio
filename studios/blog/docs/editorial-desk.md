@@ -88,7 +88,7 @@ Opening the desk never turns analysis on; see the launch section below.
 
 ## Bring in your earlier blogs
 
-In the desk, open **Reference library → Import old blogs**. Choose a folder on
+In the desk, open **Team library → Add to library → Import a blog or site**. Choose a folder on
 this computer, a website, an RSS/Atom feed, or a JSON export. Give the collection
 a name; for web sources, choose the website/path containing the permitted posts.
 Sitemaps and a list of post links are also supported. A website preview lists
@@ -144,7 +144,8 @@ the editing controls; GitHub repository admins manage membership. The access
 message distinguishes a local workspace, write access, read-only access, expired
 sign-in, and unavailable verification. **Check access** checks again before you
 fill out an editing form. Read-only members can still browse saved records and
-use **Refresh Hub**; editing controls are unavailable with an explanation.
+use **Refresh Hub**, beside **Check access** and under **Team sharing** on Status and
+Settings; editing controls are unavailable with an explanation.
 Under the access message the desk names the workspace folder and Team Hub it is
 showing, and the analysis CLI saved for this workspace.
 

@@ -171,7 +171,7 @@ repair, or other problems, use the [setup help](docs/troubleshooting.md).
 | Edit and review with others in Google Docs | [Google Docs guide](docs/google-docs.md) |
 | Share a repository with Training and Presentation Studio | [Join a team workspace](docs/team-workspace.md) |
 | Use an existing Team Hub or move selected blogs | [Legacy Team Hubs](docs/team-hub.md) · [Migration](docs/team-workspace.md#bring-selected-work-from-a-legacy-team-hub) |
-| Browse the editorial pipeline, the team library or import earlier posts | [Editorial tools and reference library](docs/editorial-desk.md) |
+| Browse the editorial pipeline, the team library or import earlier posts | [Library and team tools](docs/editorial-desk.md) |
 | Understand where your content goes | [Privacy details](docs/privacy-review.md) |
 
 [What's new](CHANGELOG.md) · [Developer guide](docs/development.md)

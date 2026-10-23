@@ -31,7 +31,7 @@ const suiteTab = suiteBack(location.hash) || sessionStorage.getItem('marketing-s
 if(suiteTab)sessionStorage.setItem('marketing-studio-back','tab');
 history.replaceState(null, '', location.pathname+(location.search||''));
 // Ticked library rows by location and ID: a local item goes by its ID, a Team Hub one with its location.
-let view = 'board', offset = 0, total = 0, memoryEdit = null, librarySelection = new Map();
+let view = 'board', offset = 0, total = 0, memoryEdit = null, librarySelection = new Map(), libraryShown = [];
 function libraryEntry(item){return item.location==='hub'?{id:item.id,location:'hub'}:item.id;}
 // What a library item is for, as the catalog's role says it.
 const LIBRARY_ROLES={facts:'Facts',messaging:'Approved messaging',example:'Example','voice-sample':'Voice sample','style-sample':'Style sample'};
@@ -52,6 +52,32 @@ function notice(message, error=false) {
   target.textContent=message;target.className=error?'dialog-notice error':'dialog-notice';target.hidden=false;
 }
 function savedNotice(result) {if(result.team_sync){notice(result.team_sync.shared?'Saved and shared with the team repository.':result.team_sync.notice||'Saved on this computer; sharing is pending.');return;}notice((result.receipts||[]).map(r=>r.label+': '+r.message).join(' ')||result.next_step||'Saved.');}
+// Each view's toolbar: its one primary action, then the way to the other views. The buttons
+// are made again whenever the view or the access changes, so they always follow both.
+function legacyActions() {
+  const made=[];
+  const add=(id,text,action,cls='button',ready=true)=>{const b=button(text,action,cls);b.id=id;b.disabled=!ready;made.push(b);return b;};
+  if(view==='board')add('new-blog','New blog',()=>newBlog(),'button button-filled',access.actions.edit);
+  if(view==='library'){
+    add('library-add-open','Add to library',()=>sLibraryAdd(),'button button-filled',access.actions.edit);
+    // A secondary action of this view: under the lede, so the toolbar keeps one primary.
+    const voices=button('Create voices for every author',()=>sVoicesForAuthors(),'button button-quiet');voices.id='library-voices-open';voices.disabled=!access.actions.edit;
+    $('view-actions').replaceChildren(voices);
+  }else $('view-actions').replaceChildren();
+  if(view==='memory')add('memory-open','Add memory',openMemory,'button button-filled',access.actions.memory);
+  if(typeof sTools==='function')add('legacy-tools','Library and team tools',()=>sTools(),'button button-quiet');
+  return made;
+}
+function legacyToolbar() {
+  // Only while a legacy view is the one showing; the guided screens draw their own toolbar.
+  if($('editorial-screen').hidden)return;
+  $('actions').replaceChildren(...legacyActions());
+}
+function openMemory() {
+  if(!access.actions.memory)return;
+  memoryEdit=null;$('memory-truncated').hidden=true;$('memory-form').reset();
+  $('memory-form').querySelector('[type=submit]').disabled=false;$('memory-title').textContent='Add shared memory';$('memory-dialog').showModal();
+}
 function analysisChoice(prefix) {
   // Sent only when an analysis CLI is configured; unchecked means "do not send this text to the model".
   const analysis=access.analysis||{};
@@ -61,11 +87,8 @@ function applyCapabilities() {
   // The Hub access panel has something to say only when a Hub is selected or access failed.
   $('access-panel').hidden=!(access.hub||['read-only','unverified','access-expired','unavailable','identity-mismatch'].includes(access.status));
   $('access-status').textContent=access.message;
-  $('upload-open').disabled=!access.actions.edit;
-  $('new-blog').disabled=!access.actions.edit;
-  $('import-open').disabled=!access.actions.edit;
-  $('memory-open').disabled=!access.actions.memory;
   $('refresh-hub').disabled=!access.actions.refresh;
+  legacyToolbar();
   const analysis=access.analysis||{};
   $('analysis-status').textContent=analysis.message||'';
   $('analysis-status').hidden=!analysis.message;
@@ -170,6 +193,15 @@ function loading(state, pending) {
   $('previous').disabled=pending || !sameView(renderedState,state) || renderedState.offset===0;
   $('next').disabled=pending || !sameView(renderedState,state) || renderedState.offset+limit>=total;
 }
+// The filters of a view as the server reads them; the same for a page and for Select all matching.
+function filterArgs(state) {
+  const args=new URLSearchParams({query:state.query});
+  if(state.stage)args.set('stage',state.stage);
+  if(state.sourceStatus)args.set('status',state.sourceStatus);
+  if(state.collection)args.set('collection',state.collection);
+  for(const key of ['role','kind','author'])if(state[key])args.set(key,state[key]);
+  return args;
+}
 async function load() {
   const state=Object.freeze({view,offset,query:$('query').value,stage:view==='board'?$('stage').value:'',sourceStatus:view==='library'?$('library-status').value:'',collection:view==='library'?$('library-collection').value:'',role:view==='library'?$('library-role').value:'',kind:view==='library'?$('library-kind').value:'',author:view==='library'?$('library-author').value.trim():''});
   const generation=++loadGeneration;
@@ -178,15 +210,11 @@ async function load() {
   const current=()=>generation===loadGeneration;
   loading(state,true);
   loadReceipts(controller.signal,current).catch(error=>{if(current()&&error.name!=='AbortError')notice(error.message,true);});
-  const args=new URLSearchParams({limit:String(limit),offset:String(state.offset),query:state.query});
-  if(state.stage)args.set('stage',state.stage);
-  if(state.sourceStatus)args.set('status',state.sourceStatus);
-  if(state.collection)args.set('collection',state.collection);
-  for(const key of ['role','kind','author'])if(state[key])args.set(key,state[key]);
+  const args=filterArgs(state);args.set('limit',String(limit));args.set('offset',String(state.offset));
   try {
     const result=await api(state.view+'?'+args,undefined,controller.signal);
     if(!current())return;
-    render(state,result);total=result.total;renderedState=state;
+    total=result.total;renderedState=state;render(state,result);
   } catch(error) {
     if(!current()||error.name==='AbortError')return;
     if(sameView(renderedState,state))offset=renderedState.offset;
@@ -199,30 +227,76 @@ function render(state, result) {
   const {view,offset}=state, total=result.total;
   if(view==='runs'){renderRuns(result);return;}
   $('heading').textContent=views[view][0];$('subtitle').textContent=views[view][1];$('section-title').textContent=views[view][2];$('count').textContent=total+' '+(total===1?'item':'items');
-  $('import-open').hidden=view!=='library';$('library-add-open').hidden=view!=='library'||!access.actions.edit;$('stage-filter').hidden=view!=='board';for(const name of ['status','collection','role','kind','author'])$('library-'+name+'-filter').hidden=view!=='library';
+  $('stage-filter').hidden=view!=='board';for(const name of ['status','role','kind','author'])$('library-'+name+'-filter').hidden=view!=='library';$('library-more-filters').hidden=view!=='library';
   if(view==='library'){const kinds=$('library-kind'),chosen=kinds.value;kinds.replaceChildren(...[['','Any kind'],...(result.kinds||[]).map(kind=>[kind.id,kind.name])].map(([value,text])=>{const option=element('option',text);option.value=value;return option;}));kinds.value=chosen;}
-  librarySelectionBar();$('memory-open').hidden=view!=='memory';$('previous').disabled=offset===0;$('next').disabled=offset+limit>=total;$('page-label').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} of ${total}`:'No items yet';
+  {const chosen=view==='library'?['library-role','library-kind','library-author','library-status'].filter(id=>$(id).value.trim()).length+($('library-collection').value.trim()?1:0):view==='board'&&$('stage').value?1:0;$('filters-toggle').textContent=chosen?'Filters ('+chosen+')':'Filters';}
+  libraryShown=view==='library'?result.items:[];librarySelectionBar();legacyToolbar();$('previous').disabled=offset===0;$('next').disabled=offset+limit>=total;$('page-label').textContent=total?`${offset+1}–${Math.min(offset+limit,total)} of ${total}`:'No items yet';
   $('query').placeholder={board:'Blog title, author, owner…',inbox:'Blog, finding, status…',library:'Title, author, topic…',memory:'Title, kind, scope…'}[view];
   $('observation').textContent=result.observation||result.google_observation||'Saved content only. Historical product claims need current verification.';
   $('results').replaceChildren();
   const unreadable=view==='board'||view==='inbox'?unreadableNote(result):null;
   if(unreadable)$('results').append(unreadable);
-  if(!result.items.length){const box=element('div',undefined,'empty');box.append(element('h3',{board:'Your next blog starts here',inbox:'Nothing in this saved inbox',library:'Build your reference shelf',memory:'Give your team useful context'}[view]),element('p',{board:'Choose New blog to write here, upload a draft, or start a blog in chat.',inbox:'Run a review in chat to collect findings. Google review status is not checked live here.',library:'Choose “Import old blogs” to add a folder, website, feed or export, or upload a single reference.',memory:'Join a Team Hub, then save a note, context, or writing rule.'}[view]));$('results').append(box);return;}
-  const table=element('table'),head=element('tr');table.setAttribute('role','table');head.setAttribute('role','row');table.className='table view-'+view;const headings={board:['Blog / author','Stage','Owner / due','Working copy'],inbox:['Blog','Finding','Status','Next action'],library:['Reference / author','Status','Collection / date','Actions'],memory:['Memory','Kind','Applies to','Actions']}[view];headings.forEach(h=>{const th=element('th',h);th.setAttribute('scope','col');th.setAttribute('role','columnheader');head.append(th);});const thead=element('thead');thead.append(head);table.append(thead);const body=element('tbody');
+  if(!result.items.length){const box=element('div',undefined,'empty');box.append(element('h3',{board:'Your next blog starts here',inbox:'Nothing in this saved inbox',library:'Build your reference shelf',memory:'Give your team useful context'}[view]),element('p',{board:'Choose New blog to write here, upload a draft, or start a blog in chat.',inbox:'Run a review in chat to collect findings. Google review status is not checked live here.',library:'Choose Add to library for files, links, a Google Doc, or a whole blog, site or feed.',memory:'Join a Team Hub, then save a note, context, or writing rule.'}[view]));$('results').append(box);return;}
+  const table=element('table'),head=element('tr');table.setAttribute('role','table');head.setAttribute('role','row');table.className='table view-'+view;const headings={board:['Blog / author','Stage','Owner / due','Working copy'],inbox:['Blog','Finding','Status','Next action'],library:[...(access.actions.edit?['Selected']:[]),'Title','Author','Role','Status','Action'],memory:['Memory','Kind','Applies to','Actions']}[view];
+  // On a phone each library row is a card: the title and the action need no label.
+  const labels=view==='library'?headings.map(h=>['Selected','Title','Action'].includes(h)?'':h):headings;headings.forEach(h=>{const th=element('th',h);if(h==='Selected'){th.textContent='';th.setAttribute('aria-label','Selected');}th.setAttribute('scope','col');th.setAttribute('role','columnheader');head.append(th);});const thead=element('thead');thead.append(head);table.append(thead);const body=element('tbody');
   for(const item of result.items){const row=element('tr');row.setAttribute('role','row');
     if(view==='board'){const cell=textCell(row,'');cell.append(button(item.title,()=>showBlog(item),'title-button'),element('p',item.author));const stage=textCell(row,'');stage.append(badge(item.stage));if(item.conflict||item.shared_newer)stage.append(element('p',item.conflict?'Competing revisions':'New shared revision'));const owner=textCell(row,item.owner);if(item.due)owner.append(element('p',(item.overdue?'Overdue · ':'Due · ')+item.due,item.overdue?'overdue':''));const doc=textCell(row,'');doc.append(item.google?link(item.google.url,'Open Google Doc ↗'):element('span',item.location==='hub'?'Saved in Team Hub':'Local writing'));if(item.google)doc.append(element('p','Saved link; refresh Google in chat'));}
     if(view==='inbox'){const blog=textCell(row,'');blog.append(button(item.title,()=>showBlog({...item,location:item.location||'local'}),'title-button'));const finding=textCell(row,'');finding.append(button(item.kind,()=>showFinding(item),'title-button'));if(item.finding)finding.append(element('p',item.finding.message||item.finding.detail||item.finding.original||'Inspect this saved finding in chat.'));const status=textCell(row,'');status.append(badge(item.status));const action=textCell(row,'');action.append(button('Inspect finding',()=>showFinding(item)),element('p',item.action));}
-    if(view==='library'){const cell=textCell(row,item.title),pick=element('input');pick.type='checkbox';pick.className='library-pick';pick.setAttribute('aria-label','Select '+item.title);const key=(item.location||'local')+':'+item.id;pick.checked=librarySelection.has(key);pick.addEventListener('change',()=>{if(pick.checked)librarySelection.set(key,libraryEntry(item));else librarySelection.delete(key);librarySelectionBar();});if(access.actions.edit)cell.prepend(pick);cell.append(element('p',item.author||'Author unknown'),element('p',(LIBRARY_ROLES[item.role]||'Facts')+(item.kind_name?' · '+item.kind_name:'')+['voice-sample','style-sample'].filter(purpose=>purpose!==item.role&&(item.purposes||[]).includes(purpose)).map(purpose=>' · '+LIBRARY_ROLES[purpose].toLowerCase()).join(''),'help'));if(item.library.canonical_url)cell.append(link(item.library.canonical_url,'Original post ↗'));const status=textCell(row,'');status.append(badge(item.library.curation||item.status),badge(item.analysis?.status==='ready'?'Analyzed':item.analysis?.status==='needs-extraction'?'Needs extraction':'Needs analysis'));textCell(row,(item.collection_names||item.library.collections||[]).join(', ')+' '+(item.library.published||'Date unknown'));const action=textCell(row,'');action.append(button(access.actions.edit?'Review details':'Read reference',()=>curate(item)));if(item.historical)action.append(element('p','Historical reference'));}
+    if(view==='library'){
+      const key=libraryKey(item);
+      if(access.actions.edit){const pick=element('input');pick.type='checkbox';pick.className='library-pick';pick.dataset.key=key;pick.setAttribute('aria-label','Select '+item.title);pick.checked=librarySelection.has(key);pick.addEventListener('change',()=>{if(pick.checked)librarySelection.set(key,libraryEntry(item));else librarySelection.delete(key);librarySelectionBar();});const tick=textCell(row,'');tick.className='pick-cell';tick.append(pick);}
+      const cell=textCell(row,'');cell.append(element('strong',item.title,'item-title'));
+      const facts=[item.library.published||'',(item.collection_names||item.library.collections||[]).join(', ')].filter(Boolean).join(' · ');if(facts)cell.append(element('p',facts));
+      if(item.library.canonical_url)cell.append(link(item.library.canonical_url,'Original post ↗'));
+      textCell(row,item.author||'Author unknown');
+      textCell(row,(LIBRARY_ROLES[item.role]||'Facts')+(item.kind_name?' · '+item.kind_name:'')+['voice-sample','style-sample'].filter(purpose=>purpose!==item.role&&(item.purposes||[]).includes(purpose)).map(purpose=>' · '+LIBRARY_ROLES[purpose].toLowerCase()).join(''));
+      const status=textCell(row,'');status.append(badge(item.library.curation||item.status),badge(item.analysis?.status==='ready'?'Analyzed':item.analysis?.status==='needs-extraction'?'Needs extraction':'Needs analysis'));
+      const action=textCell(row,'');action.append(button(access.actions.edit?'Review details':'Read reference',()=>curate(item)));if(item.historical)action.append(element('p','Historical reference'));}
     if(view==='memory'){const cell=textCell(row,'');cell.append(button(item.title,()=>editMemory(item),'title-button'));if(item.conflict)cell.append(element('p','Competing revisions'));if(item.lesson_status)cell.append(element('p','Candidate lesson · '+item.lesson_status));textCell(row,item.kind);textCell(row,item.scope.level+(item.scope.key?' · '+item.scope.key:''));textCell(row,item.lesson?'Review / promote in chat':item.focused_workflow?'Manage in chat':item.kind==='decision'||item.conflict||!access.actions.memory?'Read details':'Open to read or edit');}
-    Array.from(row.children).forEach((cell,index)=>cell.setAttribute('data-label',headings[index]));
+    Array.from(row.children).forEach((cell,index)=>cell.setAttribute('data-label',labels[index]));
     body.append(row);
   }table.append(body);const wrap=element('div',undefined,'table-wrap');wrap.append(table);$('results').append(wrap);
 }
+// The selection bar shows while anything is ticked. A tick stays as you page and change the
+// filters, so the count can include rows not in view; Select all matching ticks what the
+// filters match at that moment, and later filters neither add to it nor take from it.
 function librarySelectionBar() {
-  // The three actions on ticked library items; the selection lasts across pages and filters.
-  const count=librarySelection.size;
+  const count=librarySelection.size,shown=view==='library'?libraryShown:[],ticked=shown.filter(item=>librarySelection.has(libraryKey(item))).length,hidden=count-ticked;
   $('library-selection').hidden=view!=='library'||!count||!access.actions.edit;
   $('library-selection-count').textContent=count+' selected';
+  $('library-selection-hidden').textContent=hidden?(hidden===1?'1 of them is':hidden+' of them are')+' not in this view.':'';
+  $('library-select-shown').textContent='Select all '+shown.length+' on this page';$('library-select-shown').hidden=!shown.length||ticked===shown.length;
+  $('library-select-matching').textContent='Select all '+total+' matching';$('library-select-matching').hidden=view!=='library'||total<=shown.length||allMatchingTicked();
+  $('library-select-page').hidden=view!=='library'||!shown.length||!access.actions.edit;
+  const box=$('library-select-page-box');box.checked=!!shown.length&&ticked===shown.length;box.indeterminate=ticked>0&&ticked<shown.length;
+}
+function libraryKey(item){return (item.location||'local')+':'+item.id;}
+function tickLibrary(items,on) {
+  for(const item of items){const key=libraryKey(item);if(on)librarySelection.set(key,libraryEntry(item));else librarySelection.delete(key);}
+  for(const pick of document.querySelectorAll('.library-pick'))pick.checked=librarySelection.has(pick.dataset.key);
+  librarySelectionBar();
+}
+// What the last Select all matching ticked, under which filters: the button hides only
+// while every one of those matches is still ticked, not when the selection is merely large.
+let libraryMatched=null;
+const LIBRARY_SELECTION_LIMIT=500;
+function allMatchingTicked(){
+  const state=renderedState;if(!libraryMatched||!state||libraryMatched.filters!==filterArgs(state).toString())return false;
+  return libraryMatched.keys.every(key=>librarySelection.has(key));
+}
+async function selectAllMatching(control) {
+  // Every item the same filters match, through the server, up to its limit.
+  const state=renderedState;if(!state||state.view!=='library')return;
+  const found=await busy(control,'Selecting…',()=>api('library-matching?'+filterArgs(state)));
+  const fresh=found.items.filter(item=>!librarySelection.has(libraryKey(item))).length;
+  if(librarySelection.size+fresh>LIBRARY_SELECTION_LIMIT){
+    notice('That would tick '+(librarySelection.size+fresh)+' items, and a selection holds at most '+LIBRARY_SELECTION_LIMIT+'. Clear the selection or narrow the filters first.',true);
+    return;
+  }
+  libraryMatched={filters:filterArgs(state).toString(),keys:found.items.map(libraryKey)};
+  tickLibrary(found.items,true);
+  if(found.capped)notice('Selected the first '+found.items.length+' of '+found.total+' matching items. Narrow the filters to choose the rest.');
 }
 function disclosure(label, ...content) {
   const box=element('details'),summary=element('summary',label);box.append(summary,...content);return box;
@@ -355,7 +429,7 @@ async function curate(item) {
   const form=element('form',undefined,'narrow'),metadata=result.record.library||{},l=element('label','Curation','field'),select=element('select',undefined,'input');select.name='curation';
   for(const state of ['active','pending','retired']){const option=element('option',state);option.value=state;option.selected=state===(metadata.curation||'active');select.append(option);}l.append(select);form.append(l);
   const fields={curation:select};
-  for(const [key,label]of [['topics','Topics (comma separated)'],['products','Products (comma separated)'],['note','Source note']]){const field=element('label',label,'field'),input=element(key==='note'?'textarea':'input',undefined,'input');input.name=key;input.value=key==='note'?(result.record.note||''):(metadata[key]||[]).join(', ');fields[key]=input;field.append(input);form.append(field);}
+  for(const [key,label]of [['author','Author (whose writing this is)'],['topics','Topics (comma separated)'],['products','Products (comma separated)'],['note','Source note']]){const field=element('label',label,'field'),input=element(key==='note'?'textarea':'input',undefined,'input');input.name=key;input.value=key==='note'?(result.record.note||''):key==='author'?(result.record.author||''):(metadata[key]||[]).join(', ');if(key==='author')input.maxLength=200;fields[key]=input;field.append(input);form.append(field);}
   const save=element('button','Save curation','button button-filled');save.type='submit';const actions=element('div',undefined,'bar form-actions');actions.append(save);form.append(actions);
   let blocked=false;
   const conflict=element('div',undefined,'curation-conflict');conflict.hidden=true;
@@ -363,7 +437,7 @@ async function curate(item) {
   conflict.append(element('p','Your proposed changes are retained. Compare the latest saved reference before deciding what to submit.'),button('Reload and compare',async()=>{
     const latest=await api('source?'+new URLSearchParams({id:result.id,location:result.location}));
     const proposed=Object.fromEntries(new FormData(form));
-    const current={curation:latest.record.library?.curation||'active',topics:(latest.record.library?.topics||[]).join(', '),products:(latest.record.library?.products||[]).join(', '),note:latest.record.note||''};
+    const current={curation:latest.record.library?.curation||'active',author:latest.record.author||'',topics:(latest.record.library?.topics||[]).join(', '),products:(latest.record.library?.products||[]).join(', '),note:latest.record.note||''};
     comparison.replaceChildren(element('h3','Latest saved values'),element('pre',JSON.stringify(current,null,2),'source-excerpt'),element('h3','Your proposed values'),element('pre',JSON.stringify(proposed,null,2),'source-excerpt'),button('Keep my proposal for resubmission',()=>{result=latest;blocked=false;save.disabled=false;conflict.hidden=true;notice('Latest version selected. Review your retained proposal, then choose Save curation to submit it.');}),button('Use latest saved values',()=>{for(const [key,value]of Object.entries(current))fields[key].value=value;result=latest;blocked=false;save.disabled=false;conflict.hidden=true;notice('Latest saved values loaded. Edit them and choose Save curation when ready.');}));
   }),comparison);
   form.addEventListener('submit',async e=>{
@@ -372,9 +446,10 @@ async function curate(item) {
       const data=Object.fromEntries(new FormData(form));
       // Compare what the form holds now with what it would show for the saved reference, in the same shape.
       const tags=text=>text.split(',').map(v=>v.trim()).filter(Boolean),library=result.record.library||{};
-      const proposed={curation:data.curation,topics:tags(data.topics),products:tags(data.products),note:data.note};
+      const proposed={curation:data.curation,author:(data.author||'').trim(),topics:tags(data.topics),products:tags(data.products),note:data.note};
       const changes=changedFields(proposed,{
         curation:['active','pending','retired'].includes(library.curation)?library.curation:'active',
+        author:(result.record.author||'').trim(),
         topics:tags((library.topics||[]).join(', ')),products:tags((library.products||[]).join(', ')),
         note:(result.record.note||'').replace(/\r\n?/g,'\n')});
       if(!Object.keys(changes).length){notice('No changes to save.');return;}
@@ -555,6 +630,11 @@ async function saveImport(retry=false){
   }catch(error){notice(error.message,true);}finally{importBusyState(false);}
 }
 
+// One file with the upload dialog's extra choices: summarize and tag it, or start a blog from it.
+function openUpload(purpose='reference'){
+  if(!access.actions.edit)return;
+  $('upload-purpose').value=purpose;$('upload-dialog').showModal();
+}
 async function saveUpload(submit){
   const analyzing=analysisChoice('upload').analyze;
   try{
@@ -589,6 +669,10 @@ for(const b of document.querySelectorAll('[data-close]'))b.addEventListener('cli
 $('search-go').addEventListener('click',()=>{offset=0;load().catch(e=>notice(e.message,true));});
 for(const id of ['library-role','library-kind','library-status'])$(id).addEventListener('change',()=>{$('search-go').click();});$('library-author').addEventListener('keydown',e=>{if(e.key==='Enter')$('search-go').click();});
 $('library-clear-selection').addEventListener('click',()=>{librarySelection.clear();for(const pick of document.querySelectorAll('.library-pick'))pick.checked=false;librarySelectionBar();});
+$('library-select-page-box').addEventListener('change',()=>tickLibrary(libraryShown,$('library-select-page-box').checked));
+$('filters-toggle').addEventListener('click',()=>{const open=!$('filters-toggle').closest('.filter-bar').classList.contains('filters-open');$('filters-toggle').closest('.filter-bar').classList.toggle('filters-open',open);$('filters-toggle').setAttribute('aria-expanded',String(open));});
+$('library-select-shown').addEventListener('click',()=>tickLibrary(libraryShown,true));
+$('library-select-matching').addEventListener('click',()=>selectAllMatching($('library-select-matching')).catch(e=>notice(e.message,true)));
 for(const [id,action] of [['library-learn-style','style-learn'],['library-learn-voice','voice-learn'],['library-start-blog','blog']])$(id).addEventListener('click',()=>sLibrarySelection(action,[...librarySelection.values()]).catch(e=>notice(e.message,true)));$('query').addEventListener('keydown',e=>{if(e.key==='Enter')$('search-go').click();});$('stage').addEventListener('change',()=>{$('search-go').click();});
 $('previous').addEventListener('click',()=>{if($('previous').disabled)return;offset=Math.max(0,offset-limit);load().catch(e=>notice(e.message,true));});$('next').addEventListener('click',()=>{if($('next').disabled)return;offset+=limit;load().catch(e=>notice(e.message,true));});
 $('refresh-hub').addEventListener('click',async()=>{
@@ -599,7 +683,6 @@ $('refresh-hub').addEventListener('click',async()=>{
 $('check-access').addEventListener('click',async()=>{try{await loadCapabilities();await load();}catch(e){notice(e.message,true);}});
 $('import-collection').addEventListener('change',importFields);
 $('import-new').addEventListener('click',()=>{if(!importBusy)resetImportPreview();});
-$('import-open').addEventListener('click',openImport);
 $('import-type').addEventListener('change',()=>{resetImportPreview();importFields();});
 $('import-form').addEventListener('input',()=>{if(!importBusy)resetImportPreview();});
 $('import-form').addEventListener('submit',e=>{e.preventDefault();previewImport();});
@@ -608,8 +691,6 @@ $('import-retry').addEventListener('click',()=>saveImport(true));
 $('import-dialog').addEventListener('cancel',e=>{if(importBusy)e.preventDefault();});
 $('import-reload').addEventListener('click',async()=>{if(importBusy||!importState)return;importBusyState(true,'Reloading your saved preview…');try{renderImport(await api('library-preview?preview='+encodeURIComponent(importState.preview)));}catch(error){notice(error.message,true);}finally{importBusyState(false);}});
 
-$('upload-open').addEventListener('click',()=>{if(access.actions.edit)$('upload-dialog').showModal();});
 $('upload-form').addEventListener('submit',e=>{e.preventDefault();saveUpload(e.target.querySelector('[type=submit]'));});
-$('memory-open').addEventListener('click',()=>{if(!access.actions.memory)return;memoryEdit=null;$('memory-truncated').hidden=true;$('memory-form').reset();$('memory-form').querySelector('[type=submit]').disabled=false;$('memory-title').textContent='Add shared memory';$('memory-dialog').showModal();});
 $('memory-form').addEventListener('submit',e=>{e.preventDefault();saveMemory(e.target.querySelector('[type=submit]'));});
 applyCapabilities();loadCapabilities().then(()=>load()).catch(e=>notice(e.message,true));
