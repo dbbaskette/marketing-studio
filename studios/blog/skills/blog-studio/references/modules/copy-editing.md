@@ -58,6 +58,8 @@ A finding should identify an exact passage, explain its effect on the reader,
 and offer a concrete replacement or action. Prioritize factual contradiction
 and broken reasoning before cosmetic preferences. Separate a required correction
 from an optional stylistic alternative so the author can judge the tradeoff.
+A qualification repeated in three or more sections is an editorial finding: keep it
+once, where it decides something for the reader.
 
 For developmental feedback, explain the missing reasoning or example and where
 it belongs; ask for facts only the author can supply rather than writing a

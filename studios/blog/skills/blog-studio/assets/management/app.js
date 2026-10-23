@@ -34,7 +34,7 @@ history.replaceState(null, '', location.pathname+(location.search||''));
 let view = 'board', offset = 0, total = 0, memoryEdit = null, librarySelection = new Map();
 function libraryEntry(item){return item.location==='hub'?{id:item.id,location:'hub'}:item.id;}
 // What a library item is for, as the catalog's role says it.
-const LIBRARY_ROLES={facts:'Facts',example:'Example','voice-sample':'Voice sample','style-sample':'Style sample'};
+const LIBRARY_ROLES={facts:'Facts',messaging:'Approved messaging',example:'Example','voice-sample':'Voice sample','style-sample':'Style sample'};
 const limit = 20;
 let loadGeneration = 0, loadController = null, renderedState = null;
 let access = {status:'checking',message:'Checking Hub access…',actions:{edit:false,memory:false,refresh:false}};

@@ -228,6 +228,23 @@ def carried_over(text, examples, allowed):
     }
 
 
+# A source ID or an editorial placeholder is a note for the author, never reader-facing text.
+READER_FACING_NOTE = re.compile(r'\[(?:source-|editorial placeholder)[^\]\n]{0,300}\]?', re.I)
+
+
+def reader_facing_notes(text):
+    """Each source ID or editorial placeholder left in writing a reader reads."""
+    return [
+        {
+            'rule': 'reader-facing-note',
+            'target': hit.group(),
+            'start': hit.start(),
+            'line': text.count('\n', 0, hit.start()) + 1,
+        }
+        for hit in READER_FACING_NOTE.finditer(text)
+    ]
+
+
 def facts(text):
     return {
         'numbers': sorted(Counter(re.findall(r'\b\d[\d,]*(?:\.\d+)?(?:%|\b)', text)).items()),

@@ -3554,3 +3554,329 @@ class GateCheckTests(RunnerCase):
         self.assertNotIn('Saved document contains readable text', labels)
         self.assertNotIn('Document matches its submitted version and selected inputs', labels)
         self.assertEqual(labels, ['No automatic checks apply to Outline.'])
+
+
+class MessagingTests(FilesCase):
+    """Approved messaging: the announcement's own claims, stated in the product's voice."""
+
+    BRIEF = 'Gateway Prime retries a failed call twice. It is in preview, planned for March.'
+
+    def messaging(self, *files):
+        import base64
+        import blog_library
+
+        with patch.object(blog_library.shutil, 'which', return_value=None):
+            result = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': studio.digest(repr(('messaging', files)).encode())[:32],
+                    'purpose': 'material',
+                    'analyze': False,
+                    'files': [
+                        {
+                            'filename': name,
+                            'content': base64.b64encode(body.encode()).decode(),
+                            'purpose': 'messaging',
+                        }
+                        for name, body in files
+                    ],
+                },
+            )
+        return [row['source']['id'] for row in result['files']]
+
+    def test_the_stance_reaches_the_payload_only_with_messaging(self):
+        facts = self.material(('notes.md', 'Retries cost money. ' * 40))
+        brief = self.messaging(('launch-brief.md', self.BRIEF))
+        found = self.create(sources=facts + brief, research='none')
+        _, record, run = runner.load(self.root, found['id'])
+        stances = {s['name']: s['stance'] for s in runner.inputs(self.root, record, run)['sources']}
+        self.assertEqual(stances, {'notes': 'evidence', 'launch-brief': 'messaging'})
+        # Without messaging, no source carries a stance, so saved pins hold byte for byte.
+        plain = self.create(sources=facts, research='none', title='Plain')
+        _, record, run = runner.load(self.root, plain['id'])
+        self.assertTrue(
+            all('stance' not in s for s in runner.inputs(self.root, record, run)['sources'])
+        )
+
+    def test_the_writer_is_told_what_messaging_means(self):
+        self.assertIn("stance 'messaging'", blog_worker.POLICY)
+        self.assertIn('without attribution hedges', blog_worker.POLICY)
+        found = self.create(
+            sources=self.messaging(('launch-brief.md', self.BRIEF)), research='none'
+        )
+        found = self.approve(self.submit(found))  # outline
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['sources'][0]['stance'], 'messaging')
+        self.assertIn('| Approved messaging |', guidance)
+        self.assertIn('dates, versions and entitlements', guidance)
+        self.assertIn('claim the messaging makes', guidance)
+
+    def test_the_claims_map_reads_messaging_as_the_products_own_claims(self):
+        found = self.create(
+            sources=self.messaging(('launch-brief.md', self.BRIEF)), research='supplied-only'
+        )
+        self.assertEqual(found['next'], 'claims-map')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual([s['stance'] for s in payload['sources']], ['messaging'])
+        self.assertIn('stance `messaging`', guidance)
+
+
+class ReaderFacingNotesTests(RunnerCase):
+    """Source IDs and editorial notes stay out of the reader's text."""
+
+    EVIDENCE = [
+        {'claim': 'Retries twice', 'source': 'source-abc', 'passage': 'retries a failed call twice'}
+    ]
+    GAPS = ['The confirmed release version and date.']
+
+    def at_draft(self, page=False):
+        found = self.approve(self.submit(self.create(page=page), page=page), page=page)
+        self.assertEqual(found['next'], 'draft')
+        return found
+
+    def test_reader_facing_notes_finds_source_ids_and_placeholders(self):
+        from text_checks import reader_facing_notes
+
+        text = (
+            'Gateway Prime retries twice [source-abc123].\n\n'
+            '[Editorial placeholder: add the confirmed release version.]\n'
+        )
+        found = reader_facing_notes(text)
+        self.assertEqual([f['rule'] for f in found], ['reader-facing-note'] * 2)
+        self.assertEqual(
+            [f['target'] for f in found],
+            ['[source-abc123]', '[Editorial placeholder: add the confirmed release version.]'],
+        )
+        self.assertEqual(reader_facing_notes('A clean paragraph about sources.'), [])
+
+    def test_the_gate_check_fails_on_a_note_in_the_draft(self):
+        found = self.at_draft()
+        found = self.submit(found, '# Draft\n\nIt retries twice [source-abc123].\n')
+        row = next(
+            c
+            for c in runner.document(self.root, found['id'], 'draft')['checks']
+            if 'editorial notes' in c['label']
+        )
+        self.assertEqual(
+            (row['label'], row['passed']), ('Source IDs or editorial notes in the writing', False)
+        )
+        self.assertEqual(row['detail'], ['line 3: [source-abc123]'])
+        # The review and the handoff check the draft too, and a clean draft passes.
+        found = self.submit(
+            runner.decide(
+                self.root, found['id'], found['expected'], 'changes', 'Clean it.', target='draft'
+            ),
+            '# Draft\n\nIt retries twice.\n',
+        )
+        row = next(
+            c
+            for c in runner.document(self.root, found['id'], 'draft')['checks']
+            if 'editorial notes' in c['label']
+        )
+        self.assertEqual(
+            (row['label'], row['passed']),
+            ('No source IDs or editorial notes in the writing', True),
+        )
+
+    def test_a_draft_job_asks_for_evidence_and_gaps_apart_from_the_writing(self):
+        found = self.at_draft()
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['response_kind'], 'writing-with-notes')
+        self.assertIn('never in content', guidance)
+        schema = blog_worker.schema_for(payload)
+        self.assertEqual(schema['required'], ['content', 'notes', 'evidence', 'gaps'])
+        self.assertIs(blog_worker.schema_for({}), blog_worker.SCHEMA)
+        result = {'content': 'x', 'notes': '', 'evidence': self.EVIDENCE, 'gaps': self.GAPS}
+        self.assertEqual(blog_worker.validate(result), result)
+        for bad in ({'gaps': 'one'}, {'gaps': [3]}, {'evidence': [{'claim': 'x'}]}):
+            with self.assertRaisesRegex(ValueError, 'notes'):
+                blog_worker.validate({**result, **bad})
+        self.assertIn('never in the words a reader reads', blog_worker.POLICY)
+
+    def test_notes_are_saved_beside_the_stage_shown_and_handed_off(self):
+        found = self.at_draft(page=True)
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(payload)
+            return {
+                'content': '# Draft\n\nGateway Prime retries a failed call twice.\n',
+                'notes': 'Judgment.',
+                'evidence': self.EVIDENCE,
+                'gaps': self.GAPS,
+            }
+
+        engine = runner.Engine(self.root, worker=worker)
+        self.addCleanup(engine.close)
+        engine.keep_local(found['id'], {'enabled': True})
+        engine.once(found['id'])
+        self.assertEqual(engine.describe(found['id'])['status'], 'waiting-for-approval')
+        directory, _, _ = runner.load(self.root, found['id'])
+        saved = json.loads((directory / 'derived/blog-draft-notes.json').read_text())
+        self.assertEqual(saved, {'evidence': self.EVIDENCE, 'gaps': self.GAPS})
+        self.assertNotIn('[source-', (directory / 'DRAFT.md').read_text())
+        shown = runner.document(self.root, found['id'], 'draft')
+        self.assertEqual(shown['gaps'], self.GAPS)
+        found = runner.survey(self.root, found['id'])
+        found = self.approve(found, page=True)  # draft
+        found = self.approve(self.submit(found, page=True), page=True)  # review
+        self.assertEqual(found['next'], 'package')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['gaps'], self.GAPS)
+        self.assertIn('## Needs you before publishing', guidance)
+        # The handoff shows the draft's gaps until it returns its own.
+        found = self.submit(found, '# Handoff\n\nTitle.', page=True)
+        self.assertEqual(runner.document(self.root, found['id'], 'package')['gaps'], self.GAPS)
+        # A chat submission names its gaps with --gap; one without them keeps none.
+        chat = self.at_draft()
+        self.file.write_text('# Draft\n\nGateway Prime retries a failed call twice.\n')
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'run', 'submit', '--id', chat['id']]
+            + ['--expected', chat['expected'], '--stage', 'draft', '--file', str(self.file)]
+            + ['--gap', 'A launch link.']
+        )
+        chat = runner.command(self.root, args)
+        self.assertEqual(
+            runner.document(self.root, chat['id'], 'draft')['gaps'], ['A launch link.']
+        )
+        self.submit(
+            runner.decide(
+                self.root, chat['id'], chat['expected'], 'changes', 'Again.', target='draft'
+            )
+        )
+        self.assertEqual(runner.document(self.root, chat['id'], 'draft')['gaps'], [])
+
+
+class LengthAndQualificationTests(RunnerCase):
+    """Qualify once, and write to the depth asked for."""
+
+    def guidance_at(self, stage, **extra):
+        found = self.create(**extra)
+        while found['next'] != stage:
+            found = self.approve(self.submit(found))
+        return runner.load(self.root, found['id'])[2], runner.job(self.root, found['id'])[2]
+
+    def test_length_is_chosen_pinned_and_written_to(self):
+        run, guidance = self.guidance_at('draft')
+        self.assertEqual(run['length'], 'style')
+        self.assertNotIn('about twice', guidance)
+        self.assertNotIn('about half', guidance)
+        run, guidance = self.guidance_at('draft', length='deep', title='Deep')
+        self.assertEqual(run['length'], 'deep')
+        self.assertIn('about twice', guidance)
+        self.assertIn('one worked example or proof point', guidance)
+        _, outline = self.guidance_at('outline', length='short', title='Short')
+        self.assertIn('about half', outline)
+        with self.assertRaisesRegex(ValueError, 'length'):
+            self.create(length='long', title='Refused')
+        args = studio.parser().parse_args(
+            ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
+            + ['--title', 'Chat', '--research', 'none', '--length', 'deep']
+        )
+        chat = runner.command(self.root, args)
+        self.assertEqual(runner.load(self.root, chat['id'])[2]['length'], 'deep')
+
+    def test_the_writer_qualifies_once_and_builds_each_capability(self):
+        _, guidance = self.guidance_at('draft')
+        self.assertIn('State a limitation once', guidance)
+        self.assertIn('what it does, how it works', guidance)
+        self.assertIn('"is described as"', guidance)
+        _, outline = self.guidance_at('outline', title='Outline')
+        self.assertIn('State a limitation once', outline)
+        _, review = self.guidance_at('review', title='Review')
+        self.assertIn('repeated in three or more sections', review)
+
+    def test_the_point_is_the_angle_and_the_style_sets_the_register(self):
+        _, plan = self.guidance_at(
+            'research-plan', research='web-allowed', sources=[self.source()['id']], title='Plan'
+        )
+        self.assertIn('Read the point to make as the angle', plan)
+        _, draft = self.guidance_at('draft', style='product-announcement', title='Styled')
+        self.assertIn('the house guide still decides mechanics', draft)
+
+
+class ReviewFixTests(RunnerCase):
+    """Final review: notes survive edits, reach the review, and the handoff is checked."""
+
+    EVIDENCE, GAPS = ReaderFacingNotesTests.EVIDENCE, ReaderFacingNotesTests.GAPS
+    at_draft = ReaderFacingNotesTests.at_draft
+
+    def drafted(self, page=False, **extra):
+        found = self.create(page=page, **extra)
+        found = self.approve(self.submit(found, page=page), page=page)
+        return runner.submit(
+            self.root,
+            found['id'],
+            'draft',
+            {
+                'content': '# Draft\n\nGateway Prime retries twice.\n',
+                'notes': '',
+                'evidence': self.EVIDENCE,
+                'gaps': self.GAPS,
+            },
+            found['expected'],
+            page=page,
+        )
+
+    def test_an_edit_is_given_the_open_gaps_and_adopt_keeps_them(self):
+        found = self.drafted(page=True)
+        found = runner.decide(
+            self.root,
+            found['id'],
+            found['expected'],
+            'changes',
+            'Fix a typo.',
+            page=True,
+            target='draft',
+        )
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['gaps'], self.GAPS)
+        self.assertIn('still open', guidance)
+        # Bringing the saved version back keeps its notes.
+        with studio.locked(self.root):
+            runner.dispatch(self.root, 'adopt', {'id': found['id'], 'expected': found['expected']})
+        self.assertEqual(runner.document(self.root, found['id'], 'draft')['gaps'], self.GAPS)
+
+    def test_the_review_reads_the_drafts_evidence(self):
+        found = self.approve(self.drafted(sources=[self.source()['id']]))
+        self.assertEqual(found['next'], 'review')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['evidence'], self.EVIDENCE)
+        self.assertIn('evidence lists', guidance)
+
+    def test_the_handoff_is_checked_for_notes_outside_its_gaps(self):
+        found = self.approve(self.submit(self.approve(self.drafted())))
+        self.assertEqual(found['next'], 'package')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertIn('evidence stays empty', guidance)
+        found = self.submit(
+            found,
+            '# Handoff\n\nDescription: Retries twice [source-abc123].\n\n'
+            '## Needs you before publishing\n\n- [Editorial placeholder: the date]\n',
+        )
+        row = next(
+            c
+            for c in runner.document(self.root, found['id'], 'package')['checks']
+            if 'handoff' in c['label']
+        )
+        self.assertEqual(
+            (row['label'], row['passed'], row['detail']),
+            ('Source IDs or editorial notes in the handoff', False, ['line 3: [source-abc123]']),
+        )
+
+    def test_notes_that_cannot_be_read_or_are_blank_lose_nothing(self):
+        result = blog_worker.validate(
+            {'content': 'x', 'notes': '', 'evidence': [], 'gaps': ['  ', 'A date.']}
+        )
+        self.assertEqual(result['gaps'], ['A date.'])
+        self.assertEqual(blog_worker.WRITING_SCHEMA['properties']['gaps']['items']['minLength'], 1)
+        found = self.drafted()
+        directory, _, _ = runner.load(self.root, found['id'])
+        for broken in ('not json', '["a list"]', '{"gaps": [3, "Kept."]}'):
+            (directory / 'derived/blog-draft-notes.json').write_text(broken)
+            shown = runner.document(self.root, found['id'], 'draft')
+            self.assertEqual(shown['gaps'], ['Kept.'] if 'Kept' in broken else [])
+
+    def test_the_policy_keeps_source_ids_for_notes(self):
+        self.assertIn('Cite supplied sources by their IDs in notes or evidence', blog_worker.POLICY)

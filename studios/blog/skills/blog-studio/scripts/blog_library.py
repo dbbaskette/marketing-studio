@@ -47,7 +47,7 @@ EMPTY_PDF = 'No text was found in this PDF, so it needs text. A scanned image ne
 ORIGIN_KINDS = ('written-here', 'upload', 'link', 'google-doc', 'import')
 # What an item is for, as the library filters it: facts the writing may quote, an example
 # of the kind of post, or a sample of a voice or a style.
-ROLES = ('facts', 'example', 'voice-sample', 'style-sample')
+ROLES = ('facts', 'messaging', 'example', 'voice-sample', 'style-sample')
 
 
 def library_fields(root, kind=None, origin_kind=None, article=None):
@@ -76,11 +76,13 @@ def library_fields(root, kind=None, origin_kind=None, article=None):
 
 
 def role_of(record):
-    """facts or example, from a source's purposes. An item that is only a voice or style
-    sample (no reference) is listed by that purpose, never as facts."""
+    """facts, messaging or example, from a source's purposes. An item that is only a voice
+    or style sample (no reference) is listed by that purpose, never as facts."""
     purposes = record.get('purposes') or []
     if 'inspiration' in purposes:
         return 'example'
+    if 'messaging' in purposes:
+        return 'messaging'
     if 'reference' not in purposes:
         for purpose in ('voice-sample', 'style-sample'):
             if purpose in purposes:
@@ -1347,7 +1349,13 @@ def search_index(database, rows, signature, filters):
         if role == 'example':
             clauses.append(has % 'inspiration')
         elif role == 'facts':
-            clauses.append(has % 'reference' + ' AND NOT ' + has % 'inspiration')
+            clauses.append(
+                has % 'reference'
+                + ' AND NOT '
+                + has % 'inspiration'
+                + ' AND NOT '
+                + has % 'messaging'
+            )
         elif role:
             clauses.append(has % role)
         if kind:
@@ -1411,7 +1419,7 @@ def catalog(
         raise ValueError('Choose a listed library status.')
     if role not in (None, '', *ROLES):
         raise ValueError(
-            'Choose a listed library role: facts, example, voice-sample or style-sample.'
+            'Choose a listed library role: facts, messaging, example, voice-sample or style-sample.'
         )
     if kind is not None and not isinstance(kind, str):
         raise ValueError('Choose a listed kind of post.')
@@ -1766,7 +1774,11 @@ def add_parser(groups):
     p.add_argument('--product')
     p.add_argument('--since')
     p.add_argument('--until')
-    p.add_argument('--role', choices=ROLES, help='Facts, examples, or voice or style samples')
+    p.add_argument(
+        '--role',
+        choices=ROLES,
+        help='Facts, approved messaging, examples, or voice or style samples',
+    )
     p.add_argument('--kind', help='A kind of post (style ID)')
     p.add_argument('--limit', type=int, default=20)
     p.add_argument('--offset', type=int, default=0)

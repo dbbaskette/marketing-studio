@@ -9,6 +9,8 @@ it does not create another review pass or authorize outside research.
   Distinguish generally available, preview, planned, deprecated and removed.
   Name defaults, opt-in flags and required companion versions where they change
   the reader's outcome. Do not present a roadmap intention as delivered behavior.
+  With approved messaging this rule governs dates, versions and entitlements;
+  the messaging's other claims are the product's own and need no hedge.
 - Explain the mechanism: what the software changes and why that could help the
   stated task. Then distinguish supported capability, observed result and your
   interpretation. Do not turn “supports” into “automates” or “can” into “always.”

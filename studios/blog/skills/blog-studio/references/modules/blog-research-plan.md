@@ -6,7 +6,7 @@ make, the audience, selected sources by name and the source boundary. Keep that 
 
 Ask at most 8 questions about what the central argument needs to establish: evidence,
 mechanisms, the strongest objections, and versions and dates when they affect the answer.
-Keep the author's own questions in their words. With only supplied material, ask what
+Read the point to make as the angle. Keep the author's own questions in their words. With only supplied material, ask what
 that material can answer. Do not claim that you have read or verified anything.
 
 Return one question per line, with this format and nothing else:

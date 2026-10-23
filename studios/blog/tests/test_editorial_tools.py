@@ -2199,7 +2199,7 @@ class MaterialUploadTests(Fixture):
         # A role that is not facts or an example is refused before anything is saved.
         bad = self.files(('a.md', b'ok'), ('b.md', b'ok'))
         bad[1]['purpose'] = 'voice-sample'
-        with self.assertRaisesRegex(ValueError, 'Facts or an example'):
+        with self.assertRaisesRegex(ValueError, 'Facts, approved messaging or an example'):
             management.dispatch(self.root, 'upload', dict(data, operation='9' * 32, files=bad))
         self.assertEqual(len(list((self.root / '.uploads' / 'material').iterdir())), 2)
 
@@ -2228,9 +2228,9 @@ class MaterialUploadTests(Fixture):
         self.assertEqual(role(id=ident, role='facts')['role'], 'facts')
         self.assertEqual(studio.item(self.root, 'sources', ident)[1]['purposes'], ['material'])
         self.assertEqual(studio.item(self.root, 'sources', ident)[1]['revision'], 1)
-        with self.assertRaisesRegex(ValueError, 'facts or example'):
+        with self.assertRaisesRegex(ValueError, 'facts, messaging or example'):
             role(id=ident, role='reference')
-        with self.assertRaisesRegex(ValueError, 'facts or example'):
+        with self.assertRaisesRegex(ValueError, 'facts, messaging or example'):
             role(id=ident, role='facts', keep=True)
         with self.assertRaisesRegex(ValueError, 'Unknown sources ID'):
             role(id='material-0000000000000000', role='facts')
@@ -2257,6 +2257,68 @@ class MaterialUploadTests(Fixture):
             role(id=pinned, role='example')
         self.assertEqual(studio.item(self.root, 'sources', pinned)[1]['purposes'], ['material'])
         self.assertEqual(role(id=ident, role='example')['role'], 'example')
+
+    def test_an_upload_can_be_the_products_approved_messaging(self):
+        files = self.files(('brief.md', b'The gateway retries twice.'), ('notes.md', b'Facts.'))
+        files[0]['purpose'] = 'messaging'
+        data = {'operation': '5' * 32, 'purpose': 'material', 'analyze': False, 'files': files}
+        with patch.object(library.shutil, 'which', return_value=None):
+            result = management.dispatch(self.root, 'upload', data)
+        messaging, facts = (row['source']['id'] for row in result['files'])
+        self.assertEqual(
+            studio.item(self.root, 'sources', messaging)[1]['purposes'], ['material', 'messaging']
+        )
+        self.assertEqual(studio.item(self.root, 'sources', facts)[1]['purposes'], ['material'])
+        kept = management.dispatch(self.root, 'upload', dict(data, operation='6' * 32, keep=True))
+        _, record = studio.item(self.root, 'sources', kept['files'][0]['source']['id'])
+        self.assertEqual(record['purposes'], ['reference', 'messaging'])
+        self.assertEqual(library.role_of(record), 'messaging')
+        # The single-file dialog keeps approved messaging as a shared reference too.
+        single = management.dispatch(
+            self.root,
+            'upload',
+            {
+                'operation': '4' * 32,
+                'filename': 'launch.md',
+                'content': base64.b64encode(b'The launch brief.').decode(),
+                'purpose': 'messaging',
+                'as_blog': False,
+                'analyze': False,
+            },
+        )
+        _, record = studio.item(self.root, 'sources', single['source']['id'])
+        self.assertEqual(record['purposes'], ['reference', 'messaging'])
+        html = (
+            Path(management.__file__).resolve().parents[1] / 'assets/management/index.html'
+        ).read_text()
+        self.assertIn(
+            '<option value="messaging">Approved messaging (the product’s own claims)</option>', html
+        )
+
+    def test_source_role_switches_among_facts_example_and_messaging(self):
+        with patch.object(library.shutil, 'which', return_value=None):
+            uploaded = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': 'c' * 32,
+                    'purpose': 'material',
+                    'analyze': False,
+                    'files': self.files(('brief.md', b'The launch brief.')),
+                },
+            )
+        ident = uploaded['files'][0]['source']['id']
+        role = lambda **data: management.dispatch(self.root, 'source-role', data)  # noqa: E731
+        self.assertEqual(role(id=ident, role='messaging')['purposes'], ['material', 'messaging'])
+        self.assertEqual(role(id=ident, role='example')['purposes'], ['material', 'inspiration'])
+        self.assertEqual(role(id=ident, role='facts')['purposes'], ['material'])
+        # A library reference trades one mark for the other and keeps its other purposes.
+        reference = self.source()
+        self.assertEqual(role(id=reference['id'], role='example')['purposes'][-1], 'inspiration')
+        self.assertEqual(
+            role(id=reference['id'], role='messaging')['purposes'], ['reference', 'messaging']
+        )
+        self.assertEqual(role(id=reference['id'], role='facts')['purposes'], ['reference'])
 
     def test_the_upload_dialog_saves_an_example_as_a_shared_reference(self):
         import blog_runner

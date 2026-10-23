@@ -1471,10 +1471,10 @@ async function filesJourney(){
   assert.ok(text().some(t=>/^Add at least one file with text, from your computer, a Google Doc or the library, and this lights up\.$/.test(t)),'and the screen says why Start is grey: '+text().join('|'));
   assert.equal(start().textContent,'Find three angles');
   assert.ok(text().some(t=>/stops for the angles/.test(t)),'the stops line names the angles: '+text().join('|'));
-  // Each upload says what the files are for: facts by default, or an example of the kind of post.
+  // Each upload says what the files are for: facts by default, approved messaging, or an example of the kind of post.
   const role=()=>byId('files-role');
   assert.equal(role().tagName,'select');assert.equal(role().value,'material');
-  assert.deepEqual(role().children.map(o=>[o.value,o.textContent]),[['material','Facts (may be quoted)'],['inspiration','Example of the kind of post']]);
+  assert.deepEqual(role().children.map(o=>[o.value,o.textContent]),[['material','Facts (may be quoted)'],['messaging','Approved messaging (the product’s own claims)'],['inspiration','Example of the kind of post']]);
   // Write as: the same choice as the wizard's first step. My voice is the default voice, a
   // provisional profile says so, and no particular voice shows the tone.
   const voice=()=>byId('files-voice');
@@ -1508,6 +1508,8 @@ async function filesJourney(){
   rowRole().value='inspiration';await rowRole().listeners.change();
   assert.deepEqual(requests.find(r=>r.url==='/api/source-role').data,{id:'s1',role:'example'});
   assert.equal(byId('files-role-s1').value,'inspiration','the row keeps the new role');
+  byId('files-role-s1').value='messaging';await byId('files-role-s1').listeners.change();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/source-role').at(-1).data,{id:'s1',role:'messaging'},'approved messaging is its own role');
   byId('files-role-s1').value='material';await byId('files-role-s1').listeners.change();
   assert.deepEqual(requests.filter(r=>r.url==='/api/source-role').at(-1).data,{id:'s1',role:'facts'});
   assert.equal(f.run('studio.busy'),false,'the screen is free again after a role change');assert.equal(start().disabled,false);
@@ -1586,6 +1588,8 @@ async function filesJourney(){
   await how().children.find(e=>e.textContent==='I know the point').listeners.click();
   assert.ok(byId('files-title')&&byId('files-point')&&byId('files-audience'),'the point path asks for the title, the point and the reader: '+text().join('|'));
   assert.equal(byId('files-goal'),undefined);
+  assert.match(byId('files-point-hint').textContent,/For example: “/,'the point has an example of a specific point');
+  assert.ok(byId('files-length'),'Length is on the files screen too');
   assert.equal(start().textContent,'Start writing');
   assert.ok(text().some(t=>/^Balanced: it stops for the outline and the handoff$/.test(t)),'no angles on the point path: '+text().join('|'));
   await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
@@ -1610,6 +1614,13 @@ async function filesJourney(){
   const items=nodes().filter(e=>e.className==='check-detail quiet');
   assert.equal(items.length,1,'one detail list for the failing check');
   assert.deepEqual(items[0].children.map(e=>e.textContent),['42 percent','https://example.invalid/launch']);
+  // What the author must supply before publishing is its own part of the aside, never in the writing.
+  assert.ok(!text().includes('Needs you before publishing'),'no gaps, no heading');
+  f.set('gapped',{...shown,gaps:['The confirmed release date.','A launch link.']});
+  f.run("sGate(waiting,gapped)");
+  const needs=nodes().find(e=>e.tagName==='h2'&&e.textContent==='Needs you before publishing');
+  assert.ok(needs,'the gaps have their own heading: '+text().join('|'));
+  assert.deepEqual(nodes().find(e=>e.className==='gap-items')?.children.map(e=>e.textContent),['The confirmed release date.','A launch link.']);
   f.run("sGate(waiting,shown)");
   assert.ok(!actions().some(t=>/Save ideas|Use this|Finish/.test(t)),actions().join('|'));
   assert.ok(text().some(t=>/notes was excerpted|excerpted/.test(t)),'the gate says which files were excerpted: '+text().join('|'));
@@ -2044,6 +2055,11 @@ async function wizardVoiceAndKind(){
   assert.deepEqual(texts(byId('new-profile')),['My voice — Synthetic Author · confirmed','Guest Writer · provisional','No particular voice (use the described tone)','Learn a new voice…']);
   assert.equal(chosen('new-profile'),'My voice — Synthetic Author · confirmed','the default voice is chosen by default');
   assert.deepEqual(texts(byId('new-style')),['No particular kind of post','Product announcement (starter)','Field notes · provisional'],'retired kinds are left out');
+  // Length sits beside Kind of post: the style's own by default.
+  assert.ok(ids.indexOf('new-length')>ids.indexOf('new-style'),'Length is beside Kind of post');
+  assert.equal(nodes().find(e=>e.tagName==='label'&&e.htmlFor==='new-length').textContent,'Length');
+  assert.deepEqual(texts(byId('new-length')),['The style’s own','Short (about half)','In depth (about twice, with an example for each capability)']);
+  assert.equal(chosen('new-length'),'The style’s own');
   // Step two keeps tone, author and brand, with the tone as a nudge.
   await submit();
   assert.ok(nodes().some(e=>e.textContent==='Tone, author and brand'));
@@ -2060,7 +2076,9 @@ async function wizardVoiceAndKind(){
   options={...options,default_voice:mine};
   // A chosen voice and kind are sent as chosen.
   await f.run("newBlog('',null,'write')");fill();choose('new-profile','Guest Writer · provisional');choose('new-style','Field notes · provisional');
-  sent=await start();assert.equal(sent.profile,'guest');assert.equal(sent.style,'field-notes');
+  sent=await start();assert.equal(sent.profile,'guest');assert.equal(sent.style,'field-notes');assert.equal(Object.hasOwn(sent,'length'),false,'the style’s own length sends nothing');
+  await f.run("newBlog('',null,'write')");fill();choose('new-length','In depth (about twice, with an example for each capability)');
+  sent=await start();assert.equal(sent.length,'deep','a chosen length is sent');
   await f.run("newBlog('',null,'write')");fill();choose('new-profile','No particular voice (use the described tone)');
   sent=await start();assert.equal(sent.profile,'','no particular voice uses the described tone');
   // With no default voice, nothing is left to a default that may be missing or in conflict.

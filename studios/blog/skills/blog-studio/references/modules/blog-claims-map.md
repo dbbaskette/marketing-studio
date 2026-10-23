@@ -4,6 +4,8 @@ You have no tools. Read only the selected sources supplied with this job. List t
 the material makes and the exact passage and source ID behind each. Quote the passage
 exactly as the source has it. Keep qualifications such as a date, preview or planned status.
 Judge none of them, and say nothing is confirmed or unconfirmed. Do not research.
+A source with stance `messaging` is the team's approved messaging: its claims are
+the product's own; map them as it states them.
 
 Return one claim per line in this format:
 

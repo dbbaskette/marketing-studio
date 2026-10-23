@@ -21,7 +21,9 @@ Preserve a supplied outline when expansion rather than restructuring was request
 
 A useful section plan names its title, unique contribution, relation to the prior
 section, evidence/examples, and what belongs elsewhere. Mark unsupported areas
-as research needs; do not invent supporting facts. Opening and first section
+as research needs; do not invent supporting facts. State a limitation once, in the
+section where it decides something for the reader. Plan a capability section as what
+it does, how it works, what the reader can now do, and one example or proof point. Opening and first section
 should progress rather than repeat each other. Save the outline/checkpoint via
 [article storage](../workspace/articles.md); outline-only mode stops here.
 

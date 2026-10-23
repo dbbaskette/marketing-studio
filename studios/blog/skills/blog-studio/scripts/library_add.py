@@ -19,7 +19,7 @@ from hub_store import HubError, encoded, sha
 
 EACH = '*each'
 FIELDS = {'operation', 'files', 'links', 'role', 'author', 'kind', 'expected', 'retry'}
-NO_ROLE = 'Choose facts or an example of the kind of post for these items.'
+NO_ROLE = 'Choose facts, approved messaging or an example of the kind of post for these items.'
 
 
 def ledger_path(root, operation):
@@ -36,7 +36,7 @@ def checked(root, data):
     if set(data) - FIELDS:
         raise ValueError('Unknown add-to-library field.')
     role = data.get('role')
-    if role not in ('facts', 'example'):
+    if role not in ('facts', 'messaging', 'example'):
         raise ValueError(NO_ROLE)
     author = data.get('author') or ''
     if author != EACH:
@@ -78,7 +78,8 @@ def checked(root, data):
         'author': author,
         'kind': kind,
         'kind_name': _kind_name(root, kind),
-        'purposes': ['reference'] + (['inspiration'] if role == 'example' else []),
+        'purposes': ['reference']
+        + {'example': ['inspiration'], 'messaging': ['messaging']}.get(role, []),
         'fields': fields,
         'entries': entries,
         'parsed': parsed,

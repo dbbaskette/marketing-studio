@@ -199,9 +199,9 @@
       "sha256": "6ead74e1bcaea3972e6a3be7967fa0ee72314814e092bc02cce78cfccd5e4b2e"
     },
     "references/guided-runs.md": {
-      "characters": 11311,
-      "estimated_tokens": 2828,
-      "sha256": "fc80bfa96fd305642b5a79adb9d47f82eb793e8bde2d32a15863043a6af96b18"
+      "characters": 12311,
+      "estimated_tokens": 3078,
+      "sha256": "d8c1e229a79dcc856b5a10bcd3d53db37df912d77bf030e3d905347d76a83c03"
     },
     "references/headline-lab.md": {
       "characters": 574,
@@ -249,9 +249,9 @@
       "sha256": "f2b2c03e92df5e8051b7d2744266107e7cfccf5348c68d00dc1d18f8493ef948"
     },
     "references/modules/blog-argument-outline.md": {
-      "characters": 1736,
-      "estimated_tokens": 434,
-      "sha256": "5175e34ad5b99094d42470ffce25d1489902fc3b04f4dc66fcf16ce3821a5367"
+      "characters": 1936,
+      "estimated_tokens": 484,
+      "sha256": "cf8aad5699ae4f0a14543bbcd6355087e67bf05fd8b2343c31963c27182217b7"
     },
     "references/modules/blog-author-interview.md": {
       "characters": 1659,
@@ -259,19 +259,19 @@
       "sha256": "a7fc75be17a70d3c06dea94dceada2e3858cdf8dac13efc3038eb39e267ea430"
     },
     "references/modules/blog-claims-map.md": {
-      "characters": 764,
-      "estimated_tokens": 191,
-      "sha256": "bc13d988b29b274ca80c6f51a0714d28904c430a0085161df01d50588d72006c"
+      "characters": 893,
+      "estimated_tokens": 224,
+      "sha256": "9d64aad394c0755189ec35b131ce915dcd0bcf407c6c3a4e1eb14f75034207f6"
     },
     "references/modules/blog-deep-research.md": {
-      "characters": 1621,
-      "estimated_tokens": 406,
-      "sha256": "93ea455fa90cbbfc03598288301af4148bfe87f2e536e694d8c1e3b087fa51d4"
+      "characters": 1718,
+      "estimated_tokens": 430,
+      "sha256": "c36aad9d8eb2c0d1d5436569a5ddba003f3284bb983982c1bfa473d4eb5eec4c"
     },
     "references/modules/blog-fact-check.md": {
-      "characters": 2457,
-      "estimated_tokens": 615,
-      "sha256": "bba3863ab166037a91ed3523ea73d21366b36f07c5916f29ff3efde30fcf8461"
+      "characters": 2621,
+      "estimated_tokens": 656,
+      "sha256": "0089bf45e07181335aca4891faf3f84e649e3a4d9729b3ea2300fc294f26c301"
     },
     "references/modules/blog-geo-review.md": {
       "characters": 1596,
@@ -319,14 +319,14 @@
       "sha256": "72e0dc0d106e868be01644a85128cec1cde6bc44d65020964e3fb354f79c1707"
     },
     "references/modules/blog-repurpose.md": {
-      "characters": 1711,
-      "estimated_tokens": 428,
-      "sha256": "856b24f92ce573f6f715231ebe737136a009533ba1d86cd474eafc57501fe755"
+      "characters": 1858,
+      "estimated_tokens": 465,
+      "sha256": "5799fbd10f37d7e42f24decadd7c144cfcebcab83035262cc2290ef57968d50a"
     },
     "references/modules/blog-research-plan.md": {
-      "characters": 993,
-      "estimated_tokens": 249,
-      "sha256": "57b36c74fde53f493c9cf2286989ae20d35925ac308991387721425d1d52e65c"
+      "characters": 1030,
+      "estimated_tokens": 258,
+      "sha256": "c7d183786eecb73440d3761f5c39011d89412d348e7077a05bf266fa4c15a5e5"
     },
     "references/modules/blog-source-intake.md": {
       "characters": 1480,
@@ -344,9 +344,9 @@
       "sha256": "8085a149033db0bcf85824140a5277929b1bb1f31fafdce47b80324922f30c6a"
     },
     "references/modules/blog-write.md": {
-      "characters": 6461,
-      "estimated_tokens": 1616,
-      "sha256": "793f665fd5824b4c3ae379b2c08172ca4d77dbaefb50fb00d505847291cbba7e"
+      "characters": 7351,
+      "estimated_tokens": 1838,
+      "sha256": "89e08d21c86569cf3567c988c19a9f5208de88d7d2f76d34c3a97a430b48b47f"
     },
     "references/modules/blog.md": {
       "characters": 2324,
@@ -359,9 +359,9 @@
       "sha256": "209081f4d89b97f25543d1c9f6a3be23961094602562c264b53055d67c8dba7d"
     },
     "references/modules/copy-editing.md": {
-      "characters": 6018,
-      "estimated_tokens": 1505,
-      "sha256": "d1c5675fc2d446f88af88343cce0103f549e4e4781f4906937c1109c91287626"
+      "characters": 6151,
+      "estimated_tokens": 1538,
+      "sha256": "969620f5320a8950e50eb9b517f935dbce0b2c8208e7573cd7b8d2522248d20a"
     },
     "references/modules/copywriting.md": {
       "characters": 3388,
@@ -374,9 +374,9 @@
       "sha256": "e3bcb2d1a5de00f6ee34987d7ec525382b99b87623c1a436edd9bd669834f7c7"
     },
     "references/page-tools.md": {
-      "characters": 5219,
-      "estimated_tokens": 1305,
-      "sha256": "41b73c008112437ce36a502771aa1de75a0b38098780a9d37ddaabc7760fd021"
+      "characters": 5823,
+      "estimated_tokens": 1456,
+      "sha256": "a850b3d4f0b32554cc838e6522c1619a91f84433dafc2c69e394cea1ba2f7eb7"
     },
     "references/privacy.md": {
       "characters": 4170,
@@ -404,9 +404,9 @@
       "sha256": "ff220715a53d4b42937990a5d40a484c0a3eee145109e7154b96d1555ba30100"
     },
     "references/short-commands.md": {
-      "characters": 6081,
-      "estimated_tokens": 1521,
-      "sha256": "b53b24bb54187c0eabf80edc5266581aea8d067a6422b52450dc9a36f9e9ccf0"
+      "characters": 6162,
+      "estimated_tokens": 1541,
+      "sha256": "adbf4735e7d5ea09b5875417656ec649a3258fa3a02c32297db8c9827d051178"
     },
     "references/style/examples.md": {
       "characters": 1936,
@@ -429,9 +429,9 @@
       "sha256": "da4015356782d1cf2f6f0d20c86d691507ab3b646e06bd8b432df0b88509bc5d"
     },
     "references/style/software.md": {
-      "characters": 2214,
-      "estimated_tokens": 554,
-      "sha256": "264747f617575330a98e30e69575cabe583656d58070e0ca69570f54991c2bbd"
+      "characters": 2364,
+      "estimated_tokens": 591,
+      "sha256": "0bc91d80319c7aeea3f639825a6fb460d1cacc7f7823c17282c3cb91b06621a0"
     },
     "references/style/sources.md": {
       "characters": 3732,
@@ -794,7 +794,7 @@
       "sha256": "4c95901507d60239adadfec8ddd4001a409a52b5c5f7bf20b49bb10a79890142"
     }
   },
-  "library_tokens": 224538,
+  "library_tokens": 225445,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -809,7 +809,7 @@
         "references/modules/blog-argument-outline.md"
       ],
       "scenario": "New local outline-only article from readable supplied notes and an explicit tone; no voice profile or hub.",
-      "estimated_tokens": 4730
+      "estimated_tokens": 4780
     },
     "first_draft_with_sources": {
       "files": [
@@ -825,7 +825,7 @@
         "references/modules/blog-write.md"
       ],
       "scenario": "New local draft from supplied notes and explicit tone; internal outline, no specialized template or extra composition reference.",
-      "estimated_tokens": 6346
+      "estimated_tokens": 6618
     },
     "quick_edit": {
       "files": [
@@ -841,7 +841,7 @@
         "references/modules/blog-voice-check.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 5737
+      "estimated_tokens": 5770
     },
     "voice_setup": {
       "files": [
@@ -875,7 +875,7 @@
         "references/review/evidence.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 6435
+      "estimated_tokens": 6476
     },
     "quick_polish": {
       "files": [
@@ -887,7 +887,7 @@
         "references/modules/copy-editing.md"
       ],
       "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
-      "estimated_tokens": 4521
+      "estimated_tokens": 4554
     }
   },
   "team_hub_routes": {
@@ -1027,7 +1027,7 @@
       "files": [
         "references/short-commands.md"
       ],
-      "estimated_tokens": 1521,
+      "estimated_tokens": 1541,
       "note": "Conditional runtime 1.7 author operation; ordinary entry and author data are additional."
     },
     "reference_memory": {
@@ -1043,13 +1043,13 @@
       "files": [
         "references/modules/blog-write.md"
       ],
-      "estimated_tokens": 1616
+      "estimated_tokens": 1838
     },
     "editing": {
       "files": [
         "references/modules/copy-editing.md"
       ],
-      "estimated_tokens": 1505
+      "estimated_tokens": 1538
     },
     "strategy": {
       "files": [
@@ -1070,14 +1070,14 @@
         "references/workspace/sources.md",
         "references/review/evidence.md"
       ],
-      "estimated_tokens": 2394,
+      "estimated_tokens": 2418,
       "note": "Conditional research only; immutable upstream sources stay unloaded during ordinary use."
     },
     "research_plan": {
       "files": [
         "references/modules/blog-research-plan.md"
       ],
-      "estimated_tokens": 249,
+      "estimated_tokens": 258,
       "note": "Tool-less plan for one synthesis investigation."
     },
     "legacy_research": {
@@ -1203,7 +1203,7 @@
         "references/style/house.md",
         "references/style/software.md"
       ],
-      "estimated_tokens": 1177
+      "estimated_tokens": 1214
     },
     "practical_post": {
       "files": [
@@ -1211,7 +1211,7 @@
         "references/style/software.md",
         "references/style/examples.md"
       ],
-      "estimated_tokens": 1661
+      "estimated_tokens": 1698
     },
     "performance_post": {
       "files": [
@@ -1219,7 +1219,7 @@
         "references/style/software.md",
         "references/style/performance.md"
       ],
-      "estimated_tokens": 1675
+      "estimated_tokens": 1712
     },
     "visual_extension": {
       "files": [

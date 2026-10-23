@@ -37,13 +37,19 @@ title, summary box, FAQ, or marketing CTA is not compulsory.
 
 Use selected sources according to their roles. Inspiration suggests an angle;
 biography establishes background; confirmed authored samples inform voice.
-None automatically proves a factual claim. Keep private source names/passages out
-of public queries. Supplied-only work stays within supplied evidence.
+None automatically proves a factual claim. A source's `stance` says how to write it:
+
+| Stance | How the writing uses it |
+| --- | --- |
+| Facts (`evidence`) | Evidence to cite; attributed when a claim is contested or measured |
+| Approved messaging | The post's own claims: the product's voice, present tense, no attribution; a limit the document marks (target, preview, planned) stays that limit |
+
+Keep private source names/passages out of public queries. Supplied-only work stays within supplied evidence.
 
 For a material claim, inspect the supporting passage and retain its source ID or
 verified URL. Keep population, period, units, method, uncertainty, and causal limits
-intact. Place reader-facing citations near the supported assertion in the chosen
-publication style. Use exact quotes only when available; paraphrase faithfully.
+intact. Source IDs and passages go in the evidence notes and missing material in
+gaps, never in the writing; a reader-facing citation is a public link near its claim. Use exact quotes only when available; paraphrase faithfully.
 A summary or linked title is not proof that the underlying passage was read.
 
 Separate source findings from your interpretation. Explain how the evidence leads
@@ -64,6 +70,13 @@ Give important sections a clear point early, then explanation, evidence, and the
 practical implication the reader needs. Define unfamiliar terms where introduced.
 Use accurate descriptive headings and a coherent hierarchy. Make claims intelligible
 in their context without repeating the thesis at every section boundary.
+
+State a limitation once, where it decides something for the reader (usually
+availability), not in every section. On approved messaging, drop attribution hedges
+("is described as", "is designed to", "the messaging describes", "intended to");
+"in preview" and "planned for" stay, because they are facts. A capability section
+says what it does, how it works in a sentence or two, what the reader can now do,
+and one concrete example or proof point from the material.
 
 Apply the selected voice guide and explicit author rules: vocabulary, point of
 view, rhythm, degree of formality, and tolerated promotional language. Preserve

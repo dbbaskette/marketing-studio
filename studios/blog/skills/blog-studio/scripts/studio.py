@@ -22,6 +22,7 @@ PURPOSES = (
     'style-sample',
     'author-background',
     'material',  # Uploaded for one blog's run; not a library reference unless kept.
+    'messaging',  # With reference or material: the product's own approved claims.
 )
 MODES = (
     'existing',

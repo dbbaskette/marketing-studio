@@ -34,7 +34,9 @@ nudge beside the voice (dropped when it equals the settings' tone), or the whole
 when none applies. `--style <id>` adds a kind of post. `--author` overrides a saved
 default. Select an installed brand with `--brand ID --variant VARIANT`, or
 `--brand ''` for no brand. `--example <id>` reads a team library item as an example of
-the kind of post for this blog only (`--source` reads one with its library role).
+the kind of post for this blog only, `--messaging <id>` as the product's approved
+messaging (`--source` reads one with its library role). `--length short|deep` halves or
+doubles the style's own length; in depth adds an example or proof point per capability.
 Approving the last stage keeps the draft in the team library as a reference and an
 example, once per blog. Read its pinned guides in `derived/blog-run.json`;
 keep its naming rules separate from the author voice. `--mode write` is the default; `outline` stops at outline. Use
@@ -55,9 +57,11 @@ the outline onward (web research first only with `--research web-allowed`); `run
 changes --stage angles` with their note asks for three different ones. When the person
 already knows the point, add `--point` with `--title`, `--goal` (the point) and
 `--audience`: the run starts at the outline with no angles stage, and `run choose`
-refuses it. Each file says what it is for: facts the writing may quote (`material`), or
-an example of the kind of post wanted (`--purpose material --purpose inspiration`; a kept
-example is `reference` and `inspiration`). Examples reach the worker under `examples`,
+refuses it. Each file says what it is for: facts the writing may quote (`material`),
+approved messaging (`--purpose material --purpose messaging`), or an example of the kind
+of post wanted (`--purpose material --purpose inspiration`; a kept one is `reference`
+with its mark). Approved messaging reaches the worker with `stance: messaging`: state its
+claims as the product's own, without attribution hedges. Examples reach the worker under `examples`,
 never `sources`: take their shape, length, moves and register, and no fact, figure,
 name, quotation, link or product detail from one unless the sources, research or brief
 also say it. Research never reads an example. At draft and review, `mechanical_checks`
@@ -82,6 +86,8 @@ This creates no model process in chat: you do the writing here.
    must distinguish completed checks from assistant judgment and missing facts.
 3. Save a temporary Markdown file outside the skill and submit it:
    `... run submit --id <id> --stage <next> --file <file> --expected <expected>`.
+   A draft or handoff carries no source IDs or editorial placeholders; add one
+   `--gap "..."` for each thing the author must supply before publishing.
 4. Read `awaits` in the returned status. `submission` means the review level
    accepted that stage (its row shows `auto_accepted`): do not approve it, and
    write the next stage. The default Balanced level waits for the person only at

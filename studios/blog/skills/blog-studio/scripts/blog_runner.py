@@ -96,6 +96,14 @@ DEFAULTS = {
     'author': '',
 }
 MODES = ('write', 'outline', 'from-outline', 'ideas', 'revise', 'review', 'from-files')
+# How long the post runs, beside its kind of post: the style's own length by default.
+LENGTHS = {
+    'style': '',
+    'short': 'Length: about half the style’s usual length. Keep each capability’s what and '
+    'why; cut secondary detail before any qualifier.',
+    'deep': 'Length: about twice the style’s usual length, with one worked example or proof '
+    'point from the material for each capability. Develop; do not pad or invent.',
+}
 MATERIAL_ELSEWHERE = (
     'This blog’s uploaded files stay on the computer that added them. Continue it there, '
     'or start it again here from your files.'
@@ -569,6 +577,11 @@ def inputs(root, record, run):
         if 'inspiration' in source['purposes']
     ]
     sources = [source for source in sources if 'inspiration' not in source['purposes']]
+    if any('messaging' in source['purposes'] for source in sources):
+        # Approved messaging is the announcement's own claims; the rest is evidence to cite.
+        # Only a run with messaging says so, so saved pins hold for every other run.
+        for source in sources:
+            source['stance'] = 'messaging' if 'messaging' in source['purposes'] else 'evidence'
     payload = {
         'title': record['title'],
         'author': record.get('author', ''),
@@ -1060,6 +1073,7 @@ def create(root, data, approval='conversation'):
         'review_level',
         'review_seen',
         'review_default',
+        'length',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
@@ -1123,6 +1137,9 @@ def create(root, data, approval='conversation'):
         raise ValueError('A revision starts at draft. Choose draft, review or the handoff.')
     if stop not in ('outline', 'draft', 'review', 'package'):
         raise ValueError('Choose outline, draft, review or the handoff.')
+    length = data.get('length', 'style')
+    if length not in LENGTHS:
+        raise ValueError('Choose a length: the style’s own, short or in depth.')
     from_files = mode == 'from-files'
     angles_first = from_files and not point
     brief = {
@@ -1272,6 +1289,7 @@ def create(root, data, approval='conversation'):
         'mode': mode,
         'pipeline': pipeline,
         'stages': {},
+        'length': length,
     }
     if from_files:
         run['angles'] = angles_first
@@ -1341,7 +1359,11 @@ def create(root, data, approval='conversation'):
     return survey(root, record['id'])
 
 
-LIBRARY_ROLES = {'facts': ['reference'], 'example': ['reference', 'inspiration']}
+LIBRARY_ROLES = {
+    'facts': ['reference'],
+    'example': ['reference', 'inspiration'],
+    'messaging': ['reference', 'messaging'],
+}
 
 
 def library_picks(root, chosen, sources):
@@ -1361,7 +1383,9 @@ def library_picks(root, chosen, sources):
             or not isinstance(entry['id'], str)
             or entry['role'] not in LIBRARY_ROLES
         ):
-            raise ValueError('Each library item needs its id and a role: facts or example.')
+            raise ValueError(
+                'Each library item needs its id and a role: facts, messaging or example.'
+            )
         ident = blog_library.local_item(root, entry['id'], entry.get('location', 'local'))
         if ident in picked or ident in sources:
             raise ValueError('Pick each library item once.')
@@ -1412,6 +1436,8 @@ def submit(root, ident, stage, result, expected, page=False):
     pin = basis(root, directory, record, run, stage)
     filename = STAGES[stage][1]
     preservation = None
+    saved_path = studio.inside(directory, filename)
+    unchanged = saved_path.is_file() and saved_path.read_text() == result['content']
     if stage == 'draft' and (directory / 'DRAFT.md').is_file():
         from text_checks import preserve
 
@@ -1428,6 +1454,14 @@ def submit(root, ident, stage, result, expected, page=False):
                 path.read_bytes(),
             )
         studio.atomic(path, result['content'].encode())
+    if stage in NOTED:
+        noted = notes_path(directory, stage)
+        if result.get('evidence') or result.get('gaps'):
+            kept = {'evidence': result.get('evidence', []), 'gaps': result.get('gaps', [])}
+            studio.atomic(noted, (json.dumps(kept, indent=2) + '\n').encode())
+        elif not (unchanged and 'evidence' not in result and 'gaps' not in result):
+            # A new version without notes keeps none; the same version brought back keeps its.
+            noted.unlink(missing_ok=True)
     previous = run['stages'].get(stage, {})
     run['stages'][stage] = {
         'status': 'draft',
@@ -1452,6 +1486,43 @@ def submit(root, ident, stage, result, expected, page=False):
         shutil.rmtree(directory / RESEARCH_DRAFT, ignore_errors=True)
     save(root, directory, record, run, 'Submitted ' + stage)
     return survey(root, ident)
+
+
+# A draft's and a handoff's notes for the author, saved beside the stage: each claim's source
+# and passage, and what the author must supply before publishing. Never in the writing.
+NOTED = ('draft', 'package')
+
+
+def notes_path(directory, stage):
+    return studio.inside(directory, 'derived', 'blog-' + stage + '-notes.json')
+
+
+def stage_notes(directory, stage):
+    """The saved notes, or none when the file is missing or cannot be read as notes."""
+    path = notes_path(directory, stage)
+    try:
+        found = studio.read_json(path) if path.is_file() else {}
+    except (OSError, ValueError):
+        found = {}
+    if not isinstance(found, dict):
+        found = {}
+    evidence, gaps = found.get('evidence'), found.get('gaps')
+    return {
+        'evidence': [row for row in evidence if isinstance(row, dict)]
+        if isinstance(evidence, list)
+        else [],
+        'gaps': [gap for gap in gaps if isinstance(gap, str) and gap.strip()]
+        if isinstance(gaps, list)
+        else [],
+    }
+
+
+def gaps(directory, stage):
+    """What the author must supply before publishing: a handoff keeps the draft's too."""
+    found = list(stage_notes(directory, stage)['gaps'])
+    if stage == 'package':
+        found += [gap for gap in stage_notes(directory, 'draft')['gaps'] if gap not in found]
+    return found
 
 
 def _accept(directory, run, stage, by):
@@ -1777,8 +1848,12 @@ def job(root, ident):
             + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
             'structure, moves, length, headings and register. The selected voice says how its '
             'author sounds. Where they conflict on wording, the voice wins; where they conflict '
-            'on structure, the style wins. Neither invents facts, experience or sources.'
+            'on structure, the style wins. Neither invents facts, experience or sources. Where '
+            'the style’s register differs from the house guide’s tone defaults, the style wins; '
+            'the house guide still decides mechanics.'
         )
+    if LENGTHS.get(run.get('length')) and stage in ('outline', 'draft') and not edit:
+        guidance += '\n\n' + LENGTHS[run['length']]
     if stage in ('draft', 'review'):
         requested = run.get('editor_check')
         guides = ['modules/blog-voice-check.md', 'style/software.md']
@@ -1802,6 +1877,9 @@ def job(root, ident):
         payload['mechanical_checks'] = lint(writing, rules or {})
         copied = carried(directory, run, {**payload, 'sources': evidence}, writing)
         payload['mechanical_checks']['findings'] += copied
+        from text_checks import reader_facing_notes
+
+        payload['mechanical_checks']['findings'] += reader_facing_notes(writing)
         if copied and stage == 'review':
             guidance += (
                 '\nmechanical_checks lists, under rule from-example, passages the draft carried '
@@ -1826,6 +1904,35 @@ def job(root, ident):
         guidance += '\nReturn three distinct blog angles with audience, thesis, evidence needed and tradeoffs. Stop for the author to choose; do not draft the blog.'
     if run.get('mode') == 'from-outline':
         guidance += '\nUse the supplied outline as authoritative structure. Preserve headings and order unless explicitly asked to restructure.'
+    if stage in NOTED:
+        payload['response_kind'] = 'writing-with-notes'
+        guidance += (
+            '\nReturn the writing in content and your notes apart from it: in evidence, each '
+            'material claim with its source ID and exact passage; in gaps, each thing the author '
+            'must supply before publishing, such as a release date or a link. Source IDs and '
+            'editorial placeholders go there, never in content.'
+        )
+    if stage in NOTED:
+        payload['gaps'] = gaps(directory, stage)
+        if stage == 'draft':
+            guidance += (
+                '\nThe gaps already noted are in gaps: return those still open with any new ones.'
+            )
+    if stage == 'package':
+        guidance += (
+            '\nList the gaps (in gaps) and any new ones under a '
+            '`## Needs you before publishing` heading. The titles, excerpt and description are '
+            'reader-facing: no source IDs or placeholders. With no sources here, evidence stays '
+            'empty at the handoff.'
+        )
+    if stage == 'review' and payload['sources']:
+        found_evidence = stage_notes(directory, 'draft')['evidence']
+        if found_evidence:
+            payload['evidence'] = found_evidence
+            guidance += (
+                "\nevidence lists the draft's claims with the source ID and passage behind each; "
+                'check them against the sources.'
+            )
     if stage == 'review' and run.get('editor_check'):
         payload['response_kind'] = 'editing-review'
         guidance += (
@@ -2530,7 +2637,7 @@ def strip_preservation(notes):
     return before.rstrip(), check
 
 
-def gate_checks(stage, content, rules, copied, preservation):
+def gate_checks(stage, content, rules, copied, preservation, handoff=None):
     from text_checks import lint
 
     rows = []
@@ -2572,6 +2679,18 @@ def gate_checks(stage, content, rules, copied, preservation):
                     (f'line {line}: ' if line is not None else '') + match['target'][:160]
                 )
             rows.append({'label': f'{len(matches)} {label}', 'passed': False, 'detail': detail})
+        from text_checks import reader_facing_notes
+
+        noted = reader_facing_notes(content)
+        rows.append(
+            {
+                'label': 'Source IDs or editorial notes in the writing'
+                if noted
+                else 'No source IDs or editorial notes in the writing',
+                'passed': not noted,
+                'detail': [f'line {item["line"]}: ' + item['target'][:160] for item in noted[:5]],
+            }
+        )
         rows.append(
             {
                 'label': f'{len(repeated)} paragraphs repeat'
@@ -2589,6 +2708,24 @@ def gate_checks(stage, content, rules, copied, preservation):
                     else 'No passage carried over from an example',
                     'passed': not copied,
                     'detail': [item['target'][:120] for item in copied],
+                }
+            )
+        if handoff is not None:
+            kept = re.sub(
+                r'(?ims)^##[^\n]*(?:needs you before publishing|finding)[^\n]*\n.*?(?=^## |\Z)',
+                lambda m: '\n' * m.group().count('\n'),
+                handoff,
+            )
+            noted = reader_facing_notes(kept)
+            rows.append(
+                {
+                    'label': 'Source IDs or editorial notes in the handoff'
+                    if noted
+                    else 'No source IDs or editorial notes in the handoff',
+                    'passed': not noted,
+                    'detail': [
+                        f'line {item["line"]}: ' + item['target'][:160] for item in noted[:5]
+                    ],
                 }
             )
         if preservation is not None:
@@ -2708,7 +2845,15 @@ def document(root, ident, stage):
         'status': row['status'],
         'notes': notes,
         'expected': found['expected'],
-        'checks': gate_checks(stage, checked_text, rules, copied, preservation),
+        'checks': gate_checks(
+            stage,
+            checked_text,
+            rules,
+            copied,
+            preservation,
+            content if stage == 'package' else None,
+        ),
+        'gaps': gaps(directory, stage) if stage in NOTED else [],
         'id': ident,
         'title': found['title'],
     }
@@ -2982,6 +3127,7 @@ def add_parser(groups):
     create_cmd.add_argument(
         '--stop', choices=('outline', 'draft', 'review', 'package'), default='package'
     )
+    create_cmd.add_argument('--length', choices=tuple(LENGTHS), default=None)
     create_cmd.add_argument('--engine', choices=('codex', 'claude'))
     create_cmd.add_argument('--seconds', type=int, default=600)
     create_cmd.add_argument('--source', action='append', default=[])
@@ -2990,6 +3136,12 @@ def add_parser(groups):
         action='append',
         default=[],
         help='A library item read as an example of the kind of post for this blog only',
+    )
+    create_cmd.add_argument(
+        '--messaging',
+        action='append',
+        default=[],
+        help='A library item read as the product’s approved messaging for this blog only',
     )
     create_cmd.add_argument('--mode', choices=MODES, default='write')
     create_cmd.add_argument('--manuscript')
@@ -3012,6 +3164,12 @@ def add_parser(groups):
             cmd.add_argument('--stage', choices=tuple(STAGES), required=True)
             cmd.add_argument('--file', required=True)
             cmd.add_argument('--notes', default='')
+            cmd.add_argument(
+                '--gap',
+                action='append',
+                default=[],
+                help='With a draft or handoff: something the author must supply before publishing',
+            )
         if name == 'changes':
             cmd.add_argument('--request', required=True)
             cmd.add_argument('--stage', choices=tuple(STAGES))
@@ -3027,19 +3185,25 @@ def command(root, args):
             data = {
                 k: v
                 for k, v in vars(args).items()
-                if k not in ('root', 'group', 'action', 'source', 'example', 'compact')
+                if k not in ('root', 'group', 'action', 'source', 'example', 'messaging', 'compact')
                 and v is not None
             }
             data['sources'] = args.source
-            if args.example:
-                data['library'] = [{'id': ident, 'role': 'example'} for ident in args.example]
+            library = [{'id': ident, 'role': 'example'} for ident in args.example]
+            library += [{'id': ident, 'role': 'messaging'} for ident in args.messaging]
+            if library:
+                data['library'] = library
             return create(root, data)
         if args.action == 'submit':
             return submit(
                 root,
                 args.id,
                 args.stage,
-                {'content': Path(args.file).read_text(), 'notes': args.notes},
+                {
+                    'content': Path(args.file).read_text(),
+                    'notes': args.notes,
+                    **({'gaps': args.gap} if args.gap else {}),
+                },
                 args.expected,
             )
         if args.action == 'choose':

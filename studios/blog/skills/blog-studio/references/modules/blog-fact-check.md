@@ -26,6 +26,8 @@ opinion and the author's own reported experience from externally checkable facts
 A reference supports only what it actually says; preserve population, date,
 methodology, causality, and qualifiers. Contradiction takes priority over missing
 support. A linked page or keyword match is not adequate evidence by itself.
+A claim the messaging makes is supported by that approved messaging source; flag
+only claims no source makes, and dates or availability the messaging only targets.
 
 Without readable references the evidence check is unavailable; list claims needing
 sources if useful, but do not return a clean bill of health. Unsupported means
