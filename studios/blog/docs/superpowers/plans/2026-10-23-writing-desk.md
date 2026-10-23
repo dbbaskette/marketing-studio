@@ -1084,7 +1084,7 @@ fix guidance carries as the proofread's finding.
 ### Task 3.3: `finish-humanize`
 
 **Files:** Modify `scripts/desk_finish.py`, `scripts/desk_jobs.py`, `scripts/tool_jobs.py`,
-`scripts/desk.py` (route `humanize {id, seen, level}`); Test `tests/test_desk_finish.py`.
+`scripts/desk.py` (route `finish {id, seen, tool, level}`, one for every finishing tool); Test `tests/test_desk_finish.py`.
 
 Payload: the title, opening and written sections (`{id, heading, text}`), the level, and the
 `_context` (kind of post, tone, sources). Guidance: `blog-humanize.md`, the level's sentence,
@@ -1104,7 +1104,7 @@ link or quote (`text_checks.preserve`) or a name is flagged.
 
 ### Task 3.4: `finish-facts`
 
-**Files:** as 3.3 (route `facts {id, seen}`).
+**Files:** as 3.3 (`desk-finish` with `tool: facts`).
 
 Payload: the draft, the desk's sources (`draft['sources']` through `_context`, with stance)
 and research (`desk_jobs._research_extra`). Refused up front with "Add a source first: facts
@@ -1121,7 +1121,7 @@ for claims not supported.
 
 ### Task 3.5: `finish-headline`
 
-**Files:** as 3.3 (route `headline {id, seen}`).
+**Files:** as 3.3 (`desk-finish` with `tool: headline`).
 
 Payload: title, opening, headings and the brief; guidance `headline-lab.md`, the shared
 guidance and `{"titles": [{"text", "why"}], "openings": [{"text", "why"}]}` (up to five
@@ -1135,7 +1135,7 @@ skips its siblings.
 
 ### Task 3.6: `finish-feedback` (Feedback without a rewrite)
 
-**Files:** as 3.3 (route `feedback {id, seen}`).
+**Files:** as 3.3 (`desk-finish` with `tool: feedback`).
 
 Replaces the old "Review a draft" task for desk blogs. Payload: the whole draft, the brief,
 kind of post, tone and sources. Guidance: `STAGES['review']`'s rule, `CHECKS['shape']`,

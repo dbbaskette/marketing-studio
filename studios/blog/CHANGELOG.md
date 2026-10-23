@@ -5,6 +5,26 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Finishing on the desk.** **Finishing** in the desk's toolbar opens a side panel (a
+  full-screen sheet on a phone) of tools that propose and change nothing until you apply:
+  **Humanize** (light, medium, strong; numbers, names, quotes and links kept, a rewrite
+  that would change one flagged), **Proofread** (instant mechanical checks with **Fix** on
+  each finding), **Check facts against sources** (supported, not in your sources or
+  contradicted, with the passage, **Add a source** and **Keep it**), **Headline and
+  opening**, **Feedback without a rewrite** (comments shown in place, each a section note in
+  one click; it replaces Review a draft for desk blogs) and **Before publishing** (the
+  pre-publish check, **Repurpose** into a new desk blog, and **Send to Google Doc as
+  suggestions** for a blog started from a Doc). Each proposal shows before and after side by
+  side with **Apply**, **Edit** and **Skip**, or **Apply all**; each Apply keeps the earlier
+  text in History. **Apply a voice** arrives with voice guides.
+- **For maintainers:** `scripts/desk_finish.py`; tool job kinds `finish-humanize`,
+  `finish-facts`, `finish-headline` and `finish-feedback` that write no part and return
+  JSON read strictly when they settle; proposals wait in `.blog-runs/desk-proposals/` (never
+  in the blog's tracked folder); routes `desk-finish`, `desk-apply`, `desk-skip`,
+  `desk-repurpose`, `desk-google-plan`, `desk-google-send` and `GET /api/desk-proofread`;
+  `desk-selection` `fix` takes the proofread finding as `instruction`; the editor's Google
+  plan and send are `manuscript_editor.google_plan` and `google_send`; the desk view reads
+  Google and publication links from the blog record again after a whole-draft note.
 - **Author and co-author starts.** New blogs start on the desk in three steps: the kind
   of post; sources and settings for every way (files, links, Google Docs and team library
   posts with their roles, kept with the blog unless **Keep in the team library** is ticked,

@@ -47,7 +47,20 @@ Choose **New blog** for a blog on the writing desk: the kind of post, then sourc
 (kept with the blog unless you tick Keep), research ticks, length and tone, then what you
 have (just a topic, with three suggested angles if you like; an outline or notes, written
 from or shaped with you first; or a draft). **Start** runs research (when ticked), the outline and the draft with no stops,
-and the draft opens on the desk. The rest of this section describes the step-by-step
+and the draft opens on the desk. On the desk, **Finishing** opens a side panel (a
+full-screen sheet on a phone) whose tools propose and change nothing until you apply:
+**Humanize** at light, medium or strong (numbers, names, quotes and links kept, and a
+rewrite that would change one flagged), **Proofread** (dashes, words that often read as
+machine-written and repetition, checked at once, with **Fix** on each finding), **Check
+facts against sources** (each claim supported, not in your sources, or contradicted, with
+the passage, and **Add a source**), **Headline and opening**, **Feedback without a rewrite**
+(comments on shape, argument, audience and claims, each made a section note in one click)
+and **Before publishing** (the pre-publish check, **Repurpose**, whose copy becomes a new
+blog on the desk, and **Send to Google Doc as suggestions** for a blog started from a Doc).
+Each proposal shows before and after side by side; **Apply**, **Edit** or **Skip** it, or
+**Apply all** (flagged ones wait to be checked one by one). Each Apply keeps the earlier
+text in History. Suggestions wait on this computer until you decide; only what you apply
+is shared with a team. The rest of this section describes the step-by-step
 wizard that blogs started before the desk keep. **Your brief** asks for
 the topic and reader, **Write as** (your default voice, another saved voice, no
 particular voice, or **Learn a new voice…**) and **Kind of post** (a starter or

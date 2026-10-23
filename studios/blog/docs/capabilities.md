@@ -8,6 +8,7 @@ it does not claim every low-level CLI flag is a browser control.
 | User task | Page | Skill/CLI contract |
 | --- | --- | --- |
 | Start from a topic (with three angles), an outline or notes, or a draft | Home → New blog | `desk-create` with `way`, `desk-angles`, `desk-retry`; `desk-outline-save`, `desk-draft` and `desk-sources` on the desk |
+| Finish a desk blog: humanize, proofread, check facts, headline and opening, feedback, before publishing | Desk → Finishing | `desk-finish` (`finish-humanize`, `finish-facts`, `finish-headline`, `finish-feedback` jobs), `GET /api/desk-proofread`, `desk-apply`, `desk-skip`, `desk-repurpose`, `desk-google-plan`, `desk-google-send` |
 | Write, outline, explore ideas, use an outline (blogs started step by step) | The run | Guided runs, `run` |
 | New blog from files: each file's role, three angles or the point, Write as | Home → New blog from my files | `upload` entries with `purpose`, `source-role`, `run create --mode from-files [--point]`, `examples` in the worker payload, the `from-example` check |
 | Approved messaging written as the product's own claims | Your files → Used as: Approved messaging; Upload → Use this file as | Purpose `messaging`; `stance: messaging` on the payload's sources; `run create --messaging <id>` |
