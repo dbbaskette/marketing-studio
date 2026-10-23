@@ -84,6 +84,9 @@ class DeskCase(unittest.TestCase):
         self.addCleanup(environment.stop)
         self.root = self.base / 'workspace'
         studio.initialize(self.root)
+        # These tests call the desk directly, as management's lock holder would.
+        held = studio._HELD.set(True)
+        self.addCleanup(studio._HELD.reset, held)
 
     def make(self, **extra):
         return desk.create(
@@ -231,6 +234,29 @@ class DeskRecordTests(DeskCase):
     def test_a_blog_not_on_the_desk_is_refused(self):
         with self.assertRaisesRegex(ValueError, 'Unknown articles'):
             desk.read(self.root, 'no-such-blog')
+
+
+class LockTests(DeskCase):
+    def test_desk_writes_need_the_studio_lock(self):
+        import contextvars
+
+        made = self.make()
+        part = made['sections'][0]['id']
+
+        def unlocked(call):
+            studio._HELD.set(False)
+            return call()
+
+        for call in (
+            lambda: desk.save(self.root, made['id'], 1, part, 'Changed.'),
+            lambda: desk.keep(self.root, made['id'], part, 'x', 'save'),
+            lambda: desk.create(self.root, {'title': 'T', 'manuscript': DRAFT}),
+        ):
+            with self.assertRaisesRegex(RuntimeError, 'studio lock'):
+                contextvars.copy_context().run(unlocked, call)
+        self.assertEqual(desk.read(self.root, made['id'])['sections'][0]['text'], 'First text.')
+        with studio.locked(self.root):
+            self.assertTrue(studio.lock_held())
 
 
 class VersionTests(DeskCase):

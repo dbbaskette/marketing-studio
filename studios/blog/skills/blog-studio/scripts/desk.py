@@ -92,7 +92,13 @@ def join(draft):
 
 
 # The desk record. Every function below expects the caller to hold the studio lock, as the
-# page's dispatch and views do (management.py); none of them takes it again.
+# page's dispatch and views do (management.py) and the job worker does when it settles a
+# result (tool_jobs.once); none of them takes it again, and every writer checks it is held.
+
+
+def _require_lock():
+    if not studio.lock_held():
+        raise RuntimeError('Desk writes run under the studio lock.')
 
 
 def _paths(root, ident):
@@ -141,6 +147,7 @@ def create(root, data):
     blog just started from a Google Doc (`article`), with its kind of post, tone and length.
 
     The blog writes with its tone only: no default or pinned voice is applied."""
+    _require_lock()
     if not isinstance(data, dict) or set(data) - CREATE:
         raise ValueError('This request has fields the desk does not take.')
     given = [key for key in ('manuscript', 'source', 'article') if data.get(key)]
@@ -250,6 +257,7 @@ def open_run(root, ident):
     stay as they are, so it remains readable; opening again returns the same desk."""
     import blog_runner
 
+    _require_lock()
     directory, record, run = blog_runner.load(root, ident)
     target = studio.inside(directory, DESK, 'draft.json')
     if target.is_file() and not target.is_symlink():
@@ -312,6 +320,7 @@ def _set(draft, part, text):
 def _write(root, ident, draft, parts=()):
     """Keep the draft, DRAFT.md and the blog's record in step, one revision on. Each part
     in `parts` records the revision it last changed at, for the stale check."""
+    _require_lock()
     directory, target = _paths(root, ident)
     record = studio.read_json(studio.metadata_path(directory, 'articles'))
     draft['revision'] += 1
@@ -401,6 +410,7 @@ def keep(root, ident, part, text, source, session=None):
 
     Saves from one editing session (the page's session token) keep only the text before
     the first of them; every rewrite, revision, selection edit and restore keeps one."""
+    _require_lock()
     if source not in SOURCES:
         raise ValueError('Choose a listed kind of change.')
     target = _versions_path(root, ident, part)

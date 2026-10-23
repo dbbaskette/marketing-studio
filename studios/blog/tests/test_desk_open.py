@@ -46,9 +46,10 @@ class OpenOnTheDeskTests(RunnerCase):
 
     def test_opening_twice_returns_the_same_desk(self):
         found = self.finished()
-        first = desk.open_run(self.root, found['id'])
-        desk.save(self.root, found['id'], 1, 'opening', 'Changed opening.')
-        again = desk.open_run(self.root, found['id'])
+        with studio.locked(self.root):
+            first = desk.open_run(self.root, found['id'])
+            desk.save(self.root, found['id'], 1, 'opening', 'Changed opening.')
+            again = desk.open_run(self.root, found['id'])
         self.assertEqual(again['opening'], 'Changed opening.')
         self.assertEqual(first['sections'][0]['id'], again['sections'][0]['id'])
 
@@ -56,7 +57,8 @@ class OpenOnTheDeskTests(RunnerCase):
         found = self.create(page=True)
         self.assertFalse(runner.engine(self.root).describe(found['id'])['desk_open'])
         with self.assertRaisesRegex(ValueError, 'Finish this blog, then open it on the desk'):
-            desk.open_run(self.root, found['id'])
+            with studio.locked(self.root):
+                desk.open_run(self.root, found['id'])
         self.assertFalse(
             studio.inside(runner.load(self.root, found['id'])[0], 'desk', 'draft.json').exists()
         )

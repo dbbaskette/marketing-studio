@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -154,6 +155,14 @@ def persist(directory, kind, record):
     write_json(metadata_path(directory, kind), record)
 
 
+# Whether this thread of work holds the studio lock, for writers that require it.
+_HELD = ContextVar('blog_studio_lock_held', default=False)
+
+
+def lock_held():
+    return _HELD.get()
+
+
 @contextmanager
 def _locked(root):
     """Serialize commands that change the workspace.
@@ -172,9 +181,11 @@ def _locked(root):
             'Retry shortly; the lock clears by itself when that command ends, so do not delete '
             '.studio.lock.'
         )
+    held = _HELD.set(True)
     try:
         yield
     finally:
+        _HELD.reset(held)
         release_lock(fd)
 
 
