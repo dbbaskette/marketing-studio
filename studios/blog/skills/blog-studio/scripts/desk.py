@@ -6,7 +6,18 @@ pre-publish check read the same text as before.
 
 import re
 import secrets
+from types import SimpleNamespace
 
+import studio
+
+DESK = 'desk'
+KEEP = 20  # versions kept per part
+PARTS = ('title', 'opening')  # plus each section id
+LIMIT = 200_000  # characters in one part
+LENGTHS = ('style', 'short', 'deep')  # as blog_runner.LENGTHS: usual, short, in depth
+CREATE = frozenset(
+    {'title', 'manuscript', 'source', 'article', 'style', 'tone', 'length', 'sources', 'library'}
+)
 FENCE = re.compile(r' {0,3}(`{3,}|~{3,})')
 TITLE = re.compile(r'# (?!#)(.*\S)\s*')
 HEADING = re.compile(r'## (?!#)(.*\S)\s*')
@@ -77,3 +88,225 @@ def join(draft):
             '## ' + section['heading'] + ('\n\n' + section['text'] if section['text'] else '')
         )
     return '\n\n'.join(parts) + '\n'
+
+
+# The desk record. Every function below expects the caller to hold the studio lock, as the
+# page's dispatch and views do (management.py); none of them takes it again.
+
+
+def _paths(root, ident):
+    directory, _ = studio.item(root, 'articles', ident)
+    return directory, studio.inside(directory, DESK, 'draft.json')
+
+
+def _source_text(root, ident):
+    folder, source = studio.item(root, 'sources', ident)
+    path = studio.inside(folder, 'content.md')
+    if source['status'] != 'ready' or not path.is_file() or not path.read_text().strip():
+        raise ValueError('Choose a draft with readable text.')
+    return path.read_text()
+
+
+def _attach(root, data, record):
+    """The sources and library items chosen for this blog, pinned as a run pins them."""
+    import blog_runner
+
+    sources = data.get('sources', [])
+    if not isinstance(sources, list) or len(sources) > 50 or len(set(sources)) != len(sources):
+        raise ValueError('Select at most 50 different sources.')
+    for source in sources:
+        if not isinstance(source, str):
+            raise ValueError('Select at most 50 different sources.')
+        studio.item(root, 'sources', source)
+    picked = blog_runner.library_picks(root, data.get('library', []), sources)
+    for source in sources + list(picked):
+        _, found = studio.item(root, 'sources', source)
+        record['sources'] = [s for s in record['sources'] if s['source_id'] != source] + [
+            {
+                'source_id': source,
+                'revision': found['revision'],
+                'purposes': picked.get(source, found['purposes']),
+            }
+        ]
+    record['material'] = [
+        entry['source_id'] for entry in record['sources'] if 'material' in entry['purposes']
+    ]
+
+
+def create(root, data):
+    """A new desk blog from a pasted draft (`manuscript`), an uploaded draft (`source`), or a
+    blog just started from a Google Doc (`article`), with its kind of post, tone and length.
+
+    The blog writes with its tone only: no default or pinned voice is applied."""
+    if not isinstance(data, dict) or set(data) - CREATE:
+        raise ValueError('This request has fields the desk does not take.')
+    given = [key for key in ('manuscript', 'source', 'article') if data.get(key)]
+    if len(given) > 1:
+        raise ValueError('Bring one draft: pasted, uploaded or from a Google Doc.')
+    title = data.get('title') or ''
+    tone = data.get('tone') or ''
+    if not isinstance(title, str) or len(title.strip()) > 500 or '\n' in title.strip():
+        raise ValueError('Use a blog title of one line, up to 500 characters.')
+    if not isinstance(tone, str) or len(tone) > 2000:
+        raise ValueError('Describe the tone in up to 2000 characters.')
+    tone = tone.strip()
+    length = data.get('length', 'style')
+    if length not in LENGTHS:
+        raise ValueError('Choose a length: the usual length, short or in depth.')
+    style = data.get('style') or None
+    if style is not None and not isinstance(style, str):
+        raise ValueError('Choose a listed kind of post.')
+    if style:
+        studio.style_check(root, style)  # Refused when retired or unknown; writes nothing.
+    existing = None
+    if given == ['article']:
+        directory, existing = studio.item(root, 'articles', data['article'])
+        import blog_runner
+
+        if studio.inside(directory, DESK, 'draft.json').exists():
+            raise ValueError('This blog is already on the desk. Open it there.')
+        if studio.inside(directory, blog_runner.STATE).exists():
+            raise ValueError('This blog has a step-by-step run. Open it there.')
+        if not (directory / 'DRAFT.md').is_file():
+            raise ValueError('This blog has no draft to bring to the desk.')
+        manuscript = (directory / 'DRAFT.md').read_text()
+        title = title or existing['title']
+    elif given == ['source']:
+        manuscript = _source_text(root, data['source'])
+    else:
+        manuscript = data.get('manuscript') or ''
+        if not isinstance(manuscript, str):
+            raise ValueError('Paste or upload a draft to start on the desk.')
+    if not manuscript.strip():
+        raise ValueError('Paste or upload a draft to start on the desk.')
+    if len(manuscript) > 1_000_000:
+        raise ValueError('Use a draft under one million characters.')
+    draft = split(manuscript, title=title.strip())
+    if not draft['title']:
+        raise ValueError('Give the blog a title.')
+    draft['title'] = draft['title'][:500]
+    if existing is None:
+        args = SimpleNamespace(
+            action='create',
+            id=None,
+            title=draft['title'],
+            mode='existing',
+            profile=None,
+            author=None,
+            voice='tone',
+            tone=tone,
+            audience=None,
+            blog_type=None,
+            review_folder=None,
+            stop='review',
+            research='supplied-only',
+        )
+        ident = studio.new_id(draft['title'])
+        record = studio.article_record(root, args, ident)
+        directory = studio.inside(root, 'articles', ident)
+    else:
+        record, ident = existing, existing['id']
+    record['voice'] = {'mode': 'tone', 'tone': tone}  # Tone only, whatever the defaults say.
+    record['flow'] = 'desk'
+    record['title'] = draft['title']
+    _attach(root, data, record)
+    if style:
+        record['style'] = studio.style_pin(root, style)
+    now = studio.now()
+    draft = {
+        'schema': 1,
+        'id': ident,
+        'revision': 1,
+        **draft,
+        'style': record.get('style') if style else None,
+        'tone': tone,
+        'length': length,
+        'sources': list(record['sources']),
+        'gaps': [],
+        'created_at': now,
+        'updated_at': now,
+    }
+    if existing is None:
+        directory.mkdir()
+        studio.save_artifact(directory, 'original', manuscript, record, 'supplied manuscript')
+    studio.save_artifact(directory, 'draft', join(draft), record, 'brought to the desk')
+    studio.write_json(studio.inside(directory, DESK, 'draft.json'), draft)
+    studio.persist(directory, 'articles', record)
+    studio.write_json(studio.inside(root, '.active-article.json'), {'id': ident})
+    return draft
+
+
+def read(root, ident):
+    _, target = _paths(root, ident)
+    if not target.is_file() or target.is_symlink():
+        raise ValueError('This blog is not on the desk.')
+    return studio.read_json(target)
+
+
+def _part(draft, part):
+    """The section a part names, or None for the title and the opening."""
+    if part in PARTS:
+        return None
+    for section in draft['sections']:
+        if section['id'] == part:
+            return section
+    raise ValueError('Choose a part of this draft.')
+
+
+def text_of(draft, part):
+    section = _part(draft, part)
+    return draft[part] if section is None else section['text']
+
+
+def _set(draft, part, text):
+    section = _part(draft, part)
+    if section is None:
+        draft[part] = text.strip()
+    else:
+        section['text'] = text.strip()
+
+
+def _write(root, ident, draft):
+    """Keep the draft, DRAFT.md and the blog's record in step, one revision on."""
+    directory, target = _paths(root, ident)
+    record = studio.read_json(studio.metadata_path(directory, 'articles'))
+    draft['revision'] += 1
+    draft['updated_at'] = studio.now()
+    body = join(draft)
+    studio.write_json(target, draft)
+    studio.atomic(studio.inside(directory, 'DRAFT.md'), body.encode())
+    record['artifact_hashes']['draft'] = studio.digest(body.encode())
+    record['stage'] = 'draft'
+    record['title'] = draft['title']
+    studio.persist(directory, 'articles', record)
+    return draft
+
+
+def checked(draft, seen):
+    if type(seen) is not int or draft['revision'] != seen:
+        raise ValueError('This draft changed since you opened it. Reload to see the latest.')
+
+
+def checked_text(part, text):
+    if not isinstance(text, str) or len(text) > LIMIT:
+        raise ValueError('Keep one part under 200,000 characters.')
+    if part == 'title' and (not text.strip() or '\n' in text.strip() or len(text.strip()) > 500):
+        raise ValueError('Keep the title to one line, up to 500 characters.')
+    return text
+
+
+def save(root, ident, seen, part, text, source='save', session=None):
+    """Save one part the form last saw at revision `seen`; an outdated form is refused."""
+    checked_text(part, text)
+    draft = read(root, ident)
+    checked(draft, seen)
+    before = text_of(draft, part)
+    if before == text.strip():
+        return draft
+    keep(root, ident, part, before, source, session)
+    _set(draft, part, text)
+    return _write(root, ident, draft)
+
+
+def keep(*args):
+    pass

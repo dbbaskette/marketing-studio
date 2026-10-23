@@ -1,9 +1,14 @@
 """The desk record: a draft as title, opening and sections, with versions."""
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
+import os
+import tempfile
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 import desk
+import studio
 
 DRAFT = """# A synthetic title
 
@@ -57,6 +62,172 @@ class SplitJoinTests(unittest.TestCase):
     def test_windows_line_endings_are_read(self):
         found = desk.split('# T\r\n\r\n## Part\r\n\r\nText.\r\n')
         self.assertEqual(found['sections'][0]['text'], 'Text.')
+
+
+class DeskCase(unittest.TestCase):
+    """A disposable workspace and shared settings; nothing on this computer is read."""
+
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.base = Path(temporary.name)
+        environment = patch.dict(
+            os.environ,
+            {
+                'BLOG_STUDIO_DATA': str(self.base / 'data'),
+                'STUDIOS_CONFIG': str(self.base / 'studios-config.json'),
+                'BRAND_SKILL_RUNTIME': str(self.base / 'no-brand'),
+                'HARNESS_RESEARCH_RUNTIME': str(self.base / 'no-research'),
+            },
+        )
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.root = self.base / 'workspace'
+        studio.initialize(self.root)
+
+    def make(self, **extra):
+        return desk.create(
+            self.root, {'title': 'Synthetic', 'manuscript': DRAFT, 'tone': 'Plain', **extra}
+        )
+
+    def folder(self, ident):
+        return studio.inside(self.root, 'articles', ident)
+
+    def source(self, text='Synthetic reference text.', purpose='reference'):
+        path = self.base / 'source.md'
+        path.write_text(text)
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'source',
+                'add',
+                '--name',
+                'Synthetic source',
+                '--file',
+                str(path),
+                '--purpose',
+                purpose,
+            ]
+        )
+        return studio.source_command(self.root, args)['id']
+
+
+class DeskRecordTests(DeskCase):
+    def test_create_writes_the_record_the_draft_and_DRAFT_md(self):
+        made = self.make()
+        directory = self.folder(made['id'])
+        self.assertEqual((directory / 'DRAFT.md').read_text(), DRAFT)
+        self.assertEqual((directory / 'ORIGINAL.md').read_text(), DRAFT)
+        record = studio.read_json(directory / 'session.json')
+        self.assertEqual(record['flow'], 'desk')
+        self.assertEqual(record['voice'], {'mode': 'tone', 'tone': 'Plain'})
+        self.assertEqual(record['title'], 'A synthetic title')
+        self.assertEqual(record['artifact_hashes']['draft'], studio.digest(DRAFT.encode()))
+        saved = desk.read(self.root, made['id'])
+        self.assertEqual(saved['revision'], 1)
+        self.assertEqual(saved['id'], made['id'])
+        self.assertEqual(saved['tone'], 'Plain')
+
+    def test_a_default_voice_never_reaches_a_desk_blog(self):
+        with patch('writing_defaults.for_create', return_value={'profile_id': 'x', 'revision': 1}):
+            made = self.make()
+        record = studio.read_json(self.folder(made['id']) / 'session.json')
+        self.assertEqual(record['voice'], {'mode': 'tone', 'tone': 'Plain'})
+
+    def test_a_draft_without_a_title_needs_one(self):
+        with self.assertRaisesRegex(ValueError, 'Give the blog a title'):
+            desk.create(self.root, {'manuscript': 'Just prose.'})
+        made = desk.create(self.root, {'title': 'Named', 'manuscript': 'Just prose.'})
+        self.assertEqual(desk.read(self.root, made['id'])['title'], 'Named')
+
+    def test_an_empty_draft_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'Paste or upload a draft'):
+            desk.create(self.root, {'title': 'T', 'manuscript': '  '})
+
+    def test_a_kind_of_post_is_pinned_and_unknown_fields_are_refused(self):
+        made = self.make(style='how-to')
+        self.assertEqual(desk.read(self.root, made['id'])['style']['style_id'], 'how-to')
+        with self.assertRaisesRegex(ValueError, 'does not take'):
+            desk.create(self.root, {'title': 'T', 'manuscript': DRAFT, 'profile': 'x'})
+        with self.assertRaisesRegex(ValueError, 'length'):
+            self.make(length='enormous')
+
+    def test_sources_are_attached_with_their_purposes(self):
+        source = self.source()
+        made = self.make(sources=[source])
+        record = studio.read_json(self.folder(made['id']) / 'session.json')
+        self.assertEqual(record['sources'][0]['source_id'], source)
+        self.assertEqual(record['sources'][0]['purposes'], ['reference'])
+        self.assertEqual(desk.read(self.root, made['id'])['sources'], record['sources'])
+
+    def test_an_uploaded_draft_source_starts_the_desk(self):
+        source = self.source(DRAFT, purpose='manuscript')
+        made = desk.create(self.root, {'source': source})
+        self.assertEqual(desk.read(self.root, made['id'])['sections'][0]['text'], 'First text.')
+
+    def test_a_blog_started_from_a_google_doc_moves_onto_the_desk(self):
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'article',
+                'create',
+                '--title',
+                'From a Doc',
+                '--mode',
+                'existing',
+            ]
+        )
+        ident = studio.article_command(self.root, args)['id']
+        directory, record = studio.item(self.root, 'articles', ident)
+        studio.save_artifact(directory, 'draft', DRAFT, record, 'starting manuscript')
+        studio.persist(directory, 'articles', record)
+        made = desk.create(self.root, {'article': ident, 'tone': 'Warm'})
+        self.assertEqual(made['id'], ident)
+        record = studio.read_json(directory / 'session.json')
+        self.assertEqual((record['flow'], record['voice']['mode']), ('desk', 'tone'))
+        with self.assertRaisesRegex(ValueError, 'already on the desk'):
+            desk.create(self.root, {'article': ident})
+
+    def test_save_a_section_bumps_the_revision_and_DRAFT_md(self):
+        made = self.make()
+        part = made['sections'][0]['id']
+        saved = desk.save(self.root, made['id'], 1, part, 'New first text.')
+        self.assertEqual(saved['revision'], 2)
+        directory = self.folder(made['id'])
+        body = (directory / 'DRAFT.md').read_text()
+        self.assertIn('New first text.', body)
+        record = studio.read_json(directory / 'session.json')
+        self.assertEqual(record['artifact_hashes']['draft'], studio.digest(body.encode()))
+
+    def test_an_unchanged_save_writes_nothing(self):
+        made = self.make()
+        part = made['sections'][0]['id']
+        self.assertEqual(desk.save(self.root, made['id'], 1, part, 'First text.')['revision'], 1)
+
+    def test_an_outdated_form_is_refused_and_nothing_changes(self):
+        made = self.make()
+        part = made['sections'][0]['id']
+        desk.save(self.root, made['id'], 1, part, 'Second.')
+        with self.assertRaisesRegex(ValueError, 'changed since'):
+            desk.save(self.root, made['id'], 1, part, 'Stale.')
+        self.assertEqual(desk.read(self.root, made['id'])['sections'][0]['text'], 'Second.')
+
+    def test_title_and_opening_are_parts_too(self):
+        made = self.make()
+        desk.save(self.root, made['id'], 1, 'title', 'Better title')
+        self.assertEqual(desk.read(self.root, made['id'])['title'], 'Better title')
+        record = studio.read_json(self.folder(made['id']) / 'session.json')
+        self.assertEqual(record['title'], 'Better title')
+        with self.assertRaisesRegex(ValueError, 'Choose a part'):
+            desk.save(self.root, made['id'], 2, 'nope', 'x')
+        with self.assertRaisesRegex(ValueError, 'one line'):
+            desk.save(self.root, made['id'], 2, 'title', 'Two\nlines')
+
+    def test_a_blog_not_on_the_desk_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'Unknown articles'):
+            desk.read(self.root, 'no-such-blog')
 
 
 if __name__ == '__main__':
