@@ -982,23 +982,233 @@ through `desk_jobs.research_run` instead of one worker call), `scripts/desk.py` 
 
 ## Phase 3: Finishing
 
-- **3.1 Proposals store**: `desk/proposals/<job>.json` with items `{id, part, before,
-  after, note, flag}`; `desk-apply {job, items}` swaps text with a `finishing` version and
-  refuses items whose `before` is no longer in the part. Tests.
-- **3.2 Proofread** in process: `text_checks.lint` plus repetition over each part; **Fix**
-  queues `desk-selection` with action `fix` on the sentence. Tests.
-- **3.3 `finish-humanize`** (light, medium, strong) from `references/modules/blog-humanize.md`;
-  each suggestion's `before` must occur verbatim; a suggestion changing a number, name,
-  quote or link (`text_checks.facts`/`preserve`) is flagged. Tests.
-- **3.4 `finish-facts`**: reuse `manuscript_editor.CHECKS['factual-support']` with the
-  desk's sources; results as supported, not in your sources, contradicted, with passages;
-  "Add a source" opens the sources panel. Tests.
-- **3.5 `finish-headline`**: title and opening alternatives as proposals. Tests.
-- **3.6 Before publishing**: link the existing pre-publish check, Repurpose (new desk blog
-  per output) and Send to Google Doc to desk blogs (they read `DRAFT.md`). Tests that each
-  reads the desk's latest text.
-- **3.7 Finishing panel** in `desk.js`: preview before and after per item, Apply, Edit,
-  Skip, Apply all. Journeys. Checks, CHANGELOG, PR, merge, restart.
+Expanded on 2026-10-23 against the Phase 2 code on `claude/writing-desk` (`desk.py`,
+`desk_jobs.py`, `desk.js`). Phase 3 lands on the same branch, one commit per task.
+
+**What Finishing is.** An optional side panel on the desk (a full-screen sheet on a phone),
+opened from the toolbar's **Finishing**. Every tool proposes; the person previews each
+proposal before and after, side by side with word-level marks, and chooses **Apply**,
+**Edit** (adjust the suggested text, then apply) or **Skip**, or **Apply all**. Nothing
+changes until Apply, and each Apply keeps a `finishing` version of every part it changes
+first, so History restores it. **Apply a voice** is Phase 4: the panel lists it, disabled.
+
+**Where proposals live.** A proposal set is transient until a decision: it is kept on this
+computer in `.blog-runs/desk-proposals/<blog id>/<job id>.json` (ignored, never in the blog's
+tracked folder), so a team workspace records only what Apply wrote. A new module,
+`scripts/desk_finish.py`, owns the sets, Apply and Skip, proofread, the result readers and
+the desk's Google send; `desk_jobs` queues and settles the jobs as before.
+
+```json
+{"schema": 1, "job": "<tool job id>", "kind": "finish-humanize", "blog": "<id>",
+ "made_at": "…", "level": "light", "summary": "", "dropped": 2,
+ "items": [{"id": "p1", "part": "<section id>|opening|title", "before": "…", "after": "…",
+            "note": "why", "flag": "", "state": "open|applied|skipped",
+            "whole": false, "group": null}]}
+```
+
+Facts items add `verdict` (`supported`, `not-in-sources`, `contradicted`), `passage` and
+`source`; feedback items are comments: `{id, part (a section, opening, title or whole),
+quote, aspect (shape, argument, audience, claims), comment, state}` with no `after`.
+Headline items are alternatives for a whole part (`whole: true`, `group` = the part).
+
+**Jobs.** `finish-humanize`, `finish-facts`, `finish-headline` and `finish-feedback` join
+`desk_jobs.KINDS`, `tool_jobs.KINDS` and `tool_jobs.DESK`. They write no part, so their
+`meta.part` is `finishing` (no card turns read-only), they queue with `parts=[]` (no stale
+refusal) and they are not in `desk.WHOLE_DRAFT` (the outline stays editable). One desk job
+per blog still holds. Each returns structured JSON in `content` (`response_kind` dropped, as
+for angles); `desk_jobs._apply` hands a finish result to `desk_finish.settle`, which reads it
+strictly (an unreadable result is settled unapplied with "The suggestions came back in a
+shape Blog Studio cannot read. Run it again.") and keeps the proposal set. A settled finish
+job is not shared with the team: it wrote nothing tracked. Guidance reuses existing text:
+`blog-humanize.md`; `manuscript_editor.CHECKS['factual-support']` with `blog-fact-check.md`
+and `review/evidence.md`; `headline-lab.md`; `CHECKS['shape']` with `review/shape.md` and the
+review stage's rule (`STAGES['review']`). No new guide is added.
+
+**View.** `desk_jobs.view` gains `finishing`: the newest set per tool with each item's
+`state` and `present` (its `before` still in its part), and `google_suggestions` (the blog
+has a Google baseline to send suggestions to).
+
+### Task 3.0: Expand this phase (this section)
+
+- [x] Commit "Plan Finishing step by step".
+
+### Task 3.1: Proposals store, Apply and Skip (server)
+
+**Files:** Create `scripts/desk_finish.py`; Modify `scripts/desk.py` (routes `apply`,
+`skip`), `scripts/desk_jobs.py` (view), `scripts/management.py` (`desk-skip` is an edit:
+driver check only, nothing shared), `scripts/blog_delete.py` (forget the sets); Test
+`tests/test_desk_finish.py` (new).
+
+- [ ] **Step 1: Failing tests**
+  - `desk_finish.keep(root, ident, job, kind, items, **extra)` writes the set under
+    `.blog-runs/desk-proposals/<id>/`; nothing new appears under the blog's folder.
+  - `desk-apply {id, seen, job, items: [{id}]}` swaps `before` for `after` in its part, keeps
+    one `finishing` version per changed part and marks the item applied; DRAFT.md follows.
+  - `{id, after}` (Edit) applies the person's text instead; a heading in it, or a title of
+    more than one line, is refused readably.
+  - An item whose `before` is no longer in its part, or occurs twice, is refused with
+    nothing changed; a whole-part item needs the part exactly as it was.
+  - Several items in one request (Apply all): every open, present item lands; two in one
+    part keep one version of that part; one that no longer matches is left open and counted
+    in `left`.
+  - An outdated form is refused (`desk.checked` over the parts it changes).
+  - `desk-skip {id, job, items}` marks items skipped and writes nothing tracked.
+  - Unknown job, unknown item, an applied item again: refused readably.
+  - `view['finishing']` lists the newest set per tool with `present`.
+  - Deleting the blog forgets its sets.
+- [ ] **Step 2: Run** `HOME=$TMPDIR/h python3 -m unittest test_desk_finish -v`; expect failures.
+- [ ] **Step 3: Implement.** **Step 4: Run; pass.** **Step 5: Commit** "Keep Finishing proposals on this computer and apply them with a version".
+
+### Task 3.2: Proofread (server)
+
+**Files:** Modify `scripts/desk_finish.py`, `scripts/management.py` (GET `desk-proofread`),
+`scripts/desk_jobs.py` (`selection` takes the finding for `fix`); Test `tests/test_desk_finish.py`.
+
+`desk_finish.proofread(root, ident)` runs in process, no job: `text_checks.lint` over each
+part (title, opening, sections) with the desk's rules (no em dashes or double hyphens, and
+BlogForge's AI-tell words and phrases in `references/blogforge/voice/assets/ai-tells/`),
+duplicate paragraphs and repeated section openings across parts, and repetition inside a
+part (two sentences in a row starting with the same word; a long word three times in one
+sentence). Each finding: `{part, rule, label, target, sentence, start}`, where `sentence` and
+`start` locate the sentence in the part for **Fix**. **Fix** posts `desk-selection` with
+action `fix`, the sentence, its start and `instruction` (the finding in words), which the
+fix guidance carries as the proofread's finding.
+
+- [ ] **Step 1: Failing tests**: an em dash, an AI-tell word and phrase, a repeated opener, a
+  repeated sentence start and a duplicate paragraph are each found with their part and
+  sentence; code and quotations are not; `start` points at the sentence in the part; GET
+  `desk-proofread?id=` through `management.view` writes nothing; `fix` with an instruction
+  says the finding in its guidance and still replaces only the sentence.
+- [ ] **Steps 2-5**: commit "Proofread the desk in place, with Fix for each finding".
+
+### Task 3.3: `finish-humanize`
+
+**Files:** Modify `scripts/desk_finish.py`, `scripts/desk_jobs.py`, `scripts/tool_jobs.py`,
+`scripts/desk.py` (route `humanize {id, seen, level}`); Test `tests/test_desk_finish.py`.
+
+Payload: the title, opening and written sections (`{id, heading, text}`), the level, and the
+`_context` (kind of post, tone, sources). Guidance: `blog-humanize.md`, the level's sentence,
+the shared guidance and the JSON shape `{"suggestions": [{"part", "before", "after",
+"why"}]}` (at most 40; `before` an exact sentence or two from that part). Settling: a
+suggestion for an unknown part, an empty or unchanged one, or one whose `before` is not
+verbatim in its part's current text is dropped (counted); one whose rewrite changes a number,
+link or quote (`text_checks.preserve`) or a name is flagged.
+
+- [ ] **Step 1: Failing tests**: guidance holds the humanize guide and the level; a ready
+  result lands as proposals and the draft is unchanged; a non-verbatim `before` is dropped;
+  a changed number and a changed name are flagged; not JSON is refused readably; a fake
+  worker runs it end to end through `tool_jobs.once`; a humanize job leaves every card
+  editable (`part == 'finishing'`) and outline saves allowed; Apply of a suggestion keeps a
+  `finishing` version.
+- [ ] **Steps 2-5**: commit "Humanize: sentences that read as machine-written, each with a rewrite to apply".
+
+### Task 3.4: `finish-facts`
+
+**Files:** as 3.3 (route `facts {id, seen}`).
+
+Payload: the draft, the desk's sources (`draft['sources']` through `_context`, with stance)
+and research (`desk_jobs._research_extra`). Refused up front with "Add a source first: facts
+are checked against your sources." when there are neither. Guidance: `CHECKS['factual-
+support']`, `blog-fact-check.md`, `review/evidence.md` and the JSON shape `{"claims":
+[{"part", "before", "verdict", "passage", "source", "after", "why"}]}`. Each claim must be
+verbatim in its part (else dropped); `verdict` one of the three; `after` (a rewording) only
+for claims not supported.
+
+- [ ] **Step 1: Failing tests**: payload carries the sources and research; no sources is
+  refused; a ready result keeps verdicts, passages and rewordings; an unknown verdict or a
+  non-verbatim claim is dropped; applying a rewording keeps a version.
+- [ ] **Steps 2-5**: commit "Check the desk's facts against its sources".
+
+### Task 3.5: `finish-headline`
+
+**Files:** as 3.3 (route `headline {id, seen}`).
+
+Payload: title, opening, headings and the brief; guidance `headline-lab.md`, the shared
+guidance and `{"titles": [{"text", "why"}], "openings": [{"text", "why"}]}` (up to five
+titles, three openings). Items are whole-part alternatives grouped by part; applying one
+skips its siblings.
+
+- [ ] **Step 1: Failing tests**: alternatives land grouped; a title over one line is
+  dropped; an opening with a `##` heading is dropped; applying one alternative skips the
+  others; the title or opening changed since makes the alternatives not present.
+- [ ] **Steps 2-5**: commit "Suggest headline and opening alternatives on the desk".
+
+### Task 3.6: `finish-feedback` (Feedback without a rewrite)
+
+**Files:** as 3.3 (route `feedback {id, seen}`).
+
+Replaces the old "Review a draft" task for desk blogs. Payload: the whole draft, the brief,
+kind of post, tone and sources. Guidance: `STAGES['review']`'s rule, `CHECKS['shape']`,
+`review/shape.md`, the shared guidance and `{"summary", "comments": [{"part", "quote",
+"aspect", "comment"}]}` (at most 30). A comment for an unknown part goes to `whole`; a quote
+not verbatim in its part is dropped from the comment (the comment stays). Comments are never
+applied: the page shows them in place and turns one into a section note (or the
+whole-draft note) with one click.
+
+- [ ] **Step 1: Failing tests**: guidance says it gives comments and does not rewrite; a
+  ready result lands as comments by part; a bad quote is dropped, the comment kept; Apply
+  on a comment is refused; Skip dismisses one.
+- [ ] **Steps 2-5**: commit "Give editorial feedback on the desk without a rewrite".
+
+### Task 3.7: Before publishing
+
+**Files:** Modify `scripts/desk_finish.py`, `scripts/desk.py` (routes `repurpose`,
+`google-plan`, `google-send`), `scripts/manuscript_editor.py` (the Google plan and send
+factored into `google_plan` and `google_send`, unchanged for the editor), `scripts/
+management.py` (desk Google routes skip the team refresh as the editor's do; a repurposed
+blog is shared); Test `tests/test_desk_finish.py`.
+
+- The pre-publish check (`GET prepublish?id=`) reads DRAFT.md, which every desk write keeps
+  in step: no change, a test.
+- Repurpose: the existing `repurpose` tool job (`tool-action` `job-create`) reads DRAFT.md
+  through `manuscript_editor.read`; `desk-repurpose {id, job, title, content}` makes its
+  output a new desk blog (`desk.create`, way `draft`, the source blog's kind of post and
+  tone), once per job (the job's `applied` receipt names the new blog).
+- Send to Google Doc as suggestions: `desk-google-plan {id, mode}` turns the differences
+  between the Doc's baseline and the desk's DRAFT.md into quoted suggestions (paragraphs
+  added or removed, and formatting, are counted as not sendable) and plans them through
+  `google_suggestions.plan`; `desk-google-send {id, plan, confirmed}` sends them through the
+  existing ledger. A blog with no Google baseline is refused readably.
+- [ ] **Step 1: Failing tests**: after a desk save, the pre-publish report and a repurpose
+  job's payload read the new text; a repurpose result becomes a new desk blog once, with the
+  source's tone; the desk Google plan sends the latest desk wording (fake Google client from
+  `test_google_start`), refuses a stale send and a blog without a Doc; the editor's Google
+  tests still pass.
+- [ ] **Steps 2-5**: commit "Before publishing on the desk: the check, repurpose to a new blog, and Google suggestions".
+
+### Task 3.8: The Finishing panel (page)
+
+**Files:** Modify `assets/management/desk.js`, `assets/management/blog.css`; Test
+`scripts/ci/check-management.cjs`.
+
+- **Finishing** in the toolbar opens the panel beside the draft (a full-screen sheet on a
+  phone, `sNarrow()`); its header uses the sheet material, its body is opaque. Home lists the
+  tools with what each has waiting; **Apply a voice** is shown disabled.
+- Each proposal: the part's name, Before and After side by side with word-level marks
+  (`diffWords`), the reason and any flag, and **Apply**, **Edit** (a field with the
+  suggestion, then **Apply this**), **Skip**. **Apply all** (not for headline alternatives
+  or comments) applies every open, present, unflagged proposal and says what it left.
+- Proofread lists findings with **Fix** and **Check again**. Facts shows each claim's
+  verdict and passage with **Fix the wording**, **Add a source** (the sources sheet) and
+  **Keep it**. Feedback shows comments in the panel and in their section cards, each with
+  **Make it a note**. Before publishing: the pre-publish report, Repurpose (form, the
+  prepared copy, **Make it a new blog**) and Send to Google Doc as suggestions (check, then
+  a confirmed send).
+- The panel redraws only when its own data changes and never while focus is inside it;
+  cards redraw through `sDeskRefresh`, so typing in the draft keeps focus and caret.
+- [ ] **Step 1: Journeys**: the panel lists every tool; humanize preview → Apply, Edit,
+  Skip and Apply all post the right `desk-apply`/`desk-skip`; proofread Fix posts
+  `desk-selection`; facts Add a source opens the sheet; feedback to a note fills the note;
+  the Google send posts plan then a confirmed send; the panel on a phone is a sheet.
+- [ ] **Steps 2-5**: commit "The Finishing panel: preview, apply, edit or skip each change".
+
+### Task 3.9: Checks, docs and CHANGELOG
+
+- [ ] Docs where the desk is described (`README.md`, `docs/runner.md`,
+  `docs/capabilities.md`).
+- [ ] CHANGELOG (Unreleased): Finishing on the desk.
+- [ ] Full checks as in Task 1.11; screenshots with synthetic content in a disposable
+  workspace. No push or merge on this branch until the owner asks.
 
 ## Phase 4: voice guides and the switch
 
@@ -1045,7 +1255,7 @@ through `desk_jobs.research_run` instead of one worker call), `scripts/desk.py` 
 | Sources panel and gaps | 1.6 (gaps), 1.10 |
 | Top bar | 1.10, 3.6 |
 | One job per blog, Stop | 1.4, 1.7, 1.10 |
-| Finishing tools with preview and apply | 3.1-3.7, 4.5 |
+| Finishing tools with preview and apply | 3.1-3.8, 4.5 |
 | Voice guides | 4.4 |
 | Hidden for now, server enforced | 4.1-4.3 |
 | Old blogs and Open on the desk | 1.8, 1.9 |
