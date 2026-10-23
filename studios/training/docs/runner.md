@@ -215,7 +215,11 @@ Where harness-slides can review a deck against the design you approved, a deck d
 - If the deck, its pictures or what it was built from change after the review, it is rendered and reviewed again before it comes to you. Without LibreOffice, and without a harness-slides that renders a review through Drive, the run stops and says to install it.
 - Where harness-slides can, the deck is put to you there too, with what its review still finds. Your approval at the deck's gate is then sent to harness-slides as your answer, before it is recorded, and nothing is recorded if harness-slides does not take it.
 
-**A new harness-slides.** A new deck needs a harness-slides that keeps a design, checks each section against it, keeps the deck's pictures and icons and reviews the whole deck against it. The Status screen says what the one on this computer lacks, in plain words, and "See the versions" goes to where it is updated. Until then a training whose deck has not begun is made up to its deck and waits there, saying the same; check this computer again once it is updated, and the deck begins. The brand skill's line says too whether it can export a brand for a deck and check it again.
+**A talk or a handout, asked once.** The deck step asks **How is this deck used?**: **Presented in a session** (a talk, the default) or **Read on its own**. The brand is exported, the looks drawn and the outline checked for that delivery; a talk's notes carry what the presenter says and the source behind each claim. A training started before this was asked stays for reading, and a change after the first outline is refused.
+
+**Walking through each slide's design.** A new deck is approved on what it says and on its look, as the brand's checkpoints are. **Walk through each slide's design before it is built**, on the deck step, off by default, runs the design session above; a deck already written keeps what it was written with, and **Redesign** still draws one from a design.
+
+**A new harness-slides.** A deck needs Harness Slides 0.16.0 or newer, the version the installer pins, and a brand skill of 0.14.0 or newer; when the brand skill's own installer brings an older Harness Slides, Status says so. A deck whose design is walked through also needs a harness-slides that keeps a design, checks each section against it, keeps the deck's pictures and icons and reviews the whole deck against it. The Status screen says what the one on this computer lacks, in plain words, and "See the versions" goes to where it is updated. Until then a training whose deck has not begun is made up to its deck and waits there, saying the same; check this computer again once it is updated, and the deck begins. The brand skill's line says too whether it can export a brand for a deck and check it again.
 
 A deck begun before is never changed by an update: its approvals, what was saved and how it is drawn stay as they were. To have it drawn from a design, press "Redesign" on its run and say yes. What it says is written again with a design, from the words you approved, and comes back to you first; then it is drawn and reviewed again. What it was is kept: the earlier outline and your approval in its history, and the deck you approved, which stays readable until the new one replaces it. Nothing else in the training changes.
 
@@ -336,6 +340,14 @@ The original folder is left exactly as it was, with nothing deleted. From then o
 
 The design is in [the runner's specification](superpowers/specs/2026-10-13-studio-runner-design.md). Working as a team is specified in [milestone 5](superpowers/specs/2026-10-13-milestone-5-team.md).
 
+## The companions, as the runner uses them
+
+- **The review.** The reviewer answers the slides tool's own questions, as each whole-deck preview writes them in `critic.json`, and reads its review guidance and the brand's review checklist, when the brand gives one.
+- **The brand's check before the review.** Each round's preview is checked by the brand before it is reviewed. A blocker on a slide sends that slide's section back, within the repair rounds; warnings go to the reviewer. A check that cannot run leaves the round as it is, with a note.
+- **Code spans.** Writers and composers write a configuration field, command, API or file name as a code span, with plain English first; a title takes none. Where an outline names a focal, it takes the slide's one emphasis.
+- **Previews.** Previews through Google Drive, on a slides tool with a preview pool, run side by side, up to `HARNESS_PREVIEW_POOL_SIZE` (4 when unset); LibreOffice renders one at a time.
+- **Fonts.** Status says when the brand's own check finds no Arial on this computer. It holds no deck up.
+
 ## Reading and changing research
 
 Research reviews lead with the authored brief, the independent check's note, remaining
@@ -352,3 +364,10 @@ questions and your request, retaining the supplied-only boundary and eight-quest
 Step by step stops at the plan. Balanced and Automatic accept this plan under the saved
 policy, so Balanced's first stop is the first-drafts review. Web research still drafts a
 plan with your questions. Older runs retain their saved source scope and legacy queue.
+The legacy question queue is kept for a training begun before the synthesis research contract, so that it finishes as it began. It can go once no workspace holds such a run.
+
+Writers are told what the reviewed research is: its brief first, and that its IDs, digests
+and verdicts are for checking and provenance, never words a learner reads. A goal that
+compares options asks the research for a comparison, one criterion a row. When asking for
+changes to the research, **Bring the evidence up to date** reads the sources again and checks
+the report again; the sheet says what the last try took.

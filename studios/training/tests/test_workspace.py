@@ -1614,7 +1614,7 @@ class WalkthroughRowTests(TrainingCase):
 class RefreshRequestTests(PlainCase):
     """Asked on the page, the research is brought up to date: its request says so."""
 
-    def test_a_research_request_may_bring_the_evidence_up_to_date(self):
+    def test_row_128_a_research_request_may_bring_the_evidence_up_to_date(self):
         self.approved('intake', 'research-plan')
         self.build('research')
         session = workspace.load(self.root)

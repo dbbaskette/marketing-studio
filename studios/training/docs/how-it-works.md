@@ -21,6 +21,8 @@ At each gate you approve, ask for changes, have it rebuilt, or skip. With levels
 
 The blueprint is the hub. The document and brief are written from it, and the deck is built from the blueprint and the document. A Yoodli scenario is built from your scenario file, the brief and the blueprint.
 
+The legacy question queue is kept for a training begun before the synthesis research contract, so that it finishes as it began. It can go once no workspace holds such a run.
+
 ## Where facts come from
 
 The research is written by one agent and checked by another, which reads every source the report quotes and, for a document you supplied as a PDF, a Word file or a web page, the file itself. When the check could not read what it must vouch for and the studio cannot serve it either, the research stops at once and says so, rather than spending rounds of correction on it.
