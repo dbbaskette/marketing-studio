@@ -238,3 +238,204 @@ def skip(root, ident, job, ids):
             items[name]['state'] = 'skipped'
     studio.write_json(_path(root, ident, job), found)
     return {'skipped': len(ids)}
+
+
+# Proofread: mechanical checks in process, no job. Advisory, never an authorship verdict.
+AI_TELLS = ('blogforge', 'voice', 'assets', 'ai-tells')
+COMMON_STARTS = frozenset({'the', 'a', 'an'})
+PROOF_LIMIT = 300  # findings shown at once
+BOUNDARY = re.compile(
+    r'(?<=[.!?…])["”’)\]]*[ \t]+|\n[ \t]*\n|\n(?=[ \t]*(?:[-*+]|\d{1,3}[.)]|#|>)[ \t])'
+)
+WORD = re.compile(r'[^\W\d_]+(?:[’\'-][^\W\d_]+)*')
+SENTENCE_MAX = 2000  # a passage Fix rewrites; a longer run is cut to its line
+
+
+def _listed(name):
+    import blog_runner
+
+    path = blog_runner.REFERENCES.joinpath(*AI_TELLS, name)
+    return [
+        line.strip()
+        for line in path.read_text(encoding='utf-8').splitlines()
+        if line.strip() and not line.lstrip().startswith('#')
+    ]
+
+
+def proof_rules():
+    """The desk's mechanical rules: no em dashes or double hyphens, and the words and
+    phrases BlogForge listed as reading machine-written. A desk blog has no voice rules."""
+    return {
+        'no_em_dashes': True,
+        'no_ascii_double_hyphen': True,
+        'banished_words': _listed('words.txt'),
+        'banished_phrases': _listed('phrases.txt'),
+    }
+
+
+def _sentences(text):
+    """(start, end) of each sentence-like run in a part, without the spaces around it."""
+    spans, at = [], 0
+    for cut in [*BOUNDARY.finditer(text), None]:
+        end = cut.start() if cut else len(text)
+        piece = text[at:end]
+        lead = len(piece) - len(piece.lstrip())
+        if piece.strip():
+            spans.append((at + lead, at + len(piece.rstrip())))
+        if cut:
+            at = cut.end()
+    return spans
+
+
+def _sentence(text, start, spans=None):
+    """The sentence holding `start`, as (its text, where it starts in the part)."""
+    for begin, end in spans or _sentences(text):
+        if begin <= start < end:
+            if end - begin > SENTENCE_MAX:
+                line_start = text.rfind('\n', 0, start) + 1
+                line_end = text.find('\n', start)
+                begin, end = line_start, line_end if line_end != -1 else len(text)
+                end = min(end, begin + SENTENCE_MAX)
+            return text[begin:end], begin
+    return text[start : start + 1], start
+
+
+def _offsets(draft):
+    """Where each part sits in the Markdown desk.join makes, to place findings in it."""
+    places, at = [], 0
+    if draft.get('title'):
+        places.append(('title', at + 2, draft['title']))
+        at += 2 + len(draft['title']) + 2
+    if draft.get('opening'):
+        places.append(('opening', at, draft['opening']))
+        at += len(draft['opening']) + 2
+    for section in draft['sections']:
+        at += 3 + len(section['heading'])
+        if section['text']:
+            places.append((section['id'], at + 2, section['text']))
+            at += 2 + len(section['text'])
+        at += 2
+    return places
+
+
+def _label(rule, target):
+    if rule == 'em-dash':
+        return 'A dash (' + target + '). Many readers take it as machine writing.', (
+            'Replace the dash with a comma, a full stop, a colon or brackets.'
+        )
+    if rule == 'double-hyphen':
+        return 'A double hyphen (--).', 'Replace the double hyphen with suitable punctuation.'
+    if rule.startswith('banished:'):
+        term = rule.partition(':')[2]
+        return '“' + target + '” often reads as machine-written.', (
+            'Say it without “' + term + '”, in plain words.'
+        )
+    if rule == 'duplicate-paragraph':
+        return 'This paragraph repeats an earlier one.', 'Cut the repetition, or say something new.'
+    if rule == 'ai-starter':
+        return '“' + target + '” to start a sentence often reads as machine-written.', (
+            'Start the sentence without “' + target + '”.'
+        )
+    if rule == 'repeated-start':
+        return 'Two sentences in a row start with “' + target + '”.', (
+            'Vary how this sentence starts.'
+        )
+    if rule == 'repeated-word':
+        return '“' + target + '” three times in one paragraph.', (
+            'Use “' + target + '” less often here.'
+        )
+    return 'This section opens the way another one does.', 'Open this section differently.'
+
+
+def _finding(part, text, rule, start, target, spans=None):
+    sentence, at = _sentence(text, start, spans)
+    label, fix = _label(rule, target)
+    return {
+        'part': part,
+        'rule': rule,
+        'label': label,
+        'fix': fix,
+        'target': target,
+        'sentence': sentence,
+        'start': at,
+        'at': start,
+    }
+
+
+def _repetition(part, text):
+    """Within one part: an AI-tell sentence opener, two sentences in a row with the same
+    first word, and a long word three times in one paragraph."""
+    from text_checks import mask_protected
+
+    clean = mask_protected(text)
+    spans = _sentences(text)
+    starters = {word.casefold() for word in _listed('sentence-starters.txt')}
+    found, previous = [], None
+    for begin, end in spans:
+        first = WORD.search(clean, begin, end)
+        word = first.group() if first and first.start() == begin else None
+        if word and word.casefold() in starters:
+            found.append(_finding(part, text, 'ai-starter', begin, word, spans))
+        elif (
+            word
+            and previous
+            and word.casefold() == previous.casefold()
+            and word.casefold() not in COMMON_STARTS
+        ):
+            found.append(_finding(part, text, 'repeated-start', begin, word, spans))
+        previous = word
+    for paragraph in re.finditer(r'\S[\s\S]*?(?=\n[ \t]*\n|\Z)', clean):
+        seen = {}
+        for match in WORD.finditer(paragraph.group()):
+            word = match.group().casefold()
+            if len(word) < 6:
+                continue
+            seen[word] = seen.get(word, 0) + 1
+            if seen[word] == 3:
+                start = paragraph.start() + match.start()
+                found.append(_finding(part, text, 'repeated-word', start, match.group(), spans))
+    return found
+
+
+def _openers(draft):
+    found, seen = [], {}
+    for section in draft['sections']:
+        paragraph = section['text'].strip().split('\n\n')[0]
+        opener = ' '.join(paragraph.lower().split()[:8])
+        if len(opener.split()) >= 6:
+            if opener in seen:
+                found.append(_finding(section['id'], section['text'], 'echoed-opener', 0, opener))
+            seen[opener] = section['id']
+    return found
+
+
+def proofread(root, ident):
+    """Mechanical findings for each part, in draft order, each with the sentence Fix would
+    rewrite. Reading only: nothing is written and no job starts."""
+    from text_checks import lint
+
+    draft = desk.read(root, ident)
+    places = _offsets(draft)
+    findings = []
+    for hit in lint(desk.join(draft), proof_rules())['findings']:
+        if 'start' not in hit:
+            continue
+        for part, offset, text in places:
+            if offset <= hit['start'] < offset + len(text):
+                local = hit['start'] - offset
+                target = text[local : local + len(hit['target'])].split('\n')[0][:200]
+                findings.append(_finding(part, text, hit['rule'], local, target))
+                break
+    for part, _, text in places:
+        findings += _repetition(part, text)
+    findings += _openers(draft)
+    order = {part: number for number, (part, _, _) in enumerate(places)}
+    findings.sort(key=lambda found: (order.get(found['part'], 0), found['at'], found['rule']))
+    return {
+        'id': ident,
+        'revision': draft['revision'],
+        'findings': findings[:PROOF_LIMIT],
+        'more': max(0, len(findings) - PROOF_LIMIT),
+        'limitations': 'Mechanical matches and repetition hints only; read for meaning. Code, '
+        'links and quotations are left out.',
+    }

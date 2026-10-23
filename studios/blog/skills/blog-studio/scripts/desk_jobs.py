@@ -351,17 +351,17 @@ def selection(root, ident, seen, part, text, action, instruction='', start=None)
         raise ValueError('That passage is no longer in this part. Select it again.')
     elif whole.count(text) > 1:
         raise ValueError('That passage appears more than once here. Select a longer passage.')
+    if action not in ACTIONS and action != 'ask':
+        raise ValueError('Choose rephrase, shorten, expand, fix or ask.')
+    if not isinstance(instruction, str) or len(instruction) > 2000:
+        raise ValueError('Keep the instruction to 2,000 characters.')
+    instruction = instruction.strip() if action in ('ask', 'fix') else ''
     if action == 'ask':
-        if not isinstance(instruction, str) or len(instruction) > 2000:
-            raise ValueError('Keep the instruction to 2,000 characters.')
-        instruction = instruction.strip()
         if not instruction:
             raise ValueError('Say what to do with the passage.')
         line = 'Do what the author asks below with the passage.'
-    elif action in ACTIONS:
-        line = ACTIONS[action]
     else:
-        raise ValueError('Choose rephrase, shorten, expand, fix or ask.')
+        line = ACTIONS[action]
     extra, shared = _context(root, draft)
     payload = {'passage': text[:12_000], 'around': whole[:20_000], 'action': line, **extra}
     guidance = (
@@ -374,6 +374,12 @@ def selection(root, ident, seen, part, text, action, instruction='', start=None)
     if action == 'ask':
         guidance += _request(
             'INSTRUCTION FOR THE PASSAGE', instruction, 'Apply it to the passage only.'
+        )
+    elif instruction:  # Fix from a proofread finding: the finding, as the author chose it.
+        guidance += _request(
+            'PROOFREAD FINDING TO FIX',
+            instruction,
+            'Fix this in the passage as well, and change nothing else.',
         )
     return _queue(
         root,

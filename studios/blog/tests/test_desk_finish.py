@@ -198,5 +198,105 @@ class ProposalStoreTests(FinishCase):
             desk_finish.read(self.root, self.ident, job)
 
 
+PROSE = """# A synthetic title
+
+We leverage the parser — it reads every file. It is quick. It is small.
+
+## Setup
+
+Moreover, the installer checks tools. The `leverage` flag stays in code, and "leverage" in a quote.
+
+The registry, the registry client and the registry cache all read one file.
+
+## Usage
+
+Moreover, the installer checks tools. The `leverage` flag stays in code, and "leverage" in a quote.
+"""
+
+
+class ProofreadTests(FinishCase):
+    def setUp(self):
+        super().setUp()
+        self.ident = desk.create(self.root, {'title': 'Prose', 'manuscript': PROSE})['id']
+        self.parts = desk.read(self.root, self.ident)
+
+    def found(self):
+        return desk_finish.proofread(self.root, self.ident)['findings']
+
+    def rules(self, part):
+        return [f['rule'] for f in self.found() if f['part'] == part]
+
+    def test_each_finding_names_its_part_and_the_sentence_fix_rewrites(self):
+        found = self.found()
+        opening = [f for f in found if f['part'] == 'opening']
+        dash = next(f for f in opening if f['rule'] == 'em-dash')
+        self.assertEqual(dash['sentence'], 'We leverage the parser — it reads every file.')
+        self.assertEqual(dash['start'], 0)
+        word = next(f for f in opening if f['rule'] == 'banished:leverage')
+        self.assertEqual(word['target'], 'leverage')
+        self.assertIn('machine-written', word['label'])
+        self.assertIn('leverage', word['fix'])
+        again = next(f for f in opening if f['rule'] == 'repeated-start')
+        self.assertEqual(again['sentence'], 'It is small.')
+        text = self.parts['opening']
+        self.assertEqual(
+            text[again['start'] : again['start'] + len(again['sentence'])], again['sentence']
+        )
+
+    def test_code_and_quotations_are_left_out(self):
+        setup = self.parts['sections'][0]
+        hits = [
+            f for f in self.found() if f['part'] == setup['id'] and f['rule'] == 'banished:leverage'
+        ]
+        self.assertEqual(hits, [])
+
+    def test_ai_openers_repeated_words_and_repeats_across_sections_are_found(self):
+        setup, usage = (s['id'] for s in self.parts['sections'])
+        self.assertIn('ai-starter', self.rules(setup))
+        self.assertIn('repeated-word', self.rules(setup))
+        self.assertIn('echoed-opener', self.rules(usage))
+        self.assertIn('duplicate-paragraph', self.rules(usage))
+
+    def test_findings_follow_the_draft_order(self):
+        order = ['title', 'opening'] + [s['id'] for s in self.parts['sections']]
+        seen = [order.index(f['part']) for f in self.found()]
+        self.assertEqual(seen, sorted(seen))
+
+    def test_the_view_writes_nothing(self):
+        import management
+
+        folder = self.folder(self.ident)
+        before = {p: p.read_bytes() for p in folder.rglob('*') if p.is_file()}
+        shown = management.view(self.root, 'desk-proofread', {'id': [self.ident]})
+        self.assertTrue(shown['findings'])
+        self.assertEqual({p: p.read_bytes() for p in folder.rglob('*') if p.is_file()}, before)
+        self.assertEqual(desk_jobs.jobs(self.root, self.ident), [])
+
+    def test_fix_carries_the_finding_and_still_replaces_only_the_sentence(self):
+        import tool_jobs
+
+        dash = next(f for f in self.found() if f['rule'] == 'em-dash')
+        job = desk_jobs.selection(
+            self.root, self.ident, 1, 'opening', dash['sentence'], 'fix', dash['fix'], dash['start']
+        )
+        saved = tool_jobs.read(self.root, job['id'])
+        self.assertIn('PROOFREAD FINDING TO FIX', saved['guidance'])
+        self.assertIn(dash['fix'], saved['guidance'])
+        self.assertIn(desk_jobs.ACTIONS['fix'], saved['guidance'])
+        saved.update(
+            status='ready',
+            result={'content': 'We use the parser, which reads every file.', 'notes': ''},
+        )
+        tool_jobs.write(self.root, saved)
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(
+            desk.read(self.root, self.ident)['opening'],
+            'We use the parser, which reads every file. It is quick. It is small.',
+        )
+
+    def test_a_plain_draft_has_nothing_to_find(self):
+        self.assertEqual(desk_finish.proofread(self.root, self.made['id'])['findings'], [])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -2379,13 +2379,17 @@ def view(root, name, query):
 
                 return prepublish.report(root, arg('id'), whole(arg('title_limit', 80)))
             return advanced_tools.overview(root, arg('id'), whole(arg('offset', 0)))
-    if name in ('desk', 'desk-versions', 'desk-angles'):
+    if name in ('desk', 'desk-versions', 'desk-angles', 'desk-proofread'):
         import desk
         import desk_jobs
 
         with studio.locked(root):
             if name == 'desk-angles':
                 return desk_jobs.angles_view(root, arg('operation'))
+            if name == 'desk-proofread':
+                import desk_finish
+
+                return desk_finish.proofread(root, arg('id'))  # In process; writes nothing.
             if name == 'desk-versions':
                 ident = arg('id')
                 desk.read(root, ident)
