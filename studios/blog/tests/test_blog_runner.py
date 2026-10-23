@@ -4055,3 +4055,35 @@ class SharedGuidanceTests(RunnerCase):
             + '\n\n'
             + (references / runner.GUIDES['outline']).read_text(),
         )
+
+    def test_a_styled_runs_draft_review_and_package_guidance_is_unchanged(self):
+        found = self.create(style='how-to', length='deep', tone='Warm and direct', page=True)
+        references = Path(runner.__file__).resolve().parents[1] / 'references'
+        house = (references / 'style/house.md').read_text()
+        seen = []
+        for _ in range(4):
+            found = runner.survey(self.root, found['id'])
+            if found['complete']:
+                break
+            _, payload, guidance = runner.job(self.root, found['id'])
+            stage = found['next']
+            seen.append(stage)
+            style = (
+                '\n\nSELECTED STYLE: '
+                + payload['style']['name']
+                + '. Its guide is in style.guide. The style says the shape of this kind of '
+                'writing: structure, moves, length, headings and register. The selected voice '
+                'says how its author sounds. Where they conflict on wording, the voice wins; '
+                'where they conflict on structure, the style wins. Neither invents facts, '
+                'experience or sources. Where the style’s register differs from the house '
+                'guide’s tone defaults, the style wins; the house guide still decides mechanics.'
+            )
+            tail = '\n\n' + house + style
+            if stage in ('outline', 'draft'):
+                tail += '\n\n' + runner.LENGTHS['deep']
+            else:
+                self.assertNotIn(runner.LENGTHS['deep'], guidance)
+            self.assertEqual(guidance.count(tail), 1, stage)
+            self.submit(found, page=True)
+            self.approve(runner.survey(self.root, found['id']), page=True)
+        self.assertEqual(seen, ['outline', 'draft', 'review', 'package'])
