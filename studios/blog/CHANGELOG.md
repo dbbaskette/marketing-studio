@@ -7,7 +7,9 @@ changes for authors first, then what changes for maintainers.
 
 - **Small things put right.** **Checked for you** now also catches `[TODO]`, `[TBD]` and
   `[Placeholder: …]` in any case, and no longer mistakes a link's own text, such as
-  `[source-available](https://…)`, for a source ID.
+  `[source-available](https://…)`, for a source ID. `source add --purpose messaging` on
+  its own is refused in a plain sentence, because approved messaging marks a library
+  reference or one blog's file and on its own would never be read.
 
 - **Announcements that read like announcements.** A file can be **Approved messaging
   (the product's own claims)**, beside facts and examples: a messaging document, launch
