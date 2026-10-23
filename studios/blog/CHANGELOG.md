@@ -5,6 +5,23 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **The writing desk.** Blogs can be edited on the desk: notes per section and for the
+  whole draft, selection edits, and versions with compare and restore. **Polish a
+  document** and **Revise or review a draft** bring a pasted, uploaded or Google Doc draft
+  to the desk, with its kind of post, tone and an optional first pass (tighten and
+  proofread, or reshape to the kind of post). Each part saves as you type; a section's
+  note rewrites only what it asks for, keeping the rest word for word; selected text can
+  be rephrased, shortened, expanded, fixed or changed as asked. Every change keeps the
+  earlier text in History (the last twenty per part), and a form that is out of date is
+  refused rather than overwriting newer text. A finished step-by-step blog offers **Open
+  on the desk**; its run stays readable. Desk blogs write with their tone only.
+- **For maintainers:** `scripts/desk.py` (the desk record under `desk/draft.json` and
+  `desk/versions/<part>.jsonl`, with `DRAFT.md` kept in step), `scripts/desk_jobs.py` (the
+  `desk-section`, `desk-revise-all`, `desk-selection` and `desk-first-pass` tool job kinds
+  and how a ready result settles), `references/modules/desk-edit.md`, `POST
+  /api/desk-<action>`, `GET /api/desk` and `GET /api/desk-versions`, and
+  `blog_runner.shared_guidance` (the house guide, kind of post and length runs already
+  used, unchanged for runs).
 - **Select all in the Team library.** Tick **Select all on this page**, or, once anything
   is ticked, **Select all N matching** to tick every item the filters match. Ticks stay as
   you page and change the filters; the selection bar says how many are out of view. A
