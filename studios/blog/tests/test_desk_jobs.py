@@ -127,6 +127,58 @@ class DeskJobTests(DeskJobCase):
         )
 
 
+class WholeDraftTests(DeskJobCase):
+    def test_a_whole_draft_note_sends_every_section_and_the_note(self):
+        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Tighten throughout.')
+        saved = self.saved(job)
+        self.assertEqual(saved['kind'], 'desk-revise-all')
+        self.assertEqual(
+            [s['text'] for s in saved['payload']['sections']], ['First text.', 'Second text.']
+        )
+        self.assertEqual(saved['payload']['opening'], 'An opening paragraph.')
+        self.assertEqual(saved['payload']['note'], 'Tighten throughout.')
+        self.assertIn('ids unchanged', saved['guidance'])
+        self.assertIn('verbatim', saved['guidance'])
+        self.assertIn('"""\nTighten throughout.\n"""', saved['guidance'])
+
+    def test_an_empty_whole_draft_note_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'Write the note for the whole draft'):
+            desk_jobs.revise_all(self.root, self.ident, 1, '  ')
+
+    def test_a_first_pass_refuses_an_unknown_choice(self):
+        with self.assertRaisesRegex(ValueError, 'Choose tighten, reshape'):
+            desk_jobs.first_pass(self.root, self.ident, 1, 'polish')
+
+    def test_leave_it_queues_nothing(self):
+        self.assertIsNone(desk_jobs.first_pass(self.root, self.ident, 1, 'leave'))
+        self.assertEqual(desk_jobs.jobs(self.root, self.ident), [])
+
+    def test_tighten_reads_the_copy_edit_rule(self):
+        import manuscript_editor
+
+        saved = self.saved(desk_jobs.first_pass(self.root, self.ident, 1, 'tighten'))
+        self.assertEqual(saved['kind'], 'desk-first-pass')
+        self.assertIn(manuscript_editor.CHECKS['copyedit'], saved['guidance'])
+        self.assertEqual(saved['metadata']['desk']['action'], 'tighten')
+
+    def test_reshape_needs_a_kind_of_post_and_reads_its_shape(self):
+        with self.assertRaisesRegex(ValueError, 'Choose a kind of post'):
+            desk_jobs.first_pass(self.root, self.ident, 1, 'reshape')
+        made = desk.create(
+            self.root,
+            {'title': 'Styled', 'manuscript': DRAFT, 'style': 'how-to', 'length': 'short'},
+        )
+        saved = self.saved(desk_jobs.first_pass(self.root, made['id'], 1, 'reshape'))
+        self.assertIn(desk_jobs.RESHAPE, saved['guidance'])
+        self.assertIn(blog_runner.LENGTHS['short'], saved['guidance'])
+        self.assertNotIn('verbatim', saved['guidance'])
+
+    def test_a_draft_without_sections_has_no_first_pass(self):
+        made = desk.create(self.root, {'title': 'Flat', 'manuscript': 'Just prose.'})
+        with self.assertRaisesRegex(ValueError, 'section by section'):
+            desk_jobs.first_pass(self.root, made['id'], 1, 'tighten')
+
+
 class SharedGuidanceTests(unittest.TestCase):
     def test_it_is_the_same_text_runs_use(self):
         style = {'name': 'How-to', 'guide': 'Steps.'}

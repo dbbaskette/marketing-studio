@@ -242,3 +242,85 @@ def selection(root, ident, seen, part, text, action, instruction=''):
             'basis': fingerprint(whole),
         },
     )
+
+
+def _whole_payload(draft, extra, note=''):
+    return {
+        'title': draft['title'],
+        'opening': draft['opening'],
+        'sections': [
+            {'id': s['id'], 'heading': s['heading'], 'text': s['text']}
+            for s in draft['sections']
+            if s['text']
+        ],
+        'note': note,
+        **extra,
+    }
+
+
+def revise_all(root, ident, seen, note):
+    """One job that revises every written section for a note on the whole draft."""
+    if not isinstance(note, str) or len(note) > 4000:
+        raise ValueError('Keep the note to 4,000 characters.')
+    note = note.strip()
+    if not note:
+        raise ValueError('Write the note for the whole draft.')
+    draft = desk.read(root, ident)
+    if not any(s['text'] for s in draft['sections']):
+        raise ValueError('This draft has no written sections to revise.')
+    extra, shared = _context(root, draft)
+    guidance = _guide('desk-edit.md') + '\n\n' + WHOLE + '\n\n' + shared + '\n' + RETURN
+    guidance += _request(
+        'NOTE FOR THE WHOLE DRAFT',
+        note,
+        'Apply it to each section as a surgical edit and change nothing it does not require.',
+    )
+    return _queue(
+        root,
+        ident,
+        draft,
+        seen,
+        'desk-revise-all',
+        _whole_payload(draft, extra, note),
+        guidance,
+        {'part': 'sections', 'action': 'revise', 'basis': _sections_basis(draft)},
+    )
+
+
+FIRST_PASSES = ('tighten', 'reshape', 'leave')
+
+
+def first_pass(root, ident, seen, choice):
+    """Tighten and proofread, or reshape to the kind of post; leave queues nothing."""
+    if choice not in FIRST_PASSES:
+        raise ValueError('Choose tighten, reshape or leave it as it is.')
+    if choice == 'leave':
+        return None
+    draft = desk.read(root, ident)
+    if not any(s['text'] for s in draft['sections']):
+        raise ValueError(
+            'A first pass works section by section. Give the draft ## headings, or edit it '
+            'as it is.'
+        )
+    if choice == 'reshape' and not draft.get('style'):
+        raise ValueError('Choose a kind of post to reshape the draft to.')
+    import manuscript_editor
+
+    extra, shared = _context(root, draft, length=choice == 'reshape')
+    rule = (
+        TIGHTEN + ' ' + manuscript_editor.CHECKS['copyedit'] + '\n\n' + _guide('desk-edit.md')
+        if choice == 'tighten'
+        else RESHAPE
+    )
+    guidance = rule + '\n\n' + WHOLE.replace('for this note', 'for this pass') + '\n\n'
+    guidance += shared + '\n' + RETURN
+    return _queue(
+        root,
+        ident,
+        draft,
+        seen,
+        'desk-first-pass',
+        _whole_payload(draft, extra),
+        guidance,
+        {'part': 'sections', 'action': choice, 'basis': _sections_basis(draft)},
+    )
