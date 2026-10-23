@@ -151,7 +151,7 @@ old run stays readable). New blogs always start on the desk.
 
 - **Desk record.** In each desk blog's folder: `desk/draft.json` (title, opening,
   sections with id, heading, brief and text, sources, gaps) and `desk/versions/<part>.jsonl`
-  (last 20 per section, title and opening). `manuscript.md` is rewritten on every save so
+  (last 20 per section, title and opening). `DRAFT.md` is rewritten on every save so
   Copy, Download, Google Doc, library keep and pre-publish work unchanged. Splitting is by
   `##` heading; text before the first heading is the opening. Writes take the studio lock
   and carry the version the form last saw; an outdated form is refused.
