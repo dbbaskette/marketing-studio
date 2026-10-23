@@ -251,6 +251,12 @@ POLICY += (
 
 POLICY += "\nWhen documents['claims-map'] is supplied, it lists the claims the author's own material makes and where. State those claims as the material does, and add no claim it does not make."
 
+POLICY += """\nA source with stance 'messaging' is the team's approved messaging: its claims are this
+post's own. State them in the product's voice and the present tense, without attribution hedges
+such as "is described as", "is designed to" or "the messaging says". Keep a limit the document
+itself marks (a target, a preview, a plan) as that limit. Dates, versions, availability and
+entitlements still follow the software-claims guide. A source with stance 'evidence' is cited."""
+
 POLICY += """\nWhen a selected brand contract is supplied, follow its organisation and product naming
 rules. Use its design guide only for visual handoff suggestions. Keep brand identity separate
 from the selected author voice: preserve that voice and its provisional or confirmed status.

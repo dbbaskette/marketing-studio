@@ -3554,3 +3554,69 @@ class GateCheckTests(RunnerCase):
         self.assertNotIn('Saved document contains readable text', labels)
         self.assertNotIn('Document matches its submitted version and selected inputs', labels)
         self.assertEqual(labels, ['No automatic checks apply to Outline.'])
+
+
+class MessagingTests(FilesCase):
+    """Approved messaging: the announcement's own claims, stated in the product's voice."""
+
+    BRIEF = 'Gateway Prime retries a failed call twice. It is in preview, planned for March.'
+
+    def messaging(self, *files):
+        import base64
+        import blog_library
+
+        with patch.object(blog_library.shutil, 'which', return_value=None):
+            result = management.dispatch(
+                self.root,
+                'upload',
+                {
+                    'operation': studio.digest(repr(('messaging', files)).encode())[:32],
+                    'purpose': 'material',
+                    'analyze': False,
+                    'files': [
+                        {
+                            'filename': name,
+                            'content': base64.b64encode(body.encode()).decode(),
+                            'purpose': 'messaging',
+                        }
+                        for name, body in files
+                    ],
+                },
+            )
+        return [row['source']['id'] for row in result['files']]
+
+    def test_the_stance_reaches_the_payload_only_with_messaging(self):
+        facts = self.material(('notes.md', 'Retries cost money. ' * 40))
+        brief = self.messaging(('launch-brief.md', self.BRIEF))
+        found = self.create(sources=facts + brief, research='none')
+        _, record, run = runner.load(self.root, found['id'])
+        stances = {s['name']: s['stance'] for s in runner.inputs(self.root, record, run)['sources']}
+        self.assertEqual(stances, {'notes': 'evidence', 'launch-brief': 'messaging'})
+        # Without messaging, no source carries a stance, so saved pins hold byte for byte.
+        plain = self.create(sources=facts, research='none', title='Plain')
+        _, record, run = runner.load(self.root, plain['id'])
+        self.assertTrue(
+            all('stance' not in s for s in runner.inputs(self.root, record, run)['sources'])
+        )
+
+    def test_the_writer_is_told_what_messaging_means(self):
+        self.assertIn("stance 'messaging'", blog_worker.POLICY)
+        self.assertIn('without attribution hedges', blog_worker.POLICY)
+        found = self.create(
+            sources=self.messaging(('launch-brief.md', self.BRIEF)), research='none'
+        )
+        found = self.approve(self.submit(found))  # outline
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual(payload['sources'][0]['stance'], 'messaging')
+        self.assertIn('| Approved messaging |', guidance)
+        self.assertIn('dates, versions and entitlements', guidance)
+        self.assertIn('claim the messaging makes', guidance)
+
+    def test_the_claims_map_reads_messaging_as_the_products_own_claims(self):
+        found = self.create(
+            sources=self.messaging(('launch-brief.md', self.BRIEF)), research='supplied-only'
+        )
+        self.assertEqual(found['next'], 'claims-map')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        self.assertEqual([s['stance'] for s in payload['sources']], ['messaging'])
+        self.assertIn('stance `messaging`', guidance)

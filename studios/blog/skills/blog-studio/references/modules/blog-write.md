@@ -37,7 +37,14 @@ title, summary box, FAQ, or marketing CTA is not compulsory.
 
 Use selected sources according to their roles. Inspiration suggests an angle;
 biography establishes background; confirmed authored samples inform voice.
-None automatically proves a factual claim. Keep private source names/passages out
+None automatically proves a factual claim. A source's `stance` says how to write it:
+
+| Stance | How the writing uses it |
+| --- | --- |
+| Facts (`evidence`) | Evidence to cite; attributed when a claim is contested or measured |
+| Approved messaging | The post's own claims: the product's voice, present tense, no attribution; a limit the document marks (target, preview, planned) stays that limit |
+
+ Keep private source names/passages out
 of public queries. Supplied-only work stays within supplied evidence.
 
 For a material claim, inspect the supporting passage and retain its source ID or

@@ -569,6 +569,11 @@ def inputs(root, record, run):
         if 'inspiration' in source['purposes']
     ]
     sources = [source for source in sources if 'inspiration' not in source['purposes']]
+    if any('messaging' in source['purposes'] for source in sources):
+        # Approved messaging is the announcement's own claims; the rest is evidence to cite.
+        # Only a run with messaging says so, so saved pins hold for every other run.
+        for source in sources:
+            source['stance'] = 'messaging' if 'messaging' in source['purposes'] else 'evidence'
     payload = {
         'title': record['title'],
         'author': record.get('author', ''),
