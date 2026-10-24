@@ -7,8 +7,8 @@ Its companion command exports a task contract with
 Read the resulting `VOICE.md` for language and `DESIGN.md` for visual work.
 
 The page's **Settings → Brand skill** accepts its repository and release and
-selects an installed skill, as in Training Studio. **New blog** selects the
-brand/variant. Guided CLI runs accept `--brand ID --variant VARIANT`; `--brand ''`
+selects an installed skill, as in Training Studio. Desk blogs carry no brand
+contract. Guided CLI runs accept `--brand ID --variant VARIANT`; `--brand ''`
 opts out of a shared default. Read a guided run's pinned `brand` guides in
 `derived/blog-run.json`; settings changes never replace that saved contract.
 

@@ -10,14 +10,18 @@ approve an internal review artifact before choosing edits.
 
 | Job | Steps | Result |
 | --- | --- | --- |
-| Polish a document | Choose Google Doc, pasted text, or a file → polish → choose changes → finish | Google feedback or a revised local draft with retained history |
-| Write from a brief | Brief and audience → optional sources → outline → draft | A saved manuscript ready for editing or download |
-| Write from an outline | Brief and supplied outline → optional sources → draft | A draft guided by the supplied structure |
-| Explore ideas | Brief → three angles → select and develop | An outline/draft from the chosen angle |
+| Write about a topic | Kind of post → sources and settings → title, reader and point, or three angles → Start | A draft on the writing desk |
+| Work from an outline or notes | Kind of post → sources and settings → the outline → write from it, or shape it first | A draft, or an outline to shape, on the desk |
+| Edit or polish a draft | Kind of post → sources and settings → pasted text, a file or a Google Doc → optional first pass | The draft on the desk, with notes, selection edits, History and Finishing |
+| Polish a document (blogs in the manuscript editor) | Choose Google Doc, pasted text, or a file → polish → choose changes → finish | Google feedback or a revised local draft with retained history |
+
+Blogs started before the desk keep their step-by-step run (brief, research, outline,
+draft, review, handoff) and the manuscript editor described below.
 
 ## Interface contract
 
-Home offers tasks and a compact resume list. Polish a document asks for the
+Home offers tasks and a compact resume list. Every new blog starts on the writing desk;
+nothing stops for the writer after Start. In the manuscript editor, Polish a document asks for the
 input method: Google Doc link, pasted text, or an uploaded text/Markdown/Word/PDF
 file. These are source choices within one task, rather than separate workflows. Blogs open the relevant next step.
 The editor has three explicit steps: Polish, Choose changes, Finish.

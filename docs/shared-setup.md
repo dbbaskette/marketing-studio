@@ -116,7 +116,9 @@ host, path at a segment boundary, every redirect checked); see
 ## Review level
 
 Choose the shared **Review level** under You and your assistant. New browser
-runs in Blog Studio, Presentation Studio and Training Studio save this choice.
+runs in Presentation Studio and Training Studio, and Blog Studio runs started step by step
+in chat, save this choice. A new blog on Blog Studio's writing desk has no stops: its
+outline and draft are written after Start, and you edit them when you choose.
 
 | Choice | Reviews |
 | --- | --- |
@@ -133,17 +135,18 @@ saying why. No stop is passed while a review or the brand's audit still finds
 something grave.
 
 Presentation Studio's direction stop includes research, the editable outline
-with its wireframe draft, and the brand's rendered looks to pick from. Blog Studio includes research with the outline, and the
-writing, independent review and requested handoff at the final stop.
+with its wireframe draft, and the brand's rendered looks to pick from. A Blog Studio run
+includes research with the outline, and the writing, independent review and requested
+handoff at the final stop.
 Training Studio reads the research plan before any research is run, then groups
 all selected levels into one stop, **Review the first drafts**, with each deck's
 wireframe draft and the brand's looks to pick from, stops at each drawn deck, then
 one review of the completed documents, decks and scenarios.
 
-### Where this run stops
+### Where a run stops
 
-Every studio's start form has a **Where this run stops** card (in Training Studio,
-**Where this training stops**; in Presentation Studio, **Where this deck stops**): the
+Training Studio's and Presentation Studio's start forms have a stops card (**Where this
+training stops**, **Where this deck stops**): the
 three levels as one control, the stops the chosen level makes for this run, and a chip,
 **Use this for new work in every studio**. The control sets this run's level only and
 starts at the shared level the form read. With the chip on, the level is written to the

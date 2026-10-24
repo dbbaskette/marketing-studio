@@ -10,8 +10,8 @@ For contextual browser tasks and their limits, read [page tools](references/page
 For a shared studios repository, drivers, handovers or migration, read
 [team workspace](references/workspace/team-workspace.md).
 
-To start a blog or continue one with `derived/blog-run.json`, read
-[guided runs](references/guided-runs.md). It works on the page or in chat.
+To start a guided blog in chat or continue one with `derived/blog-run.json`, read
+[guided runs](references/guided-runs.md). On the page, new blogs start on the writing desk.
 Focused outline, draft, edit and interview requests keep the routes below.
 
 Read [entry flow](references/entry-flows.md) for writing starts. For setup/help,

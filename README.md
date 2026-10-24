@@ -29,7 +29,7 @@ own launcher and can be installed on its own.
 
 | You want to… | Open | What you work on |
 | :--- | :--- | :--- |
-| Turn an idea into a blog in your voice | **[Blog Studio](studios/blog)** | Research, outline, draft, review, and a publication handoff |
+| Turn a topic, notes or a draft into a finished blog | **[Blog Studio](studios/blog)** | One writing desk: notes per section, selection edits, versions, and finishing tools before publishing |
 | Build a researched presentation in your brand | **[Presentation Studio](studios/presentation)** | New decks, existing decks, storyboards, and slide reviews |
 | Teach a topic at the right level | **[Training Studio](studios/training)** | Research, teaching plans, learner materials, decks, and practice |
 
