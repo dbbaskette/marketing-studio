@@ -164,9 +164,19 @@ def _forget(root, ident):
     import tool_jobs
 
     studio.inside(root, '.blog-runs', ident + '.json').unlink(missing_ok=True)
-    for path in studio.inside(root, '.blog-runs', 'creations').glob('*.json'):
-        if _names(path, ident, ('id',)):
-            path.unlink()
+    for folder in ('creations', 'desk-creations'):
+        for path in studio.inside(root, '.blog-runs', folder).glob('*.json'):
+            if _names(path, ident, ('id',)):
+                path.unlink()
+    studio.inside(root, '.blog-runs', 'desk-jobs', ident + '.json').unlink(missing_ok=True)
+    # A start's phase and problem, and research staged while it worked (desk_jobs.staging).
+    studio.inside(root, '.blog-runs', 'desk-starts', ident + '.json').unlink(missing_ok=True)
+    shutil.rmtree(studio.inside(root, '.blog-runs', 'desk-starts', ident), ignore_errors=True)
+    import desk_finish
+
+    desk_finish.forget(root, ident)  # Finishing suggestions waiting for this blog.
+    # What Finishing sent to the blog's Google Doc, kept on this computer.
+    studio.inside(root, '.blog-runs', 'desk-google', ident + '.json').unlink(missing_ok=True)
     studio.inside(root, '.blog-runs', 'diagnostics', ident + '.json').unlink(missing_ok=True)
     blog_runner.said_path(root, ident).unlink(missing_ok=True)
     active = studio.inside(root, '.active-article.json')

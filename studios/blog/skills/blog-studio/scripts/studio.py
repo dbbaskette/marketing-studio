@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -54,6 +55,38 @@ def identifier(value):
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,79}', value):
         raise ValueError('ID must contain lowercase letters, digits, and hyphens (max 80).')
     return value
+
+
+# Blog Studio's own switches, saved with this computer's writing defaults. `voice` shows
+# the older voice tools (learning voices, Write as, default voice); voice guides do not
+# depend on it.
+FEATURES = {'voice': False}
+VOICES_OFF = 'Voices are switched off in Blog Studio settings.'
+
+
+def features(root):
+    """The switches as saved in .blog-run-settings.json; a missing or damaged one is off."""
+    found = dict(FEATURES)
+    try:
+        saved = read_json(inside(root, '.blog-run-settings.json'))
+    except (OSError, ValueError):
+        return found
+    values = saved.get('features') if isinstance(saved, dict) else None
+    if isinstance(values, dict):
+        for key in FEATURES:
+            if type(values.get(key)) is bool:
+                found[key] = values[key]
+    return found
+
+
+def voices_on(root):
+    return features(root)['voice']
+
+
+def require_voices(root):
+    """Refuse an older voice tool while the switch is off."""
+    if not voices_on(root):
+        raise ValueError(VOICES_OFF)
 
 
 def new_id(name):
@@ -154,6 +187,14 @@ def persist(directory, kind, record):
     write_json(metadata_path(directory, kind), record)
 
 
+# Whether this thread of work holds the studio lock, for writers that require it.
+_HELD = ContextVar('blog_studio_lock_held', default=False)
+
+
+def lock_held():
+    return _HELD.get()
+
+
 @contextmanager
 def _locked(root):
     """Serialize commands that change the workspace.
@@ -172,9 +213,11 @@ def _locked(root):
             'Retry shortly; the lock clears by itself when that command ends, so do not delete '
             '.studio.lock.'
         )
+    held = _HELD.set(True)
     try:
         yield
     finally:
+        _HELD.reset(held)
         release_lock(fd)
 
 
@@ -862,7 +905,21 @@ def article_command(root, args):
             raise ValueError('Save the imported original before saving an edited draft.')
         if args.kind == 'original' and (directory / 'ORIGINAL.md').exists():
             raise ValueError('Imported original is immutable; revisions belong in DRAFT.md.')
-        saved_artifact = save_artifact(directory, args.kind, body, record, label=args.label)
+        import desk
+
+        if args.kind == 'draft' and desk.on_desk(directory):
+            # A blog on the desk takes a chat edit as a new version of each part it changed,
+            # so the next desk save keeps it rather than writing over it.
+            desk.reimport(root, args.id, body, 'chat', record)
+            target = inside(directory, 'DRAFT.md')
+            saved_artifact = {
+                'path': str(target),
+                'sha256': record['artifact_hashes']['draft'],
+                'reopened': True,
+                'on_desk': True,
+            }
+        else:
+            saved_artifact = save_artifact(directory, args.kind, body, record, label=args.label)
     elif args.action == 'progress':
         record['stage'] = args.stage
         record['next_step'] = args.next_step

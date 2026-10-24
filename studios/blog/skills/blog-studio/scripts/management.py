@@ -34,6 +34,7 @@ STATIC = {
     '/': ('index.html', 'text/html; charset=utf-8'),
     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
     '/runner.js': ('runner.js', 'text/javascript; charset=utf-8'),
+    '/desk.js': ('desk.js', 'text/javascript; charset=utf-8'),
     '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8'),
     '/blog.css': ('blog.css', 'text/css; charset=utf-8'),
     '/style.css': ('style.css', 'text/css; charset=utf-8'),
@@ -407,6 +408,100 @@ def checked_google(root, entry):
     }
 
 
+# Two-part endings under which a site's own name is the third label from the right.
+SHARED_SUFFIXES = frozenset({'co', 'com', 'net', 'org', 'gov', 'ac', 'edu', 'ltd', 'plc'})
+
+
+def _site_of(host):
+    """The registrable part of a host, near enough without a public suffix list:
+    www.example.com and docs.example.com are example.com; shop.example.co.uk is
+    example.co.uk."""
+    labels = (host or '').lower().rstrip('.').split('.')
+    keep = 3 if len(labels) > 2 and len(labels[-1]) == 2 and labels[-2] in SHARED_SUFFIXES else 2
+    return '.'.join(labels[-keep:])
+
+
+class LinkScope:
+    """Where one added link may go: its own site, such as example.com to www.example.com,
+    and nowhere else. The fetch checks the address is public on every hop."""
+
+    def __init__(self, link):
+        from urllib.parse import urlsplit
+
+        self.site = _site_of(urlsplit(link).hostname)
+
+    def refuse(self, url, redirected_from=None):
+        from urllib.parse import urlsplit
+
+        host = (urlsplit(url).hostname or '').lower()
+        if _site_of(host) == self.site:
+            return None
+        return (
+            'That link moves to another site, '
+            + (host or 'an unknown address')
+            + ', so it was not read. Add that page’s own link instead.'
+        )
+
+
+LINK_WORDS = {
+    blog_library.CREDENTIALS: 'Use a public https link without a password or port.',
+    blog_library.CREDENTIALS_IN_QUERY: 'Use a public https link without a password or port.',
+    blog_library.PRIVATE: 'That link points to a private address, so it cannot be read.',
+    blog_library.REDIRECTS: 'That link redirects too many times, so it was not read.',
+}
+
+
+def checked_link(root, entry):
+    """A public web page as one more file: read now through the library's fetch (public
+    addresses only on every hop, a deadline, redirects kept on its own site), saved like
+    an upload beside the files. Reads the network: call it before taking the studio lock."""
+    import html
+    import re
+    from urllib.parse import urlsplit
+
+    link = entry.get('link') if set(entry) == {'link'} else None
+    if not isinstance(link, str) or not re.fullmatch(r'https://\S{4,2000}', link.strip()):
+        raise ValueError('Use a public https link without a password or port.')
+    link = link.strip()
+    parts = urlsplit(link)
+    try:
+        content, origin, kind = blog_library.fetch(link, LinkScope(link))
+    except ValueError as error:
+        raise ValueError(LINK_WORDS.get(str(error), str(error))) from None
+    suffix = '.html' if 'html' in kind else '.txt' if kind.startswith('text/') else ''
+    if not suffix:
+        raise ValueError('This page has no readable text version. Save it as a file and upload it.')
+    if len(content) > blog_library.MAX_BINARY:
+        raise ValueError('This page is larger than one file may be.')
+    text, status, note = blog_library.extract_detail(root, content, suffix)
+    if text is not None and len(text.encode()) > blog_library.MAX_TEXT:
+        raise ValueError('This page has more text than one file may hold.')
+    found = (
+        re.search(rb'<title[^>]*>(.*?)</title>', content, re.I | re.S)
+        if suffix == '.html'
+        else None
+    )
+    title = found.group(1).decode('utf-8', 'replace') if found else ''
+    title = ' '.join(html.unescape(re.sub(r'<[^>]*>', ' ', title)).split())
+    title = (title or (parts.netloc + parts.path).rstrip('/'))[:300]
+    try:
+        filename = clean_filename(title + suffix)
+    except ValueError:
+        filename = 'Web page' + suffix
+    return {
+        'filename': filename,
+        'shown': title,
+        'suffix': suffix,
+        'content': content,
+        'text': text,
+        'status': status,
+        'note': note,
+        'title': title,
+        'origin': origin,
+        'link': origin,
+    }
+
+
 def save_upload(root, staging, checked, purpose, author=None, analyze=True, library=None):
     with (
         tempfile.TemporaryDirectory(dir=staging) as temp,
@@ -432,7 +527,33 @@ def save_upload(root, staging, checked, purpose, author=None, analyze=True, libr
         )
 
 
-def upload_files(root, data, staging, ledger, fingerprint):
+def read_ahead(root, data):
+    """Read the links and Google Docs of a files upload before the studio lock is taken,
+    so a slow page or Doc never holds the workspace. {position: checked entry}.
+
+    Nothing is fetched for a request `upload_files` will refuse anyway."""
+    files = data.get('files')
+    if not isinstance(files, list) or len(files) > MAX_UPLOAD_FILES:
+        return {}
+    if (
+        set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze', 'author', 'kind'}
+        or data.get('purpose', 'material') not in studio.PURPOSES
+        or not isinstance(data.get('keep', False), bool)
+    ):
+        return {}
+    found = {}
+    for at, entry in enumerate(files):
+        if not isinstance(entry, dict) or 'linkedin' in entry:
+            return {}  # An export expands into several entries: read it all under the lock.
+        bare = {key: value for key, value in entry.items() if key != 'purpose'}
+        if 'link' in entry:
+            found[at] = checked_link(root, bare)
+        elif 'google' in entry:
+            found[at] = checked_google(root, bare)
+    return found
+
+
+def upload_files(root, data, staging, ledger, fingerprint, prepared=None):
     """Several files under one operation. Material is pinned by a run and stays out of
     the reference library and the Team Hub unless the person keeps it. A LinkedIn export
     expands into its About text and its articles, and an author named for the request is
@@ -480,7 +601,13 @@ def upload_files(root, data, staging, ledger, fingerprint):
                 found['purposes'] = [found.get('purpose', purpose)]
                 checked.append(found)
         else:
-            found = (checked_google if 'google' in entry else checked_upload)(root, entry)
+            found = (prepared or {}).get(len(checked)) or (
+                checked_google
+                if 'google' in entry
+                else checked_link
+                if 'link' in entry
+                else checked_upload
+            )(root, entry)
             found['purposes'] = [purpose] + ([role] if role != 'material' else [])
             # Refused here, before the upload is begun, as `source add` refuses it.
             studio.lone_messaging(found['purposes'], 'Nothing was saved.')
@@ -496,7 +623,13 @@ def upload_files(root, data, staging, ledger, fingerprint):
             # A kept file is a library item: it says where it came from and its kind of post.
             fields = (
                 blog_library.library_fields(
-                    root, kind=kind, origin_kind='google-doc' if entry.get('link') else 'upload'
+                    root,
+                    kind=kind,
+                    origin_kind='google-doc'
+                    if (entry.get('link') or '').startswith('https://docs.google.com/')
+                    else 'link'
+                    if entry.get('link')
+                    else 'upload',
                 )
                 if chosen != 'material'
                 else None
@@ -659,8 +792,9 @@ def source_shared(root, ident):
     return False
 
 
-def source_keep(root, data):
-    """Move an unpinned upload without changing its ID, bytes, original or example role."""
+def source_keep(root, data, blog=None):
+    """Move an unpinned upload without changing its ID, bytes, original or example role.
+    `blog` is a desk blog made in the same request that keeps it: its own pin is moved too."""
     if set(data) - {'id', 'keep'} or type(data.get('keep')) is not bool:
         raise ValueError('Choose whether to keep this file in the team library.')
     directory, record = studio.item(root, 'sources', str(data.get('id', '')))
@@ -672,6 +806,8 @@ def source_keep(root, data):
         return {'id': record['id'], 'kept': keep}
     for path in studio.inside(root, 'articles').glob('*/session.json'):
         article = studio.read_json(path)
+        if blog and article.get('id') == blog:
+            continue
         if record['id'] in article.get('material', []) or any(
             selected.get('source_id') == record['id'] for selected in article.get('sources', [])
         ):
@@ -707,6 +843,8 @@ def source_keep(root, data):
             {
                 'origin_kind': 'google-doc'
                 if record.get('origin', '').startswith('https://docs.google.com/')
+                else 'link'
+                if record.get('origin', '').startswith('https://')
                 else 'upload'
             },
         )
@@ -724,7 +862,7 @@ def source_keep(root, data):
     return result
 
 
-def upload(root, data):
+def upload(root, data, prepared=None):
     if set(data) - {
         'operation',
         'filename',
@@ -759,7 +897,7 @@ def upload(root, data):
             'This upload has an uncertain result. Inspect retained work before retrying; do not create a duplicate.'
         )
     if 'files' in data:
-        return upload_files(root, data, staging, ledger, fingerprint)
+        return upload_files(root, data, staging, ledger, fingerprint, prepared)
     checked = checked_upload(root, data)
     text, status, title = checked['text'], checked['status'], checked['title']
     purpose = data.get('purpose', 'reference')
@@ -1769,6 +1907,8 @@ def _dispatch(root, route, data):
         import blog_delete
 
         return blog_delete.delete(root, data)
+    # A page or Google Doc added to a files upload is read before the lock is taken.
+    prepared = read_ahead(root, data) if route == 'upload' else None
     with studio.locked(root):
         if route == 'run-settings':
             from blog_runner import settings
@@ -1836,6 +1976,10 @@ def _dispatch(root, route, data):
             import manuscript_editor
 
             return manuscript_editor.dispatch(root, route[7:], data)
+        if route.startswith('desk-'):
+            import desk
+
+            return desk.dispatch(root, route[5:], data)
         if route.startswith('run-'):
             from blog_runner import dispatch as run_dispatch
 
@@ -1853,7 +1997,7 @@ def _dispatch(root, route, data):
         if route == 'retry-sync':
             return retry_receipt(root, adapter, data)
         if route == 'upload':
-            return upload(root, data)
+            return upload(root, data, prepared)
         if route == 'source-keep':
             return source_keep(root, data)
         if route == 'source-role':
@@ -1974,10 +2118,64 @@ def _dispatch(root, route, data):
     raise ValueError('Unknown management action.')
 
 
+# Desk requests that change only what this computer keeps: the driver check, nothing shared.
+DESK_LOCAL = ('desk-save', 'desk-skip')
+
+
+# The older voice tools, which the voice switch in Blog Studio settings hides: learning
+# voices, auditions, Change the voice, voice samples, LinkedIn exports, Create voices for
+# every author and its author suggestions. Voice guides (profile-save, profile-retire and
+# voice-guide jobs) and examples of a kind of post are not among them.
+VOICE_ROUTES = ('library-voices', 'library-add-samples', 'library-author-same')
+VOICE_ROUTES += ('library-author-different',)
+VOICE_JOBS = ('voice-learn', 'voice-audition')
+
+
+def old_voice_tool(route, data):
+    """Whether this request uses one of the older voice tools."""
+    if not isinstance(data, dict):
+        return False
+    action = data.get('action')
+    if route in VOICE_ROUTES:
+        return True
+    if route in ('voice-links-preview', 'voice-links-import'):
+        return data.get('purpose', 'voice-sample') != 'style-sample'
+    if route == 'library-selection':
+        return action == 'voice-learn'
+    if route == 'tool-action':
+        return (
+            action == 'voice-apply'
+            or (action == 'job-create' and data.get('kind') in VOICE_JOBS)
+            or (action == 'source-purpose' and data.get('purpose') == 'voice-sample')
+            or (action == 'interview-start' and bool(data.get('profile')))
+            # A voice guide by hand has no voice samples; learned ones keep theirs unsent.
+            or (action == 'profile-save' and bool(data.get('samples')))
+        )
+    if route == 'run-create':
+        return bool(data.get('profile'))
+    if route == 'upload':
+        files = data.get('files') if isinstance(data.get('files'), list) else []
+        # Voice samples, an author's background (their About text) and LinkedIn exports.
+        return data.get('purpose') in ('voice-sample', 'author-background') or any(
+            isinstance(entry, dict) and 'linkedin' in entry for entry in files
+        )
+    return False
+
+
 def dispatch(root, route, data):
     from team_workspace import space, before, saved, status, refresh, action, join
+    from team_workspace import keep_desk_leftovers
 
-    if route in ('editor-google-plan', 'editor-google-send'):
+    # Refused before anything is read, fetched or shared. The default voice in run-settings
+    # is checked with the rest of that form (blog_runner.settings).
+    if old_voice_tool(route, data):
+        studio.require_voices(root)
+    if route in (
+        'editor-google-plan',
+        'editor-google-send',
+        'desk-google-plan',
+        'desk-google-send',
+    ):
         return _dispatch(root, route, data)
     if (
         route == 'google-preview'
@@ -2026,13 +2224,26 @@ def dispatch(root, route, data):
                 raise ValueError('Reload the displayed sharing setting before saving.')
             studios_config.update({'share': data['share']}, expected={'share': before['share']})
             return status(root)
+        keep_desk_leftovers(root)
         return refresh(root, push=True)
+    if route == 'desk-share':
+        # Leaving the desk: share its edits, kept on this computer while typing, with the team.
+        if set(data) != {'id'} or not isinstance(data['id'], str):
+            raise ValueError('Choose a blog on the desk.')
+        studio.item(root, 'articles', data['id'])
+        from team_workspace import share_desk
+
+        return {'id': data['id'], **share_desk(root, data['id'])}
     if route.startswith('team-'):
         if data.get('confirmed') is not True or not isinstance(data.get('expected'), str):
             raise ValueError('Confirm the current blog before changing its driver or publishing.')
+        keep_desk_leftovers(root)
         return action(root, data.get('id'), route[5:], data['expected'])
     if space(root):
         if route in ('refresh', 'retry-sync'):
+            # What a desk result left after its share failed is kept first, so a refresh is
+            # never refused for it.
+            keep_desk_leftovers(root)
             return refresh(root, push=True)
         if route == 'memory':
             from team_workspace import save_memory
@@ -2041,21 +2252,40 @@ def dispatch(root, route, data):
             result = save_memory(root, data)
             result['team_sync'] = saved(root)
             return result
-        before(
-            root,
-            data.get('id')
-            if route.startswith(('run-', 'editor-'))
-            and route != 'run-create'
-            or route in ('schedule', 'tool-action', 'blog-delete', 'google-open')
-            else None,
-        )
+        if route.startswith('desk-') and route not in ('desk-create', 'desk-save'):
+            # A desk result whose share failed after it settled is committed first. A desk
+            # save commits everything under the blog after it anyway (kept_locally).
+            from team_workspace import keep_desk
+
+            keep_desk(root, data.get('id'))
+        if route in DESK_LOCAL:
+            # Typing, or setting a suggestion aside, is not a decision: no fetch, only the
+            # driver check.
+            from team_workspace import guard
+
+            guard(root, data.get('id'))
+        else:
+            before(
+                root,
+                data.get('id')
+                if route.startswith(('run-', 'editor-', 'desk-'))
+                and route not in ('run-create', 'desk-create')
+                or route in ('schedule', 'tool-action', 'blog-delete', 'google-open')
+                else None,
+            )
     result = _dispatch(root, route, data)
-    if space(root) and route not in ('run-settings', 'review-level'):
+    if space(root) and route == 'desk-save':
+        from team_workspace import kept_locally
+
+        result['team_sync'] = kept_locally(root, result['id'], data.get('session'))
+    elif space(root) and route not in ('run-settings', 'review-level', 'desk-angles', 'desk-skip'):
         if route == 'tool-action':
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.
             ident = data.get('id')
-        elif route.startswith(('run-', 'editor-')) or route in (
+        elif route == 'desk-repurpose':
+            ident = result['made']['id']  # The new blog; the source changed nothing shared.
+        elif route.startswith(('run-', 'editor-', 'desk-')) or route in (
             'schedule',
             'google-start',
             'google-open',
@@ -2176,6 +2406,7 @@ def view(root, name, query):
     if name in (
         'voices',
         'voice',
+        'voice-guides',
         'styles',
         'style',
         'interview',
@@ -2198,6 +2429,8 @@ def view(root, name, query):
                 return article_tools.variants(root, arg('id'))
             if name == 'voices':
                 return article_tools.voices(root)
+            if name == 'voice-guides':
+                return article_tools.guides(root)
             if name == 'voice':
                 return article_tools.profile(root, arg('profile'))
             if name == 'interview':
@@ -2214,6 +2447,28 @@ def view(root, name, query):
 
                 return prepublish.report(root, arg('id'), whole(arg('title_limit', 80)))
             return advanced_tools.overview(root, arg('id'), whole(arg('offset', 0)))
+    if name in ('desk', 'desk-versions', 'desk-angles', 'desk-proofread'):
+        import desk
+        import desk_jobs
+
+        with studio.locked(root):
+            if name == 'desk-angles':
+                return desk_jobs.angles_view(root, arg('operation'))
+            if name == 'desk-proofread':
+                import desk_finish
+
+                return desk_finish.proofread(root, arg('id'))  # In process; writes nothing.
+            if name == 'desk-versions':
+                ident = arg('id')
+                desk.read(root, ident)
+                return {
+                    'id': ident,
+                    'part': arg('part'),
+                    'versions': desk.versions(root, ident, arg('part')),
+                }
+            # Reading never writes: the worker settles results, and so does the next desk
+            # request for one an older process left.
+            return desk_jobs.view(root, arg('id'))
     if name == 'manuscript':
         import manuscript_editor
 
@@ -2245,6 +2500,8 @@ def view(root, name, query):
         import library_add
 
         if name == 'library-authors':
+            # Create voices for every author and its author suggestions: an older voice tool.
+            studio.require_voices(root)
             return library_add.authors(root)
         return library_add.matching(
             root,

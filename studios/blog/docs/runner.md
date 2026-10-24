@@ -35,59 +35,122 @@ on this computer, from their last saved stage.
 
 ## Your first blog
 
-The page follows Training Studio’s current layout: **Home**, **Blogs**,
-**Status** and **Settings**, with the same glass navigation and toolbar, progress
-stages, paper documents and decision sheets. Home groups **Needs you**, **In
-progress** and **Finished**. Settings edits shared values for all studios and local writing preferences for
-future blogs; existing runs keep their choices. **Status → Check this
-computer** shares setup’s read-only checks and next steps. You can run the same
-report with `sh ~/.local/share/blog-studio/studio check`.
+The page follows Training Studio's layout: **Home**, **Blogs**, **Voice guides**,
+**Status** and **Settings**, with the same glass navigation and toolbar and opaque paper
+for reading and editing. Home groups **Needs you**, **In progress** and **Finished**.
+Settings edits shared values for all studios and local writing preferences for future
+blogs; existing blogs keep their choices. **Status → Check this computer** shares setup's
+read-only checks and next steps. You can run the same report with
+`sh ~/.local/share/blog-studio/studio check`.
 
-Choose **New blog**, pick a task, and work through two steps. **Your brief** asks for
-the topic and reader, **Write as** (your default voice, another saved voice, no
-particular voice, or **Learn a new voice…**) and **Kind of post** (a starter or
-learned style: the shape of the piece, while the voice is how it sounds). A
-manuscript keeps its own voice unless you pick one. **Start writing** adds optional
-sources and research, and **Tone, author and brand**; the tone is a nudge on top
-of the voice. Choose **Write a blog**, **Outline only**,
-**Revise a draft**, or **Review a draft**. Revision and review accept an uploaded
-manuscript or a saved readable source; the original is retained. You can upload
-references in the wizard too. The assistant receives only selected source and
-voice context plus this blog's saved writing preferences, memories and explicitly
-selected team context. Oversized context is refused rather than silently cut.
+Choose **New blog**, or one of Home's tasks (**Write about a topic**, **Work from my
+outline or notes**, **Edit or polish a draft**). A new blog is always made on the writing
+desk, in three steps:
 
-Voices and styles are described in [their own section](#voices-and-styles). A run's
-**About this blog** shows its voice and kind of post.
+1. **What are you writing?** A card for each kind of post, with its usual shape and
+   length, and **Something else**.
+2. **Sources and settings.** Files, links, Google Docs and team library posts, each with
+   its role: facts that may be quoted, approved messaging (stated as the product's own
+   claims) or an example of the kind of post (its shape, never its facts). They stay with
+   this blog; one with **Keep in the team library** ticked goes to the library when you
+   press Start. For new writing, **Search my sites** and **Search the web too** research
+   before the outline. They start as **Settings → Writing preferences → Research for new
+   blogs from** ticks your sites and the public web (your documents are always read; your
+   sites only when the shared list has any), and you can change them for this blog. Both are
+   off unless ticked there. **Length** asks for the usual length, short or in
+   depth. **Tone** says how it sounds.
+3. **What do you have?**
+   - **Just a topic**: a working title, who it is for and the point to make. **Suggest
+     three angles** reads your sources and offers three cards; pick one and edit its
+     wording, or type your own point.
+   - **An outline or notes**, pasted or uploaded: **Write from my outline** writes the
+     draft next; **Shape an outline with me first** opens the outline on the desk.
+   - **A draft**, pasted, uploaded or from a Google Doc (every tab is read, and the Doc is
+     not changed), with an optional first pass: **Tighten and proofread**, **Reshape to
+     fit this kind of post** or **Leave it as it is**.
+
+After **Start** nothing stops for you. The page says "Nothing needed from you", names the
+step under way (researching, outlining, drafting) with one clock, and offers **Stop**, and
+**Retry** if a step fails. The draft, or the outline for Shape, opens on the desk by
+itself.
+
+An interview's **Review outline and start a draft** and a saved blog's **Open writing
+run** (when it has no step-by-step run) open this start too, with the outline or the saved
+draft already in place.
+
+## The writing desk
+
+The desk is one page: the title, the opening, then a card for each section.
+
+- **Edit in place.** Type in any card; it saves as you go.
+- **Section notes.** Under each section, "How should this change?" and **Rewrite**. Only
+  what the note asks for changes; the rest is kept word for word, at the same length and
+  shape. With no note, **Write again** writes the section fresh from its brief, the
+  sections before it and the sources.
+- **Note for the whole draft.** One note ("tighten throughout") revises each written
+  section in turn, with progress and Stop. A section that fails is named; the rest still
+  go ahead.
+- **Selection.** Select text to **Rephrase**, **Shorten**, **Expand**, **Fix** or
+  **Ask…**. The result replaces the selection.
+- **History.** Every rewrite, revision, restore and the first save of an editing session
+  keeps the earlier text first, the last twenty for each part. **History** on a section,
+  the title or the opening lists them, with a word-by-word comparison and **Restore**.
+- **Outline.** The **Outline** tab renames, reorders, adds and removes sections (a
+  removed one can be brought back) and edits each one's brief. **Write the draft** or
+  **Write this section** works from it.
+- **Sources and what needs you.** What the draft used, with **Add a source** at any time;
+  later rewrites and the fact check read it. Anything the writer could not settle, such
+  as a release date, is listed under **Needs you before publishing**, never in the prose.
+- **Toolbar.** **Copy**, **Download**, **Google Doc**, **Mark as published** and
+  **Finishing**.
+
+One job works on a blog at a time; the desk shows it and offers Stop. An edit from a form
+that is out of date is refused rather than written over newer text.
+
+## Finishing
+
+**Finishing** opens a side panel (a full-screen sheet on a phone). Every tool suggests;
+nothing changes until you apply.
+
+- **Humanize** at light, medium or strong: sentences that read as machine-written, each
+  with a rewrite. Numbers, names, quotes and links are kept, and a rewrite that would
+  change one is flagged.
+- **Proofread**: dashes, words that often read as machine-written and repetition, checked
+  at once, with **Fix** on each finding.
+- **Check facts against sources**: each claim supported, not in your sources, or
+  contradicted, with the passage, **Add a source** and **Keep it**.
+- **Headline and opening**: alternatives to apply.
+- **Feedback without a rewrite**: comments on shape, argument, audience and claims, each
+  made a section note in one click.
+- **Apply a voice**: the draft rewritten part by part in one of your
+  [voice guides](#voice-guides), keeping its structure, facts, numbers, names, quotes and
+  links. A part whose facts, code or shape changed is flagged.
+- **Before publishing**: the pre-publish check, **Repurpose** (each copy becomes a new
+  blog on the desk) and **Send to Google Doc** as suggestions, for a blog started from a
+  Doc.
+
+Each suggestion shows before and after side by side. **Apply**, **Edit** or **Skip** it,
+or **Apply all** (flagged ones wait to be checked one by one). Each Apply keeps the
+earlier text in History. Suggestions wait on this computer until you decide; only what
+you apply is shared with a team.
 
 ## Start from a Google Doc
 
-Choose **Open Google Doc** on **Home**, **Blogs**, or in the new-blog wizard.
-Paste the manuscript's Google Doc link or ID, then choose **Preview Google Doc**.
-The page uses the workspace's remembered Google account, or the active Google
-Cloud CLI account. Google Cloud CLI must already be installed and signed in with
+In **New blog**, choose **A draft**, then **Google Doc**. Paste the link or ID and choose
+**Read Google Doc**. The page uses the workspace's remembered Google account, or the active
+Google Cloud CLI account. Google Cloud CLI must already be installed and signed in with
 Drive access; see [Google setup](google-docs.md#local-codex-and-claude-gcloud-setup).
-Preview reads only the selected Doc and saves a private capture on this computer.
+Reading saves a private copy on this computer; it does not change the Doc, share it or
+start an assistant. Check the text shown, then **Start**. The Doc stays linked, and
+**Finishing → Before publishing → Send to Google Doc** later sends your changes back as
+suggestions. A Doc that is already a blog here opens that blog instead of a second one.
+Images are left out of the text; inspect them in the original Doc. Pending suggestions
+stay in Google.
 
-Read the text and structure summary and compare them with the original Doc.
-Images and their encoded data are omitted from previews; inspect them in the
-original Doc. Saved originals, drafts, formatting history and downloads retain them.
-Pending suggestions stay in Google and are excluded from the imported text.
-Confirm the preview and choose **Import and continue**. Blog Studio saves the
-original, draft and formatted history and links that same Doc as the working copy.
-With a selected team workspace or Team Hub, the imported blog follows its normal
-sharing settings; raw Google data and unconfirmed previews stay on this computer.
-
-Import opens **Edit manuscript**. Make local edits or select a focused check without
-starting a new-blog wizard. No assistant starts until you request an editing action.
-If the Doc is already linked here, Blog Studio opens its existing run or saved
-blog without replacing local edits or its Google baseline. The working Doc link
-remains visible in the wizard and writing run.
-
-The page imports a single-tab Doc. Access failures, multiple tabs or an unreadable
-capture leave saved blogs intact. You can retry, or upload a downloaded manuscript.
-Reviewing and revising on the page saves local work. Select suggestions or comments,
-preview the target document, and explicitly confirm delivery from **Edit manuscript**.
-The CLI remains available for Google reconciliation and advanced operations.
+A blog edited in the manuscript editor (**Edit manuscript**) keeps its own Google tools:
+selected suggestions or comments are previewed and sent only when you confirm. Its
+**Polish another document** opens the desk start with **A draft**. The CLI remains available for Google
+reconciliation and advanced operations.
 
 ## Your brand skill
 
@@ -116,10 +179,11 @@ the commit shown. Research installation is skipped. If the release declares it
 would install or replace another companion, Blog Studio refuses before running
 the installer; install a compatible companion yourself first.
 
-In **New blog → Its shape → Brand**, select a brand and variant from that skill,
-or **No brand**. A shared `brand.brand` / `brand.variant` default is offered when
-the selected skill has it. The blog exports a contract for the `blog` medium
-and keeps its exact naming and design guides with the run. Existing blogs keep
+A blog run step by step (in chat, with `--brand ID --variant VARIANT`, or `--brand ''`
+for none) takes a brand and variant from that skill; the shared `brand.brand` /
+`brand.variant` default applies when the selected skill has it. The blog exports a
+contract for the `blog` medium and keeps its exact naming and design guides with the
+run. Blogs on the writing desk carry no brand contract. Existing blogs keep
 that contract when settings or installed skills change, including when resumed
 on another computer. Brand naming rules and visual guidance stay separate from
 the author's voice; a logo or palette does not imply a company tone.
@@ -128,36 +192,58 @@ The brand repository, release and identity live in the shared settings file.
 Installed skill paths and release-check observations stay in Blog Studio's local
 data folder. Only the selected contract travels with a blog.
 
-## Voices and styles
+## Voice guides
 
-A **voice** is how one person sounds; a **style** is the shape of a kind of writing,
-such as a product announcement or a how-to. A blog takes one of each: the style decides
-the structure, the voice decides the wording. In **New blog** they are **Write as** and
-**Kind of post**. **Voices** in the sidebar opens the Voices and styles screen; from a
-blog, **Tools → Voices and styles** opens the same list where a voice can be applied.
+A **voice guide** says how a piece should sound: a name and a page of text about register,
+sentence length, openings and the words to use or avoid. **Voice guides** in the sidebar
+lists them with a line from each. **New voice guide** runs in three steps: a name; then
+**Write it**, or **From samples** with 3 to 20 posts, emails or notes pasted or uploaded
+(Markdown, text, HTML or DOCX) and **Make the guide**, one job that reads only those samples;
+then the guide's text to read and edit before **Save guide**. Samples are not added to the
+library. Open a guide to edit its name and text or retire it. A guide is saved where voice
+profiles always were (`profiles/`, or `.shared/voices` in a team workspace), so voices
+learned before are listed as guides. On the desk, **Finishing → Apply a voice** rewrites a
+draft in a guide; each part is previewed before and after, and you apply all, some or none.
 
-**Write as** offers your default voice, another saved voice, no particular voice (the
-tone you describe), or **Learn a new voice…**. A manuscript you revise or review keeps its
-own voice unless you pick one, and **New blog from my files** offers the same **Write as**.
-Your personal default voice is pinned at the revision it names. The tone you give is kept as a nudge beside a voice, unless it is just your
-usual default. **Change the voice** on a blog switches its voice for what comes next;
-it asks once when the blog already has writing, since its reviews will need a new look.
-Nothing is rewritten, and the blog's history records the change.
+A **kind of post** (a style) is the shape of a kind of writing, such as a product
+announcement or a how-to: its parts, length and register. The start's first step chooses
+one. **Kinds of post** opens from Settings, Home's Set up before you write, or Tools.
+Blog Studio ships eight starters for tech-industry writing: product announcement, release
+notes and changelog, technical deep dive, how-to and tutorial, point of view, customer
+story, comparison and evaluation guide, and postmortem and lessons learned. A starter is
+copied into your workspace only when you edit it, retire it or use it for a blog; you can
+also export it. **Create a style** reads examples of a kind of writing by anyone, from
+uploads, links or the library, and proposes a guide, which stays provisional until you
+confirm it. **Write a style guide** is for one you write yourself.
+
+### The older voice tools
+
+Learning a voice from an author's posts, auditions, **Write as**, the default voice,
+**Change the voice**, voice samples, LinkedIn imports and **Create voices for every author**
+are off by default, while Blog Studio concentrates on writing well. **Settings → Advanced →
+Show the older voice tools** turns them on; then the Kinds of post screen is **Voices and
+styles** again and the rest of this section applies. Off, the page hides them, the server
+refuses them ("Voices are switched off in Blog Studio settings.") and new blogs write with
+their tone. Saved voices, samples and every blog's pinned voice stay as they are.
+
+A **voice** is how one person sounds. A blog run step by step takes a voice and a kind of
+post: the kind decides the structure, the voice the wording. Blogs on the desk write with
+their tone and are pinned to no voice; **Apply a voice** with a voice guide is the desk's
+way to sound like someone. Settings → **Voices and styles** opens the screen; from a blog,
+**Tools → Voices and styles** opens the same list where a voice can be applied.
+
+**Write as**, on **Interview me**, offers your default voice, another saved voice, no
+particular voice (the tone you describe), or **Learn a new voice…**. Your personal default
+voice (**Settings → Default voice**) is pinned at the revision it names. **Change the
+voice** on a step-by-step blog switches its voice for what comes next; it asks once when
+the blog already has writing, since its reviews will need a new look. Nothing is
+rewritten, and the blog's history records the change.
 
 A voice belongs to one author, and that author need not be you. If you ghostwrite, learn
-a voice for each person you write for, from their published posts, and start a blog with
-that voice and, under **Tone, author and brand**, their name. Each voice sample records
-whose writing it is, and the sheets ask before reading anything.
+a voice for each person you write for, from their published posts. Each voice sample
+records whose writing it is, and the sheets ask before reading anything.
 
-Blog Studio ships eight starter styles for tech-industry writing: product announcement,
-release notes and changelog, technical deep dive, how-to and tutorial, point of view,
-customer story, comparison and evaluation guide, and postmortem and lessons learned.
-They are confirmed and ready to choose from the start. A starter is copied into your
-workspace only when you edit it, retire it or use it for a blog; you can also export
-it. **Create a style** reads examples of a kind of writing by anyone and proposes a
-guide, which stays provisional until you confirm it.
-
-There are two ways to make voices.
+There are two ways to learn voices.
 
 **Create a voice** makes one author's voice in one sheet, in order: name the author, add
 their writing, tick up to twenty samples, confirm you may analyze them, and build.
@@ -201,29 +287,28 @@ refusal for one changes nothing. One permission confirms the batch, and one
 learning job per ticked author joins the queue, each reading up to twenty of the
 author's posts, newest first, which then become their voice samples. The sheet follows
 each job; **Review** opens a ready voice to save as provisional or confirm. It is offered
-on the Voices screen, the Team library and the result of **Add to library**.
+on the Voices and styles screen, the Team library and the result of **Add to library**.
 
 Every sample is a source in your reference library, so it follows the same sharing rules
 as any other source. Learned voices and styles stay provisional until you confirm them,
 and an existing blog keeps the revision it was started with.
 
-## Run and review
+## Blogs started step by step
 
-**Research it first** turns research on or off. **Research from:** ticks any of
-**your documents** (the sources you selected), **your sites** and **the public web**.
-Your sites are the list in Marketing Studio's Shared settings, a tick for each; **Add a
-site for this piece of work** checks one https address and uses it for this blog only,
-leaving the shared list as it is. The line below says it: "Research from your documents
-and 2 of your sites (blogs.vmware.com/tanzu, docs.example.com)." With nothing ticked, or
-your sites with none ticked, the form says what to choose and does not start. Your
-documents with no source selected skip the research steps. The blog keeps the exact
-sites it started with. Your sites stay unticked until you tick them, here and in
-Settings. They are searched with the assistant's web search, and only pages under them
-are saved. That check is Harness Research's, so without it (see Status) your sites alone
-are refused; tick the public web too to research without it. Pick
-Codex or Claude Code, already installed and signed in, and a time limit for each
-step. The runner uses your CLI account. It does not hold an API key. It has no
-spending limit; your account's usage charges or limits still apply.
+Blogs started before the writing desk, and guided blogs run in chat, keep their
+step-by-step path: research (when chosen), outline, draft, review and a handoff, each made
+by your assistant and brought back for a decision where the blog's review level says. A
+finished one offers **Open on the desk** on its Done card, which Home's **Finished
+drafts**, **Blogs** and the manuscript editor all open; it brings the manuscript onto the
+desk, including edits made since in the editor, and the run stays readable as it ended.
+
+Research in a run reads **your documents** (its selected sources), **your sites** (the list
+in Marketing Studio's Shared settings, or a site added for that blog only) and/or **the
+public web**. Your sites are searched with the assistant's web search, and only pages under
+them are saved. That check is Harness Research's, so without it (see Status) your sites
+alone are refused. The runner uses your CLI account, with a time limit for each step. It
+does not hold an API key and has no spending limit; your account's usage charges or limits
+still apply.
 
 | It makes | You decide |
 | --- | --- |
@@ -234,11 +319,9 @@ spending limit; your account's usage charges or limits still apply.
 | A review | Which findings need changes? |
 | The handoff | Are the title, excerpt and links ready to hand over? |
 
-How often you decide is chosen on the last step of the form, in **Where this run
-stops**: its control sets this blog's level, and **Use this for new work in every
-studio** also makes it the shared level when the blog starts. **Settings** has
-**Where new work stops**, saved at once. A run keeps the level it started with, and
-one line under its stages says how many steps are left, where it next stops and what
+A run keeps the review level it started with; **Settings → Where new work stops** sets the
+level for runs started from now on, in every studio, saved at once. One
+line under a run's stages says how many steps are left, where it next stops and what
 its jobs have cost so far. **Ask for changes** says what is drawn again and what those
 steps took the last time they ran. The default, **Balanced**, stops for you
 twice: at the outline, with the research questions and findings beside it, and
@@ -253,11 +336,10 @@ Choose an earlier stage under **Ask for changes** to revise the draft or outline
 after reviewing it, including one the review level accepted. The assistant edits
 that saved document, changing only what you asked. The later stages are made
 again and reach you at their usual stops. You can stop at outline, draft or
-review instead of making a package. A saved draft can enter at review or
-revision. Review mode keeps the manuscript as written; revision makes a new draft
-while retaining the original.
+review instead of making a package. Review mode keeps the manuscript as written;
+revision makes a new draft while retaining the original.
 
-**Blogs** shows all guided blogs and saved writing. Each card has **Delete**, as
+**Blogs** shows every blog, on the desk or step by step, and saved writing. Each card has **Delete**, as
 each blog in Home's lists does, which asks for the blog's title, stops anything running for it and keeps it for
 30 days under **Recently deleted**, where **Restore** brings it back. Open a run
 to see steps and made files. Each review page renders the saved Markdown as a
@@ -324,7 +406,7 @@ A stopped run says what to do next beside the error:
   brief and selected sources alone.
 
 First-run setup opens **Writing preferences**, and an assistant that is not
-installed is marked "Not installed — see Status" there and on the start form.
+installed is marked "Not installed — see Status" there.
 One job works at a time in this workspace. Models can search the web only in a
 public research job; they have no shell, file tools, connected apps or approval
 tools. Only the runner saves their returned documents.
@@ -339,7 +421,8 @@ their existing focused workflow.
 You can start in either place. **Run this from here** moves a conversation run
 to the page. **Continue in the conversation** stops its browser worker and gives
 you a request to paste into your assistant. The same files and decisions stay in use.
-For an ordinary saved blog, open its details and choose **Run this blog**.
+For a saved blog with no run, its details' **Open writing run** brings its draft to the
+desk start.
 
 ## Shared studios repository
 
@@ -356,7 +439,13 @@ and shared-value saves are refused until it can be read.
 
 ## Saved work and teams
 
-Outlines and drafts remain `OUTLINE.md` and `DRAFT.md`. Research questions,
+A desk blog keeps its draft in `desk/draft.json` (the title, the opening and each section
+with its brief) and earlier versions in `desk/versions/`, and rewrites `DRAFT.md` on every
+save so Copy, Download, Google Docs and the pre-publish check read the same text. A draft
+saved in chat, restored from its history or accepted from Google comes onto the desk as a
+new version of each part it changes, so the next desk save keeps it.
+Suggestions from Finishing wait in `.blog-runs/desk-proposals/` on this computer until you
+decide. For a run, outlines and drafts remain `OUTLINE.md` and `DRAFT.md`. Research questions,
 research findings, review and package live under `derived/`. The stage record
 is `derived/blog-run.json`; earlier writing and decisions remain in history.
 Changing an input or an approved document invalidates affected decisions.
@@ -385,7 +474,7 @@ existing create/join, intake, saves, reviews and cross-clone protections.
 
 ## Research stops and supplied material
 
-New runs that research your documents only, with selected facts/material, map the claims in that material
+This section is about blogs run step by step. Runs that research your documents only, with selected facts/material, map the claims in that material
 instead of running research. Each claim names a source ID and an exact passage. The runner
 checks words against that source (ignoring whitespace and line breaks), allows one
 correction and stops on another failure. Later writers receive the map and keep the
@@ -398,9 +487,8 @@ together and checked independently. The research review leads with the authored 
 checker's note, gaps, source limitations and findings mapped to questions. Report and
 evidence are folded below. Ask for changes says before sending that the full research
 runs again, what its last try recorded and which saved later stages it will make again.
-Home keeps the saved research default, except Explore ideas, Revise and Review, which
-start with none. Saved older runs continue through their original research pipeline:
-supplied-only reads as your documents, web-allowed as your documents and the public web.
+Saved older runs continue through their original research pipeline: supplied-only reads
+as your documents, web-allowed as your documents and the public web.
 
 Source discovery searches your sites first, with `site:` queries, and uses the wider web
 only for gaps when the public web is ticked too. Every page and every redirect is checked

@@ -411,6 +411,7 @@ class BlogRunnerTests(RunnerCase):
         )
 
     def test_marking_a_pinned_source_as_a_sample_keeps_its_runs_open(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         import management
 
         source = self.source('A fictional gateway routes synthetic requests.')
@@ -1997,6 +1998,10 @@ class StyleTests(RunnerCase):
 class VoiceChoiceTests(RunnerCase):
     """The page's Write as: the default voice applies unless the person chose another."""
 
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
+
     def voice(self, name='Avery', guide='Short direct sentences.', status='confirmed'):
         self.file.write_text(guide)
         return self.command(
@@ -2954,6 +2959,10 @@ class PointTests(FilesCase):
 
 class WriteAsTests(RunnerCase):
     """The page's Write as select: Me is the personal default voice, when one is set."""
+
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
 
     def test_options_name_the_personal_default_voice(self):
         self.assertIsNone(runner.options(self.root)['default_voice'])
@@ -4024,3 +4033,66 @@ class ReviewFixTests(RunnerCase):
 
     def test_the_policy_keeps_source_ids_for_notes(self):
         self.assertIn('Cite supplied sources by their IDs in notes or evidence', blog_worker.POLICY)
+
+
+class SharedGuidanceTests(RunnerCase):
+    """The writing desk reads the same house guide, style rule and length as a run's steps;
+    pulling them into helpers left a run's guidance exactly as it was."""
+
+    def test_a_styled_runs_outline_guidance_is_unchanged(self):
+        found = self.create(style='how-to', length='deep', tone='Warm and direct')
+        _, payload, guidance = runner.job(self.root, found['id'])
+        references = Path(runner.__file__).resolve().parents[1] / 'references'
+        expected_tail = (
+            '\n\n'
+            + (references / 'style/house.md').read_text()
+            + '\n\nSELECTED STYLE: '
+            + payload['style']['name']
+            + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
+            'structure, moves, length, headings and register. The selected voice says how its '
+            'author sounds. Where they conflict on wording, the voice wins; where they conflict '
+            'on structure, the style wins. Neither invents facts, experience or sources. Where '
+            'the style’s register differs from the house guide’s tone defaults, the style wins; '
+            'the house guide still decides mechanics.' + '\n\n' + runner.LENGTHS['deep']
+        )
+        self.assertEqual(guidance.count(expected_tail), 1)
+        self.assertEqual(
+            guidance.split(expected_tail)[0],
+            runner.brief_line(self.root, runner.load(self.root, found['id'])[1], payload)
+            + '\n\n'
+            + runner.STAGES['outline'][2]
+            + '\n\n'
+            + (references / runner.GUIDES['outline']).read_text(),
+        )
+
+    def test_a_styled_runs_draft_review_and_package_guidance_is_unchanged(self):
+        found = self.create(style='how-to', length='deep', tone='Warm and direct', page=True)
+        references = Path(runner.__file__).resolve().parents[1] / 'references'
+        house = (references / 'style/house.md').read_text()
+        seen = []
+        for _ in range(4):
+            found = runner.survey(self.root, found['id'])
+            if found['complete']:
+                break
+            _, payload, guidance = runner.job(self.root, found['id'])
+            stage = found['next']
+            seen.append(stage)
+            style = (
+                '\n\nSELECTED STYLE: '
+                + payload['style']['name']
+                + '. Its guide is in style.guide. The style says the shape of this kind of '
+                'writing: structure, moves, length, headings and register. The selected voice '
+                'says how its author sounds. Where they conflict on wording, the voice wins; '
+                'where they conflict on structure, the style wins. Neither invents facts, '
+                'experience or sources. Where the style’s register differs from the house '
+                'guide’s tone defaults, the style wins; the house guide still decides mechanics.'
+            )
+            tail = '\n\n' + house + style
+            if stage in ('outline', 'draft'):
+                tail += '\n\n' + runner.LENGTHS['deep']
+            else:
+                self.assertNotIn(runner.LENGTHS['deep'], guidance)
+            self.assertEqual(guidance.count(tail), 1, stage)
+            self.submit(found, page=True)
+            self.approve(runner.survey(self.root, found['id']), page=True)
+        self.assertEqual(seen, ['outline', 'draft', 'review', 'package'])

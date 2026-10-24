@@ -35,6 +35,8 @@ let view = 'board', offset = 0, total = 0, memoryEdit = null, librarySelection =
 function libraryEntry(item){return item.location==='hub'?{id:item.id,location:'hub'}:item.id;}
 // What a library item is for, as the catalog's role says it.
 const LIBRARY_ROLES={facts:'Facts',messaging:'Approved messaging',example:'Example','voice-sample':'Voice sample','style-sample':'Style sample'};
+// The older voice tools show only with the switch in Blog Studio settings on (runner.js).
+function libraryVoices(){return typeof sVoicesOn==='function'&&sVoicesOn();}
 const limit = 20;
 let loadGeneration = 0, loadController = null, renderedState = null;
 let access = {status:'checking',message:'Checking Hub access…',actions:{edit:false,memory:false,refresh:false}};
@@ -57,12 +59,12 @@ function savedNotice(result) {if(result.team_sync){notice(result.team_sync.share
 function legacyActions() {
   const made=[];
   const add=(id,text,action,cls='button',ready=true)=>{const b=button(text,action,cls);b.id=id;b.disabled=!ready;made.push(b);return b;};
-  if(view==='board')add('new-blog','New blog',()=>newBlog(),'button button-filled',access.actions.edit);
+  if(view==='board')add('new-blog','New blog',()=>sDeskBegin(),'button button-filled',access.actions.edit);
   if(view==='library'){
     add('library-add-open','Add to library',()=>sLibraryAdd(),'button button-filled',access.actions.edit);
     // A secondary action of this view: under the lede, so the toolbar keeps one primary.
     const voices=button('Create voices for every author',()=>sVoicesForAuthors(),'button button-quiet');voices.id='library-voices-open';voices.disabled=!access.actions.edit;
-    $('view-actions').replaceChildren(voices);
+    $('view-actions').replaceChildren(...(libraryVoices()?[voices]:[]));
   }else $('view-actions').replaceChildren();
   if(view==='memory')add('memory-open','Add memory',openMemory,'button button-filled',access.actions.memory);
   if(typeof sTools==='function')add('legacy-tools','Library and team tools',()=>sTools(),'button button-quiet');
@@ -250,7 +252,7 @@ function render(state, result) {
       const facts=[item.library.published||'',(item.collection_names||item.library.collections||[]).join(', ')].filter(Boolean).join(' · ');if(facts)cell.append(element('p',facts));
       if(item.library.canonical_url)cell.append(link(item.library.canonical_url,'Original post ↗'));
       textCell(row,item.author||'Author unknown');
-      textCell(row,(LIBRARY_ROLES[item.role]||'Facts')+(item.kind_name?' · '+item.kind_name:'')+['voice-sample','style-sample'].filter(purpose=>purpose!==item.role&&(item.purposes||[]).includes(purpose)).map(purpose=>' · '+LIBRARY_ROLES[purpose].toLowerCase()).join(''));
+      textCell(row,(item.role==='voice-sample'&&!libraryVoices()?'Writing sample':LIBRARY_ROLES[item.role]||'Facts')+(item.kind_name?' · '+item.kind_name:'')+(libraryVoices()?['voice-sample','style-sample']:['style-sample']).filter(purpose=>purpose!==item.role&&(item.purposes||[]).includes(purpose)).map(purpose=>' · '+LIBRARY_ROLES[purpose].toLowerCase()).join(''));
       const status=textCell(row,'');status.append(badge(item.library.curation||item.status),badge(item.analysis?.status==='ready'?'Analyzed':item.analysis?.status==='needs-extraction'?'Needs extraction':'Needs analysis'));
       const action=textCell(row,'');action.append(button(access.actions.edit?'Review details':'Read reference',()=>curate(item)));if(item.historical)action.append(element('p','Historical reference'));}
     if(view==='memory'){const cell=textCell(row,'');cell.append(button(item.title,()=>editMemory(item),'title-button'));if(item.conflict)cell.append(element('p','Competing revisions'));if(item.lesson_status)cell.append(element('p','Candidate lesson · '+item.lesson_status));textCell(row,item.kind);textCell(row,item.scope.level+(item.scope.key?' · '+item.scope.key:''));textCell(row,item.lesson?'Review / promote in chat':item.focused_workflow?'Manage in chat':item.kind==='decision'||item.conflict||!access.actions.memory?'Read details':'Open to read or edit');}

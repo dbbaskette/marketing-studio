@@ -50,6 +50,7 @@ class LibraryFieldTests(Fixture):
         )
 
     def test_fields_survive_a_revision_a_refresh_and_the_hub_projection(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         provider = FakeProvider(self.base / 'remotes')
         a, b = Registry(self.base / 'a-hubs', provider), Registry(self.base / 'b-hubs', provider)
         ident = a.create('fixture/library', 'Library')['hub']
@@ -475,6 +476,7 @@ class AddTests(RunnerCase):
         return self.file
 
     def test_each_posts_own_author_imports_first_then_groups_by_byline(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         coauthored = (
             b'<html><head><title>Co</title><script type="application/ld+json">{"author":[{"name":"Avery Quinn"},'
             b'{"name":"Jordan Lee"}]}</script></head><body><p>Two voices wrote this.</p></body></html>'
@@ -628,6 +630,10 @@ class AddTests(RunnerCase):
 
 class SelectionTests(RunnerCase):
     """Task 5: the library screen filters, and acts on a selection."""
+
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
 
     def items(self, *names, author=None, operation='a'):
         result = management.dispatch(
@@ -815,6 +821,10 @@ class SelectionTests(RunnerCase):
 
 class VoicesForEveryAuthorTests(RunnerCase):
     """Create voices for every author: one learning job per ticked author, confirmed once."""
+
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
 
     items = SelectionTests.items
 
@@ -1090,6 +1100,7 @@ class AuthorClarifyTests(RunnerCase):
 
     def setUp(self):
         super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         self.dan = self.items('d1.md', author='Dan', operation='d')
         self.smith = self.items('s1.md', 's2.md', author='Dan Smith', operation='e')
         self.file.write_text('Short direct sentences.')
@@ -1406,6 +1417,10 @@ class LibraryPickTests(RunnerCase):
 class DefaultVoiceTests(RunnerCase):
     """Task 8: the Settings default voice, and Write as for Interview me."""
 
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
+
     def voice(self, name='Avery', status='confirmed'):
         self.file.write_text('Short direct sentences.')
         return self.command(
@@ -1648,6 +1663,7 @@ class HubSyncTests(RunnerCase):
     """I6: a group's changes are published one by one and the Team Hub syncs once."""
 
     def test_marking_or_renaming_a_group_syncs_the_hub_once(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         import hub
         import hub_workspace
 

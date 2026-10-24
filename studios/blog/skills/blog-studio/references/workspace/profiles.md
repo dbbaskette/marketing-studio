@@ -1,7 +1,8 @@
 # Profile storage
 
 Use the [workspace](../workspace.md) command prefix. Create the guide/audition
-with the harness before saving it. [Voice setup](../voice-flow.md) covers sample
+with the harness before saving it. A profile is also what the page calls a **voice
+guide** (a name and its VOICE.md text); the page's guides have no samples. [Voice setup](../voice-flow.md) covers sample
 selection and LinkedIn extraction; imports do not create profiles automatically.
 
 ```text

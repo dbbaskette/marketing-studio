@@ -8,11 +8,43 @@ import studio
 KINDS = {
     'voice-learn',
     'voice-audition',
+    'voice-guide',  # A voice guide made from a few samples (article_tools).
     'style-learn',
     'repurpose',
     'interview-question',
     'interview-outline',
+    # The writing desk (desk_jobs.py): a section note, the whole draft, a selection, a first
+    # pass; and a start's angles (before a blog exists), research, outline and draft.
+    'desk-section',
+    'desk-revise-all',
+    'desk-selection',
+    'desk-first-pass',
+    'desk-angles',
+    'desk-research',
+    'desk-outline',
+    'desk-draft',
+    # Finishing on the desk: proposals to preview, then apply, edit or skip.
+    'finish-humanize',
+    'finish-facts',
+    'finish-headline',
+    'finish-feedback',
+    'finish-voice',
 }
+DESK = (
+    'desk-section',
+    'desk-revise-all',
+    'desk-selection',
+    'desk-first-pass',
+    'desk-angles',
+    'desk-research',
+    'desk-outline',
+    'desk-draft',
+    'finish-humanize',
+    'finish-facts',
+    'finish-headline',
+    'finish-feedback',
+    'finish-voice',
+)
 
 
 def path(root, ident):
@@ -121,6 +153,8 @@ def control(root, ident, action, engine):
             if engine.current == 'tool:' + ident:
                 engine.stop.set()
     elif action == 'retry':
+        if saved['kind'] in DESK:
+            raise ValueError('Run it again from the desk, where the draft it changes is shown.')
         if saved['status'] not in ('failed', 'cancelled') or saved['attempts'] >= 3:
             raise ValueError(
                 'This task cannot be retried. Start a new task after reviewing its inputs.'
@@ -164,6 +198,22 @@ def once(engine):
             return
         saved = min(values, key=lambda value: value['created_at'])
         ident = saved['id']
+        if saved['kind'] in DESK and saved['metadata'].get('article'):
+            import team_workspace
+
+            try:
+                team_workspace.guard(root, saved['metadata'].get('article'))
+            except ValueError as error:
+                # Another computer took the blog since this was queued: it never runs here.
+                saved.update(
+                    status='cancelled',
+                    error=(
+                        'Another computer drives this blog now, so this did not run. ' + str(error)
+                    )[:1000],
+                    finished_at=studio.now(),
+                )
+                write(root, saved)
+                return
         from studio_core import model_profiles
 
         try:
@@ -182,15 +232,31 @@ def once(engine):
         engine.current = 'tool:' + ident
         engine.stop.clear()
     try:
-        result = engine.worker(
-            saved['engine'],
-            saved['payload'],
-            saved['guidance'],
-            seconds=saved['seconds'],
-            web=False,
-            stop=engine.stop,
-            model_selection=choice,
-        )
+        if saved['kind'] == 'desk-research':
+            import desk_jobs
+
+            # Research before a desk start's writing: a plan, then research, as runs do.
+            result = desk_jobs.research_run(engine, saved)
+        else:
+            result = engine.worker(
+                saved['engine'],
+                saved['payload'],
+                saved['guidance'],
+                seconds=saved['seconds'],
+                web=False,
+                stop=engine.stop,
+                model_selection=choice,
+            )
+        if (
+            saved['kind'] in DESK
+            and isinstance(result, dict)
+            and isinstance(result.get('content'), str)
+            and len(result['content']) > 200_000
+        ):
+            raise ValueError(
+                'The rewrite came back longer than 200,000 characters, more than one part of '
+                'a draft holds. Nothing was changed; run it again with a narrower note.'
+            )
         if (
             not isinstance(result, dict)
             or not isinstance(result.get('content'), str)
@@ -206,14 +272,35 @@ def once(engine):
                 return
             current.update(status='ready', result=result, finished_at=studio.now())
             write(root, current)
+            shared = _ended(root, current)
+        _share(root, shared)
     except Exception as error:
+        shared = None
         with studio.locked(root):
             current = _working(root, ident)
             if current is not None:
                 current.update(status='failed', error=str(error)[:1000], finished_at=studio.now())
                 write(root, current)
+                shared = _ended(root, current)
+        _share(root, shared)
     finally:
         engine.current = None
+
+
+def _ended(root, job):
+    """A desk job settles into its draft as soon as it ends, under the lock already held."""
+    if job['kind'] not in DESK:
+        return None
+    import desk_jobs
+
+    return desk_jobs.ended(root, job)
+
+
+def _share(root, ident):
+    if ident:
+        import desk_jobs
+
+        desk_jobs.share(root, ident)
 
 
 def _working(root, ident):
@@ -232,6 +319,8 @@ def listing(root, article=None):
     for target in folder.glob('*.json'):
         try:
             value = read(root, target.stem)
+            if value['kind'] == 'desk-angles':
+                continue  # Angles for a blog not yet made belong to its start page.
             if value['metadata'].get('article') == article:
                 values.append(
                     {key: value.get(key) for key in ('id', 'kind', 'status', 'created_at')}

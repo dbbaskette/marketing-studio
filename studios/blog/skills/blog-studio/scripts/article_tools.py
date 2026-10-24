@@ -135,6 +135,152 @@ def voices(root):
     return {'profiles': profiles, 'samples': sources, **studio.sample_choices(root, 'voice-sample')}
 
 
+GUIDE_SAMPLES = (3, 20)  # pasted or uploaded samples a voice guide is made from
+GUIDE_SUFFIXES = ('.md', '.txt', '.html', '.htm', '.docx', '.pdf')
+GUIDE_SAYS = 160  # characters of a guide shown in the list
+
+
+def _says(guide):
+    """A guide's first line of prose, for the list: no headings, no Markdown marks."""
+    for line in guide.splitlines():
+        line = line.strip().lstrip('>-*+ ').strip()
+        if not line or line.startswith('#') or set(line) <= set('-=*_`|'):
+            continue
+        line = ' '.join(line.replace('**', '').replace('__', '').replace('`', '').split())
+        if len(line) <= GUIDE_SAYS:
+            return line
+        cut = line[:GUIDE_SAYS].rsplit(' ', 1)[0].rstrip(' ,;:.')
+        return cut + '…'
+    return ''
+
+
+def guides(root):
+    """Every saved profile as a voice guide, active ones first, and guides still being made
+    from samples. Learned voices are guides too: a guide is a profile's name and text."""
+    found = []
+    for file in sorted(studio.inside(root, 'profiles').glob('*/record.json')):
+        try:
+            record = studio.read_json(file)
+            guide = (
+                studio.read_text(file.parent / 'VOICE.md')
+                if (file.parent / 'VOICE.md').is_file()
+                else ''
+            )
+        except (ValueError, OSError):
+            continue
+        found.append(
+            {
+                **{key: record.get(key) for key in ('id', 'name', 'revision', 'status')},
+                'says': _says(guide),
+            }
+        )
+    found.sort(key=lambda row: (row['status'] == 'retired', str(row['name']).casefold()))
+    making = []
+    for ident in _guide_jobs(root):
+        try:
+            job = tool_jobs.read(root, ident)
+        except (ValueError, OSError):
+            continue
+        if (
+            job.get('kind') == 'voice-guide'
+            and not job.get('applied')
+            and job.get('status') in ('queued', 'working', 'ready', 'failed')
+        ):
+            making.append(
+                {
+                    'id': job['id'],
+                    'name': (job.get('metadata') or {}).get('name'),
+                    'status': job['status'],
+                    'created_at': job.get('created_at'),
+                }
+            )
+    making.sort(key=lambda row: row['created_at'] or '', reverse=True)
+    return {'guides': found, 'making': making[:10]}
+
+
+GUIDE_JOBS = 20  # voice guides being made that the screen lists
+
+
+def _guide_index(root):
+    return studio.inside(root, '.blog-runs', 'voice-guides.json')
+
+
+def _guide_jobs(root):
+    """The voice-guide jobs still being made, newest last: an index on this computer, so the
+    screen reads only those jobs, never every tool job."""
+    try:
+        found = studio.read_json(_guide_index(root))
+    except (OSError, ValueError):
+        return []
+    jobs = found.get('jobs') if isinstance(found, dict) else None
+    return [job for job in jobs if isinstance(job, str)] if isinstance(jobs, list) else []
+
+
+def _keep_guide_jobs(root, jobs):
+    target = _guide_index(root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    studio.write_json(target, {'schema': 1, 'jobs': jobs[-GUIDE_JOBS:]})
+
+
+def discard_guide(root, data):
+    """Let a voice guide that failed, or was never saved, leave the screen. A job still
+    queued or working is cancelled first."""
+    job = data.get('job')
+    if job not in _guide_jobs(root):
+        raise ValueError('This is not a voice guide being made. Reload Voice guides.')
+    saved = tool_jobs.read(root, job)
+    if saved['status'] in ('queued', 'working'):
+        import blog_runner
+
+        tool_jobs.control(root, job, 'cancel', blog_runner.engine(root))
+    _keep_guide_jobs(root, [other for other in _guide_jobs(root) if other != job])
+    return guides(root)
+
+
+def guide_samples(root, given):
+    """3 to 20 samples for a voice guide, each pasted text or an uploaded file read as text.
+    Nothing is saved as a source: the samples go to the job only."""
+    import base64
+
+    low, high = GUIDE_SAMPLES
+    if not isinstance(given, list) or not low <= len(given) <= high:
+        raise ValueError('Add 3 to 20 samples of the writing to make a voice guide from.')
+    found = []
+    for number, entry in enumerate(given, 1):
+        entry = entry if isinstance(entry, dict) else {}
+        if 'filename' in entry:
+            import blog_library
+
+            name = entry.get('filename')
+            if not isinstance(name, str) or not name.strip() or len(name) > 200 or '/' in name:
+                raise ValueError('Give each uploaded sample its file name.')
+            suffix = Path(name).suffix.lower()
+            if suffix not in GUIDE_SUFFIXES:
+                raise ValueError('Upload samples as Markdown, text, HTML, DOCX or PDF.')
+            try:
+                content = base64.b64decode(entry.get('content', ''), validate=True)
+            except (ValueError, TypeError):
+                raise ValueError(name + ' could not be read. Upload it again.') from None
+            if len(content) > blog_library.MAX_BINARY:
+                raise ValueError(name + ' is larger than 10 MiB.')
+            body, _, _ = blog_library.extract_detail(root, content, suffix)
+            if not body or not body.strip():
+                raise ValueError(name + ' has no readable text. Paste its text instead.')
+            title = name.strip()
+        else:
+            body = entry.get('text')
+            if not isinstance(body, str) or not body.strip():
+                raise ValueError(
+                    'Sample %d has no text. Paste some writing, or remove it.' % number
+                )
+            title = 'Sample %d' % number
+        body = body.strip()
+        if len(body) > 200_000:
+            raise ValueError(title + ' is longer than 200,000 characters. Use a shorter sample.')
+        found.append({'id': 's%d' % number, 'title': title, 'text': body})
+    return [{key: entry[key] for key in entry if key != 'id'} for entry in shared(found)]
+
+
 def article_basis(root, ident):
     folder, record = studio.item(root, 'articles', ident)
     return fingerprint(studio.fingerprints(root, folder, record))
@@ -205,6 +351,17 @@ def save_interview(root, ident, state):
     )
 
 
+GUIDE_LEARN = (
+    '\nInfer a voice guide from these writing samples only: tone and register, sentence '
+    'rhythm, openings, transitions, vocabulary, opinion strength, humor, anecdote habits and '
+    'formatting, where the samples support them, and say where the evidence is thin. Describe '
+    'observable style and uncertainty. Separate voice from factual expertise, supplied branding '
+    'and generic house style. Do not invent biography or anecdotes. Do not say who wrote the '
+    'samples or guess at it. Return only the editable guide as Markdown in content, headed with '
+    'the guide name: no audition, no invented sample text.'
+)
+
+
 def request(root, data):
     kind = data.get('kind')
     operation = data.get('operation')
@@ -247,6 +404,17 @@ def request(root, data):
                 'identity; it is not prose to imitate, and career facts are never inferred from '
                 'the samples.'
             )
+    elif kind == 'voice-guide':
+        # A voice guide from a few samples, pasted or uploaded: the voice-learning guidance
+        # without author matching, library samples, background or audition.
+        if not isinstance(data.get('name'), str) or not data['name'].strip():
+            raise ValueError('Name the voice guide.')
+        name = text(data.get('name'), 'a voice guide name', 200)
+        selected = guide_samples(root, data.get('samples'))
+        metadata = {'name': name, 'samples': len(selected)}
+        basis = fingerprint([name, selected])
+        payload = {'name': name, 'samples': selected}
+        guidance = (REFERENCES / 'blog-voice-profile.md').read_text() + GUIDE_LEARN
     elif kind == 'style-learn':
         if data.get('confirmed') is not True:
             raise ValueError('Confirm you may analyze these examples before starting.')
@@ -349,6 +517,8 @@ def request(root, data):
     else:
         raise ValueError('Choose a supported contextual task.')
     result = tool_jobs.create(root, operation, kind, payload, guidance, basis, metadata)
+    if kind == 'voice-guide' and result['id'] not in _guide_jobs(root):
+        _keep_guide_jobs(root, _guide_jobs(root) + [result['id']])
     import blog_runner
 
     blog_runner.engine(root).wake.set()
@@ -362,6 +532,8 @@ def apply(root, data):
     if job['status'] != 'ready':
         raise ValueError('Wait for a complete result before saving it.')
     metadata, kind = job['metadata'], job['kind']
+    if kind in ('voice-learn', 'voice-audition'):
+        studio.require_voices(root)  # Queued before the older voice tools were switched off.
     if metadata.get('article'):
         from team_workspace import guard
 
@@ -376,6 +548,8 @@ def apply(root, data):
         basis, _ = style_basis(root, metadata)
     elif kind == 'voice-audition':
         basis = profile(root, metadata['profile'])['expected']
+    elif kind == 'voice-guide':
+        basis = job['basis']  # Made from the samples in the job itself; nothing else to change.
     elif kind.startswith('interview-'):
         basis = interview(root, metadata['article'])['expected']
     else:
@@ -425,6 +599,28 @@ def apply(root, data):
             'revision': result['revision'],
             'status': result['status'],
         }
+    elif kind == 'voice-guide':
+        # The person read and edited the guide: it is saved as a confirmed voice guide.
+        content = text(content, 'the voice guide', 40_000)
+        name = text(data.get('name', metadata.get('name')), 'a voice guide name', 200)
+        with tempfile.TemporaryDirectory(prefix='blog-voice-guide-') as scratch:
+            guide = Path(scratch) / 'VOICE.md'
+            guide.write_text(content, encoding='utf-8')
+            result = studio.profile_command(
+                root,
+                SimpleNamespace(
+                    action='create',
+                    id=None,
+                    name=name,
+                    guide_file=str(guide),
+                    background_file=None,
+                    rules_file=None,
+                    status='confirmed',
+                    sample=[],
+                ),
+            )
+        receipt = {'profile': result['id'], 'revision': result['revision'], 'status': 'confirmed'}
+        _keep_guide_jobs(root, [other for other in _guide_jobs(root) if other != job['id']])
     elif kind == 'style-learn':
         import styles
 
@@ -623,6 +819,8 @@ def job_view(root, ident):
             basis, _ = style_basis(root, metadata)
         elif kind == 'voice-audition':
             basis = profile(root, metadata['profile'])['expected']
+        elif kind == 'voice-guide':
+            basis = value['basis']
         elif kind.startswith('interview-'):
             basis = interview(root, metadata['article'])['expected']
         else:

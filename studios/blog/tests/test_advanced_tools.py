@@ -249,6 +249,7 @@ class ContextJobTests(Fixture):
         self.assertEqual(self.jobs.read(self.root, job['id'])['status'], 'ready')
 
     def test_voice_learning_permission_confirmation_audition_retirement_and_pins(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         sample = self.source('Synthetic authored passage with a distinctive short rhythm.')
         folder, record = studio.item(self.root, 'sources', sample['id'])
         record['purposes'] = ['voice-sample']
@@ -491,6 +492,7 @@ class ContextJobTests(Fixture):
         )
 
     def test_voice_learning_can_take_an_author_background(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         sample = self.classified('Synthetic authored passage with a short rhythm.', 'voice-sample')
         about = self.classified('Platform engineer who writes about rollouts.', 'author-background')
         with self.assertRaisesRegex(ValueError, 'author-background'):
@@ -521,6 +523,7 @@ class ContextJobTests(Fixture):
         )
 
     def test_a_queued_voice_job_from_before_backgrounds_still_applies(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         sample = self.classified('Synthetic authored passage with a short rhythm.', 'voice-sample')
         job = self.create('voice-learn', name='Synthetic Author', samples=[sample], confirmed=True)
         saved = self.jobs.read(self.root, job['id'])
@@ -681,6 +684,10 @@ class AdvisoryAndOutcomeTests(Fixture):
 class SourcePurposeTests(Fixture):
     """A ready reference becomes a voice or style sample from the page, in a new revision."""
 
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
+
     def mark(self, source, purpose, author=None):
         import management
 
@@ -790,6 +797,7 @@ class VoiceApplyTests(Fixture):
 
     def setUp(self):
         super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
 
     def voice(self, name):

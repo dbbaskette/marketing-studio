@@ -246,6 +246,7 @@ class BrandSkillTests(unittest.TestCase):
             self.assertEqual(self.seen(), {'voice': None}, 'a tone-only run passes none')
 
     def test_the_default_voice_is_exported_to_the_brand(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         import writing_defaults
 
         self.skill()

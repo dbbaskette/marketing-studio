@@ -190,6 +190,7 @@ def before(root, ident=None):
     found = space(root)
     if found:
         _drop_stray_claims(root, found)
+        keep_desk_leftovers(root, found)
         report = refresh(root)
         if report.get('conflict'):
             raise ValueError(report['notice'])
@@ -266,6 +267,102 @@ def saved(root, ident=None, message='Keep Blog Studio decision'):
         if found.share == 'decision'
         else {'shared': False, 'notice': 'Saved here. Choose Share now to send your decisions.'}
     )
+
+
+def keep_desk(root, ident):
+    """Commit what a desk result left under a blog this computer drives, when sharing it
+    after the worker settled it did not get that far (desk_jobs.share). The next desk
+    request calls this before refreshing, so a failed share never jams the desk."""
+    found = space(root)
+    if not found or not isinstance(ident, str):
+        return False
+    folder = root / studio.identifier(ident)
+    if not (folder / 'desk' / 'draft.json').is_file() or not (folder / 'run.json').is_file():
+        return False
+    with support.locked(found.repo / '.git/blog-studio.lock'):
+        try:
+            guard(root, ident)
+        except ValueError:
+            return False  # Another computer drives it: nothing here is ours to record.
+        return gitstate.commit(found, 'Keep a desk change', [ident])
+
+
+def keep_desk_leftovers(root, found=None):
+    """Commit what desk work left under any desk blog this computer drives, such as a start
+    step settled by the worker whose share did not get that far, so the next decision on any
+    blog is not refused for it. A blog another computer drives is left as it is."""
+    found = found or space(root)
+    if not found:
+        return []
+    with support.locked(found.repo / '.git/blog-studio.lock'):
+        changed = gitstate.changed(found)
+    prefix = found.folder.rstrip('/') + '/'
+    blogs = sorted(
+        {
+            path[len(prefix) :].split('/', 1)[0]
+            for path in changed
+            if path.startswith(prefix) and '/' in path[len(prefix) :]
+        }
+    )
+    kept = []
+    for ident in blogs:
+        try:
+            if keep_desk(root, ident):
+                kept.append(ident)
+        except ValueError:
+            continue
+    return kept
+
+
+def share_desk(root, ident):
+    """Leaving the desk: push what was kept on this computer for this blog, and only that.
+
+    The page asks every time a desk is left or its tab hidden. With nothing of this blog's
+    unshared there is nothing to fetch or push, and it never claims a blog: viewing a desk
+    is not a decision. Leftovers under blogs this computer drives are committed first."""
+    found = space(root)
+    if not found:
+        return {'shared': False}
+    keep_desk_leftovers(root, found)
+    with support.locked(found.repo / '.git/blog-studio.lock'):
+        waiting = gitstate.unshared(found, studio.identifier(ident))
+    if not waiting:
+        return {'shared': False}
+    return {'shared': True, 'team_sync': refresh(root, push=True)}
+
+
+def kept_locally(root, ident, session):
+    """A desk autosave: an edit, not a decision. It is committed on this computer only, one
+    commit per editing session (the page's session token), and shared with the next decision
+    or when the person leaves the desk (`saved`). Nothing is fetched or pushed."""
+    found = space(root)
+    if not found:
+        return None
+    if not (root / studio.identifier(ident) / 'run.json').is_file():
+        return saved(root, ident, 'Keep desk edits')  # Not claimed yet: claim it once.
+    message = 'Edit ' + ident + ' on the desk (editing session ' + str(session or '')[:16] + ')'
+    with support.locked(found.repo / '.git/blog-studio.lock'):
+        guard(root, ident)
+        same = (
+            session
+            and support.passes(found.repo, 'rev-parse', '--verify', '--quiet', 'HEAD~1')
+            and support.git(found.repo, 'log', '-1', '--format=%s') == message
+            and not support.git(found.repo, 'branch', '-r', '--contains', 'HEAD')
+        )
+        before = support.git(found.repo, 'rev-parse', 'HEAD')
+        try:
+            if same:
+                # The same editing session, not yet shared: one commit, brought up to date.
+                support.git(found.repo, 'reset', '--soft', 'HEAD~1')
+            gitstate.commit(found, message, [ident])
+        except Exception:
+            # Put HEAD and the index back as they were; the edit stays in the files.
+            support.git(found.repo, 'reset', '--quiet', before)
+            raise
+    return {
+        'shared': False,
+        'notice': 'Saved on this computer. It is shared when you leave the desk or make a change.',
+    }
 
 
 def _take(root, ident, found):

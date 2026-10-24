@@ -428,14 +428,39 @@ def settings(root, data=None):
         base['author'] = name
     import writing_defaults
 
+    features = studio.features(root)
     if data is not None:
         data = dict(data)
+        # Blog Studio's own switches, saved with the form when it shows them, checked
+        # against what it showed; a form that does not show them keeps what is saved.
+        features_given = 'features' in data
+        if features_given:
+            if 'features_before' not in data:
+                raise ValueError('Reload the displayed settings before saving these switches.')
+            shown_features = data.pop('features_before')
+            wanted = data.pop('features')
+            if (
+                not isinstance(wanted, dict)
+                or set(wanted) != set(studio.FEATURES)
+                or any(type(value) is not bool for value in wanted.values())
+            ):
+                raise ValueError('Choose on or off for each switch.')
+            if shown_features != features:
+                raise ValueError(
+                    'These switches changed since these settings were shown. Reload the '
+                    'settings before saving.'
+                )
+            features = dict(wanted)
+        elif 'features_before' in data:
+            raise ValueError('Save the displayed writing settings only.')
         # The personal default voice: a confirmed profile at a revision, or none. It lives in
         # the private writing defaults, beside the other personal values, never in a Hub. It
         # is checked with the rest of the form, against the voice the form showed, and saved
         # only once the shared settings are, so a refused form changes nothing.
         voice_given = 'voice' in data
         voice = data.pop('voice', None)
+        if voice_given and not features['voice']:
+            raise ValueError(studio.VOICES_OFF)  # The default voice is an older voice tool.
         if voice_given:
             if 'voice_before' not in data:
                 raise ValueError('Reload the displayed settings before saving the default voice.')
@@ -492,7 +517,7 @@ def settings(root, data=None):
             expected['person'] = {'name': before['author']}
         shared = studios_config.update(changes, expected=expected)
         private = {key: value for key, value in data.items() if key not in ('engine', 'author')}
-        studio.write_json(path, {'schema': 1, 'defaults': private})
+        studio.write_json(path, {'schema': 1, 'defaults': private, 'features': features})
         if voice_given:
             writing_defaults.set_personal(root, 'voice', voice)
         base = {
@@ -510,6 +535,7 @@ def settings(root, data=None):
         'defaults': base,
         'voice': personal if isinstance(personal, dict) else None,
         'voices': writing_defaults.confirmed_voices(root),
+        'features': studio.features(root),
         'review_level': review_level,
         'shared_before': {
             'engine': shared.get('assistant', {}).get('agent'),
@@ -1010,6 +1036,11 @@ def survey(root, ident, listing=False):
         'ahead': ahead,
         'awaits': awaits,
         'complete': next_stage is None,
+        # Every stage was approved once, though an edit since may read as stale: a blog
+        # finished and then edited in the manuscript editor. Its DRAFT.md is the latest text.
+        'finished': all(
+            run['stages'].get(name, {}).get('status') == 'approved' for name in run['pipeline']
+        ),
         'content': content,
         'expected': revision,
         'directory': str(directory),
@@ -1069,6 +1100,9 @@ def note_decision(directory, run, event):
 
 
 def save(root, directory, record, run, event):
+    import desk
+
+    desk.refuse_on_desk(directory)  # A blog on the desk keeps its run as it was, read-only.
     note_decision(directory, run, event)
     record['next_step'] = (
         'Continue the guided blog on the page.'
@@ -1558,6 +1592,10 @@ def guard(root, ident, expected, page=False):
 
 
 def submit(root, ident, stage, result, expected, page=False):
+    import desk
+
+    # A blog on the desk keeps its run as it ended: a late result writes nothing at all.
+    desk.refuse_on_desk(studio.item(root, 'articles', ident)[0])
     found = guard(root, ident, expected, page)
     if found['next'] != stage:
         raise ValueError('Finish the current stage before submitting another.')
@@ -1888,6 +1926,65 @@ def carried(directory, run, payload, writing):
     return carried_over(writing, payload['examples'], allowed)['findings']
 
 
+REFERENCES = Path(__file__).resolve().parents[1] / 'references'
+# Sentences a run's writing steps and the desk's writing jobs share.
+FROM_OUTLINE = (
+    'Use the supplied outline as authoritative structure. Preserve headings and order unless '
+    'explicitly asked to restructure.'
+)
+WRITING_NOTES = (
+    'Return the writing in content and your notes apart from it: in evidence, each material '
+    'claim with its source ID and exact passage; in gaps, each thing the author must supply '
+    'before publishing, such as a release date or a link. Source IDs and editorial '
+    'placeholders go there, never in content.'
+)
+GAPS_OPEN = 'The gaps already noted are in gaps: return those still open with any new ones.'
+
+
+def house_guide():
+    """The house style guide every writing job reads."""
+    return (REFERENCES / 'style/house.md').read_text()
+
+
+def style_rule(name, voice=True):
+    """How a selected kind of post sits beside the voice and the house guide. A desk job has
+    no voice, only its tone and the draft's own voice, and is told so."""
+    if not voice:
+        return (
+            'SELECTED STYLE: '
+            + name
+            + '. Its guide is in style.guide. The style says the shape of this kind of '
+            'writing: structure, moves, length, headings and register. Keep the draft’s own '
+            'voice and the tone within that shape. The style invents no facts, experience or '
+            'sources. Where the style’s register differs from the house guide’s tone defaults, '
+            'the style wins; the house guide still decides mechanics.'
+        )
+    return (
+        'SELECTED STYLE: '
+        + name
+        + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
+        'structure, moves, length, headings and register. The selected voice says how its '
+        'author sounds. Where they conflict on wording, the voice wins; where they conflict '
+        'on structure, the style wins. Neither invents facts, experience or sources. Where '
+        'the style’s register differs from the house guide’s tone defaults, the style wins; '
+        'the house guide still decides mechanics.'
+    )
+
+
+def shared_guidance(style=None, tone='', length=None):
+    """What every desk job shares with a run's writing steps: the tone, the house guide, the
+    kind of post and, where the job writes new text, the length. A desk blog writes with its
+    tone only; no voice guide is read here."""
+    tone = (tone or '').strip()
+    parts = ['No author voice is pinned; keep the draft’s own voice.' + tone_nudge({'tone': tone})]
+    parts.append(house_guide())
+    if style:
+        parts.append(style_rule(style['name'], voice=False))
+    if LENGTHS.get(length):
+        parts.append(LENGTHS[length])
+    return '\n\n'.join(parts)
+
+
 def job(root, ident):
     found = survey(root, ident)
     stage = found['next']
@@ -1989,18 +2086,9 @@ def job(root, ident):
             'research findings. Work from the brief and the supplied sources; mark a claim that '
             'needs evidence they lack as unresolved.'
         )
-    guidance += '\n\n' + (references / 'style/house.md').read_text()
+    guidance += '\n\n' + house_guide()
     if payload['style'] and stage in ('outline', 'draft', 'review', 'package'):
-        guidance += (
-            '\n\nSELECTED STYLE: '
-            + payload['style']['name']
-            + '. Its guide is in style.guide. The style says the shape of this kind of writing: '
-            'structure, moves, length, headings and register. The selected voice says how its '
-            'author sounds. Where they conflict on wording, the voice wins; where they conflict '
-            'on structure, the style wins. Neither invents facts, experience or sources. Where '
-            'the style’s register differs from the house guide’s tone defaults, the style wins; '
-            'the house guide still decides mechanics.'
-        )
+        guidance += '\n\n' + style_rule(payload['style']['name'])
     if LENGTHS.get(run.get('length')) and stage in ('outline', 'draft') and not edit:
         guidance += '\n\n' + LENGTHS[run['length']]
     if stage in ('draft', 'review'):
@@ -2052,21 +2140,14 @@ def job(root, ident):
     if run.get('mode') == 'ideas' and stage == 'outline':
         guidance += '\nReturn three distinct blog angles with audience, thesis, evidence needed and tradeoffs. Stop for the author to choose; do not draft the blog.'
     if run.get('mode') == 'from-outline':
-        guidance += '\nUse the supplied outline as authoritative structure. Preserve headings and order unless explicitly asked to restructure.'
+        guidance += '\n' + FROM_OUTLINE
     if stage in NOTED:
         payload['response_kind'] = 'writing-with-notes'
-        guidance += (
-            '\nReturn the writing in content and your notes apart from it: in evidence, each '
-            'material claim with its source ID and exact passage; in gaps, each thing the author '
-            'must supply before publishing, such as a release date or a link. Source IDs and '
-            'editorial placeholders go there, never in content.'
-        )
+        guidance += '\n' + WRITING_NOTES
     if stage in NOTED:
         payload['gaps'] = gaps(directory, stage)
         if stage == 'draft':
-            guidance += (
-                '\nThe gaps already noted are in gaps: return those still open with any new ones.'
-            )
+            guidance += '\n' + GAPS_OPEN
     if stage == 'package':
         guidance += (
             '\nList the gaps (in gaps) and any new ones under a '
@@ -2268,6 +2349,13 @@ class Engine:
                 # Pages your sites kept out of the last attempt, named for the gate.
                 'outside': outside_words(saved.get('outside')),
             }
+        on_desk = (Path(found['directory']) / 'desk' / 'draft.json').is_file()
+        if on_desk:
+            # Opened on the desk once finished: the run is read as it ended, with nothing to
+            # resume, approve or redo; desk saves never make it look paused or stale.
+            found.update(complete=True, next=None, awaits=None)
+            found['stages'] = [{**row, 'status': 'approved'} for row in found['stages']]
+            status = 'on-desk'
         return {
             **{key: value for key, value in found.items() if key != 'research_tie'},
             'team': bool(space(self.root) and space(self.root).address),
@@ -2284,6 +2372,13 @@ class Engine:
             # The last lines the assistant's CLI wrote, kept on this computer only.
             'said': read_said(self.root, ident) if status == 'failed' else None,
             'research': research,
+            # A finished blog may be opened on the writing desk; one already there says so.
+            'desk_open': bool(
+                (found['complete'] or found.get('finished'))
+                and status not in ('queued', 'working')  # Its step would write DRAFT.md.
+                and (Path(found['directory']) / 'DRAFT.md').is_file()
+            ),
+            'on_desk': on_desk,
             'enabled': local.get('enabled', False),
             'observation': 'Saved locally. Workers use your selected CLI sign-in. Public research links need review; no publishing is automatic.',
         }
@@ -2298,6 +2393,12 @@ class Engine:
     def _once(self, ident):
         if not self.local(ident).get('enabled'):
             return
+        try:
+            directory, _ = studio.item(self.root, 'articles', ident)
+        except ValueError:
+            return
+        if (directory / 'desk' / 'draft.json').is_file():
+            return  # On the desk: its run never starts another step.
         from team_workspace import before
 
         preview = survey(self.root, ident)
@@ -2575,10 +2676,11 @@ class Engine:
             self.current = None
 
     def sync_team(self):
-        from team_workspace import refresh
+        from team_workspace import keep_desk_leftovers, refresh
 
         while not self.closed.is_set():
             try:
+                keep_desk_leftovers(self.root)  # So the check is never refused for them.
                 refresh(self.root)
             except (ValueError, OSError) as exc:
                 # A failed background check remains visible until a successful one.
@@ -2647,10 +2749,49 @@ def engine(root):
 
 
 def catalog(root):
+    import desk
+    import desk_jobs
+
     rows = []
+    working = desk_jobs.active(root)
     for path in sorted(studio.inside(root, 'articles').glob('*/session.json')):
         ident = path.parent.name
         try:
+            # A blog on the writing desk, including a finished run opened there, lists as one.
+            on_desk = studio.inside(path.parent, 'desk', 'draft.json')
+            if on_desk.is_file() and not on_desk.is_symlink():
+                draft = studio.read_json(on_desk)
+                busy = working.get(ident, 0)
+                # Marked as published: finished, out of In progress.
+                published = (studio.read_json(path).get('editorial') or {}).get(
+                    'stage'
+                ) == 'published' and not busy
+                # A start that stopped (a failed research, a Stop) needs the person.
+                stopped = (
+                    '' if busy else desk_jobs.stalled(root, ident, desk.read_start(root, ident))
+                )
+                rows.append(
+                    {
+                        'id': ident,
+                        'title': draft['title'],
+                        'status': 'working'
+                        if busy
+                        else 'failed'
+                        if stopped
+                        else 'complete'
+                        if published
+                        else 'desk',
+                        'touched': draft['updated_at'],
+                        'flow': 'desk',
+                        'jobs': busy,
+                        'complete': published,
+                        'stages': [],
+                        'next': None,
+                        'error': stopped,
+                        'mode': 'desk',
+                    }
+                )
+                continue
             if studio.inside(path.parent, STATE).is_file():
                 found = engine(root).describe(ident, listing=True)
                 rows.append(
@@ -2671,6 +2812,7 @@ def catalog(root):
                             'team',
                             'driver',
                             'touched',
+                            'desk_open',
                         )
                     }
                 )
@@ -2700,6 +2842,8 @@ def default_voice(root):
 
     # Whatever stops the read (a Team Hub not joined here, a damaged record), the wizard
     # still opens: it just offers no default voice.
+    if not studio.voices_on(root):
+        return None  # No default voice is applied while the older voice tools are off.
     try:
         adapter = active(root)
         found = writing_defaults.resolve(root, adapter=adapter)['values'].get('voice')
@@ -3032,6 +3176,10 @@ def dispatch(root, action, data):
         studio.write_json(path, {'id': found['id'], 'fingerprint': fingerprint})
         return runner.control(found['id'], 'resume')
     ident = data.get('id')
+    if isinstance(ident, str):
+        import desk
+
+        desk.refuse_on_desk(studio.item(root, 'articles', ident)[0])
     if (
         set(data)
         - {'id', 'expected', 'request', 'stage'}

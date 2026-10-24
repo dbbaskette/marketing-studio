@@ -1164,7 +1164,13 @@ def _command(root, args):
         snapshot(directory, transfer, 'local', accepted)
         snapshot(directory, transfer, 'document', body)
         if studio.digest(accepted.encode()) != check['local_sha256']:
-            studio.save_artifact(directory, kind, accepted, record)
+            import desk
+
+            if kind == 'draft' and desk.on_desk(directory):
+                # On the desk, Google's accepted text is a new version of each part it changes.
+                desk.reimport(root, record['id'], accepted, 'google', record)
+            else:
+                studio.save_artifact(directory, kind, accepted, record)
         google['transfers'][transfer] = {
             'status': 'confirmed',
             'kind': kind,

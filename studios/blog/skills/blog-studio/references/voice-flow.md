@@ -30,10 +30,10 @@ before reading it, and keep the permission to analyze it the person's to give. A
 is not a style.
 When the author wants a kind of writing learned, such as how product announcements are
 shaped, learn a [style](workspace/styles.md) from examples by anyone and keep it apart
-from the voice; a blog takes one of each, and the page offers them as **Write as** and
-**Kind of post**. Links to public posts arrive through `library voice-links` (add
-`--purpose style-sample` for a style, which skips the byline check) or the page's
-**Voices → Create a voice → Add links to posts**. A LinkedIn export arrives through
+from the voice. The page's New blog takes a kind of post; Write as and voice learning
+are its older voice tools, behind **Settings → Advanced**. Links to public posts arrive
+through `library voice-links` (add `--purpose style-sample` for a style, which skips the
+byline check) or the page's **Create a voice → Add links to posts**. A LinkedIn export arrives through
 the page's **Import a LinkedIn export** (the `upload` route), as `author-background` and
 `voice-sample` sources by the person it names. A post kept from another byline keeps
 its published byline in the library. **Create voices for every author** (`library-voices`)

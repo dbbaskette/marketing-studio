@@ -4,10 +4,10 @@
 
 **Turn ideas, notes, and rough drafts into blogs that sound like you.**
 
-Blog Studio gives you a **browser UI to create, run, and review blogs**, powered
-by your **Codex or Claude Code** assistant. Bring an idea, notes, or a draft; the
-assistant does the writing and the UI brings each stage back for your approval.
-You can also work directly in chat.
+Blog Studio gives you a **browser UI to write and edit blogs**, powered by your
+**Codex or Claude Code** assistant. Bring a topic, an outline or notes, or a draft;
+the assistant writes, and you shape the result on one editing desk with notes,
+selection edits and finishing tools. You can also work directly in chat.
 
 [Install Blog Studio](#install-blog-studio) · [Start your first blog](#start-your-first-blog) · [Get help](docs/troubleshooting.md)
 
@@ -65,66 +65,68 @@ even when the computer’s `python3` is older.
 Once the page is open, use its controls to drive the work:
 
 1. **Set your defaults.** On first launch, save your preferred assistant, author,
-   tone, research choice, and step time limit. You can change these later in
-   **Settings**. Under **Brand skill**, enter its repository and release or choose
-   an installed skill, just as in Training Studio. See [brand setup](docs/runner.md#your-brand-skill).
-2. **Choose New blog.** Choose **Polish a document**, **Write from a brief**, **Use my
-   outline**, **Outline only**, **Revise or review a draft**, **Explore ideas**, **New blog from my files** or **Interview me**; give
-   the topic and audience, then **Write as** (whose
-   voice) and **Kind of post** (the shape of the piece); then upload files or select
-   saved references, and set the tone, author and an optional brand. To revise or review, supply the manuscript.
-   To start from your own documents, choose **New blog from my files** on Home: upload
-   them or paste Google Doc links and say what each is for: facts that may be quoted,
-   approved messaging (a messaging document, launch brief or release notes, written as
-   the product's own claims), or an example of the kind of post you want (its shape,
-   never its facts). **Length** asks for the usual length, short or in depth. Then pick one
-   of three suggested angles, or give the title, the point and the reader yourself, and
-   the usual outline and draft follow. **Write as** chooses the voice there too: your
-   default voice, a saved profile, or no particular voice with a tone.
-   A Doc is read with this computer's Google sign-in, so it does not need to be shared.
-   The files land in the **team library** unless you untick **Keep**; then they stay
-   on this computer, though the blog's outline and draft may quote them and are
-   shared like any other blog. Every finished blog lands in the library too, and
-   **From the library** picks finished blogs, files and links as facts or examples
-   for the next one, with no re-adding; **Add to library** takes files, links and
-   Google Docs straight in, by one author or each post's own.
-   For a blog already in Google Docs, choose **Open Google Doc** on Home or Blogs,
-   preview its link and confirm the manuscript before importing. The same Doc
-   stays linked; importing does not start an assistant or change Google.
-3. **Press Start the blog.** Blog Studio starts the selected assistant and runs
-   the next stage. The progress view shows its steps and the files made so far.
-   A new blog can go through research, outline, draft, review, and the handoff.
-4. **Review when it needs you.** With the default **Balanced** review level,
-   Blog Studio stops for you at the outline, with its research beside it (at the
-   draft, for a blog that starts from your outline), and
-   at the last step, with the steps since then beside it. Other steps
-   carry on by themselves. **Step by step** stops at every stage. Open the item
-   under **Needs you** on Home or choose **Review** on its run. Read the
-   document, assistant notes, and any comparison with the last approved version.
-   Choose **Approve** and confirm to let the run continue. **Finish**, at the last
-   step, always asks first and keeps the draft in the team library.
-5. **Request changes in the UI.** Choose **Ask for changes**, select the stage,
-   and describe what you want—for example, “Make the introduction more direct.”
-   The next version comes back for review. If the run is paused, choose **Resume**.
-6. **Collect your writing.** Open saved documents under **Made so far** and use
-   **Download** to keep a Markdown copy. Your originals, stages, and decisions
-   stay saved with the blog.
+   tone and step time limit. You can change these later in **Settings**. Under **Brand
+   skill**, enter its repository and release or choose an installed skill, just as in
+   Training Studio. See [brand setup](docs/runner.md#your-brand-skill).
+2. **Choose New blog.** Every new blog is made on the writing desk, in three steps:
+   - **What are you writing?** Pick a kind of post, such as a product announcement or a
+     how-to, or **Something else**.
+   - **Sources and settings.** Add files, links, Google Docs and team library posts. Say
+     what each is for: facts that may be quoted, approved messaging (the product's own
+     claims), or an example of the kind of post (its shape, never its facts). They stay
+     with this blog unless you tick **Keep in the team library**. **Search my sites** and
+     **Search the web too** research before the writing; they start as ticked under
+     **Settings → Writing preferences** (off unless you tick them there), and you can change
+     them for each blog. Choose a **Length**
+     and a **Tone**.
+   - **What do you have?** **Just a topic** (a title, who it is for and the point, or
+     **Suggest three angles** to pick and edit one), **An outline or notes** (**Write
+     from my outline**, or **Shape an outline with me first**), or **A draft** (pasted,
+     uploaded or a Google Doc, with an optional first pass that tightens it or reshapes it
+     to the kind of post).
+3. **Press Start.** Nothing is needed from you after that. The page shows each step and
+   opens the draft on the desk when it is ready.
+4. **Edit on the desk.** The draft is one page: the title, the opening, and a card per
+   section. Type in any card; it saves as you go. Under each section, say how it should
+   change and press **Rewrite**; only what you asked for changes. **Write again** writes
+   the section fresh. A **Note for the whole draft** revises every section in turn. Select
+   text to **Rephrase**, **Shorten**, **Expand**, **Fix** or **Ask…**. **History** on each
+   part keeps earlier versions, with a comparison and **Restore**. The **Outline** tab
+   renames, reorders, adds and removes sections and writes the draft or one section from
+   it. **Add a source** takes more sources at any time.
+5. **Finish before publishing.** **Finishing** opens a panel of tools that suggest changes:
+   **Humanize** (light, medium or strong), **Proofread**, **Check facts against sources**,
+   **Headline and opening**, **Feedback without a rewrite**, **Apply a voice** and
+   **Before publishing** (the pre-publish check, **Repurpose**, and **Send to Google Doc**
+   as suggestions). Each suggestion shows before and after. **Apply**, **Edit** or
+   **Skip** it, or **Apply all**. Nothing changes until you apply, and the earlier text
+   stays in History.
+6. **Take it with you.** **Copy**, **Download**, **Google Doc** and **Mark as published**
+   are in the desk's toolbar.
 
-If a step stops, its run says why and what to do: a CLI failure points at
-**Status → Check this computer** and shows what the assistant printed; a step that
-ran out of time says its limit, which lives in **Settings**, beside **Try again
-with more time**. Research the independent check refused is kept on this computer
-and listed by what the check objected to; **Try again** continues from it, and
-**Continue without research** carries on without it.
+**Voice guides** in the sidebar says how a piece should sound: a name and a page of text.
+Write one by hand, or make one from 3 to 20 samples, then use it with **Finishing → Apply
+a voice**. The older voice tools (learning a voice from an author's posts, **Write as**
+and a default voice) are hidden behind **Settings → Advanced**.
 
-You can leave the browser while it works and return to **Home** to see **Needs
-you**, **In progress**, and **Finished**. Use **Pause after this step** to pause
-between stages, or **Stop** to end a running step. **Blogs** holds your saved
-runs; each card has **Delete**, as each blog listed on **Home** does, which asks
-for the blog's title and keeps the blog for 30 days under **Recently deleted**. In **Status**, choose **Check this
-computer** for assistant and sign-in checks, optional Team Hub tools, and
-instructions for anything missing. You can also run
-`sh ~/.local/share/blog-studio/studio check` from Terminal.
+A Google Doc is read with this computer's Google sign-in, so it need not be shared.
+**From the library** picks earlier posts and files from the **team library** as facts or
+examples; **Add to library** takes files, links and Google Docs straight in.
+
+Blogs started before the desk keep their step-by-step path: research, outline, draft,
+review and handoff, stopping for your review where their review level says. Open one from
+**Needs you** on Home, read the document and choose **Approve** or **Ask for changes**.
+A finished one offers **Open on the desk** from its Done card or the manuscript editor.
+
+If a step stops, the page says why and what to do: a CLI failure points at **Status →
+Check this computer** and shows what the assistant printed; a step that ran out of time
+says its limit, which lives in **Settings**, and offers **Try again with more time**.
+
+You can leave the browser while it works and come back to **Home**. **Blogs** holds every
+saved blog; each card has **Delete**, which asks for the blog's title and keeps the blog
+for 30 days under **Recently deleted**. In **Status**, choose **Check this computer** for
+assistant and sign-in checks, optional Team Hub tools, and what to do about anything
+missing. You can also run `sh ~/.local/share/blog-studio/studio check` from Terminal.
 
 [All UI controls, stages, and page/chat handoff →](docs/runner.md)
 
@@ -143,9 +145,9 @@ reusable writing style, say **“Help me set up my voice.”**
 
 ## Save and come back
 
-In the UI, open **Blogs**, select your blog, and review its current stage or
-choose **Resume** if it is paused. Your drafts, sources, voice profiles, and
-earlier revisions stay in your writing workspace on your computer.
+In the UI, open **Blogs** and choose **Continue editing** on your blog. It opens on the
+desk where you left it; an older blog opens at its current stage. Your drafts, sources,
+voice guides and earlier versions stay in your writing workspace on your computer.
 
 In chat, say **“My blogs”** to find saved work or **“Continue [title]”** to resume.
 **“Show status”** tells you where the current blog is saved and what to do next.
@@ -175,19 +177,3 @@ repair, or other problems, use the [setup help](docs/troubleshooting.md).
 | Understand where your content goes | [Privacy details](docs/privacy-review.md) |
 
 [What's new](CHANGELOG.md) · [Developer guide](docs/development.md)
-
-### When your own material is enough
-
-With Only what you supply, a new guided blog maps the claims and exact source passages
-in your selected facts/material, then writes from that map. It asks for one correction if
-a passage does not match. Balanced and Automatic continue to the outline; Step by step
-shows the map first. New blog from my files already reads the files at every stage and
-keeps that flow. Public-web research still investigates and independently checks its report;
-its review shows the brief, check, gaps and source limitations. Before you send a research
-change, the page names the full rerun, its last recorded cost and the saved stages it redoes.
-
-### Finish from the page
-
-Home includes **Outline only** and **Revise or review a draft**, with a manuscript upload and a choice to improve it or give feedback only. Developing an idea continues through outline, draft, review and handoff. Done offers pre-publish checks, repurposing and **Open as a Google Doc**. Confirming the latter creates one private Doc of the approved draft; another press reopens it or reconciles an uncertain upload before trying anything else.
-
-At review, **Apply the review's findings** preserves the current draft, then runs draft, review and handoff again after confirmation. Review notes open beside the text, with actual voice, repetition, example and preservation checks. Each uploaded file can be kept in the team library or returned to this blog's material before it is shared or pinned by a run.

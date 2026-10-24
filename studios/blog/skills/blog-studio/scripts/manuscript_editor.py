@@ -43,7 +43,17 @@ def read(root, ident):
         shown = blog_runner.engine(root).describe(ident)
         operation = {
             key: shown.get(key)
-            for key in ('id', 'expected', 'status', 'error', 'enabled', 'next', 'editor_check')
+            for key in (
+                'id',
+                'expected',
+                'status',
+                'error',
+                'enabled',
+                'next',
+                'editor_check',
+                'complete',
+                'desk_open',
+            )
         }
     checks = studio.freshness(root, directory, record)
     checked = operation.get('editor_check') if operation else None
@@ -82,6 +92,9 @@ def guard(root, data):
     from team_workspace import guard as team_guard
 
     team_guard(root, data.get('id'))
+    import desk
+
+    desk.refuse_on_desk(studio.item(root, 'articles', data.get('id'))[0])
     current = read(root, data.get('id'))
     if not data.get('expected') or data['expected'] != current['expected']:
         raise ValueError(
@@ -132,6 +145,28 @@ def proposal(value):
     if result['kind'] == 'comment':
         result.pop('after', None)
     return result
+
+
+def changed_span(old, new):
+    """The words that differ between two versions of one line, widened to whole words."""
+    left, tail = changed_bounds(old, new)
+    return old[left : len(old) - tail], new[left : len(new) - tail]
+
+
+def changed_bounds(old, new):
+    """How many characters the two versions share at the start and at the end, each cut back
+    to a word boundary."""
+    left = 0
+    while left < min(len(old), len(new)) and old[left] == new[left]:
+        left += 1
+    tail = 0
+    while tail < min(len(old), len(new)) - left and old[-tail - 1] == new[-tail - 1]:
+        tail += 1
+    while left and old[left - 1].isalnum():
+        left -= 1
+    while tail and old[len(old) - tail].isalnum():
+        tail -= 1
+    return left, tail
 
 
 def dispatch(root, action, data):
@@ -218,17 +253,7 @@ def dispatch(root, action, data):
                     'Some edits change paragraph structure. Keep those as quoted comments or individual suggestions; no partial conversion was saved.'
                 )
             old, new = before[a], after[c] if d > c else ''
-            left = 0
-            while left < min(len(old), len(new)) and old[left] == new[left]:
-                left += 1
-            tail = 0
-            while tail < min(len(old), len(new)) - left and old[-tail - 1] == new[-tail - 1]:
-                tail += 1
-            while left and old[left - 1].isalnum():
-                left -= 1
-            while tail and old[len(old) - tail].isalnum():
-                tail -= 1
-            quoted, replacement = old[left : len(old) - tail], new[left : len(new) - tail]
+            quoted, replacement = changed_span(old, new)
             if not quoted or any(character in quoted + replacement for character in '[]*`<>'):
                 raise ValueError(
                     'This change includes insertion-only text or formatting. Add an individual quoted suggestion or comment; no partial conversion was saved.'
@@ -340,49 +365,68 @@ def dispatch(root, action, data):
         return blog_runner.engine(root).control(ident, 'resume')
     if action in ('google-plan', 'google-send'):
         import google_drive as drive
-        import google_suggestions as suggestions
 
         client = drive.Client(drive.account_for(root))
         if action == 'google-plan':
             if not current['google']:
                 raise ValueError('Open a linked Google manuscript before sending suggestions.')
-            mode = data.get('mode', 'auto')
-            token = uuid.uuid4().hex
-            path = studio.inside(drive.staging_root(root, create=True), 'editor-' + token + '.json')
-            result = suggestions.plan(
-                client, root, ident, 'draft', current['proposals'], path, mode
+            return google_plan(
+                client,
+                root,
+                ident,
+                current['proposals'],
+                data.get('mode', 'auto'),
+                current['expected'],
+                current['google']['url'],
             )
-            studio.write_json(
-                path.with_suffix('.guard.json'), {'expected': current['expected'], 'id': ident}
-            )
-            return {
-                'plan': token,
-                'mode': result['mode'],
-                'count': result['findings'],
-                'target': current['google']['url'],
-                'expected': current['expected'],
-                'proposals': current['proposals'],
-            }
-        token = data.get('plan', '')
-        if (
-            not isinstance(token, str)
-            or not re.fullmatch('[a-f0-9]{32}', token)
-            or data.get('confirmed') is not True
-        ):
-            raise ValueError('Preview and confirm the selected Google suggestions first.')
-        path = studio.inside(drive.staging_root(root), 'editor-' + token + '.json')
-        bound = studio.read_json(path.with_suffix('.guard.json'))
-        if bound != {'expected': current['expected'], 'id': ident}:
-            raise ValueError('The selected edits changed. Preview Google delivery again.')
-        saved = studio.read_json(path)
-        if saved['article'] != ident:
-            raise ValueError('This plan belongs to another manuscript.')
-        # Existing CLI ledger handles safe retries and uncertain writes; never blindly resend.
-        receipt = suggestions.ledger(root) / (suggestions.operation_key(saved) + '.json')
-        if receipt.is_file():
-            return suggestions.verify(client, root, saved)
-        return suggestions.apply(client, root, saved)
+        return google_send(client, root, ident, data, current['expected'])
     raise ValueError('Unknown manuscript action.')
+
+
+def google_plan(client, root, ident, proposals, mode, expected, target):
+    """Check chosen suggestions against the linked Google Doc and keep the plan on this
+    computer, bound to the text it was made from. Nothing is sent."""
+    import google_drive as drive
+    import google_suggestions as suggestions
+
+    token = uuid.uuid4().hex
+    path = studio.inside(drive.staging_root(root, create=True), 'editor-' + token + '.json')
+    result = suggestions.plan(client, root, ident, 'draft', proposals, path, mode)
+    studio.write_json(path.with_suffix('.guard.json'), {'expected': expected, 'id': ident})
+    return {
+        'plan': token,
+        'mode': result['mode'],
+        'count': result['findings'],
+        'target': target,
+        'expected': expected,
+        'proposals': proposals,
+    }
+
+
+def google_send(client, root, ident, data, expected):
+    """Send a confirmed plan once, while the text it was made from is unchanged."""
+    import google_drive as drive
+    import google_suggestions as suggestions
+
+    token = data.get('plan', '')
+    if (
+        not isinstance(token, str)
+        or not re.fullmatch('[a-f0-9]{32}', token)
+        or data.get('confirmed') is not True
+    ):
+        raise ValueError('Preview and confirm the selected Google suggestions first.')
+    path = studio.inside(drive.staging_root(root), 'editor-' + token + '.json')
+    bound = studio.read_json(path.with_suffix('.guard.json'))
+    if bound != {'expected': expected, 'id': ident}:
+        raise ValueError('The selected edits changed. Preview Google delivery again.')
+    saved = studio.read_json(path)
+    if saved['article'] != ident:
+        raise ValueError('This plan belongs to another manuscript.')
+    # Existing CLI ledger handles safe retries and uncertain writes; never blindly resend.
+    receipt = suggestions.ledger(root) / (suggestions.operation_key(saved) + '.json')
+    if receipt.is_file():
+        return suggestions.verify(client, root, saved)
+    return suggestions.apply(client, root, saved)
 
 
 def validate_review(result, manuscript):

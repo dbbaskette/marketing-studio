@@ -160,7 +160,7 @@ that plan; Training Studio Balanced and Automatic accept it under the saved poli
 An explicit request to revise that plan uses the planning assistant with the current
 questions and your request, keeping the supplied-only boundary and eight-question limit.
 
-New Blog Studio supplied-only runs use a claims map instead of synthesis research: one
+Blog Studio's step-by-step supplied-only runs use a claims map instead of synthesis research: one
 worker lists the claims and exact passages in selected facts/material. Whitespace and line
 breaks may differ; words may not. One correction is allowed, within the stage's time limit.
 The map is handed to later stages without judging the author's claims. Balanced and

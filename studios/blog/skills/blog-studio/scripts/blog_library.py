@@ -184,12 +184,12 @@ def canonical(url):
         or parsed.password
         or parsed.port not in (None, 443)
     ):
-        raise ValueError('Use an HTTPS URL without credentials or a custom port.')
+        raise ValueError(CREDENTIALS)
     if any(
         key in parsed.query.lower()
         for key in ('access_token', 'api_key', 'password', 'authorization')
     ):
-        raise ValueError('Do not put credentials in collection URLs.')
+        raise ValueError(CREDENTIALS_IN_QUERY)
     return urlunsplit(('https', parsed.hostname.lower(), parsed.path or '/', parsed.query, ''))
 
 
@@ -200,6 +200,13 @@ def in_scope(url, scope):
     return url.hostname == base.hostname and (
         not prefix or url.path == prefix or url.path.startswith(prefix + '/')
     )
+
+
+# What a fetch refuses, named so a single link can say it in its own words.
+CREDENTIALS = 'Use an HTTPS URL without credentials or a custom port.'
+CREDENTIALS_IN_QUERY = 'Do not put credentials in collection URLs.'
+PRIVATE = 'Collection URLs must resolve only to public addresses.'
+REDIRECTS = 'Too many collection redirects.'
 
 
 class PinnedHTTPS(http.client.HTTPSConnection):
@@ -275,7 +282,7 @@ def fetch(url, scope, redirects=3, deadline=None, redirected_from=None):
         raise ValueError(UNREACHABLE) from exc
     addresses = list(dict.fromkeys(v[4][0] for v in found))
     if not addresses or any(not ipaddress.ip_address(a).is_global for a in addresses):
-        raise ValueError('Collection URLs must resolve only to public addresses.')
+        raise ValueError(PRIVATE)
     connection = PinnedHTTPS(parsed.hostname, addresses[0])
     try:
         connection.timeout = time_left(deadline)
@@ -291,7 +298,7 @@ def fetch(url, scope, redirects=3, deadline=None, redirected_from=None):
         response = connection.getresponse()
         if response.status in (301, 302, 303, 307, 308):
             if redirects <= 0:
-                raise ValueError('Too many collection redirects.')
+                raise ValueError(REDIRECTS)
             # Checked as the server sent it, and again as it is fetched, on the next hop.
             destination = urljoin(url, response.getheader('Location', ''))
             connection.close()

@@ -218,6 +218,12 @@ def dispatch(root, data):
                     'Choose an active profile; existing pinned work remains unchanged.'
                 )
             return apply_voice(root, current['id'], selected, data.get('confirmed') is True)
+    if action == 'guide-discard':
+        import article_tools
+
+        if set(data) - {'action', 'job'}:
+            raise ValueError('Name the voice guide to discard.')
+        return article_tools.discard_guide(root, data)
     if action == 'variant-save':
         import article_tools
 
