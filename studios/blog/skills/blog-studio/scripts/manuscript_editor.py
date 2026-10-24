@@ -43,7 +43,17 @@ def read(root, ident):
         shown = blog_runner.engine(root).describe(ident)
         operation = {
             key: shown.get(key)
-            for key in ('id', 'expected', 'status', 'error', 'enabled', 'next', 'editor_check')
+            for key in (
+                'id',
+                'expected',
+                'status',
+                'error',
+                'enabled',
+                'next',
+                'editor_check',
+                'complete',
+                'desk_open',
+            )
         }
     checks = studio.freshness(root, directory, record)
     checked = operation.get('editor_check') if operation else None

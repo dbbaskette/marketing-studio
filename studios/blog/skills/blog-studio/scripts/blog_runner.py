@@ -1036,6 +1036,11 @@ def survey(root, ident, listing=False):
         'ahead': ahead,
         'awaits': awaits,
         'complete': next_stage is None,
+        # Every stage was approved once, though an edit since may read as stale: a blog
+        # finished and then edited in the manuscript editor. Its DRAFT.md is the latest text.
+        'finished': all(
+            run['stages'].get(name, {}).get('status') == 'approved' for name in run['pipeline']
+        ),
         'content': content,
         'expected': revision,
         'directory': str(directory),
@@ -2365,7 +2370,8 @@ class Engine:
             'research': research,
             # A finished blog may be opened on the writing desk; one already there says so.
             'desk_open': bool(
-                found['complete'] and (Path(found['directory']) / 'DRAFT.md').is_file()
+                (found['complete'] or found.get('finished'))
+                and (Path(found['directory']) / 'DRAFT.md').is_file()
             ),
             'on_desk': on_desk,
             'enabled': local.get('enabled', False),
@@ -2801,6 +2807,7 @@ def catalog(root):
                             'team',
                             'driver',
                             'touched',
+                            'desk_open',
                         )
                     }
                 )

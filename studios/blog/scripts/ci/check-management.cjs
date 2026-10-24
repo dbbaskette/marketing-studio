@@ -120,6 +120,7 @@ async function check(){
   await failureRecovery();
   await deskJourneys();
   await deskOpenFinished();
+  await deskOpenFromLists();
   await deskLeaveShares();
   await deskReturnAndGoogle();
   await deskTopicStart();
@@ -132,7 +133,7 @@ async function check(){
   await deskAddSource();
   await deskFinishing();
   pageDefinesEveryElement();
-  const checks=['Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Proofread with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, a saved draft brought as it is','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Proofread with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, a saved draft brought as it is','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','element ids'];
@@ -2913,6 +2914,52 @@ async function deskOpenFinished(){
   const shown=[...nodes(),...descendants(f.get('actions'))].map(n=>n.textContent);
   assert.ok(shown.includes('Open on the desk'));
   for(const label of ['Resume','Try again','Polish or edit the draft','Edit manuscript','Tools','Ask for changes','Continue'])assert.ok(!shown.includes(label),label);
+}
+
+// A finished blog reaches Open on the desk from the lists: Home's Finished drafts and Blogs
+// open its Done card, even when it was last polished in the manuscript editor, and the editor
+// offers it too; a saved blog with no run goes to the desk start with its draft.
+async function deskOpenFromLists(){
+  const requests=[];
+  const row={id:'done',title:'Done blog',status:'complete',complete:true,desk_open:true,editor_check:'polish',mode:'write',next:null,approval:'page',stages:[{stage:'draft',label:'Draft',path:'DRAFT.md',status:'approved'}]};
+  const run={...row,expected:'v1',enabled:false,seconds:600,engine:'codex',decisions:[],brief:{goal:'G',audience:'A'},directory:'/synthetic',on_desk:false};
+  let operation={id:'done',status:'complete',complete:true,desk_open:true,editor_check:'polish',next:null};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    if(url==='/api/runs')return {items:[row],deleted:[]};
+    if(url.startsWith('/api/board'))return {items:[],total:0};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}};
+    if(url==='/api/team')return {};
+    if(url.startsWith('/api/run?'))return run;
+    if(url.startsWith('/api/manuscript?'))return {id:'done',title:'Done blog',content:'# Done blog\n\nText.\n',expected:'m1',google:null,proposals:[],findings:[],checks:{},working:false,operation,sources:[],baseline:''};
+    if(url==='/api/desk-open'||url.startsWith('/api/desk?'))return deskView({id:'done',run:true});
+    return {items:[],total:0};});
+  f.loadRunner();
+  const nodes=()=>descendants(f.get('studio-page')),actions=()=>descendants(f.get('actions'));
+  const openOnDesk=async()=>{const open=nodes().find(n=>n.textContent==='Open on the desk');assert.ok(open,'Open on the desk on the Done card: '+nodes().map(n=>n.textContent).filter(Boolean).join('|'));await open.listeners.click();assert.equal(f.run('studio.screen'),'desk');assert.deepEqual(requests.filter(r=>r.url==='/api/desk-open').at(-1).data,{id:'done'});};
+  // Home: Finished drafts → Continue editing → the Done card, not the editor.
+  await f.run("sRoute('home')");
+  const group=nodes().find(e=>e.tagName==='section'&&e.children[0]?.textContent==='Finished drafts');assert.ok(group,'a Finished drafts group');
+  await descendants(group).find(e=>e.textContent==='Continue editing').listeners.click();
+  assert.equal(f.run('studio.screen'),'run','a finished blog opens at its run, not the editor');
+  await openOnDesk();
+  // Blogs: the card's button does the same.
+  await f.run("sRoute('blogs')");
+  await nodes().find(e=>e.textContent==='Continue editing'&&e.listeners.click).listeners.click();
+  assert.equal(f.run('studio.screen'),'run');
+  await openOnDesk();
+  // The run's address with the editor's check set still shows the Done card.
+  await f.run("sRoute('run','done')");assert.equal(f.run('studio.screen'),'run');
+  // The manuscript editor offers it for a finished blog...
+  await f.run("sRoute('editor','done')");
+  const inEditor=actions().find(n=>n.textContent==='Open on the desk');assert.ok(inEditor,'the editor offers Open on the desk');
+  await inEditor.listeners.click();assert.equal(f.run('studio.screen'),'desk');
+  // ...and, for a saved blog with no run, opens the desk start with its draft.
+  operation=null;await f.run("sRoute('editor','done')");
+  await actions().find(n=>n.textContent==='Open on the desk').listeners.click();
+  assert.equal(f.run('studio.screen'),'desk-start');assert.equal(f.run('studio.deskStart.article'),'done');assert.equal(f.run('studio.deskStart.source'),'saved');
+  // An unfinished run's editor offers nothing of the kind.
+  operation={id:'done',status:'waiting-for-approval',complete:false,desk_open:false,editor_check:'polish',next:'review'};await f.run("sRoute('editor','done')");
+  assert.ok(!actions().some(n=>n.textContent==='Open on the desk'));
 }
 
 // Phase 2 of the writing desk: the author and co-author starts, progress, the Outline tab and

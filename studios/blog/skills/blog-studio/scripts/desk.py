@@ -558,10 +558,10 @@ def open_run(root, ident):
     target = studio.inside(directory, DESK, 'draft.json')
     if target.is_file() and not target.is_symlink():
         return read(root, ident)
-    if (
-        not blog_runner.survey(root, ident, listing=True)['complete']
-        or not (directory / 'DRAFT.md').is_file()
-    ):
+    found = blog_runner.survey(root, ident, listing=True)
+    # A finished blog edited since in the manuscript editor reads as stale at its draft; its
+    # DRAFT.md is the person's latest text, so it opens too.
+    if not (found['complete'] or found['finished']) or not (directory / 'DRAFT.md').is_file():
         raise ValueError('Finish this blog, then open it on the desk.')
     draft = split((directory / 'DRAFT.md').read_text(), title=record['title'])
     now = studio.now()

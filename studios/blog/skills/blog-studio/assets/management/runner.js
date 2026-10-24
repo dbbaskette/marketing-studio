@@ -114,7 +114,7 @@ async function studioNavigate(screen,id=null,stage=null){
     else if(screen==='google'){sGooglePage();}
     else if(screen==='draft'){sPolishIntake('paste');}
     else if(screen==='polish'){sPolishIntake();}
-    else if(screen==='run'||screen==='gate'){const found=await api('run?id='+encodeURIComponent(id));if(turn!==studio.turn)return;studio.found=found;if(found.on_desk){if(screen!=='run')await sRoute('run',found.id,null,true);else sRun(found);return;}if(sEditingRun(found)){await sRoute('editor',found.id,null,true);return;}if(screen==='run'&&stage!=='status'&&sWritingReady(found)){await sRoute('gate',found.id,found.next,true);return;}if(screen==='gate')await sReadGate(stage||found.next);else sRun(found);}
+    else if(screen==='run'||screen==='gate'){const found=await api('run?id='+encodeURIComponent(id));if(turn!==studio.turn)return;studio.found=found;if(found.on_desk){if(screen!=='run')await sRoute('run',found.id,null,true);else sRun(found);return;}if(sEditingRun(found)&&!found.complete){await sRoute('editor',found.id,null,true);return;}if(screen==='run'&&stage!=='status'&&sWritingReady(found)){await sRoute('gate',found.id,found.next,true);return;}if(screen==='gate')await sReadGate(stage||found.next);else sRun(found);}
     if(turn===studio.turn&&screen==='editor')$('title').focus({preventScroll:true});
   }catch(error){if(turn===studio.turn)sPage(sCard('This view could not be read',sNode('p','problem',error.message),sButton('Try again',()=>studioNavigate(screen,id,stage))));}
   finally{if(turn===studio.turn)$('studio-page').removeAttribute('aria-busy');}
@@ -171,7 +171,8 @@ function sGooglePage(){
   });
   sPage(sWorkflowSteps(['Choose document','Check preview','Polish'],found?1:0,null),form);
 }
-function sReview(found){if(found.flow==='desk')return ()=>sRoute('desk',found.id);if(['ideas','outline'].includes(found.mode)&&found.complete)return ()=>sRoute('gate',found.id,'outline');if(sEditingRun(found)||found.complete)return ()=>sRoute('editor',found.id);return ()=>found.next&&found.status==='waiting-for-approval'?sRoute('gate',found.id,found.next):sRoute('run',found.id);}
+// A finished blog that can go on the desk opens at its Done card, where Open on the desk is.
+function sReview(found){if(found.flow==='desk')return ()=>sRoute('desk',found.id);if(found.complete&&found.desk_open)return ()=>sRoute('run',found.id);if(['ideas','outline'].includes(found.mode)&&found.complete)return ()=>sRoute('gate',found.id,'outline');if(sEditingRun(found)||found.complete)return ()=>sRoute('editor',found.id);return ()=>found.next&&found.status==='waiting-for-approval'?sRoute('gate',found.id,found.next):sRoute('run',found.id);}
 function sRow(found){const row=sNode('li','row'+(found.status==='working'?' working':'')),text=sAdd(sNode('div','row-text'),sNode('h3','row-title',found.title),sNode('p','row-says',found.error||sWords(found)));return sAdd(row,sBead(sNeeds(found)?'review':found.complete?'done':found.status==='working'?'current':'none'),text,sRowActions(sButton(sEditingRun(found)||found.flow==='desk'?'Continue editing':sNeeds(found)?'Continue review':'Continue',sReview(found)),found));}
 // A listed blog's way in, with Delete beside it where it has one: the same sheet as its card on Blogs.
 function sRowActions(go,found){const remove=sDeleteAction(found);return remove?sAdd(sNode('div','bar row-actions'),go,remove):go;}
@@ -428,7 +429,9 @@ async function sEditor(ident){
   if(active)phase='prepare';
   const problem=sNode('p','problem');problem.setAttribute('role','alert');
   const route=step=>sRoute('editor',ident,['prepare','changes','finish'][step]);
-  sFrame(found.title,[...(found.google?[link(found.google.url,'Open Google Doc ↗')]:[]),sButton('Tools',()=>sMoreTools(ident))],found.google?'Google Doc review':'Improve a draft',()=>sRoute('blogs'));
+  // A finished blog, or a saved one with no run, can go on the writing desk from here too.
+  const toDesk=!access.actions.edit?null:operation?.desk_open?sButton('Open on the desk',async button=>busy(button,'Opening…',async()=>{try{const made=await api('desk-open',{id:ident});studio.desk={id:made.id,view:made,session:operationId()};await sRoute('desk',made.id);}catch(error){problem.textContent=error.message;}})):!operation&&found.content.trim()?sButton('Open on the desk',()=>sDeskBegin({have:'draft',source:'saved',article:ident,title:found.title||''})):null;
+  sFrame(found.title,[...(found.google?[link(found.google.url,'Open Google Doc ↗')]:[]),toDesk,sButton('Tools',()=>sMoreTools(ident))],found.google?'Google Doc review':'Improve a draft',()=>sRoute('blogs'));
   const progress=sWorkflowSteps(['Polish','Choose changes','Finish'],['prepare','changes','finish'].indexOf(phase),route);
   const steps=progress.querySelectorAll('button');steps[1].disabled=active;steps[2].disabled=active||!found.proposals.length&&!sSavedDelivery(ident,found.expected)&&!(found.google&&found.content!==found.baseline)&&!(operation?.editor_check==='revise'&&ready);
   const options=studio.editorChoices[ident]||(studio.editorChoices[ident]={check:['polish','factual-support','shape','geo','revise'].includes(operation?.editor_check)?operation.editor_check:'polish',request:'',research:'none',sources:[...(found.sources||[])]});

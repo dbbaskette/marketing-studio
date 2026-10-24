@@ -53,6 +53,26 @@ class OpenOnTheDeskTests(RunnerCase):
         self.assertEqual(again['opening'], 'Changed opening.')
         self.assertEqual(first['sections'][0]['id'], again['sections'][0]['id'])
 
+    def test_a_finished_blog_edited_in_the_old_editor_still_opens_with_its_latest_text(self):
+        import manuscript_editor
+
+        found = self.finished()
+        current = manuscript_editor.read(self.root, found['id'])
+        edited = current['content'].replace('Because.', 'Because, edited in the editor.')
+        management.dispatch(
+            self.root,
+            'editor-save',
+            {'id': found['id'], 'expected': current['expected'], 'content': edited},
+        )
+        shown = runner.engine(self.root).describe(found['id'])
+        self.assertFalse(shown['complete'], 'the edit reads as a stale draft')
+        self.assertTrue(shown['desk_open'])
+        row = next(r for r in runner.catalog(self.root)['items'] if r['id'] == found['id'])
+        self.assertTrue(row['desk_open'], 'the list knows it can go on the desk')
+        self.assertTrue(manuscript_editor.read(self.root, found['id'])['operation']['desk_open'])
+        opened = management.dispatch(self.root, 'desk-open', {'id': found['id']})
+        self.assertEqual(opened['sections'][0]['text'], 'Because, edited in the editor.')
+
     def test_an_unfinished_run_is_refused(self):
         found = self.create(page=True)
         self.assertFalse(runner.engine(self.root).describe(found['id'])['desk_open'])
