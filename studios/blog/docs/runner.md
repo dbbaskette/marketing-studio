@@ -43,7 +43,7 @@ blogs; existing blogs keep their choices. **Status → Check this computer** sha
 read-only checks and next steps. You can run the same report with
 `sh ~/.local/share/blog-studio/studio check`.
 
-Choose **New blog**, or one of Home's tasks (**Write about a topic**, **Work from my
+Choose **New blog**, or one of Home's tasks (**Write from a topic or my documents**, **Work from my
 outline or notes**, **Edit or polish a draft**). A new blog is always made on the writing
 desk, in three steps:
 
@@ -60,7 +60,7 @@ desk, in three steps:
    off unless ticked there. **Length** asks for the usual length, short or in
    depth. **Tone** says how it sounds.
 3. **What do you have?**
-   - **Just a topic**: a working title, who it is for and the point to make. **Suggest
+   - **A topic**: a working title, who it is for and the point to make. **Suggest
      three angles** reads your sources and offers three cards; pick one and edit its
      wording, or type your own point.
    - **An outline or notes**, pasted or uploaded: **Write from my outline** writes the

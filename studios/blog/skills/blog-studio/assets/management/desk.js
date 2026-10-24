@@ -43,7 +43,7 @@ function deskTextOf(view,part){if(part==='title'||part==='opening')return view[p
 
 // A new blog: 1. the kind of post, 2. sources and settings, 3. what the person brings (a
 // topic, an outline or notes, or a draft), then Start. Nothing stops for the person after it.
-const DESK_HAVE=[['topic','Just a topic'],['outline','An outline or notes'],['draft','A draft']];
+const DESK_HAVE=[['topic','A topic'],['outline','An outline or notes'],['draft','A draft']];
 const DESK_OUTLINE_WAYS=[['outline','Write from my outline'],['shape','Shape an outline with me first']];
 const DESK_START_STEPS=['Kind of post','Sources and settings','What you have'];
 const DESK_START_LEDES=['Choose the kind of post. It sets the usual shape and length.','Add sources if you have them. They stay with this blog unless you keep them in the team library.','Say what you bring, then start. Nothing stops for you on the way.'];
@@ -120,7 +120,7 @@ function sDeskHaveProblem(held){
   }
   return '';
 }
-// Just a topic: the point typed, or three angles from the sources chosen, to pick and edit.
+// A topic: the point typed, or three angles from the sources chosen, to pick and edit.
 function sDeskTopic(held){
   const card=sCard('Your topic',sField('desk-title','Working title',held,'title',{required:true,max:500}),sField('desk-audience','Who is it for?',held,'audience',{max:500}),sField('desk-point','The point to make',held,'point',{long:true,max:2000,hint:'What the reader should understand or do afterward.'}));
   const ready=held.files.filter(file=>file.state==='ready').length;
