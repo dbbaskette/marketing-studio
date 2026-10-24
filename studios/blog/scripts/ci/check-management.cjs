@@ -22,6 +22,8 @@ class Element {
   focus(){this.focused=true;}
   select(){this.selected=true;}
 }
+// The older voice tools are switched off by default; a journey of them turns them on.
+function voicesOn(f){f.run('sVoicesOn=()=>true');}
 function descendants(node){return node.children.flatMap(c=>[c,...descendants(c)]);}
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 function fixture(responder=()=>({items:[],total:0})){
@@ -110,6 +112,7 @@ async function check(){
   await voiceCandidates();
   await runVoiceChange();
   await toolsAreNamed();
+  await voiceSwitch();
   await researchRefusal();
   await researchRounds();
   await skipResearch();
@@ -126,7 +129,7 @@ async function check(){
   await deskAddSource();
   await deskFinishing();
   pageDefinesEveryElement();
-  const checks=['Finishing on the desk: every tool listed, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Proofread with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Proofread with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','research from your documents, your sites and/or the public web: the shared list prefilled, a site for one blog checked by the server, the shared sentences, and the sites named at the research gate','element ids'];
@@ -463,7 +466,7 @@ async function taskJourneys(){
   for(const label of ['Write about a topic','Work from my outline or notes','Edit or polish a draft'])assert.ok(nodes().some(e=>e.textContent===label));
   // Setting up voices, styles and the library is on Home, without starting a blog.
   assert.ok(nodes().some(e=>e.textContent==='Set up before you write'),'Home offers setting up before writing');
-  for(const label of ['Voices and styles','Team library'])assert.ok(nodes().some(e=>e.className==='pick-card'&&descendants(e).some(d=>d.textContent===label)||e.textContent===label),label);
+  for(const label of ['Kinds of post','Team library'])assert.ok(nodes().some(e=>e.className==='pick-card'&&descendants(e).some(d=>d.textContent===label)||e.textContent===label),label);
   await nodes().find(e=>e.textContent==='Edit or polish a draft').listeners.click();
   assert.equal(f.run('studio.screen'),'desk-start');
   await f.run("sRoute('polish')");
@@ -681,7 +684,10 @@ async function capabilityAndMemory(){
   assert.equal(f.get('actions').children.find(e=>e.textContent==='New blog').disabled,true,'New blog follows edit access');
   f.run("view='memory';legacyToolbar()");assert.equal(f.get('actions').children.find(e=>e.textContent==='Add memory').disabled,true);
   f.run("view='library';legacyToolbar()");assert.deepEqual(f.get('actions').children.map(e=>[e.textContent,e.disabled]),[['Add to library',true]]);
+  assert.deepEqual(f.get('view-actions').children.map(e=>[e.textContent,e.disabled]),[],'Create voices for every author waits behind the voice switch');
+  f.run('globalThis.sVoicesOn=()=>true');f.run("legacyToolbar()");
   assert.deepEqual(f.get('view-actions').children.map(e=>[e.textContent,e.disabled]),[['Create voices for every author',true]],'a secondary action sits under the lede');
+  f.run('delete globalThis.sVoicesOn');
   f.run("view='board'");
   assert.equal(f.get('refresh-hub').disabled,false);assert.match(f.get('access-status').textContent,/Read-only/);
   for(const kind of ['note','context','rule','decision','collection','lesson']){
@@ -986,9 +992,9 @@ async function staleSharedForms(){
 async function sharedSettings(){
   const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:'Before'},before={engine:'codex',author:'Before'};
   const voices=[{id:'mine',name:'Synthetic Author',revision:3},{id:'guest',name:'Guest Writer',revision:1}];
-  const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});return {defaults,shared_before:before,workspace:'/synthetic',voice:null,voices};}if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};if(url==='/api/team')return {};return empty();});
-  f.loadRunner();f.set('defaults',defaults);f.set('before',before);f.set('voices',voices);f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',voice:{profile_id:'mine',revision:3},voices};studio.screen='settings';sSettings()");
-  assert.equal(descendants(f.get('studio-page')).filter(e=>e.type==='checkbox'&&!e.id.startsWith('settings-research-')).length,0,'shared saves have no second consent toggle');
+  const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});return {defaults,shared_before:before,workspace:'/synthetic',features:{voice:true},voice:null,voices};}if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};if(url==='/api/team')return {};return empty();});
+  f.loadRunner();f.set('defaults',defaults);f.set('before',before);f.set('voices',voices);f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',features:{voice:true},voice:{profile_id:'mine',revision:3},voices};studio.screen='settings';sSettings()");
+  assert.equal(descendants(f.get('studio-page')).filter(e=>e.type==='checkbox'&&!e.id.startsWith('settings-research-')&&e.id!=='settings-voice-tools').length,0,'shared saves have no second consent toggle');
   // The research default: three ticks, an older 'none' read as none of them.
   const tick=key=>descendants(f.get('studio-page')).find(e=>e.id==='settings-research-'+key);
   assert.deepEqual(['documents','sites','web'].map(key=>tick(key).checked),[false,false,false]);
@@ -1004,13 +1010,14 @@ async function sharedSettings(){
   assert.deepEqual(requests[0].data.shared_before,before);assert.equal('for_all_studios' in requests[0].data,false);
   assert.deepEqual(requests[0].data.voice,{profile_id:'mine',revision:3},'the default voice is saved with its revision');
   assert.deepEqual(requests[0].data.voice_before,{profile_id:'mine',revision:3},'against the voice the form showed');
+  assert.deepEqual([requests[0].data.features,requests[0].data.features_before],[{voice:true},{voice:true}],'the voice switch is saved against what the form showed');
   assert.deepEqual(requests[0].data.research,{documents:false,sites:true,web:false},'the research default is saved as three ticks');assert.equal(defaults.research,'none','the shown defaults are not changed by the form');
-  f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',voice:null,voices};sSettings()");
+  f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',features:{voice:true},voice:null,voices};sSettings()");
   const none=descendants(f.get('studio-page')).find(e=>e.id==='settings-voice');assert.equal(none.value,'','no default: None');
   none.value='guest';none.listeners.change();
   await f.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.deepEqual(requests.at(-1).data.voice,{profile_id:'guest',revision:1});
-  f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',voice:{profile_id:'guest',revision:1},voices};sSettings()");
+  f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',features:{voice:true},voice:{profile_id:'guest',revision:1},voices};sSettings()");
   const back=descendants(f.get('studio-page')).find(e=>e.id==='settings-voice');back.value='';back.listeners.change();
   await f.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   assert.equal(requests.at(-1).data.voice,null,'None removes the default');
@@ -1025,7 +1032,7 @@ async function interviewVoice(){
     if(url==='/api/tool-action'&&data.action==='interview-start')return {id:'interviewed',title:data.title,answers:[],notes:'',question:'What is the main point?',expected:'i1',outline:false,outline_content:''};
     if(url.startsWith('/api/interview?'))return {id:'interviewed',title:'Synthetic interview',answers:[],notes:'',question:'What is the main point?',expected:'i1',outline:false,outline_content:''};
     return {items:[],total:0};});
-  f.loadRunner();
+  f.loadRunner();voicesOn(f);
   const sheet=()=>descendants(f.get('sheet')),byId=id=>sheet().find(e=>e.id===id);
   const fill=()=>{for(const [id,value] of [['interview-title','Synthetic interview'],['interview-audience','Developers'],['interview-goal','Explain a gateway']]){byId(id).value=value;byId(id).listeners.input();}};
   await f.run('sNewInterview()');
@@ -1134,7 +1141,7 @@ async function voicesForEveryAuthor(){
     if(url==='/api/tool-action')return {profile:'avery',revision:1,status:'provisional'};
     if(url.startsWith('/api/voices'))return {profiles:[],samples:[],candidates:[],pending:[]};
     return {items:[],total:0};});
-  f.loadRunner();
+  f.loadRunner();voicesOn(f);
   const sheet=()=>descendants(f.get('sheet')),text=()=>sheet().map(e=>e.textContent),find=label=>sheet().find(e=>e.textContent===label),byId=id=>sheet().find(e=>e.id===id);
   await f.run("sLegacy('library')");
   await f.get('view-actions').children.find(e=>e.textContent==='Create voices for every author').listeners.click();
@@ -1197,7 +1204,7 @@ async function createVoiceSources(){
     if(url==='/api/upload'){if(data.files)return {files:[{filename:'LinkedIn · Article',source:{id:'li'},state:'ready',chars:9,note:'',purpose:'voice-sample',author:'Avery Quinn'}],receipts:[],state:'saved',next_step:'Every file has text.'};samples.push({id:'up-'+data.filename,name:data.filename,author:data.author});return {source:{id:'up-'+data.filename},state:'ready',chars:20,note:'',receipts:[]};}
     if(url==='/api/tool-action'){samples.push({id:data.source,name:'Library post',author:'Avery Quinn'});return {source:data.source,revision:2,purposes:['reference','voice-sample'],author:'Avery Quinn',changed:true,receipts:[]};}
     return {items:[],total:0};});
-  f.loadRunner();
+  f.loadRunner();voicesOn(f);
   const sheet=()=>descendants(f.get('sheet')),text=()=>sheet().map(e=>e.textContent),find=label=>sheet().find(e=>e.textContent===label),byId=id=>sheet().find(e=>e.id===id);
   const ticked=()=>sheet().filter(e=>e.type==='checkbox'&&e.checked&&e.value).map(e=>e.value);
   await f.run("sRoute('voices')");
@@ -1462,7 +1469,7 @@ async function contextualTools(){
     if(url.startsWith('/api/variant?'))return {id:'fixture',name:'launch-copy',content:'Human-edited copy',expected:'copy-version',provenance:{format:'summary',source_sha256:'a'.repeat(64)}};
     if(url.startsWith('/api/variants'))return {id:'fixture',variants:[{name:'launch-copy',content:'Human-edited copy',provenance:{format:'summary',source_sha256:'a'.repeat(64)}}]};
     return {};
-  });f.loadRunner();
+  });f.loadRunner();voicesOn(f);
   await f.run("sMoreTools('fixture')");
   const sheet=()=>descendants(f.get('sheet'));
   assert.ok(sheet().some(node=>node.textContent==='Compare Google and local text'));
@@ -1556,7 +1563,7 @@ async function oneVocabulary(){
 // a voice, what each gate's decision does, and where a change comes back.
 async function honestBlogCopy(){
   const requests=[];let changed=null;
-  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/run-changes')return changed;return {};});f.loadRunner();
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/run-changes')return changed;return {};});f.loadRunner();voicesOn(f);
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),all=()=>text().join('\n');
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
   f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[{id:'one',name:'One',status:'ready',purposes:['reference']},{id:'two',name:'Two',status:'ready',purposes:['reference']}],profiles:[],agents:{codex:true}};studio.screen='new';studio.draft={...defaults,step:1,id:'',title:'A synthetic blog',goal:'Explain',audience:'Authors',profile:'',sources:[],manuscript:'',mode:'write',stop:'package',minutes:'10',operation:'a'.repeat(32)};sWizard()");
@@ -1620,7 +1627,7 @@ async function honestBlogCopy(){
 // without stopping, and a phone keeps one decision in the toolbar.
 async function sharedPattern(){
   const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',ahead:{steps_left:2,next_gate:'draft',next_stop:'Draft',jobs:2,seconds:180,dollars:null,spent:'3 minutes; the assistant reported no cost'},decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),note_stage:'review',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'REVIEW.md',status:'pending'}]};
-  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url==='/api/upload')return f.run('studio.api_upload');if(url==='/api/run-create')return found;return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();
+  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url==='/api/upload')return f.run('studio.api_upload');if(url==='/api/run-create')return found;return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();voicesOn(f);
   const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent);
   // The start form: one line says where this run stops, from the shared review level.
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
@@ -1748,7 +1755,7 @@ async function filesJourney(){
     if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
     if(url.startsWith('/api/run-'))return found;
     return {items:[],total:0};});
-  f.loadRunner();f.run('sHome()');
+  f.loadRunner();voicesOn(f);f.run('sHome()');
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),byId=id=>nodes().find(e=>e.id===id);
   // New blogs start on the writing desk; the files screen stays for the code that reaches it.
   assert.ok(!nodes().some(e=>e.className==='pick-card'&&e.textContent==='New blog from my files'),'Home starts new blogs on the desk');
@@ -2058,7 +2065,7 @@ async function voiceLinksJourney(){
     if(url==='/api/voice-links-import'&&data.purpose==='style-sample')return {...result(true),author:data.author,purpose:'style-sample',results:result(true).results.map(({byline,mismatch,kept,...row})=>row),counts:{...result(true).counts,mismatch:0},next_step:'Next, learn or update a style from these examples.'};
     if(url==='/api/voice-links-import'){imports++;return imports===1?{...result(false),remaining:1,counts:{...result(false).counts,pending:1}}:result(data.keep.length>0);}
     return {items:[],total:0};});
-  f.loadRunner();
+  f.loadRunner();voicesOn(f);
   const sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label),byId=id=>sheet().find(e=>e.id===id),has=pattern=>sheet().some(e=>pattern.test(e.textContent));
   await f.run('sVoiceTools()');
   // Links to posts are one of Create a voice's sources.
@@ -2133,7 +2140,7 @@ async function libraryAddJourney(){
     if(url==='/api/library-add-author'){renamed=true;return result();}
     if(url==='/api/library-add-samples'){marked=true;return result();}
     return {items:[],total:0};});
-  f.loadRunner();
+  f.loadRunner();voicesOn(f);
   const sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label),byId=id=>sheet().find(e=>e.id===id),has=pattern=>sheet().some(e=>pattern.test(e.textContent));
   await f.run('sLibraryAdd()');
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Add to the library');
@@ -2217,7 +2224,7 @@ async function libraryScreen(){
     if(url.startsWith('/api/voices'))return {profiles:[],samples:[{id:'a',name:'A post',author:'Avery'},{id:'b',name:'B notes',author:'Avery'}],candidates:[],pending:[]};
     if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'Clear',author:''},review_level:'balanced'},sources:[],profiles:[],default_voice:null,agents:{codex:true},styles:[]};
     return {items:[],total:0};});
-  f.loadRunner();
+  f.loadRunner();voicesOn(f);
   f.run("view='library'");await f.run('load()');
   for(const name of ['role','kind','author'])assert.equal(f.get('library-'+name+'-filter').hidden,false,name+' filter shows on the library');
   assert.deepEqual(f.get('library-kind').children.map(o=>o.textContent),['Any kind','Product announcement','How-to'],'the kinds come from the view');
@@ -2356,7 +2363,7 @@ async function wizardVoiceAndKind(){
     if(url==='/api/tool-action'&&data.action==='profile-save')return {profile:data.profile||'written',revision:2,status:'provisional',receipts:[]};
     if(url.startsWith('/api/article?'))return {title:'Uploaded draft',record:{writing_preferences:{audience:'Editors'},...(url.includes('styled')?{style:{style_id:'product-announcement',revision:1}}:{})},view:{}};
     return {items:[],total:0};});
-  f.loadRunner();
+  f.loadRunner();voicesOn(f);
   const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id),texts=select=>select.children.map(o=>o.textContent);
   const chosen=id=>{const select=byId(id);return select.children.find(o=>o.value===select.value)?.textContent;};
   const choose=(id,text)=>{const select=byId(id),option=select.children.find(o=>o.textContent===text);assert.ok(option,text+' in '+texts(select).join('|'));select.value=option.value;select.listeners.change();};
@@ -2470,7 +2477,7 @@ async function voicesAndStyles(){
     if(url==='/api/tool-action'){const data=JSON.parse(options.body);if(data.action==='source-purpose')return {source:data.source,revision:2,purposes:['reference',data.purpose],author:null,changed:true,receipts:[]};return {id:'b'.repeat(32),kind:'style-learn',status:'queued',metadata:{name:'Launch note',samples:['example']},attempts:0};}
     if(url==='/api/upload')return {files:[{filename:'LinkedIn · About',source:{id:'about'},state:'ready',chars:40,note:'',purpose:'author-background',author:'Synthetic Author'},{filename:'LinkedIn · A first article',source:{id:'article'},state:'ready',chars:400,note:'',purpose:'voice-sample',author:'Synthetic Author'}],receipts:[],state:'saved',next_step:'Every file has text.'};
     return {items:[]};
-  });f.loadRunner();
+  });f.loadRunner();voicesOn(f);
   const sheet=()=>descendants(f.get('sheet')),text=()=>sheet().map(e=>e.textContent),find=label=>sheet().find(e=>e.textContent===label);
   await f.run('sVoiceTools()');
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and styles');
@@ -2577,7 +2584,7 @@ async function runVoiceChange(){
     if(url.startsWith('/api/voice?'))return {id:'guest',name:'Guest Writer',revision:2,status:'provisional',guide:'A guide.',sample_ids:[],expected:'p1'};
     if(url==='/api/tool-action')return refuse?{__http:409,error:refuse}:{id:data.id,voice:{mode:'profile'},status:'voice-selected',receipts:[],run:found};
     return {items:[],total:0};});
-  f.loadRunner();
+  f.loadRunner();voicesOn(f);
   const page=()=>descendants(f.get('studio-page')),sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label);
   await f.run("sRoute('run','synthetic','status')");
   assert.ok(page().some(e=>e.textContent==='Voice: Synthetic Author · Kind of post: Product announcement'),page().map(e=>e.textContent).join('|'));
@@ -2624,8 +2631,70 @@ async function runVoiceChange(){
 }
 
 // Tools are not hidden: the library sheet opens Tools and Voices and styles directly, and Settings links to them.
+// The older voice tools wait behind one switch in Settings → Advanced, off by default: no
+// Write as, Default voice, Change the voice, voice learning, Create voices for every author,
+// voice-sample uploads or library marks. Kinds of post have their own screen. On, they return.
+async function voiceSwitch(){
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};
+  const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'draft',approval:'page',expected:'run-1',enabled:false,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},voice_name:'Synthetic Author',voice_mode:'profile',voice_profile:'voice',voice_revision:1,style_name:'Product announcement',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
+  let settings={defaults,shared_before:{engine:'codex',author:''},workspace:'/synthetic',voice:{profile_id:'voice',revision:1},voices:[{id:'voice',name:'Synthetic Author',revision:1}],features:{voice:false}};
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    if(url==='/api/run-settings'&&data){settings={...settings,features:data.features||settings.features};return settings;}
+    if(url==='/api/run-settings')return settings;
+    if(url.startsWith('/api/run?'))return found;
+    if(url.startsWith('/api/tools'))return {id:null,has_manuscript:false,jobs:[]};
+    if(url.startsWith('/api/voices'))return {profiles:[{id:'voice',name:'Synthetic Author',revision:1,status:'confirmed'}],samples:[],candidates:[],pending:[]};
+    if(url.startsWith('/api/styles'))return {styles:[{id:'product-announcement',name:'Product announcement',summary:'Lead with what is new.',kind:'seed',revision:1,status:'confirmed'}],samples:[],candidates:[],pending:[]};
+    if(url==='/api/run-options')return {settings,sources:[],profiles:[{id:'voice',name:'Synthetic Author',status:'confirmed'}],agents:{codex:true},default_voice:{scope:'personal',profile:'voice',name:'Synthetic Author',revision:1,status:'confirmed'},styles:[]};
+    if(url==='/api/team')return {};
+    return {items:[],total:0};});
+  f.loadRunner();f.set('settings',settings);f.set('defaults',defaults);f.run('studio.settings=settings');
+  const page=()=>descendants(f.get('studio-page')),text=()=>page().map(e=>e.textContent),sheet=()=>descendants(f.get('sheet')).map(e=>e.textContent);
+  // The page parts drawn once: the Voices item, Learn a voice from these, the voice-sample roles.
+  for(const id of ['upload-purpose','library-role']){const select=f.get(id);for(const value of ['reference','voice-sample','style-sample']){const option=new (f.get(id).constructor)('option');option.value=value;select.append(option);}}
+  f.run('sVoiceSwitchShown()');
+  assert.equal(f.get('go-voices').hidden,true,'no Voices item while off');assert.equal(f.get('library-learn-voice').hidden,true,'no Learn a voice from these');
+  for(const id of ['upload-purpose','library-role'])assert.deepEqual(f.get(id).children.map(o=>o.value),['reference','style-sample'],'no voice-sample choice in '+id);
+  // Settings: no Default voice; the switch is under Advanced, closed; saving posts it, and no voice.
+  f.run("studio.brand={};studio.team={};studio.screen='settings';sSettings()");
+  assert.equal(page().some(e=>e.id==='settings-voice'),false,'no Default voice while off');
+  const box=page().find(e=>e.id==='settings-voice-tools');assert.ok(box,'the switch is in Settings');assert.equal(box.checked,false);
+  let node=box,inside=null;while(node){if(node.tagName==='details'&&!inside)inside=node;node=node.parent;}
+  assert.ok(inside&&descendants(inside).some(e=>e.textContent==='Advanced'),'the switch sits under Advanced');assert.notEqual(inside.open,true,'Advanced is closed');
+  assert.ok(text().includes('Kinds of post')&&text().includes('Open kinds of post'),'Settings links to kinds of post');assert.equal(text().includes('Open voices and styles'),false);
+  await page().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  let sent=requests.filter(r=>r.url==='/api/run-settings'&&r.data).at(-1).data;
+  assert.deepEqual([sent.features,sent.features_before],[{voice:false},{voice:false}]);assert.equal('voice' in sent||'voice_before' in sent,false,'no default voice is posted while off');
+  // The old start: no Write as, and the tone shows; a new blog sends no profile.
+  f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[{id:'voice',name:'Synthetic Author',status:'confirmed'}],default_voice:{scope:'personal',profile:'voice',name:'Synthetic Author',revision:1,status:'confirmed'},agents:{codex:true},styles:[]};studio.screen='new';studio.draft={...studio.options.settings.defaults,step:0,id:'',title:'T',goal:'G',audience:'A',sources:[],manuscript:'',mode:'write',stop:'draft',minutes:'10',files:[]};sWizard()");
+  assert.equal(page().some(e=>e.id==='new-profile'),false,'no Write as while off');
+  assert.equal(f.run('JSON.stringify(sVoicePayload(studio.draft))'),'{}','no profile is sent');assert.equal(/Write as/.test(f.run('sVoiceSummary(studio.draft)')),false);
+  // A run: its voice is said, never changed here.
+  await f.run("sRoute('run','synthetic','status')");
+  assert.ok(text().some(t=>/^Voice: Synthetic Author/.test(t)),'the run still says its voice');assert.equal(text().includes('Change the voice'),false,'no Change the voice while off');
+  // Tools and the kinds of post screen.
+  f.run('sTools()');assert.ok(sheet().includes('Kinds of post'));assert.equal(sheet().includes('Voices and styles'),false);
+  await f.run('sMoreTools()');assert.ok(sheet().includes('Kinds of post'));assert.equal(sheet().includes('Voices and styles'),false);
+  f.run('sCloseSheet()');await f.run("sRoute('settings')");await f.run("sRoute('voices')");
+  assert.equal(f.get('title').textContent,'Kinds of post');
+  assert.deepEqual(f.get('actions').children.map(e=>e.textContent),['Create a style']);
+  assert.ok(text().includes('Product announcement')&&text().includes('Write a style guide'));
+  for(const gone of ['Voices','Create a voice','Write a voice guide','Create voices for every author','Every author in the team library'])assert.equal(text().includes(gone),false,gone+' is hidden while off');
+  const back=f.get('toolbar-lead').children[0];assert.ok(back,'Kinds of post goes Back');await back.listeners.click();assert.equal(f.run('studio.screen'),'settings');
+  assert.equal(f.get('go-settings').attributes['aria-current'],'page');
+  // On: Settings saves it, and the tools come back.
+  f.run("studio.screen='settings';sSettings()");const on=page().find(e=>e.id==='settings-voice-tools');on.checked=true;on.listeners.change();
+  await page().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
+  sent=requests.filter(r=>r.url==='/api/run-settings'&&r.data).at(-1).data;assert.deepEqual([sent.features,sent.features_before],[{voice:true},{voice:false}]);
+  assert.equal(f.run('sVoicesOn()'),true);assert.equal(f.get('go-voices').hidden,false);
+  for(const id of ['upload-purpose','library-role'])assert.ok(f.get(id).children.some(o=>o.value==='voice-sample'),'the voice-sample choice is back in '+id);
+  f.run("studio.screen='settings';sSettings()");assert.ok(page().some(e=>e.id==='settings-voice'),'Default voice is back');
+  await f.run("sRoute('run','synthetic','status')");assert.ok(text().includes('Change the voice'));
+  f.run("studio.screen='new';studio.draft.step=0;sWizard()");assert.ok(page().some(e=>e.id==='new-profile'),'Write as is back');
+}
+
 async function toolsAreNamed(){
-  const f=fixture(url=>{if(url.startsWith('/api/tools'))return {id:null,has_manuscript:false,jobs:[]};if(url.startsWith('/api/voices'))return {profiles:[],samples:[],candidates:[],pending:[]};if(url.startsWith('/api/styles'))return {styles:[],samples:[],candidates:[],pending:[]};return {items:[]};});f.loadRunner();
+  const f=fixture(url=>{if(url.startsWith('/api/tools'))return {id:null,has_manuscript:false,jobs:[]};if(url.startsWith('/api/voices'))return {profiles:[],samples:[],candidates:[],pending:[]};if(url.startsWith('/api/styles'))return {styles:[],samples:[],candidates:[],pending:[]};return {items:[]};});f.loadRunner();voicesOn(f);
   const sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label);
   f.run('sTools()');assert.ok(find('Tools'));assert.equal(sheet().some(e=>e.textContent==='More tools'),false);
   await find('Tools').listeners.click();assert.equal(f.get('sheet').children[0].children[0].textContent,'Tools');
