@@ -50,7 +50,9 @@ from or shaped with you first; or a draft). **Start** runs research (when ticked
 and the draft opens on the desk. On the desk, **Finishing** opens a side panel (a
 full-screen sheet on a phone) whose tools propose and change nothing until you apply:
 **Humanize** at light, medium or strong (numbers, names, quotes and links kept, and a
-rewrite that would change one flagged), **Proofread** (dashes, words that often read as
+rewrite that would change one flagged), **Apply a voice** (the draft rewritten part by part
+in one of your [voice guides](#voice-guides), keeping its structure, facts, numbers, names,
+quotes and links; a part where a fact changed is flagged), **Proofread** (dashes, words that often read as
 machine-written and repetition, checked at once, with **Fix** on each finding), **Check
 facts against sources** (each claim supported, not in your sources, or contradicted, with
 the passage, and **Add a source**), **Headline and opening**, **Feedback without a rewrite**
@@ -62,8 +64,9 @@ Each proposal shows before and after side by side; **Apply**, **Edit** or **Skip
 text in History. Suggestions wait on this computer until you decide; only what you apply
 is shared with a team. The rest of this section describes the step-by-step
 wizard that blogs started before the desk keep. **Your brief** asks for
-the topic and reader, **Write as** (your default voice, another saved voice, no
-particular voice, or **Learn a new voice…**) and **Kind of post** (a starter or
+the topic and reader, **Write as** (with the [older voice tools](#the-older-voice-tools) on:
+your default voice, another saved voice, no particular voice, or **Learn a new voice…**)
+and **Kind of post** (a starter or
 learned style: the shape of the piece, while the voice is how it sounds). A
 manuscript keeps its own voice unless you pick one. **Start writing** adds optional
 sources and research, and **Tone, author and brand**; the tone is a nudge on top
@@ -74,8 +77,9 @@ references in the wizard too. The assistant receives only selected source and
 voice context plus this blog's saved writing preferences, memories and explicitly
 selected team context. Oversized context is refused rather than silently cut.
 
-Voices and styles are described in [their own section](#voices-and-styles). A run's
-**About this blog** shows its voice and kind of post.
+Voice guides, kinds of post and the older voice tools are described in
+[their own section](#voice-guides). A run's **About this blog** shows its voice and kind of
+post.
 
 ## Start from a Google Doc
 
@@ -146,12 +150,37 @@ The brand repository, release and identity live in the shared settings file.
 Installed skill paths and release-check observations stay in Blog Studio's local
 data folder. Only the selected contract travels with a blog.
 
-## Voices and styles
+## Voice guides
+
+A **voice guide** says how a piece should sound: a name and a page of text about register,
+sentence length, openings and the words to use or avoid. **Voice guides** in the sidebar
+lists them with a line from each. **New voice guide** runs in three steps: a name; then
+**Write it**, or **From samples** with 3 to 20 posts, emails or notes pasted or uploaded
+(Markdown, text, HTML or DOCX) and **Make the guide**, one job that reads only those samples;
+then the guide's text to read and edit before **Save guide**. Samples are not added to the
+library. Open a guide to edit its name and text or retire it. A guide is saved where voice
+profiles always were (`profiles/`, or `.shared/voices` in a team workspace), so voices
+learned before are listed as guides. On the desk, **Finishing → Apply a voice** rewrites a
+draft in a guide; each part is previewed before and after, and you apply all, some or none.
+
+A **kind of post** (a style) is the shape of a kind of writing, such as a product
+announcement or a how-to: its parts, length and register. The start's first step chooses
+one. **Kinds of post** opens from Settings, Home's Set up before you write, or Tools.
+
+### The older voice tools
+
+Learning a voice from an author's posts, auditions, **Write as**, the default voice,
+**Change the voice**, voice samples, LinkedIn imports and **Create voices for every author**
+are off by default, while Blog Studio concentrates on writing well. **Settings → Advanced →
+Show the older voice tools** turns them on; then the Kinds of post screen is **Voices and
+styles** again and the rest of this section applies. Off, the page hides them, the server
+refuses them ("Voices are switched off in Blog Studio settings.") and new blogs write with
+their tone. Saved voices, samples and every blog's pinned voice stay as they are.
 
 A **voice** is how one person sounds; a **style** is the shape of a kind of writing,
 such as a product announcement or a how-to. A blog takes one of each: the style decides
 the structure, the voice decides the wording. In **New blog** they are **Write as** and
-**Kind of post**. **Voices** in the sidebar opens the Voices and styles screen; from a
+**Kind of post**. Settings → **Voices and styles** opens the screen; from a
 blog, **Tools → Voices and styles** opens the same list where a voice can be applied.
 
 **Write as** offers your default voice, another saved voice, no particular voice (the
@@ -219,7 +248,7 @@ refusal for one changes nothing. One permission confirms the batch, and one
 learning job per ticked author joins the queue, each reading up to twenty of the
 author's posts, newest first, which then become their voice samples. The sheet follows
 each job; **Review** opens a ready voice to save as provisional or confirm. It is offered
-on the Voices screen, the Team library and the result of **Add to library**.
+on the Voices and styles screen, the Team library and the result of **Add to library**.
 
 Every sample is a source in your reference library, so it follows the same sharing rules
 as any other source. Learned voices and styles stay provisional until you confirm them,

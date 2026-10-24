@@ -86,11 +86,15 @@ Once the page is open, use its controls to drive the work:
    **Outline** tab renames, reorders, adds and removes sections and writes the draft or
    one section from it; **Add a source** takes more sources at any time. **Finishing**
    opens a side panel of tools that propose changes: **Humanize** (light, medium or
-   strong), **Proofread**, **Check facts against sources**, **Headline and opening**,
+   strong), **Apply a voice** (in a guide from **Voice guides** in the sidebar, written by
+   hand or made from 3 to 20 samples), **Proofread**, **Check facts against sources**,
+   **Headline and opening**,
    **Feedback without a rewrite** and **Before publishing** (the pre-publish check,
    Repurpose into new blogs, and Send to Google Doc as suggestions). Each proposal shows
    before and after side by side; **Apply**, **Edit** or **Skip** it, or **Apply all**.
-   Nothing changes until you apply, and the earlier text stays in History.
+   Nothing changes until you apply, and the earlier text stays in History. Learning voices
+   from samples, **Write as** and the default voice are hidden for now, behind **Settings →
+   Advanced**.
    A Doc is read with this computer's Google sign-in, so it does not need to be shared.
    The files land in the **team library** unless you untick **Keep**; then they stay
    on this computer, though the blog's outline and draft may quote them and are

@@ -4,11 +4,21 @@ In a manuscript, choose **Tools**. From Blogs, use **Library and team tools
 → Tools** for global tasks. Normal writing and polishing require none of
 these options. Opening a tool starts no model, research or Google write.
 
-- **Voices and styles:** a voice is one author's; a style is a kind of writing. Open it from Home (Set up before you write), the sidebar's Voices, Settings or Tools.
-  Add samples by upload, links, a LinkedIn export or an existing source, learn a
-  provisional guide, edit, audition, explicitly confirm, export or retire.
-  Choosing a revision for an article is separate from changing defaults. Existing
-  articles keep their pins. Sparse samples do not establish biography or expertise.
+- **Voice guides** (the sidebar): a guide says how a piece should sound, as a name
+  and text. **New voice guide** takes text written by hand, or 3 to 20 pasted or
+  uploaded samples that **Make the guide** turns into text to read and edit before
+  saving; samples are not added to the library. Open a guide to edit or retire it.
+  Learned voices are listed as guides. Apply one from the desk's **Finishing → Apply a
+  voice**. Sparse samples do not establish biography or expertise.
+- **Kinds of post:** the shape of a kind of writing. Open it from Home (Set up before
+  you write), Settings or Tools; make one from examples (uploads, links, existing
+  sources) or write it, then edit, confirm, export or retire it.
+- **The older voice tools** are off by default (**Settings → Advanced → Show the older
+  voice tools**): learning a voice from an author's posts, links or a LinkedIn export,
+  auditions, **Write as**, **Default voice**, **Change the voice**, voice samples and
+  **Create voices for every author**. On, the Kinds of post screen is **Voices and
+  styles** again. Off, the page hides them, the server refuses them and new blogs write
+  with their tone; saved voices, samples and existing pins are kept.
 - **Interview me:** record, revise or skip answers; pause and resume from Blogs.
   Ask for one adaptive question or prepare an outline when enough substance exists.
   Read/edit the outline before explicitly starting the normal draft flow on that
@@ -44,7 +54,8 @@ while navigating tools but is not a cross-computer transcript or backup.
 **New blog from my files** on Home takes each upload with its role, facts, approved
 messaging or an example of the kind of post (changeable per file until Start), asks
 whether to find three angles or start from the point the person knows, and chooses the
-voice with **Write as**, the shape with **Kind of post** and the depth with **Length**.
+shape with **Kind of post**, the depth with **Length** and, with the older voice tools on,
+the voice with **Write as**.
 The Upload dialog's **Use this file as** offers the same roles. A draft's gate lists
 what the writing left for the author under **Needs you before publishing**.
 
@@ -52,13 +63,14 @@ what the writing left for the author under **Needs you before publishing**.
 finished blog, kept file, link and Google Doc, each with a role, author and kind of
 post. **Add to library** takes files, a list of links and a Doc in one sheet with one
 role, author and kind; **Each post's own author** imports first, reads each page's
-byline, then groups the posts by author to rename, merge, complete, mark as voice
-samples (on by default) and learn a voice per group, with the usual confirmation.
-Filters for role, kind and author; a selection learns a style or a voice from the
-items or starts a blog with them as examples. **From the library** on the files card
-picks items with their library role, changeable for that blog only; a learned kind
-of post pre-ticks its samples. **Settings → Default voice** names a confirmed voice
-for every new blog, and **Interview me** takes **Write as** too.
+byline, then groups the posts by author to rename, merge and complete (with the older
+voice tools on, also to mark as voice samples and learn a voice per group, with the usual
+confirmation). Filters for role, kind and author; a selection learns a style (or, with
+the older voice tools on, a voice) from the items or starts a blog with them as examples.
+**From the library** on the files card picks items with their library role, changeable
+for that blog only; a learned kind of post pre-ticks its samples. With the older voice
+tools on, **Settings → Default voice** names a confirmed voice for every new blog, and
+**Interview me** takes **Write as** too.
 
 **A run that stops** says what to do beside the error: **Open Status** and **What the
 assistant said** for a CLI failure, where the step time limit lives beside **Try again

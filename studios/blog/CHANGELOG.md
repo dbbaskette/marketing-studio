@@ -5,6 +5,30 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Voice guides and Apply a voice.** **Voice guides** replaces Voices in the sidebar. A
+  guide is a name and text: write it by hand, or paste or upload 3 to 20 samples and
+  **Make the guide**, then read and edit it before saving. Samples are not added to the
+  library, and voices learned before are listed as guides. On the desk, **Finishing →
+  Apply a voice** rewrites the draft in a guide part by part, keeping its structure, facts,
+  numbers, names, quotes and links; each part is previewed before and after, a part where
+  a fact changed is flagged, and you apply all, some or none.
+- **The older voice tools are hidden for now.** Learning voices from samples, auditions,
+  **Write as**, the default voice, **Change the voice**, voice samples in uploads and the
+  library, LinkedIn imports, links to posts as voice samples, **Create voices for every
+  author** and its author suggestions are off by default, behind **Settings → Advanced →
+  Show the older voice tools**. Off, new blogs write with their tone and the server refuses
+  those requests; saved voices, samples and every blog's pinned voice are kept. Kinds of
+  post (styles, including links to examples) have their own **Kinds of post** screen,
+  opened from Settings, Home and Tools.
+- **For maintainers:** `features.voice` in `.blog-run-settings.json`, read by
+  `studio.features`, `voices_on` and `require_voices` and saved by `blog_runner.settings`
+  with `features_before`; `management.old_voice_tool` refuses the older routes before
+  anything is read; `writing_defaults.for_create` and `blog_runner.default_voice` apply no
+  default voice while off. Tool job kinds `voice-guide` (`article_tools.guides`,
+  `guide_samples`, saved through `job-apply`; `GET /api/voice-guides`) and `finish-voice`
+  (`desk-finish` with `guide`; one whole-part proposal per rewritten part, the guide's text
+  in the payload while `desk_jobs._context` stays tone-only). Tests turn the switch on with
+  `isolation.voices_on(root)`.
 - **Finishing on the desk.** **Finishing** in the desk's toolbar opens a side panel (a
   full-screen sheet on a phone) of tools that propose and change nothing until you apply:
   **Humanize** (light, medium, strong; numbers, names, quotes and links kept, a rewrite
@@ -16,7 +40,7 @@ changes for authors first, then what changes for maintainers.
   pre-publish check, **Repurpose** into a new desk blog, and **Send to Google Doc as
   suggestions** for a blog started from a Doc). Each proposal shows before and after side by
   side with **Apply**, **Edit** and **Skip**, or **Apply all**; each Apply keeps the earlier
-  text in History. **Apply a voice** arrives with voice guides.
+  text in History.
 - **For maintainers:** `scripts/desk_finish.py`; tool job kinds `finish-humanize`,
   `finish-facts`, `finish-headline` and `finish-feedback` that write no part and return
   JSON read strictly when they settle; proposals wait in `.blog-runs/desk-proposals/` (never

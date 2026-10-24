@@ -1253,7 +1253,7 @@ Voices and styles, as today.
 `tests/isolation.py` (`voices_on(root)`, the test helper that turns it on in a disposable
 workspace); Test `tests/test_voice_switch.py` (new, `VoiceSwitchTests`).
 
-- [ ] **Step 1: Failing tests**
+- [x] **Step 1: Failing tests**
   - A fresh workspace reads `features == {'voice': False}` from `settings(root)` and
     `studio.voices_on(root)` is false.
   - Saving the settings form with `features: {voice: true}` and `features_before` equal to
@@ -1264,8 +1264,8 @@ workspace); Test `tests/test_voice_switch.py` (new, `VoiceSwitchTests`).
     settings were shown"); an unknown feature or a non-boolean is refused; nothing is saved.
   - A damaged `features` value reads as off.
   - `isolation.voices_on(root)` writes the switch for a disposable workspace.
-- [ ] **Step 2: Run** `HOME=$TMPDIR/h python3 -m unittest test_voice_switch -v`.
-- [ ] **Steps 3-5**: implement, pass, commit "A switch in Blog Studio settings for the old voice tools, off by default".
+- [x] **Step 2: Run** `HOME=$TMPDIR/h python3 -m unittest test_voice_switch -v`.
+- [x] **Steps 3-5**: implement, pass, commit "A switch in Blog Studio settings for the old voice tools, off by default".
 
 ### Task 4.2: Server enforcement while off
 
@@ -1292,7 +1292,7 @@ default (an explicit `--profile` in chat still pins), so `blog_runner.create` wr
 `{'mode': 'tone', 'tone': …}` and `run-options` reports `default_voice: None`. Desk blogs
 are tone-only already (`desk.create`, `desk_jobs._context`); a test keeps them so.
 
-- [ ] **Step 1: Failing tests** (`test_voice_switch.py`, a disposable workspace with a saved
+- [x] **Step 1: Failing tests** (`test_voice_switch.py`, a disposable workspace with a saved
   confirmed voice set as the personal default): each route above refused with the sentence
   through `management.dispatch`, nothing written; with the switch on each is accepted as
   before (or reaches its own validation); a run created while off writes Tone even with a
@@ -1300,9 +1300,9 @@ are tone-only already (`desk.create`, `desk_jobs._context`); a test keeps them s
   `style-sample` links preview is not refused; `run-options` has no default voice while off;
   an existing run's pinned voice and the saved profile and samples are untouched by turning
   it off; a desk blog's job payload has no voice.
-- [ ] **Step 2: Run**; then the full suite to find the existing voice tests that now fail;
+- [x] **Step 2: Run**; then the full suite to find the existing voice tests that now fail;
   turn the switch on in their `setUp` with `isolation.voices_on(self.root)`.
-- [ ] **Steps 3-5**: commit "Refuse the old voice tools on the server while the switch is off".
+- [x] **Steps 3-5**: commit "Refuse the old voice tools on the server while the switch is off".
 
 ### Task 4.3: Page: hide the old voice tools while off
 
@@ -1322,11 +1322,11 @@ are tone-only already (`desk.create`, `desk_jobs._context`); a test keeps them s
   Tools and Home, with Back; Settings' Elsewhere card and the Tools task say "Kinds of post".
 - Settings gains an **Advanced** disclosure, closed, with one check: "Show the older voice
   tools (learning voices from samples, Write as, default voice)", saved with the form.
-- [ ] **Step 1: Journeys**: off, none of the hidden controls is drawn on Settings, the old
+- [x] **Step 1: Journeys**: off, none of the hidden controls is drawn on Settings, the old
   start, a run, the Tools sheet, the library and the upload dialog; the `voices` screen is
   Kinds of post with styles only; Settings posts `features` and no default voice; on, each
   comes back (the existing voice journeys run with it on).
-- [ ] **Steps 2-5**: commit "Hide the old voice tools on the page while the switch is off".
+- [x] **Steps 2-5**: commit "Hide the old voice tools on the page while the switch is off".
 
 ### Task 4.4: Voice guides
 
@@ -1359,7 +1359,7 @@ item); Test `tests/test_voice_guides.py` (new), `check-management.cjs` (journey
   guide** and Cancel together. Making polls the job and fills step 3. A guide's sheet edits
   its name and text (**Save guide**) and **Retire this guide** (confirmed). With the switch
   on, a quiet card links to Voices and styles.
-- [ ] **Step 1: Failing tests**: listing reads existing learned voices as guides with
+- [x] **Step 1: Failing tests**: listing reads existing learned voices as guides with
   `says`; fewer than three or more than twenty samples refused; an upload read as text; an
   unreadable file refused by name; payload and guidance (no author, no audition, no
   library); a fake worker's result readable from `tool-job`; save by hand creates a
@@ -1367,7 +1367,7 @@ item); Test `tests/test_voice_guides.py` (new), `check-management.cjs` (journey
   switch off. Journeys: the screen lists guides, New voice guide by hand posts
   `profile-save`, from samples posts `job-create` kind `voice-guide` then fills the text,
   retire posts `profile-retire`, phone layout.
-- [ ] **Steps 2-5**: commit "Voice guides: write one by hand or make it from samples".
+- [x] **Steps 2-5**: commit "Voice guides: write one by hand or make it from samples".
 
 ### Task 4.5: `finish-voice`
 
@@ -1392,20 +1392,20 @@ Test `tests/test_desk_finish.py` (`VoiceTests`), `check-management.cjs` (`deskFi
   "No voice guides yet" with **Open voice guides**; **Apply the voice** runs it; per-section
   Before and After with Apply, Edit and Skip; **Apply all** for every unflagged section;
   a flagged section says a fact changed.
-- [ ] **Step 1: Failing tests**: guidance and payload carry the guide text, `_context` has
+- [x] **Step 1: Failing tests**: guidance and payload carry the guide text, `_context` has
   no voice; a retired or unknown guide refused; a ready result lands as one proposal per
   part with `before` the whole part and nothing changed; a changed number flagged; bad JSON
   unreadable; Apply all lands the unflagged parts with one `finishing` version each; a part
   edited since is not present; a fake worker end to end. Journey: pick a guide, run, preview
   per section, Apply all leaves the flagged one, Skip.
-- [ ] **Steps 2-5**: commit "Apply a voice: rewrite the draft in a voice guide, section by section".
+- [x] **Steps 2-5**: commit "Apply a voice: rewrite the draft in a voice guide, section by section".
 
 ### Task 4.6: Docs, CHANGELOG and checks
 
-- [ ] Docs where voices are described (`README.md`, `docs/capabilities.md`, `docs/runner.md`,
+- [x] Docs where voices are described (`README.md`, `docs/capabilities.md`, `docs/runner.md`,
   `references/page-tools.md`, `references/workspace/profiles.md`), the CHANGELOG
   (Unreleased): voice guides, Apply a voice, the switch.
-- [ ] Full checks as in Task 1.11; screenshots with synthetic content in a disposable
+- [x] Full checks as in Task 1.11; screenshots with synthetic content in a disposable
   workspace. No push or merge on this branch until the owner asks.
 
 ## Phase 5: docs and cleanup
