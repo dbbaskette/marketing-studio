@@ -5,107 +5,84 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
-- **Voice guides and Apply a voice.** **Voice guides** replaces Voices in the sidebar. A
-  guide is a name and text: write it by hand, or paste or upload 3 to 20 samples and
-  **Make the guide**, then read and edit it before saving. Samples are not added to the
-  library, and voices learned before are listed as guides. On the desk, **Finishing →
-  Apply a voice** rewrites the draft in a guide part by part, keeping its structure, facts,
-  numbers, names, quotes and links; each part is previewed before and after, a part whose
-  facts, code or shape changed is flagged and left out of Apply all, and you apply all, some
-  or none. Humanize and fact-check rewordings are flagged for changed code too.
-- **The older voice tools are hidden for now.** Learning voices from samples, auditions,
-  **Write as**, the default voice, **Change the voice**, voice samples in uploads and the
-  library, LinkedIn imports, links to posts as voice samples, **Create voices for every
-  author** and its author suggestions are off by default, behind **Settings → Advanced →
-  Show the older voice tools**. Off, new blogs write with their tone and the server refuses
-  those requests; saved voices, samples and every blog's pinned voice are kept. Kinds of
-  post (styles, including links to examples) have their own **Kinds of post** screen,
-  opened from Settings, Home and Tools.
-- **For maintainers:** `features.voice` in `.blog-run-settings.json`, read by
-  `studio.features`, `voices_on` and `require_voices` and saved by `blog_runner.settings`
-  with `features_before`; `management.old_voice_tool` refuses the older routes before
-  anything is read; `writing_defaults.for_create` and `blog_runner.default_voice` apply no
-  default voice while off. Tool job kinds `voice-guide` (`article_tools.guides`,
-  `guide_samples`, saved through `job-apply`; `GET /api/voice-guides`) and `finish-voice`
-  (`desk-finish` with `guide`; one whole-part proposal per rewritten part, the guide's text
-  in the payload while `desk_jobs._context` stays tone-only); `desk_finish.changes_structure`
-  flags changed code spans, fenced blocks or block counts; guide jobs are indexed in
-  `.blog-runs/voice-guides.json` and `guide-discard` lets one go. Tests turn the switch on with
-  `isolation.voices_on(root)`.
-- **Finishing on the desk.** **Finishing** in the desk's toolbar opens a side panel (a
-  full-screen sheet on a phone) of tools that propose and change nothing until you apply:
-  **Humanize** (light, medium, strong; numbers, names, quotes and links kept, a rewrite
-  that would change one flagged), **Proofread** (instant mechanical checks with **Fix** on
-  each finding), **Check facts against sources** (supported, not in your sources or
-  contradicted, with the passage, **Add a source** and **Keep it**), **Headline and
-  opening**, **Feedback without a rewrite** (comments shown in place, each a section note in
-  one click; it replaces Review a draft for desk blogs) and **Before publishing** (the
-  pre-publish check, **Repurpose** into a new desk blog, and **Send to Google Doc as
-  suggestions** for a blog started from a Doc). Each proposal shows before and after side by
-  side with **Apply**, **Edit** and **Skip**, or **Apply all**; each Apply keeps the earlier
-  text in History.
-- **For maintainers:** `scripts/desk_finish.py`; tool job kinds `finish-humanize`,
-  `finish-facts`, `finish-headline` and `finish-feedback` that write no part and return
-  JSON read strictly when they settle; proposals wait in `.blog-runs/desk-proposals/` (never
-  in the blog's tracked folder; the newest set per tool is indexed and older resolved sets
-  are let go), and what was sent to a Doc in `.blog-runs/desk-google/`, so a later send
-  leaves out what went before; routes `desk-finish`, `desk-apply`, `desk-skip`,
-  `desk-repurpose`, `desk-google-plan`, `desk-google-send` and `GET /api/desk-proofread`;
-  `desk-selection` `fix` takes the proofread finding as `instruction`; the editor's Google
-  plan and send are `manuscript_editor.google_plan` and `google_send`; the desk view reads
-  Google and publication links from the blog record again after a whole-draft note.
-- **Author and co-author starts.** New blogs start on the desk in three steps: the kind
-  of post; sources and settings for every way (files, links, Google Docs and team library
-  posts with their roles, kept with the blog unless **Keep in the team library** is ticked,
-  and then only at Start; **Search my sites** and **Search the web too**, both off; length
-  and tone); and what you have (**Just a topic**, with **Suggest three angles** offering
-  three editable cards from those sources; **An outline or notes**, with **Write from my
-  outline** or **Shape an outline with me first**; or **A draft**). After
-  **Start** nothing stops for you: research (when ticked), the outline and the draft run
-  one after another, the page says "Nothing needed from you" with the step under way and
-  one clock (estimated from recent steps here, and saying so when a step takes longer than
-  usual), offers Stop and Retry, and opens the draft (or, for Shape, the outline) on its
-  own. The desk gains an **Outline** tab (rename, reorder, add and remove sections, bring a
-  removed one back, edit their briefs, **Write the draft**, **Write this section**) and
-  **Add a source** in its sources panel. Home, New blog and the library's Write a blog from these open the new
-  start; blogs already started step by step keep their wizard and run.
-- **For maintainers:** `desk.create` takes `way` (`topic`, `outline`, `shape`) with
-  `desk/start.json` beside the draft; new tool job kinds `desk-angles` (before a blog
-  exists, keyed by the page operation), `desk-research` (the research plan, then Harness
-  Research or one web research job, with no gate), `desk-outline` and `desk-draft`;
-  `references/modules/desk-write.md`; routes `desk-angles` (and `GET /api/desk-angles`),
-  `desk-retry`, `desk-outline-save`, `desk-unremove`, `desk-draft` and `desk-sources`; an
-  `upload` entry may be a `link` read through the library's fetch (kept on its own site, and
-  read with Google Docs before the studio lock is taken); `desk-create` and `desk-sources`
-  take `keep`, the sources the server moves to the team library once the blog is made. A start's phase and
-  problem stay on this computer (`.blog-runs/desk-starts/`), and a decision first commits
-  desk leftovers under any blog this computer drives.
-  `blog_runner.FROM_OUTLINE`, `WRITING_NOTES` and `GAPS_OPEN` name sentences runs already
-  used, unchanged.
-- **The writing desk.** Blogs can be edited on the desk: notes per section and for the
-  whole draft, selection edits, and versions with compare and restore. **Polish a
-  document** and **Revise or review a draft** bring a pasted, uploaded or Google Doc draft
-  to the desk, with its kind of post, tone and an optional first pass (tighten and
-  proofread, or reshape to the kind of post). Each part saves as you type; a section's
-  note rewrites only what it asks for, keeping the rest word for word; selected text can
-  be rephrased, shortened, expanded, fixed or changed as asked. Every change keeps the
-  earlier text in History (the last twenty per part), and a form that is out of date is
-  refused rather than overwriting newer text. A note for the whole draft revises each
-  section in turn ("Revising section 2 of 5"); a section that fails is named and the rest
-  still go ahead. A finished step-by-step blog offers **Open on the desk**; its run is then
-  kept as it ended, to read, and the manuscript editor and run steps leave a desk blog to
-  the desk. In a team workspace, typing on the desk is kept on this computer, one commit
-  per editing session, and shared with the next change or when you leave the desk. Desk
-  blogs write with their tone only.
-- **For maintainers:** `scripts/desk.py` (the desk record under `desk/draft.json` and
-  `desk/versions/<part>.jsonl`, with `DRAFT.md` kept in step), `scripts/desk_jobs.py` (the
-  `desk-section`, `desk-revise-all`, `desk-selection` and `desk-first-pass` tool job kinds
-  and how a ready result settles), `references/modules/desk-edit.md`, `POST
-  /api/desk-<action>`, `GET /api/desk` and `GET /api/desk-versions`, and
-  `blog_runner.shared_guidance` (the house guide, kind of post and length runs already
-  used, unchanged for runs). The worker settles a desk result as soon as it is ready and
-  records it as a team decision; reading the desk never writes. `POST /api/desk-share`
-  shares a desk's locally kept edits.
+- **The writing desk.** New blogs are made on one editing desk, with no stops along the
+  way.
+  - **Three ways in.** **New blog** asks what you are writing (a kind of post), takes
+    your sources and settings (files, links, Google Docs and team library posts, each
+    facts, approved messaging or an example; **Search my sites** and **Search the web
+    too**, both off; length and tone), then what you have: **Just a topic** (with
+    **Suggest three angles** if you like), **An outline or notes** (write from it, or
+    shape it with you first), or **A draft** (pasted, uploaded or a Google Doc, with an
+    optional first pass). Sources stay with the blog unless you tick **Keep in the team
+    library**. After **Start** the page says "Nothing needed from you" and opens the draft
+    on the desk when it is ready. An interview's outline and a saved blog's **Open writing
+    run** start here too.
+  - **The desk.** The draft is one page: the title, the opening and a card per section,
+    saved as you type. A note under a section rewrites only what it asks for; **Write
+    again** writes it fresh; a note for the whole draft revises every section in turn.
+    Select text to rephrase, shorten, expand, fix or ask for a change. **History** keeps
+    the last twenty versions of each part, with a comparison and **Restore**. The
+    **Outline** tab renames, reorders, adds and removes sections and writes from them.
+    **Add a source** takes more at any time, and anything the writer could not settle is
+    listed under **Needs you before publishing**, never in the prose.
+  - **Finishing.** A side panel of tools that propose and change nothing until you apply:
+    **Humanize** (light, medium, strong), **Proofread**, **Check facts against sources**,
+    **Headline and opening**, **Feedback without a rewrite**, **Apply a voice** and
+    **Before publishing** (the pre-publish check, **Repurpose** into a new blog, and **Send
+    to Google Doc** as suggestions). Each change shows before and after with **Apply**,
+    **Edit** and **Skip**, or **Apply all**; a change that would alter a fact, code or a
+    part's shape is flagged and left for you. Each Apply keeps the earlier text in History.
+  - **Voice guides.** **Voice guides** replaces Voices in the sidebar: a name and a page of
+    text, written by hand or made from 3 to 20 samples, then read and edited before saving.
+    Voices learned before are listed as guides. **Kinds of post** has its own screen.
+  - **The older voice tools are hidden for now.** Learning voices from samples, auditions,
+    **Write as**, the default voice, **Change the voice**, voice samples, LinkedIn imports
+    and **Create voices for every author** are off, behind **Settings → Advanced → Show the
+    older voice tools**. New blogs write with their tone. Saved voices, samples and every
+    blog's pinned voice are kept.
+  - **Older blogs keep their path.** Blogs started step by step continue through outline,
+    draft, review and handoff as before, and a finished one offers **Open on the desk**.
+    The old new-blog wizard and **New blog from my files** are gone from the page; chat
+    runs work as they did.
+- **For maintainers: the writing desk.**
+  - **The desk record.** `scripts/desk.py`: `desk/draft.json` and
+    `desk/versions/<part>.jsonl`, with `DRAFT.md` kept in step; `desk.create` takes `way`
+    (`draft`, `topic`, `outline`, `shape`) and `article` for a saved draft, with
+    `desk/start.json` beside the draft; routes `POST /api/desk-<action>`, `GET /api/desk`
+    and `GET /api/desk-versions`; `POST /api/desk-share` shares a desk's locally kept
+    edits. A start's phase and problem stay on this computer (`.blog-runs/desk-starts/`),
+    and a decision first commits desk leftovers under any blog this computer drives.
+  - **Desk jobs.** `scripts/desk_jobs.py` on the tool queue: `desk-section`,
+    `desk-revise-all`, `desk-selection`, `desk-first-pass`, `desk-angles` (before a blog
+    exists, keyed by the page operation), `desk-research` (the research plan, then Harness
+    Research or one web research job, with no gate), `desk-outline` and `desk-draft`, with
+    `references/modules/desk-edit.md` and `desk-write.md`. The worker settles a result as
+    soon as it is ready and records it as a team decision; reading the desk never writes.
+    An `upload` entry may be a `link` read through the library's fetch; `desk-create` and
+    `desk-sources` take `keep`, the sources the server moves to the team library once the
+    blog is made. `blog_runner.shared_guidance`, `FROM_OUTLINE`, `WRITING_NOTES` and
+    `GAPS_OPEN` name what runs already used, unchanged for runs.
+  - **Finishing.** `scripts/desk_finish.py`: job kinds `finish-humanize`, `finish-facts`,
+    `finish-headline`, `finish-feedback` and `finish-voice` (`desk-finish` with `guide`;
+    the guide's text in the payload while `desk_jobs._context` stays tone-only) that write
+    no part and return JSON read strictly; proposals wait in `.blog-runs/desk-proposals/`
+    and Google sends in `.blog-runs/desk-google/`; routes `desk-finish`, `desk-apply`,
+    `desk-skip`, `desk-repurpose`, `desk-google-plan`, `desk-google-send` and `GET
+    /api/desk-proofread`; `desk_finish.changes_structure` flags changed code, blocks or
+    shape; the editor's Google plan and send are `manuscript_editor.google_plan` and
+    `google_send`.
+  - **Voice guides and the switch.** `features.voice` in `.blog-run-settings.json`, read by
+    `studio.features`, `voices_on` and `require_voices` and saved by `blog_runner.settings`
+    with `features_before`; `management.old_voice_tool` refuses the older routes before
+    anything is read; no default voice applies while off. Job kind `voice-guide`
+    (`article_tools.guides`, `guide_samples`, `job-apply`, `GET /api/voice-guides`, indexed
+    in `.blog-runs/voice-guides.json`, `guide-discard`). Tests turn the switch on with
+    `isolation.voices_on(root)`.
+  - **The page.** `assets/management/desk.js` beside `runner.js`. The old wizard
+    (`newBlog`, `sWizard`, the from-files screen, `sStartBlog`, the per-blog brand choice,
+    Where this run stops and their research and stops helpers) is removed; `screen=new`
+    opens the desk start. The gates, the angles gate for older from-files runs, the
+    manuscript editor and the server's `run-create` stay.
 - **Select all in the Team library.** Tick **Select all on this page**, or, once anything
   is ticked, **Select all N matching** to tick every item the filters match. Ticks stay as
   you page and change the filters; the selection bar says how many are out of view. A
