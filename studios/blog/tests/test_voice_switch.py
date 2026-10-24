@@ -195,7 +195,30 @@ class EnforcementTests(EnforcementCase):
                 'files': [{'linkedin': {'filename': 'export.zip', 'content': 'SGk='}}],
             },
         ),
+        (
+            'upload',
+            {
+                'operation': 'a2' * 16,
+                'filename': 'about.md',
+                'content': 'SGk=',
+                'purpose': 'author-background',
+            },
+        ),
+        (
+            'upload',
+            {
+                'operation': 'a3' * 16,
+                'purpose': 'author-background',
+                'files': [{'filename': 'about.md', 'content': 'SGk='}],
+            },
+        ),
     )
+
+    def test_author_suggestions_are_refused_while_off(self):
+        with self.assertRaisesRegex(ValueError, OFF):
+            management.view(self.root, 'library-authors', {})
+        self.on()
+        self.assertIn('authors', management.view(self.root, 'library-authors', {}))
 
     def test_each_old_voice_route_is_refused_while_off_and_reached_when_on(self):
         for route, data in self.ROUTES:

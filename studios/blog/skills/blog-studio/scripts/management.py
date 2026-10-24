@@ -2147,7 +2147,8 @@ def old_voice_tool(route, data):
         return bool(data.get('profile'))
     if route == 'upload':
         files = data.get('files') if isinstance(data.get('files'), list) else []
-        return data.get('purpose') == 'voice-sample' or any(
+        # Voice samples, an author's background (their About text) and LinkedIn exports.
+        return data.get('purpose') in ('voice-sample', 'author-background') or any(
             isinstance(entry, dict) and 'linkedin' in entry for entry in files
         )
     return False
@@ -2491,6 +2492,8 @@ def view(root, name, query):
         import library_add
 
         if name == 'library-authors':
+            # Create voices for every author and its author suggestions: an older voice tool.
+            studio.require_voices(root)
             return library_add.authors(root)
         return library_add.matching(
             root,
