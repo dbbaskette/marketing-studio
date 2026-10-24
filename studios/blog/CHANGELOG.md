@@ -20,7 +20,9 @@ changes for authors first, then what changes for maintainers.
 - **For maintainers:** `scripts/desk_finish.py`; tool job kinds `finish-humanize`,
   `finish-facts`, `finish-headline` and `finish-feedback` that write no part and return
   JSON read strictly when they settle; proposals wait in `.blog-runs/desk-proposals/` (never
-  in the blog's tracked folder); routes `desk-finish`, `desk-apply`, `desk-skip`,
+  in the blog's tracked folder; the newest set per tool is indexed and older resolved sets
+  are let go), and what was sent to a Doc in `.blog-runs/desk-google/`, so a later send
+  leaves out what went before; routes `desk-finish`, `desk-apply`, `desk-skip`,
   `desk-repurpose`, `desk-google-plan`, `desk-google-send` and `GET /api/desk-proofread`;
   `desk-selection` `fix` takes the proofread finding as `instruction`; the editor's Google
   plan and send are `manuscript_editor.google_plan` and `google_send`; the desk view reads
