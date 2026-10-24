@@ -1,9 +1,7 @@
 /* Blog Studio's own layouts on the shared Golden Gate-inspired shell. Controls, dialogs,
    steps, choice cards, tables and every colour come from style.css. */
 .studio-hidden-controls{display:none}
-.studio-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));gap:1rem}
 .blog-search{max-width:28rem}
-.wizard-foot{display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap}
 .source-choices{display:grid;gap:.5rem;max-height:20rem;overflow:auto}
 .source-choice{display:flex;gap:.7rem;align-items:flex-start;padding:.7rem;border:1px solid var(--hair);border-radius:12px;background:var(--paper)}
 .source-choice input{width:1.2rem;height:1.2rem;flex:none;margin-top:.2rem}
@@ -50,14 +48,13 @@
 .import-post-list label{display:flex;align-items:start;gap:.7rem}.import-post-list input{width:auto}.import-post-list a{display:block}
 .import-selection-tools,.import-actions{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap;margin:1rem 0}
 @media(min-width:1100px){.gate{grid-template-columns:minmax(0,1fr) 18rem}}
-@media(max-width:600px){.wizard-foot>*{flex:1}.pagination{flex-wrap:wrap}}
+@media(max-width:600px){.pagination{flex-wrap:wrap}}
 
 .manuscript-input { width:100%; min-height:22rem; resize:vertical; font:inherit; line-height:1.6; box-sizing:border-box; }
 .manuscript-original { white-space:pre-wrap; overflow-wrap:anywhere; max-height:24rem; overflow:auto; }
 .editor-suggestions { display:grid; gap:1rem; }
 
 /* Task-first writing: quiet reading surfaces, one next action per step. */
-.workflow-next{border-top:1px solid var(--hair);padding-top:1rem;display:flex;justify-content:flex-end}
 .writing-changes{background:var(--paper);border:1px solid var(--hair);border-radius:12px;overflow:hidden}
 .writing-change{padding:1.2rem;border-bottom:1px solid var(--hair);overflow-wrap:anywhere}
 .writing-change:last-child{border-bottom:0}
@@ -68,7 +65,7 @@
 .change-after{padding:.65rem .8rem;background:var(--selection);border-radius:6px;white-space:pre-wrap}
 .change-reason{margin-top:.75rem;font-size:.95rem}
 .finish-summary{padding-left:1.25rem}.finish-summary li{padding:.5rem 0;border-bottom:1px solid var(--hair);overflow-wrap:anywhere}
-@media(max-width:600px){.workflow-next .button{width:100%}.writing-change{padding:1rem}}
+@media(max-width:600px){.writing-change{padding:1rem}}
 .finish-selection{display:grid;gap:.8rem}.finish-change{padding:.8rem 0;border-bottom:1px solid var(--hair);overflow-wrap:anywhere}
 .writing-change details{margin-top:.8rem}.finish-change:last-child{border-bottom:0}
 
@@ -117,7 +114,6 @@
 .research-choices[hidden],.site-choices[hidden]{display:none}
 .site-choices{display:grid;gap:.6rem;margin-top:.75rem;padding:.75rem;border:1px solid var(--hair);border-radius:12px;background:var(--paper)}
 .site-choices .check span{overflow-wrap:anywhere}
-.research-from .research-scope{margin-top:.6rem}
 
 /* The library's selection bar: the toolbar's material, shown only while something is ticked.
    It stays in view below the toolbar; on a phone it sits above the bar of screens. */

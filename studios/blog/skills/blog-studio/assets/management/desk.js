@@ -75,13 +75,13 @@ function sDeskKinds(held){
 
 // 2. Sources and settings, for every way of working; research and length for new writing.
 function sDeskSettings(held){
-  const form=sNode('form','narrow desk-start'),problem=sNode('p','problem');problem.setAttribute('role','alert');
+  // A refused role change is said here after the card is drawn again.
+  const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
   const again=()=>sDeskStartAgain(held);
   const go=sNode('button','button button-filled','Continue');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
-  form.append(sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;},{desk:true}));
+  form.append(sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}));
   if(sDeskWriting(held))form.append(sCard('Research before the writing',sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>again()),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'),sNode('p','quiet','Off unless ticked. It runs before the outline, with no stop for you.')));
-  const length={mode:'write',get length(){return held.length;},set length(value){held.length=value;}};
-  form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(length,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
+  form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(held,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
   form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
   form.addEventListener('submit',event=>{event.preventDefault();if(studio.busy)return;if(sDeskWriting(held)&&held.searchSites&&!sChosenSites(held.from).length){problem.textContent=sResearchWord('no_sites')||'Choose at least one of your sites, or untick Search my sites.';return;}held.step=2;sTop();sDeskStart();});
   return form;
@@ -232,9 +232,9 @@ async function sDeskGo(held){
 // the team library when it is added.
 function sDeskSourcesSheet(held){
   const adding=held.adding||(held.adding={files:[],role:'material',keep:false,style:held.view.style?.style_id||''});
-  const problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
+  const problem=sNode('p','sheet-error',adding.problem||'');problem.setAttribute('role','alert');delete adding.problem;
   let done;
-  const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!access.actions.edit;},{desk:true,keepWhen:'Ticked ones go to the team library when you add them.'});
+  const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!access.actions.edit;},{keepWhen:'Ticked ones go to the team library when you add them.'});
   done=sButton('Add to this draft',async button=>{
     const ready=adding.files.filter(file=>file.state==='ready');if(!ready.length){problem.textContent='Add a file, a link, a Google Doc or a library post with text first.';return;}
     await busy(button,'Adding…',async()=>{try{await sDeskFlush(held);const before=held.view;held.view=await api('desk-sources',{id:held.id,sources:sDeskUploads(ready),library:sDeskLibraryPicks(ready),...sDeskKept(ready)});held.adding=null;sCloseSheet();sToast(ready.length===1?'Added. Later rewrites read it.':'Added. Later rewrites read them.');sDeskRefresh(held,before);}catch(error){problem.textContent=error.message;}});
