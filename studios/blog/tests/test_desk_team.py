@@ -136,6 +136,122 @@ class DeskTeamTests(TeamCase):
             support.git(self.remote, 'show', 'main:blogs/' + ident + '/DRAFT.md'),
         )
 
+    def finish_view(self):
+        return management.view(self.root, 'desk', {'id': [self.made['id']]})
+
+    def finish_worker(self, content):
+        import json
+
+        def worker(engine, payload, guidance, **options):
+            text = content if isinstance(content, str) else json.dumps(content)
+            return {'content': text, 'notes': ''}
+
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+
+    def test_finishing_leaves_the_team_workspace_clean_at_every_step(self):
+        import secrets
+
+        ident = self.made['id']
+        clean = lambda: self.assertEqual(gitstate.changed(self.found), [])  # noqa: E731
+        # An unreadable result: said on the job, nothing to record.
+        management.dispatch(
+            self.root, 'desk-finish', {'id': ident, 'seen': 1, 'tool': 'humanize', 'level': 'light'}
+        )
+        self.finish_worker('not json')
+        clean()
+        self.assertIn('cannot read', self.finish_view()['jobs'][-1]['error'])
+        # Proofread reads only.
+        remote = self.remote_commits()
+        management.view(self.root, 'desk-proofread', {'id': [ident]})
+        clean()
+        self.assertEqual(self.remote_commits(), remote)
+        # Applying a headline is a decision, shared; its sibling is skipped.
+        management.dispatch(self.root, 'desk-finish', {'id': ident, 'seen': 1, 'tool': 'headline'})
+        self.finish_worker(
+            {'titles': [{'text': 'New title A'}, {'text': 'New title B'}], 'openings': []}
+        )
+        shown = self.finish_view()
+        management.dispatch(
+            self.root,
+            'desk-apply',
+            {
+                'id': ident,
+                'seen': shown['revision'],
+                'job': shown['finishing']['headline']['job'],
+                'items': [{'id': 'p1'}],
+            },
+        )
+        clean()
+        self.assertEqual(self.remote_commits(), self.local_commits())
+        self.assertTrue(
+            support.git(self.remote, 'show', 'main:blogs/' + ident + '/DRAFT.md').startswith(
+                '# New title A'
+            )
+        )
+        # A repurposed copy is a new blog, shared, once.
+        job = management.dispatch(
+            self.root,
+            'tool-action',
+            {
+                'action': 'job-create',
+                'kind': 'repurpose',
+                'id': ident,
+                'operation': secrets.token_hex(16),
+                'format': 'linkedin',
+                'words': 100,
+            },
+        )
+        saved = tool_jobs.read(self.root, job['id'])
+        saved.update(status='ready', result={'content': 'A short post.', 'notes': ''})
+        tool_jobs.write(self.root, saved)
+        made = management.dispatch(
+            self.root,
+            'desk-repurpose',
+            {'id': ident, 'job': job['id'], 'title': 'Copy post', 'content': 'A short post.'},
+        )['made']
+        clean()
+        self.assertTrue(
+            support.git(self.remote, 'ls-tree', 'main', 'blogs/' + made['id'] + '/DRAFT.md')
+        )
+        # Skip records nothing, so it leaves a result an older process finished for the next
+        # request that is shared, never uncommitted.
+        management.dispatch(
+            self.root,
+            'desk-finish',
+            {
+                'id': ident,
+                'seen': self.finish_view()['revision'],
+                'tool': 'humanize',
+                'level': 'light',
+            },
+        )
+        self.finish_worker(
+            {
+                'suggestions': [
+                    {'part': self.part, 'before': 'First text.', 'after': 'The first text.'}
+                ]
+            }
+        )
+        humanize = self.finish_view()['finishing']['humanize']['job']
+        queued = management.dispatch(
+            self.root,
+            'desk-note',
+            {
+                'id': ident,
+                'seen': self.finish_view()['revision'],
+                'part': self.part,
+                'note': 'More.',
+            },
+        )
+        ready = tool_jobs.read(self.root, queued['working']['id'])
+        ready.update(
+            status='ready', result={'content': 'Rewritten elsewhere.', 'notes': ''}, finished_at='x'
+        )
+        tool_jobs.write(self.root, ready)
+        management.dispatch(self.root, 'desk-skip', {'id': ident, 'job': humanize, 'items': ['p1']})
+        clean()
+        self.assertFalse(tool_jobs.read(self.root, ready['id']).get('settled_at'))
+
     def save(self, seen, text, session='c' * 16):
         return management.dispatch(
             self.root,

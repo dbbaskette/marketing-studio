@@ -23,10 +23,14 @@ TOOLS = {
 }
 KINDS = tuple(TOOLS)
 JOB = re.compile(r'[a-f0-9]{32}')
-ITEM = re.compile(r'p[0-9]{1,3}')
 ITEMS = 200  # proposals in one set
+DAY = 86_400  # an older set no longer shown is let go after this long
+LATEST = 'latest.json'  # the newest set for each tool, so a poll reads only those
 GONE = 'That text is no longer in this part, so the suggestion was not applied. Skip it.'
 NONE_LEFT = 'None of these suggestions match the text now, so nothing was applied.'
+EMPTY = (
+    'Write the words to use. To cut text, edit the part itself; a suggestion is not applied empty.'
+)
 
 
 def _require_lock():
@@ -64,7 +68,46 @@ def keep(root, ident, job, kind, items, **extra):
         ],
     }
     studio.write_json(_path(root, ident, job), record)
+    newest = _latest(root, ident)
+    newest[TOOLS[kind]] = job
+    studio.write_json(studio.inside(_folder(root, ident), LATEST), newest)
+    _prune(root, ident, set(newest.values()))
     return record
+
+
+def _latest(root, ident):
+    """{tool: job} for the newest set of each tool, rebuilt from the sets when missing."""
+    target = studio.inside(_folder(root, ident), LATEST)
+    try:
+        found = studio.read_json(target) if target.is_file() and not target.is_symlink() else None
+    except (ValueError, OSError):
+        found = None
+    if isinstance(found, dict) and all(
+        tool in TOOLS.values() and isinstance(job, str) and JOB.fullmatch(job)
+        for tool, job in found.items()
+    ):
+        return found
+    newest = {}
+    for value in sets(root, ident):
+        newest[TOOLS[value['kind']]] = value['job']
+    return newest
+
+
+def _prune(root, ident, shown):
+    """Let go of sets no longer shown once nothing in them is open, or after a day."""
+    import time
+
+    folder = _folder(root, ident)
+    for target in sorted(folder.glob('*.json')) if folder.is_dir() else []:
+        if not JOB.fullmatch(target.stem) or target.stem in shown or target.is_symlink():
+            continue
+        try:
+            value = studio.read_json(target)
+            done = not any(item.get('state') == 'open' for item in value.get('items', []))
+            if done or time.time() - target.stat().st_mtime > DAY:
+                target.unlink()
+        except (ValueError, OSError, AttributeError):
+            continue
 
 
 def read(root, ident, job):
@@ -118,10 +161,15 @@ def present(draft, item):
 
 
 def summary(root, ident, draft):
-    """The newest set for each tool, as the panel shows it."""
+    """The newest set for each tool, as the panel shows it. Only those sets are read."""
     newest = {}
-    for value in sets(root, ident):
-        newest[TOOLS[value['kind']]] = value
+    for tool, job in _latest(root, ident).items():
+        try:
+            value = read(root, ident, job)
+        except (ValueError, OSError):
+            continue
+        if TOOLS.get(value.get('kind')) == tool:
+            newest[tool] = value
     return {
         tool: {
             **value,
@@ -184,6 +232,8 @@ def apply(root, ident, seen, job, chosen):
     for item, after in picks:
         part = item['part']
         try:
+            if not after.strip():
+                raise ValueError(EMPTY)
             text = texts[part] if part in texts else desk.text_of(draft, part)
             fits = text == item['before'] if item.get('whole') else text.count(item['before']) == 1
             if not item['before'] and not item.get('whole'):
@@ -215,6 +265,9 @@ def apply(root, ident, seen, job, chosen):
         desk.keep(root, ident, part, before, 'finishing')
         desk._set(draft, part, text)
         changed.append(part)
+    if changed:
+        desk._write(root, ident, draft, changed)
+    # Only once the draft is written are the proposals marked applied.
     for item in applied:
         item['state'] = 'applied'
         if item.get('group'):
@@ -222,8 +275,6 @@ def apply(root, ident, seen, job, chosen):
                 if other.get('group') == item['group'] and other['state'] == 'open':
                     other['state'] = 'skipped'  # An alternative to the one chosen.
     studio.write_json(_path(root, ident, job), found)
-    if changed:
-        desk._write(root, ident, draft, changed)
     return {'applied': len(applied), 'left': left}
 
 
@@ -235,11 +286,13 @@ def skip(root, ident, job, ids):
     items = {item['id']: item for item in found['items']}
     if any(not isinstance(name, str) or name not in items for name in ids):
         raise ValueError('Choose suggestions from this set.')
-    for name in ids:
+    skipped = 0
+    for name in set(ids):
         if items[name]['state'] == 'open':
             items[name]['state'] = 'skipped'
+            skipped += 1
     studio.write_json(_path(root, ident, job), found)
-    return {'skipped': len(ids)}
+    return {'skipped': skipped}
 
 
 # Proofread: mechanical checks in process, no job. Advisory, never an authorship verdict.
@@ -364,12 +417,52 @@ def _finding(part, text, rule, start, target, spans=None):
     }
 
 
+LIST_LINE = re.compile(r'[ \t]*(?:[-*+]|\d{1,3}[.)])[ \t]')
+
+
+def _mask_indented(text):
+    """Indented code (four spaces or a tab after a blank line, outside a list) as spaces of
+    the same length, so findings keep their places and code is never read as prose."""
+    out, code, listed, blank = [], False, False, True
+    for line in text.split('\n'):
+        indented = line.startswith(('    ', '\t'))
+        if not line.strip():
+            out.append(line)
+            blank = True
+            continue
+        if indented and (code or (blank and not listed)):
+            code, blank = True, False
+            out.append(' ' * len(line))
+            continue
+        code = False
+        if LIST_LINE.match(line):
+            listed = True
+        elif not indented:
+            listed = False
+        out.append(line)
+        blank = False
+    return '\n'.join(out)
+
+
+def _clean(text):
+    from text_checks import mask_protected
+
+    return mask_protected(_mask_indented(text))
+
+
+def _units(paragraph):
+    """A paragraph, or each item of a list on its own: parallel items repeat by design."""
+    starts = [m.start() for m in re.finditer(r'(?m)^' + LIST_LINE.pattern, paragraph)]
+    if not starts:
+        return [(0, paragraph)]
+    cuts = ([0] if starts[0] else []) + starts + [len(paragraph)]
+    return [(a, paragraph[a:b]) for a, b in zip(cuts, cuts[1:], strict=False)]
+
+
 def _repetition(part, text):
     """Within one part: an AI-tell sentence opener, two sentences in a row with the same
     first word, and a long word three times in one paragraph."""
-    from text_checks import mask_protected
-
-    clean = mask_protected(text)
+    clean = _clean(text)
     spans = _sentences(text)
     starters = {word.casefold() for word in _listed('sentence-starters.txt')}
     found, previous = [], None
@@ -387,22 +480,23 @@ def _repetition(part, text):
             found.append(_finding(part, text, 'repeated-start', begin, word, spans))
         previous = word
     for paragraph in re.finditer(r'\S[\s\S]*?(?=\n[ \t]*\n|\Z)', clean):
-        seen = {}
-        for match in WORD.finditer(paragraph.group()):
-            word = match.group().casefold()
-            if len(word) < 6:
-                continue
-            seen[word] = seen.get(word, 0) + 1
-            if seen[word] == 3:
-                start = paragraph.start() + match.start()
-                found.append(_finding(part, text, 'repeated-word', start, match.group(), spans))
+        for offset, unit in _units(paragraph.group()):
+            seen = {}
+            for match in WORD.finditer(unit):
+                word = match.group().casefold()
+                if len(word) < 6:
+                    continue
+                seen[word] = seen.get(word, 0) + 1
+                if seen[word] == 3:
+                    start = paragraph.start() + offset + match.start()
+                    found.append(_finding(part, text, 'repeated-word', start, match.group(), spans))
     return found
 
 
 def _openers(draft):
     found, seen = [], {}
     for section in draft['sections']:
-        paragraph = section['text'].strip().split('\n\n')[0]
+        paragraph = _clean(section['text']).strip().split('\n\n')[0]
         opener = ' '.join(paragraph.lower().split()[:8])
         if len(opener.split()) >= 6:
             if opener in seen:
@@ -419,7 +513,7 @@ def proofread(root, ident):
     draft = desk.read(root, ident)
     places = _offsets(draft)
     findings = []
-    for hit in lint(desk.join(draft), proof_rules())['findings']:
+    for hit in lint(_mask_indented(desk.join(draft)), proof_rules())['findings']:
         if 'start' not in hit:
             continue
         for part, offset, text in places:
@@ -622,13 +716,26 @@ def _prose_parts(draft):
     return {'opening'} | {s['id'] for s in draft['sections']}
 
 
-def _read_humanize(draft, found):
-    rows = found.get('suggestions') if isinstance(found, dict) else None
+def _rows(found, key, fields):
+    """The result's rows, each a dict whose named fields are text. A row of another shape is
+    dropped; a result made only of such rows cannot be read."""
+    rows = found.get(key) if isinstance(found, dict) else None
     if not isinstance(rows, list):
         raise ValueError(UNREADABLE)
-    items, dropped, seen = [], 0, set()
-    for row in rows[:60]:
-        row = row if isinstance(row, dict) else {}
+    good = [
+        row
+        for row in rows[:60]
+        if isinstance(row, dict) and all(isinstance(row.get(name), str) for name in fields)
+    ]
+    if rows and not good:
+        raise ValueError(UNREADABLE)
+    return good, len(rows[:60]) - len(good)
+
+
+def _read_humanize(draft, found):
+    rows, dropped = _rows(found, 'suggestions', ('part', 'before', 'after'))
+    items, seen = [], set()
+    for row in rows:
         part, after = row.get('part'), row.get('after')
         before = _located(draft, part, row.get('before')) if part in _prose_parts(draft) else None
         if (
@@ -656,12 +763,9 @@ def _read_humanize(draft, found):
 
 
 def _read_facts(draft, found):
-    rows = found.get('claims') if isinstance(found, dict) else None
-    if not isinstance(rows, list):
-        raise ValueError(UNREADABLE)
-    items, dropped = [], 0
-    for row in rows[:60]:
-        row = row if isinstance(row, dict) else {}
+    rows, dropped = _rows(found, 'claims', ('part', 'before', 'verdict'))
+    items = []
+    for row in rows:
         part, verdict = row.get('part'), VERDICTS.get(row.get('verdict'))
         before = _located(draft, part, row.get('before')) if part in _prose_parts(draft) else None
         if before is None or verdict is None:
@@ -733,9 +837,11 @@ def _read_feedback(draft, found):
         comment = _text(row.get('comment'), 2000)
         if not comment:
             continue
-        part = row.get('part') if row.get('part') in parts else 'whole'
+        part = row.get('part')
+        part = part if isinstance(part, str) and part in parts else 'whole'
         quote = _located(draft, part, row.get('quote')) if part != 'whole' else None
-        aspect = row.get('aspect') if row.get('aspect') in ASPECTS else 'shape'
+        aspect = row.get('aspect')
+        aspect = aspect if isinstance(aspect, str) and aspect in ASPECTS else 'shape'
         items.append({'part': part, 'quote': quote or '', 'aspect': aspect, 'comment': comment})
     summary = _text(found.get('summary'), 2000)
     if not items and not summary:
@@ -762,7 +868,10 @@ def settle(root, ident, draft, job):
         found = json.loads(fenced.group(1) if fenced else content)
     except ValueError:
         raise ValueError(UNREADABLE) from None
-    items, dropped, extra = READERS[job['kind']](draft, found)
+    try:
+        items, dropped, extra = READERS[job['kind']](draft, found)
+    except (TypeError, AttributeError, KeyError):
+        raise ValueError(UNREADABLE) from None  # A shape no reader expects, said plainly.
     meta = (job.get('metadata') or {}).get('desk') or {}
     if meta.get('level'):
         extra['level'] = meta['level']
@@ -772,7 +881,7 @@ def settle(root, ident, draft, job):
 # Before publishing: repurpose into new desk blogs, and send the desk's wording to the
 # blog's Google Doc as suggestions. The pre-publish check reads DRAFT.md, which every desk
 # write keeps in step.
-MARKS = frozenset('[]*`<>')
+MARKS = frozenset('[]*`<>#')
 NO_DOC = (
     'This blog has no Google Doc to send suggestions to. A blog started from a Google Doc can '
     'send its desk changes back to that Doc.'
@@ -780,39 +889,50 @@ NO_DOC = (
 
 
 def google_changes(baseline, body):
-    """The desk's wording changes against the Google Doc as quoted suggestions, and how many
-    changed paragraphs cannot be one (added, removed, split or formatted)."""
+    """The desk's wording changes against the Google Doc as quoted suggestions, how many
+    changed paragraphs cannot be one (added, removed, split or formatted), and the Doc
+    paragraph each suggestion is in. A suggestion's id stays the same wherever its paragraph
+    moves, so one sent before is known again."""
     import difflib
     import json
 
     import manuscript_editor
 
-    before, after = baseline.splitlines(), body.splitlines()
-    found, left = [], 0
+    # Paragraphs, without the blank lines between them, so the diff aligns on text.
+    before = [line for line in baseline.splitlines() if line.strip()]
+    after = [line for line in body.splitlines() if line.strip()]
+    found, left, paragraphs = [], 0, {}
     for tag, a, b, c, d in difflib.SequenceMatcher(
         None, before, after, autojunk=False
     ).get_opcodes():
         if tag == 'equal':
             continue
-        if tag != 'replace' or b - a != d - c:
-            left += max(
-                sum(1 for line in before[a:b] if line.strip()),
-                sum(1 for line in after[c:d] if line.strip()),
+        pairs, used = [], c
+        for old in before[a:b]:
+            # Each changed Doc paragraph with the desk line most like it, in order; a line
+            # with no close match was added or removed.
+            best = max(
+                range(used, d),
+                key=lambda at: difflib.SequenceMatcher(None, old, after[at]).ratio(),
+                default=None,
             )
-            continue
-        for offset, (old, new) in enumerate(zip(before[a:b], after[c:d], strict=True)):
+            if best is not None and difflib.SequenceMatcher(None, old, after[best]).ratio() >= 0.6:
+                pairs.append((old, after[best]))
+                used = best + 1
+        left += max(b - a, d - c) - len(pairs)
+        for old, new in pairs:
+            if old == new:
+                continue
             quoted, replacement = manuscript_editor.changed_span(old, new)
             if (
-                not old.strip()
-                or not new.strip()
+                not new.strip()
                 or not quoted.strip()
                 or any(mark in quoted + replacement for mark in MARKS)
             ):
                 left += 1
                 continue
             item = {
-                'id': 'desk-'
-                + studio.digest(json.dumps([a + offset, quoted, replacement]).encode())[:16],
+                'id': 'desk-' + studio.digest(json.dumps([old, quoted, replacement]).encode())[:16],
                 'kind': 'edit',
                 'before': quoted,
                 'after': replacement,
@@ -820,8 +940,38 @@ def google_changes(baseline, body):
             }
             if baseline.count(quoted) > 1 and old.count(quoted) == 1 and not MARKS & set(old):
                 item['context'] = old  # The paragraph, so the quote is found in the right place.
+            if item['id'] in paragraphs:
+                continue  # The same change in an identical paragraph: one suggestion.
             found.append(manuscript_editor.proposal(item))
-    return found, left
+            paragraphs[item['id']] = studio.digest(old.encode())
+    return found, left, paragraphs
+
+
+def _sent_path(root, ident):
+    return studio.inside(root, '.blog-runs', 'desk-google', studio.identifier(ident) + '.json')
+
+
+def _sent(root, ident):
+    """What this computer sent to the blog's Doc: {'plans': {token: rows}, 'sent': rows},
+    each row {id, paragraph}. Kept beside the jobs, never in the blog's folder."""
+    target = _sent_path(root, ident)
+    try:
+        found = studio.read_json(target) if target.is_file() and not target.is_symlink() else {}
+    except (ValueError, OSError):
+        found = {}
+    found = found if isinstance(found, dict) else {}
+    return {'plans': dict(found.get('plans') or {}), 'sent': list(found.get('sent') or [])}
+
+
+def _delivered(root, document, ident):
+    """Whether the Google ledger holds a reservation for this suggestion in this Doc."""
+    import google_suggestions as suggestions
+
+    marker = suggestions.contained(
+        suggestions.ledger(root),
+        suggestions.digest(suggestions.encoded([document, ident])) + '.finding',
+    )
+    return marker.is_file()
 
 
 def _google_base(root, ident):
@@ -856,14 +1006,38 @@ def google_plan(root, ident, mode):
     if mode not in ('auto', 'native', 'comments'):
         raise ValueError('Choose suggestions, comments or suggestions with comments fallback.')
     baseline = snapshot_path(directory, base['transfer'], 'document').read_text()
-    proposals, left = google_changes(baseline, (directory / 'DRAFT.md').read_text())
+    proposals, left, paragraphs = google_changes(baseline, (directory / 'DRAFT.md').read_text())
+    # Suggestions sent before stay in the Doc for its owner; a paragraph holding one waits for
+    # the owner's review before it can take another.
+    record = _sent(root, ident)
+    document = base['document'].get('document_id')
+    sent = {row.get('id') for row in record['sent']} | {
+        p['id'] for p in proposals if _delivered(root, document, p['id'])
+    }
+    held = {row.get('paragraph') for row in record['sent']}
+    before = sum(1 for p in proposals if p['id'] in sent)
+    waiting = sum(1 for p in proposals if p['id'] not in sent and paragraphs[p['id']] in held)
+    proposals = [p for p in proposals if p['id'] not in sent and paragraphs[p['id']] not in held]
     if not proposals:
+        said = []
+        if before:
+            said.append(
+                str(before) + (' change was' if before == 1 else ' changes were') + ' sent before'
+            )
+        if waiting:
+            said.append(
+                str(waiting)
+                + (' change is' if waiting == 1 else ' changes are')
+                + ' in a paragraph whose earlier suggestion the Doc’s owner has not reviewed yet'
+            )
+        if left:
+            said.append('paragraphs added, removed or formatted cannot be suggestions')
         raise ValueError(
-            'Nothing to send: the desk’s wording matches the Google Doc'
+            'Nothing new to send'
             + (
-                ', apart from paragraphs added, removed or formatted, which suggestions cannot carry.'
-                if left
-                else '.'
+                ': ' + '; '.join(said) + '.'
+                if said
+                else ': the desk’s wording matches the Google Doc.'
             )
         )
     if len(proposals) > 100:
@@ -874,7 +1048,13 @@ def google_plan(root, ident, mode):
     plan = manuscript_editor.google_plan(
         client, root, ident, proposals, mode, _google_expected(root, ident), base['document']['url']
     )
-    return {**plan, 'left': left}
+    record['plans'] = {
+        **{token: rows for token, rows in record['plans'].items() if token != plan['plan']},
+        plan['plan']: [{'id': p['id'], 'paragraph': paragraphs[p['id']]} for p in proposals],
+    }
+    record['plans'] = dict(list(record['plans'].items())[-20:])
+    studio.write_json(_sent_path(root, ident), record)
+    return {**plan, 'left': left, 'sent_before': before, 'waiting': waiting}
 
 
 def google_send(root, ident, data):
@@ -886,7 +1066,16 @@ def google_send(root, ident, data):
 
     expected = _google_expected(root, ident)
     client = drive.Client(drive.account_for(root))
-    return manuscript_editor.google_send(client, root, ident, data, expected)
+    result = manuscript_editor.google_send(client, root, ident, data, expected)
+    record = _sent(root, ident)
+    rows = record['plans'].pop(data.get('plan'), None)
+    if rows:
+        known = {row.get('id') for row in record['sent']}
+        record['sent'] = (record['sent'] + [row for row in rows if row.get('id') not in known])[
+            -500:
+        ]
+        studio.write_json(_sent_path(root, ident), record)
+    return result
 
 
 def repurpose(root, ident, job_id, title, content):

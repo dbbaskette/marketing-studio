@@ -719,9 +719,190 @@ class BeforePublishingTests(ToolCase):
     def test_wording_changes_become_quoted_suggestions_and_the_rest_is_counted(self):
         baseline = '## Heading\n\nThe delay is long.\n\nKeep it.\n\nGone soon.\n'
         body = '# Title\n\n## Heading\n\nThe wait is long.\n\nKeep **it**.\n'
-        found, left = desk_finish.google_changes(baseline, body)
+        found, left, _ = desk_finish.google_changes(baseline, body)
         self.assertEqual([(f['before'], f['after']) for f in found], [('delay', 'wait')])
         self.assertEqual(left, 3)  # The title line added, a formatting change, a paragraph cut.
+
+
+class ReviewFixTests(ToolCase):
+    """What the independent review of Finishing found."""
+
+    def test_odd_json_types_are_unreadable_never_a_type_error(self):
+        draft = self.draft()
+        for kind, value in [
+            ('finish-humanize', {'suggestions': [{'part': ['x'], 'before': 'A.', 'after': 'B.'}]}),
+            (
+                'finish-facts',
+                {'claims': [{'part': 'opening', 'before': 'A.', 'verdict': ['supported']}]},
+            ),
+            ('finish-headline', {'titles': 'abc'}),
+            ('finish-humanize', [1, 2]),
+            ('finish-humanize', {'suggestions': [None, 3]}),
+        ]:
+            job = {
+                'id': secrets.token_hex(16),
+                'kind': kind,
+                'result': {'content': json.dumps(value)},
+                'metadata': {},
+            }
+            with (
+                self.subTest(kind=kind, value=value),
+                self.assertRaisesRegex(ValueError, 'cannot read'),
+            ):
+                desk_finish.settle(self.root, self.ident, draft, job)
+        # A comment with an odd part goes to the whole draft; an odd row among good ones is dropped.
+        job = {
+            'id': secrets.token_hex(16),
+            'kind': 'finish-feedback',
+            'result': {
+                'content': json.dumps(
+                    {'comments': [{'part': {'a': 1}, 'aspect': ['x'], 'comment': 'C.'}]}
+                )
+            },
+            'metadata': {},
+        }
+        kept = desk_finish.settle(self.root, self.ident, draft, job)
+        self.assertEqual([(i['part'], i['aspect']) for i in kept['items']], [('whole', 'shape')])
+        mixed = {
+            'suggestions': [
+                {'part': 7},
+                {
+                    'part': self.first,
+                    'before': 'We leverage a robust parser.',
+                    'after': 'We use a parser.',
+                },
+            ]
+        }
+        job = {
+            'id': secrets.token_hex(16),
+            'kind': 'finish-humanize',
+            'result': {'content': json.dumps(mixed)},
+            'metadata': {},
+        }
+        kept = desk_finish.settle(self.root, self.ident, draft, job)
+        self.assertEqual((len(kept['items']), kept['dropped']), (1, 1))
+
+    def test_an_empty_edit_is_refused_and_apply_all_leaves_it(self):
+        job = self.offer(
+            [
+                {
+                    'part': 'opening',
+                    'before': 'An opening paragraph.',
+                    'after': 'New.',
+                    'whole': True,
+                    'group': 'opening',
+                },
+                {'part': self.first, 'before': 'We leverage a robust parser.', 'after': ''},
+                {'part': self.second, 'before': 'Second text.', 'after': 'Two.'},
+            ]
+        )
+        for item in ('p1', 'p2'):
+            with self.subTest(item=item), self.assertRaisesRegex(ValueError, 'not applied empty'):
+                self.act('apply', seen=self.seen, job=job, items=[{'id': item, 'after': '  '}])
+        shown = self.act('apply', seen=self.seen, job=job, items=[{'id': 'p2'}, {'id': 'p3'}])
+        self.assertEqual(shown['finished'], {'applied': 1, 'left': ['p2']})
+        self.assertTrue(self.draft()['sections'][0]['text'].startswith('We leverage'))
+
+    def test_proposals_are_marked_applied_only_once_the_draft_is_written(self):
+        from unittest.mock import patch
+
+        job = self.offer([{'part': self.second, 'before': 'Second text.', 'after': 'Two.'}])
+        with patch('desk._write', side_effect=OSError('disk full')), self.assertRaises(OSError):
+            self.act('apply', seen=self.seen, job=job, items=[{'id': 'p1'}])
+        self.assertEqual(desk_finish.read(self.root, self.ident, job)['items'][0]['state'], 'open')
+
+    def test_skip_counts_only_what_was_open(self):
+        job = self.offer(
+            [
+                {'part': self.second, 'before': 'Second text.', 'after': 'Two.'},
+                {'part': self.second, 'before': 'Second', 'after': 'X'},
+            ]
+        )
+        self.assertEqual(self.act('skip', job=job, items=['p1'])['finished'], {'skipped': 1})
+        self.assertEqual(
+            self.act('skip', job=job, items=['p1', 'p2', 'p2'])['finished'], {'skipped': 1}
+        )
+
+    def test_sets_are_pruned_and_a_poll_reads_only_the_newest(self):
+        from unittest.mock import patch
+
+        older = self.offer([{'part': self.second, 'before': 'Second text.', 'after': 'Two.'}])
+        self.act('skip', job=older, items=['p1'])
+        waiting = self.offer([{'part': self.second, 'before': 'Second text.', 'after': 'Deux.'}])
+        newest = self.offer([{'part': self.second, 'before': 'Second text.', 'after': 'Zwei.'}])
+        folder = studio.inside(self.root, '.blog-runs', 'desk-proposals', self.ident)
+        names = sorted(path.stem for path in folder.glob('*.json'))
+        self.assertNotIn(older, names, 'a resolved older set is let go')
+        self.assertIn(
+            waiting, names, 'an open older set waits a day for a page that still shows it'
+        )
+        with patch('desk_finish.sets', side_effect=AssertionError('read every set')):
+            shown = desk_jobs.view(self.root, self.ident)['finishing']
+        self.assertEqual(shown['humanize']['job'], newest)
+
+    def test_a_request_that_shares_nothing_does_not_settle_a_waiting_result(self):
+        job = self.offer([{'part': self.second, 'before': 'Second text.', 'after': 'Two.'}])
+        queued = desk_jobs.section(self.root, self.ident, self.seen, self.first, 'More.')
+        saved = tool_jobs.read(self.root, queued['id'])
+        saved.update(status='ready', result={'content': 'Rewritten.', 'notes': ''}, finished_at='x')
+        tool_jobs.write(self.root, saved)
+        self.act('skip', job=job, items=['p1'])
+        self.assertFalse(tool_jobs.read(self.root, queued['id']).get('settled_at'))
+        self.act(
+            'apply',
+            seen=self.seen,
+            job=self.offer(
+                [{'part': 'title', 'before': 'A synthetic title', 'after': 'T', 'whole': True}],
+                'finish-headline',
+            ),
+            items=[{'id': 'p1'}],
+        )
+        self.assertTrue(tool_jobs.read(self.root, queued['id']).get('settled_at'))
+
+
+PROOF_EDGES = """# Proof
+
+Intro.
+
+## List
+
+- Install the parser on each machine.
+- Install the checker on each machine.
+- Install the reporter on each machine.
+
+## Indented
+
+    code -- here — delve
+
+Plain sentence.
+
+## Code first
+
+```sh
+make all the things we need to build here
+```
+
+Then we explain what the build did for you.
+
+## Code second
+
+```sh
+make all the things we need to build here
+```
+
+After that the tests run on their own.
+"""
+
+
+class ProofreadEdgeTests(FinishCase):
+    def test_indented_code_lists_and_code_openers_are_not_findings(self):
+        ident = desk.create(self.root, {'title': 'Edges', 'manuscript': PROOF_EDGES})['id']
+        self.assertEqual(desk_finish.proofread(self.root, ident)['findings'], [])
+
+    def test_a_list_continuation_is_prose_not_code(self):
+        text = '- An item\n\n    continues with a robust tapestry.\n'
+        self.assertIn('tapestry', desk_finish._mask_indented(text))
+        self.assertNotIn('delve', desk_finish._mask_indented('Text.\n\n    delve\n'))
 
 
 import google_drive  # noqa: E402
@@ -773,7 +954,50 @@ class DeskGoogleTests(unittest.TestCase):
             self.act('google-send', plan=plan['plan'], confirmed=False)
 
     def test_nothing_changed_is_said(self):
-        with self.assertRaisesRegex(ValueError, 'Nothing to send'):
+        with self.assertRaisesRegex(ValueError, 'Nothing new to send'):
+            self.act('google-plan', mode='auto')
+
+    def test_a_second_batch_sends_only_what_is_new(self):
+        text = self.made['sections'][0]['text']
+        desk.save(self.root, self.ident, 1, self.part, text.replace('slow', 'late'))
+        first = self.act('google-plan', mode='auto')
+        self.act('google-send', plan=first['plan'], confirmed=True)
+        writes = self.client.writes
+        # Sent before, and nothing else changed: said, and nothing is planned.
+        with self.assertRaisesRegex(ValueError, '1 change was sent before'):
+            self.act('google-plan', mode='auto')
+        # A change in another paragraph goes on its own; the first is not sent again.
+        draft = desk.read(self.root, self.ident)
+        heading = draft['sections'][0]['heading'].replace('delay', 'wait')
+        desk.outline_save(
+            self.root,
+            self.ident,
+            draft['revision'],
+            [{'id': self.part, 'heading': heading, 'brief': ''}],
+        )
+        second = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['before'], p['after']) for p in second['proposals']], [('delay', 'wait')]
+        )
+        self.assertEqual(second['sent_before'], 1)
+        self.assertEqual(
+            self.act('google-send', plan=second['plan'], confirmed=True)['status'],
+            'verified-pending',
+        )
+        self.assertGreater(self.client.writes, writes)
+        # A paragraph added above moves the first change; it is still known as sent.
+        draft = desk.read(self.root, self.ident)
+        desk.save(self.root, self.ident, draft['revision'], 'opening', 'A new first line.')
+        with self.assertRaisesRegex(ValueError, '2 changes were sent before'):
+            self.act('google-plan', mode='auto')
+
+    def test_a_paragraph_with_a_pending_suggestion_waits(self):
+        text = self.made['sections'][0]['text']
+        desk.save(self.root, self.ident, 1, self.part, text.replace('slow', 'late'))
+        first = self.act('google-plan', mode='auto')
+        self.act('google-send', plan=first['plan'], confirmed=True)
+        desk.save(self.root, self.ident, 2, self.part, text.replace('slow', 'very late'))
+        with self.assertRaisesRegex(ValueError, 'has not reviewed yet'):
             self.act('google-plan', mode='auto')
 
 

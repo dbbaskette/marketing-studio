@@ -1000,6 +1000,8 @@ ROUTES = {
     'google-send': {'id', 'plan', 'confirmed'},
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
+# Routes the page's dispatch does not record as a decision on this blog (management.py).
+UNSHARED = ('skip', 'google-plan', 'google-send', 'repurpose')
 
 
 def _create(root, data):
@@ -1083,8 +1085,10 @@ def dispatch(root, action, data):
         desk_jobs.settle(root, ident)
         desk_jobs.retry(root, ident)
         return desk_jobs.view(root, ident)
-    # A result an older process finished lands before anything else changes the draft.
-    desk_jobs.settle(root, ident)
+    # A result an older process finished lands before anything else changes the draft. Not on
+    # requests that record no decision for the team, which would leave what landed unshared.
+    if action not in UNSHARED:
+        desk_jobs.settle(root, ident)
     seen = data.get('seen')
     if action == 'save':
         session = data.get('session')
