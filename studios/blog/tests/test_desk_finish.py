@@ -980,7 +980,13 @@ class GooglePairingTests(unittest.TestCase):
         ]
         for baseline, body in cases:
             with self.subTest(baseline=baseline[:20]):
-                self.assertEqual(self.occurrence(baseline, body)[0], 2)
+                found, _, expected = desk_finish.google_changes(baseline, body)
+                self.assertEqual(
+                    [(f['before'], f.get('context'), f.get('occurrence')) for f in found],
+                    [('setup', 'Then run setup again.', None)],
+                    'found by its own paragraph as the Doc shows it',
+                )
+                self.assertEqual(expected[found[0]['id']]['matches'], 1)
 
     def test_an_edit_to_one_of_several_copies_after_a_table_row_is_that_copy(self):
         baseline = '| Keep it short. |\n\nKeep it short.\n\nKeep it short.\n\nKeep it short.\n'
@@ -989,6 +995,64 @@ class GooglePairingTests(unittest.TestCase):
             lines[edited] = 'Keep it brief.'
             with self.subTest(edited=edited):
                 self.assertEqual(self.occurrence(baseline, '\n\n'.join(lines) + '\n'), (copy, 3))
+
+    def test_a_change_only_to_a_link_address_is_left_on_the_desk(self):
+        for baseline, body in (
+            (
+                'See [docs](https://x.com/setup).\n\nRun setup first.\n',
+                'See [docs](https://x.com/install).\n\nRun setup first.\n',
+            ),
+            (
+                'Read [the setup guide](https://x.com/setup) before setup.\n',
+                'Read [the setup guide](https://x.com/install) before setup.\n',
+            ),
+            ('Keep it short.\n', 'Keep it **short**.\n'),
+        ):
+            with self.subTest(body=body):
+                self.assertEqual(self.changes(baseline, body), ([], 1))
+
+    def test_a_word_changed_beside_a_link_is_found_in_the_visible_text(self):
+        found, left, expected = desk_finish.google_changes(
+            'Read [the setup guide](https://x.com/setup) before setup.\n',
+            'Read [the setup guide](https://x.com/setup) before install.\n',
+        )
+        self.assertEqual(
+            [(f['before'], f['after'], f.get('occurrence')) for f in found],
+            [('setup', 'install', 2)],
+        )
+        self.assertEqual(expected[found[0]['id']]['text'], 'Read the setup guide before setup.')
+
+    def test_escapes_read_as_the_characters_they_stand_for(self):
+        self.assertEqual(
+            desk_finish._visible('A \\*star\\* and snake\\_case.'), 'A *star* and snake_case.'
+        )
+
+    def test_a_quote_found_in_another_paragraph_is_not_sent_even_with_equal_counts(self):
+        from unittest.mock import patch
+
+        import google_roundtrip
+        import google_suggestions
+
+        found, _, expected = desk_finish.google_changes(
+            'Run setup first.\n\n**Then** run setup again.\n',
+            'Run setup first.\n\n**Then** run install again.\n',
+        )
+        document = {'document_id': 'd', 'tab_ids': ['t.0']}
+        other = {'elements': [{'textRun': {'content': 'Run setup first.\n'}}]}
+        with (
+            patch.object(google_suggestions, 'read_for_review', return_value=({}, {}, 'auto')),
+            patch.object(
+                google_suggestions, 'quote_positions', return_value=[('t.0', 1), ('t.0', 20)]
+            ),
+            patch.object(
+                google_suggestions, 'locate', return_value={'tab_id': 't.0', 'start_index': 1}
+            ),
+            patch.object(google_roundtrip, 'paragraph_at', return_value=(('t.0', 1), other)),
+        ):
+            free, waiting, unsure = desk_finish._not_pending(
+                object(), document, found, expected, 'auto'
+            )
+        self.assertEqual((free, waiting, unsure), ([], 0, 1))
 
     def test_a_quote_the_doc_shows_another_number_of_times_is_not_sent(self):
         from unittest.mock import patch

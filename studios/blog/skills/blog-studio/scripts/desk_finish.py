@@ -888,6 +888,7 @@ NO_DOC = (
 )
 
 
+ESCAPED = re.compile(r'\\([\\`*_{}\[\]()#+\-.!<>|~])')
 VISIBLE = (
     (re.compile(r'^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d{1,3}[.)]\s+)'), ''),  # line markers
     (re.compile(r'!\[[^\]]*\]\([^)]*\)'), ''),  # images
@@ -904,9 +905,22 @@ def _visible(line):
     bare = line.strip()
     if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[\^[^\]]+\]:', bare):
         return None
+    # An escaped mark is the character itself, as Google's Markdown export writes it.
+    line = ESCAPED.sub(lambda found: '\x00' + str(ord(found.group(1))) + '\x00', line)
     for pattern, replacement in VISIBLE:
         line = pattern.sub(replacement, line)
-    return line
+    return re.sub('\x00([0-9]+)\x00', lambda found: chr(int(found.group(1))), line)
+
+
+def _hidden_spans(line):
+    """Where a line holds what the Doc shows no text for: link targets and whole images."""
+    return [m.span(1) for m in re.finditer(r'\]\(([^)]*)\)', line)] + [
+        m.span() for m in re.finditer(r'!\[[^\]]*\]\([^)]*\)|<https?://[^>\s]+>', line)
+    ]
+
+
+def _touches(spans, start, end):
+    return any(start < b and a < max(end, start + 1) for a, b in spans)
 
 
 def _shown(lines):
@@ -987,20 +1001,32 @@ def google_changes(baseline, body):
             old, new, at = olds[i], news[j], a + i
             if old == new:
                 continue
-            start, _ = manuscript_editor.changed_bounds(old, new)
-            quoted, replacement = manuscript_editor.changed_span(old, new)
+            # A link's address, an image or formatting changed only: the Doc shows no words
+            # for it, so it is made in the Doc by hand. Otherwise the change is found in the
+            # words the Doc shows, and every count is taken from those words.
+            shown, now = _visible(old), _visible(new)
+            raw_left, raw_tail = manuscript_editor.changed_bounds(old, new)
+            raw_quoted, raw_replacement = manuscript_editor.changed_span(old, new)
             if (
-                not new.strip()
-                or not quoted.strip()
-                or any(mark in quoted + replacement for mark in MARKS)
+                shown is None
+                or now is None
+                or shown == now
+                or not now.strip()
+                or any(mark in raw_quoted + raw_replacement for mark in MARKS)
+                or _touches(_hidden_spans(old), raw_left, len(old) - raw_tail)
+                or _touches(_hidden_spans(new), raw_left, len(new) - raw_tail)
             ):
+                left += 1  # A link or formatting change, made in the Doc by hand.
+                continue
+            start, _ = manuscript_editor.changed_bounds(shown, now)
+            quoted, replacement = manuscript_editor.changed_span(shown, now)
+            if not quoted.strip() or any(mark in quoted + replacement for mark in MARKS):
                 left += 1
                 continue
             # Which copy this is of a paragraph the Doc repeats, so each copy is its own.
             shown_before, shown_after = _shown(before[:at]), _shown(before[at:])
-            shown = _visible(old) or ''
-            copy = sum(line.count(shown) for line in shown_before) if shown else 0
-            copies = copy + sum(line.count(shown) for line in shown_after) if shown else 0
+            copy = sum(line.count(shown) for line in shown_before)
+            copies = copy + sum(line.count(shown) for line in shown_after)
             quotes = sum(line.count(quoted) for line in shown_before + shown_after)
             item = {
                 'id': 'desk-'
@@ -1011,16 +1037,14 @@ def google_changes(baseline, body):
                 'reason': 'Wording changed on the writing desk.',
             }
             occurrence, needle, matches = None, quoted, quotes
-            plain = shown == old.strip() and not MARKS & set(old)
-            if plain and shown.count(quoted) == 1 and (copies > 1 or quotes > 1):
-                item['context'] = shown  # The paragraph, so the quote is found in it.
-                needle, matches = shown, copies
+            if shown.strip().count(quoted) == 1 and (copies > 1 or quotes > 1):
+                item['context'] = shown.strip()  # The paragraph, so the quote is found in it.
+                needle, matches = shown.strip(), copies
                 occurrence = copy + 1 if copies > 1 else None
             elif quotes > 1:
-                # Formatted text cannot be matched as a whole: count the quote as shown.
                 occurrence = (
                     sum(line.count(quoted) for line in shown_before)
-                    + (_visible(old[:start]) or '').count(quoted)
+                    + shown[:start].count(quoted)
                     + 1
                 )
             item = manuscript_editor.proposal(item)
@@ -1031,6 +1055,7 @@ def google_changes(baseline, body):
                 'paragraph': studio.digest(old.encode()),
                 'needle': needle,
                 'matches': matches,
+                'text': shown.strip(),  # The paragraph the change is meant for, as shown.
             }
     return found, left, paragraphs
 
@@ -1163,8 +1188,9 @@ def google_plan(root, ident, mode):
 
 def _not_pending(client, document, proposals, expected, mode):
     """The proposals that can go now, read from the Doc: how many wait for a pending
-    suggestion in their paragraph, and how many the Doc shows a different number of times than
-    the desk counted, which could land on the wrong copy and so stay on the desk."""
+    suggestion in their paragraph, and how many could land somewhere other than the paragraph
+    they are meant for (the Doc shows the quote a different number of times than the desk
+    counted, or it resolves to a paragraph with other words), which stay on the desk."""
     import google_roundtrip as rt
     import google_suggestions as suggestions
     from google_drive import GoogleError
@@ -1186,8 +1212,11 @@ def _not_pending(client, document, proposals, expected, mode):
         except GoogleError:
             free.append(proposal)  # Planning says plainly why it cannot be found.
             continue
+        meant = ' '.join((found.get('text') or '').split())
         if rt.suggestions(paragraph):
             waiting += 1
+        elif meant and ' '.join(rt.paragraph_text(paragraph).split()) != meant:
+            unsure += 1  # It would land in a paragraph with other words.
         else:
             free.append(proposal)
     return free, waiting, unsure
