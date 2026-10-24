@@ -1212,22 +1212,201 @@ blog is shared); Test `tests/test_desk_finish.py`.
 
 ## Phase 4: voice guides and the switch
 
-- **4.1 The switch**: `features.voice` (default false) in Blog Studio settings
-  (`blog_runner.settings`), returned to the page. Tests: default false.
-- **4.2 Server enforcement**: while off, refuse `voice-links-*`, `library-voices`,
-  `library-author-*`, `job-create` kinds `voice-learn` and `voice-audition`, `voice-apply`,
-  default-voice settings and `profile` on run creation, with "Voices are switched off in
-  Blog Studio settings."; `create()` and `writing_defaults.for_create` write Tone. Saved
-  voices stay on disk. Tests per route; existing voice tests run with the switch on.
-- **4.3 Page**: hide the items listed in the spec's "Hidden for now" when off.
-  Journeys with the switch off and on.
-- **4.4 Voice guides**: `voice-guide` job kind (samples to guide text, reusing the learning
-  guidance without author matching) and hand-written guides, saved as profiles
-  (`article_tools.save_profile`) so existing voices appear as guides; screen "Voice guides".
-  Tests.
-- **4.5 `finish-voice`**: apply a guide to the draft as per-section proposals (reuse
-  `advanced_tools.apply_voice` guidance), Apply all, some or none. Tests and journey.
-- **4.6** Checks, CHANGELOG, PR, merge, restart.
+Expanded on 2026-10-23 against the Phase 3 code on `claude/writing-desk` (`desk_finish.py`,
+`desk_jobs.py`, `desk.js`, `runner.js`, `management.py`, `advanced_tools.py`,
+`article_tools.py`). Phase 4 lands on the same branch, one commit per task.
+
+**What the switch is.** `features.voice` (default `false`) sits beside the writing defaults
+in this computer's Blog Studio settings, `.blog-run-settings.json` (`{"schema": 1,
+"defaults": {...}, "features": {"voice": false}}`), never in studios-config. `studio.features
+(root)` reads it (a missing or damaged value reads as off); `studio.voices_on(root)` and
+`studio.require_voices(root)` (raises "Voices are switched off in Blog Studio settings.")
+are what every module calls. `blog_runner.settings` returns `features` and saves it with
+the form when `features` and `features_before` (what the form showed) are posted; an
+outdated form is refused, and saving without them keeps the saved value.
+
+**What the switch hides, and what it does not.** Off hides the old voice tools: learning
+and audition, Write as, Default voice, Change the voice, LinkedIn import, links-to-posts as
+voice samples, voice-sample uploads and marks, Create voices for every author and author
+suggestions. It does not hide **voice guides**: a guide is a saved profile (`profiles/`,
+`.shared/voices` in a team workspace) with a name and text, listed, written, made from
+samples, edited and retired on the Voice guides screen, and applied on the desk with
+**Apply a voice**. Saved voices, samples and every `record['voice']` stay on disk untouched,
+so old runs keep their pins.
+
+**Where kinds of post go.** The old Voices screen (`screen=voices`) held voices and styles.
+The sidebar's Voices item becomes **Voice guides** (`screen=guides`). The `voices` screen
+stays and, while the switch is off, is **Kinds of post**: the Styles card only, with Create
+a style and Write a style guide (saving a style from examples, including links to examples,
+works as before). It is reached from Settings (Elsewhere in Blog Studio), the Tools sheet
+and Home's setup task, with Back to where it was opened from. With the switch on it is
+Voices and styles, as today.
+
+### Task 4.0: Expand this phase (this section)
+
+- [x] Commit "Plan voice guides and the voice switch step by step".
+
+### Task 4.1: The switch (server)
+
+**Files:** Modify `scripts/studio.py` (`FEATURES`, `features`, `voices_on`,
+`require_voices`, `VOICES_OFF`), `scripts/blog_runner.py` (`settings`); Test
+`tests/test_blog_runner.py` (new class `VoiceSwitchTests`); Create
+`tests/isolation.py:voices_on(root)` (the test helper that turns it on).
+
+- [ ] **Step 1: Failing tests**
+  - A fresh workspace reads `features == {'voice': False}` from `settings(root)` and
+    `studio.voices_on(root)` is false.
+  - Saving the settings form with `features: {voice: true}` and `features_before` equal to
+    what was shown turns it on; the writing defaults saved beside it are unchanged.
+  - A save without `features` keeps the saved value; a later save of the defaults does not
+    turn it off.
+  - `features_before` different from the saved value is refused ("changed since these
+    settings were shown"); an unknown feature or a non-boolean is refused; nothing is saved.
+  - A damaged `features` value reads as off.
+  - `isolation.voices_on(root)` writes the switch for a disposable workspace.
+- [ ] **Step 2: Run** `HOME=$TMPDIR/h python3 -m unittest test_blog_runner.VoiceSwitchTests -v`.
+- [ ] **Steps 3-5**: implement, pass, commit "A switch in Blog Studio settings for the old voice tools, off by default".
+
+### Task 4.2: Server enforcement while off
+
+**Files:** Modify `scripts/management.py` (`_dispatch`, `upload`, `upload_files`),
+`scripts/advanced_tools.py` (`dispatch`), `scripts/article_tools.py` (`request`,
+`start_interview`), `scripts/blog_runner.py` (`settings`, `create`, `default_voice`),
+`scripts/writing_defaults.py` (`for_create`), `scripts/library_add.py` (`selection`);
+Test `tests/test_voice_switch.py` (new), and existing voice tests turned on.
+
+Refused while off with `studio.VOICES_OFF`, before anything is read or saved:
+
+| Entry point | Where |
+| --- | --- |
+| `voice-links-preview`, `voice-links-import` (voice samples; `purpose: style-sample` stays allowed for kinds of post) | `management._dispatch` |
+| `library-voices`, `library-add-samples`, `library-author-same`, `library-author-different` | `management._dispatch` |
+| `library-selection` with `action: voice-learn` | `library_add.selection` |
+| `tool-action` `job-create` kinds `voice-learn`, `voice-audition`; `voice-apply`; `source-purpose` with `voice-sample` | `advanced_tools.dispatch` |
+| A default voice in `run-settings` | `blog_runner.settings` |
+| `profile` (non-empty) on run creation and on `interview-start` | `blog_runner.create`, `article_tools.start_interview` |
+| An upload with purpose `voice-sample`; any LinkedIn export | `management.upload`, `upload_files` |
+
+Never applied while off: a default voice. `writing_defaults.for_create` resolves no voice
+default (an explicit `--profile` in chat still pins), so `blog_runner.create` writes
+`{'mode': 'tone', 'tone': …}` and `run-options` reports `default_voice: None`. Desk blogs
+are tone-only already (`desk.create`, `desk_jobs._context`); a test keeps them so.
+
+- [ ] **Step 1: Failing tests** (`test_voice_switch.py`, a disposable workspace with a saved
+  confirmed voice set as the personal default): each route above refused with the sentence
+  through `management.dispatch`, nothing written; with the switch on each is accepted as
+  before (or reaches its own validation); a run created while off writes Tone even with a
+  default voice saved, and keeps working with the switch on (the default applies); a
+  `style-sample` links preview is not refused; `run-options` has no default voice while off;
+  an existing run's pinned voice and the saved profile and samples are untouched by turning
+  it off; a desk blog's job payload has no voice.
+- [ ] **Step 2: Run**; then the full suite to find the existing voice tests that now fail;
+  turn the switch on in their `setUp` with `isolation.voices_on(self.root)`.
+- [ ] **Steps 3-5**: commit "Refuse the old voice tools on the server while the switch is off".
+
+### Task 4.3: Page: hide the old voice tools while off
+
+**Files:** Modify `assets/management/runner.js`, `app.js`, `index.html`; Test
+`scripts/ci/check-management.cjs` (new journey `voiceSwitch`; existing voice journeys set
+`studio.settings.features.voice = true`).
+
+- `sVoicesOn()` reads `studio.settings.features.voice` (fetched at start and after Settings).
+- Off: no Write as (`sVoiceSelect` returns nothing, `sVoicePayload` sends no profile, the
+  summary drops "Write as", the tone field always shows); no Default voice in Settings and
+  no `voice`/`voice_before` posted; no Change the voice on a run; no voice cards, learning,
+  audition, LinkedIn import or links-to-posts voice import (reachable only from those); no
+  "Authored voice sample" upload role; no Create voices for every author, author
+  suggestions, "Learn a voice from these", "Learn X's voice", "Mark the posts as voice
+  samples"; no "Voice samples" role filter or " · voice sample" marks in the library.
+- The `voices` screen is **Kinds of post** while off (styles only), reached from Settings,
+  Tools and Home, with Back; Settings' Elsewhere card and the Tools task say "Kinds of post".
+- Settings gains an **Advanced** disclosure, closed, with one check: "Show the older voice
+  tools (learning voices from samples, Write as, default voice)", saved with the form.
+- [ ] **Step 1: Journeys**: off, none of the hidden controls is drawn on Settings, the old
+  start, a run, the Tools sheet, the library and the upload dialog; the `voices` screen is
+  Kinds of post with styles only; Settings posts `features` and no default voice; on, each
+  comes back (the existing voice journeys run with it on).
+- [ ] **Steps 2-5**: commit "Hide the old voice tools on the page while the switch is off".
+
+### Task 4.4: Voice guides
+
+**Files:** Modify `scripts/article_tools.py` (`voice-guide` in `request`, `guides`,
+`job_view`), `scripts/tool_jobs.py` (`KINDS`), `scripts/management.py` (view
+`voice-guides`), `assets/management/runner.js` (screen `guides`), `index.html` (the nav
+item); Test `tests/test_voice_guides.py` (new), `check-management.cjs` (journey
+`voiceGuides`).
+
+- `article_tools.guides(root)`: every profile as a guide, `{id, name, revision, status,
+  says}` (`says`: the guide's first prose line, at most 160 characters), active first,
+  retired last. GET `voice-guides`.
+- `tool-action` `job-create` kind `voice-guide` `{operation, name, samples}`: 3 to 20
+  samples, each `{text}` (pasted) or `{filename, content}` (uploaded, base64, read with
+  `blog_library.extract_detail`; a file with no readable text is refused by name), each up
+  to 200,000 characters and within `LEARN_BUDGET` together (`shared`). Payload `{name,
+  samples: [{title, text}]}`; guidance: `blog-voice-profile.md` and the learning sentence
+  (observable style only, uncertainty said, no biography or anecdotes, voice apart from
+  facts and house style), without author matching, library linking, background or
+  audition; it returns the guide as Markdown in content. Nothing is saved as a source; the
+  job waits in `.blog-runs/tools` (ignored). Allowed whether or not the switch is on.
+- Save and retire use the existing `profile-save` and `profile-retire` (`save_profile`,
+  `retire_profile`, shared as a Voice profile receipt). A new guide is saved confirmed (the
+  person wrote or reviewed it) with no samples; a learned voice keeps its samples.
+- Page: sidebar **Voice guides** (`screen=guides`): the lede, a card per guide (name, says,
+  status) with **Open**, and **New voice guide** (toolbar, filled). The sheet runs in steps:
+  `1. Name`, `2. Write it, or make it from samples` (a segmented choice: **Write it** shows
+  the guide field; **From samples** shows paste boxes, Add another sample, and an upload
+  field, then **Make the guide**), `3. Read and edit` (the guide text, editable), **Save
+  guide** and Cancel together. Making polls the job and fills step 3. A guide's sheet edits
+  its name and text (**Save guide**) and **Retire this guide** (confirmed). With the switch
+  on, a quiet card links to Voices and styles.
+- [ ] **Step 1: Failing tests**: listing reads existing learned voices as guides with
+  `says`; fewer than three or more than twenty samples refused; an upload read as text; an
+  unreadable file refused by name; payload and guidance (no author, no audition, no
+  library); a fake worker's result readable from `tool-job`; save by hand creates a
+  confirmed profile in `profiles/` with no samples; retire keeps it on disk; all with the
+  switch off. Journeys: the screen lists guides, New voice guide by hand posts
+  `profile-save`, from samples posts `job-create` kind `voice-guide` then fills the text,
+  retire posts `profile-retire`, phone layout.
+- [ ] **Steps 2-5**: commit "Voice guides: write one by hand or make it from samples".
+
+### Task 4.5: `finish-voice`
+
+**Files:** Modify `scripts/desk_finish.py` (`TOOLS`, `request`, `READERS`), `scripts/
+desk_jobs.py` (`KINDS`, `FINISH`, `finish` takes `guide`), `scripts/tool_jobs.py` (`KINDS`,
+`DESK`), `scripts/desk.py` (`ROUTES['finish']` takes `guide`), `assets/management/desk.js`;
+Test `tests/test_desk_finish.py` (`VoiceTests`), `check-management.cjs` (`deskFinishing`).
+
+- `desk-finish {id, seen, tool: 'voice', guide}`: the guide is a saved, unretired profile
+  (else "Choose a voice guide that is not retired."). Payload: `_payload(draft, extra)` and
+  `voice_guide: {name, text}` (the guide text put in explicitly; `_context` stays
+  tone-only). Guidance: the apply-a-voice rule (rewrite each written part in the guide's
+  voice; keep the structure, paragraphs, lists, code, every fact, number, name, quotation
+  and link; change how it sounds, never what it says; invent no experience, opinion or
+  anecdote; the guide outranks the tone where they differ), the shared guidance, and
+  `{"parts": [{"part", "text", "why"}]}` for the opening and each written section.
+- Reading: one whole-part item per part (`whole: true`, `before` = the part's text), an
+  unknown part, an empty or unchanged text, a heading in the text or a second row for a
+  part dropped (counted); `flag` from `changes_facts`. Meta keeps the guide's name and
+  revision; the set says which guide it used.
+- Panel: **Apply a voice** enabled: a guide picker (from `voice-guides`, active ones), or
+  "No voice guides yet" with **Open voice guides**; **Apply the voice** runs it; per-section
+  Before and After with Apply, Edit and Skip; **Apply all** for every unflagged section;
+  a flagged section says a fact changed.
+- [ ] **Step 1: Failing tests**: guidance and payload carry the guide text, `_context` has
+  no voice; a retired or unknown guide refused; a ready result lands as one proposal per
+  part with `before` the whole part and nothing changed; a changed number flagged; bad JSON
+  unreadable; Apply all lands the unflagged parts with one `finishing` version each; a part
+  edited since is not present; a fake worker end to end. Journey: pick a guide, run, preview
+  per section, Apply all leaves the flagged one, Skip.
+- [ ] **Steps 2-5**: commit "Apply a voice: rewrite the draft in a voice guide, section by section".
+
+### Task 4.6: Docs, CHANGELOG and checks
+
+- [ ] Docs where voices are described (`README.md`, `docs/capabilities.md`, `docs/runner.md`,
+  `references/page-tools.md`, `references/workspace/profiles.md`), the CHANGELOG
+  (Unreleased): voice guides, Apply a voice, the switch.
+- [ ] Full checks as in Task 1.11; screenshots with synthetic content in a disposable
+  workspace. No push or merge on this branch until the owner asks.
 
 ## Phase 5: docs and cleanup
 
