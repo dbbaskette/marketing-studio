@@ -907,22 +907,33 @@ def google_changes(baseline, body):
     ).get_opcodes():
         if tag == 'equal':
             continue
-        pairs, used = [], c
-        for old in before[a:b]:
-            # Each changed Doc paragraph with the desk line most like it, in order; a line
-            # with no close match was added or removed.
-            best = max(
-                range(used, d),
-                key=lambda at: difflib.SequenceMatcher(None, old, after[at]).ratio(),
-                default=None,
-            )
-            if best is not None and difflib.SequenceMatcher(None, old, after[best]).ratio() >= 0.6:
-                pairs.append((old, after[best]))
-                used = best + 1
-        left += max(b - a, d - c) - len(pairs)
-        for old, new in pairs:
+        olds, news = before[a:b], after[c:d]
+        if len(olds) * len(news) > 40_000:
+            left += max(len(olds), len(news))  # Too much moved at once to pair safely.
+            continue
+        # Pair Doc paragraphs with desk lines, the closest pairs first, never two pairs that
+        # cross: a paragraph deleted next to an edited one is never rewritten into it.
+        ratios = sorted(
+            (
+                (difflib.SequenceMatcher(None, old, new).ratio(), i, j)
+                for i, old in enumerate(olds)
+                for j, new in enumerate(news)
+            ),
+            key=lambda found: (-found[0], found[1], found[2]),
+        )
+        pairs = []
+        for ratio, i, j in ratios:
+            if ratio < 0.6:
+                break
+            if all(i != pi and j != pj and (i < pi) == (j < pj) for pi, pj in pairs):
+                pairs.append((i, j))
+        pairs.sort()
+        left += max(len(olds), len(news)) - len(pairs)
+        for i, j in pairs:
+            old, new, at = olds[i], news[j], a + i
             if old == new:
                 continue
+            start, _ = manuscript_editor.changed_bounds(old, new)
             quoted, replacement = manuscript_editor.changed_span(old, new)
             if (
                 not new.strip()
@@ -931,18 +942,30 @@ def google_changes(baseline, body):
             ):
                 left += 1
                 continue
+            # Which copy this is of a paragraph the Doc repeats, so each copy is its own.
+            copy = sum(line.count(old) for line in before[:at])
+            copies = copy + sum(line.count(old) for line in before[at:])
             item = {
-                'id': 'desk-' + studio.digest(json.dumps([old, quoted, replacement]).encode())[:16],
+                'id': 'desk-'
+                + studio.digest(json.dumps([old, quoted, replacement, copy]).encode())[:16],
                 'kind': 'edit',
                 'before': quoted,
                 'after': replacement,
                 'reason': 'Wording changed on the writing desk.',
             }
-            if baseline.count(quoted) > 1 and old.count(quoted) == 1 and not MARKS & set(old):
-                item['context'] = old  # The paragraph, so the quote is found in the right place.
-            if item['id'] in paragraphs:
-                continue  # The same change in an identical paragraph: one suggestion.
-            found.append(manuscript_editor.proposal(item))
+            occurrence = None
+            if not MARKS & set(old) and (copies > 1 or baseline.count(quoted) > 1):
+                item['context'] = old  # The paragraph, so the quote is found in it.
+                occurrence = copy + 1 if copies > 1 else None
+            elif baseline.count(quoted) > 1:
+                # Formatted text cannot be matched as a whole: count the quote instead.
+                occurrence = (
+                    sum(line.count(quoted) for line in before[:at]) + old[:start].count(quoted) + 1
+                )
+            item = manuscript_editor.proposal(item)
+            if occurrence:
+                item['occurrence'] = occurrence
+            found.append(item)
             paragraphs[item['id']] = studio.digest(old.encode())
     return found, left, paragraphs
 
@@ -1007,17 +1030,20 @@ def google_plan(root, ident, mode):
         raise ValueError('Choose suggestions, comments or suggestions with comments fallback.')
     baseline = snapshot_path(directory, base['transfer'], 'document').read_text()
     proposals, left, paragraphs = google_changes(baseline, (directory / 'DRAFT.md').read_text())
-    # Suggestions sent before stay in the Doc for its owner; a paragraph holding one waits for
-    # the owner's review before it can take another.
+    # A suggestion sent before stays in the Doc for its owner and is not sent again.
     record = _sent(root, ident)
     document = base['document'].get('document_id')
     sent = {row.get('id') for row in record['sent']} | {
         p['id'] for p in proposals if _delivered(root, document, p['id'])
     }
-    held = {row.get('paragraph') for row in record['sent']}
     before = sum(1 for p in proposals if p['id'] in sent)
-    waiting = sum(1 for p in proposals if p['id'] not in sent and paragraphs[p['id']] in held)
-    proposals = [p for p in proposals if p['id'] not in sent and paragraphs[p['id']] not in held]
+    proposals = [p for p in proposals if p['id'] not in sent]
+    client = drive.Client(drive.account_for(root))
+    # A paragraph the Doc shows with a suggestion still waiting for its owner waits too; once
+    # the owner accepts or rejects it, the paragraph can take another.
+    waiting = 0
+    if proposals:
+        proposals, waiting = _not_pending(client, base['document'], proposals, mode)
     if not proposals:
         said = []
         if before:
@@ -1028,7 +1054,8 @@ def google_plan(root, ident, mode):
             said.append(
                 str(waiting)
                 + (' change is' if waiting == 1 else ' changes are')
-                + ' in a paragraph whose earlier suggestion the Doc’s owner has not reviewed yet'
+                + ' in a paragraph that still has a suggestion waiting for the Doc’s owner to '
+                'accept or reject'
             )
         if left:
             said.append('paragraphs added, removed or formatted cannot be suggestions')
@@ -1044,7 +1071,6 @@ def google_plan(root, ident, mode):
         raise ValueError(
             'More than 100 wording changes to send at once. Send fewer, or share the draft.'
         )
-    client = drive.Client(drive.account_for(root))
     plan = manuscript_editor.google_plan(
         client, root, ident, proposals, mode, _google_expected(root, ident), base['document']['url']
     )
@@ -1055,6 +1081,29 @@ def google_plan(root, ident, mode):
     record['plans'] = dict(list(record['plans'].items())[-20:])
     studio.write_json(_sent_path(root, ident), record)
     return {**plan, 'left': left, 'sent_before': before, 'waiting': waiting}
+
+
+def _not_pending(client, document, proposals, mode):
+    """The proposals whose Doc paragraph has no pending suggestion, read from the Doc now,
+    and how many wait for one."""
+    import google_roundtrip as rt
+    import google_suggestions as suggestions
+    from google_drive import GoogleError
+
+    inline, _, _ = suggestions.read_for_review(client, document['document_id'], mode)
+    free, waiting = [], 0
+    for proposal in proposals:
+        try:
+            where = suggestions.locate(inline, proposal, document['tab_ids'])
+            _, paragraph = rt.paragraph_at(inline, where['tab_id'], where['start_index'])
+        except GoogleError:
+            free.append(proposal)  # Planning says plainly why it cannot be found.
+            continue
+        if rt.suggestions(paragraph):
+            waiting += 1
+        else:
+            free.append(proposal)
+    return free, waiting
 
 
 def google_send(root, ident, data):

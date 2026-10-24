@@ -139,6 +139,13 @@ def proposal(value):
 
 def changed_span(old, new):
     """The words that differ between two versions of one line, widened to whole words."""
+    left, tail = changed_bounds(old, new)
+    return old[left : len(old) - tail], new[left : len(new) - tail]
+
+
+def changed_bounds(old, new):
+    """How many characters the two versions share at the start and at the end, each cut back
+    to a word boundary."""
     left = 0
     while left < min(len(old), len(new)) and old[left] == new[left]:
         left += 1
@@ -149,7 +156,7 @@ def changed_span(old, new):
         left -= 1
     while tail and old[len(old) - tail].isalnum():
         tail -= 1
-    return old[left : len(old) - tail], new[left : len(new) - tail]
+    return left, tail
 
 
 def dispatch(root, action, data):

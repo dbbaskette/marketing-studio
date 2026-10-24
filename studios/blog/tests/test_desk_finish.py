@@ -192,7 +192,10 @@ class ProposalStoreTests(FinishCase):
         import blog_delete
 
         job = self.offer([self.edit()])
+        sent = studio.inside(self.root, '.blog-runs', 'desk-google', self.ident + '.json')
+        studio.write_json(sent, {'plans': {}, 'sent': [{'id': 'desk-x', 'paragraph': 'y'}]})
         blog_delete._forget(self.root, self.ident)
+        self.assertFalse(sent.exists(), 'what was sent to its Doc goes too')
         self.assertFalse(
             studio.inside(self.root, '.blog-runs', 'desk-proposals', self.ident).exists()
         )
@@ -905,6 +908,54 @@ class ProofreadEdgeTests(FinishCase):
         self.assertNotIn('delve', desk_finish._mask_indented('Text.\n\n    delve\n'))
 
 
+class GooglePairingTests(unittest.TestCase):
+    """Each desk change is sent against the Doc paragraph it came from, never a neighbour."""
+
+    def changes(self, baseline, body):
+        found, left, _ = desk_finish.google_changes(baseline, body)
+        return [(f['before'], f['after'], f.get('occurrence')) for f in found], left
+
+    def test_a_deleted_paragraph_is_not_rewritten_into_its_edited_neighbour(self):
+        self.assertEqual(
+            self.changes(
+                'We ship on Monday at noon.\n\nWe ship on Friday at noon.\n',
+                'We ship on Friday at nine.\n',
+            ),
+            ([('noon', 'nine', None)], 1),
+        )
+        self.assertEqual(
+            self.changes(
+                'Step one: install the parser on each machine.\n\n'
+                'Step two: install the checker on each machine.\n',
+                'Step two: install the reporter on each machine.\n',
+            ),
+            ([('checker', 'reporter', None)], 1),
+        )
+
+    def test_pairs_never_cross(self):
+        found, left = self.changes(
+            'Alpha one two three.\n\nBeta four five six.\n',
+            'Beta four five seven.\n\nAlpha one two three.\n',
+        )
+        self.assertEqual(left, 2)  # A move is not a wording change; it stays on the desk.
+
+    def test_each_copy_of_a_repeated_paragraph_is_located_on_its_own(self):
+        found, _, _ = desk_finish.google_changes(
+            'Keep it short.\n\nMiddle.\n\nKeep it short.\n',
+            'Keep it brief.\n\nMiddle.\n\nKeep it brief.\n',
+        )
+        self.assertEqual(
+            [(f['before'], f['context'], f['occurrence']) for f in found],
+            [('short', 'Keep it short.', 1), ('short', 'Keep it short.', 2)],
+        )
+        self.assertEqual(len({f['id'] for f in found}), 2)
+        found, _, _ = desk_finish.google_changes(
+            'Keep it short.\n\nMiddle.\n\nKeep it short.\n',
+            'Keep it short.\n\nMiddle.\n\nKeep it brief.\n',
+        )
+        self.assertEqual([(f['before'], f['occurrence']) for f in found], [('short', 2)])
+
+
 import google_drive  # noqa: E402
 import test_google_start  # noqa: E402
 
@@ -991,14 +1042,23 @@ class DeskGoogleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '2 changes were sent before'):
             self.act('google-plan', mode='auto')
 
-    def test_a_paragraph_with_a_pending_suggestion_waits(self):
+    def test_a_paragraph_with_a_pending_suggestion_waits_until_it_is_reviewed(self):
+        import copy
+
+        unsent = copy.deepcopy(self.client.doc)
         text = self.made['sections'][0]['text']
         desk.save(self.root, self.ident, 1, self.part, text.replace('slow', 'late'))
         first = self.act('google-plan', mode='auto')
         self.act('google-send', plan=first['plan'], confirmed=True)
         desk.save(self.root, self.ident, 2, self.part, text.replace('slow', 'very late'))
-        with self.assertRaisesRegex(ValueError, 'has not reviewed yet'):
+        with self.assertRaisesRegex(ValueError, 'still has a suggestion waiting'):
             self.act('google-plan', mode='auto')
+        # The Doc's owner rejects it: the paragraph is free again and the new wording goes.
+        self.client.doc = unsent
+        again = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['before'], p['after']) for p in again['proposals']], [('slow', 'very late')]
+        )
 
 
 if __name__ == '__main__':
