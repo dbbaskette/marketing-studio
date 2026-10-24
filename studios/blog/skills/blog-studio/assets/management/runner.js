@@ -770,21 +770,22 @@ function sGuideDraw(held){
   const form=sNode('form','create-flow'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');
   const ready=held.job?.status==='ready',busyJob=['queued','working'].includes(held.job?.status);
   const how=sChoice('How to start',[['write','Write it'],['samples','From samples']],held,'way',()=>sGuideDraw(held));
-  const samples=[];
+  const samples=[],counted=sNode('p','quiet'),recount=()=>{const count=held.samples.filter(sample=>sample.text.trim()).length+held.files.length;counted.textContent=count+(count===1?' sample':' samples')+'. Three to twenty: posts, emails or notes in the voice you want, by one writer.';};
   if(held.way==='samples'){
-    held.samples.forEach((sample,index)=>samples.push(sField('guide-sample-'+(index+1),'Sample '+(index+1),sample,'text',{long:true,max:200000})));
+    held.samples.forEach((sample,index)=>samples.push(sField('guide-sample-'+(index+1),'Sample '+(index+1),sample,'text',{long:true,max:200000,changed:recount})));
     const more=sButton('Add another sample',()=>{held.samples.push({text:''});sGuideDraw(held);});more.disabled=held.samples.length+held.files.length>=20;
     const field=sNode('div','field'),upload=sNode('input','input'),label=sNode('label','field-label','Upload samples');upload.type='file';upload.multiple=true;upload.id='guide-upload';upload.accept='.md,.txt,.html,.htm,.docx,.pdf';label.htmlFor=upload.id;
     upload.addEventListener('change',async()=>{const chosen=Array.from(upload.files||[]);if(chosen.some(file=>file.size>10*1024*1024)){held.problem='Choose files up to 10 MiB each.';return sGuideDraw(held);}for(const file of chosen)held.files.push({filename:file.name,content:await encodeImportFile(file)});held.problem='';sGuideDraw(held);});
     field.append(label,upload,sNode('p','quiet field-hint','Markdown, text, HTML or DOCX. Nothing you add here is kept in the library.'));
     const files=held.files.length?sAdd(sNode('ul','rows'),...held.files.map((file,index)=>sAdd(sNode('li','row'),sNode('span','row-title',file.filename),sButton('Remove',()=>{held.files.splice(index,1);sGuideDraw(held);})))):null;
-    const count=held.samples.filter(sample=>sample.text.trim()).length+held.files.length;
+    recount();
     const make=sButton(held.job&&!busyJob?'Make the guide again':'Make the guide',async button=>{await busy(button,'Starting…',async()=>{try{const given=[...held.samples.filter(sample=>sample.text.trim()).map(sample=>({text:sample.text})),...held.files];held.job=await api('tool-action',{action:'job-create',kind:'voice-guide',operation:held.operation,name:held.name.trim(),samples:given});held.operation=operationId();held.problem='';sGuideFollow(held);}catch(error){held.problem=error.message;}sGuideDraw(held);});},'filled');make.disabled=busyJob||!access.actions.edit;
-    samples.push(more,field,files,sNode('p','quiet',count+(count===1?' sample':' samples')+'. Three to twenty: posts, emails or notes in the voice you want, by one writer.'),sAdd(sNode('div','bar'),make));
+    samples.push(more,field,files,counted,sAdd(sNode('div','bar'),make));
     if(busyJob){const note=sNode('p','desk-working-note','Making the guide from your samples…');note.setAttribute('role','status');samples.push(note);}
     if(held.job?.status==='failed')samples.push(sNode('p','problem',held.job.error||'This did not finish. Make the guide again.'));
   }
   const text=held.way==='write'||ready||held.guide?sField('guide-text','The guide',held,'guide',{long:true,max:40000,required:true,hint:held.way==='samples'?'Made from your samples. Read it and change anything that is not how this writing sounds.':'How this writing sounds: register, sentence length, openings, words to use and avoid.'}):sNode('p','quiet','The guide appears here when it is made. You can edit it before saving.');
+  const guideBox=text.querySelector?.('textarea');if(guideBox)guideBox.rows=12;
   const save=sNode('button','button button-filled','Save guide');save.type='submit';save.disabled=!access.actions.edit||held.way==='samples'&&!ready&&!held.guide;
   form.append(sCreateStep(1,'Name',sField('guide-name','Name',held,'name',{required:true,max:200})),sCreateStep(2,'Write it, or make it from samples',how,...samples),sCreateStep(3,'Read and edit',text),problem,sAdd(sNode('div','bar form-actions'),save,sButton('Cancel',()=>{studio.guideDraft=null;sCloseSheet();})));
   form.addEventListener('submit',async event=>{event.preventDefault();await busy(save,'Saving…',async()=>{try{
@@ -810,7 +811,8 @@ function sGuideEdit(found){
   if(retired){sOpenSheet(found.name,sNode('p','quiet','Retired. Drafts that used it keep what was applied.'),sNode('p','desk-plain',found.guide),sButton('Close',sCloseSheet));return;}
   const save=sNode('button','button button-filled','Save guide');save.type='submit';save.disabled=!access.actions.edit;
   const retire=sButton('Retire this guide',()=>sOpenSheet('Retire '+found.name+'?',sNode('p','','It leaves the list of guides you can apply. Drafts that used it keep their text, and blogs that write as it keep it.'),sAdd(sNode('div','bar'),sButton('Retire',async button=>{await busy(button,'Retiring…',async()=>{try{const saved=await api('tool-action',{action:'profile-retire',profile:found.id,expected:found.expected,confirmed:true});sCloseSheet();if(saved.team_sync)savedNotice(saved);sToast('Retired “'+found.name+'”.');if(studio.screen==='guides')await sGuidesPage();}catch(error){notice(error.message,true);}});},'danger'),sButton('Cancel',()=>sGuideEdit(found)))));retire.disabled=!access.actions.edit;
-  form.append(sField('guide-name','Name',held,'name',{required:true,max:200}),sField('guide-text','The guide',held,'guide',{long:true,max:40000,required:true}),found.status==='provisional'?sNode('p','quiet','Provisional: learned from samples and not yet confirmed. Saving it here confirms it.'):null,problem,sAdd(sNode('div','bar form-actions'),save,retire));
+  const guideText=sField('guide-text','The guide',held,'guide',{long:true,max:40000,required:true}),guideBox=guideText.querySelector?.('textarea');if(guideBox)guideBox.rows=14;
+  form.append(sField('guide-name','Name',held,'name',{required:true,max:200}),guideText,found.status==='provisional'?sNode('p','quiet','Provisional: learned from samples and not yet confirmed. Saving it here confirms it.'):null,problem,sAdd(sNode('div','bar form-actions'),save,retire));
   form.addEventListener('submit',async event=>{event.preventDefault();await busy(save,'Saving…',async()=>{try{const saved=await api('tool-action',{action:'profile-save',profile:found.id,expected:found.expected,name:held.name.trim(),guide:held.guide,status:'confirmed',confirmed:true});sCloseSheet();if(saved.team_sync)savedNotice(saved);sToast('Saved “'+held.name.trim()+'”.');if(studio.screen==='guides')await sGuidesPage();}catch(error){problem.textContent=error.message;}});});
   sOpenSheet(found.name,form);
 }
