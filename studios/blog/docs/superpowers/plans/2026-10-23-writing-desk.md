@@ -1410,12 +1410,83 @@ Test `tests/test_desk_finish.py` (`VoiceTests`), `check-management.cjs` (`deskFi
 
 ## Phase 5: docs and cleanup
 
-- **5.1** README, `docs/capabilities.md`, `docs/runner.md` (desk section; the step-by-step
-  flow described as the path for older blogs), `references/guided-runs.md`,
-  `references/page-tools.md`, `docs/commands.md` regenerated.
-- **5.2** Remove start-screen code no longer reachable (old wizard steps, files screen start,
-  angles-in-run for new blogs) only where no old run can reach it; keep gate screens.
-- **5.3** Full check suite, CHANGELOG, PR, merge, restart.
+Expanded on 2026-10-23 against the Phase 4 code on `claude/writing-desk` (`runner.js`,
+`desk.js`, `app.js`, `check-management.cjs`). Phase 5 lands on the same branch, one commit
+per task. The cleanup (5.2) goes before the docs (5.1), so the docs describe the page as it
+is left. No push, pull request, merge or restart: the owner does those.
+
+**What still reaches the old new-blog wizard.** `sWizard` (with `newBlog`, the from-files
+screen `sFilesScreen` and `sStartBlog`) is reached from three places only:
+
+| Entry point | Today | After |
+| --- | --- | --- |
+| Interview → **Review outline and start a draft** | `newBlog(id, null, 'from-outline')`, the outline pasted into the wizard | `sDeskBegin({have: 'outline', outline, title})`: a desk start from the outline (`desk-create` `way: 'outline'` takes the text) |
+| A blog's details → **Open writing run**, with no guided run | `newBlog(id)`: the wizard's Review a draft for that blog | On the desk when it is a desk blog; a saved `DRAFT.md` comes to the desk start as **Your saved draft** (`desk-create` with `article`); anything else opens the desk start with its title |
+| `?screen=new` | `sWizard`, which already opens the desk start when no wizard draft is held | The desk start (`screen=desk-start`, the address replaced) |
+
+Old runs never reach the wizard: their run, gate, editor and Done screens are separate, and
+the angles gate (`sAngles`, `sNoneOfThese`, `anglesGate`) stays for a from-files run waiting
+at its angles.
+
+### Task 5.0: Expand this phase (this section)
+
+- [x] Commit "Plan the writing desk's docs and cleanup step by step".
+
+### Task 5.2: Move the last wizard entry points to the desk start, then remove the wizard
+
+**Files:** Modify `assets/management/runner.js`, `desk.js`; Test `scripts/ci/check-management.cjs`.
+
+- `desk.js`: the draft way takes `source: 'saved'` with `article` (shown as **Your saved
+  draft**, offered only when the start was opened for a saved blog) and posts `desk-create`
+  with `article`.
+- `runner.js`: Interview, `openBlogRun` and `screen=new` as in the table above.
+- Removed once nothing reaches them (each checked by grep over the page scripts and the
+  journeys): `newBlog`, `sWizard`, `sFilesScreen`, `sStartBlog`, `sUpload`, `sBackToWizard`,
+  `sWhereItStops`, `sResearchFrom`, `sSources`, `sStyleSelect`, `sStyleChoices`,
+  `sBrandChoice`, `sVoiceSummary`, `sKeepFields`, the research and stops helpers only the
+  wizard used (`sFrom`, `sFromDefault`, `sEffective`, `sClaimMaterials`, `sFetches`,
+  `sResearchPayload`, `sResearchProblem`, `sResearchWords`, `sResearchSays`,
+  `sResearchSummary`, `sPicked`, `sPipeline`, `sStops`, `sStopWords`, `sLevel`,
+  `sRefreshStops`), the files card's non-desk branches (every caller is the desk's), the
+  wizard's keep-the-manuscript's-voice branch of `sVoiceChoices` and `sVoiceChoice`
+  (`sKeepsVoice`, `VOICE_KEEP`), the `new` screen and the wizard's Google draft.
+- Kept: everything behind the voice switch (`sVoiceSelect`, `sVoicePayload`,
+  `sChangeVoice`, `sLearnVoice`, `sVoicesForAuthors`, voice `sVoiceLinks`, LinkedIn, voice
+  job sheets, Default voice), the gate screens, `sGoogleButton`, `sIsStop` and
+  `sChangedSays` (gates), `sLengthSelect` and `sStyleSamples` (desk), the server's
+  `run-create` and every mode it takes (chat and old runs use them).
+- [ ] **Step 1: Journeys**: Interview's outline opens the desk start on An outline or
+  notes with the outline and title; Open writing run on a desk blog opens the desk, on a
+  saved draft the desk start with Your saved draft and Start posts `desk-create` with
+  `article`, on a blog with no draft the desk start with its title; `?screen=new` opens the
+  desk start. Journeys that drove the wizard are removed where the desk start already covers
+  what they checked (the files card, the library picker, sites, length, kinds of post), and
+  moved to the desk start where it does not.
+- [ ] **Steps 2-5**: commit "Move the last ways into the old wizard to the desk start" and
+  "Remove the old new-blog wizard and the files screen".
+
+### Task 5.1: Docs
+
+- One pass, removing what Phases 1 to 4 left contradicting or repeating: `README.md`,
+  `docs/capabilities.md`, `docs/runner.md` (the desk first; the step-by-step flow as the path
+  older blogs keep), `docs/new-user-guide.md` and `docs/manuscript-workflow.md` where they
+  describe the page's start, `references/guided-runs.md`, `references/page-tools.md`,
+  `references/entry-flows.md` if it names the page's start, `references/workspace/profiles.md`,
+  and the root `docs/` where Blog Studio's start form is described (`shared-setup.md`).
+- `docs/commands.md` regenerated only if `command_reference.py --check` asks.
+  `measure_guidance.py --check` stays within budget.
+- [ ] Commit "Describe Blog Studio as it now is: the writing desk first".
+
+### Task 5.3: Full check and CHANGELOG
+
+- [ ] The full suite outside the sandbox (`python3 scripts/ci/run_tests.py --jobs 8`),
+  `check-management.cjs`, `check-newcomer.cjs`, `ruff format --check .`, `ruff check .`,
+  `build.py --check`, `measure_guidance.py --check`, `command_reference.py --check`,
+  `validate_package.py`, root `tests.test_ui_consistency` and the root tests that read Blog
+  Studio's pages.
+- [ ] One CHANGELOG (Unreleased) entry for the whole writing desk, for people, with the
+  maintainer notes kept beside it.
+- [ ] Commit "One CHANGELOG entry for the writing desk".
 
 ---
 
