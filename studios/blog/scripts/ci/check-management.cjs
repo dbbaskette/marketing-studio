@@ -428,7 +428,7 @@ async function phase4Starts(){
   const f=fixture(url=>url==='/api/run-options'?{settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}}:{items:[]});
   f.loadRunner();f.run('sHome()');
   const nodes=()=>descendants(f.get('studio-page'));
-  for(const title of ['Write about a topic','Work from my outline or notes','Edit or polish a draft'])assert.ok(nodes().some(n=>n.textContent===title));
+  for(const title of ['Write from a topic or my documents','Work from my outline or notes','Edit or polish a draft'])assert.ok(nodes().some(n=>n.textContent===title));
   for(const title of ['Outline only','Revise or review a draft','New blog from my files'])assert.ok(!nodes().some(n=>n.textContent===title),title+' is no longer a way to start');
   // A draft the person brings opens on the writing desk.
   await nodes().find(n=>n.textContent==='Edit or polish a draft').listeners.click();
@@ -452,7 +452,7 @@ async function taskJourneys(){
     return {items:[],total:0};
   });f.loadRunner();f.run('sHome()');
   const nodes=()=>descendants(f.get('studio-page')),field=id=>nodes().find(e=>e.id===id);
-  for(const label of ['Write about a topic','Work from my outline or notes','Edit or polish a draft'])assert.ok(nodes().some(e=>e.textContent===label));
+  for(const label of ['Write from a topic or my documents','Work from my outline or notes','Edit or polish a draft'])assert.ok(nodes().some(e=>e.textContent===label));
   // Setting up voices, styles and the library is on Home, without starting a blog.
   assert.ok(nodes().some(e=>e.textContent==='Set up before you write'),'Home offers setting up before writing');
   for(const label of ['Kinds of post','Team library'])assert.ok(nodes().some(e=>e.className==='pick-card'&&descendants(e).some(d=>d.textContent===label)||e.textContent===label),label);
@@ -3000,7 +3000,7 @@ async function deskTopicStart(){
   });
   // Home's tasks open the new start with what the person brings already chosen.
   await t.f.run("sRoute('home')");
-  await t.click('Write about a topic');
+  await t.click('Write from a topic or my documents');
   assert.equal(t.f.run('studio.screen'),'desk-start');assert.equal(t.f.run('studio.deskStart.have'),'topic');
   assert.equal(t.f.get('title').textContent,'New blog');
   // 1. A card per kind of post, with its usual shape; a retired one is not offered.
@@ -3025,7 +3025,7 @@ async function deskTopicStart(){
   t.byId('desk-web').checked=true;t.byId('desk-web').listeners.change();
   t.type('desk-length','deep');t.type('desk-tone','Warm');
   await t.submit();
-  // 3. Just a topic: the point typed, or three angles that read the sources already chosen.
+  // 3. A topic: the point typed, or three angles that read the sources already chosen.
   assert.equal(t.f.run('studio.deskStart.step'),2);
   assert.ok(!t.nodes().some(n=>n.textContent==='Add sources first'));
   t.type('desk-title','Retries');t.type('desk-audience','Operators');t.type('desk-point','Keep the work.');

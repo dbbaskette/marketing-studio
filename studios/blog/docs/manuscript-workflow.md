@@ -10,7 +10,7 @@ confirm a specific delivery.
 
 | Starting material | Route | Next decision |
 | --- | --- | --- |
-| A topic and point of view | New blog → Just a topic | Type the point, or pick one of three angles |
+| A topic and point of view | New blog → A topic, with your documents as sources | Type the point, or pick one of three angles |
 | An outline or notes | New blog → An outline or notes | Write from it, or shape the outline first |
 | A draft, a file or a Google Doc | New blog → A draft | An optional first pass; then notes on the desk |
 | Someone else's Google Doc | New blog → A draft → Google Doc | Edit on the desk, then **Finishing → Before publishing → Send to Google Doc** as suggestions |

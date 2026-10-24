@@ -79,7 +79,7 @@ Once the page is open, use its controls to drive the work:
      **Settings → Writing preferences** (off unless you tick them there), and you can change
      them for each blog. Choose a **Length**
      and a **Tone**.
-   - **What do you have?** **Just a topic** (a title, who it is for and the point, or
+   - **What do you have?** **A topic** (a title, who it is for and the point, or
      **Suggest three angles** to pick and edit one), **An outline or notes** (**Write
      from my outline**, or **Shape an outline with me first**), or **A draft** (pasted,
      uploaded or a Google Doc, with an optional first pass that tightens it or reshapes it

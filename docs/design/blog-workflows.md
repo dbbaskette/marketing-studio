@@ -10,7 +10,7 @@ approve an internal review artifact before choosing edits.
 
 | Job | Steps | Result |
 | --- | --- | --- |
-| Write about a topic | Kind of post → sources and settings → title, reader and point, or three angles → Start | A draft on the writing desk |
+| Write from a topic or my documents | Kind of post → sources and settings (files, links, Google Docs) → title, reader and point, or three angles → Start | A draft on the writing desk |
 | Work from an outline or notes | Kind of post → sources and settings → the outline → write from it, or shape it first | A draft, or an outline to shape, on the desk |
 | Edit or polish a draft | Kind of post → sources and settings → pasted text, a file or a Google Doc → optional first pass | The draft on the desk, with notes, selection edits, History and Finishing |
 | Polish a blog already in the manuscript editor | Continue editing → polish → choose changes → finish | Google feedback or a revised local draft with retained history; **Polish another document** then opens the desk start with A draft |
