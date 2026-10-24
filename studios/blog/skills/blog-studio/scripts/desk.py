@@ -351,7 +351,10 @@ def create(root, data):
         directory = studio.inside(root, 'articles', ident)
     else:
         record, ident = existing, existing['id']
-    record['voice'] = {'mode': 'tone', 'tone': tone}  # Tone only, whatever the defaults say.
+    # A saved blog keeps the voice it was pinned to in its record; the desk writes with the
+    # tone of its own draft whatever the record says.
+    if existing is None or (existing.get('voice') or {}).get('mode') != 'profile':
+        record['voice'] = {'mode': 'tone', 'tone': tone}  # Tone only, whatever the defaults say.
     record['flow'] = 'desk'
     record['title'] = draft['title']
     _attach(root, data, record)

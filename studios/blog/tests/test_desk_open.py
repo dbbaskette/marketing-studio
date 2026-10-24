@@ -112,5 +112,23 @@ class OpenOnTheDeskTests(RunnerCase):
             runner.save(self.root, directory, record, run, 'A late decision')
 
 
+class SavedBlogVoiceTests(RunnerCase):
+    def test_a_saved_blog_brought_to_the_desk_keeps_its_pinned_voice(self):
+        found = self.create(page=True)
+        directory, record, _ = runner.load(self.root, found['id'])
+        (directory / runner.STATE).unlink()  # A saved blog with no run: brought by `article`.
+        record['voice'] = {'mode': 'profile', 'profile_id': 'someone', 'revision': 2, 'tone': ''}
+        studio.persist(directory, 'articles', record)
+        (directory / 'DRAFT.md').write_text('# Saved\n\nOpening.\n\n## A\n\nText.\n')
+        made = management.dispatch(
+            self.root,
+            'desk-create',
+            {'operation': 'e' * 32, 'article': found['id'], 'tone': 'Warm'},
+        )
+        self.assertEqual(made['tone'], 'Warm', 'the desk writes with its tone')
+        _, after = studio.item(self.root, 'articles', found['id'])
+        self.assertEqual(after['voice'], record['voice'], 'the record keeps its pin')
+
+
 if __name__ == '__main__':
     unittest.main()
