@@ -2155,6 +2155,7 @@ def old_voice_tool(route, data):
 
 def dispatch(root, route, data):
     from team_workspace import space, before, saved, status, refresh, action, join
+    from team_workspace import keep_desk_leftovers
 
     # Refused before anything is read, fetched or shared. The default voice in run-settings
     # is checked with the rest of that form (blog_runner.settings).
@@ -2214,6 +2215,7 @@ def dispatch(root, route, data):
                 raise ValueError('Reload the displayed sharing setting before saving.')
             studios_config.update({'share': data['share']}, expected={'share': before['share']})
             return status(root)
+        keep_desk_leftovers(root)
         return refresh(root, push=True)
     if route == 'desk-share':
         # Leaving the desk: share its edits, kept on this computer while typing, with the team.
@@ -2226,9 +2228,13 @@ def dispatch(root, route, data):
     if route.startswith('team-'):
         if data.get('confirmed') is not True or not isinstance(data.get('expected'), str):
             raise ValueError('Confirm the current blog before changing its driver or publishing.')
+        keep_desk_leftovers(root)
         return action(root, data.get('id'), route[5:], data['expected'])
     if space(root):
         if route in ('refresh', 'retry-sync'):
+            # What a desk result left after its share failed is kept first, so a refresh is
+            # never refused for it.
+            keep_desk_leftovers(root)
             return refresh(root, push=True)
         if route == 'memory':
             from team_workspace import save_memory

@@ -2665,10 +2665,11 @@ class Engine:
             self.current = None
 
     def sync_team(self):
-        from team_workspace import refresh
+        from team_workspace import keep_desk_leftovers, refresh
 
         while not self.closed.is_set():
             try:
+                keep_desk_leftovers(self.root)  # So the check is never refused for them.
                 refresh(self.root)
             except (ValueError, OSError) as exc:
                 # A failed background check remains visible until a successful one.

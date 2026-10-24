@@ -865,6 +865,52 @@ class ReviewFixTests(ChainCase):
         self.assertGreaterEqual(limits[0], 598)
         self.assertLess(limits[1], limits[0])
 
+    def test_research_writes_into_the_blog_only_when_it_settles(self):
+        # A start's research takes minutes: the blog's folder stays as it was meanwhile, so a
+        # team workspace has nothing outside a recorded decision. The plan and the findings
+        # land together when the job settles.
+        during = []
+
+        def worker(engine, payload, guidance, **options):
+            if 'research questions' in guidance:
+                return {'content': '1. What stops jobs?', 'notes': ''}
+            folder = self.folder(made['id']) / 'derived'
+            during.append(sorted(path.name for path in folder.glob('*')) if folder.exists() else [])
+            return {'content': '# Findings\n\nTimeouts.', 'notes': ''}
+
+        made = self.begin(research_from={'sites': [], 'web': True})
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(during, [[]])
+        derived = self.folder(made['id']) / 'derived'
+        self.assertEqual((derived / 'blog-research-plan.md').read_text(), '1. What stops jobs?')
+        self.assertIn('Timeouts', (derived / 'blog-research.md').read_text())
+        self.assertFalse(studio.inside(self.root, '.blog-runs', 'desk-starts', made['id']).exists())
+
+    def test_reviewed_research_is_staged_until_it_settles(self):
+        from unittest.mock import patch
+
+        import synthesis_fixture
+        import synthesis_research
+        from studio_core import research_contract
+
+        seen = {}
+
+        def generate(directory, run, payload, worker, **options):
+            synthesis_fixture.published_bundle(directory / research_contract.CASE / 'research')
+            seen['research'] = (self.folder(made['id']) / 'research').exists()
+            seen['plan'] = (self.folder(made['id']) / 'derived' / 'blog-research-plan.md').exists()
+            return {'content': '# Report\n', 'notes': ''}
+
+        with patch.object(research_contract, 'snapshot', return_value={'schema': 2}):
+            made = self.begin(research_from={'sites': [], 'web': True})
+        with patch.object(synthesis_research, 'generate', side_effect=generate):
+            self.run_jobs(1)
+        self.assertEqual(seen, {'research': False, 'plan': False})
+        self.assertTrue((self.folder(made['id']) / 'research' / 'output.json').is_file())
+        self.assertTrue((self.folder(made['id']) / research_contract.CASE).is_dir())
+        self.assertTrue((self.folder(made['id']) / 'derived' / 'blog-research-plan.md').is_file())
+        self.assertFalse(studio.inside(self.root, '.blog-runs', 'desk-starts', made['id']).exists())
+
     def test_an_overlong_research_report_is_refused_readably(self):
         def worker(engine, payload, guidance, **options):
             if 'research questions' in guidance:

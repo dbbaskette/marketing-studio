@@ -394,6 +394,57 @@ class DeskStartTeamTests(TeamCase):
         retried = management.dispatch(self.root, 'desk-retry', {'id': made['id']})
         self.assertEqual(retried['working']['kind'], 'desk-research')
 
+    def test_research_under_way_leaves_the_tree_clean_for_refresh_shares_and_sync(self):
+        made = self.start()
+        other = self.made['id']
+        during = []
+
+        def worker(engine, payload, guidance, **options):
+            if 'research questions' in guidance:
+                return {'content': '1. What stops jobs?', 'notes': ''}
+            during.append(gitstate.changed(self.found))
+            # Meanwhile the person refreshes, leaves another blog's desk, and the page's
+            # background check runs: none is refused for the research under way.
+            management.dispatch(self.root, 'refresh', {})
+            management.dispatch(self.root, 'desk-share', {'id': other})
+            teams.refresh(self.root)
+            during.append(gitstate.changed(self.found))
+            return {'content': '# Findings\n\nTimeouts.', 'notes': ''}
+
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(during, [[], []])
+        self.assertEqual(gitstate.changed(self.found), [])
+        folder = self.root / made['id'] / 'derived'
+        self.assertTrue((folder / 'blog-research-plan.md').is_file())
+        self.assertTrue((folder / 'blog-research.md').is_file())
+        shared = support.git(self.remote, 'ls-tree', '-r', '--name-only', 'main')
+        self.assertIn(made['id'] + '/derived/blog-research.md', shared)
+
+    def test_refresh_keeps_desk_leftovers_first(self):
+        folder = self.root / self.made['id'] / 'desk'
+        (folder / 'start.json').write_text('{"left": true}')
+        management.dispatch(self.root, 'refresh', {})
+        self.assertEqual(gitstate.changed(self.found), [])
+        (folder / 'start.json').write_text('{"left": 2}')
+        management.dispatch(self.root, 'team-sync', {})
+        self.assertEqual(gitstate.changed(self.found), [])
+        # The page's background check, once.
+        (folder / 'start.json').write_text('{"left": 3}')
+
+        class Once:
+            def is_set(self):
+                return False
+
+            def wait(self, seconds):
+                return True
+
+        engine = blog_runner.Engine(self.root)
+        engine.closed = Once()
+        engine.sync_team()
+        self.assertEqual(gitstate.changed(self.found), [])
+        report = (self.root / '.team-sync.json').read_text()
+        self.assertNotIn('Local files changed', report)
+
     def test_leftovers_under_any_desk_blog_are_kept_before_the_next_decision(self):
         folder = self.root / self.made['id'] / 'desk'
         (folder / 'start.json').write_text('{"left": true}')

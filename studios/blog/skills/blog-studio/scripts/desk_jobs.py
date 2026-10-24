@@ -11,6 +11,7 @@ process finished is settled by the next desk request. Like desk.py, every functi
 import json
 import re
 import secrets
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -986,10 +987,18 @@ def _round_words(event):
     )
 
 
+def staging(root, ident):
+    """Where a start's reviewed research waits on this computer while its job works: never in
+    the blog's folder, which a team workspace would see as changed outside a decision."""
+    return studio.inside(root, '.blog-runs', 'desk-starts', studio.identifier(ident))
+
+
 def research_run(engine, job):
     """Run a start's research job outside the lock: the plan, then reviewed research through
-    Harness Research when the start pinned it, published into the blog's research folder; or
-    one research job with the assistant's web search, kept as derived/blog-research.md."""
+    Harness Research when the start pinned it, or one research job with the assistant's web
+    search. Nothing is written into the blog while it works: the plan and report go back with
+    the result, a reviewed case waits in `staging`, and all of it lands when the job settles
+    (`_land_research`), under the lock, as one team decision."""
     from studio_core import model_profiles, research_contract
 
     import time
@@ -999,7 +1008,7 @@ def research_run(engine, job):
     root, stop = engine.root, engine.stop
     deadline = time.monotonic() + job['seconds']  # One limit for the plan and the research.
     ident = job['metadata']['article']
-    directory, _ = studio.item(root, 'articles', ident)
+    studio.item(root, 'articles', ident)
 
     def left():
         remaining = int(deadline - time.monotonic())
@@ -1008,11 +1017,6 @@ def research_run(engine, job):
                 'Research ran out of the time a step may take.', 'time-limit'
             )
         return remaining
-
-    def keep(stage, text):
-        with studio.locked(root):
-            if tool_jobs._working(root, job['id']) is not None and not stop.is_set():
-                studio.atomic(studio.inside(directory, blog_runner.STAGES[stage][1]), text.encode())
 
     def ask(data, guidance, step, web=False):
         if stop.is_set():
@@ -1030,7 +1034,8 @@ def research_run(engine, job):
 
     _note_phase(root, job, 'Planning the research')
     plan = ask(job['payload'], job['guidance'], 'research-plan')['content']
-    keep('research-plan', plan)
+    if not isinstance(plan, str) or len(plan) > 200_000:
+        raise ValueError('The research questions came back unreadable. Retry it.')
     payload = {**job['payload'], 'documents': {'research-plan': plan}}
     contract = job['metadata']['desk'].get('contract')
     if contract:
@@ -1057,13 +1062,17 @@ def research_run(engine, job):
             )
             with studio.locked(root):
                 if tool_jobs._working(root, job['id']) is not None and not stop.is_set():
+                    kept = staging(root, ident)
+                    shutil.rmtree(kept, ignore_errors=True)
+                    kept.mkdir(parents=True)
                     research_contract.copy_case(
-                        target / research_contract.CASE, directory / research_contract.CASE
+                        target / research_contract.CASE, kept / research_contract.CASE
                     )
-                    research_contract.publish(
-                        target / research_contract.CASE, directory / 'research'
-                    )
-        return {'content': result['content'][:200_000], 'notes': result['notes'][:10_000]}
+        return {
+            'content': result['content'][:200_000],
+            'notes': result['notes'][:10_000],
+            'plan': plan,
+        }
     _note_phase(root, job, 'Researching')
     stage = blog_runner.STAGES['research']
     guidance = (
@@ -1082,8 +1091,35 @@ def research_run(engine, job):
             'The research report came back longer than 200,000 characters, more than the '
             'draft can read. Nothing was saved; retry it.'
         )
-    keep('research', content)
-    return result
+    return {**result, 'plan': plan}
+
+
+def _land_research(root, ident, job, result):
+    """A start's research, settled: its plan, then its reviewed case published into the blog's
+    research folder, or its report as derived/blog-research.md. The staged case goes."""
+    from studio_core import research_contract
+
+    directory, _ = studio.item(root, 'articles', ident)
+    kept = staging(root, ident)
+    case = kept / research_contract.CASE
+    plan = result.get('plan')
+    if (job['metadata'].get('desk') or {}).get('contract'):
+        if case.is_dir():
+            research_contract.copy_case(case, directory / research_contract.CASE)
+            research_contract.publish(case, directory / 'research')
+        elif not (directory / 'research').is_dir():
+            raise ValueError('The reviewed research was not kept on this computer. Retry it.')
+    else:
+        studio.atomic(
+            studio.inside(directory, blog_runner.STAGES['research'][1]),
+            result['content'].encode(),
+        )
+    if isinstance(plan, str) and plan.strip():
+        studio.atomic(
+            studio.inside(directory, blog_runner.STAGES['research-plan'][1]), plan.encode()
+        )
+    shutil.rmtree(kept, ignore_errors=True)
+    return None
 
 
 def _queue_step(root, ident, step):
@@ -1398,7 +1434,7 @@ def _apply(root, ident, draft, job):
         desk_finish.settle(root, ident, draft, job)
         return None  # Proposals only: nothing changes until the person applies them.
     if kind == 'desk-research':
-        return None  # Its findings are in the blog's folder; the next step reads them.
+        return _land_research(root, ident, job, result)
     if kind == 'desk-outline':
         return _apply_outline(root, ident, draft, job, result)
     if kind == 'desk-draft':
