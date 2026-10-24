@@ -172,6 +172,8 @@ def _forget(root, ident):
     import desk_finish
 
     desk_finish.forget(root, ident)  # Finishing suggestions waiting for this blog.
+    # What Finishing sent to the blog's Google Doc, kept on this computer.
+    studio.inside(root, '.blog-runs', 'desk-google', ident + '.json').unlink(missing_ok=True)
     studio.inside(root, '.blog-runs', 'diagnostics', ident + '.json').unlink(missing_ok=True)
     blog_runner.said_path(root, ident).unlink(missing_ok=True)
     active = studio.inside(root, '.active-article.json')

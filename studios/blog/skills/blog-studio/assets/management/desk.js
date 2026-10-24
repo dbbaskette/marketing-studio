@@ -872,5 +872,5 @@ function sDeskSheetOpened(){const held=studio.desk;if(studio.screen!=='desk'||!h
 function sDeskSheetClosed(){const held=studio.desk;if(!held?.panelUnder)return;held.panelUnder=false;if(held.panel)held.panel.hidden=false;}
 // Turning a phone or resizing the window across a layout redraws the desk in the new one.
 function sDeskLayout(){return sNarrow()?'phone':sDeskFloating()?'drawer':'wide';}
-function sDeskResized(){const held=studio.desk;if(!held||!sDeskCurrent(held)||!held.cards&&held.tab!=='outline'||held.layout===sDeskLayout())return;held.layout=sDeskLayout();sDeskRender(held);}
+function sDeskResized(){const held=studio.desk;if(!held||!sDeskCurrent(held)||!held.cards&&held.tab!=='outline'||held.layout===sDeskLayout())return;held.layout=sDeskLayout();held.panelUnder=!!studio.sheet&&!!held.finish&&sDeskFloating();sDeskRender(held);}  // A sheet open across the change stays on top.
 if(typeof window.addEventListener==='function')window.addEventListener('resize',()=>{if(typeof clearTimeout==='function')clearTimeout(window.deskResize);window.deskResize=setTimeout(sDeskResized,150);});

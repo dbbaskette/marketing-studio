@@ -3556,6 +3556,13 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
     assert.equal(panel().hidden,false,size+': the panel is back when the sheet closes');
     assert.equal(f.get('main').inert,false);
   }
+  // Narrowing the window while a sheet is open keeps the sheet on top at once.
+  f.run("window.matchMedia=()=>({matches:false})");f.run('sDeskResized()');
+  await descendants(panel()).find(n=>n.textContent==='Add a source'&&n.listeners.click).listeners.click();
+  assert.equal(panel().hidden,false,'beside the draft, the panel is not in the way');
+  f.run("window.matchMedia=()=>({matches:true})");f.run('sDeskResized()');
+  assert.equal(panel().hidden,true,'narrowed under an open sheet, the panel steps aside');
+  f.run('sCloseSheet()');assert.equal(panel().hidden,false);
   // Turning the screen redraws the desk in its new layout.
   f.run("window.matchMedia=()=>({matches:false})");f.run('sDeskResized()');
   assert.doesNotMatch(panel().className,/desk-finish-sheet/);assert.match(nodes().find(n=>/desk-layout/.test(n.className)).className,/desk-finishing/);
