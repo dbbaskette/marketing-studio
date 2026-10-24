@@ -982,6 +982,14 @@ class GooglePairingTests(unittest.TestCase):
             with self.subTest(baseline=baseline[:20]):
                 self.assertEqual(self.occurrence(baseline, body)[0], 2)
 
+    def test_an_edit_to_one_of_several_copies_after_a_table_row_is_that_copy(self):
+        baseline = '| Keep it short. |\n\nKeep it short.\n\nKeep it short.\n\nKeep it short.\n'
+        for edited, copy in ((1, 1), (2, 2), (3, 3)):
+            lines = ['| Keep it short. |', 'Keep it short.', 'Keep it short.', 'Keep it short.']
+            lines[edited] = 'Keep it brief.'
+            with self.subTest(edited=edited):
+                self.assertEqual(self.occurrence(baseline, '\n\n'.join(lines) + '\n'), (copy, 3))
+
     def test_a_quote_the_doc_shows_another_number_of_times_is_not_sent(self):
         from unittest.mock import patch
 

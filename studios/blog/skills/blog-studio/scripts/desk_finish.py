@@ -913,6 +913,32 @@ def _shown(lines):
     return [shown for shown in (_visible(line) for line in lines) if shown is not None]
 
 
+def _aligned(before, opcodes):
+    """Opcodes with a change among repeated paragraphs kept in place. Where copies of one
+    paragraph repeat, the diff may read an edit to one copy as a line added before them and
+    one removed after; the same lines read as that copy replaced."""
+    out, at = [], 0
+    while at < len(opcodes):
+        three = opcodes[at : at + 3]
+        if len(three) == 3 and [op[0] for op in three] == ['insert', 'equal', 'delete']:
+            (_, a, _, c, d), (_, _, e, _, g), (_, _, f, _, _) = three
+            k = d - c
+            if f - e == k and before[a:f] == before[e:f] + before[a:e]:
+                out += [('replace', a, a + k, c, d), ('equal', a + k, f, d, g)]
+                at += 3
+                continue
+        if len(three) == 3 and [op[0] for op in three] == ['delete', 'equal', 'insert']:
+            (_, a, b, c, _), (_, _, e, _, g), (_, _, _, h, i) = three
+            k = b - a
+            if i - h == k and before[a:e] == before[b:e] + before[a:b]:
+                out += [('equal', a, a + (e - b), c, g), ('replace', a + (e - b), e, h, i)]
+                at += 3
+                continue
+        out.append(opcodes[at])
+        at += 1
+    return out
+
+
 def google_changes(baseline, body):
     """The desk's wording changes against the Google Doc as quoted suggestions, how many
     changed paragraphs cannot be one (added, removed, split or formatted), and the Doc
@@ -929,9 +955,10 @@ def google_changes(baseline, body):
     before = [line for line in baseline.splitlines() if line.strip()]
     after = [line for line in body.splitlines() if line.strip()]
     found, left, paragraphs = [], 0, {}
-    for tag, a, b, c, d in difflib.SequenceMatcher(
-        None, before, after, autojunk=False
-    ).get_opcodes():
+    opcodes = _aligned(
+        before, difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
+    )
+    for tag, a, b, c, d in opcodes:
         if tag == 'equal':
             continue
         olds, news = before[a:b], after[c:d]
