@@ -73,6 +73,52 @@ class OpenOnTheDeskTests(RunnerCase):
         opened = management.dispatch(self.root, 'desk-open', {'id': found['id']})
         self.assertEqual(opened['sections'][0]['text'], 'Because, edited in the editor.')
 
+    def test_a_run_step_under_way_keeps_the_blog_off_the_desk(self):
+        from unittest.mock import patch
+
+        import manuscript_editor
+
+        found = self.finished()
+        current = manuscript_editor.read(self.root, found['id'])
+        edited = current['content'].replace('Because.', 'Because, edited.')
+        management.dispatch(
+            self.root,
+            'editor-save',
+            {'id': found['id'], 'expected': current['expected'], 'content': edited},
+        )
+        # Continue it: a polish step is queued on the run.
+        current = manuscript_editor.read(self.root, found['id'])
+        with patch.object(runner.Engine, 'start', return_value=None):
+            manuscript_editor.dispatch(
+                self.root,
+                'check',
+                {'id': found['id'], 'expected': current['expected'], 'check': 'polish'},
+            )
+        shown = runner.engine(self.root).describe(found['id'])
+        self.assertIn(shown['status'], ('queued', 'working'))
+        self.assertFalse(shown['desk_open'])
+        with self.assertRaisesRegex(ValueError, 'is under way'):
+            management.dispatch(self.root, 'desk-open', {'id': found['id']})
+        directory = runner.load(self.root, found['id'])[0]
+        self.assertFalse((directory / 'desk' / 'draft.json').exists())
+
+    def test_a_submit_for_a_blog_on_the_desk_writes_nothing(self):
+        found = self.finished()
+        management.dispatch(self.root, 'desk-open', {'id': found['id']})
+        directory = runner.load(self.root, found['id'])[0]
+        before = {p: p.read_bytes() for p in directory.rglob('*') if p.is_file()}
+        with self.assertRaisesRegex(ValueError, 'on the desk'):
+            runner.submit(
+                self.root,
+                found['id'],
+                'draft',
+                {'content': '# Late\n\n## Why\n\nA late result.\n', 'notes': ''},
+                'x',
+                page=True,
+            )
+        after = {p: p.read_bytes() for p in directory.rglob('*') if p.is_file()}
+        self.assertEqual(after, before)
+
     def test_an_unfinished_run_is_refused(self):
         found = self.create(page=True)
         self.assertFalse(runner.engine(self.root).describe(found['id'])['desk_open'])

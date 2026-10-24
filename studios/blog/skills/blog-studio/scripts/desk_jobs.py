@@ -1103,21 +1103,27 @@ def _land_research(root, ident, job, result):
     kept = staging(root, ident)
     case = kept / research_contract.CASE
     plan = result.get('plan')
-    if (job['metadata'].get('desk') or {}).get('contract'):
-        if case.is_dir():
+    contract = (job['metadata'].get('desk') or {}).get('contract')
+    if contract and not case.is_dir() and not (directory / 'research').is_dir():
+        raise ValueError('The reviewed research was not kept on this computer. Retry it.')
+    try:
+        if contract and case.is_dir():
             research_contract.copy_case(case, directory / research_contract.CASE)
             research_contract.publish(case, directory / 'research')
-        elif not (directory / 'research').is_dir():
-            raise ValueError('The reviewed research was not kept on this computer. Retry it.')
-    else:
-        studio.atomic(
-            studio.inside(directory, blog_runner.STAGES['research'][1]),
-            result['content'].encode(),
-        )
-    if isinstance(plan, str) and plan.strip():
-        studio.atomic(
-            studio.inside(directory, blog_runner.STAGES['research-plan'][1]), plan.encode()
-        )
+        elif not contract:
+            studio.atomic(
+                studio.inside(directory, blog_runner.STAGES['research'][1]),
+                result['content'].encode(),
+            )
+        if isinstance(plan, str) and plan.strip():
+            studio.atomic(
+                studio.inside(directory, blog_runner.STAGES['research-plan'][1]), plan.encode()
+            )
+    except Exception as error:  # noqa: BLE001 - part of it may be in the blog already.
+        raise ValueError(
+            'The research could not be saved in full (' + str(error)[:300] + '). Retry saves '
+            'it again.'
+        ) from None
     shutil.rmtree(kept, ignore_errors=True)
     return None
 

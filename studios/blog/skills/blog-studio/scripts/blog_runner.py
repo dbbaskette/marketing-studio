@@ -1592,6 +1592,10 @@ def guard(root, ident, expected, page=False):
 
 
 def submit(root, ident, stage, result, expected, page=False):
+    import desk
+
+    # A blog on the desk keeps its run as it ended: a late result writes nothing at all.
+    desk.refuse_on_desk(studio.item(root, 'articles', ident)[0])
     found = guard(root, ident, expected, page)
     if found['next'] != stage:
         raise ValueError('Finish the current stage before submitting another.')
@@ -2371,6 +2375,7 @@ class Engine:
             # A finished blog may be opened on the writing desk; one already there says so.
             'desk_open': bool(
                 (found['complete'] or found.get('finished'))
+                and status not in ('queued', 'working')  # Its step would write DRAFT.md.
                 and (Path(found['directory']) / 'DRAFT.md').is_file()
             ),
             'on_desk': on_desk,

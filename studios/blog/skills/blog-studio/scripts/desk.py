@@ -550,6 +550,9 @@ def _citable(sources):
     return [dict(entry) for entry in sources if 'manuscript' not in entry['purposes']]
 
 
+UNDER_WAY = ('queued', 'working')  # a run's step that will write when it ends
+
+
 def open_run(root, ident):
     """A finished step-by-step blog on the desk: its DRAFT.md split into a desk draft with
     the run's kind of post, tone (never its voice) and length. The run's own state and files
@@ -561,6 +564,11 @@ def open_run(root, ident):
     target = studio.inside(directory, DESK, 'draft.json')
     if target.is_file() and not target.is_symlink():
         return read(root, ident)
+    if blog_runner.engine(root).describe(ident, listing=True)['status'] in UNDER_WAY:
+        # Its step would write DRAFT.md when it ends, behind the desk's back.
+        raise ValueError(
+            'A step of this blog is under way. Let it finish, or stop it, then open it on the desk.'
+        )
     found = blog_runner.survey(root, ident, listing=True)
     # A finished blog edited since in the manuscript editor reads as stale at its draft; its
     # DRAFT.md is the person's latest text, so it opens too.

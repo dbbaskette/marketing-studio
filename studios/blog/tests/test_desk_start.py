@@ -886,6 +886,31 @@ class ReviewFixTests(ChainCase):
         self.assertIn('Timeouts', (derived / 'blog-research.md').read_text())
         self.assertFalse(studio.inside(self.root, '.blog-runs', 'desk-starts', made['id']).exists())
 
+    def test_research_that_cannot_be_saved_in_full_says_so(self):
+        from unittest.mock import patch
+
+        import desk_jobs
+
+        def worker(engine, payload, guidance, **options):
+            if 'research questions' in guidance:
+                return {'content': '1. What stops jobs?', 'notes': ''}
+            return {'content': '# Findings\n\nTimeouts.', 'notes': ''}
+
+        real = studio.atomic
+
+        def atomic(path, data):
+            if str(path).endswith('blog-research-plan.md'):
+                raise OSError('disk full')
+            return real(path, data)
+
+        made = self.begin(research_from={'sites': [], 'web': True})
+        with patch.object(desk_jobs.studio, 'atomic', side_effect=atomic):
+            tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        problem = self.get('desk', id=made['id'])['start']['problem']
+        self.assertIn('could not be saved in full', problem)
+        self.assertIn('Retry saves it again', problem)
+        self.assertNotIn('Nothing was changed', problem)
+
     def test_reviewed_research_is_staged_until_it_settles(self):
         from unittest.mock import patch
 
