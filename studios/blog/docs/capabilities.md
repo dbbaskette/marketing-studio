@@ -16,7 +16,7 @@ it does not claim every low-level CLI flag is a browser control.
 | Writing without source IDs or placeholders; what the author must still supply | Desk → Sources and what needs you; Gate → Checked for you; Needs you before publishing | `evidence` and `gaps` beside a draft or handoff (`derived/blog-<stage>-notes.json`), the `reader-facing-note` check, `run submit --gap` |
 | How long the post runs | New blog → Sources and settings → Length | `desk-create` `length`; `run create --length style\|short\|deep` |
 | Bring a Google Doc, local Word/Markdown/text to the desk | New blog → A draft | `google-preview`, `google-start`, `upload` with `purpose: manuscript`, then `desk-create` |
-| Polish, proofread, humanize, fact check, revise a blog edited in the manuscript editor | Manuscript → Polish (and **Polish another document** once one is finished) | Located editor review, article reviews |
+| Polish, proofread, humanize, fact check, revise a blog edited in the manuscript editor | Manuscript → Polish (its **Polish another document** opens the desk start) | Located editor review, article reviews |
 | Choose/adjust edits and comments; save locally | Manuscript → Choose changes → Finish | Version-bound editor proposals and draft save |
 | Send explicit Google feedback | Manuscript → Finish → Send feedback; Desk → Finishing → Before publishing | Reserved, guarded Google suggestion/comment plans |
 | Voice guides: write one, make one from 3 to 20 samples, edit or retire it | Voice guides (sidebar) → New voice guide; Open | `GET /api/voice-guides`; `tool-action` `job-create` kind `voice-guide`, then `job-apply`; `profile-save`, `profile-retire`; saved as profiles, so learned voices are guides too |

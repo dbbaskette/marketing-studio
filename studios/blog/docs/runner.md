@@ -148,8 +148,8 @@ Images are left out of the text; inspect them in the original Doc. Pending sugge
 stay in Google.
 
 A blog edited in the manuscript editor (**Edit manuscript**) keeps its own Google tools:
-**Polish a document** imports another Doc there, and selected suggestions or comments are
-previewed and sent only when you confirm. The CLI remains available for Google
+selected suggestions or comments are previewed and sent only when you confirm. Its
+**Polish another document** opens the desk start with **A draft**. The CLI remains available for Google
 reconciliation and advanced operations.
 
 ## Your brand skill

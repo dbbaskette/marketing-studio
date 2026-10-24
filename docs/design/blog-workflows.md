@@ -13,17 +13,18 @@ approve an internal review artifact before choosing edits.
 | Write about a topic | Kind of post → sources and settings → title, reader and point, or three angles → Start | A draft on the writing desk |
 | Work from an outline or notes | Kind of post → sources and settings → the outline → write from it, or shape it first | A draft, or an outline to shape, on the desk |
 | Edit or polish a draft | Kind of post → sources and settings → pasted text, a file or a Google Doc → optional first pass | The draft on the desk, with notes, selection edits, History and Finishing |
-| Polish a document (blogs in the manuscript editor) | Choose Google Doc, pasted text, or a file → polish → choose changes → finish | Google feedback or a revised local draft with retained history |
+| Polish a blog already in the manuscript editor | Continue editing → polish → choose changes → finish | Google feedback or a revised local draft with retained history; **Polish another document** then opens the desk start with A draft |
 
 Blogs started before the desk keep their step-by-step run (brief, research, outline,
 draft, review, handoff) and the manuscript editor described below.
 
 ## Interface contract
 
-Home offers tasks and a compact resume list. Every new blog starts on the writing desk;
-nothing stops for the writer after Start. In the manuscript editor, Polish a document asks for the
-input method: Google Doc link, pasted text, or an uploaded text/Markdown/Word/PDF
-file. These are source choices within one task, rather than separate workflows. Blogs open the relevant next step.
+Home offers tasks and a compact resume list. Every new blog starts on the writing desk,
+including another document polished after one in the editor; nothing stops for the writer
+after Start. A draft brought to the desk asks for the input method: pasted text, an
+uploaded text/Markdown/Word/PDF file, or a Google Doc link. These are source choices within
+one task, rather than separate workflows. Blogs open the relevant next step.
 The editor has three explicit steps: Polish, Choose changes, Finish.
 Polish combines proofreading, copy editing and natural wording, without research.
 Fact checking, structure review and scoped revision remain available under other

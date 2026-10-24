@@ -496,11 +496,11 @@ async function sEditor(ident){
   const comments=found.proposals.filter(item=>item.kind==='comment'),edits=found.proposals.filter(item=>item.kind==='edit');
   const feedback=()=>sDownload({name:'blog-feedback.md',content:'# '+found.title+' — selected feedback\n\n'+found.proposals.map((item,index)=>'## '+(index+1)+'. '+(item.kind==='comment'?'Comment':'Suggested edit')+'\n\n'+item.before.replace(/^/gm,'> ')+'\n\n'+(item.kind==='edit'?'Suggested wording: '+(item.after||'(Remove this text)')+'\n\n':'')+item.reason).join('\n\n')});
   if(verified){
-    sPage(progress,sCard('Feedback sent',sStatus('done',delivery.message),link(found.google.url,'Open Google Doc ↗'),sNode('p','quiet','The author can review your feedback in Google Docs.'),sAdd(sNode('div','bar'),sButton('Polish another document',()=>{studio.intake=null;studio.google=null;return sRoute('polish');},'filled'),sButton('Back to your blogs',()=>sRoute('blogs')))));
+    sPage(progress,sCard('Feedback sent',sStatus('done',delivery.message),link(found.google.url,'Open Google Doc ↗'),sNode('p','quiet','The author can review your feedback in Google Docs.'),sAdd(sNode('div','bar'),sButton('Polish another document',()=>{studio.intake=null;studio.google=null;return sDeskBegin({have:'draft'});},'filled'),sButton('Back to your blogs',()=>sRoute('blogs')))));
     return;
   }
   if(delivery?.status==='local'&&!found.google){
-    sPage(progress,sCard('Your polished draft is saved',sStatus('done',delivery.message),sButton('Download polished document',download,'filled'),sCopyButton(found.content),comments.length?sButton('Download feedback',feedback):null,sAdd(sNode('div','bar'),sButton('Polish another document',()=>{studio.intake=null;studio.google=null;return sRoute('polish');}),sButton('Back to your blogs',()=>sRoute('blogs')))),manuscript);
+    sPage(progress,sCard('Your polished draft is saved',sStatus('done',delivery.message),sButton('Download polished document',download,'filled'),sCopyButton(found.content),comments.length?sButton('Download feedback',feedback):null,sAdd(sNode('div','bar'),sButton('Polish another document',()=>{studio.intake=null;studio.google=null;return sDeskBegin({have:'draft'});}),sButton('Back to your blogs',()=>sRoute('blogs')))),manuscript);
     return;
   }
   const summary=sNode('div','finish-selection');

@@ -184,6 +184,10 @@ async function manuscriptEditing(){
   assert.equal(writes.filter(r=>r.url==='/api/editor-google-plan').length,1,'success does not prepare another write');
   f.run('studio.editorDelivery=null');await f.run("sRoute('editor','fixture','finish')");
   assert.ok(nodes().some(e=>e.textContent==='Feedback sent'),'refresh keeps the verified delivery result');
+  // Polish another document starts on the writing desk with a draft, not the old intake.
+  await nodes().find(e=>e.textContent==='Polish another document').listeners.click();
+  assert.equal(f.run('studio.screen'),'desk-start');assert.equal(f.run('studio.deskStart.have'),'draft');
+  await f.run("sRoute('editor','fixture','finish')");
   assert.equal(writes.filter(r=>r.url==='/api/editor-google-plan').length,1);
 
   f.run("studio.editorDelivery={id:'fixture',expected:'v3',status:'local',message:'Saved locally'}");await f.run("sRoute('editor','fixture','finish')");

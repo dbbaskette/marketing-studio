@@ -55,9 +55,10 @@ assistant assessments unless the record identifies a performed mechanical check.
 
 ## Edit another author's Google Doc in the manuscript editor
 
-1. After finishing a blog in the editor, choose **Polish another document**, then
-   **Google Doc**. Paste the link, read the preview, and
-   confirm the accepted text matches the original. Importing starts no model.
+1. Open a blog already in the editor, imported from a Google Doc, with **Continue
+   editing**. A new Doc goes to the writing desk instead (**New blog → A draft → Google
+   Doc**), and so does **Polish another document** after you finish. Importing starts no
+   model.
 2. In **Polish**, optionally name a concern, then choose **Polish writing**.
    This combines proofreading, copy editing and natural wording without research.
    Other editing actions, including fact checking, are in a disclosure.
