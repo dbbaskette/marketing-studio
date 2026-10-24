@@ -955,6 +955,52 @@ class GooglePairingTests(unittest.TestCase):
         )
         self.assertEqual([(f['before'], f['occurrence']) for f in found], [('short', 2)])
 
+    def occurrence(self, baseline, body):
+        found, _, expected = desk_finish.google_changes(baseline, body)
+        self.assertEqual(len(found), 1)
+        return found[0].get('occurrence'), expected[found[0]['id']]['matches']
+
+    def test_occurrences_count_only_what_a_reader_of_the_doc_sees(self):
+        # A link target, a table row and an image are not text in the Doc's body paragraphs.
+        cases = [
+            (
+                'See [the guide](https://example.com/setup).\n\nRun setup first.\n\n'
+                '**Then** run setup again.\n\nFinally setup ends.\n',
+                'See [the guide](https://example.com/setup).\n\nRun setup first.\n\n'
+                '**Then** run install again.\n\nFinally setup ends.\n',
+            ),
+            (
+                '| setup | x |\n|---|---|\n\nRun setup first.\n\n**Then** run setup again.\n',
+                '| setup | x |\n|---|---|\n\nRun setup first.\n\n**Then** run install again.\n',
+            ),
+            (
+                '![setup diagram](setup.png)\n\nRun setup first.\n\n**Then** run setup again.\n',
+                '![setup diagram](setup.png)\n\nRun setup first.\n\n**Then** run install again.\n',
+            ),
+        ]
+        for baseline, body in cases:
+            with self.subTest(baseline=baseline[:20]):
+                self.assertEqual(self.occurrence(baseline, body)[0], 2)
+
+    def test_a_quote_the_doc_shows_another_number_of_times_is_not_sent(self):
+        from unittest.mock import patch
+
+        import google_suggestions
+
+        found, _, expected = desk_finish.google_changes(
+            'Run setup first.\n\n**Then** run setup again.\n',
+            'Run setup first.\n\n**Then** run install again.\n',
+        )
+        document = {'document_id': 'd', 'tab_ids': ['t.0']}
+        with (
+            patch.object(google_suggestions, 'read_for_review', return_value=({}, {}, 'auto')),
+            patch.object(google_suggestions, 'quote_positions', return_value=[('t.0', 1)] * 3),
+        ):
+            free, waiting, unsure = desk_finish._not_pending(
+                object(), document, found, expected, 'auto'
+            )
+        self.assertEqual((free, waiting, unsure), ([], 0, 1))
+
 
 import google_drive  # noqa: E402
 import test_google_start  # noqa: E402

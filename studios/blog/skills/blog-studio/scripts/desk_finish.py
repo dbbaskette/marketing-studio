@@ -888,11 +888,38 @@ NO_DOC = (
 )
 
 
+VISIBLE = (
+    (re.compile(r'^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d{1,3}[.)]\s+)'), ''),  # line markers
+    (re.compile(r'!\[[^\]]*\]\([^)]*\)'), ''),  # images
+    (re.compile(r'\[\^[^\]]+\]'), ''),  # footnote markers
+    (re.compile(r'\[([^\]]*)\]\([^)]*\)'), r'\1'),  # links show their text, not their target
+    (re.compile(r'<(https?://[^>\s]+)>'), r'\1'),
+    (re.compile(r'[*`]+'), ''),  # emphasis and code marks
+)
+
+
+def _visible(line):
+    """A Markdown line as the Doc's body paragraph shows it, or None for a line that is not
+    one (a table row, a fence, a footnote's own text)."""
+    bare = line.strip()
+    if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[\^[^\]]+\]:', bare):
+        return None
+    for pattern, replacement in VISIBLE:
+        line = pattern.sub(replacement, line)
+    return line
+
+
+def _shown(lines):
+    return [shown for shown in (_visible(line) for line in lines) if shown is not None]
+
+
 def google_changes(baseline, body):
     """The desk's wording changes against the Google Doc as quoted suggestions, how many
     changed paragraphs cannot be one (added, removed, split or formatted), and the Doc
-    paragraph each suggestion is in. A suggestion's id stays the same wherever its paragraph
-    moves, so one sent before is known again."""
+    paragraph each suggestion is in with how many times the Doc should show what locates it.
+    A suggestion's id stays the same wherever its paragraph moves, so one sent before is known
+    again. Copies are counted in the text a reader of the Doc sees, as Google's own search
+    finds it: link targets, images, table rows and footnote markers are not part of it."""
     import difflib
     import json
 
@@ -943,8 +970,11 @@ def google_changes(baseline, body):
                 left += 1
                 continue
             # Which copy this is of a paragraph the Doc repeats, so each copy is its own.
-            copy = sum(line.count(old) for line in before[:at])
-            copies = copy + sum(line.count(old) for line in before[at:])
+            shown_before, shown_after = _shown(before[:at]), _shown(before[at:])
+            shown = _visible(old) or ''
+            copy = sum(line.count(shown) for line in shown_before) if shown else 0
+            copies = copy + sum(line.count(shown) for line in shown_after) if shown else 0
+            quotes = sum(line.count(quoted) for line in shown_before + shown_after)
             item = {
                 'id': 'desk-'
                 + studio.digest(json.dumps([old, quoted, replacement, copy]).encode())[:16],
@@ -953,20 +983,28 @@ def google_changes(baseline, body):
                 'after': replacement,
                 'reason': 'Wording changed on the writing desk.',
             }
-            occurrence = None
-            if not MARKS & set(old) and (copies > 1 or baseline.count(quoted) > 1):
-                item['context'] = old  # The paragraph, so the quote is found in it.
+            occurrence, needle, matches = None, quoted, quotes
+            plain = shown == old.strip() and not MARKS & set(old)
+            if plain and shown.count(quoted) == 1 and (copies > 1 or quotes > 1):
+                item['context'] = shown  # The paragraph, so the quote is found in it.
+                needle, matches = shown, copies
                 occurrence = copy + 1 if copies > 1 else None
-            elif baseline.count(quoted) > 1:
-                # Formatted text cannot be matched as a whole: count the quote instead.
+            elif quotes > 1:
+                # Formatted text cannot be matched as a whole: count the quote as shown.
                 occurrence = (
-                    sum(line.count(quoted) for line in before[:at]) + old[:start].count(quoted) + 1
+                    sum(line.count(quoted) for line in shown_before)
+                    + (_visible(old[:start]) or '').count(quoted)
+                    + 1
                 )
             item = manuscript_editor.proposal(item)
             if occurrence:
                 item['occurrence'] = occurrence
             found.append(item)
-            paragraphs[item['id']] = studio.digest(old.encode())
+            paragraphs[item['id']] = {
+                'paragraph': studio.digest(old.encode()),
+                'needle': needle,
+                'matches': matches,
+            }
     return found, left, paragraphs
 
 
@@ -1041,9 +1079,12 @@ def google_plan(root, ident, mode):
     client = drive.Client(drive.account_for(root))
     # A paragraph the Doc shows with a suggestion still waiting for its owner waits too; once
     # the owner accepts or rejects it, the paragraph can take another.
-    waiting = 0
+    waiting = unsure = 0
     if proposals:
-        proposals, waiting = _not_pending(client, base['document'], proposals, mode)
+        proposals, waiting, unsure = _not_pending(
+            client, base['document'], proposals, paragraphs, mode
+        )
+        left += unsure
     if not proposals:
         said = []
         if before:
@@ -1057,7 +1098,15 @@ def google_plan(root, ident, mode):
                 + ' in a paragraph that still has a suggestion waiting for the Doc’s owner to '
                 'accept or reject'
             )
-        if left:
+        if unsure:
+            said.append(
+                str(unsure)
+                + (' change' if unsure == 1 else ' changes')
+                + ' could not be placed in the Doc with certainty and '
+                + ('stays' if unsure == 1 else 'stay')
+                + ' on the desk'
+            )
+        if left - unsure:
             said.append('paragraphs added, removed or formatted cannot be suggestions')
         raise ValueError(
             'Nothing new to send'
@@ -1076,23 +1125,34 @@ def google_plan(root, ident, mode):
     )
     record['plans'] = {
         **{token: rows for token, rows in record['plans'].items() if token != plan['plan']},
-        plan['plan']: [{'id': p['id'], 'paragraph': paragraphs[p['id']]} for p in proposals],
+        plan['plan']: [
+            {'id': p['id'], 'paragraph': paragraphs[p['id']]['paragraph']} for p in proposals
+        ],
     }
     record['plans'] = dict(list(record['plans'].items())[-20:])
     studio.write_json(_sent_path(root, ident), record)
     return {**plan, 'left': left, 'sent_before': before, 'waiting': waiting}
 
 
-def _not_pending(client, document, proposals, mode):
-    """The proposals whose Doc paragraph has no pending suggestion, read from the Doc now,
-    and how many wait for one."""
+def _not_pending(client, document, proposals, expected, mode):
+    """The proposals that can go now, read from the Doc: how many wait for a pending
+    suggestion in their paragraph, and how many the Doc shows a different number of times than
+    the desk counted, which could land on the wrong copy and so stay on the desk."""
     import google_roundtrip as rt
     import google_suggestions as suggestions
     from google_drive import GoogleError
 
     inline, _, _ = suggestions.read_for_review(client, document['document_id'], mode)
-    free, waiting = [], 0
+    free, waiting, unsure = [], 0, 0
     for proposal in proposals:
+        found = expected.get(proposal['id']) or {}
+        if proposal.get('occurrence') or proposal.get('context'):
+            seen = suggestions.quote_positions(
+                inline, document['tab_ids'], proposal['before'], proposal.get('context')
+            )
+            if len(seen) != found.get('matches'):
+                unsure += 1
+                continue
         try:
             where = suggestions.locate(inline, proposal, document['tab_ids'])
             _, paragraph = rt.paragraph_at(inline, where['tab_id'], where['start_index'])
@@ -1103,7 +1163,7 @@ def _not_pending(client, document, proposals, mode):
             waiting += 1
         else:
             free.append(proposal)
-    return free, waiting
+    return free, waiting, unsure
 
 
 def google_send(root, ident, data):
