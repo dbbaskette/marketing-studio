@@ -763,6 +763,109 @@ def outline_save(root, ident, seen, rows):
     )
 
 
+def _same_heading(one, other):
+    def plain(text):
+        return ' '.join(re.sub(r'[^\w\s]', ' ', text.lower()).split())
+
+    return plain(one) == plain(other)
+
+
+def reimport(root, ident, markdown, source, record=None):
+    """Bring a whole draft written outside the desk onto it: a chat save or a restore from
+    history (`chat`), or Google's accepted text (`google`). Each part it changes keeps its
+    text first as a version from that source; sections go with the desk section of the same
+    heading, then with the one in their place, so ids and History follow the text; a section
+    the new text leaves out can be brought back from the Outline tab. DRAFT.md and the
+    record are written by `_write`, so a desk page open meanwhile is refused for what changed
+    rather than writing over it. `record`, the caller's copy, is brought up to date."""
+    _require_lock()
+    if source not in ('chat', 'google'):
+        raise ValueError('Choose a listed kind of change.')
+    if not isinstance(markdown, str) or not markdown.strip():
+        raise ValueError('Cannot save an empty draft.')
+    if len(markdown) > LIMIT:
+        raise ValueError('Use a draft up to 200,000 characters.')
+    import desk_jobs
+
+    if any(
+        job['kind'] in WHOLE_DRAFT and desk_jobs.busy(job) for job in desk_jobs.jobs(root, ident)
+    ):
+        raise ValueError(
+            'The desk is writing this draft now. Wait for it, or stop it on the desk, then '
+            'save again.'
+        )
+    draft = read(root, ident)
+    found = split(markdown, title=draft['title'])
+    if len(found['sections']) > SECTIONS:
+        raise ValueError('Keep the draft to 60 sections.')
+    changed = []
+    title = ' '.join(found['title'].split()) or draft['title']
+    if title != draft['title']:
+        checked_text('title', title)
+        keep(root, ident, 'title', draft['title'], source)
+        draft['title'] = title
+        changed.append('title')
+    if found['opening'] != draft['opening']:
+        checked_text('opening', found['opening'])
+        if draft['opening']:
+            keep(root, ident, 'opening', draft['opening'], source)
+        draft['opening'] = found['opening']
+        changed.append('opening')
+    current, taken = draft['sections'], {section['id'] for section in draft['sections']}
+    planned, used = [None] * len(found['sections']), set()
+    for at, written in enumerate(found['sections']):
+        for section in current:
+            if section['id'] not in used and _same_heading(section['heading'], written['heading']):
+                planned[at] = section
+                used.add(section['id'])
+                break
+    for at in range(len(found['sections'])):
+        if planned[at] is None and at < len(current) and current[at]['id'] not in used:
+            planned[at] = current[at]
+            used.add(current[at]['id'])
+    merged = []
+    for at, written in enumerate(found['sections']):
+        section = planned[at]
+        heading = ' '.join(written['heading'].split())[:200]
+        checked_text('opening', written['text'])
+        if section is None:
+            part = _id(taken)
+            changed.append(part)
+            merged.append({'id': part, 'heading': heading, 'brief': '', 'text': written['text']})
+            continue
+        if section['text'] != written['text']:
+            if section['text']:
+                keep(root, ident, section['id'], section['text'], source)
+            changed.append(section['id'])
+        elif section['heading'] != heading:
+            changed.append(section['id'])
+        merged.append({**section, 'heading': heading, 'text': written['text']})
+    gone = [section for section in current if section['id'] not in used]
+    if gone or [s['id'] for s in merged if s['id'] in taken] != [
+        s['id'] for s in current if s['id'] in used
+    ]:
+        changed.append('outline')
+    if any(section['id'] not in taken for section in merged):
+        changed.append('outline')
+    if not changed:
+        return draft
+    now = studio.now()
+    _keep_removed(
+        root,
+        ident,
+        [{**section, 'index': current.index(section), 'at': now} for section in gone],
+    )
+    draft['sections'] = merged
+    draft = _write(root, ident, draft, sorted(set(changed)))
+    if record is not None:
+        directory, _ = _paths(root, ident)
+        fresh = studio.read_json(studio.metadata_path(directory, 'articles'))
+        for key in ('artifact_hashes', 'artifact_events', 'stage', 'title'):
+            if key in fresh:
+                record[key] = fresh[key]
+    return draft
+
+
 REMOVED = 20  # removed sections kept to bring back
 
 
@@ -883,6 +986,8 @@ SOURCES = (
     'finishing',
     'restore',
     'draft',
+    'chat',  # A whole draft saved in chat, or restored from its history (`reimport`).
+    'google',  # Google's accepted text brought back (`reimport`).
 )
 
 

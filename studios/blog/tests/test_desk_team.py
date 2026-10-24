@@ -445,6 +445,26 @@ class DeskStartTeamTests(TeamCase):
         report = (self.root / '.team-sync.json').read_text()
         self.assertNotIn('Local files changed', report)
 
+    def test_a_chat_save_of_a_desk_blog_is_one_shared_decision(self):
+        import sys
+
+        import desk
+        import studio
+
+        edited = self.base / 'edited.md'
+        body = (self.root / self.made['id'] / 'DRAFT.md').read_text().replace('First', 'Fixed')
+        edited.write_text(body)
+        remote = self.remote_commits()
+        argv = ['studio.py', '--root', str(self.root), 'article', 'save', '--id', self.made['id']]
+        argv += ['--kind', 'draft', '--file', str(edited)]
+        with patch.object(sys, 'argv', argv), patch('builtins.print'):
+            self.assertEqual(studio.main(), 0)
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertGreater(self.remote_commits(), remote)
+        shown = management.view(self.root, 'desk', {'id': [self.made['id']]})
+        self.assertIn('Fixed', shown['sections'][0]['text'])
+        self.assertEqual(desk.versions(self.root, self.made['id'], self.part)[0]['source'], 'chat')
+
     def test_leftovers_under_any_desk_blog_are_kept_before_the_next_decision(self):
         folder = self.root / self.made['id'] / 'desk'
         (folder / 'start.json').write_text('{"left": true}')

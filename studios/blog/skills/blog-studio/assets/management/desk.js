@@ -4,7 +4,7 @@
 'use strict';
 const DESK_FIRST_PASSES=[['tighten','Tighten and proofread'],['reshape','Reshape to fit this kind of post'],['leave','Leave it as it is']];
 const DESK_SELECTION=[['rephrase','Rephrase'],['shorten','Shorten'],['expand','Expand'],['fix','Fix']];
-const DESK_SOURCES={save:'Before your edit',rewrite:'Before a rewrite','revise-all':'Before a whole-draft revision',selection:'Before a selection edit','first-pass':'Before the first pass',finishing:'Before a finishing change',restore:'Before a restore',draft:'Before the draft was written'};
+const DESK_SOURCES={save:'Before your edit',rewrite:'Before a rewrite','revise-all':'Before a whole-draft revision',selection:'Before a selection edit','first-pass':'Before the first pass',finishing:'Before a finishing change',restore:'Before a restore',draft:'Before the draft was written',chat:'Before an edit in chat',google:'Before Google’s accepted text'};
 const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback','finish-voice':'Rewriting the draft in a voice guide'};
 // A start's steps, as the progress screen names them.
 const DESK_STEPS={research:'Researching',outline:'Outlining',draft:'Drafting'};

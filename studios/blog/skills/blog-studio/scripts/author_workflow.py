@@ -629,9 +629,21 @@ def restore(root, args):
         raise ValueError('Resolve or inspect Hub state before restoring this article.')
     if args.kind == 'draft' and record['stop_point'] in ('outline', 'brief'):
         raise ValueError('The selected task stops before drafting.')
-    saved = studio.save_artifact(
-        directory, args.kind, body, record, label='restore ' + args.revision
-    )
+    import desk
+
+    if args.kind == 'draft' and desk.on_desk(directory):
+        # On the desk, the restored text is a new version of each part it changes.
+        desk.reimport(root, args.id, body, 'chat', record)
+        saved = {
+            'path': str(target),
+            'sha256': record['artifact_hashes']['draft'],
+            'reopened': True,
+            'on_desk': True,
+        }
+    else:
+        saved = studio.save_artifact(
+            directory, args.kind, body, record, label='restore ' + args.revision
+        )
     if args.kind == 'draft':
         for review in record['reviews'].values():
             review['status'] = 'stale'

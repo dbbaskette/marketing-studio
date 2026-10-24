@@ -440,7 +440,9 @@ and shared-value saves are refused until it can be read.
 
 A desk blog keeps its draft in `desk/draft.json` (the title, the opening and each section
 with its brief) and earlier versions in `desk/versions/`, and rewrites `DRAFT.md` on every
-save so Copy, Download, Google Docs and the pre-publish check read the same text.
+save so Copy, Download, Google Docs and the pre-publish check read the same text. A draft
+saved in chat, restored from its history or accepted from Google comes onto the desk as a
+new version of each part it changes, so the next desk save keeps it.
 Suggestions from Finishing wait in `.blog-runs/desk-proposals/` on this computer until you
 decide. For a run, outlines and drafts remain `OUTLINE.md` and `DRAFT.md`. Research questions,
 research findings, review and package live under `derived/`. The stage record

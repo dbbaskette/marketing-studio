@@ -23,7 +23,8 @@ from Git; pass `--destination google|hub` only when already established.
   repeating mechanical checks. Do not expand to research or a developmental rewrite.
   Where the corrections go depends on the route result's `linked_document`:
   - **No linked Google Doc:** read the current draft and save the corrected text
-    with `article save ... --label proofread`.
+    with `article save ... --label proofread`. On a desk blog (`desk/draft.json`) the
+    saved text becomes a new version of each part it changes; History keeps the earlier one.
   - **Linked Google Doc:** the Doc is where the team's wording changes, so record
     each correction as a finding (exact current wording, proposed wording,
     reason) and save the list with `article review --check proofread --status

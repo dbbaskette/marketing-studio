@@ -905,7 +905,21 @@ def article_command(root, args):
             raise ValueError('Save the imported original before saving an edited draft.')
         if args.kind == 'original' and (directory / 'ORIGINAL.md').exists():
             raise ValueError('Imported original is immutable; revisions belong in DRAFT.md.')
-        saved_artifact = save_artifact(directory, args.kind, body, record, label=args.label)
+        import desk
+
+        if args.kind == 'draft' and desk.on_desk(directory):
+            # A blog on the desk takes a chat edit as a new version of each part it changed,
+            # so the next desk save keeps it rather than writing over it.
+            desk.reimport(root, args.id, body, 'chat', record)
+            target = inside(directory, 'DRAFT.md')
+            saved_artifact = {
+                'path': str(target),
+                'sha256': record['artifact_hashes']['draft'],
+                'reopened': True,
+                'on_desk': True,
+            }
+        else:
+            saved_artifact = save_artifact(directory, args.kind, body, record, label=args.label)
     elif args.action == 'progress':
         record['stage'] = args.stage
         record['next_step'] = args.next_step
