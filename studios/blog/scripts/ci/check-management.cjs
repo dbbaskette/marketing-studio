@@ -3054,15 +3054,18 @@ async function deskOtherWaysIn(){
   await t.f.run("openBlogRun('saved')");
   assert.equal(t.f.run('studio.screen'),'desk-start');
   await throughKinds();
-  const saved=t.nodes().find(n=>n.textContent==='Your saved draft');
-  assert.equal(saved.attributes['aria-pressed'],'true','the saved draft is chosen');
+  assert.equal(t.byId('desk-saved').checked,true,'the saved draft is chosen');
   assert.equal(t.byId('desk-manuscript'),undefined,'nothing to paste');
+  assert.equal(t.nodes().some(n=>n.textContent==='Paste text'),false,'and no other draft offered while it is');
+  t.byId('desk-saved').checked=false;t.byId('desk-saved').listeners.change();
+  assert.ok(t.byId('desk-manuscript'),'unticked, another draft can be pasted');
+  t.byId('desk-saved').checked=true;t.byId('desk-saved').listeners.change();
   await t.submit();
   made=t.requests.filter(r=>r.url==='/api/desk-create').at(-1).data;
   assert.equal(made.article,'saved');assert.equal(made.manuscript,undefined);assert.equal(made.title,'A saved blog');assert.equal(made.first_pass,'leave');
   // Paste text still works from there, and the saved draft is not offered on a fresh start.
   await t.f.run("sDeskBegin({have:'draft'})");await throughKinds();
-  assert.equal(t.nodes().some(n=>n.textContent==='Your saved draft'),false);
+  assert.equal(t.byId('desk-saved'),undefined);
   // A blog with no draft yet starts on the desk with its title.
   await t.f.run("openBlogRun('empty')");
   assert.equal(t.f.run('studio.screen'),'desk-start');assert.equal(t.f.run('studio.deskStart.title'),'An empty blog');assert.equal(t.f.run('studio.deskStart.have'),'topic');

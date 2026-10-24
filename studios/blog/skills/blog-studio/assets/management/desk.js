@@ -165,8 +165,9 @@ function sDeskOutlineIn(held){
 // A draft: paste, upload or a Google Doc (every tab), with an optional first pass. A start
 // opened from a saved blog's details also offers that blog's own draft, brought as it is.
 function sDeskDraftIn(held){
-  const card=sCard('Your draft',sChoice('Where is your draft?',[...(held.article?[['saved','Your saved draft']]:[]),['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
-  if(held.source==='saved')card.append(sNode('p','','The saved draft comes to the desk as it is, in the same blog. Its history is kept.'));
+  const saved=held.article?sCheck('desk-saved','Use this blog’s saved draft',{on:held.source==='saved'},'on','It comes to the desk as it is, in the same blog. Its history is kept.',on=>{held.source=on?'saved':'paste';held.preview=null;sDeskStart();}):null;
+  const card=sCard('Your draft',saved,held.source==='saved'?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
+  if(held.source==='saved'){/* The blog's own draft: nothing to paste or read. */}
   else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Each ## heading starts a section.'}));
   else if(held.source==='file'){
     const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload a draft');
