@@ -601,6 +601,41 @@ class ListingTests(RouteCase):
         self.assertEqual(blog_runner.catalog(self.root)['deleted'][0]['id'], made['id'])
 
 
+class ForgetAndReadAheadTests(RouteCase):
+    def test_deleting_a_desk_blog_forgets_its_start_and_staged_research(self):
+        made = self.start()
+        kept = studio.inside(self.root, '.blog-runs', 'desk-starts')
+        kept.mkdir(parents=True, exist_ok=True)
+        (kept / (made['id'] + '.json')).write_text('{"phase": "Researching"}')
+        (kept / made['id'] / 'case').mkdir(parents=True)
+        (kept / made['id'] / 'case' / 'state.json').write_text('{}')
+        (kept / 'other-blog.json').write_text('{}')
+        self.post(
+            'blog-delete', {'id': made['id'], 'expected': made['expected'], 'title': made['title']}
+        )
+        self.assertFalse((kept / (made['id'] + '.json')).exists())
+        self.assertFalse((kept / made['id']).exists())
+        self.assertTrue((kept / 'other-blog.json').exists(), 'another blog keeps its own')
+
+    def test_an_upload_with_fields_it_does_not_take_fetches_nothing(self):
+        from unittest.mock import patch
+
+        import management
+
+        link = {'link': 'https://docs.example.com/page'}
+        for data in (
+            {'operation': 'a' * 32, 'files': [link], 'extra': True},
+            {'operation': 'a' * 32, 'files': [link], 'purpose': 'nonsense'},
+            {'operation': 'a' * 32, 'files': [link], 'keep': 'yes'},
+        ):
+            with self.subTest(data=data):
+                with patch.object(
+                    management, 'checked_link', side_effect=AssertionError('fetched')
+                ):
+                    with self.assertRaises(ValueError):
+                        self.post('upload', data)
+
+
 class OtherWritersTests(RouteCase):
     """While a blog is on the desk, only the desk writes its DRAFT.md."""
 

@@ -529,9 +529,17 @@ def save_upload(root, staging, checked, purpose, author=None, analyze=True, libr
 
 def read_ahead(root, data):
     """Read the links and Google Docs of a files upload before the studio lock is taken,
-    so a slow page or Doc never holds the workspace. {position: checked entry}."""
+    so a slow page or Doc never holds the workspace. {position: checked entry}.
+
+    Nothing is fetched for a request `upload_files` will refuse anyway."""
     files = data.get('files')
     if not isinstance(files, list) or len(files) > MAX_UPLOAD_FILES:
+        return {}
+    if (
+        set(data) - {'operation', 'files', 'purpose', 'keep', 'analyze', 'author', 'kind'}
+        or data.get('purpose', 'material') not in studio.PURPOSES
+        or not isinstance(data.get('keep', False), bool)
+    ):
         return {}
     found = {}
     for at, entry in enumerate(files):

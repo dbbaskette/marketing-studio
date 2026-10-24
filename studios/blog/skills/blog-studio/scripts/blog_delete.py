@@ -169,6 +169,9 @@ def _forget(root, ident):
             if _names(path, ident, ('id',)):
                 path.unlink()
     studio.inside(root, '.blog-runs', 'desk-jobs', ident + '.json').unlink(missing_ok=True)
+    # A start's phase and problem, and research staged while it worked (desk_jobs.staging).
+    studio.inside(root, '.blog-runs', 'desk-starts', ident + '.json').unlink(missing_ok=True)
+    shutil.rmtree(studio.inside(root, '.blog-runs', 'desk-starts', ident), ignore_errors=True)
     import desk_finish
 
     desk_finish.forget(root, ident)  # Finishing suggestions waiting for this blog.
