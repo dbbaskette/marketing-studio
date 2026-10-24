@@ -459,6 +459,133 @@ class HumanizeTests(ToolCase):
         self.assertTrue(kept['text'].startswith('We leverage'))
 
 
+class VoiceTests(ToolCase):
+    """Apply a voice: the draft rewritten in a voice guide, section by section."""
+
+    def setUp(self):
+        super().setUp()
+        import article_tools
+
+        self.tools = article_tools
+        self.guide = article_tools.save_profile(
+            self.root,
+            {
+                'name': 'Plain',
+                'guide': 'Plain words. Short sentences.',
+                'status': 'confirmed',
+                'confirmed': True,
+            },
+        )['profile']
+        self.first_text = self.draft()['sections'][0]['text']
+
+    def parts(self, *rows):
+        return {'parts': [dict(zip(('part', 'text', 'why'), row, strict=True)) for row in rows]}
+
+    def test_the_guide_text_goes_in_the_payload_and_the_context_stays_tone_only(self):
+        job = self.queue('voice', guide=self.guide)
+        self.assertEqual(job['kind'], 'finish-voice')
+        self.assertEqual(
+            job['payload']['voice_guide'],
+            {'name': 'Plain', 'text': 'Plain words. Short sentences.'},
+        )
+        self.assertNotIn('voice', job['payload'])
+        self.assertIn(desk_finish.VOICE, job['guidance'])
+        self.assertIn('"parts"', job['guidance'])
+        self.assertIn(blog_runner.house_guide(), job['guidance'])
+        meta = job['metadata']['desk']
+        self.assertEqual(
+            (meta['part'], meta['guide'], meta['guide_name']), ('finishing', self.guide, 'Plain')
+        )
+        extra, _ = desk_jobs._context(self.root, self.draft())
+        self.assertNotIn('voice', extra)
+
+    def test_a_retired_unknown_or_missing_guide_is_refused(self):
+        current = self.tools.profile(self.root, self.guide)
+        self.tools.retire_profile(
+            self.root, {'profile': self.guide, 'expected': current['expected'], 'confirmed': True}
+        )
+        for guide in (self.guide, 'nobody', None):
+            with self.subTest(guide=guide), self.assertRaisesRegex(ValueError, 'not retired'):
+                self.queue('voice', guide=guide)
+
+    def test_one_whole_part_proposal_per_rewritten_part_and_nothing_changes(self):
+        before = self.draft()
+        self.ready(
+            self.queue('voice', guide=self.guide),
+            self.parts(
+                ('opening', 'An opening, said plainly.', 'Plainer.'),
+                (self.first, self.first_text, 'Already plain.'),
+                (self.second, 'Second text, plainly.', ''),
+                (self.second, 'A second row for the same part.', ''),
+                ('zzzzzzzz', 'Unknown.', ''),
+                ('opening', 'Intro\n\n## Extra', ''),
+            ),
+        )
+        self.assertEqual(self.draft()['revision'], before['revision'])
+        shown = self.shown('voice')
+        self.assertEqual((shown['dropped'], shown['kept'], shown['guide_name']), (3, 1, 'Plain'))
+        self.assertEqual(
+            [
+                (i['part'], i['before'], i['after'], i['whole'], i['present'])
+                for i in shown['items']
+            ],
+            [
+                ('opening', 'An opening paragraph.', 'An opening, said plainly.', True, True),
+                (self.second, 'Second text.', 'Second text, plainly.', True, True),
+            ],
+        )
+
+    def test_a_changed_fact_is_flagged_and_apply_all_lands_the_rest(self):
+        self.ready(
+            self.queue('voice', guide=self.guide),
+            self.parts(
+                (self.first, self.first_text.replace('12 files', '15 files'), ''),
+                (self.second, 'Second text, plainly.', ''),
+                ('opening', 'An opening, said plainly.', ''),
+            ),
+        )
+        items = self.shown('voice')['items']
+        self.assertIn('a number', items[1]['flag'])
+        ready = [{'id': i['id']} for i in items if not i['flag']]
+        shown = self.act('apply', seen=self.seen, job=self.shown('voice')['job'], items=ready)
+        self.assertEqual(shown['finished'], {'applied': 2, 'left': []})
+        draft = self.draft()
+        self.assertEqual(draft['opening'], 'An opening, said plainly.')
+        self.assertEqual(draft['sections'][1]['text'], 'Second text, plainly.')
+        self.assertEqual(draft['sections'][0]['text'], self.first_text)
+        for part, text in (('opening', 'An opening paragraph.'), (self.second, 'Second text.')):
+            kept = desk.versions(self.root, self.ident, part)[0]
+            self.assertEqual((kept['source'], kept['text']), ('finishing', text))
+
+    def test_a_part_edited_since_no_longer_fits(self):
+        self.ready(
+            self.queue('voice', guide=self.guide),
+            self.parts((self.second, 'Second text, plainly.', '')),
+        )
+        desk.save(self.root, self.ident, self.seen, self.second, 'Typed meanwhile.')
+        self.assertFalse(self.shown('voice')['items'][0]['present'])
+
+    def test_a_result_that_is_not_the_json_asked_for_is_unreadable(self):
+        job = self.ready(self.queue('voice', guide=self.guide), {'sections': []})
+        self.assertEqual(job['error'], desk_finish.UNREADABLE)
+
+    def test_a_fake_worker_runs_it_end_to_end(self):
+        def worker(engine, payload, guidance, **options):
+            self.assertEqual(payload['voice_guide']['name'], 'Plain')
+            return {
+                'content': json.dumps(
+                    {'parts': [{'part': self.second, 'text': 'Second text, plainly.', 'why': ''}]}
+                ),
+                'notes': '',
+            }
+
+        job = self.queue('voice', guide=self.guide)
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertTrue(tool_jobs.read(self.root, job['id'])['settled_at'])
+        self.act('apply', seen=self.seen, job=job['id'], items=[{'id': 'p1'}])
+        self.assertEqual(self.draft()['sections'][1]['text'], 'Second text, plainly.')
+
+
 class FactsTests(ToolCase):
     def test_no_sources_and_no_research_is_refused(self):
         with self.assertRaisesRegex(ValueError, 'Add a source first'):

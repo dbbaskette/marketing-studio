@@ -32,8 +32,9 @@ KINDS = (
     'finish-facts',
     'finish-headline',
     'finish-feedback',
+    'finish-voice',
 )  # A blog's own desk jobs; desk-angles runs before there is a blog.
-FINISH = ('finish-humanize', 'finish-facts', 'finish-headline', 'finish-feedback')
+FINISH = ('finish-humanize', 'finish-facts', 'finish-headline', 'finish-feedback', 'finish-voice')
 ACTIVE = ('queued', 'working')
 ACTIONS = {
     'rephrase': 'Rewrite the passage in fresh words with the same meaning.',
@@ -1262,13 +1263,13 @@ def _start_view(root, ident, rows):
     }
 
 
-def finish(root, ident, seen, tool, level=None):
+def finish(root, ident, seen, tool, level=None, guide=None):
     """Queue a finishing tool. It writes no part, so no card waits for it and no form is
     refused for it; its proposals are read against the draft when they come back."""
     import desk_finish
 
     draft = desk.read(root, ident)
-    kind, payload, guidance, meta = desk_finish.request(root, ident, draft, tool, level)
+    kind, payload, guidance, meta = desk_finish.request(root, ident, draft, tool, level, guide)
     return _queue(
         root,
         ident,

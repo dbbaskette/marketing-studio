@@ -5,7 +5,7 @@
 const DESK_FIRST_PASSES=[['tighten','Tighten and proofread'],['reshape','Reshape to fit this kind of post'],['leave','Leave it as it is']];
 const DESK_SELECTION=[['rephrase','Rephrase'],['shorten','Shorten'],['expand','Expand'],['fix','Fix']];
 const DESK_SOURCES={save:'Before your edit',rewrite:'Before a rewrite','revise-all':'Before a whole-draft revision',selection:'Before a selection edit','first-pass':'Before the first pass',finishing:'Before a finishing change',restore:'Before a restore',draft:'Before the draft was written'};
-const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback'};
+const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback','finish-voice':'Rewriting the draft in a voice guide'};
 // A start's steps, as the progress screen names them.
 const DESK_STEPS={research:'Researching',outline:'Outlining',draft:'Drafting'};
 const DESK_SAVE_WAIT=1000,DESK_POLL=3000,DESK_DIFF_LIMIT=4000;
@@ -587,6 +587,7 @@ async function sDeskWriteDraft(held,button){
 // each Apply keeps the earlier text in History. On a phone the panel is a full-screen sheet.
 const DESK_TOOLS=[
   ['humanize','Humanize','Sentences that read as machine-written, each with a rewrite. Numbers, names, quotes and links are kept.'],
+  ['voice','Apply a voice','The draft rewritten in one of your voice guides, section by section. Its facts, quotes, links and shape are kept.'],
   ['proofread','Proofread','Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'],
   ['facts','Check facts against sources','Each claim marked supported, not in your sources, or contradicted, with the passage.'],
   ['headline','Headline and opening','Alternatives for the title and the opening, to use or adjust.'],
@@ -594,13 +595,20 @@ const DESK_TOOLS=[
   ['publish','Before publishing','The pre-publish check, Repurpose, and Send to Google Doc as suggestions.'],
 ];
 const DESK_LEVELS=[['light','Light'],['medium','Medium'],['strong','Strong']];
-const DESK_RUN={humanize:['Find sentences','Finding sentences that read as machine-written…'],facts:['Check facts','Checking each claim against your sources…'],headline:['Suggest alternatives','Suggesting headlines and openings…'],feedback:['Get feedback','Reading the draft for feedback…']};
+const DESK_RUN={humanize:['Find sentences','Finding sentences that read as machine-written…'],facts:['Check facts','Checking each claim against your sources…'],headline:['Suggest alternatives','Suggesting headlines and openings…'],feedback:['Get feedback','Reading the draft for feedback…'],voice:['Apply the voice','Rewriting the draft in the voice guide, section by section…']};
 const DESK_VERDICTS={supported:'Supported','not-in-sources':'Not in your sources',contradicted:'Contradicted'};
 const DESK_ASPECTS={shape:'Shape',argument:'Argument',audience:'Audience',claims:'Claims'};
 const DESK_FORMATS=[['linkedin','LinkedIn feed copy'],['newsletter','Newsletter introduction'],['email','Announcement email'],['summary','Short summary'],['thread','Short thread']];
-function sDeskFinishOpen(held,tool=null){held.finish=held.finish||{tool:null,level:'light',editing:{},noted:{}};held.finish.tool=tool;sDeskRender(held);if(tool==='proofread')return sDeskProofread(held);}
+function sDeskFinishOpen(held,tool=null){held.finish=held.finish||{tool:null,level:'light',editing:{},noted:{}};held.finish.tool=tool;sDeskRender(held);if(tool==='proofread')return sDeskProofread(held);if(tool==='voice')return sDeskGuides(held);}
 function sDeskFinishClose(held){held.finish=null;sDeskRender(held);}
-function sDeskFinishTool(held,tool){held.finish.tool=tool;sDeskPanelShow(held);if(tool==='proofread'&&!held.finish.proof)return sDeskProofread(held);}
+function sDeskFinishTool(held,tool){held.finish.tool=tool;sDeskPanelShow(held);if(tool==='proofread'&&!held.finish.proof)return sDeskProofread(held);if(tool==='voice')return sDeskGuides(held);}
+// The voice guides Apply a voice can use, read when the tool opens.
+async function sDeskGuides(held){
+  const f=held.finish;try{const found=await api('voice-guides');if(held.finish!==f)return;f.guides=found.guides.filter(guide=>guide.status!=='retired');f.guidesProblem='';}catch(error){if(held.finish!==f)return;f.guides=f.guides||[];f.guidesProblem=error.message;}
+  const used=(held.view.finishing||{}).voice?.items&&f.guides.find(guide=>guide.name===(held.view.finishing||{}).voice.guide_name);
+  if(!f.guides.some(guide=>guide.id===f.guide))f.guide=(used||f.guides[0]||{}).id||'';
+  if(f.tool==='voice')sDeskPanelSync(held,true);
+}
 function sDeskPanel(held){
   const f=held.finish,tool=DESK_TOOLS.find(([key])=>key===f.tool);
   const panel=sNode('aside','desk-finish'+(sNarrow()?' desk-finish-sheet':''));panel.setAttribute('aria-label','Finishing');
@@ -626,7 +634,6 @@ function sDeskPanelSync(held,force=false){
 function sDeskToolList(held){
   const list=sNode('div','pick-cards desk-finish-tools');
   for(const [key,name,says] of DESK_TOOLS){const card=sPickCard(name,sDeskToolSays(held,key)||says,()=>sDeskFinishTool(held,key));list.append(card);}
-  const voice=sPickCard('Apply a voice','Arrives with voice guides.',()=>{});voice.disabled=true;list.append(voice);
   return [sNode('p','quiet','Each tool proposes changes. Preview each one, then apply, edit or skip it. Nothing changes until you apply, and the earlier text stays in History.'),list];
 }
 function sDeskToolSays(held,key){
@@ -641,8 +648,14 @@ function sDeskToolView(held,key){
   const view=held.view,f=held.finish,kind='finish-'+key,set=(view.finishing||{})[key],working=view.working,[label,doing]=DESK_RUN[key];
   const parts=[sNode('p','quiet',DESK_TOOLS.find(([name])=>name===key)[2])];
   if(key==='humanize')parts.push(sChoice('Intensity',DESK_LEVELS,f,'level'));
+  if(key==='voice'){
+    if(!f.guides)parts.push(sNode('p','quiet','Reading your voice guides…'));
+    else if(!f.guides.length){parts.push(sAdd(sNode('div','decision-notice'),sNode('p','','No voice guides yet. Write one, or make one from a few samples of the writing you want to sound like.'),sButton('Open voice guides',()=>sRoute('guides'))));}
+    else{const says=sNode('p','quiet desk-guide-says',(f.guides.find(guide=>guide.id===f.guide)||{}).says||'');parts.push(sField('desk-voice-guide','Voice guide',f,'guide',{options:f.guides.map(guide=>[guide.id,guide.name]),changed:value=>{says.textContent=(f.guides.find(guide=>guide.id===value)||{}).says||'';}}),says);}
+    if(f.guidesProblem)parts.push(sNode('p','problem',f.guidesProblem));
+  }
   if(key==='facts'&&!(view.source_names||[]).length){const add=sButton('Add a source',()=>sDeskSourcesSheet(held));add.disabled=!access.actions.edit;parts.push(sAdd(sNode('div','decision-notice desk-problem'),sNode('p','','Facts are checked against your sources, and this draft has none yet.'),add));}
-  const run=sButton(set?label+' again':label,button=>sDeskJob(held,button,'desk-finish',{tool:key,...(key==='humanize'?{level:f.level}:{})}),'filled');run.disabled=!access.actions.edit||!!working;
+  const run=sButton(set?label+' again':label,button=>sDeskJob(held,button,'desk-finish',{tool:key,...(key==='humanize'?{level:f.level}:{}),...(key==='voice'?{guide:f.guide}:{})}),'filled');run.disabled=!access.actions.edit||!!working||key==='voice'&&!f.guide;
   parts.push(sAdd(sNode('div','bar'),run));
   if(working&&working.kind===kind){const note=sNode('p','desk-working-note',doing);note.setAttribute('role','status');parts.push(note);}
   else if(working)parts.push(sNode('p','quiet','Another change is under way. This can run when it ends.'));
@@ -660,18 +673,20 @@ function sDeskProposals(held,key,set){
     for(const item of [...items].sort((a,b)=>order.indexOf(a.part)-order.indexOf(b.part)))out.push(sDeskComment(held,set,item,true));
     return out;
   }
-  const facts=key==='facts',checked=facts?open.filter(item=>item.verdict!=='supported'):open;
-  const said=[items.length+(facts?(items.length===1?' claim checked':' claims checked'):items.length===1?' suggestion':' suggestions'),checked.length+' to review'];
+  const facts=key==='facts',voice=key==='voice',checked=facts?open.filter(item=>item.verdict!=='supported'):open;
+  const said=[items.length+(facts?(items.length===1?' claim checked':' claims checked'):voice?(items.length===1?' part rewritten':' parts rewritten'):items.length===1?' suggestion':' suggestions'),checked.length+' to review'];
   if(set.level)said.unshift('Found at '+set.level);
+  if(voice&&set.guide_name)said.unshift('In the voice of '+set.guide_name);
+  if(voice&&set.kept)said.push(set.kept+(set.kept===1?' part already reads':' parts already read')+' in this voice');
   if(set.dropped)said.push(set.dropped+' left out because '+(set.dropped===1?'it did not':'they did not')+' match the text');
   out.push(sNode('p','quiet',said.join(' · ')+'.'));
-  if(!items.length){out.push(sNode('p','',key==='facts'?'No claims to check.':'Nothing to change at this level.'));return out;}
+  if(!items.length){out.push(sNode('p','',key==='facts'?'No claims to check.':voice?'Nothing to change: the draft already reads in this voice.':'Nothing to change at this level.'));return out;}
   // Apply all: every open proposal that still fits; flagged ones wait to be checked one by one.
   const ready=open.filter(item=>item.present&&!item.flag&&'after' in item);
-  if(key==='humanize'&&ready.length>1){
+  if((key==='humanize'||voice)&&ready.length>1){
     const flagged=open.filter(item=>item.flag).length;
     const all=sButton('Apply all ('+ready.length+')',button=>sDeskApply(held,set,ready.map(item=>({id:item.id})),button));all.disabled=!access.actions.edit||!!held.view.working;
-    out.push(sAdd(sNode('div','bar'),all),flagged?sNode('p','quiet',flagged+(flagged===1?' flagged suggestion is':' flagged suggestions are')+' left for you to check one by one.'):null);
+    out.push(sAdd(sNode('div','bar'),all),flagged?sNode('p','quiet',voice?flagged+(flagged===1?' part where a fact changed is':' parts where a fact changed are')+' left for you to check one by one.':flagged+(flagged===1?' flagged suggestion is':' flagged suggestions are')+' left for you to check one by one.'):null);
   }
   if(key==='headline'){
     for(const [part,name] of [['title','Title'],['opening','Opening']]){const group=items.filter(item=>item.part===part);if(group.length)out.push(sNode('h3','sheet-part',name+' alternatives'),...group.map(item=>sDeskProposal(held,set,item,key)));}

@@ -20,6 +20,7 @@ TOOLS = {
     'finish-facts': 'facts',
     'finish-headline': 'headline',
     'finish-feedback': 'feedback',
+    'finish-voice': 'voice',
 }
 KINDS = tuple(TOOLS)
 JOB = re.compile(r'[a-f0-9]{32}')
@@ -599,6 +600,21 @@ FEEDBACK_JSON = (
     'copied exactly from that part ("" for none); aspect is "shape", "argument", "audience" or '
     '"claims"; summary is two or three sentences on the draft overall.'
 )
+VOICE = (
+    'Rewrite this draft in the voice described in voice_guide, part by part. Change how it '
+    'sounds, never what it says: keep the structure (the same paragraphs, lists, tables and code '
+    'in the same order), every fact, number, name, quotation and link exactly, and the author’s '
+    'stance. Apply only the supplied voice; preserve the facts and their uncertainty, and invent '
+    'no experience, opinion or anecdote. Where the guide and the tone differ, follow the guide. '
+    'Leave a part that already reads in this voice as it is.'
+)
+VOICE_JSON = (
+    'Return JSON in content: {"parts": [{"part": ..., "text": ..., "why": ...}]}, one row for '
+    'the opening and for each section in sections that has text. part is "opening" or the id of '
+    'a section; text is the whole part rewritten, without its heading; why says in a few words '
+    'what changed.'
+)
+NO_GUIDE = 'Choose a voice guide that is not retired.'
 VERDICTS = {
     'supported': 'supported',
     'not-in-sources': 'not-in-sources',
@@ -627,7 +643,24 @@ def _payload(draft, extra):
     }
 
 
-def request(root, ident, draft, tool, level=None):
+def _guide(root, guide):
+    """A saved voice guide that is not retired: {id, name, revision, guide}."""
+    import article_tools
+
+    if not isinstance(guide, str) or not guide:
+        raise ValueError(NO_GUIDE)
+    try:
+        chosen = article_tools.profile(root, guide)
+    except (ValueError, OSError):
+        raise ValueError(NO_GUIDE) from None
+    if chosen.get('status') == 'retired':
+        raise ValueError(NO_GUIDE)
+    if not chosen['guide'].strip():
+        raise ValueError('This voice guide has no text yet. Write it on the Voice guides screen.')
+    return chosen
+
+
+def request(root, ident, draft, tool, level=None, guide=None):
     """The kind, payload, guidance and job details for one finishing tool on this draft."""
     import blog_runner
     import desk_jobs
@@ -661,6 +694,17 @@ def request(root, ident, draft, tool, level=None):
         guidance += _reference('modules', 'blog-fact-check.md') + '\n\n'
         guidance += _reference('review', 'evidence.md') + '\n\n' + shared + said
         guidance += '\nThe sources are in sources, with their names and stance.\n' + FACTS_JSON
+    elif tool == 'voice':
+        # The guide's text is put in the payload: the desk's own context stays tone-only.
+        chosen = _guide(root, guide)
+        meta.update(
+            guide=chosen['id'], guide_name=chosen['name'], guide_revision=chosen['revision']
+        )
+        payload = {
+            **_payload(draft, extra),
+            'voice_guide': {'name': chosen['name'], 'text': chosen['guide']},
+        }
+        guidance = VOICE + '\n\n' + shared + '\n' + VOICE_JSON
     elif tool == 'headline':
         payload = _payload(draft, extra)
         guidance = HEADLINE + '\n\n' + _reference('headline-lab.md') + '\n\n' + shared
@@ -849,11 +893,49 @@ def _read_feedback(draft, found):
     return items, 0, {'summary': summary}
 
 
+def _read_voice(draft, found):
+    """One proposal per part the voice rewrote: the whole part, before and after. A part the
+    guide left as it was is counted as kept; an unknown part, a heading, or a second row for
+    one part is dropped."""
+    rows, dropped = _rows(found, 'parts', ('part', 'text'))
+    order = ['opening'] + [s['id'] for s in draft['sections']]
+    items, seen, kept = [], set(), 0
+    for row in rows:
+        part = row.get('part')
+        if part not in _prose_parts(draft) or part in seen:
+            dropped += 1
+            continue
+        seen.add(part)
+        before, after = desk.text_of(draft, part), row['text'].strip()
+        if not before.strip():
+            dropped += 1
+            continue
+        if after == before.strip():
+            kept += 1
+            continue
+        if not after or desk.has_heading(after):
+            dropped += 1
+            continue
+        items.append(
+            {
+                'part': part,
+                'before': before,
+                'after': after,
+                'note': _text(row.get('why'), 500),
+                'flag': changes_facts(before, after),
+                'whole': True,
+            }
+        )
+    items.sort(key=lambda item: order.index(item['part']))
+    return items, dropped, {'kept': kept}
+
+
 READERS = {
     'finish-humanize': _read_humanize,
     'finish-facts': _read_facts,
     'finish-headline': _read_headline,
     'finish-feedback': _read_feedback,
+    'finish-voice': _read_voice,
 }
 
 
@@ -875,6 +957,8 @@ def settle(root, ident, draft, job):
     meta = (job.get('metadata') or {}).get('desk') or {}
     if meta.get('level'):
         extra['level'] = meta['level']
+    if meta.get('guide_name'):
+        extra['guide_name'] = meta['guide_name']  # Which voice guide the set applies.
     return keep(root, ident, job['id'], job['kind'], items, dropped=dropped, **extra)
 
 

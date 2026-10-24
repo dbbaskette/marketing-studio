@@ -991,7 +991,7 @@ ROUTES = {
     'draft': {'id', 'seen'},
     'sources': {'id', 'sources', 'library', 'keep'},
     # Finishing (desk_finish.py): a tool proposes, then the person applies or skips.
-    'finish': {'id', 'seen', 'tool', 'level'},
+    'finish': {'id', 'seen', 'tool', 'level', 'guide'},
     'apply': {'id', 'seen', 'job', 'items'},
     'skip': {'id', 'job', 'items'},
     # Before publishing: a repurpose result as a new blog, and Google suggestions.
@@ -1136,7 +1136,7 @@ def dispatch(root, action, data):
         )
         return {**desk_jobs.view(root, ident), 'made': made}
     elif action == 'finish':
-        desk_jobs.finish(root, ident, seen, data.get('tool'), data.get('level'))
+        desk_jobs.finish(root, ident, seen, data.get('tool'), data.get('level'), data.get('guide'))
     elif action in ('apply', 'skip'):
         import desk_finish
 

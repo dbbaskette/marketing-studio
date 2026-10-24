@@ -28,6 +28,7 @@ KINDS = {
     'finish-facts',
     'finish-headline',
     'finish-feedback',
+    'finish-voice',
 }
 DESK = (
     'desk-section',
@@ -42,6 +43,7 @@ DESK = (
     'finish-facts',
     'finish-headline',
     'finish-feedback',
+    'finish-voice',
 )
 
 
