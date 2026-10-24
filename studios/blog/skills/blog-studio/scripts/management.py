@@ -2114,9 +2114,50 @@ def _dispatch(root, route, data):
 DESK_LOCAL = ('desk-save', 'desk-skip')
 
 
+# The older voice tools, which the voice switch in Blog Studio settings hides: learning
+# voices, auditions, Change the voice, voice samples, LinkedIn exports, Create voices for
+# every author and its author suggestions. Voice guides (profile-save, profile-retire and
+# voice-guide jobs) and examples of a kind of post are not among them.
+VOICE_ROUTES = ('library-voices', 'library-add-samples', 'library-author-same')
+VOICE_ROUTES += ('library-author-different',)
+VOICE_JOBS = ('voice-learn', 'voice-audition')
+
+
+def old_voice_tool(route, data):
+    """Whether this request uses one of the older voice tools."""
+    if not isinstance(data, dict):
+        return False
+    action = data.get('action')
+    if route in VOICE_ROUTES:
+        return True
+    if route in ('voice-links-preview', 'voice-links-import'):
+        return data.get('purpose', 'voice-sample') != 'style-sample'
+    if route == 'library-selection':
+        return action == 'voice-learn'
+    if route == 'tool-action':
+        return (
+            action == 'voice-apply'
+            or (action == 'job-create' and data.get('kind') in VOICE_JOBS)
+            or (action == 'source-purpose' and data.get('purpose') == 'voice-sample')
+            or (action == 'interview-start' and bool(data.get('profile')))
+        )
+    if route == 'run-create':
+        return bool(data.get('profile'))
+    if route == 'upload':
+        files = data.get('files') if isinstance(data.get('files'), list) else []
+        return data.get('purpose') == 'voice-sample' or any(
+            isinstance(entry, dict) and 'linkedin' in entry for entry in files
+        )
+    return False
+
+
 def dispatch(root, route, data):
     from team_workspace import space, before, saved, status, refresh, action, join
 
+    # Refused before anything is read, fetched or shared. The default voice in run-settings
+    # is checked with the rest of that form (blog_runner.settings).
+    if old_voice_tool(route, data):
+        studio.require_voices(root)
     if route in (
         'editor-google-plan',
         'editor-google-send',

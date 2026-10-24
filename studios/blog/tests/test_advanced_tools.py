@@ -681,6 +681,10 @@ class AdvisoryAndOutcomeTests(Fixture):
 class SourcePurposeTests(Fixture):
     """A ready reference becomes a voice or style sample from the page, in a new revision."""
 
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
+
     def mark(self, source, purpose, author=None):
         import management
 
@@ -790,6 +794,7 @@ class VoiceApplyTests(Fixture):
 
     def setUp(self):
         super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
 
     def voice(self, name):

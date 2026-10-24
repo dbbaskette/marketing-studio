@@ -1073,6 +1073,10 @@ class TeamPageTests(unittest.TestCase):
 class StrayClaimTests(TeamTests):
     """A tool job is not a blog: its ID must never be claimed in the team repository."""
 
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
+
     def sample(self, root):
         import base64
         import management

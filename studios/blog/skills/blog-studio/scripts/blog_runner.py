@@ -459,6 +459,8 @@ def settings(root, data=None):
         # only once the shared settings are, so a refused form changes nothing.
         voice_given = 'voice' in data
         voice = data.pop('voice', None)
+        if voice_given and not features['voice']:
+            raise ValueError(studio.VOICES_OFF)  # The default voice is an older voice tool.
         if voice_given:
             if 'voice_before' not in data:
                 raise ValueError('Reload the displayed settings before saving the default voice.')
@@ -2827,6 +2829,8 @@ def default_voice(root):
 
     # Whatever stops the read (a Team Hub not joined here, a damaged record), the wizard
     # still opens: it just offers no default voice.
+    if not studio.voices_on(root):
+        return None  # No default voice is applied while the older voice tools are off.
     try:
         adapter = active(root)
         found = writing_defaults.resolve(root, adapter=adapter)['values'].get('voice')

@@ -239,7 +239,12 @@ def for_create(root, args):
 
     adapter = active(root)
     result = resolve(root, overrides=overrides, adapter=adapter)
-    if 'voice' in overrides and not args.profile:
+    if not args.profile and not studio.voices_on(root):
+        # While the older voice tools are off no default voice is applied: a new blog
+        # writes with its tone. An explicit profile from chat still pins.
+        result['values'].pop('voice', None)
+        result['problems'] = [p for p in result['problems'] if p['key'] != 'voice']
+    elif 'voice' in overrides and not args.profile:
         result['values'].pop('voice', None)
         result['problems'] = [p for p in result['problems'] if p['key'] != 'voice']
     if result['problems']:

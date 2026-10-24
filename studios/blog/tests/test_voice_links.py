@@ -219,6 +219,10 @@ class BylineTests(Fixture):
 
 
 class ImportTests(Fixture):
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
+
     def links(self, *names):
         return ''.join(SITE + name + '/\n' for name in names)
 

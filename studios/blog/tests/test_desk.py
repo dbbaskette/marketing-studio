@@ -605,6 +605,7 @@ class OtherWritersTests(RouteCase):
     """While a blog is on the desk, only the desk writes its DRAFT.md."""
 
     def test_the_manuscript_editor_and_its_tools_are_refused(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         made = self.start()
         expected = studio.digest(b'x')
         for route, data in (

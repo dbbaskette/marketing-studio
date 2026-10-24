@@ -411,6 +411,7 @@ class BlogRunnerTests(RunnerCase):
         )
 
     def test_marking_a_pinned_source_as_a_sample_keeps_its_runs_open(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         import management
 
         source = self.source('A fictional gateway routes synthetic requests.')
@@ -1997,6 +1998,10 @@ class StyleTests(RunnerCase):
 class VoiceChoiceTests(RunnerCase):
     """The page's Write as: the default voice applies unless the person chose another."""
 
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
+
     def voice(self, name='Avery', guide='Short direct sentences.', status='confirmed'):
         self.file.write_text(guide)
         return self.command(
@@ -2954,6 +2959,10 @@ class PointTests(FilesCase):
 
 class WriteAsTests(RunnerCase):
     """The page's Write as select: Me is the personal default voice, when one is set."""
+
+    def setUp(self):
+        super().setUp()
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
 
     def test_options_name_the_personal_default_voice(self):
         self.assertIsNone(runner.options(self.root)['default_voice'])

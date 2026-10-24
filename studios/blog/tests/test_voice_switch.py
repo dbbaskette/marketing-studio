@@ -10,6 +10,7 @@ import unittest
 from unittest.mock import patch
 
 import blog_runner
+import management
 import studio
 
 OFF = 'Voices are switched off in Blog Studio settings.'
@@ -97,6 +98,258 @@ class VoiceSwitchTests(SwitchCase):
         self.assertTrue(studio.voices_on(self.root))
         saved = json.loads(studio.inside(self.root, '.blog-run-settings.json').read_text())
         self.assertEqual(saved['features'], {'voice': True})
+
+
+class EnforcementCase(SwitchCase):
+    def setUp(self):
+        super().setUp()
+        guide = self.base / 'VOICE.md'
+        guide.write_text('Short direct sentences.')
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'profile',
+                'create',
+                '--name',
+                'Avery',
+                '--guide-file',
+                str(guide),
+                '--status',
+                'confirmed',
+            ]
+        )
+        self.profile = studio.profile_command(self.root, args)
+
+    def refused(self, route, data):
+        before = sorted(str(p) for p in self.root.rglob('*') if p.is_file())
+        with self.assertRaisesRegex(ValueError, OFF):
+            management.dispatch(self.root, route, data)
+        after = sorted(str(p) for p in self.root.rglob('*') if p.is_file())
+        self.assertEqual(before, after, route + ' wrote something while refused')
+
+    def reaches(self, route, data):
+        """Not refused by the switch: it succeeds, or stops at its own check."""
+        try:
+            return management.dispatch(self.root, route, data)
+        except Exception as error:  # noqa: BLE001 - any refusal but the switch's
+            self.assertNotIn(OFF, str(error), route)
+            return None
+
+    def on(self):
+        isolation.voices_on(self.root)
+
+
+class EnforcementTests(EnforcementCase):
+    ROUTES = (
+        ('voice-links-preview', {'text': 'https://example.com/a', 'author': 'Avery'}),
+        ('voice-links-import', {'text': 'https://example.com/a', 'author': 'Avery'}),
+        ('library-voices', {'operation': 'a' * 32, 'authors': ['Avery'], 'confirmed': True}),
+        ('library-add-samples', {'operation': 'a' * 32}),
+        ('library-author-same', {'author': 'A. Avery', 'into': 'Avery', 'expected': 'x'}),
+        ('library-author-different', {'author': 'A. Avery', 'others': ['Avery']}),
+        ('library-selection', {'action': 'voice-learn', 'ids': ['x']}),
+        (
+            'tool-action',
+            {'action': 'job-create', 'kind': 'voice-learn', 'operation': 'b' * 32},
+        ),
+        (
+            'tool-action',
+            {'action': 'job-create', 'kind': 'voice-audition', 'operation': 'c' * 32},
+        ),
+        ('tool-action', {'action': 'voice-apply', 'id': 'none', 'profile': 'none'}),
+        ('tool-action', {'action': 'source-purpose', 'source': 'x', 'purpose': 'voice-sample'}),
+        (
+            'tool-action',
+            {
+                'action': 'interview-start',
+                'title': 'T',
+                'audience': 'A',
+                'goal': 'G',
+                'profile': 'avery',
+                'operation': 'd' * 32,
+            },
+        ),
+        (
+            'upload',
+            {
+                'operation': 'e' * 32,
+                'filename': 'a.md',
+                'content': 'SGk=',
+                'purpose': 'voice-sample',
+            },
+        ),
+        (
+            'upload',
+            {
+                'operation': 'f' * 32,
+                'purpose': 'voice-sample',
+                'files': [{'filename': 'a.md', 'content': 'SGk='}],
+            },
+        ),
+        (
+            'upload',
+            {
+                'operation': 'a1' * 16,
+                'purpose': 'author-background',
+                'files': [{'linkedin': {'filename': 'export.zip', 'content': 'SGk='}}],
+            },
+        ),
+    )
+
+    def test_each_old_voice_route_is_refused_while_off_and_reached_when_on(self):
+        for route, data in self.ROUTES:
+            with self.subTest(route=route, data=data):
+                self.refused(route, data)
+        self.on()
+        for route, data in self.ROUTES:
+            with self.subTest(route=route, data=data):
+                self.reaches(route, data)
+
+    def test_examples_of_a_kind_of_post_are_not_voices(self):
+        found = management.dispatch(
+            self.root,
+            'voice-links-preview',
+            {'text': 'https://example.com/a', 'author': 'Announcements', 'purpose': 'style-sample'},
+        )
+        self.assertEqual(found['purpose'], 'style-sample')
+        self.reaches('library-selection', {'action': 'style-learn', 'ids': ['x']})
+        self.reaches(
+            'tool-action', {'action': 'source-purpose', 'source': 'x', 'purpose': 'style-sample'}
+        )
+        self.reaches(
+            'upload',
+            {
+                'operation': '9' * 32,
+                'filename': 'a.md',
+                'content': 'SGk=',
+                'purpose': 'style-sample',
+            },
+        )
+
+    def test_a_default_voice_in_settings_is_refused_unless_the_same_save_turns_it_on(self):
+        shown = blog_runner.settings(self.root)
+        pin = {'profile_id': self.profile['id'], 'revision': 1}
+        with self.assertRaisesRegex(ValueError, OFF):
+            management.dispatch(
+                self.root,
+                'run-settings',
+                {**shown['defaults'], 'voice': pin, 'voice_before': None},
+            )
+        self.assertIsNone(blog_runner.settings(self.root)['voice'])
+        saved = management.dispatch(
+            self.root,
+            'run-settings',
+            {
+                **shown['defaults'],
+                'voice': pin,
+                'voice_before': None,
+                'features': {'voice': True},
+                'features_before': {'voice': False},
+            },
+        )
+        self.assertEqual(saved['voice'], pin)
+
+    def test_a_profile_on_a_new_run_from_the_page_is_refused(self):
+        data = {
+            'operation': 'ab' * 16,
+            'title': 'T',
+            'audience': 'A',
+            'goal': 'G',
+            'research': 'none',
+            'profile': self.profile['id'],
+        }
+        self.refused('run-create', data)
+        self.on()
+        found = management.dispatch(self.root, 'run-create', data)
+        _, record = studio.item(self.root, 'articles', found['id'])
+        self.assertEqual(record['voice']['profile_id'], self.profile['id'])
+
+
+class ToneWhileOffTests(EnforcementCase):
+    def setUp(self):
+        super().setUp()
+        import writing_defaults
+
+        writing_defaults.set_personal(
+            self.root, 'voice', {'profile_id': self.profile['id'], 'revision': 1}
+        )
+
+    def create(self):
+        return blog_runner.create(
+            self.root,
+            {'title': 'T', 'audience': 'A', 'goal': 'G', 'research': 'none', 'tone': 'Warm'},
+        )
+
+    def test_a_new_run_writes_with_tone_and_no_default_voice(self):
+        found = self.create()
+        _, record = studio.item(self.root, 'articles', found['id'])
+        self.assertEqual(record['voice'], {'mode': 'tone', 'tone': 'Warm'})
+        self.assertIsNone(blog_runner.options(self.root)['default_voice'])
+
+    def test_with_the_switch_on_the_default_voice_applies_as_before(self):
+        self.on()
+        found = self.create()
+        _, record = studio.item(self.root, 'articles', found['id'])
+        self.assertEqual(record['voice']['mode'], 'profile')
+        self.assertEqual(record['voice']['profile_id'], self.profile['id'])
+        self.assertEqual(
+            blog_runner.options(self.root)['default_voice']['profile'], self.profile['id']
+        )
+
+    def test_turning_it_off_leaves_saved_voices_and_pins_alone(self):
+        self.on()
+        found = self.create()
+        folder = studio.inside(self.root, 'articles', found['id'])
+        pinned = (folder / 'session.json').read_bytes()
+        profiles = sorted(
+            p.read_bytes() for p in studio.inside(self.root, 'profiles').rglob('*') if p.is_file()
+        )
+        blog_runner.settings(
+            self.root,
+            self.form(features={'voice': False}, features_before={'voice': True}),
+        )
+        self.assertEqual((folder / 'session.json').read_bytes(), pinned)
+        self.assertEqual(
+            sorted(
+                p.read_bytes()
+                for p in studio.inside(self.root, 'profiles').rglob('*')
+                if p.is_file()
+            ),
+            profiles,
+        )
+        self.assertEqual(
+            blog_runner.engine(self.root).describe(found['id'])['voice_profile'], self.profile['id']
+        )
+
+    def test_a_chat_article_writes_no_default_voice_while_off(self):
+        args = studio.parser().parse_args(
+            [
+                '--root',
+                str(self.root),
+                'article',
+                'create',
+                '--title',
+                'Chat',
+                '--mode',
+                'first-draft',
+            ]
+        )
+        record = studio.article_command(self.root, args)
+        self.assertNotEqual(record['voice']['mode'], 'profile')
+
+    def test_a_desk_blog_is_tone_only(self):
+        import desk
+        import desk_jobs
+
+        with studio.locked(self.root):
+            made = desk.create(
+                self.root, {'title': 'Desk', 'manuscript': '## A\n\nText.', 'tone': 'Plain'}
+            )
+            _, record = studio.item(self.root, 'articles', made['id'])
+            self.assertEqual(record['voice'], {'mode': 'tone', 'tone': 'Plain'})
+            extra, _ = desk_jobs._context(self.root, desk.read(self.root, made['id']))
+        self.assertNotIn('voice', extra)
 
 
 if __name__ == '__main__':

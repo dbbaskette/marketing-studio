@@ -145,6 +145,7 @@ class AuthorWorkflowTests(unittest.TestCase):
         self.assertEqual((self.root / '.writing-defaults.json').stat().st_mode & 0o777, 0o600)
 
     def test_default_voice_pins_and_preserved_import(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         profile = studio.profile_command(
             self.root,
             self.args(
@@ -377,6 +378,7 @@ class AuthorWorkflowTests(unittest.TestCase):
                 self.default('set', 'audience', 'Overwrite', scope='team')
 
     def test_team_voice_default_projects_exact_shared_profile(self):
+        isolation.voices_on(self.root)  # These exercise the older voice tools.
         profile = studio.profile_command(
             self.root,
             self.args(
@@ -396,6 +398,7 @@ class AuthorWorkflowTests(unittest.TestCase):
             self.default('set', 'voice', {k: ref[k] for k in ('item', 'revision')}, scope='team')
         other = self.base / 'other'
         studio.initialize(other)
+        isolation.voices_on(other)
         other_adapter = Workspace(other, adapter.hub)
         with patch('hub_workspace.active', return_value=other_adapter):
             args = studio.parser().parse_args(
