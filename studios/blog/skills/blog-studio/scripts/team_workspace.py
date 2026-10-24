@@ -314,6 +314,23 @@ def keep_desk_leftovers(root, found=None):
     return kept
 
 
+def share_desk(root, ident):
+    """Leaving the desk: push what was kept on this computer for this blog, and only that.
+
+    The page asks every time a desk is left or its tab hidden. With nothing of this blog's
+    unshared there is nothing to fetch or push, and it never claims a blog: viewing a desk
+    is not a decision. Leftovers under blogs this computer drives are committed first."""
+    found = space(root)
+    if not found:
+        return {'shared': False}
+    keep_desk_leftovers(root, found)
+    with support.locked(found.repo / '.git/blog-studio.lock'):
+        waiting = gitstate.unshared(found, studio.identifier(ident))
+    if not waiting:
+        return {'shared': False}
+    return {'shared': True, 'team_sync': refresh(root, push=True)}
+
+
 def kept_locally(root, ident, session):
     """A desk autosave: an edit, not a decision. It is committed on this computer only, one
     commit per editing session (the page's session token), and shared with the next decision

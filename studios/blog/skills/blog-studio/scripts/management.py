@@ -2222,9 +2222,9 @@ def dispatch(root, route, data):
         if set(data) != {'id'} or not isinstance(data['id'], str):
             raise ValueError('Choose a blog on the desk.')
         studio.item(root, 'articles', data['id'])
-        if not space(root):
-            return {'id': data['id'], 'shared': False}
-        return {'id': data['id'], 'team_sync': saved(root, data['id'], 'Keep desk edits')}
+        from team_workspace import share_desk
+
+        return {'id': data['id'], **share_desk(root, data['id'])}
     if route.startswith('team-'):
         if data.get('confirmed') is not True or not isinstance(data.get('expected'), str):
             raise ValueError('Confirm the current blog before changing its driver or publishing.')

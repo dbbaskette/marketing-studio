@@ -280,6 +280,24 @@ class DeskTeamTests(TeamCase):
         self.assertTrue(shared['team_sync']['shared'])
         self.assertEqual(self.remote_commits(), self.local_commits())
 
+    def test_leaving_the_desk_with_nothing_unshared_fetches_and_pushes_nothing(self):
+        remote = self.remote_commits()
+        with patch('team_workspace.refresh', side_effect=AssertionError('no fetch or push')):
+            shared = management.dispatch(self.root, 'desk-share', {'id': self.made['id']})
+        self.assertFalse(shared['shared'])
+        self.assertEqual(self.remote_commits(), remote)
+
+    def test_leaving_the_desk_never_claims_a_blog(self):
+        ident = self.made['id']
+        support.git(self.found.repo, 'rm', '-q', str(self.root / ident / 'run.json'))
+        support.git(self.found.repo, 'commit', '-q', '-m', 'Nobody drives it')
+        support.git(self.found.repo, 'push', '-q', 'origin', 'HEAD:main')
+        local, remote = self.local_commits(), self.remote_commits()
+        shared = management.dispatch(self.root, 'desk-share', {'id': ident})
+        self.assertFalse(shared['shared'])
+        self.assertFalse((self.root / ident / 'run.json').exists(), 'viewing claims nothing')
+        self.assertEqual((self.local_commits(), self.remote_commits()), (local, remote))
+
     def test_a_decision_after_typing_shares_the_typing_too(self):
         seen = self.save(1, 'Typed title')['revision']
         management.dispatch(
