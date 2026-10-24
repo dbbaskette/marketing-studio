@@ -607,6 +607,31 @@ class VoiceTests(ToolCase):
             desk_finish.changes_structure('Plain `x` words.', 'Plainer `x` words.'), ''
         )
 
+    def test_indented_code_quotes_and_a_fence_language_are_compared_exactly(self):
+        flagged = desk_finish.STRUCTURE
+        cases = (
+            ('Run it:\n\n    tool --fast\n\nDone.', 'Run it:\n\n    tool --slow\n\nDone.', flagged),
+            ('Run it:\n\n\ttool --fast', 'Run it:\n\n\ttool --slow', flagged),
+            (
+                'Said:\n\n> A quoted line.\n\nThen more.',
+                'Said:\n\nA quoted line.\n\nThen more.',
+                flagged,
+            ),
+            ('Said:\n> A quoted line.', 'Said: a quoted line.\n> Another line.', flagged),
+            ('```bash\nmake all\n```', '```python\nmake all\n```', flagged),
+            # A list continuation is prose, not code: rewording it is not a change of code.
+            ('- one\n\n    more about one', '- one\n\n    more on one', ''),
+            (
+                'Run it:\n\n    tool --fast\n\nDone.',
+                'Run this:\n\n    tool --fast\n\nFinished.',
+                '',
+            ),
+            ('> A quoted line.\n\nThen more.', '> A quoted line.\n\nAfter that, more.', ''),
+        )
+        for before, after, expected in cases:
+            with self.subTest(before=before, after=after):
+                self.assertEqual(desk_finish.changes_structure(before, after), expected)
+
     def test_a_name_that_only_moves_is_not_flagged_but_one_added_or_dropped_is(self):
         before = 'The parser was built at Acme Labs. It is fast.'
         moved = 'Acme Labs built the parser. It is fast.'

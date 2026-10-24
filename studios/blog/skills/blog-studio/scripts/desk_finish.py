@@ -761,11 +761,13 @@ STRUCTURE = 'Check the structure: this changes code or the part’s shape.'
 FENCE = re.compile(r'^[ \t]*(```|~~~)')
 INLINE_CODE = re.compile(r'(`+)(.+?)\1', re.S)
 TABLE_LINE = re.compile(r'^[ \t]*\|')
+QUOTE_LINE = re.compile(r'^\s{0,3}>')
 
 
 def _shape(text, paragraphs=True):
-    """The code a part holds, exactly, and the count of its blocks: paragraphs, list
-    items, fenced blocks and tables."""
+    """The code and quotations a part holds, exactly (fenced blocks with their opening
+    line, indented code, inline code spans, blockquote lines), and the count of its
+    blocks: paragraphs, list items, fenced blocks and tables."""
     fences, inline, outside = [], [], []
     block, inside = None, False
     for line in text.splitlines():
@@ -774,7 +776,7 @@ def _shape(text, paragraphs=True):
                 fences.append('\n'.join(block))
                 inside = False
             else:
-                inside, block = True, []
+                inside, block = True, [line.strip()]  # The language tag is part of the code.
             outside.append('')
             continue
         if inside:
@@ -783,9 +785,18 @@ def _shape(text, paragraphs=True):
             outside.append(line)
     if inside:
         fences.append('\n'.join(block))
-    prose = '\n'.join(outside)
+    # Indented code by the same rules the proofread uses: its lines exactly, then masked.
+    shown = '\n'.join(outside)
+    masked = _mask_indented(shown)
+    indented = [
+        line
+        for line, mask in zip(shown.split('\n'), masked.split('\n'), strict=True)
+        if line.strip() and not mask.strip()
+    ]
+    prose = masked
     inline = [match.group(2) for match in INLINE_CODE.finditer(prose)]
     lines = prose.splitlines()
+    quotes = [line.strip() for line in lines if QUOTE_LINE.match(line)]
     items = sum(1 for line in lines if LIST_LINE.match(line))
     tables = sum(
         1
@@ -804,7 +815,7 @@ def _shape(text, paragraphs=True):
         if paragraphs
         else 0
     )
-    return fences, inline, (count, items, len(fences), tables)
+    return fences, indented, inline, quotes, (count, items, len(fences), tables)
 
 
 def changes_structure(before, after, paragraphs=True):
