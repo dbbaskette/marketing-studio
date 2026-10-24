@@ -42,9 +42,14 @@ changes for authors first, then what changes for maintainers.
     older voice tools**. New blogs write with their tone. Saved voices, samples and every
     blog's pinned voice are kept.
   - **Older blogs keep their path.** Blogs started step by step continue through outline,
-    draft, review and handoff as before, and a finished one offers **Open on the desk**.
-    The old new-blog wizard and **New blog from my files** are gone from the page; chat
-    runs work as they did.
+    draft, review and handoff as before. A finished one opens at its Done card from Home and
+    Blogs, and **Open on the desk** there or in the manuscript editor brings it onto the
+    desk, with any edits made since in the editor. The old new-blog wizard and **New blog
+    from my files** are gone from the page, and **Polish another document** starts on the
+    desk; chat runs work as they did.
+  - **Edits made elsewhere land on the desk.** A draft saved in chat, restored from its
+    history or accepted from Google comes onto the desk as a new version of each part it
+    changes, so the next desk save keeps it.
 - **For maintainers: the writing desk.**
   - **The desk record.** `scripts/desk.py`: `desk/draft.json` and
     `desk/versions/<part>.jsonl`, with `DRAFT.md` kept in step; `desk.create` takes `way`
@@ -79,6 +84,16 @@ changes for authors first, then what changes for maintainers.
     (`article_tools.guides`, `guide_samples`, `job-apply`, `GET /api/voice-guides`, indexed
     in `.blog-runs/voice-guides.json`, `guide-discard`). Tests turn the switch on with
     `isolation.voices_on(root)`.
+  - **Team workspaces.** A start's research is returned with its job and staged in
+    `.blog-runs/desk-starts/<id>/` until it settles, so nothing in the blog's folder is
+    changed outside a decision while it works; Refresh, retry-sync, team-sync, the team
+    actions and the background check keep desk leftovers first; `desk-share`
+    (`team_workspace.share_desk`) pushes only this blog's unshared commits and never
+    claims a driver. `desk.reimport` takes a chat save, a restore or Google's accepted
+    text onto the desk (versions from `chat` or `google`). The run's `finished` and the
+    list's `desk_open` let a finished blog edited in the editor go on the desk; a saved
+    blog brought with `article` keeps a pinned voice. While voices are off, uploads as
+    `author-background` and `GET /api/library-authors` are refused.
   - **The page.** `assets/management/desk.js` beside `runner.js`. The old wizard
     (`newBlog`, `sWizard`, the from-files screen, `sStartBlog`, the per-blog brand choice,
     Where this run stops and their research and stops helpers) is removed; `screen=new`

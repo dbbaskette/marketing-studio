@@ -298,8 +298,9 @@ and an existing blog keeps the revision it was started with.
 Blogs started before the writing desk, and guided blogs run in chat, keep their
 step-by-step path: research (when chosen), outline, draft, review and a handoff, each made
 by your assistant and brought back for a decision where the blog's review level says. A
-finished one offers **Open on the desk**, which brings its manuscript onto the desk; the
-run stays readable as it ended.
+finished one offers **Open on the desk** on its Done card, which Home's **Finished
+drafts**, **Blogs** and the manuscript editor all open; it brings the manuscript onto the
+desk, including edits made since in the editor, and the run stays readable as it ended.
 
 Research in a run reads **your documents** (its selected sources), **your sites** (the list
 in Marketing Studio's Shared settings, or a site added for that blog only) and/or **the

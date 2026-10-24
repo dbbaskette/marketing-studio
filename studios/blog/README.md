@@ -116,7 +116,7 @@ examples; **Add to library** takes files, links and Google Docs straight in.
 Blogs started before the desk keep their step-by-step path: research, outline, draft,
 review and handoff, stopping for your review where their review level says. Open one from
 **Needs you** on Home, read the document and choose **Approve** or **Ask for changes**.
-A finished one offers **Open on the desk**.
+A finished one offers **Open on the desk** from its Done card or the manuscript editor.
 
 If a step stops, the page says why and what to do: a CLI failure points at **Status →
 Check this computer** and shows what the assistant printed; a step that ran out of time
