@@ -126,7 +126,7 @@ async function check(){
   await deskAddSource();
   await deskFinishing();
   pageDefinesEveryElement();
-  const checks=['Finishing on the desk: every tool listed, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Proofread with Fix, facts with Add a source and Keep it, headline alternatives, feedback in place and made a note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, and a full-screen sheet on a phone','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['Finishing on the desk: every tool listed, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Proofread with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where this run stops, on the form and in Settings','one name for each thing','copy that says what the form and gates do','finish, done card, typed-title delete, restore and idea picks','new blog from my files: one screen, per-file text and roles, kept in the team library by default, the point path, Write as, angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the files card, with a learned style’s samples pre-ticked','Write as and Kind of post on the first step, for new blogs and manuscripts','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','research from your documents, your sites and/or the public web: the shared list prefilled, a site for one blog checked by the server, the shared sentences, and the sites named at the research gate','element ids'];
@@ -3071,7 +3071,7 @@ async function deskJourneys(){
   assert.deepEqual([saved.part,saved.seen,saved.text],['aaaaaaaa',1,'First text here, edited.']);assert.match(saved.session,/^[0-9a-f]{32}$/);
   assert.equal(nodes().find(n=>/desk-save-state/.test(n.className)).textContent,'Saved.');
   // 3. A note rewrites the section; its card says it is working until the result lands.
-  const note=inside(card('bbbbbbbb'),n=>n.tagName==='input');const rewrite=()=>inside(card('bbbbbbbb'),n=>n.tagName==='button'&&['Rewrite','Write again'].includes(n.textContent));
+  const note=inside(card('bbbbbbbb'),n=>/desk-note-text/.test(n.className));const rewrite=()=>inside(card('bbbbbbbb'),n=>n.tagName==='button'&&['Rewrite','Write again'].includes(n.textContent));
   assert.equal(rewrite().textContent,'Write again');
   note.value='Add an example.';note.listeners.input();assert.equal(rewrite().textContent,'Rewrite');
   await rewrite().listeners.click();
@@ -3477,11 +3477,13 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
     {part:'aaaaaaaa',before:'First text here.',verdict:'contradicted',passage:'The text is elsewhere.',source:'Notes'},
     {part:'bbbbbbbb',before:'Second text.',verdict:'not-in-sources',passage:'',after:'A second text.'},
     {part:'cccccccc',before:'Third text.',verdict:'supported',passage:'Third text.',source:'Notes'},
+    {part:'cccccccc',before:'Third',verdict:'not-in-sources',passage:'',after:'A third'},
   ])}};
   f.set('next',view);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
   assert.ok(descendants(item('p1')).some(n=>n.textContent==='Contradicted'));
   assert.ok(descendants(item('p1')).some(n=>n.textContent==='From Notes: “The text is elsewhere.”'));
   assert.ok(descendants(panel()).some(n=>n.tagName==='summary'&&n.textContent==='Supported (1)'));
+  assert.ok(!descendants(panel()).some(n=>/^Apply all/.test(n.textContent)),'each claim is checked on its own, never applied all at once');
   await inItem('p1','Add a source').listeners.click();
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Add a source','Add a source opens the sources sheet');
   f.run('sCloseSheet()');
@@ -3506,11 +3508,14 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
   assert.ok(descendants(panel()).some(n=>n.textContent==='A clear start.'));
   const inCard=descendants(card('bbbbbbbb')).find(n=>n.textContent==='Make it a note'&&n.listeners.click);
   assert.ok(inCard,'the comment is shown in its section card');
+  // A note the person typed is kept: the comment is added after it.
+  const typed=descendants(card('bbbbbbbb')).find(n=>/desk-note-text/.test(n.className));typed.value='My own note.';typed.listeners.input();
   const posts=requests.length;await inCard.listeners.click();
-  assert.equal(descendants(card('bbbbbbbb')).find(n=>n.tagName==='input').value,'Say why this matters. (About: “Second text.”)');
+  assert.equal(descendants(card('bbbbbbbb')).find(n=>/desk-note-text/.test(n.className)).value,'My own note.\n\nSay why this matters. (About: “Second text.”)');
+  const whole=nodes().find(n=>n.id==='desk-whole-note');whole.value='Keep it short.';whole.listeners.input();
   assert.equal(requests.length,posts,'a note is not sent until Rewrite');
   await inItem('p2','Make it the whole-draft note').listeners.click();
-  assert.equal(nodes().find(n=>n.id==='desk-whole-note').value,'The ending trails off.');
+  assert.equal(nodes().find(n=>n.id==='desk-whole-note').value,'Keep it short.\n\nThe ending trails off.');
   // 8. Before publishing: the check, a repurposed copy as a new blog, and the Google send.
   view={...view,google_suggestions:true,google:{url:'https://docs.google.com/document/d/x/edit'}};f.set('next',view);await f.run('studio.desk.view=next');
   await inPanel('All tools').listeners.click();await inPanel('Before publishing').listeners.click();
@@ -3536,6 +3541,31 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
   await folded.listeners.click();
   assert.match(panel().className,/desk-finish-sheet/);
   assert.equal(panel().parent,f.get('studio-page'),'the sheet sits over the page, not in the layout');
+  // A sheet opened from the panel is the one on top: the panel steps aside while it is open,
+  // and comes back when it closes. On a tablet the drawer does the same.
+  for(const [size,media] of [['phone',()=>({matches:true})],['tablet',query=>({matches:/1099/.test(query)})]]){
+    f.set('media',media);f.run('window.matchMedia=media');await f.run('sDeskFinishOpen(studio.desk,"facts")');
+    f.set('next',{...view,source_names:[]});await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
+    assert.equal(panel().className.includes('desk-finish-sheet'),size==='phone');
+    await descendants(panel()).find(n=>n.textContent==='Add a source'&&n.listeners.click).listeners.click();
+    assert.equal(f.get('sheet').hidden,false,size+': the sheet is open');
+    assert.equal(f.get('main').inert,true,size+': the page behind the sheet waits');
+    assert.equal(panel().hidden,true,size+': the panel is not over the sheet');
+    f.run('sDeskPanelShow(studio.desk)');assert.equal(panel().hidden,true,size+': a redraw keeps it aside');
+    f.run('sCloseSheet()');
+    assert.equal(panel().hidden,false,size+': the panel is back when the sheet closes');
+    assert.equal(f.get('main').inert,false);
+  }
+  // Turning the screen redraws the desk in its new layout.
+  f.run("window.matchMedia=()=>({matches:false})");f.run('sDeskResized()');
+  assert.doesNotMatch(panel().className,/desk-finish-sheet/);assert.match(nodes().find(n=>/desk-layout/.test(n.className)).className,/desk-finishing/);
+  f.run("window.matchMedia=()=>({matches:true})");f.run('sDeskResized()');assert.match(panel().className,/desk-finish-sheet/);
+  // A redraw the person did not ask for waits while a control in the panel has focus.
+  const select=descendants(panel()).find(n=>n.tagName==='button');f.set('focused',select);f.run('document.activeElement=focused');
+  const kept=panel();f.set('next',{...view,revision:view.revision+5});await f.run('studio.desk.view=next;sDeskPanelSync(studio.desk)');
+  assert.equal(panel(),kept,'a focused control keeps its place');assert.equal(f.run('studio.desk.panelStale'),true);
+  f.run('document.activeElement=null');await kept.listeners.focusout();for(const fn of t.timers.splice(0))await fn();
+  assert.notEqual(panel(),kept,'it redraws once focus leaves the panel');
   f.run("window.matchMedia=undefined");
 }
 async function deskAddSource(){

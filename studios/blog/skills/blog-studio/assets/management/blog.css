@@ -178,8 +178,9 @@
 .desk-part-head{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap}
 .desk-text{width:100%;max-width:none;min-height:3rem;margin-top:.6rem;resize:vertical;box-sizing:border-box}
 input.desk-text{min-height:44px}
-.desk-note{display:flex;gap:.6rem;margin-top:.6rem;flex-wrap:wrap}
+.desk-note{display:flex;gap:.6rem;margin-top:.6rem;flex-wrap:wrap;align-items:flex-start}
 .desk-note>.input{flex:1 1 16rem;min-width:0;max-width:none}
+.desk-note-text{resize:vertical}
 .desk-working{border-color:var(--yours)}
 .desk-working-note{margin-top:.6rem;color:var(--yours)}
 .desk-problem{display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap}

@@ -309,7 +309,7 @@ function sDeskToolbar(held){
   sFrame(view.title,sFold([stop,copy,download,google,publish,finishing]),held.view.working?sDeskStatusWords(held):'On the desk',()=>sRoute('blogs'));
 }
 function sDeskRender(held){
-  const view=held.view;sDeskToolbar(held);
+  const view=held.view;sDeskToolbar(held);held.layout=sDeskLayout();
   const status=sNode('p','quiet desk-save-state');status.setAttribute('role','status');status.setAttribute('aria-live','polite');held.status=status;
   if(held.stale)sDeskStale(held);else status.textContent=held.saved||'Changes save as you type.';
   const column=sNode('div','desk-column');held.tab=held.tab||'draft';held.shownTab=held.tab;
@@ -383,7 +383,7 @@ function sDeskPart(held,part){
   if(working){const note=sNode('p','desk-working-note','Working on this section');note.setAttribute('role','status');card.append(note);if(view.working.note)card.append(sNode('p','quiet','Your note: '+view.working.note));}
   if(section){
     const typed=(held.notes||{})[part]||'',row=sNode('div','desk-note');
-    const box=sNode('input','input');box.type='text';box.maxLength=4000;box.value=typed;box.placeholder='How should this change?';box.setAttribute('aria-label','How should '+section.heading+' change?');
+    const box=sNode('textarea','input desk-note-text');box.rows=typed.includes('\n')?4:1;box.maxLength=4000;box.value=typed;box.placeholder='How should this change?';box.setAttribute('aria-label','How should '+section.heading+' change?');
     const go=sButton(typed.trim()?'Rewrite':'Write again',async button=>{const note=((held.notes||{})[part]||'').trim();await sDeskJob(held,button,'desk-note',{part,note},()=>{if(held.notes)delete held.notes[part];});});
     go.disabled=!access.actions.edit||!!view.working;
     box.addEventListener('input',()=>{held.notes=held.notes||{};held.notes[part]=box.value;go.textContent=box.value.trim()?'Rewrite':'Write again';});
@@ -608,17 +608,20 @@ function sDeskPanel(held){
   if(tool)head.append(sButton('All tools',()=>{f.tool=null;sDeskPanelShow(held);}));
   head.append(sNode('h2','desk-finish-title',tool?tool[1]:'Finishing'),sButton('Close',()=>sDeskFinishClose(held)));
   const body=sNode('div','desk-finish-body');body.append(...(tool?sDeskToolView(held,f.tool):sDeskToolList(held)));
+  panel.addEventListener('focusout',()=>setTimeout(()=>{if(held.panelStale&&held.panel===panel)sDeskPanelSync(held,true);},0));
+  panel.hidden=!!held.panelUnder;  // Under a sheet opened from it, on a narrower screen.
   return sAdd(panel,head,body);
 }
 // What the panel shows, so a poll redraws it only when that changed.
 function sDeskPanelKey(held){const view=held.view,f=held.finish||{};return JSON.stringify([f.tool,view.finishing||{},view.working&&[view.working.id,view.working.kind,view.working.status],(view.jobs||[]).filter(job=>/^finish-/.test(job.kind)).slice(-4).map(job=>[job.id,job.status,job.error]),view.google_suggestions,view.revision,view.source_names?.length]);}
-function sDeskPanelShow(held){if(!held.finish||!held.panel)return;const panel=sDeskPanel(held);held.panel.replaceWith(panel);held.panel=panel;held.panelKey=sDeskPanelKey(held);}
-function sDeskPanelSync(held){
-  if(!held.finish||!held.panel||sDeskPanelKey(held)===held.panelKey)return;
-  // Never while the person types in the panel: an edited suggestion keeps its caret.
+function sDeskPanelShow(held){if(!held.finish||!held.panel)return;const panel=sDeskPanel(held);held.panel.replaceWith(panel);held.panel=panel;held.panelKey=sDeskPanelKey(held);held.panelStale=false;}
+// A redraw the person did not ask for waits while they use a control in the panel, and
+// happens as soon as focus leaves it.
+function sDeskPanelSync(held,force=false){
+  if(!held.finish||!held.panel||(!force&&sDeskPanelKey(held)===held.panelKey))return true;
   const focused=typeof document.activeElement==='object'?document.activeElement:null;
-  if(focused&&['INPUT','TEXTAREA','input','textarea'].includes(focused.tagName)&&typeof held.panel.contains==='function'&&held.panel.contains(focused))return;
-  sDeskPanelShow(held);
+  if(focused&&['INPUT','TEXTAREA','SELECT','BUTTON','SUMMARY'].includes(String(focused.tagName).toUpperCase())&&typeof held.panel.contains==='function'&&held.panel.contains(focused)){held.panelStale=true;return false;}
+  sDeskPanelShow(held);return true;
 }
 function sDeskToolList(held){
   const list=sNode('div','pick-cards desk-finish-tools');
@@ -665,7 +668,7 @@ function sDeskProposals(held,key,set){
   if(!items.length){out.push(sNode('p','',key==='facts'?'No claims to check.':'Nothing to change at this level.'));return out;}
   // Apply all: every open proposal that still fits; flagged ones wait to be checked one by one.
   const ready=open.filter(item=>item.present&&!item.flag&&'after' in item);
-  if(key!=='headline'&&ready.length>1){
+  if(key==='humanize'&&ready.length>1){
     const flagged=open.filter(item=>item.flag).length;
     const all=sButton('Apply all ('+ready.length+')',button=>sDeskApply(held,set,ready.map(item=>({id:item.id})),button));all.disabled=!access.actions.edit||!!held.view.working;
     out.push(sAdd(sNode('div','bar'),all),flagged?sNode('p','quiet',flagged+(flagged===1?' flagged suggestion is':' flagged suggestions are')+' left for you to check one by one.'):null);
@@ -760,8 +763,9 @@ function sDeskComment(held,set,item,inPanel){
 }
 function sDeskToNote(held,item){
   const section=(held.view.sections||[]).find(found=>found.id===item.part);
-  const text=(item.comment+(item.quote?' (About: “'+item.quote+'”)':'')).slice(0,4000);
-  if(section){held.notes=held.notes||{};held.notes[item.part]=text;}else held.wholeNote=text;
+  // Added to whatever note is there already, never over it.
+  const comment=item.comment+(item.quote?' (About: “'+item.quote+'”)':''),join=had=>(had.trim()?had.replace(/\s+$/,'')+'\n\n':'')+comment;
+  if(section){held.notes=held.notes||{};held.notes[item.part]=join(held.notes[item.part]||'').slice(0,4000);}else held.wholeNote=join(held.wholeNote||'').slice(0,4000);
   if(held.finish)held.finish.noted[item.id]=true;
   if(held.finish&&sNarrow())held.finish=null;  // On a phone the sheet steps aside for the note.
   if(held.tab!=='draft'||!held.cards||(section&&!held.cards[item.part])||sNarrow()){held.tab='draft';sDeskRender(held);}
@@ -770,7 +774,7 @@ function sDeskToNote(held,item){
     else{const whole=sDeskWhole(held);held.wholeCard.replaceWith(whole);held.wholeCard=whole;}
     sDeskPanelShow(held);
   }
-  const target=section?held.cards?.[item.part]?.querySelector('input'):held.wholeCard?.querySelector('textarea');
+  const target=section?held.cards?.[item.part]?.querySelector('.desk-note-text'):held.wholeCard?.querySelector('textarea');
   if(target){target.focus();if(typeof target.scrollIntoView==='function')target.scrollIntoView({block:'center'});}
   sToast(section?'Now the note for “'+section.heading+'”. Choose Rewrite when you are ready.':'Now the note for the whole draft. Choose Revise the draft when you are ready.');
 }
@@ -837,7 +841,8 @@ function sDeskRepurposeFollow(held,p){
   setTimeout(async()=>{
     p.following=false;if(!sDeskCurrent(held)||held.finish?.publish!==p||!p.job)return;
     try{p.job=await api('tool-job?job='+encodeURIComponent(p.job.id));}catch(error){p.copyProblem=error.message;}
-    if(held.finish?.tool==='publish')sDeskPanelShow(held);
+    if(held.finish?.tool==='publish')sDeskPanelSync(held,true);
+    if(['queued','working'].includes(p.job?.status))sDeskRepurposeFollow(held,p);
   },DESK_POLL);
 }
 function sDeskGoogleCard(held,p){
@@ -858,3 +863,14 @@ function sDeskGoogleCard(held,p){
   card.append(sField('desk-google-mode','Send as',p.google,'mode',{options:[['auto','Suggestions, with comments fallback'],['native','Suggestions only'],['comments','Comments only']]}),sAdd(sNode('div','bar'),check));
   return card;
 }
+
+// A sheet opened over the desk (Add a source, History…) is always on top: on a screen too
+// narrow for the panel to sit beside the draft, the panel steps aside while the sheet is open
+// and comes back when it closes. runner.js calls these when any sheet opens or closes.
+function sDeskFloating(){return sNarrow()||(typeof window.matchMedia==='function'&&!!window.matchMedia('(max-width: 1099px)').matches);}
+function sDeskSheetOpened(){const held=studio.desk;if(studio.screen!=='desk'||!held?.finish||!held.panel||!sDeskFloating())return;held.panelUnder=true;held.panel.hidden=true;}
+function sDeskSheetClosed(){const held=studio.desk;if(!held?.panelUnder)return;held.panelUnder=false;if(held.panel)held.panel.hidden=false;}
+// Turning a phone or resizing the window across a layout redraws the desk in the new one.
+function sDeskLayout(){return sNarrow()?'phone':sDeskFloating()?'drawer':'wide';}
+function sDeskResized(){const held=studio.desk;if(!held||!sDeskCurrent(held)||!held.cards&&held.tab!=='outline'||held.layout===sDeskLayout())return;held.layout=sDeskLayout();sDeskRender(held);}
+if(typeof window.addEventListener==='function')window.addEventListener('resize',()=>{if(typeof clearTimeout==='function')clearTimeout(window.deskResize);window.deskResize=setTimeout(sDeskResized,150);});
