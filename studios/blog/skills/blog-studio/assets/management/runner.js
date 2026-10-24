@@ -132,7 +132,7 @@ function sCopyButton(content){return sButton('Copy Markdown',async()=>{if(typeof
 function sFrame(title,actions=[],above='',back=null){
   $('studio-toolbar').dataset.workflow='';
   $('title').textContent=title;$('title').title=title;$('above').textContent=above;$('above').hidden=!above;$('actions').replaceChildren(...actions.filter(Boolean));$('toolbar-lead').replaceChildren();if(back){const b=sButton('Back',back);b.setAttribute('aria-label','Back');b.replaceChildren(sIcon('back'));$('toolbar-lead').append(b);}
-  $('studio-page').hidden=false;$('editorial-screen').hidden=true;for(const node of document.querySelectorAll('.sidebar button'))node.removeAttribute('aria-current');const parent=['run','gate','editor','new','google','draft','polish','desk','desk-start'].includes(studio.screen)?'blogs':studio.screen==='setup'||studio.screen==='voices'&&!sVoicesOn()?'settings':studio.screen;const nav=$('go-'+parent);if(nav)nav.setAttribute('aria-current','page');const needs=studio.listing.filter(sNeeds).length;$('needs-count').textContent=String(needs);$('needs-count').hidden=!needs;document.title=(needs?'('+needs+') ':'')+title+' · Blog Studio';
+  $('studio-page').hidden=false;$('editorial-screen').hidden=true;for(const node of document.querySelectorAll('.sidebar button'))node.removeAttribute('aria-current');const parent=['run','gate','editor','new','google','draft','polish','desk','desk-start'].includes(studio.screen)?'blogs':studio.screen==='setup'||studio.screen==='voices'?'settings':studio.screen;const nav=$('go-'+parent);if(nav)nav.setAttribute('aria-current','page');const needs=studio.listing.filter(sNeeds).length;$('needs-count').textContent=String(needs);$('needs-count').hidden=!needs;document.title=(needs?'('+needs+') ':'')+title+' · Blog Studio';
 }
 function sPage(...nodes){$('studio-page').replaceChildren(...nodes.filter(Boolean));}
 function sToast(message){const toast=sNode('p','toast glass',message);$('toasts').append(toast);setTimeout(()=>toast.remove(),5000);}
@@ -140,11 +140,12 @@ function sRoute(screen,id=null,stage=null,replace=false){const query=new URLSear
 async function studioNavigate(screen,id=null,stage=null){
   if(studio.screen==='desk'&&(screen!=='desk'||id!==studio.id)&&typeof sDeskShare==='function')sDeskShare(studio.desk);
   if(screen==='voices'&&studio.screen!=='voices')studio.kindsFrom=studio.screen;  // Kinds of post goes Back to where it was opened.
-  if(!['home','blogs','voices','status','settings','setup','new','google','draft','polish','run','gate','editor','editorial','desk','desk-start'].includes(screen))screen='home';if(screen==='editorial')return sLegacy(id||'board',false);const sameWork=studio.id===id&&['editor','run','gate'].includes(screen)&&['editor','run','gate'].includes(studio.screen);sTop();sCloseSheet();studio.screen=screen;studio.id=id;studio.stage=stage;studio.turn++;studio.signature='';const turn=studio.turn;if(!sameWork){sFrame(screen==='new'?'New blog':screen==='desk'?'Writing desk':screen==='desk-start'?'New blog':screen==='gate'?'Review':screen==='run'?'Writing run':screen==='setup'?'Set up Blog Studio':screen==='voices'?sVoicesTitle():screen[0].toUpperCase()+screen.slice(1));sPage(sNode('p','studio-loading','Reading saved work…'));}else{for(const node of [...$('actions').querySelectorAll('button'),...$('studio-page').querySelectorAll('button')])node.disabled=true;}$('studio-page').setAttribute('aria-busy','true');
+  if(!['home','blogs','guides','voices','status','settings','setup','new','google','draft','polish','run','gate','editor','editorial','desk','desk-start'].includes(screen))screen='home';if(screen==='editorial')return sLegacy(id||'board',false);const sameWork=studio.id===id&&['editor','run','gate'].includes(screen)&&['editor','run','gate'].includes(studio.screen);sTop();sCloseSheet();studio.screen=screen;studio.id=id;studio.stage=stage;studio.turn++;studio.signature='';const turn=studio.turn;if(!sameWork){sFrame(screen==='new'?'New blog':screen==='desk'?'Writing desk':screen==='desk-start'?'New blog':screen==='gate'?'Review':screen==='run'?'Writing run':screen==='setup'?'Set up Blog Studio':screen==='voices'?sVoicesTitle():screen==='guides'?'Voice guides':screen[0].toUpperCase()+screen.slice(1));sPage(sNode('p','studio-loading','Reading saved work…'));}else{for(const node of [...$('actions').querySelectorAll('button'),...$('studio-page').querySelectorAll('button')])node.disabled=true;}$('studio-page').setAttribute('aria-busy','true');
   try{
     if(['home','blogs','status'].includes(screen)){await sReadList(turn);if(turn!==studio.turn)return;if(screen==='home')sHome();else if(screen==='blogs')sBlogs();else {const computer=await api('computer');if(turn!==studio.turn)return;studio.computer=computer;studio.brand=computer.brand;sStatusPage();}}
     else if(['settings','setup'].includes(screen)){const [team,settings,brand,options]=await Promise.all([api('team'),api('run-settings'),api('brand'),studio.options||api('run-options')]);if(turn===studio.turn){studio.team=team;studio.settings=settings;studio.brand=brand;studio.options=options;sSettings(screen==='setup');}}
     else if(screen==='voices'){await sVoicesPage(turn);}
+    else if(screen==='guides'){await sGuidesPage(turn);}
     else if(screen==='editor'){await sEditor(id);}
     else if(screen==='desk'){await sDesk(id);}
     else if(screen==='desk-start'){await sDeskStart();}
@@ -375,7 +376,7 @@ function renderRun(found){studio.screen='run';sRun(found);}
 function renderRuns(result){studio.listing=result.items;studio.screen='blogs';sBlogs();}
 function sLegacy(name,push=true){sTop();if(!['board','inbox','library','memory'].includes(name))name='board';if(push)history.pushState(null,'',location.pathname+'?'+new URLSearchParams({screen:'editorial',id:name}));sCloseSheet();studio.screen='editorial';studio.turn++;view=name;offset=0;sFrame({board:'All blogs',inbox:'Review findings',library:'Team library',memory:'Team memory'}[name],[],'',()=>sRoute('blogs'));$('studio-page').hidden=true;$('editorial-screen').hidden=false;$('editorial-screen').dataset.view=name;legacyToolbar();$('go-blogs').setAttribute('aria-current','page');return load().catch(error=>notice(error.message,true));}
 async function sPoll(){
-  if(studio.polling||studio.busy||studio.sheet||['new','google','draft','polish','settings','setup','editorial','voices','desk','desk-start'].includes(studio.screen))return;studio.polling=true;const turn=studio.turn;
+  if(studio.polling||studio.busy||studio.sheet||['new','google','draft','polish','settings','setup','editorial','voices','guides','desk','desk-start'].includes(studio.screen))return;studio.polling=true;const turn=studio.turn;
   try{if(studio.screen==='editor'){
     if(!studio.editorWatching)return;
     const found=await api('run?id='+encodeURIComponent(studio.id));if(turn!==studio.turn)return;
@@ -735,9 +736,83 @@ async function sVoiceTools(article=null){
 }
 async function sVoicesPage(turn=studio.turn){
   const data=await sVoiceData();if(turn!==studio.turn)return;
-  if(!sVoicesOn()){sFrame('Kinds of post',[sButton('Create a style',()=>sLearnStyle(data.kinds),'filled')],'',()=>sRoute(['home','blogs','status'].includes(studio.kindsFrom)?studio.kindsFrom:'settings'));sPage(sNode('p','lede',KINDS_SAY),...sVoiceCards(data));return;}
-  sFrame('Voices and styles',[sButton('Create a voice',()=>sLearnVoice(data.found),'filled'),sButton('Create a style',()=>sLearnStyle(data.kinds))]);
+  if(!sVoicesOn()){sFrame('Kinds of post',[sButton('Create a style',()=>sLearnStyle(data.kinds),'filled')],'',()=>sRoute(['home','blogs','status','guides'].includes(studio.kindsFrom)?studio.kindsFrom:'settings'));sPage(sNode('p','lede',KINDS_SAY),...sVoiceCards(data));return;}
+  sFrame('Voices and styles',[sButton('Create a voice',()=>sLearnVoice(data.found),'filled'),sButton('Create a style',()=>sLearnStyle(data.kinds))],'',()=>sRoute(['home','blogs','status','guides'].includes(studio.kindsFrom)?studio.kindsFrom:'settings'));
   sPage(sNode('p','lede',VOICES_SAY),...sVoiceCards(data));
+}
+// Voice guides: how a piece should sound, as a name and text. Written by hand or made from a
+// few samples, edited, and applied to a draft from Finishing on the desk. Saved as the
+// profiles voices always were, so learned voices are guides too. Not behind the voice switch.
+const GUIDES_SAY='A voice guide says how a piece should sound. Apply one to a draft from Finishing on the desk: the draft keeps its facts, quotes and shape.';
+const GUIDE_STATUS={provisional:'Provisional',retired:'Retired'};
+async function sGuidesPage(turn=studio.turn){
+  const found=await api('voice-guides');if(turn!==studio.turn)return;studio.guides=found;
+  sFrame('Voice guides',[sButton('New voice guide',()=>sGuideSheet(),'filled')]);
+  const active=found.guides.filter(guide=>guide.status!=='retired'),retired=found.guides.filter(guide=>guide.status==='retired');
+  const card=guide=>sAdd(sNode('section','card guide-card'),sNode('h2','card-title',guide.name),guide.says?sNode('p','',guide.says):sNode('p','quiet','No text yet.'),GUIDE_STATUS[guide.status]?sNode('p','quiet',GUIDE_STATUS[guide.status]):null,sAdd(sNode('div','bar'),(()=>{const open=sButton('Open',()=>sGuideSheet(guide.id));open.setAttribute('aria-label','Open '+guide.name);return open;})()));
+  const making=found.making.map(row=>sAdd(sNode('section','card guide-card'),sNode('h2','card-title',row.name||'A voice guide'),sNode('p','quiet',{queued:'Waiting to start.',working:'Being made from your samples…',ready:'Ready to read and save.',failed:'This did not finish.'}[row.status]||''),sAdd(sNode('div','bar'),sButton(row.status==='ready'?'Read and save':'Open',()=>sGuideSheet(null,row.id),row.status==='ready'?'filled':''))));
+  sPage(sNode('p','lede',GUIDES_SAY),making.length?sAdd(sNode('div','grid'),...making):null,active.length?sAdd(sNode('div','grid'),...active.map(card)):sCard('No voice guides yet',sNode('p','','Write one by hand, or make one from three to twenty samples of the writing you want to sound like.')),
+    retired.length?disclosure('Retired ('+retired.length+')',sAdd(sNode('div','grid'),...retired.map(card))):null,
+    sVoicesOn()?sCard('Learning voices',sNode('p','quiet','The older voice tools are on: learn a voice from an author’s posts, links or a LinkedIn export, and choose Write as for a blog.'),sButton('Open voices and styles',()=>sRoute('voices'))):null);
+}
+function sGuideNew(){return {name:'',way:'write',guide:'',samples:[{text:''},{text:''},{text:''}],files:[],job:null,operation:operationId(),problem:''};}
+// New voice guide, or one already saved (`id`), or one being made from samples (`job`).
+async function sGuideSheet(id=null,job=null){
+  if(id){
+    const found=await sTaskRead('Voice guide','voice?profile='+encodeURIComponent(id));if(!found)return;
+    return sGuideEdit(found);
+  }
+  const held=job?{...sGuideNew(),way:'samples',job:{id:job,status:'queued'}}:studio.guideDraft||sGuideNew();studio.guideDraft=held;
+  if(job){try{held.job=await api('tool-job?job='+encodeURIComponent(job));if(held.job.status==='ready'&&!held.guide)held.guide=held.job.result?.content||'';if(!held.name)held.name=held.job.metadata?.name||'';}catch(error){held.problem=error.message;}}
+  sGuideDraw(held);
+}
+function sGuideDraw(held){
+  const form=sNode('form','create-flow'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');
+  const ready=held.job?.status==='ready',busyJob=['queued','working'].includes(held.job?.status);
+  const how=sChoice('How to start',[['write','Write it'],['samples','From samples']],held,'way',()=>sGuideDraw(held));
+  const samples=[];
+  if(held.way==='samples'){
+    held.samples.forEach((sample,index)=>samples.push(sField('guide-sample-'+(index+1),'Sample '+(index+1),sample,'text',{long:true,max:200000})));
+    const more=sButton('Add another sample',()=>{held.samples.push({text:''});sGuideDraw(held);});more.disabled=held.samples.length+held.files.length>=20;
+    const field=sNode('div','field'),upload=sNode('input','input'),label=sNode('label','field-label','Upload samples');upload.type='file';upload.multiple=true;upload.id='guide-upload';upload.accept='.md,.txt,.html,.htm,.docx,.pdf';label.htmlFor=upload.id;
+    upload.addEventListener('change',async()=>{const chosen=Array.from(upload.files||[]);if(chosen.some(file=>file.size>10*1024*1024)){held.problem='Choose files up to 10 MiB each.';return sGuideDraw(held);}for(const file of chosen)held.files.push({filename:file.name,content:await encodeImportFile(file)});held.problem='';sGuideDraw(held);});
+    field.append(label,upload,sNode('p','quiet field-hint','Markdown, text, HTML or DOCX. Nothing you add here is kept in the library.'));
+    const files=held.files.length?sAdd(sNode('ul','rows'),...held.files.map((file,index)=>sAdd(sNode('li','row'),sNode('span','row-title',file.filename),sButton('Remove',()=>{held.files.splice(index,1);sGuideDraw(held);})))):null;
+    const count=held.samples.filter(sample=>sample.text.trim()).length+held.files.length;
+    const make=sButton(held.job&&!busyJob?'Make the guide again':'Make the guide',async button=>{await busy(button,'Starting…',async()=>{try{const given=[...held.samples.filter(sample=>sample.text.trim()).map(sample=>({text:sample.text})),...held.files];held.job=await api('tool-action',{action:'job-create',kind:'voice-guide',operation:held.operation,name:held.name.trim(),samples:given});held.operation=operationId();held.problem='';sGuideFollow(held);}catch(error){held.problem=error.message;}sGuideDraw(held);});},'filled');make.disabled=busyJob||!access.actions.edit;
+    samples.push(more,field,files,sNode('p','quiet',count+(count===1?' sample':' samples')+'. Three to twenty: posts, emails or notes in the voice you want, by one writer.'),sAdd(sNode('div','bar'),make));
+    if(busyJob){const note=sNode('p','desk-working-note','Making the guide from your samples…');note.setAttribute('role','status');samples.push(note);}
+    if(held.job?.status==='failed')samples.push(sNode('p','problem',held.job.error||'This did not finish. Make the guide again.'));
+  }
+  const text=held.way==='write'||ready||held.guide?sField('guide-text','The guide',held,'guide',{long:true,max:40000,required:true,hint:held.way==='samples'?'Made from your samples. Read it and change anything that is not how this writing sounds.':'How this writing sounds: register, sentence length, openings, words to use and avoid.'}):sNode('p','quiet','The guide appears here when it is made. You can edit it before saving.');
+  const save=sNode('button','button button-filled','Save guide');save.type='submit';save.disabled=!access.actions.edit||held.way==='samples'&&!ready&&!held.guide;
+  form.append(sCreateStep(1,'Name',sField('guide-name','Name',held,'name',{required:true,max:200})),sCreateStep(2,'Write it, or make it from samples',how,...samples),sCreateStep(3,'Read and edit',text),problem,sAdd(sNode('div','bar form-actions'),save,sButton('Cancel',()=>{studio.guideDraft=null;sCloseSheet();})));
+  form.addEventListener('submit',async event=>{event.preventDefault();await busy(save,'Saving…',async()=>{try{
+    if(!held.name.trim()||!held.guide.trim())throw new Error('Give the guide a name and its text.');
+    const fromJob=held.way==='samples'&&held.job?.status==='ready';
+    const saved=await api('tool-action',fromJob?{action:'job-apply',job:held.job.id,name:held.name.trim(),content:held.guide}:{action:'profile-save',name:held.name.trim(),guide:held.guide,status:'confirmed',confirmed:true});
+    studio.guideDraft=null;sCloseSheet();if(saved.team_sync)savedNotice(saved);sToast('Saved “'+held.name.trim()+'”. Apply it from Finishing on the desk.');if(studio.screen==='guides')await sGuidesPage();
+  }catch(error){problem.textContent=error.message;}});});
+  sOpenSheet('New voice guide',form);held.sheet=studio.sheet;
+}
+function sGuideFollow(held){
+  if(held.following)return;held.following=true;
+  setTimeout(async()=>{held.following=false;if(studio.guideDraft!==held||!held.job||studio.sheet!==held.sheet)return;
+    try{held.job=await api('tool-job?job='+encodeURIComponent(held.job.id));}catch(error){held.problem=error.message;}
+    if(['queued','working'].includes(held.job?.status))return sGuideFollow(held);
+    if(held.job?.status==='ready'&&!held.guide.trim())held.guide=held.job.result?.content||'';
+    if(studio.guideDraft===held&&studio.sheet===held.sheet)sGuideDraw(held);
+  },2000);
+}
+function sGuideEdit(found){
+  const held={name:found.name,guide:found.guide},form=sNode('form','create-flow'),problem=sNode('p','problem');problem.setAttribute('role','alert');
+  const retired=found.status==='retired';
+  if(retired){sOpenSheet(found.name,sNode('p','quiet','Retired. Drafts that used it keep what was applied.'),sNode('p','desk-plain',found.guide),sButton('Close',sCloseSheet));return;}
+  const save=sNode('button','button button-filled','Save guide');save.type='submit';save.disabled=!access.actions.edit;
+  const retire=sButton('Retire this guide',()=>sOpenSheet('Retire '+found.name+'?',sNode('p','','It leaves the list of guides you can apply. Drafts that used it keep their text, and blogs that write as it keep it.'),sAdd(sNode('div','bar'),sButton('Retire',async button=>{await busy(button,'Retiring…',async()=>{try{const saved=await api('tool-action',{action:'profile-retire',profile:found.id,expected:found.expected,confirmed:true});sCloseSheet();if(saved.team_sync)savedNotice(saved);sToast('Retired “'+found.name+'”.');if(studio.screen==='guides')await sGuidesPage();}catch(error){notice(error.message,true);}});},'danger'),sButton('Cancel',()=>sGuideEdit(found)))));retire.disabled=!access.actions.edit;
+  form.append(sField('guide-name','Name',held,'name',{required:true,max:200}),sField('guide-text','The guide',held,'guide',{long:true,max:40000,required:true}),found.status==='provisional'?sNode('p','quiet','Provisional: learned from samples and not yet confirmed. Saving it here confirms it.'):null,problem,sAdd(sNode('div','bar form-actions'),save,retire));
+  form.addEventListener('submit',async event=>{event.preventDefault();await busy(save,'Saving…',async()=>{try{const saved=await api('tool-action',{action:'profile-save',profile:found.id,expected:found.expected,name:held.name.trim(),guide:held.guide,status:'confirmed',confirmed:true});sCloseSheet();if(saved.team_sync)savedNotice(saved);sToast('Saved “'+held.name.trim()+'”.');if(studio.screen==='guides')await sGuidesPage();}catch(error){problem.textContent=error.message;}});});
+  sOpenSheet(found.name,form);
 }
 // Items chosen on the library screen are not samples yet: the sheet lists them ticked beside
 // the samples, and they become samples only when the learning is confirmed (`mark`).
@@ -1289,7 +1364,7 @@ function sAngles(text){const lines=String(text||'').split(/\r?\n/),found=[];for(
 // the library's "Learn a voice from these", and the voice-sample choices in the upload
 // dialog and the library filter. Shown or hidden as the switch is; called after Settings.
 function sVoiceSwitchShown(){
-  const on=sVoicesOn(),nav=$('go-voices');if(nav)nav.hidden=!on;
+  const on=sVoicesOn();
   const learn=$('library-learn-voice');if(learn)learn.hidden=!on;
   studio.voiceOptions||=[];
   if(!on){for(const id of ['upload-purpose','library-role']){const select=$(id);if(!select)continue;for(const option of [...(select.children||[])])if(option.value==='voice-sample'){if(select.value==='voice-sample')select.value=select.children[0]?.value||'';option.remove();studio.voiceOptions.push({select,option});}}return;}
@@ -1302,7 +1377,7 @@ STUDIO_ICONS.suite=['M4 4h6v6H4z','M14 4h6v6h-6z','M4 14h6v6H4z','M14 14h6v6h-6z
 {const back=$('go-suite');if(back&&suite){back.href=suite+'/';if(suiteTab)back.removeAttribute('target');back.prepend(sIcon('suite'));back.hidden=false;}}
 $('studio-symbol')?.append(sIcon('studio'));
 for(const [id,screen,icon]of [['go-home','home','home'],['go-blogs','blogs','blogs'],['go-status','status','status'],['go-settings','settings','settings']]){const node=$(id);node.prepend(sIcon(icon));node.addEventListener('click',()=>sRoute(screen));}
-{const node=$('go-voices');if(node){node.prepend(sIcon('voices'));node.addEventListener('click',()=>sRoute('voices'));}}
+{const node=$('go-guides');if(node){node.prepend(sIcon('voices'));node.addEventListener('click',()=>sRoute('guides'));}}
 for(const node of document.querySelectorAll('[data-view]'))node.addEventListener('click',()=>sLegacy(node.dataset.view));
 document.querySelector('.skip').addEventListener('click',event=>{event.preventDefault();$('main').focus();});
 // A new link opened in a tab that already shows this page changes only the fragment, which does

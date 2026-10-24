@@ -2389,6 +2389,7 @@ def view(root, name, query):
     if name in (
         'voices',
         'voice',
+        'voice-guides',
         'styles',
         'style',
         'interview',
@@ -2411,6 +2412,8 @@ def view(root, name, query):
                 return article_tools.variants(root, arg('id'))
             if name == 'voices':
                 return article_tools.voices(root)
+            if name == 'voice-guides':
+                return article_tools.guides(root)
             if name == 'voice':
                 return article_tools.profile(root, arg('profile'))
             if name == 'interview':

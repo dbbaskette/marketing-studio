@@ -8,6 +8,7 @@ import studio
 KINDS = {
     'voice-learn',
     'voice-audition',
+    'voice-guide',  # A voice guide made from a few samples (article_tools).
     'style-learn',
     'repurpose',
     'interview-question',
