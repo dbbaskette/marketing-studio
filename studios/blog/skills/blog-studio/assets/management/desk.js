@@ -50,9 +50,10 @@ const DESK_START_LEDES=['Choose the kind of post. It sets the usual shape and le
 function sDeskHeld(){
   if(studio.deskStart)return studio.deskStart;
   const defaults=studio.options?.settings?.defaults||{},preset=studio.deskPreset||{};studio.deskPreset=null;
-  return studio.deskStart={step:0,kind:null,style:'',have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',manuscript:'',url:'',file:null,preview:null,first_pass:'leave',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},searchSites:false,searchWeb:false,length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
+  return studio.deskStart={step:0,kind:null,style:'',have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:'leave',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},searchSites:false,searchWeb:false,length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
 }
-// Home's tasks, New blog and the library's "Write a blog from these" all start here.
+// Home's tasks, New blog, the library's "Write a blog from these", an interview's outline and
+// a saved blog's details all start here.
 function sDeskBegin(preset={}){studio.deskStart=null;studio.deskPreset=preset;return sRoute('desk-start');}
 async function sDeskStart(){
   if(!studio.options)studio.options=await api('run-options');
@@ -161,10 +162,12 @@ function sDeskOutlineIn(held){
   card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Blank uses the outline’s # heading.'}),sChoice('Then',DESK_OUTLINE_WAYS,held,'outlineWay',()=>sDeskStart()),sNode('p','quiet field-hint',held.outlineWay==='shape'?'The outline opens on the desk for you to shape first.':'The draft is written from your outline.'));
   return card;
 }
-// A draft: paste, upload or a Google Doc (every tab), with an optional first pass.
+// A draft: paste, upload or a Google Doc (every tab), with an optional first pass. A start
+// opened from a saved blog's details also offers that blog's own draft, brought as it is.
 function sDeskDraftIn(held){
-  const card=sCard('Your draft',sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
-  if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Each ## heading starts a section.'}));
+  const card=sCard('Your draft',sChoice('Where is your draft?',[...(held.article?[['saved','Your saved draft']]:[]),['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
+  if(held.source==='saved')card.append(sNode('p','','The saved draft comes to the desk as it is, in the same blog. Its history is kept.'));
+  else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Each ## heading starts a section.'}));
   else if(held.source==='file'){
     const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload a draft');
     const note=sNode('p','quiet field-hint',held.file?'Selected: '+held.file.name:'Text, Markdown, Word or PDF.');
@@ -195,7 +198,8 @@ async function sDeskGo(held){
   let made;
   if(held.have==='draft'){
     const settings={...common,first_pass:held.first_pass};
-    if(held.source==='paste')made=await api('desk-create',{...settings,manuscript:held.manuscript});
+    if(held.source==='saved')made=await api('desk-create',{...settings,article:held.article});
+    else if(held.source==='paste')made=await api('desk-create',{...settings,manuscript:held.manuscript});
     else if(held.source==='file'){
       if(held.file.size>10*1024*1024)throw new Error('Choose a file up to 10 MiB.');
       const uploaded=await api('upload',{operation:held.upload,filename:held.file.name,title:held.title.trim()||held.file.name.replace(/\.[^.]+$/,''),content:await encodeImportFile(held.file),purpose:'manuscript',analyze:false});
