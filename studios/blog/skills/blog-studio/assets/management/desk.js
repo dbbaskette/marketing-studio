@@ -47,10 +47,14 @@ const DESK_HAVE=[['topic','Just a topic'],['outline','An outline or notes'],['dr
 const DESK_OUTLINE_WAYS=[['outline','Write from my outline'],['shape','Shape an outline with me first']];
 const DESK_START_STEPS=['Kind of post','Sources and settings','What you have'];
 const DESK_START_LEDES=['Choose the kind of post. It sets the usual shape and length.','Add sources if you have them. They stay with this blog unless you keep them in the team library.','Say what you bring, then start. Nothing stops for you on the way.'];
+// Settings' research for new blogs is where the start's ticks begin: Search my sites when it
+// ticks your sites and the shared list has any, Search the web too when it ticks the public
+// web. Your documents are always read. The person can change both for this blog.
+function sDeskResearchDefault(value){const ticks=OLD_RESEARCH[value]||(value&&typeof value==='object'?value:{});return {searchSites:!!ticks.sites&&sSharedSites().length>0,searchWeb:!!ticks.web};}
 function sDeskHeld(){
   if(studio.deskStart)return studio.deskStart;
   const defaults=studio.options?.settings?.defaults||{},preset=studio.deskPreset||{};studio.deskPreset=null;
-  return studio.deskStart={step:0,kind:null,style:'',have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:'leave',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},searchSites:false,searchWeb:false,length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
+  return studio.deskStart={step:0,kind:null,style:'',have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:'leave',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
 }
 // Home's tasks, New blog, the library's "Write a blog from these", an interview's outline and
 // a saved blog's details all start here.
@@ -80,7 +84,7 @@ function sDeskSettings(held){
   const again=()=>sDeskStartAgain(held);
   const go=sNode('button','button button-filled','Continue');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
   form.append(sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}));
-  if(sDeskWriting(held))form.append(sCard('Research before the writing',sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>again()),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'),sNode('p','quiet','Off unless ticked. It runs before the outline, with no stop for you.')));
+  if(sDeskWriting(held))form.append(sCard('Research before the writing',sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>again()),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'),sNode('p','quiet','Ticked as in Settings, for this blog only. It runs before the outline, with no stop for you.')));
   form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(held,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
   form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
   form.addEventListener('submit',event=>{event.preventDefault();if(studio.busy)return;if(sDeskWriting(held)&&held.searchSites&&!sChosenSites(held.from).length){problem.textContent=sResearchWord('no_sites')||'Choose at least one of your sites, or untick Search my sites.';return;}held.step=2;sTop();sDeskStart();});

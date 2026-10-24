@@ -1465,6 +1465,17 @@ at its angles.
 - [x] **Steps 2-5**: commit "Move the last ways into the old wizard to the desk start" and
   "Remove the old new-blog wizard and the files screen".
 
+### Task 5.2a: The desk start's research ticks follow Settings
+
+The owner's decision (2026-10-23): Settings' **Research for new blogs from** is where the desk
+start's ticks begin. Documents only leaves both off; your sites ticks **Search my sites** (when
+the shared list has any); the public web ticks **Search the web too**. The person can change
+them for each blog.
+
+- [x] `desk.js` `sDeskResearchDefault`; Settings' hint says so; journey `deskResearchDefault`;
+  test `test_the_start_reads_settings_research_for_new_blogs`; docs and CHANGELOG. Commit
+  "Start the desk's research ticks from Settings".
+
 ### Task 5.1: Docs
 
 - One pass, removing what Phases 1 to 4 left contradicting or repeating: `README.md`,

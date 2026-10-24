@@ -141,6 +141,32 @@ class StartRecordTests(StartCase):
         made = self.start(way='topic', point='P.', research_from={'sites': [], 'web': False})
         self.assertEqual(desk.read_start(self.root, made['id'])['steps'], ['outline', 'draft'])
 
+    def test_the_start_reads_settings_research_for_new_blogs(self):
+        # The page ticks Search my sites and Search the web too from what run-options says
+        # Settings ticked; an older word reads as it meant, and a damaged value as the default.
+        path = self.root / '.blog-run-settings.json'
+        for saved, shown in (
+            (
+                {'documents': True, 'sites': True, 'web': True},
+                {'documents': True, 'sites': True, 'web': True},
+            ),
+            (
+                {'documents': True, 'sites': False, 'web': False},
+                {'documents': True, 'sites': False, 'web': False},
+            ),
+            ('web-allowed', {'documents': True, 'sites': False, 'web': True}),
+            ('none', {'documents': False, 'sites': False, 'web': False}),
+            ({'web': 'yes'}, dict(blog_runner.DEFAULTS['research'])),
+        ):
+            with self.subTest(saved=saved):
+                studio.write_json(path, {'schema': 1, 'defaults': {'research': saved}})
+                self.assertEqual(
+                    blog_runner.options(self.root)['settings']['defaults']['research'], shown
+                )
+        # The web ticked from Settings puts research before the outline, as ticking it would.
+        made = self.start(way='topic', point='P.', research_from={'sites': [], 'web': True})
+        self.assertEqual(desk.read_start(self.root, made['id'])['steps'][0], 'research')
+
     def test_your_sites_alone_need_harness_research(self):
         with self.assertRaisesRegex(ValueError, 'needs Harness Research'):
             self.start(

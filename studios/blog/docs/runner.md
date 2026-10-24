@@ -53,8 +53,11 @@ desk, in three steps:
    its role: facts that may be quoted, approved messaging (stated as the product's own
    claims) or an example of the kind of post (its shape, never its facts). They stay with
    this blog; one with **Keep in the team library** ticked goes to the library when you
-   press Start. For new writing, **Search my sites** and **Search the web too** (both off)
-   research before the outline, and **Length** asks for the usual length, short or in
+   press Start. For new writing, **Search my sites** and **Search the web too** research
+   before the outline. They start as **Settings → Writing preferences → Research for new
+   blogs from** ticks your sites and the public web (your documents are always read; your
+   sites only when the shared list has any), and you can change them for this blog. Both are
+   off unless ticked there. **Length** asks for the usual length, short or in
    depth. **Tone** says how it sounds.
 3. **What do you have?**
    - **Just a topic**: a working title, who it is for and the point to make. **Suggest

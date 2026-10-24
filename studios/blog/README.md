@@ -75,7 +75,9 @@ Once the page is open, use its controls to drive the work:
      what each is for: facts that may be quoted, approved messaging (the product's own
      claims), or an example of the kind of post (its shape, never its facts). They stay
      with this blog unless you tick **Keep in the team library**. **Search my sites** and
-     **Search the web too** (both off) research before the writing. Choose a **Length**
+     **Search the web too** research before the writing; they start as ticked under
+     **Settings → Writing preferences** (off unless you tick them there), and you can change
+     them for each blog. Choose a **Length**
      and a **Tone**.
    - **What do you have?** **Just a topic** (a title, who it is for and the point, or
      **Suggest three angles** to pick and edit one), **An outline or notes** (**Write

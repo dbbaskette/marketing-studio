@@ -10,7 +10,8 @@ changes for authors first, then what changes for maintainers.
   - **Three ways in.** **New blog** asks what you are writing (a kind of post), takes
     your sources and settings (files, links, Google Docs and team library posts, each
     facts, approved messaging or an example; **Search my sites** and **Search the web
-    too**, both off; length and tone), then what you have: **Just a topic** (with
+    too**, ticked as Settings' research for new blogs says and changeable per blog; length
+    and tone), then what you have: **Just a topic** (with
     **Suggest three angles** if you like), **An outline or notes** (write from it, or
     shape it with you first), or **A draft** (pasted, uploaded or a Google Doc, with an
     optional first pass). Sources stay with the blog unless you tick **Keep in the team
@@ -81,7 +82,8 @@ changes for authors first, then what changes for maintainers.
   - **The page.** `assets/management/desk.js` beside `runner.js`. The old wizard
     (`newBlog`, `sWizard`, the from-files screen, `sStartBlog`, the per-blog brand choice,
     Where this run stops and their research and stops helpers) is removed; `screen=new`
-    opens the desk start. The gates, the angles gate for older from-files runs, the
+    opens the desk start. `sDeskResearchDefault` starts the desk's research ticks from
+    `defaults.research`. The gates, the angles gate for older from-files runs, the
     manuscript editor and the server's `run-create` stay.
 - **Select all in the Team library.** Tick **Select all on this page**, or, once anything
   is ticked, **Select all N matching** to tick every item the filters match. Ticks stay as
