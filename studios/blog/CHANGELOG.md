@@ -10,8 +10,9 @@ changes for authors first, then what changes for maintainers.
   **Make the guide**, then read and edit it before saving. Samples are not added to the
   library, and voices learned before are listed as guides. On the desk, **Finishing →
   Apply a voice** rewrites the draft in a guide part by part, keeping its structure, facts,
-  numbers, names, quotes and links; each part is previewed before and after, a part where
-  a fact changed is flagged, and you apply all, some or none.
+  numbers, names, quotes and links; each part is previewed before and after, a part whose
+  facts, code or shape changed is flagged and left out of Apply all, and you apply all, some
+  or none. Humanize and fact-check rewordings are flagged for changed code too.
 - **The older voice tools are hidden for now.** Learning voices from samples, auditions,
   **Write as**, the default voice, **Change the voice**, voice samples in uploads and the
   library, LinkedIn imports, links to posts as voice samples, **Create voices for every
@@ -27,7 +28,9 @@ changes for authors first, then what changes for maintainers.
   default voice while off. Tool job kinds `voice-guide` (`article_tools.guides`,
   `guide_samples`, saved through `job-apply`; `GET /api/voice-guides`) and `finish-voice`
   (`desk-finish` with `guide`; one whole-part proposal per rewritten part, the guide's text
-  in the payload while `desk_jobs._context` stays tone-only). Tests turn the switch on with
+  in the payload while `desk_jobs._context` stays tone-only); `desk_finish.changes_structure`
+  flags changed code spans, fenced blocks or block counts; guide jobs are indexed in
+  `.blog-runs/voice-guides.json` and `guide-discard` lets one go. Tests turn the switch on with
   `isolation.voices_on(root)`.
 - **Finishing on the desk.** **Finishing** in the desk's toolbar opens a side panel (a
   full-screen sheet on a phone) of tools that propose and change nothing until you apply:

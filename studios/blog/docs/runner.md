@@ -52,7 +52,7 @@ full-screen sheet on a phone) whose tools propose and change nothing until you a
 **Humanize** at light, medium or strong (numbers, names, quotes and links kept, and a
 rewrite that would change one flagged), **Apply a voice** (the draft rewritten part by part
 in one of your [voice guides](#voice-guides), keeping its structure, facts, numbers, names,
-quotes and links; a part where a fact changed is flagged), **Proofread** (dashes, words that often read as
+quotes and links; a part whose facts, code or shape changed is flagged), **Proofread** (dashes, words that often read as
 machine-written and repetition, checked at once, with **Fix** on each finding), **Check
 facts against sources** (each claim supported, not in your sources, or contradicted, with
 the passage, and **Add a source**), **Headline and opening**, **Feedback without a rewrite**

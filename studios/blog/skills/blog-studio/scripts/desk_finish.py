@@ -731,17 +731,98 @@ def _names(text):
     return found
 
 
-def changes_facts(before, after):
-    """What a rewrite changes that it should keep: numbers, links, quotes or names."""
+def _named(name, text):
+    return re.search(r'(?<![A-Za-z0-9])' + re.escape(name) + r'(?![A-Za-z0-9])', text) is not None
+
+
+def changes_facts(before, after, anywhere=False):
+    """What a rewrite changes that it should keep: numbers, links, quotes or names.
+
+    `anywhere` (a whole part rewritten in a voice) compares which names there are, not
+    where they sit: a name that only moves to the start of a sentence is kept, and one
+    added or dropped is flagged."""
     from text_checks import preserve
 
     changed = list(preserve(before, after)['changes'])
-    if _names(before) - _names(after) - {'I'}:
+    if anywhere:
+        dropped = {name for name in _names(before) if not _named(name, after)}
+        added = {name for name in _names(after) if not _named(name, before)}
+        if (dropped | added) - {'I'}:
+            changed.append('names')
+    elif _names(before) - _names(after) - {'I'}:
         changed.append('names')
     if not changed:
         return ''
     words = {'numbers': 'a number', 'links': 'a link', 'quotes': 'a quotation', 'names': 'a name'}
     return 'Check the facts: this changes ' + ' and '.join(words[key] for key in changed) + '.'
+
+
+STRUCTURE = 'Check the structure: this changes code or the part’s shape.'
+FENCE = re.compile(r'^[ \t]*(```|~~~)')
+INLINE_CODE = re.compile(r'(`+)(.+?)\1', re.S)
+TABLE_LINE = re.compile(r'^[ \t]*\|')
+
+
+def _shape(text, paragraphs=True):
+    """The code a part holds, exactly, and the count of its blocks: paragraphs, list
+    items, fenced blocks and tables."""
+    fences, inline, outside = [], [], []
+    block, inside = None, False
+    for line in text.splitlines():
+        if FENCE.match(line):
+            if inside:
+                fences.append('\n'.join(block))
+                inside = False
+            else:
+                inside, block = True, []
+            outside.append('')
+            continue
+        if inside:
+            block.append(line)
+        else:
+            outside.append(line)
+    if inside:
+        fences.append('\n'.join(block))
+    prose = '\n'.join(outside)
+    inline = [match.group(2) for match in INLINE_CODE.finditer(prose)]
+    lines = prose.splitlines()
+    items = sum(1 for line in lines if LIST_LINE.match(line))
+    tables = sum(
+        1
+        for at, line in enumerate(lines)
+        if TABLE_LINE.match(line) and (at == 0 or not TABLE_LINE.match(lines[at - 1]))
+    )
+    count = (
+        sum(
+            1
+            for chunk in re.split(r'\n[ \t]*\n', prose)
+            if chunk.strip()
+            and not all(
+                LIST_LINE.match(l) or TABLE_LINE.match(l) for l in chunk.strip().splitlines()
+            )
+        )
+        if paragraphs
+        else 0
+    )
+    return fences, inline, (count, items, len(fences), tables)
+
+
+def changes_structure(before, after, paragraphs=True):
+    """STRUCTURE when a rewrite changes code (fenced blocks or inline code spans, exactly)
+    or the part's block structure; '' otherwise."""
+    return STRUCTURE if _shape(before, paragraphs) != _shape(after, paragraphs) else ''
+
+
+def _flags(before, after, anywhere=False, paragraphs=True):
+    """Every reason a proposal waits to be checked one by one, as one line."""
+    return ' '.join(
+        flag
+        for flag in (
+            changes_facts(before, after, anywhere),
+            changes_structure(before, after, paragraphs),
+        )
+        if flag
+    )
 
 
 def _located(draft, part, before):
@@ -800,7 +881,7 @@ def _read_humanize(draft, found):
                 'before': before,
                 'after': after,
                 'note': _text(row.get('why'), 500),
-                'flag': changes_facts(before, after),
+                'flag': _flags(before, after),
             }
         )
     return items, dropped, {}
@@ -826,7 +907,7 @@ def _read_facts(draft, found):
         after = _text(row.get('after'), desk.LIMIT)
         if verdict != 'supported' and after and after != before and not desk.has_heading(after):
             item['after'] = after
-            item['flag'] = ''
+            item['flag'] = changes_structure(before, after)
         items.append(item)
     order = {'contradicted': 0, 'not-in-sources': 1, 'supported': 2}
     items.sort(key=lambda item: order[item['verdict']])
@@ -862,7 +943,8 @@ def _read_headline(draft, found):
                     'before': draft[part],
                     'after': text,
                     'note': _text(row.get('why'), 500),
-                    'flag': '',
+                    # An alternative opening may reshape its paragraphs; code and lists stay.
+                    'flag': changes_structure(draft[part], text, paragraphs=False),
                     'whole': True,
                     'group': part,
                 }
@@ -922,7 +1004,7 @@ def _read_voice(draft, found):
                 'before': before,
                 'after': after,
                 'note': _text(row.get('why'), 500),
-                'flag': changes_facts(before, after),
+                'flag': _flags(before, after, anywhere=True),
                 'whole': True,
             }
         )

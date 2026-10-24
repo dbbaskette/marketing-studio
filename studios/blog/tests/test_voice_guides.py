@@ -186,6 +186,26 @@ class MakeTests(GuideCase):
         self.assertEqual(self.listed()['making'], [])
         self.assertEqual([g['name'] for g in self.listed()['guides']], ['Release notes'])
 
+    def test_only_guide_jobs_are_read_and_a_failed_one_can_be_discarded(self):
+        made = self.make()
+        stray = tool_jobs.create(
+            self.root, 'e' * 32, 'voice-guide', {}, 'g', 'b', {'name': 'Stray'}
+        )
+        self.assertEqual([row['id'] for row in self.listed()['making']], [made['id']])
+        self.assertNotIn(stray['id'], json.dumps(self.listed()))
+        saved = tool_jobs.read(self.root, made['id'])
+        saved.update(status='failed', error='Synthetic failure.')
+        tool_jobs.write(self.root, saved)
+        self.assertEqual(self.listed()['making'][0]['status'], 'failed')
+        management.dispatch(
+            self.root, 'tool-action', {'action': 'guide-discard', 'job': made['id']}
+        )
+        self.assertEqual(self.listed()['making'], [])
+        with self.assertRaisesRegex(ValueError, 'not a voice guide being made'):
+            management.dispatch(
+                self.root, 'tool-action', {'action': 'guide-discard', 'job': stray['id']}
+            )
+
 
 if __name__ == '__main__':
     unittest.main()

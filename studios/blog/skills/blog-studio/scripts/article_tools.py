@@ -176,9 +176,9 @@ def guides(root):
         )
     found.sort(key=lambda row: (row['status'] == 'retired', str(row['name']).casefold()))
     making = []
-    for file in studio.inside(root, '.blog-runs', 'tools').glob('*.json'):
+    for ident in _guide_jobs(root):
         try:
-            job = tool_jobs.read(root, file.stem)
+            job = tool_jobs.read(root, ident)
         except (ValueError, OSError):
             continue
         if (
@@ -196,6 +196,45 @@ def guides(root):
             )
     making.sort(key=lambda row: row['created_at'] or '', reverse=True)
     return {'guides': found, 'making': making[:10]}
+
+
+GUIDE_JOBS = 20  # voice guides being made that the screen lists
+
+
+def _guide_index(root):
+    return studio.inside(root, '.blog-runs', 'voice-guides.json')
+
+
+def _guide_jobs(root):
+    """The voice-guide jobs still being made, newest last: an index on this computer, so the
+    screen reads only those jobs, never every tool job."""
+    try:
+        found = studio.read_json(_guide_index(root))
+    except (OSError, ValueError):
+        return []
+    jobs = found.get('jobs') if isinstance(found, dict) else None
+    return [job for job in jobs if isinstance(job, str)] if isinstance(jobs, list) else []
+
+
+def _keep_guide_jobs(root, jobs):
+    target = _guide_index(root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    studio.write_json(target, {'schema': 1, 'jobs': jobs[-GUIDE_JOBS:]})
+
+
+def discard_guide(root, data):
+    """Let a voice guide that failed, or was never saved, leave the screen. A job still
+    queued or working is cancelled first."""
+    job = data.get('job')
+    if job not in _guide_jobs(root):
+        raise ValueError('This is not a voice guide being made. Reload Voice guides.')
+    saved = tool_jobs.read(root, job)
+    if saved['status'] in ('queued', 'working'):
+        import blog_runner
+
+        tool_jobs.control(root, job, 'cancel', blog_runner.engine(root))
+    _keep_guide_jobs(root, [other for other in _guide_jobs(root) if other != job])
+    return guides(root)
 
 
 def guide_samples(root, given):
@@ -478,6 +517,8 @@ def request(root, data):
     else:
         raise ValueError('Choose a supported contextual task.')
     result = tool_jobs.create(root, operation, kind, payload, guidance, basis, metadata)
+    if kind == 'voice-guide' and result['id'] not in _guide_jobs(root):
+        _keep_guide_jobs(root, _guide_jobs(root) + [result['id']])
     import blog_runner
 
     blog_runner.engine(root).wake.set()
@@ -491,6 +532,8 @@ def apply(root, data):
     if job['status'] != 'ready':
         raise ValueError('Wait for a complete result before saving it.')
     metadata, kind = job['metadata'], job['kind']
+    if kind in ('voice-learn', 'voice-audition'):
+        studio.require_voices(root)  # Queued before the older voice tools were switched off.
     if metadata.get('article'):
         from team_workspace import guard
 
@@ -577,6 +620,7 @@ def apply(root, data):
                 ),
             )
         receipt = {'profile': result['id'], 'revision': result['revision'], 'status': 'confirmed'}
+        _keep_guide_jobs(root, [other for other in _guide_jobs(root) if other != job['id']])
     elif kind == 'style-learn':
         import styles
 

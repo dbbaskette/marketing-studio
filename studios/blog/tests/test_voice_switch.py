@@ -265,6 +265,52 @@ class EnforcementTests(EnforcementCase):
         _, record = studio.item(self.root, 'articles', found['id'])
         self.assertEqual(record['voice']['profile_id'], self.profile['id'])
 
+    def test_a_voice_job_queued_before_the_switch_went_off_is_not_saved(self):
+        import tool_jobs
+
+        self.on()
+        for kind in ('voice-learn', 'voice-audition'):
+            job = tool_jobs.create(
+                self.root,
+                ('a' if kind == 'voice-learn' else 'b') * 32,
+                kind,
+                {},
+                'g',
+                'basis',
+                {'name': 'X'},
+            )
+            saved = tool_jobs.read(self.root, job['id'])
+            saved.update(status='ready', result={'content': 'A guide.', 'notes': ''})
+            tool_jobs.write(self.root, saved)
+        blog_runner.settings(
+            self.root, self.form(features={'voice': False}, features_before={'voice': True})
+        )
+        for kind in ('voice-learn', 'voice-audition'):
+            with self.subTest(kind=kind):
+                self.assertRaisesRegex(
+                    ValueError,
+                    OFF,
+                    management.dispatch,
+                    self.root,
+                    'tool-action',
+                    {
+                        'action': 'job-apply',
+                        'job': ('a' if kind == 'voice-learn' else 'b') * 32,
+                        'content': 'A guide.',
+                    },
+                )
+
+    def test_a_guide_saved_by_hand_takes_no_voice_samples_while_off(self):
+        data = {
+            'action': 'profile-save',
+            'name': 'Plain',
+            'guide': 'Plain.',
+            'status': 'confirmed',
+            'confirmed': True,
+        }
+        self.refused('tool-action', {**data, 'samples': ['some-source']})
+        self.assertTrue(management.dispatch(self.root, 'tool-action', {**data, 'samples': []}))
+
 
 class ToneWhileOffTests(EnforcementCase):
     def setUp(self):
@@ -321,6 +367,35 @@ class ToneWhileOffTests(EnforcementCase):
         self.assertEqual(
             blog_runner.engine(self.root).describe(found['id'])['voice_profile'], self.profile['id']
         )
+
+    def test_an_old_run_still_writes_in_its_pinned_voice_while_off(self):
+        self.on()
+        found = blog_runner.create(
+            self.root,
+            {
+                'title': 'T',
+                'audience': 'A',
+                'goal': 'G',
+                'research': 'none',
+                'profile': self.profile['id'],
+            },
+            'page',
+        )
+        blog_runner.settings(
+            self.root, self.form(features={'voice': False}, features_before={'voice': True})
+        )
+        sent = []
+
+        def worker(*args, **kwargs):
+            sent.append(args[1])
+            return {'content': '# Synthetic outline', 'notes': 'Fake worker only.'}
+
+        engine = blog_runner.Engine(self.root, worker=worker)
+        self.addCleanup(engine.close)
+        engine.keep_local(found['id'], {'enabled': True})
+        engine.once(found['id'])
+        self.assertEqual(sent[0]['voice']['mode'], 'profile')
+        self.assertEqual(sent[0]['voice']['guide'], 'Short direct sentences.')
 
     def test_a_chat_article_writes_no_default_voice_while_off(self):
         args = studio.parser().parse_args(

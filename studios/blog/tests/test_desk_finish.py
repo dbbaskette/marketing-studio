@@ -399,6 +399,23 @@ class HumanizeTests(ToolCase):
         self.assertEqual(flags[1], '')
         self.assertIn('a name', desk_finish.changes_facts('Ask Acme Labs.', 'Ask the lab.'))
 
+    def test_humanize_flags_a_changed_code_span(self):
+        desk.save(self.root, self.ident, self.seen, self.second, 'Use `run --fast` here.')
+        self.seen += 1
+        self.ready(
+            self.queue('humanize', level='light'),
+            {
+                'suggestions': [
+                    {
+                        'part': self.second,
+                        'before': 'Use `run --fast` here.',
+                        'after': 'Use `run --slow` now.',
+                    }
+                ]
+            },
+        )
+        self.assertIn(desk_finish.STRUCTURE, self.shown('humanize')['items'][0]['flag'])
+
     def test_a_result_that_is_not_the_json_asked_for_is_refused_readably(self):
         job = self.ready(self.queue('humanize', level='light'), 'Here are my thoughts.')
         self.assertFalse(job['applied'])
@@ -556,6 +573,51 @@ class VoiceTests(ToolCase):
         for part, text in (('opening', 'An opening paragraph.'), (self.second, 'Second text.')):
             kept = desk.versions(self.root, self.ident, part)[0]
             self.assertEqual((kept['source'], kept['text']), ('finishing', text))
+
+    def test_changed_code_or_shape_is_flagged(self):
+        shaped = 'Run `run --fast` first.\n\n- one\n- two\n\n```\nmake all\n```'
+        desk.save(self.root, self.ident, self.seen, self.second, shaped)
+        self.seen += 1
+        self.ready(
+            self.queue('voice', guide=self.guide),
+            self.parts(
+                (self.second, shaped.replace('--fast', '--slow'), ''),
+                ('opening', 'An opening paragraph, said plainly.', ''),
+            ),
+        )
+        flags = {i['part']: i['flag'] for i in self.shown('voice')['items']}
+        self.assertEqual(flags[self.second], desk_finish.STRUCTURE)
+        self.assertEqual(flags['opening'], '')
+        self.ready(
+            self.queue('voice', guide=self.guide),
+            self.parts((self.second, 'Run it first, then make everything.', '')),
+        )
+        self.assertEqual(self.shown('voice')['items'][0]['flag'], desk_finish.STRUCTURE)
+        for before, after in (
+            ('Run `a`.', 'Run `b`.'),
+            ('One.\n\nTwo.', 'One. Two.'),
+            ('- a\n- b', '- a b'),
+            ('| a |\n| - |', 'a'),
+        ):
+            with self.subTest(before=before):
+                self.assertEqual(
+                    desk_finish.changes_structure(before, after), desk_finish.STRUCTURE
+                )
+        self.assertEqual(
+            desk_finish.changes_structure('Plain `x` words.', 'Plainer `x` words.'), ''
+        )
+
+    def test_a_name_that_only_moves_is_not_flagged_but_one_added_or_dropped_is(self):
+        before = 'The parser was built at Acme Labs. It is fast.'
+        moved = 'Acme Labs built the parser. It is fast.'
+        self.assertEqual(desk_finish.changes_facts(before, moved, anywhere=True), '')
+        self.assertIn(
+            'a name',
+            desk_finish.changes_facts(before, 'The lab built it. It is fast.', anywhere=True),
+        )
+        self.assertIn(
+            'a name', desk_finish.changes_facts(before, before + ' Ask Beta Works.', anywhere=True)
+        )
 
     def test_a_part_edited_since_no_longer_fits(self):
         self.ready(

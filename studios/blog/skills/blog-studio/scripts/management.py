@@ -2140,6 +2140,8 @@ def old_voice_tool(route, data):
             or (action == 'job-create' and data.get('kind') in VOICE_JOBS)
             or (action == 'source-purpose' and data.get('purpose') == 'voice-sample')
             or (action == 'interview-start' and bool(data.get('profile')))
+            # A voice guide by hand has no voice samples; learned ones keep theirs unsent.
+            or (action == 'profile-save' and bool(data.get('samples')))
         )
     if route == 'run-create':
         return bool(data.get('profile'))
