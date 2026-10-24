@@ -428,8 +428,31 @@ def settings(root, data=None):
         base['author'] = name
     import writing_defaults
 
+    features = studio.features(root)
     if data is not None:
         data = dict(data)
+        # Blog Studio's own switches, saved with the form when it shows them, checked
+        # against what it showed; a form that does not show them keeps what is saved.
+        features_given = 'features' in data
+        if features_given:
+            if 'features_before' not in data:
+                raise ValueError('Reload the displayed settings before saving these switches.')
+            shown_features = data.pop('features_before')
+            wanted = data.pop('features')
+            if (
+                not isinstance(wanted, dict)
+                or set(wanted) != set(studio.FEATURES)
+                or any(type(value) is not bool for value in wanted.values())
+            ):
+                raise ValueError('Choose on or off for each switch.')
+            if shown_features != features:
+                raise ValueError(
+                    'These switches changed since these settings were shown. Reload the '
+                    'settings before saving.'
+                )
+            features = dict(wanted)
+        elif 'features_before' in data:
+            raise ValueError('Save the displayed writing settings only.')
         # The personal default voice: a confirmed profile at a revision, or none. It lives in
         # the private writing defaults, beside the other personal values, never in a Hub. It
         # is checked with the rest of the form, against the voice the form showed, and saved
@@ -492,7 +515,7 @@ def settings(root, data=None):
             expected['person'] = {'name': before['author']}
         shared = studios_config.update(changes, expected=expected)
         private = {key: value for key, value in data.items() if key not in ('engine', 'author')}
-        studio.write_json(path, {'schema': 1, 'defaults': private})
+        studio.write_json(path, {'schema': 1, 'defaults': private, 'features': features})
         if voice_given:
             writing_defaults.set_personal(root, 'voice', voice)
         base = {
@@ -510,6 +533,7 @@ def settings(root, data=None):
         'defaults': base,
         'voice': personal if isinstance(personal, dict) else None,
         'voices': writing_defaults.confirmed_voices(root),
+        'features': studio.features(root),
         'review_level': review_level,
         'shared_before': {
             'engine': shared.get('assistant', {}).get('agent'),

@@ -25,3 +25,18 @@ atexit.register(shutil.rmtree, PLACE, ignore_errors=True)
 os.environ['HOME'] = str(Path(PLACE) / 'home')
 os.environ['STUDIOS_CONFIG'] = str(Path(PLACE) / 'config' / 'studios-config.json')
 os.environ['BLOG_STUDIO_DATA'] = str(Path(PLACE) / 'data')
+
+
+def voices_on(root):
+    """Turn on the older voice tools for a disposable workspace, as the hidden switch in
+    Blog Studio settings does: the tests of voice learning, Write as and the default voice
+    run with it on. Only a workspace a test made is ever written."""
+    import json
+
+    root = Path(root).resolve()
+    if not root.is_relative_to(Path(tempfile.gettempdir()).resolve()):
+        raise RuntimeError('Turn the switch on only in a disposable workspace.')
+    path = root / '.blog-run-settings.json'
+    saved = json.loads(path.read_text()) if path.is_file() else {'schema': 1, 'defaults': {}}
+    saved['features'] = {**saved.get('features', {}), 'voice': True}
+    path.write_text(json.dumps(saved, indent=2) + '\n')

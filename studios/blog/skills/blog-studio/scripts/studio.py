@@ -57,6 +57,38 @@ def identifier(value):
     return value
 
 
+# Blog Studio's own switches, saved with this computer's writing defaults. `voice` shows
+# the older voice tools (learning voices, Write as, default voice); voice guides do not
+# depend on it.
+FEATURES = {'voice': False}
+VOICES_OFF = 'Voices are switched off in Blog Studio settings.'
+
+
+def features(root):
+    """The switches as saved in .blog-run-settings.json; a missing or damaged one is off."""
+    found = dict(FEATURES)
+    try:
+        saved = read_json(inside(root, '.blog-run-settings.json'))
+    except (OSError, ValueError):
+        return found
+    values = saved.get('features') if isinstance(saved, dict) else None
+    if isinstance(values, dict):
+        for key in FEATURES:
+            if type(values.get(key)) is bool:
+                found[key] = values[key]
+    return found
+
+
+def voices_on(root):
+    return features(root)['voice']
+
+
+def require_voices(root):
+    """Refuse an older voice tool while the switch is off."""
+    if not voices_on(root):
+        raise ValueError(VOICES_OFF)
+
+
 def new_id(name):
     slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')[:60] or 'item'
     return slug + '-' + uuid.uuid4().hex[:8]

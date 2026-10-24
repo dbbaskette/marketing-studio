@@ -1249,9 +1249,9 @@ Voices and styles, as today.
 ### Task 4.1: The switch (server)
 
 **Files:** Modify `scripts/studio.py` (`FEATURES`, `features`, `voices_on`,
-`require_voices`, `VOICES_OFF`), `scripts/blog_runner.py` (`settings`); Test
-`tests/test_blog_runner.py` (new class `VoiceSwitchTests`); Create
-`tests/isolation.py:voices_on(root)` (the test helper that turns it on).
+`require_voices`, `VOICES_OFF`), `scripts/blog_runner.py` (`settings`),
+`tests/isolation.py` (`voices_on(root)`, the test helper that turns it on in a disposable
+workspace); Test `tests/test_voice_switch.py` (new, `VoiceSwitchTests`).
 
 - [ ] **Step 1: Failing tests**
   - A fresh workspace reads `features == {'voice': False}` from `settings(root)` and
@@ -1264,7 +1264,7 @@ Voices and styles, as today.
     settings were shown"); an unknown feature or a non-boolean is refused; nothing is saved.
   - A damaged `features` value reads as off.
   - `isolation.voices_on(root)` writes the switch for a disposable workspace.
-- [ ] **Step 2: Run** `HOME=$TMPDIR/h python3 -m unittest test_blog_runner.VoiceSwitchTests -v`.
+- [ ] **Step 2: Run** `HOME=$TMPDIR/h python3 -m unittest test_voice_switch -v`.
 - [ ] **Steps 3-5**: implement, pass, commit "A switch in Blog Studio settings for the old voice tools, off by default".
 
 ### Task 4.2: Server enforcement while off
