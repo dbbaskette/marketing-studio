@@ -115,7 +115,10 @@ def group(root, session, run, listed, done):
         boundaries[phase] = pipeline.Step(ident, 'review', label,
                                            'Waiting for you to ' + label.lower(), 'review')
         accepted = (run.get('review_decisions') or {}).get(phase) or {}
-        if accepted.get('signature') == signature(root, session, run, phase):
+        # A change asked for at the finished materials review keeps the first drafts
+        # approved, though what they hold is written again.
+        if accepted.get('signature') == signature(root, session, run, phase) \
+                or (phase == 'direction' and accepted.get('carried')):
             completed.add(ident)
     return tuple([*prep, *samples, *([boundaries['direction']] if mode == 'balanced' else []),
                   *build, boundaries['final'], *package]), frozenset(completed)
@@ -334,17 +337,28 @@ class Reviewing:
         for item in items:
             below = rewritten(root, found.session, found.decks, item['target'])
             item['rewrites'] = [labels[name] for name in labels if name in below]
+            # At the finished materials review, what a change rewrites comes back to it; a
+            # deck drawn again stops at its own gate first.
+            item['returns'] = phase == 'final' and bool(item['rewrites'])
+            item['deck_again'] = phase == 'final' and any(
+                workspace.split(name)[0] == 'deck' for name in below if name != item['target'])
             # What a change to it writes again, and what that took, said before it is sent.
             item['redo'] = self._redo_view(root, record, found, item['target'], below)
         return {'phase': phase, 'label': found.next.step.label, 'items': items,
                 'commits': commits(root, found.session, found.decks, phase),
                 'expected': signature(root, found.session, record, phase)}
 
-    def _request(self, root, record, decisions, target, note):
-        """Record one change asked for from a combined review. Call it holding `files`."""
+    def _request(self, root, record, decisions, target, note, phase):
+        """Record one change asked for from a combined review. Call it holding `files`.
+        A change asked for at the first drafts review brings that review back; one asked
+        for at the finished materials review keeps it, and what it rewrites comes back to
+        the review it was asked at."""
         base = target.partition('@')[0].partition(':')[0]
-        if base not in ('scenario', 'yoodli'):
+        if phase == 'direction' and base not in ('scenario', 'yoodli'):
             decisions.pop('direction', None)
+        elif phase != 'direction' and decisions.get('direction'):
+            # The first drafts stay approved: what this rewrites comes back to this review.
+            decisions['direction']['carried'] = True
         if target.startswith('outline:'):
             level = target.partition(':')[2] or None
             self._decided(record, level)['asked'] = {
@@ -427,7 +441,8 @@ class Reviewing:
                 decisions = record.setdefault('review_decisions', {})
                 decisions.pop('final', None)
                 for ask in asked:
-                    self._request(root, record, decisions, ask['target'], ask['note'])
+                    self._request(root, record, decisions, ask['target'], ask['note'],
+                                  phase)
             self._store(root, record)
             if decision != 'approve' or not again:
                 self._remember_decision(root, record, view['label'].removeprefix('Review '), decision)

@@ -3331,6 +3331,29 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                  and request['address'].startswith('/api/file')]
         self.assertTrue(asked and 'artifact=reviews%2Fresearch.md' in asked[-1]['address'], asked)
 
+    def test_a_final_change_says_what_comes_back(self):
+        self.started()
+        waiting = a_run('waiting', 'Review the finished materials.')
+        waiting['body']['review'] = {
+            'phase': 'final', 'label': 'Review the finished materials', 'expected': 'v1',
+            'commits': None,
+            'items': [
+                {'target': 'document@101', 'label': 'the level 101 learner guide',
+                 'text': '# Guide', 'rewrites': ['the level 101 slide deck'],
+                 'returns': True, 'deck_again': True},
+                {'target': 'deck@101', 'label': 'the level 101 slide deck', 'text': '',
+                 'rewrites': [], 'returns': False, 'deck_again': False}]}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', 'Review the finished materials.')],
+            'GET /api/training': [self.detail('waiting', 'Review the finished materials.')],
+            'GET /api/run': [waiting]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'},
+            {'click': 'Needs changes in the level 101 learner guide'}, {'snapshot': 'asked'}])
+        self.assertIn('If it changes, these are written again from it: the level 101 slide '
+                      'deck. They come back to this review. The deck is drawn again and stops '
+                      'for you first.', result['snapshots']['asked']['text'])
+
     def test_grouped_change_requests_go_together_and_say_what_they_rewrite(self):
         self.started()
         waiting = a_run('waiting', 'Review the direction.')
@@ -3365,6 +3388,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       '101 blueprint, the level 101 learner guide, the level 201 blueprint and '
                       'Deck direction · Level 101.', one['text'])
         self.assertIn('Send 1 request', one['buttons'])
+        self.assertNotIn('They come back to this review.', one['text'])
         two = result['snapshots']['two']
         self.assertIn('2 items are marked for changes.', two['text'])
         self.assertIn('If the research report and the level 101 blueprint change, these are '

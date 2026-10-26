@@ -6391,7 +6391,10 @@ function combinedReview(run) {
       request.value = view.notes[key] || '';
       request.addEventListener('input', () => { view.notes[key] = request.value; });
       const hint = make('p', 'quiet', (list(item.rewrites).length ? 'If it changes, these are '
-        + 'written again from it: ' + series(item.rewrites) + '.' : 'Nothing else is built from it.')
+        + 'written again from it: ' + series(item.rewrites) + '.'
+        + (item.returns ? ' They come back to this review.' : '')
+        + (item.deck_again ? ' The deck is drawn again and stops for you first.' : '')
+        : 'Nothing else is built from it.')
         + (item.research_price ? ' ' + item.research_price.words : item.redo ? ' ' + item.redo.says : ''));
       const asking = add(make('div', 'review-request'), label, request, hint);
       asking.hidden = mark !== 'changes';

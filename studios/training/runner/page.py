@@ -482,7 +482,7 @@ class RunnerPage(desk.Page):
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
             reply = super().decide(path, target, decision, note, seen, refresh)
-            driven = self.engine.decided(path, reply['decided'])
+            driven = self.engine.decided(path, reply['decided'], checked=True)
         if not driven:
             return reply
         self.engine.carry_on(path)

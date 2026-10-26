@@ -406,6 +406,45 @@ class ReviewLevelsTests(DeckCase):
         self.assertEqual(shown['review']['phase'], 'final')
         self.assertIsNone(shown['review']['commits'])
 
+    def test_row_134_a_final_change_keeps_the_first_drafts_approval(self):
+        root, shown = self.choose('balanced', levels=['101'])
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+        guide = next(item for item in shown['review']['items']
+                     if item['target'] == 'document@101')
+        self.assertIn('the level 101 slide deck', guide['rewrites'])
+        from runner_support import DOCUMENT
+
+        def shorter(tools, job):
+            accepted = tools.submit_artifact('document', DOCUMENT.replace('25 minutes',
+                                                                          '20 minutes'))
+            assert accepted[0], accepted[1]
+            tools.submit_review('Shortened, as asked.')
+        self.workers.then('document', shorter)
+        outlined = len([event for event in self.engine._load(root).get('review_events') or ()
+                        if event['gate'] == 'gate:deck-outline@101'])
+        self.engine.review_decide(root, shown['review']['expected'], 'revise',
+                                  'document@101', 'Shorten the second section.')
+        record = self.engine._load(root)
+        self.assertIn('direction', record.get('review_decisions') or {})
+        seen = []
+        for _ in range(6):
+            shown = self.view(root)
+            waiting = workspace.status(root)['gate']
+            seen.append((shown['review'] or {}).get('phase') or waiting)
+            if shown['review'] and shown['review']['phase'] == 'final':
+                break
+            self.assertIsNotNone(waiting, shown)
+            self.decide(root, waiting)
+        self.assertNotIn('direction', seen)
+        self.assertEqual(seen, ['deck@101', 'final'])
+        events = [event for event in self.engine._load(root).get('review_events') or ()
+                  if event['gate'] == 'gate:deck-outline@101']
+        # The scripted outline writer writes the same outline again, so the core keeps it;
+        # whichever way, the deck outline is the policy's, never a stop of its own.
+        self.assertGreaterEqual(len(events), outlined)
+        self.assertEqual({event['by'] for event in events}, {'review-policy'})
+
     def test_final_scenario_revision_does_not_repeat_the_unchanged_direction_review(self):
         root, shown = self.choose('balanced')
         shown = self.approve_review(root, shown)

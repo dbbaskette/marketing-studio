@@ -3608,7 +3608,7 @@ class Engine(Reviewing):
         record.pop('last_decision_stop', None)
         self._store(root, record)
 
-    def decided(self, path, outcome: dict) -> bool:
+    def decided(self, path, outcome: dict, checked: bool = False) -> bool:
         """Commit a decision the page has just recorded. False when no run is driving the
         training, so there is nothing to commit or wake.
 
@@ -3616,13 +3616,15 @@ class Engine(Reviewing):
         decision and its commit are one thing; then let go and call `carry_on`. A change
         the person asked for starts its step afresh. A decision about a file a combined
         review covers is refused: `refuse_while_reviewing` says so before anything is
-        recorded, and this is the last word should anything else record one.
+        recorded, and this is the last word should anything else record one. `checked` says
+        the caller asked it before recording: then the decision itself may be what brings
+        the review up, as approving the last deck before the finished materials does.
         """
         root = self.driven(path)
         if root is None:
             return False
         self.hold(root)
-        if outcome.get('artifact'):
+        if outcome.get('artifact') and not checked:
             self.refuse_while_reviewing(root, outcome.get('decision') or '')
         with self.files:
             record = self._load(root)
@@ -3875,6 +3877,7 @@ class Engine(Reviewing):
             run = self._run(root)
             if run.workers or run.busy:
                 raise WorkspaceError(WORKING)
+            self.refuse_while_reviewing(root, 'revise')
             note = 'Read the documents added since: ' + ', '.join(names) + '.'
             outcome = workspace.decide(root, 'research', 'revise', note, by='page',
                                        refresh=True)
@@ -3886,7 +3889,7 @@ class Engine(Reviewing):
             record = self._load(root)
             record['documents'] = {**record['documents'], 'later': []}
             self._store(root, record)
-        self.decided(path, outcome)
+        self.decided(path, outcome, checked=True)
         self.carry_on(path)
         return self.view(root)
 
