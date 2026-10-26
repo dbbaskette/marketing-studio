@@ -1309,7 +1309,8 @@ class ComputerTests(PageCase):
 
     FOUND = {'claude': '2.1.0 (Claude Code)', 'codex': 'codex-cli 0.48.0',
              'codex-sign-in': 'Logged in using ChatGPT', 'node': 'v22.3.0',
-             'gcloud': 'Google Cloud SDK 501.0.0\nbq 2.1.9', 'pandoc': 'pandoc 3.5'}
+             'gcloud': 'Google Cloud SDK 501.0.0\nbq 2.1.9', 'gcloud-account': 'ana@example.com',
+             'pandoc': 'pandoc 3.5'}
 
     def looked(self, found: dict | None = None, unreachable: dict | None = None,
                skills=('harness-research', 'harness-slides'), google: bool = False) -> dict:
@@ -1361,7 +1362,9 @@ class ComputerTests(PageCase):
         self.looked()
         self.assertEqual(sorted(self.ran), sorted([
             ('claude', '--version'), ('codex', '--version'), ('codex', 'login', 'status'),
-            ('node', '--version'), ('gcloud', '--version'), ('pandoc', '--version')]))
+            ('node', '--version'), ('gcloud', '--version'),
+            ('gcloud', 'auth', 'list', '--filter=status:ACTIVE', '--format=value(account)'),
+            ('pandoc', '--version')]))
         self.assertEqual(sorted(self.reached),
                          ['api.anthropic.com', 'api.openai.com', 'chatgpt.com'])
         for command in computer.COMMANDS.values():
