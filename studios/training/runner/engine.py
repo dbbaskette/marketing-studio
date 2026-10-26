@@ -32,6 +32,7 @@ What a caller needs to know
     engine.leaving(path)                     # what deleting a training would do
     engine.delete(path, title)               # stop it, delete it, and share that
     engine.bring(folder)                     # copy a conversation's training in, and run it
+    engine.saved_work(folders)               # which saved trainings still need each older path
     engine.serving()                         # fetch on a timer, and notify, while serving
     engine.seen(); engine.tell()             # a page asked; notify if none has for a while
     engine.close()                           # end every worker; nothing half-made is kept
@@ -5233,6 +5234,55 @@ class Engine(Reviewing):
         record['driver'] = team.claim(space)
         self._tried(record, 'intake', home.now(), 0.0, 'kept')
         return record
+
+    # --- what saved trainings still need -----------------------------------------------
+
+    def saved_work(self, folders=()) -> dict:
+        """Which saved trainings still need each older path, as `saved_work.report` says:
+        every training in the workspace a run drives, each of `folders` that holds a run,
+        and the conversation trainings this computer remembers. Only read: no lock is
+        taken, nothing is written and nothing is asked online. A training whose files
+        cannot be read is passed over, as the runner passes it over."""
+        from studio_core import saved_work
+        found: dict[str, list[dict]] = {}
+        seen: set[Path] = set()
+        runs = [*self.trainings(), *(Path(folder) for folder in folders)]
+        for root in runs:
+            if root.resolve() in seen or not (root / RECORD).is_file():
+                continue
+            seen.add(root.resolve())
+            try:
+                record = self._load(root)
+                done = self._survey(root, record).done
+                level = review_policy.level(record)
+            except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError):
+                continue
+            title = workspace.load(root)['title'] or root.name
+            if not record.get('research_contract') and 'research' not in done:
+                found.setdefault('research-queue', []).append(saved_work.needs(
+                    root, title, 'Its research has not run, and it was started before '
+                    'Harness Research could synthesize.'))
+            if 'review_layout' not in record and level != 'step_by_step' \
+                    and 'review:final' not in done:
+                found.setdefault('review-layout-1', []).append(saved_work.needs(
+                    root, title, 'It began before the current review layout, and its final '
+                    'review is still to come.'))
+        for entry in home.trainings():
+            root = Path(entry['path'])
+            if root.resolve() in seen or (root / RECORD).is_file():
+                continue
+            seen.add(root.resolve())
+            try:
+                session = workspace.load(root)
+                started = workspace.statuses(root, session).get('research', 'not-started')
+            except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError):
+                continue
+            if not session.get('research_contract') and started == 'not-started':
+                found.setdefault('research-queue', []).append(saved_work.needs(
+                    root, session['title'] or root.name,
+                    'A conversation training whose research has not started.'))
+        return saved_work.report(('research-queue', 'review-layout-1', 'old-harness-slides'),
+                                 found)
 
 
 def _assets_said(problem: dict, recorded: dict) -> str:

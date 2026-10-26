@@ -144,6 +144,100 @@ class SynthesisAtStartTests(StudioCase):
         self.assertNotIn('research_contract', self.engine._load(Path(made['path'])))
 
 
+class SavedWorkTests(StudioCase):
+    """`studio saved-work`: which saved trainings still need each older path. Each run is
+    begun on the legacy queue, as a saved one was, and its record set as the case needs."""
+
+    QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
+    CHAT = 'A conversation training whose research has not started.'
+    LAYOUT = 'It began before the current review layout, and its final review is still to come.'
+
+    def needed(self, said, ident):
+        return {entry['path']: entry['why'] for entry in
+                next(found for found in said['paths'] if found['id'] == ident)['needed_by']}
+
+    def saved(self, title, **changes):
+        """A training started from the form, its run record then changed as `changes` says:
+        a value of None takes the key out."""
+        return self.changed(self.start(title=title), **changes)
+
+    def changed(self, root, **changes):
+        record = self.engine._load(root)
+        for key, value in changes.items():
+            if value is None:
+                record.pop(key, None)
+            else:
+                record[key] = value
+        self.engine._store(root, record)
+        return root
+
+    def chat(self, title='Started in a chat'):
+        root = self.base / workspace.slugify(title)
+        root.mkdir()
+        workspace.init(root, title)
+        home.remember(root, title, [])
+        return root
+
+    def done(self, *steps):
+        """The engine's survey, with `steps` done as well."""
+        survey = self.engine._survey
+        return mock.patch.object(self.engine, '_survey', lambda root, record, copies=None: replace(
+            survey(root, record, copies), done=survey(root, record, copies).done | set(steps)))
+
+    def test_a_run_begun_on_the_queue_needs_it_until_its_research_has_run(self):
+        waiting = self.saved('Waiting training')
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'research-queue'), {str(waiting): self.QUEUE})
+        self.assertEqual(said['paths'][0]['needed_by'][0]['title'], 'Waiting training')
+        with self.done('research'):
+            self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
+        # A training folder given outside the workspace is looked at too.
+        import shutil
+        outside = self.base / 'elsewhere' / 'waiting-training'
+        shutil.copytree(waiting, outside)
+        self.assertEqual(self.needed(self.engine.saved_work(folders=(outside,)),
+                                     'research-queue'),
+                         {str(waiting): self.QUEUE, str(outside): self.QUEUE})
+        self.changed(waiting, research_contract={'schema': 2, 'version': '1.0.0',
+                                                 'digest': 'abc'}, schema=3)
+        self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
+
+    def test_a_conversation_training_whose_research_has_not_started_needs_it(self):
+        chat = self.chat()
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'research-queue'), {str(chat): self.CHAT})
+        session = workspace.load(chat)
+        session['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        workspace.store(chat, session)
+        self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
+
+    def test_a_balanced_run_with_no_layout_needs_layout_1_until_its_final_review(self):
+        balanced = {'schema': 1, 'level': 'balanced'}
+        older = self.saved('Older layout', review_layout=None, review_policy=balanced,
+                           schema=2)
+        self.saved('Current layout', review_policy=balanced, schema=2)
+        self.saved('Step by step', review_layout=None)
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'review-layout-1'), {str(older): self.LAYOUT})
+        with self.done('review:final'):
+            self.assertEqual(self.needed(self.engine.saved_work(), 'review-layout-1'), {})
+
+    def test_the_old_slides_branches_are_always_unused_and_nothing_changes(self):
+        self.saved('Waiting training')
+        chat = self.chat()
+        outside = self.base / 'elsewhere'
+        before = (self.git('status', '--porcelain'),
+                  {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
+                   if path.is_file() and '.git' not in path.parts})
+        said = self.engine.saved_work(folders=(chat, outside))
+        self.assertEqual([entry['id'] for entry in said['paths']],
+                         ['research-queue', 'review-layout-1', 'old-harness-slides'])
+        self.assertEqual(said['unused'], ['review-layout-1', 'old-harness-slides'])
+        self.assertEqual((self.git('status', '--porcelain'),
+                          {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
+                           if path.is_file() and '.git' not in path.parts}), before)
+
+
 class ObjectionsTests(StudioCase):
     def test_read_every_objection_is_offered_only_where_the_check_objected(self):
         root = self.start()
