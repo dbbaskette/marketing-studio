@@ -869,7 +869,6 @@ def upload(root, data, prepared=None):
         'content',
         'title',
         'purpose',
-        'as_blog',
         'author',
         'analyze',
         'files',
@@ -899,18 +898,10 @@ def upload(root, data, prepared=None):
     if 'files' in data:
         return upload_files(root, data, staging, ledger, fingerprint, prepared)
     checked = checked_upload(root, data)
-    text, status, title = checked['text'], checked['status'], checked['title']
+    text, status = checked['text'], checked['status']
     purpose = data.get('purpose', 'reference')
     if purpose not in studio.PURPOSES:
         raise ValueError('Choose a source purpose.')
-    if data.get('as_blog') and purpose == 'material':
-        raise ValueError(
-            'A file uploaded as material cannot start a blog. Upload it as a draft instead.'
-        )
-    if data.get('as_blog') and not (text and text.strip()):
-        raise ValueError(
-            'This file needs text extraction before it can become an editable blog. Upload it as a pending reference first.'
-        )
     if data.get('author'):
         studio.checked_author(data['author'])
     fields = (
@@ -940,38 +931,11 @@ def upload(root, data, prepared=None):
         if status != 'ready'
         else 'Source saved; attach it only to the blogs that need it.',
     }
-    if data.get('as_blog'):
-        args = SimpleNamespace(
-            action='create',
-            title=title,
-            id=None,
-            mode='existing',
-            author=data.get('author'),
-            profile=None,
-            voice='preserve',
-            tone=None,
-            stop='review',
-            research='supplied-only',
-            audience=None,
-            blog_type=None,
-            review_folder=None,
-        )
-        article = studio.article_command(root, args)
-        directory, article = studio.item(root, 'articles', article['id'])
-        studio.save_artifact(directory, 'original', text, article, 'uploaded original')
-        studio.save_artifact(directory, 'draft', text, article, 'starting manuscript')
-        article['sources'] = [
-            {'source_id': source['id'], 'revision': source['revision'], 'purposes': ['manuscript']}
-        ]
-        studio.persist(directory, 'articles', article)
-        result['article'] = share(root, 'article', article)
     result['receipts'] = (
         [receipt(root, 'Uploaded reference', result['source'], 'source')]
         if purpose != 'material'
         else []
     )
-    if result.get('article'):
-        result['receipts'].append(receipt(root, 'Uploaded blog', result['article'], 'article'))
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'saved', 'result': result})
     return result
 

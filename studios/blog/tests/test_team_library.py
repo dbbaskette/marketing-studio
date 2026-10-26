@@ -43,7 +43,6 @@ class LibraryFieldTests(Fixture):
                 'filename': 'post.md',
                 'content': base64.b64encode(b'An earlier announcement.').decode(),
                 'purpose': 'inspiration',
-                'as_blog': False,
                 'analyze': False,
                 **extra,
             },

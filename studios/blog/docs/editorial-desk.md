@@ -62,9 +62,9 @@ does not stop automatic tags from being added later.
 
 **Upload** accepts Markdown, text, HTML, DOCX and PDF. Originals remain saved.
 PDFs need text extraction in chat. Check **Then edit it on the desk** to open the
-file's text on the writing desk's draft screen; an ordinary reference upload does not
-start a new blog. A
-DOCX that cannot be opened is refused with a message; nothing is saved from it.
+file's text on the writing desk's draft screen; an upload itself only saves, summarizes
+and tags the file, and never starts a blog. A DOCX that cannot be opened is refused with
+a message; nothing is saved from it.
 
 **Team memory** lets you read and save notes, context and writing rules. Choose
 whether a memory applies to the team, a project, an author, or one blog. Changes

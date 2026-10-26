@@ -2195,7 +2195,7 @@ async function voiceCandidates(){
   const upload=sheet().find(e=>e.id==='learn-voice-upload');upload.files=[{name:'post.md',size:20,arrayBuffer:async()=>new TextEncoder().encode('# A post\n\nText.').buffer}];
   await upload.listeners.change();
   const sent=requests.find(r=>r.url==='/api/upload').data;
-  assert.equal(sent.purpose,'voice-sample');assert.equal(sent.author,'Synthetic Author');assert.equal(sent.as_blog,false);assert.equal(sent.analyze,false);
+  assert.equal(sent.purpose,'voice-sample');assert.equal(sent.author,'Synthetic Author');assert.equal('as_blog' in sent,false);assert.equal(sent.analyze,false);
 }
 
 // The run says which voice and kind of post it writes with; Change asks once before a voice

@@ -19,7 +19,7 @@ access panel shows the same state.
 The desk browses local/selected-Hub blogs, cached Google links, attention,
 references, uploads and scoped shared memory. Shared-only blogs can be resumed
 without overwriting local edits. Uploads preserve originals; PDF extraction is
-pending, and starting an editable blog is a separate choice. Curation and memory
+pending, and opening one on the writing desk is a separate choice. Curation and memory
 changes retain Git revisions. The server verifies current GitHub write access
 for Hub mutations. Everyone with write access has the same controls; GitHub
 admins manage membership. Offline/unverified Hub access can prevent UI writes;
