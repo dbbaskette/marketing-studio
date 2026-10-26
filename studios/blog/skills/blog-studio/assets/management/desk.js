@@ -1108,7 +1108,7 @@ function sDeskReview(held){
   sReviewOn(held);const state=sReviewState(held);sReviewToolbar(held,state,true);held.layout=sDeskLayout();held.cards=null;held.wholeCard=null;held.wholeGo=null;
   const status=sNode('p','quiet desk-save-state');status.setAttribute('role','status');status.setAttribute('aria-live','polite');held.status=status;
   if(held.stale)sDeskStale(held);else status.textContent=held.saved||'';
-  held.review.head=sReviewHead(held,state);held.review.paper=sReviewPaper(held,state);
+  held.review.head=sReviewHead(held,state);held.review.headKey=sReviewHeadKey(held,state);held.review.paper=sReviewPaper(held,state);
   held.review.lede=sNode('p','lede',sReviewLede(state));
   sPage(held.review.lede,status,held.review.head,held.review.paper);
   sDeskImagesLoad(held);
@@ -1163,7 +1163,8 @@ function sReviewLede(state){
   if(state.set&&!state.pending.length&&!state.failed)return 'Every fix is reviewed. Click any paragraph to keep editing, or Check again for the latest text.';
   return 'Each fix is marked in your text: struck words go, highlighted words come in. Accept or reject each one, or click a paragraph to edit it yourself. Nothing changes until you accept.';
 }
-function sReviewHeadShow(held){if(!held.review?.head)return;const head=sReviewHead(held,sReviewState(held));held.review.head.replaceWith(head);held.review.head=head;}
+function sReviewHeadKey(held,state){const g=held.review?.google;return JSON.stringify([state.working?.id||null,state.failed,state.set?.job||null,state.set?.items.length||0,state.applied,state.pending.map(item=>[item.id,item.flag]),!!held.view.working,access.actions.edit,!!held.view.google_suggestions,held.view.google?.url||'',g?[!!g.plan,!!g.sent,g.problem]:null]);}
+function sReviewHeadShow(held){if(!held.review?.head)return;const state=sReviewState(held),head=sReviewHead(held,state);held.review.head.replaceWith(head);held.review.head=head;held.review.headKey=sReviewHeadKey(held,state);}
 // The reading surface: the title, the opening and each section, every paragraph with its
 // fixes marked, opaque like any document.
 function sReviewPaper(held,state){
@@ -1233,7 +1234,10 @@ function sReviewFixes(held,set,items,loose){
 function sDeskReviewRefresh(held,before){
   if(!sDeskCurrent(held)||!held.review?.paper)return;
   const state=sReviewState(held);sReviewToolbar(held,state);
-  const head=sReviewHead(held,state);held.review.head.replaceWith(head);held.review.head=head;
+  // Like the toolbar, drawn again only when what it shows changes: a poll never swaps Stop
+  // or Accept all under a click.
+  const key=sReviewHeadKey(held,state);
+  if(key!==held.review.headKey){const head=sReviewHead(held,state);held.review.head.replaceWith(head);held.review.head=head;held.review.headKey=key;}
   if(held.review.lede)held.review.lede.textContent=sReviewLede(state);
   // Sections added or taken away, or an opening that appears or goes: drawn again whole,
   // unless a paragraph is being edited, when it waits for the editor to close.

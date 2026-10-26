@@ -3543,8 +3543,9 @@ async function deskReviewMode(){
   const thumb=descendants(part('aaaaaaaa')).find(n=>n.tagName==='img'&&/desk-thumb/.test(n.className));
   assert.ok(thumb,'the image shows as a thumbnail where it sits');assert.equal(thumb.src,'data:image/png;base64,AAAA');
   // A poll that changes nothing in the toolbar leaves its buttons as they are.
-  const toolbar=descendants(f.get('actions')).find(n=>n.textContent==='Open the full desk');await tick();
+  const toolbar=descendants(f.get('actions')).find(n=>n.textContent==='Open the full desk'),stopping=descendants(head()).find(n=>n.textContent==='Stop');await tick();
   assert.equal(descendants(f.get('actions')).find(n=>n.textContent==='Open the full desk'),toolbar,'a poll does not swap a toolbar button');
+  assert.equal(descendants(head()).find(n=>n.textContent==='Stop'),stopping,'nor Stop');
   // 2. The fixes land, each marked in its paragraph with its reason, Accept and Reject.
   view={...view,working:null,jobs:[{id:'c1',kind:'finish-copyedit',status:'ready',applied:true,error:''}],finishing:{copyedit:finishSet('copyedit',REVIEW_FIXES)}};
   await tick();
