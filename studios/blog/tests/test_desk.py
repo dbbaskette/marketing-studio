@@ -430,6 +430,52 @@ class RouteTests(RouteCase):
         self.assertEqual(again['id'], made['id'])
         self.assertEqual([row['kind'] for row in again['jobs']], ['finish-feedback'])
 
+    def test_check_spelling_and_grammar_first_queues_copy_edit_and_rewrites_nothing(self):
+        import tool_jobs
+
+        made = self.start(style='', first_pass='copyedit')
+        self.assertIsNone(made['first_pass_problem'])
+        self.assertEqual(made['revision'], 1)
+        self.assertEqual(made['markdown'], DRAFT)
+        self.assertEqual(made['working']['kind'], 'finish-copyedit')
+        self.assertEqual(made['working']['part'], 'finishing')
+        job = tool_jobs.read(self.root, made['working']['id'])
+        self.assertIn('Copy edit this draft and its title', job['guidance'])
+        self.assertEqual(job['metadata']['desk']['action'], 'copyedit')
+        # A retried request is the same blog, with no second job; nothing waits on a part.
+        again = self.start(style='', first_pass='copyedit')
+        self.assertEqual(again['id'], made['id'])
+        self.assertEqual([row['kind'] for row in again['jobs']], ['finish-copyedit'])
+        saved = self.post(
+            'desk-save',
+            {'id': made['id'], 'seen': 1, 'part': 'title', 'text': 'Typed while it checks'},
+        )
+        self.assertEqual(saved['revision'], 2)
+
+    def test_check_spelling_and_grammar_needs_written_text_and_a_draft_you_bring(self):
+        made = self.post(
+            'desk-create',
+            {
+                'operation': 'e' * 32,
+                'title': 'Only a title',
+                'manuscript': '# Only a title\n',
+                'first_pass': 'copyedit',
+            },
+        )
+        self.assertIsNone(made['working'])
+        self.assertRegex(made['first_pass_problem'], 'Write the draft first')
+        with self.assertRaisesRegex(ValueError, 'for a draft you bring'):
+            self.post(
+                'desk-create',
+                {
+                    'operation': 'f' * 32,
+                    'way': 'topic',
+                    'title': 'Synthetic',
+                    'point': 'A point.',
+                    'first_pass': 'copyedit',
+                },
+            )
+
     def test_feedback_first_is_for_a_draft_you_bring(self):
         with self.assertRaisesRegex(ValueError, 'for a draft you bring'):
             self.post(
@@ -442,7 +488,7 @@ class RouteTests(RouteCase):
                     'first_pass': 'feedback',
                 },
             )
-        with self.assertRaisesRegex(ValueError, 'Choose tighten'):
+        with self.assertRaisesRegex(ValueError, 'Choose Check spelling and grammar'):
             self.start(first_pass='polish')
 
     def test_a_draft_without_headings_is_proofread_as_it_is(self):

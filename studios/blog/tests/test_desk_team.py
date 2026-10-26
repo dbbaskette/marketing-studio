@@ -265,6 +265,43 @@ class DeskTeamTests(TeamCase):
             },
         )
 
+    def test_check_spelling_and_grammar_leaves_the_tree_clean_and_shares_only_accepts(self):
+        made = management.dispatch(
+            self.root,
+            'desk-create',
+            {'operation': 'c' * 32, 'title': 'T2', 'manuscript': DRAFT, 'first_pass': 'copyedit'},
+        )
+        ident = made['id']
+        self.assertEqual(made['working']['kind'], 'finish-copyedit')
+        clean = lambda: self.assertEqual(gitstate.changed(self.found), [])  # noqa: E731
+        clean()
+        part = made['sections'][0]['id']
+        self.finish_worker(
+            {
+                'suggestions': [
+                    {'part': part, 'before': 'First text.', 'after': 'The first text.'},
+                    {'part': 'opening', 'before': 'An opening paragraph.', 'after': 'An opening.'},
+                ]
+            }
+        )
+        clean()
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        job = shown['finishing']['copyedit']['job']
+        remote = self.remote_commits()
+        management.dispatch(self.root, 'desk-skip', {'id': ident, 'job': job, 'items': ['p2']})
+        clean()
+        self.assertEqual(self.remote_commits(), remote)
+        management.dispatch(
+            self.root,
+            'desk-apply',
+            {'id': ident, 'seen': shown['revision'], 'job': job, 'items': [{'id': 'p1'}]},
+        )
+        clean()
+        self.assertEqual(self.remote_commits(), self.local_commits())
+        body = support.git(self.remote, 'show', 'main:blogs/' + ident + '/DRAFT.md')
+        self.assertIn('The first text.', body)
+        self.assertIn('An opening paragraph.', body)
+
     def test_typing_is_kept_locally_once_per_session_and_shared_on_leaving(self):
         remote, local = self.remote_commits(), self.local_commits()
         seen = 1
@@ -551,7 +588,6 @@ class DeskTeamImageTests(TeamCase):
         self.assertIn('blogs/' + ident + '/desk/draft.json', files)
         self.assertNotIn('data:image', (self.folder(ident) / 'desk' / 'draft.json').read_text())
         self.assertIn(IMAGE_ONE, (self.folder(ident) / 'DRAFT.md').read_text())
-
 
 
 class DeskTeamHeadingTests(TeamCase):

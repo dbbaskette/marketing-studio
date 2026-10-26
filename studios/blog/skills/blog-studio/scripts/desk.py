@@ -1523,6 +1523,10 @@ SESSION = re.compile(r'[a-f0-9]{16,64}')
 UNSHARED = ('skip', 'google-plan', 'google-send', 'repurpose')
 
 
+# First passes that are a Finishing tool: they propose, and the draft is left as it is.
+FINISH_FIRST = ('copyedit', 'feedback')
+
+
 def _create(root, data):
     """Create once per page operation: the same request again returns the same blog."""
     import desk_jobs
@@ -1535,10 +1539,14 @@ def _create(root, data):
     if picked is not None:
         desk_jobs._angles_path(root, picked)  # A bad ID is refused before anything is made.
     kept = _kept_ids(data.pop('keep', []), data.get('sources') or [])
-    # Feedback first is Finishing's feedback, queued once the blog is made: comments only.
+    # Check spelling and grammar first is Finishing's Copy edit, and feedback first is its
+    # feedback, each queued once the blog is made: suggestions and comments only, so the
+    # person accepts or rejects each fix (the page's Review mode) and nothing changes before.
     choice = data.pop('first_pass', 'leave')
-    if choice not in (*desk_jobs.FIRST_PASSES, 'feedback'):
-        raise ValueError('Choose tighten, feedback, reshape or leave it as it is.')
+    if choice not in (*desk_jobs.FIRST_PASSES, *FINISH_FIRST):
+        raise ValueError(
+            'Choose Check spelling and grammar, feedback, reshape, tighten or leave it as it is.'
+        )
     if data.get('way', 'draft') != 'draft' and choice != 'leave':
         raise ValueError('A first pass is for a draft you bring.')
     if choice == 'reshape' and not data.get('style'):
@@ -1568,8 +1576,8 @@ def _create(root, data):
             'keep_problem': keep_problem,
         }
     try:
-        if choice == 'feedback':
-            desk_jobs.finish(root, made['id'], 1, 'feedback')
+        if choice in FINISH_FIRST:
+            desk_jobs.finish(root, made['id'], 1, choice)
         else:
             desk_jobs.first_pass(root, made['id'], 1, choice)
     except ValueError as error:
