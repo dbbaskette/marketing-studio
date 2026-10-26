@@ -40,6 +40,7 @@ EMPTY = (
 )
 OVERLAP = 'Another suggestion applied here covers the same words, so this one was not applied.'
 RETIRED = 'This suggestion no longer fits: another change replaced its words.'
+FLAGGED = 'It covers words a flagged suggestion still waits on, so Accept all left it for you.'
 
 
 def _require_lock():
@@ -205,17 +206,22 @@ def _busy_parts(root, ident):
     return parts
 
 
-def apply(root, ident, seen, job, chosen):
+def apply(root, ident, seen, job, chosen, every=False):
     """Apply chosen proposals, each with its suggested text or the person's own (Edit).
 
     One proposal that no longer fits is refused with nothing changed. Several at once
-    (Apply all) apply every one that still fits and leave the rest open, counted in `left`.
-    Each part changed keeps one `finishing` version first."""
+    (Apply all) apply every one that still fits and leave the rest open, counted in `left`;
+    one retired meanwhile is left out too. `every` is Review mode's Accept all: a suggestion
+    that covers words a flagged one from Copy edit or Humanize still waits on is left out,
+    so the flagged one is never retired without the person deciding on it. Each part
+    changed keeps one `finishing` version first."""
     found = read(root, ident, job)
     if not isinstance(chosen, list) or not chosen or len(chosen) > ITEMS:
         raise ValueError('Choose the suggestions to apply.')
+    if type(every) is not bool:
+        raise ValueError('Choose suggestions from this set.')
     items = {item['id']: item for item in found['items']}
-    picks, named = [], set()
+    picks, named, gone = [], set(), []
     for entry in chosen:
         if (
             not isinstance(entry, dict)
@@ -231,7 +237,10 @@ def apply(root, ident, seen, job, chosen):
         if 'after' not in item and 'after' not in entry:
             raise ValueError('Write the wording to use, then apply it.')
         if item['state'] == 'retired':
-            raise ValueError(RETIRED)
+            if len(chosen) == 1:
+                raise ValueError(RETIRED)
+            gone.append(item['id'])  # Another change took its words; the rest still apply.
+            continue
         if item['state'] != 'open':
             raise ValueError('This suggestion was already applied or skipped.')
         after = entry['after'] if 'after' in entry else item['after']
@@ -251,12 +260,13 @@ def apply(root, ident, seen, job, chosen):
     working = _busy_parts(root, ident)
     if any(part in working or ('sections' in working and part not in desk.PARTS) for part in parts):
         raise ValueError('A desk job is working on this part. Wait for it, or stop it, then apply.')
-    single = len(picks) == 1
-    texts, applied, left = {}, [], []
+    single = len(chosen) == 1
+    texts, applied, left = {}, [], gone
     # Where each applied suggestion sat in its part as it was, so two that cover the same
     # words never both land, and the others it covered are retired once it does.
     originals = {part: desk.text_of(draft, part) for part in parts}
     spans = {part: [] for part in parts}
+    waiting = _flagged_spans(root, ident, job, found, originals, named) if every else {}
     for item, after in picks:
         part = item['part']
         try:
@@ -265,6 +275,8 @@ def apply(root, ident, seen, job, chosen):
             span = _span(originals[part], item)
             if span is not None and _covers(spans[part], span):
                 raise ValueError(OVERLAP)
+            if span is not None and _covers(waiting.get(part, []), span):
+                raise ValueError(FLAGGED)
             text = texts[part] if part in texts else desk.text_of(draft, part)
             if item.get('whole'):
                 fits = desk_images.scrub(text) == item['before']
@@ -327,6 +339,41 @@ def apply(root, ident, seen, job, chosen):
     return {'applied': len(applied), 'left': left}
 
 
+def _sentence_sets(root, ident, job, found):
+    """[(job, set)] for the waiting Copy edit and Humanize sets, this one as it is held."""
+    found_sets = [(job, found)]
+    if found.get('kind') not in SENTENCES:
+        return found_sets
+    for tool, other in _latest(root, ident).items():
+        kind = next(kind for kind, name in TOOLS.items() if name == tool)
+        if kind in SENTENCES and other != job:
+            try:
+                found_sets.append((other, read(root, ident, other)))
+            except (ValueError, OSError):
+                continue
+    return found_sets
+
+
+def _flagged_spans(root, ident, job, found, originals, named):
+    """{part: [span]} of open, flagged suggestions still in the text that Accept all leaves
+    for the person, from either tool, other than the ones being applied."""
+    spans = {}
+    for name, value in _sentence_sets(root, ident, job, found):
+        for item in value.get('items', []):
+            part = item.get('part')
+            if (
+                item.get('state') != 'open'
+                or not item.get('flag')
+                or part not in originals
+                or (name == job and item.get('id') in named)
+            ):
+                continue
+            span = _span(originals[part], item)
+            if span is not None:
+                spans.setdefault(part, []).append(span)
+    return spans
+
+
 def _span(text, item):
     """Where a suggestion sits in its part's text, (start, end), or None when it is not
     there once. A whole-part alternative covers the whole part."""
@@ -357,16 +404,7 @@ def _retire(root, ident, job, found, originals, spans):
     computer's waiting sets change."""
     if not any(spans.values()):
         return
-    others = [(job, found)]
-    if found.get('kind') in SENTENCES:
-        for tool, other in _latest(root, ident).items():
-            kind = next(kind for kind, name in TOOLS.items() if name == tool)
-            if kind in SENTENCES and other != job:
-                try:
-                    others.append((other, read(root, ident, other)))
-                except (ValueError, OSError):
-                    continue
-    for name, value in others:
+    for name, value in _sentence_sets(root, ident, job, found):
         changed = False
         for item in value.get('items', []):
             part = item.get('part')

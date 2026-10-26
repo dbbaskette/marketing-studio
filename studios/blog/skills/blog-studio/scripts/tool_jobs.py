@@ -180,6 +180,10 @@ def recover(root):
                     error='This task was interrupted. Your inputs are kept; retry when ready.',
                 )
                 write(root, value)
+                if value['kind'] in DESK:
+                    import desk_jobs
+
+                    desk_jobs.interrupted(root, value)  # A check's next step still goes ahead.
         except (ValueError, OSError, KeyError):
             continue
 
@@ -223,16 +227,22 @@ def once(engine):
         except (ValueError, KeyError, TypeError) as error:
             saved.update(status='failed', error=str(error)[:1000], attempts=saved['attempts'] + 1)
             write(root, saved)
-            return
-        saved.update(
-            status='working',
-            started_at=studio.now(),
-            attempts=saved['attempts'] + 1,
-            model_selection=choice,
-        )
-        write(root, saved)
-        engine.current = 'tool:' + ident
-        engine.stop.clear()
+            # A job that could not start ends as one that failed: its desk hook still runs.
+            unstarted = _ended(root, saved) or ''
+        else:
+            unstarted = None
+            saved.update(
+                status='working',
+                started_at=studio.now(),
+                attempts=saved['attempts'] + 1,
+                model_selection=choice,
+            )
+            write(root, saved)
+            engine.current = 'tool:' + ident
+            engine.stop.clear()
+    if unstarted is not None:
+        _share(root, unstarted)
+        return
     try:
         if saved['kind'] == 'desk-research':
             import desk_jobs

@@ -1217,6 +1217,146 @@ class MixedReviewTests(ToolCase):
             states = [i['state'] for i in view['finishing'][tool]['items']]
             self.assertEqual(states, ['applied', 'open'], 'the flagged one waits: ' + tool)
 
+    def flagged_fix_and_rewrite(self):
+        """A flagged Copy edit fix and an unflagged Humanize rewrite of the same sentence."""
+        first = self.check(humanize='light')
+        sentence = 'It reads 12 files in 3 seconds at Acme Labs.'
+        self.ready(
+            first,
+            {
+                'suggestions': [
+                    self.fix(
+                        sentence,
+                        'It reads 12 files in 3 seconds at ACME Labs.',
+                        self.first,
+                        kind='consistency',
+                    ),
+                    self.fix('Their are two parser.', 'There are two parsers.', kind='grammar'),
+                ]
+            },
+        )
+        self.ready(
+            desk_jobs.jobs(self.root, self.ident)[-1],
+            {
+                'suggestions': [
+                    self.fix(sentence, 'In 3 seconds it reads 12 files at Acme Labs.', self.first),
+                    self.fix('We leverage a robust parser.', 'We use a parser.', self.first),
+                ]
+            },
+        )
+        view = desk_jobs.view(self.root, self.ident)
+        self.assertTrue(view['finishing']['copyedit']['items'][0]['flag'])
+        self.assertFalse(view['finishing']['humanize']['items'][0]['flag'])
+        return view
+
+    def test_accept_all_never_retires_a_flagged_fix_from_the_other_tool(self):
+        view = self.flagged_fix_and_rewrite()
+        # Accept all as the page sends it: the unflagged fixes, then the unflagged rewrites.
+        for tool in ('copyedit', 'humanize'):
+            picked = [
+                {'id': i['id']}
+                for i in view['finishing'][tool]['items']
+                if i['state'] == 'open' and i['present'] and not i['flag']
+            ]
+            view = self.act(
+                'apply',
+                seen=view['revision'],
+                job=view['finishing'][tool]['job'],
+                items=picked,
+                all=True,
+            )
+        self.assertEqual(view['finished'], {'applied': 1, 'left': ['p1']})
+        states = {
+            t: [i['state'] for i in view['finishing'][t]['items']] for t in ('copyedit', 'humanize')
+        }
+        self.assertEqual(states, {'copyedit': ['open', 'applied'], 'humanize': ['open', 'applied']})
+        self.assertTrue(
+            view['finishing']['copyedit']['items'][0]['present'], 'the flagged fix waits'
+        )
+        self.assertIn('at Acme Labs.', self.draft()['sections'][0]['text'])
+        self.assertTrue(self.draft()['sections'][0]['text'].startswith('We use a parser.'))
+
+    def test_an_explicit_accept_still_retires_what_it_covers(self):
+        view = self.flagged_fix_and_rewrite()
+        job = view['finishing']['humanize']['job']
+        view = self.act('apply', seen=view['revision'], job=job, items=[{'id': 'p1'}])
+        self.assertEqual(view['finishing']['copyedit']['items'][0]['state'], 'retired')
+        self.assertTrue(
+            self.draft()['sections'][0]['text'].endswith(
+                'In 3 seconds it reads 12 files at Acme Labs.'
+            )
+        )
+
+    def test_a_retired_item_in_a_multi_item_accept_is_left_out_and_the_rest_apply(self):
+        fixes = self.offer(
+            [
+                {
+                    'part': self.first,
+                    'before': 'We leverage a robust parser.',
+                    'after': 'We use a robust parser.',
+                }
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer(
+            [
+                {
+                    'part': self.first,
+                    'before': 'We leverage a robust parser.',
+                    'after': 'We rely on a parser.',
+                },
+                {'part': self.second, 'before': 'Their are two parser.', 'after': 'Two parsers.'},
+            ]
+        )
+        self.act('apply', seen=self.seen, job=fixes, items=[{'id': 'p1'}])
+        revision = self.draft()['revision']
+        done = self.act('apply', seen=revision, job=human, items=[{'id': 'p1'}, {'id': 'p2'}])
+        self.assertEqual(done['finished'], {'applied': 1, 'left': ['p1']})
+        self.assertEqual(self.draft()['sections'][1]['text'], 'Two parsers.')
+        states = [i['state'] for i in desk_finish.read(self.root, self.ident, human)['items']]
+        self.assertEqual(states, ['retired', 'applied'])
+        with self.assertRaisesRegex(ValueError, 'no longer fits'):
+            self.act('apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p1'}])
+        with self.assertRaisesRegex(ValueError, 'Choose suggestions'):
+            self.act(
+                'apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p2'}], all='yes'
+            )
+
+    def test_a_copy_edit_that_never_ran_still_lets_humanize_go_ahead_once(self):
+        from unittest.mock import patch
+
+        first = self.check(humanize='medium')
+        with patch('studio_core.model_profiles.route', side_effect=ValueError('No model chosen.')):
+            tool_jobs.once(blog_runner.Engine(self.root, worker=lambda *a, **k: None))
+        self.assertEqual(tool_jobs.read(self.root, first['id'])['status'], 'failed')
+        self.assertEqual(
+            self.jobs(), [('finish-copyedit', 'failed'), ('finish-humanize', 'queued')]
+        )
+        second = desk_jobs.jobs(self.root, self.ident)[-1]
+        self.assertEqual(second['metadata']['desk']['level'], 'medium')
+        desk_jobs.ended(self.root, tool_jobs.read(self.root, first['id']))
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(len(self.jobs()), 2, 'exactly once')
+
+    def test_a_copy_edit_interrupted_when_blog_studio_closed_still_lets_humanize_go_ahead(self):
+        first = self.check(humanize='strong')
+        first.update(status='working', started_at='x')
+        tool_jobs.write(self.root, first)
+        tool_jobs.recover(self.root)
+        self.assertEqual(
+            self.jobs(), [('finish-copyedit', 'failed'), ('finish-humanize', 'queued')]
+        )
+        tool_jobs.recover(self.root)
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(len(self.jobs()), 2, 'exactly once')
+        # Interrupted Humanize ends the check with nothing more queued.
+        second = desk_jobs.jobs(self.root, self.ident)[-1]
+        second.update(status='working', started_at='x')
+        tool_jobs.write(self.root, second)
+        tool_jobs.recover(self.root)
+        self.assertEqual(self.jobs()[-1], ('finish-humanize', 'failed'))
+        self.assertEqual(len(self.jobs()), 2)
+
     def test_no_image_data_reaches_either_job(self):
         from test_desk import GOOGLE as WITH_IMAGES
 

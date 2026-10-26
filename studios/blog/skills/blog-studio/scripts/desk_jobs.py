@@ -1480,6 +1480,19 @@ def _review_next(root, job):
     return record.get('next')
 
 
+def interrupted(root, job):
+    """A desk job Blog Studio found working when it started again (tool_jobs.recover), now
+    failed: a check's Copy edit still lets its Humanize go ahead, once. Nothing else
+    continues by itself."""
+    if not (job.get('metadata', {}).get('desk') or {}).get('then'):
+        return
+    try:
+        _guard(root, job['metadata']['article'])
+        _review_next(root, job)
+    except Exception:  # noqa: BLE001 - recovery never stops for one blog.
+        return
+
+
 def _review_end(root, ident):
     """Stop ends the check: nothing more is queued for it."""
     record = review_record(root, ident)

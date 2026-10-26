@@ -1580,7 +1580,7 @@ ROUTES = {
     'finish': {'id', 'seen', 'tool', 'level', 'guide'},
     # Review mode's check: Copy edit, then Humanize when it is on (desk_jobs.review).
     'review': {'id', 'seen', 'humanize'},
-    'apply': {'id', 'seen', 'job', 'items'},
+    'apply': {'id', 'seen', 'job', 'items', 'all'},
     'skip': {'id', 'job', 'items'},
     # Before publishing: a repurpose result as a new blog, and Google suggestions.
     'repurpose': {'id', 'job', 'title', 'content'},
@@ -1752,7 +1752,9 @@ def dispatch(root, action, data):
         import desk_finish
 
         if action == 'apply':
-            done = desk_finish.apply(root, ident, seen, data.get('job'), data.get('items'))
+            done = desk_finish.apply(
+                root, ident, seen, data.get('job'), data.get('items'), data.get('all', False)
+            )
         else:
             done = desk_finish.skip(root, ident, data.get('job'), data.get('items'))
         return {**desk_jobs.view(root, ident), 'finished': done}
