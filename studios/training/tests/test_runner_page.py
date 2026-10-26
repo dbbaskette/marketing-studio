@@ -2021,7 +2021,8 @@ class LaterTests(PageCase):
         web = self.started(title='Health checks')
         add = {'path': path, 'action': 'add', 'name': 'handbook.txt', 'content': self.sent()}
         for sent, expect, said in (
-                ({**add, 'action': 'replace'}, 400, 'A document can be: add, remove, done.'),
+                ({**add, 'action': 'replace'}, 400,
+                 'A document can be: add, remove, done, update.'),
                 ({'path': path}, 400, 'Give action as text.'),
                 ({'action': 'done'}, 400, 'Give path as text.'),
                 ({**add, 'name': None}, 400, 'Give name as text.'),
@@ -2034,8 +2035,7 @@ class LaterTests(PageCase):
                  'that can be read here. Save it as text or as a Word file.'),
                 ({'path': path, 'action': 'remove', 'name': 'missing.txt'}, 409,
                  'missing.txt is not one of the documents added.'),
-                ({**add, 'path': web}, 409, 'This training is researched from the public '
-                 'web, so it takes no documents.'),
+                ({**add, 'path': web}, 409, self.engines.NO_DOCUMENTS),
                 ({**add, 'path': str(self.base / 'elsewhere')}, 403,
                  'That folder is not a training this computer knows.')):
             with self.subTest(sent=sent):
@@ -2084,6 +2084,19 @@ class LaterTests(PageCase):
         run = self.post('documents', {'path': path, 'action': 'add', 'name': 'handbook.txt',
                                       'content': self.sent(large)})
         self.assertEqual(run['documents']['added'][0]['bytes'], len(large))
+
+    def test_the_page_updates_the_research_with_a_later_document(self):
+        path = self.started(source_scope='supplied-only')
+        root = Path(path)
+        self.engine.supply(root, 'add', 'handbook.txt', b'Capacity holds only when more than '
+                           b'one instance is running.\n')
+        self.engine.supply(root, 'done')
+        self.to_gate(root, 'research')
+        self.engine.supply(root, 'add', 'more.txt', b'More.\n')
+        with mock.patch.object(self.engine, 'carry_on'):   # the request, before it runs
+            run = self.post('documents', {'path': path, 'action': 'update'})
+        self.assertEqual(run['documents']['later'], [])
+        self.assertEqual(workspace.load(root)['requests'][-1]['added'], ['more.txt'])
 
     def test_the_copies_are_made_again_on_the_page(self):
         self.copies.refuse['google'] = 'Google access is not set up on this computer.'
@@ -2523,6 +2536,46 @@ class SettingsTests(StudioCase):
         self.assertEqual(settings.load(), kept, 'nothing that was refused was kept')
 
 
+class GoogleSignInTests(unittest.TestCase):
+    """Status says whether Google is signed in, from this computer's own gcloud settings."""
+
+    def checked(self, account: str | None) -> dict:
+        def run(command):
+            if command[0] == 'gcloud':
+                if account is None:
+                    return {'found': False, 'ok': False, 'output': ''}
+                if command == computer.COMMANDS['gcloud-account']:
+                    return {'found': True, 'ok': True, 'output': account}
+                return {'found': True, 'ok': True, 'output': 'Google Cloud SDK 500.0.0'}
+            return {'found': True, 'ok': True, 'output': '1.0.0'}
+        with mock.patch.object(computer, 'run', run), \
+                mock.patch.object(computer, 'reach', lambda host: None):
+            found = computer.check(google=True)
+        return next(entry for entry in found['items'] if entry['id'] == 'gcloud')
+
+    def test_the_account_is_asked_of_this_computer_only(self):
+        self.assertEqual(computer.COMMANDS['gcloud-account'],
+                         ('gcloud', 'auth', 'list', '--filter=status:ACTIVE',
+                          '--format=value(account)'))
+
+    def test_a_signed_in_account_is_named(self):
+        gcloud = self.checked('ana@example.com')
+        self.assertEqual(gcloud['state'], 'ok')
+        self.assertIn(computer.fact('Signed in', 'ok', 'ana@example.com'), gcloud['facts'])
+
+    def test_no_account_says_how_to_sign_in(self):
+        gcloud = self.checked('')
+        self.assertEqual(gcloud['state'], 'problem')
+        self.assertIn(computer.fact('Signed in', 'problem', 'not signed in'), gcloud['facts'])
+        self.assertEqual(gcloud['fix'], 'Not signed in. In a terminal, run `gcloud auth login '
+                         '--enable-gdrive-access`, then check this computer again.')
+
+    def test_no_gcloud_asks_nothing_more(self):
+        gcloud = self.checked(None)
+        self.assertEqual(gcloud['state'], 'missing')
+        self.assertEqual([entry['label'] for entry in gcloud['facts']], ['Installed'])
+
+
 if __name__ == '__main__':
     unittest.main()
 
@@ -2609,6 +2662,45 @@ class PullCopyTests(PageCase):
         self.assertIn('From a teammate.', (root / '101/document.md').read_text())
         self.assertIn("The Doc's changes are in.", run['said'])
         self.assertEqual(workspace.status(root)['gate'], 'document@101')
+
+    def test_the_page_looks_for_doc_changes_when_asked(self):
+        import gdocs
+        path = self.started(levels=['101'], copies=['google'])
+        root = Path(path)
+        self.to_gate(root, 'document@101')
+        self.decide(root, 'document@101')
+        before = list(self.copies.drive.calls)
+        shown = self.get('run', path=path)
+        self.assertEqual(self.copies.drive.calls, before, 'reading the page asks Google nothing')
+        self.assertNotIn('remote', shown['copies'][0])
+        ident = gdocs.read_links(root)['docs']['document@101']['file_id']
+        self.copies.drive.docs[ident] += '\nFrom a teammate.\n'
+        run = self.post('copies', {'path': path, 'action': 'check'})
+        self.assertEqual(sorted(set(run) - {'said'}), RUN_KEYS)
+        self.assertEqual(run['said'], '1 Google Doc was changed there.')
+        entry = next(one for one in run['copies'] if one['artifact'] == 'document@101')
+        self.assertEqual(entry['remote'], 'remote changed')
+        self.assertEqual(self.post('copies', {'path': path, 'action': 'nonsense'}, 400)['error'],
+                         'Ask to check the copies, make a Doc again, or make them again.')
+        run = self.post('copies', {'path': path, 'pull': 'document@101'})
+        entry = next(one for one in run['copies'] if one['artifact'] == 'document@101')
+        self.assertNotIn('remote', entry, 'brought in, so nothing is said of it any more')
+
+    def test_a_doc_check_that_cannot_reach_google_says_so(self):
+        import gdocs
+        path = self.started(levels=['101'], copies=['google'])
+        root = Path(path)
+        self.to_gate(root, 'document@101')
+        self.decide(root, 'document@101')
+        ident = gdocs.read_links(root)['docs']['document@101']['file_id']
+
+        def refused(file_id):
+            raise WorkspaceError('Google access is not set up on this computer.')
+        with mock.patch.object(self.copies.drive, 'export', refused):
+            run = self.post('copies', {'path': path, 'action': 'check'})
+        self.assertIn('could not be checked', run['said'])
+        self.assertIn('Google access is not set up on this computer.', run['said'])
+        self.assertTrue(ident)
 
     def test_pulling_is_refused_while_a_dependent_worker_builds(self):
         refused = []

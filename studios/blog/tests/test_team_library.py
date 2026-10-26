@@ -1919,6 +1919,113 @@ class FinishTests(RunnerCase):
         self.assertEqual(shared[0]['author'], 'Avery')
 
 
+class DeskPublishTests(RunnerCase):
+    """Mark as published keeps a desk blog's draft in the library, as Finish does for a run."""
+
+    kept = FinishTests.kept
+
+    def desk(self, operation='d', **extra):
+        return management.dispatch(
+            self.root,
+            'desk-create',
+            {
+                'operation': operation * 32,
+                'title': 'Desk post',
+                'manuscript': '# Desk post\n\n## One\n\nPublished words.\n',
+                **extra,
+            },
+        )
+
+    def publish(self, ident, url='https://example.invalid/post'):
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        return management.dispatch(
+            self.root,
+            'schedule',
+            {
+                'id': ident,
+                'expected': shown['expected'],
+                'stage': 'published',
+                'confirm_stage': True,
+                'publication_url': url,
+            },
+        )
+
+    def test_a_published_desk_blog_is_kept_once_and_updated_when_marked_again(self):
+        made = self.desk(style='product-announcement')
+        self.assertEqual(self.kept(), [], 'nothing is kept before it is published')
+        result = self.publish(made['id'])
+        rows = self.kept()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(result['library'], {'id': rows[0]['id'], 'revision': 1})
+        self.assertEqual(
+            rows[0]['library'],
+            {'kind': 'product-announcement', 'origin_kind': 'written-here', 'article': made['id']},
+        )
+        self.assertEqual(rows[0]['purposes'], ['reference', 'inspiration'])
+        directory, record = studio.item(self.root, 'sources', rows[0]['id'])
+        self.assertEqual((directory / 'content.md').read_text(), made['markdown'])
+        self.assertEqual(record['note'], 'Published from the writing desk.')
+        # Edited on the desk and marked again at the same address: the same item, revised.
+        shown = management.view(self.root, 'desk', {'id': [made['id']]})
+        part = shown['sections'][0]['id']
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': made['id'],
+                'seen': shown['revision'],
+                'part': part,
+                'text': 'Revised words.',
+                'session': 'a' * 16,
+            },
+        )
+        again = self.publish(made['id'])
+        self.assertEqual(again['library'], {'id': rows[0]['id'], 'revision': 2})
+        self.assertEqual([r['id'] for r in self.kept()], [rows[0]['id']])
+        self.assertIn('Revised words.', (directory / 'content.md').read_text())
+        # The same draft marked again is not a new revision.
+        self.assertEqual(self.publish(made['id'])['library']['revision'], 2)
+
+    def test_publishing_a_desk_blog_is_never_refused_when_the_library_cannot_take_it(self):
+        import blog_library
+
+        noted = []
+        for operation, failure in (('a', OSError('disk full')), ('b', RuntimeError('unexpected'))):
+            made = self.desk(operation=operation)
+            with (
+                patch.object(blog_library, 'keep_written', side_effect=failure),
+                patch.object(management, 'note_unexpected', noted.append),
+            ):
+                result = self.publish(made['id'])
+            self.assertEqual(set(result['library']), {'reason'})
+            self.assertIn('could not be saved', result['library']['reason'])
+            _, record = studio.item(self.root, 'articles', made['id'])
+            self.assertEqual(record['editorial']['publication_url'], 'https://example.invalid/post')
+        self.assertEqual([type(exc).__name__ for exc in noted], ['RuntimeError'])
+        self.assertEqual(self.kept(), [])
+
+    def test_a_team_workspace_shares_the_published_desk_blog(self):
+        from hub_workspace import Workspace
+        import hub_workspace
+
+        provider = FakeProvider(self.base / 'remotes')
+        registry = Registry(self.base / 'hubs', provider)
+        ident = registry.create('fixture/published', 'Published')['hub']
+        adapter = Workspace(self.root, registry.hub(ident))
+        with patch.object(hub_workspace, 'active', return_value=adapter):
+            made = self.desk()
+            self.publish(made['id'])
+            graph = adapter.hub.graph()
+        shared = [
+            graph['revisions'][heads[0]]['data']['studio']
+            for heads in graph['heads'].values()
+            if graph['revisions'][heads[0]]['kind'] == 'source'
+        ]
+        self.assertEqual(len(shared), 1)
+        self.assertEqual(shared[0]['library']['article'], made['id'])
+        self.assertEqual(shared[0]['library']['origin_kind'], 'written-here')
+
+
 if __name__ == '__main__':
     import unittest
 

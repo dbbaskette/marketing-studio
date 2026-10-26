@@ -303,7 +303,8 @@ class Researching:
                         self._spend_stop(root, 'The research')
                     elif stops.agent_stopped('', outcome, outcome.detail) is not None:
                         self._problem(root, 'research', 'failed', stops.agent_stopped(
-                            self._title(record.get('agent')), outcome, outcome.detail), KEPT)
+                            self._title(record.get('agent')), outcome, outcome.detail), KEPT,
+                            action=stops.agent_action(outcome))
                     elif outcome.reason == 'timeout':
                         self._out_of_time(root, 'research', 'The research', record, 1)
                     else:

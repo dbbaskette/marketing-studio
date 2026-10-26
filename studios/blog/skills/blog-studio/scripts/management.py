@@ -1134,7 +1134,9 @@ def manuscript_preview(paths):
     return {'kind': None, 'text': '', 'truncated': False}
 
 
-def article_view(ident, record, location, preview, reviews, conflict=False, shared_newer=False):
+def article_view(
+    ident, record, location, preview, reviews, conflict=False, shared_newer=False, on_desk=False
+):
     stage = editorial.row(record, ident, location, conflict=conflict)
     stop = record.get('stop_point', 'draft')
     question = record.get('pending_question')
@@ -1223,6 +1225,8 @@ def article_view(ident, record, location, preview, reviews, conflict=False, shar
         'stage': stage['stage'],
         'stop_point': stop,
         'stop_reached': reached,
+        # On the writing desk: no requested stop or chat step, and Open on the desk.
+        'on_desk': on_desk,
         'blocker': blocker,
         'decision_stale': stage['decision_stale'],
         'conflict': conflict,
@@ -1292,7 +1296,13 @@ def detail(root, ident, location='local', revision=None):
             'history': [],
             'sources': shared.get('dependencies', [])[:20],
             'view': article_view(
-                ident, record, location, preview, reviews, conflict=len(heads) > 1
+                ident,
+                record,
+                location,
+                preview,
+                reviews,
+                conflict=len(heads) > 1,
+                on_desk=record.get('flow') == 'desk',
             ),
         }
     directory, record = studio.item(root, 'articles', ident)
@@ -1331,6 +1341,7 @@ def detail(root, ident, location='local', revision=None):
             studio.freshness(root, directory, record),
             conflict=len(heads) > 1,
             shared_newer=bool(binding and binding.get('revision') not in heads),
+            on_desk=(directory / 'desk' / 'draft.json').is_file(),
         ),
     }
 
@@ -1934,6 +1945,20 @@ def _dispatch(root, route, data):
             except ValueError as error:
                 raise google_handoff.Conflict(str(error)) from None
             return google_handoff.open_as_doc(root, data['id'])
+        if route == 'desk-google-open':
+            # A private Google Doc of a blog on the writing desk, against the desk shown.
+            import desk_jobs
+            import google_handoff
+
+            if set(data) - {'id', 'expected', 'confirmed'} or not isinstance(data.get('id'), str):
+                raise ValueError('This request has fields the page does not take.')
+            if data.get('confirmed') is not True:
+                raise ValueError('Confirm making a private Google Doc first.')
+            if data.get('expected') != desk_jobs.expected(root, data['id']):
+                raise google_handoff.Conflict(
+                    'This blog changed. Reload it before making its Google Doc.'
+                )
+            return google_handoff.open_as_doc(root, data['id'], desk=True)
         if route in ('google-preview', 'google-start'):
             import google_intake
 
@@ -2010,10 +2035,24 @@ def _dispatch(root, route, data):
             directory, _ = studio.item(root, 'articles', ident)
             before = (directory / 'session.json').read_bytes()
             record = editorial.schedule(root, ident, values, desk=True)
+            import desk
+
+            # Mark as published keeps a desk blog's draft in the team library, as Finish does
+            # for a step-by-step run; marking it again updates that item.
+            kept = (
+                keep_published(root, directory, record)
+                if values.get('stage') == 'published' and desk.on_desk(directory)
+                else None
+            )
+            library = {'library': kept} if kept else {}
+            receipts = [kept.pop('receipt')] if kept and 'receipt' in kept else []
             if (directory / 'session.json').read_bytes() == before:
-                return dict(UNCHANGED, id=ident)
+                if not receipts:
+                    return dict(UNCHANGED, id=ident, **library)
+                return {'id': ident, 'status': 'saved', 'receipts': receipts, **library}
             result = share(root, 'article', record)
-            return {**result, 'receipts': [receipt(root, 'Editorial decision', result, 'article')]}
+            receipts.insert(0, receipt(root, 'Editorial decision', result, 'article'))
+            return {**result, 'receipts': receipts, **library}
         if route == 'resume':
             if set(data) != {'item'} or not adapter:
                 raise ValueError('Choose a shared blog.')
@@ -2162,6 +2201,41 @@ def old_voice_tool(route, data):
     return False
 
 
+def keep_published(root, directory, record):
+    """Keep a published desk blog's draft in the library as a reference and an example of
+    its kind of post: {'id', 'revision'}, with the library receipt when the item is new or
+    revised, or {'reason'} when it could not be kept, or None for a blog with no draft. The
+    publish never waits on it: whatever stops the library save is reported, never raised."""
+    import blog_library
+    import styles
+
+    try:
+        draft = directory / 'DRAFT.md'
+        text = draft.read_text() if draft.is_file() else ''
+        if not text.strip():
+            return None
+        kind = (record.get('style') or {}).get('style_id')
+        if kind and styles.name_of(root, kind) is None:
+            kind = None  # Its kind of post is gone; the blog is kept without one.
+        _, prior = blog_library.written_here(root, record['id'])
+        source = blog_library.keep_written(
+            root, record, text, kind, note='Published from the writing desk.'
+        )
+    except Exception as exc:
+        if not isinstance(exc, (ValueError, OSError)):
+            note_unexpected(exc)
+        return {
+            'reason': str(exc)[:200]
+            if isinstance(exc, ValueError)
+            else 'it could not be saved here. The blog is marked as published; mark it again '
+            'to retry.'
+        }
+    kept = {'id': source['id'], 'revision': source['revision']}
+    if prior is None or prior.get('revision') != source['revision']:
+        kept['receipt'] = receipt(root, 'Published blog', share(root, 'source', source), 'source')
+    return kept
+
+
 def dispatch(root, route, data):
     from team_workspace import space, before, saved, status, refresh, action, join
     from team_workspace import keep_desk_leftovers
@@ -2302,11 +2376,11 @@ class Busy(Exception):
 
 
 PROTOCOL_ERRORS = {
-    405: 'The editorial desk answers GET and POST requests only.',
+    405: 'Blog Studio’s page answers GET and POST requests only.',
     408: 'The request took too long to arrive.',
     414: 'The request address is too long.',
     431: 'The request headers are too large.',
-    501: 'The editorial desk answers GET and POST requests only.',
+    501: 'Blog Studio’s page answers GET and POST requests only.',
 }
 
 
@@ -2336,7 +2410,7 @@ def failure(exc, writing=False):
         return (409 if writing else 400), {'error': str(exc)[:500], 'code': 'source-conflict'}
     if isinstance(exc, Busy):
         return 503, {
-            'error': 'Another desk operation is still running. This request changed nothing; try again when it finishes.',
+            'error': 'Another change on this page is still running. This request changed nothing; try again when it finishes.',
             'code': 'busy',
         }
     if isinstance(exc, json.JSONDecodeError):
@@ -2347,7 +2421,7 @@ def failure(exc, writing=False):
         return 400, {'error': 'This text is not UTF-8. Save the file as UTF-8 text, then retry.'}
     if isinstance(exc, (KeyError, TypeError)):
         return 400, {
-            'error': 'This request was missing expected information. Reload the desk and try again, or continue in chat.'
+            'error': 'This request was missing expected information. Reload the page and try again, or continue in chat.'
         }
     if isinstance(exc, (ValueError, HubError, GoogleError)):
         return 400, {'error': str(exc)[:500]}
@@ -2355,7 +2429,7 @@ def failure(exc, writing=False):
         after = 'Inspect retained work before retrying.' if writing else 'Saved work is preserved.'
         return 503, {'error': 'Workspace access failed. ' + after}
     return 500, {
-        'error': 'The desk helper hit an unexpected problem. Reload the desk; saved work is kept, and you can continue in chat.',
+        'error': 'The page hit an unexpected problem. Reload the page; saved work is kept, and you can continue in chat.',
         'code': 'unexpected',
     }
 
@@ -2490,6 +2564,15 @@ def view(root, name, query):
                 return blog_runner.settings(root)
             if name == 'run-file':
                 return blog_runner.document(root, arg('id'), arg('stage'))
+            import desk
+
+            directory, _ = studio.item(root, 'articles', arg('id'))
+            if (
+                desk.on_desk(directory)
+                and not studio.inside(directory, blog_runner.STATE).is_file()
+            ):
+                # A blog on the writing desk has no run: its address opens the desk.
+                return {'id': arg('id'), 'on_desk': True}
             return blog_runner.engine(root).describe(arg('id'))
     limit, offset = whole(arg('limit', 20)), whole(arg('offset', 0))
     if name == 'board':
@@ -2697,7 +2780,7 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
             if api and not secrets.compare_digest(
                 self.headers.get('X-Blog-Studio-Token', ''), token
             ):
-                raise ValueError('Open the current editorial desk link to reconnect.')
+                raise ValueError('Reopen this page’s link to reconnect.')
 
         def opening_page(self):
             """A person following the desk link from another page: a top-level visit to the page shell.

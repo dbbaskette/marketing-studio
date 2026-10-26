@@ -83,6 +83,20 @@ class ReviewLevelsTests(DeckCase):
             self.decide(root, waiting)
         return self.view(root)
 
+    def test_a_documents_only_balanced_training_promises_one_stop_fewer(self):
+        from runner import engine as engines
+        contract = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'balanced'}), \
+                mock.patch.object(engines.research_contract, 'snapshot',
+                                  return_value=contract):
+            made = self.engine.start(pipeline.check_form({
+                **FORM, 'deck_target': 'pptx', 'brand': CHOSEN,
+                'research_from': {'documents': True, 'sites': [], 'web': False}}))
+        self.assertEqual(made['gates'], 3, 'the direction, the deck, the materials: the plan '
+                         'is written from the form')
+        self.assertTrue(pipeline.planned_from_form(self.engine._load(Path(made['path']))))
+
     def test_balanced_reads_the_research_plan_before_anything_is_researched(self):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
             made = self.engine.start(pipeline.check_form({**FORM, 'deck_target': 'pptx',
@@ -162,7 +176,8 @@ class ReviewLevelsTests(DeckCase):
         # its plan is left where it is.
         from runner_support import fails
 
-        def before(record, product, gate, last=None, holding=(), first='outline'):
+        def before(record, product, gate, last=None, holding=(), first='outline',
+                   run_gates=None):
             return not gate.startswith('review:') and gate not in ('documents', 'intake', 'deck')
 
         with mock.patch.object(review_policy, 'automatic', before):
@@ -366,9 +381,9 @@ class ReviewLevelsTests(DeckCase):
         self.assertEqual(items['research']['rewrites'], [
             'the level 101 blueprint', 'the level 101 learner guide',
             'the level 201 blueprint', 'the level 201 learner guide',
-            'Deck direction · Level 101', 'Deck direction · Level 201'])
+            'the level 101 deck outline', 'the level 201 deck outline'])
         self.assertEqual(items['blueprint@201']['rewrites'], [
-            'the level 201 learner guide', 'Deck direction · Level 201'])
+            'the level 201 learner guide', 'the level 201 deck outline'])
         self.assertEqual(items['outline:201']['rewrites'], [])
         commits = shown['review']['commits']
         self.assertEqual({key: commits[key] for key in ('levels', 'materials', 'deck')},
@@ -404,6 +419,75 @@ class ReviewLevelsTests(DeckCase):
         shown = self.approve_review(root, shown)
         self.assertEqual(shown['review']['phase'], 'final')
         self.assertIsNone(shown['review']['commits'])
+
+    def test_row_134_a_final_change_keeps_the_first_drafts_approval(self):
+        root, shown = self.choose('balanced', levels=['101'])
+        shown = self.approve_review(root, shown)
+        self.assertEqual(shown['review']['phase'], 'final')
+        guide = next(item for item in shown['review']['items']
+                     if item['target'] == 'document@101')
+        self.assertIn('the level 101 slide deck', guide['rewrites'])
+        from runner_support import DOCUMENT
+
+        def shorter(tools, job):
+            accepted = tools.submit_artifact('document', DOCUMENT.replace('25 minutes',
+                                                                          '20 minutes'))
+            assert accepted[0], accepted[1]
+            tools.submit_review('Shortened, as asked.')
+        self.workers.then('document', shorter)
+        outlined = len([event for event in self.engine._load(root).get('review_events') or ()
+                        if event['gate'] == 'gate:deck-outline@101'])
+        self.engine.review_decide(root, shown['review']['expected'], 'revise',
+                                  'document@101', 'Shorten the second section.')
+        record = self.engine._load(root)
+        self.assertIn('direction', record.get('review_decisions') or {})
+        seen = []
+        for _ in range(6):
+            shown = self.view(root)
+            waiting = workspace.status(root)['gate']
+            seen.append((shown['review'] or {}).get('phase') or waiting)
+            if shown['review'] and shown['review']['phase'] == 'final':
+                break
+            self.assertIsNotNone(waiting, shown)
+            self.decide(root, waiting)
+        self.assertNotIn('direction', seen)
+        self.assertEqual(seen, ['deck@101', 'final'])
+        events = [event for event in self.engine._load(root).get('review_events') or ()
+                  if event['gate'] == 'gate:deck-outline@101']
+        # The scripted outline writer writes the same outline again, so the core keeps it;
+        # whichever way, the deck outline is the policy's, never a stop of its own.
+        self.assertGreaterEqual(len(events), outlined)
+        self.assertEqual({event['by'] for event in events}, {'review-policy'})
+
+    def test_a_kept_first_drafts_approval_ends_with_the_finished_materials(self):
+        root, shown = self.choose('balanced', levels=['101'])
+        shown = self.approve_review(root, shown)
+        self.engine.review_decide(root, shown['review']['expected'], 'revise',
+                                  'document@101', 'Shorten the second section.')
+        self.assertTrue(self.engine._load(root)['review_decisions']['direction'].get('carried'))
+        for _ in range(6):
+            shown = self.view(root)
+            if shown['review'] and shown['review']['phase'] == 'final':
+                break
+            self.decide(root, workspace.status(root)['gate'])
+        self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        kept = self.engine._load(root)['review_decisions']['direction']
+        self.assertNotIn('carried', kept, 'approving the finished materials settles it')
+        from runner import reviews
+        found = self.engine._survey(root, self.engine._load(root))
+        self.assertEqual(kept['signature'], reviews.signature(
+            root, found.session, self.engine._load(root), 'direction'))
+
+    def test_a_change_outside_the_review_brings_the_first_drafts_back(self):
+        root, shown = self.choose('balanced', levels=['101'])
+        shown = self.approve_review(root, shown)
+        self.engine.review_decide(root, shown['review']['expected'], 'revise',
+                                  'document@101', 'Shorten the second section.')
+        record = self.engine._load(root)
+        from runner import reviews
+        reviews.uncarry(record)
+        self.assertNotIn('direction', record['review_decisions'],
+                         'a change made elsewhere is reviewed with the first drafts again')
 
     def test_final_scenario_revision_does_not_repeat_the_unchanged_direction_review(self):
         root, shown = self.choose('balanced')

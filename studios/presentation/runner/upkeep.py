@@ -1421,7 +1421,9 @@ class Upkeep:
                 'links': list((found or {}).get('links', [])),
                 'repaired': list((found or {}).get('repaired', [])),
                 'companions': list((found or {}).get('companions', [])),
-                'update': {'offered': bool(wanted and found['installer'] and not busy),
+                # Marketing Studio installs and updates a suite's companions too.
+                'update': {'offered': bool(wanted and found['installer'] and not busy
+                                           and not self.suite_managed()),
                            'state': update and update['state'],
                            'since': update and update['since'],
                            'says': update and update['says']},

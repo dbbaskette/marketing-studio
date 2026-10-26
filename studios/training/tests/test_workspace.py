@@ -1207,7 +1207,7 @@ class MoveOnTests(PlainCase):
                 ('document', 'brief', 'Write the brief'),
                 ('brief', 'deck', 'Hand the deck to harness-slides'),
                 ('deck', 'scenario', 'Prepare the scenarios'),
-                ('scenario:main', 'yoodli', 'Build the Yoodli scenarios'),
+                ('scenario:main', 'yoodli', 'Write the Yoodli scenarios'),
                 ('yoodli:main', 'package', 'Write the index')):
             with self.subTest(name):
                 outcome = self.decided(name)

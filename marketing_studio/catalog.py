@@ -3,7 +3,7 @@ import os
 from pathlib import Path
 
 STUDIOS = {
-    'blog': ('Blog Studio', 'blog-studio', 'Shape your ideas into blogs in your voice.', 'blogs'),
+    'blog': ('Blog Studio', 'blog-studio', 'Write blogs on one desk, from a topic, notes or a draft.', 'blogs'),
     'presentation': ('Presentation Studio', 'presentation-studio', 'Build a researched deck in your brand.', 'presentations'),
     'training': ('Training Studio', 'training-studio', 'Turn a topic into training people can use.', 'trainings'),
 }

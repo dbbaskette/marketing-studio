@@ -209,7 +209,7 @@ from runner import agents, companion, deck, gitstate, pipeline, settings, team, 
 from runner import brand as brand_skill
 from runner import brand_source
 from runner import copies as copies_made
-from runner.copies import BOTH, KEPT_OURS, PULLED
+from runner.copies import BOTH, CHANGED_THERE, KEPT_OURS, MISSING_DOC, PULLED, UNPLACED, worded
 from runner import documents as documents_kept
 from runner import index as index_written
 from runner import research as research_cli
@@ -264,7 +264,7 @@ DECK = {'deck-handoff': '_handoff', 'deck-brand': '_export', 'gate:deck-outline'
         'deck-look': '_looks',
         'deck-start': '_split', 'deck-sections': '_sections', 'deck-repair': '_sections',
         'deck-whole': '_whole', 'deck-review': '_review', 'deck-save': '_keep'}
-SUPPLYING = ('add', 'remove', 'done')
+SUPPLYING = ('add', 'remove', 'done', 'update')
 DECIDING = ('approve', 'revise')    # what a person may decide about what a deck says
 STATES = {'working': 'working', 'waiting': 'waiting for you', 'paused': 'paused',
           'stopped': 'stopped', 'failed': 'stopped on a problem',
@@ -297,8 +297,16 @@ AWAY = ("This training's decisions are made in the conversation now, so the runn
 NO_PDF = 'This computer cannot read a PDF: save it as text or as a Word file first.'
 NOT_HERE = ('The documents this training was researched from are on another computer. '
             'Research cannot be run again here until they are added again.')
-SETTLED = ('The research for this training was planned from the documents already added, so '
-           'they cannot be changed now.')
+SETTLED = ('The research has read the documents already added, so they cannot be removed '
+           'now. You can add another and update the research.')
+ALL_ADDED = 'Your documents are all added already. Add another, then update the research.'
+NO_DOCUMENTS = ("This training's research does not read documents, so it takes none. Start a "
+                'new training that reads your documents to use this one.')
+UPDATE_UNPRICED = ('Updating the research runs it again, then makes again what is written '
+                   'from it. This computer has no record of what that costs.')
+WORKING = 'Wait for the step in hand to finish, or pause the training, then add it.'
+NO_LATER = ('No document was added after the research, so there is nothing to update it '
+            'with.')
 REVIEW_DECIDES = ('This is part of the {name} that is waiting for you, so it is decided there, '
                   'with everything the review covers. Nothing was changed.')
 REVIEW_NAMES = {'direction': 'first drafts review', 'final': 'final review'}
@@ -1046,13 +1054,15 @@ class Engine(Reviewing):
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
             and not needs['design_update' if form.get('walkthrough') else 'update'] \
             and not needs['old_brand']
-        # Balanced stops three times: the research plan, the direction, the finished materials;
-        # Automatic draft once, at the finished materials. Each deck drawn here stops too.
+        # Balanced stops three times: the research plan, the direction, the finished materials,
+        # or twice when the plan is written from the form; Automatic draft once, at the
+        # finished materials. Each deck drawn here stops too.
         chosen = review_policy.level(record)
         decks = max(1, len(form['levels'])) if drawn else 0
+        balanced = 2 if pipeline.planned_from_form(record) else 3
         return {'path': str(root), 'id': root.name, 'gates': (
             pipeline.gates(form, drawn) if chosen == 'step_by_step'
-            else (3 if chosen == 'balanced' else 1) + decks)}
+            else (balanced if chosen == 'balanced' else 1) + decks)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
         """Share the claim a new training was committed with, before any work is done
@@ -1333,8 +1343,8 @@ class Engine(Reviewing):
         """Stop a training in a state that says what went wrong and offers one action.
         `waits` names what it waits for, when something done on the page settles it.
         `detail` is kept with the problem for what its action needs to know."""
-        label = {'retry': 'Try again', 'resume': 'Carry on',
-                 stops.MORE_TIME: stops.MORE_TIME_LABEL}.get(action)
+        label = {'resume': 'Carry on', 'asset': 'Add the picture', 'new': 'New training',
+                 **stops.ACTION_LABELS}.get(action)
         with self.files:
             record = self._load(root)
             record['problem'] = {'state': state, 'step': step, 'what': what, 'kept': kept,
@@ -1410,7 +1420,15 @@ class Engine(Reviewing):
             approved = (session['artifacts'].get(entry['artifact']) or {}).get('approved')
             if approved:
                 tried[entry['artifact']] = approved['sha256']
-        record['copies'] = {'problems': dict(problems or {}), 'tried': tried}
+        # What Google was last found to hold is kept until the Doc is brought in. A push
+        # refused because the Doc was changed there says so too.
+        remote = dict((record.get('copies') or {}).get('remote') or {})
+        for name, said in (problems or {}).items():
+            if said == CHANGED_THERE:
+                remote[name] = 'both changed'
+        record['copies'] = {'problems': dict(problems or {}), 'tried': tried,
+                            **({'remote': remote, 'checked_at': record['copies'].get(
+                                'checked_at')} if remote else {})}
 
     def _copy(self, root: Path, step: pipeline.Step) -> None:
         """After an approval: make the copies the training asked for. One that cannot be
@@ -2148,8 +2166,9 @@ class Engine(Reviewing):
         except WorkspaceError as refusal:
             said.append(f'The slides tool could not say what is recorded. {refusal}')
         if said:
+            # It leads with the picture: the page opens the deck's picture form.
             self._problem(root, it.id, 'waiting', ASSETS_WAIT.format(said=' '.join(said)),
-                          ASSETS_KEPT, waits='assets')
+                          ASSETS_KEPT, action='asset', waits='assets')
             return None
         return pipeline.assets_now(root, level)
 
@@ -2926,9 +2945,10 @@ class Engine(Reviewing):
         """What a deck of this size has cost before, said before any of it is drawn."""
         slides = len(deck.slides_of(found.decks[self._level(step.step)].outline))
         cost = deck.before(slides)
-        return (f" A deck of {slides} slides has cost about ${cost['dollars']:,.2f} and "
-                f"{cost['minutes']:g} minutes of agent time to draw before, and as much "
-                'again each time its slides were drawn again after a review.')
+        return (f" A deck of {slides} slides is estimated at about ${cost['dollars']:,.2f} "
+                f"and {cost['minutes']:g} minutes of assistant time (a fixed estimate per "
+                "slide, not this computer's history), and as much again each time its slides "
+                'are drawn again after a review.')
 
     def _live(self, run: _Run, drawing: pipeline.Step | None) -> dict:
         """The sections workers are drawing now, each with how many previews it has taken
@@ -3199,7 +3219,7 @@ class Engine(Reviewing):
         elif stops.agent_stopped('', outcome, detail) is not None:
             self._problem(root, 'research' if question else step.id, 'failed',
                           stops.agent_stopped(self._title(record['agent']), outcome, detail),
-                          KEPT)
+                          KEPT, action=stops.agent_action(outcome))
         elif not question and entry['failed'] >= pipeline.ATTEMPTS:
             if outcome.reason == 'timeout':
                 return self._out_of_time(root, step.id, step.label, record, pipeline.ATTEMPTS)
@@ -3266,7 +3286,7 @@ class Engine(Reviewing):
                 self._store(root, record)
                 self._commit(root, 'write the research plan from the form')
             return
-        sources = (self.documents.sources(root)
+        sources = (self._sources(root, record)
                    if it.id == 'research-plan' and record.get('documents') else None)
         naming = (self._naming(root, found.session)
                   if it.stage in pipeline.NAMED and it.kind == 'agent' else None)
@@ -3357,7 +3377,8 @@ class Engine(Reviewing):
             return self._spend_stop(root, 'The research')
         if stops.agent_stopped('', outcome, outcome.detail) is not None:
             return self._problem(root, 'research', 'failed', stops.agent_stopped(
-                self._title(record['agent']), outcome, outcome.detail), KEPT)
+                self._title(record['agent']), outcome, outcome.detail), KEPT,
+                action=stops.agent_action(outcome))
         if outcome.reason == 'timeout':
             return self._out_of_time(root, 'research', 'The research', record, 1)
         self._problem(root, 'research', 'failed', str(refusal), KEPT)
@@ -3408,7 +3429,7 @@ class Engine(Reviewing):
         """One try at each question still to answer, several at a time."""
         record = self._load(root)
         if record.get('research_contract'):
-            offered = self.documents.sources(root)[1] if record.get('documents') else []
+            offered = self._sources(root, record)[1] if record.get('documents') else []
             looks = pipeline.research_of(record)
             # A run that pinned where its research may look names the allowed sites in the
             # task's scope; one saved before keeps the scope it was researched under.
@@ -3468,7 +3489,7 @@ class Engine(Reviewing):
         it = pipeline.Step(f'research:{ident}', 'agent', f'Research the question {ident}',
                            f'Researching the question {ident}', 'research')
         record = self._load(root)
-        sources = self.documents.sources(root) if record.get('documents') else None
+        sources = self._sources(root, record) if record.get('documents') else None
         work = pipeline.question_work(root, found, ident, request, last_error(record, it.id),
                                       sources)
         outcome, handed, started_at, folder = self._job(root, run, it, work)
@@ -3592,7 +3613,7 @@ class Engine(Reviewing):
         record.pop('last_decision_stop', None)
         self._store(root, record)
 
-    def decided(self, path, outcome: dict) -> bool:
+    def decided(self, path, outcome: dict, checked: bool = False) -> bool:
         """Commit a decision the page has just recorded. False when no run is driving the
         training, so there is nothing to commit or wake.
 
@@ -3600,18 +3621,21 @@ class Engine(Reviewing):
         decision and its commit are one thing; then let go and call `carry_on`. A change
         the person asked for starts its step afresh. A decision about a file a combined
         review covers is refused: `refuse_while_reviewing` says so before anything is
-        recorded, and this is the last word should anything else record one.
+        recorded, and this is the last word should anything else record one. `checked` says
+        the caller asked it before recording: then the decision itself may be what brings
+        the review up, as approving the last deck before the finished materials does.
         """
         root = self.driven(path)
         if root is None:
             return False
         self.hold(root)
-        if outcome.get('artifact'):
+        if outcome.get('artifact') and not checked:
             self.refuse_while_reviewing(root, outcome.get('decision') or '')
         with self.files:
             record = self._load(root)
             target = outcome.get('artifact')
             if outcome.get('request') and target:
+                review_layout.uncarry(record)   # made outside a review: reviewed again
                 self._fresh(record, target)
                 base, level = workspace.split(target)
                 for step in pipeline.DECK_STEPS if base == 'deck' else ():
@@ -3691,7 +3715,9 @@ class Engine(Reviewing):
                 if state not in ('paused', 'stopped') and problem.get('action') != 'resume':
                     raise WorkspaceError('This training is not paused or stopped, so there '
                                          'is nothing to resume.')
-            elif problem.get('action') not in ('retry', stops.MORE_TIME) or (
+            # A deck waiting for its pictures is looked at again on Try again too.
+            elif problem.get('action') not in ('retry', 'asset', stops.STATUS,
+                                               stops.MORE_TIME) or (
                     action == stops.MORE_TIME and problem.get('action') != stops.MORE_TIME):
                 raise WorkspaceError('Nothing here failed, so there is nothing to try again.')
             elif problem.get('unreadable') and unserved:
@@ -3778,20 +3804,23 @@ class Engine(Reviewing):
 
     def supply(self, path, action: str, name: str | None = None,
                data: bytes | None = None) -> dict:
-        """Add one of the person's documents, remove one, or take their word that they are
-        all added. `data` is the document as it was sent. Nothing is researched until they
-        are all added, and after that they cannot be changed."""
+        """Add one of the person's documents, remove one, take their word that they are
+        all added, or update the research with those added since. `data` is the document as
+        it was sent. Nothing is researched until they are all added. After that a document
+        can still be added: it is kept, not read, until the person updates the research."""
         root = self._held(path)
         if action not in SUPPLYING:
             raise WorkspaceError('A document can be: ' + ', '.join(SUPPLYING) + '.')
+        if action == 'update':
+            return self.update_research(path)
         with self.files:
             record = self._load(root)
             given = record.get('documents')
             if not given:
-                raise WorkspaceError('This training is researched from the public web, so '
-                                     'it takes no documents.')
+                raise WorkspaceError(NO_DOCUMENTS)
             if self._survey(root, record).next.kind != 'documents':
-                raise WorkspaceError(SETTLED)
+                self._later(root, record, action, name, data)
+                return self.view(root)
             if action == 'add':
                 self.documents.add(root, name or '', data or b'')
             elif action == 'remove':
@@ -3815,6 +3844,75 @@ class Engine(Reviewing):
                              .rstrip('.'))
         if action == 'done':
             self.wake(root)
+        return self.view(root)
+
+    def _later(self, root: Path, record: dict, action: str, name, data) -> None:
+        """A document added, or taken back, once the research was planned: kept and listed
+        as not read yet, and read only when the person updates the research. Call it holding
+        `files`."""
+        given = record['documents']
+        later = [entry for entry in given.get('later') or () if isinstance(entry, dict)]
+        if action == 'done':
+            raise WorkspaceError(ALL_ADDED)
+        if action == 'remove':
+            if (name or '') not in [entry.get('name') for entry in later]:
+                raise WorkspaceError(SETTLED)
+            self.documents.remove(root, name or '')
+            given['later'] = [entry for entry in later if entry.get('name') != name]
+            said = f'{name} is taken back: it was added after the research'
+        else:
+            run = self._run(root)
+            if run.workers or run.busy:
+                raise WorkspaceError(WORKING)
+            self.documents.add(root, name or '', data or b'')
+            given['later'] = [*later, {'name': name, 'added_at': home.now()}]
+            said = f'{name} is added after the research, not read yet'
+        self._store(root, record)
+        self._commit(root, said)
+
+    def _sources(self, root: Path, record: dict) -> tuple[list, list]:
+        """The person's documents as research is given them: every readable one but those
+        added after the research, which are read only once the research is updated."""
+        plan, offered = self.documents.sources(root)
+        later = {entry.get('name') for entry in (record.get('documents') or {}).get('later')
+                 or () if isinstance(entry, dict)}
+        if not later:
+            return plan, offered
+        held = {entry.get('file') for entry in self.documents.listed(root)
+                if entry.get('name') in later}
+        return ([entry for entry in plan if entry.get('file') not in held],
+                [entry for entry in offered if entry.get('file') not in held])
+
+    def update_research(self, path) -> dict:
+        """Read the documents added since the research, as the person asks: a research
+        request that brings the evidence up to date, as Bring the evidence up to date does,
+        naming them. Its price is said on the page before it is asked for."""
+        root = self._held(path)
+        with self.files:
+            record = self._load(root)
+            given = record.get('documents') or {}
+            names = [entry.get('name') for entry in given.get('later') or ()
+                     if isinstance(entry, dict)]
+            if not names:
+                raise WorkspaceError(NO_LATER)
+            run = self._run(root)
+            if run.workers or run.busy:
+                raise WorkspaceError(WORKING)
+            self.refuse_while_reviewing(root, 'revise')
+            note = 'Read the documents added since: ' + ', '.join(names) + '.'
+            outcome = workspace.decide(root, 'research', 'revise', note, by='page',
+                                       refresh=True)
+            with workspace.locked(root):
+                session = workspace.load(root)
+                session['requests'][-1]['added'] = names
+                workspace.store(root, session)
+            outcome['request'] = {**outcome['request'], 'added': names}
+            record = self._load(root)
+            review_layout.uncarry(record)
+            record['documents'] = {**record['documents'], 'later': []}
+            self._store(root, record)
+        self.decided(path, outcome, checked=True)
+        self.carry_on(path)
         return self.view(root)
 
     def supply_asset(self, path, level: str | None, asset: str, data: bytes, alt: str,
@@ -3889,6 +3987,10 @@ class Engine(Reviewing):
                 raise WorkspaceError("It is being worked on. Bring the Doc's changes in once it stops.")
             outcome = self.copies.pull(root, artifact, choose=choose)
             record = self._load(root)
+            if outcome['result'] != 'both-changed':
+                ((record.get('copies') or {}).get('remote') or {}).pop(artifact, None)
+            if outcome['result'] == 'pulled':
+                review_layout.uncarry(record)   # the Doc's edit is reviewed again
             self._make(root, record)
             self._store(root, record)
             self._commit(root, 'bring the Google Doc’s changes into '
@@ -3898,7 +4000,60 @@ class Engine(Reviewing):
                 KEPT_OURS if outcome['result'] == 'kept' else
                 PULLED if outcome['result'] == 'pulled' else
                 'The Doc has no new changes to bring in.')
-        return {**self.view(root), 'said': said.format(label=workspace.label(artifact))}
+        unplaced = outcome.get('unplaced') or []
+        return {**self.view(root), 'said': worded(said, workspace.label(artifact)),
+                **({'unplaced': UNPLACED.format(headings=', '.join(unplaced))}
+                   if unplaced else {})}
+
+    def remake_copy(self, path, artifact: str) -> dict:
+        """Make a new Google Doc for a copy whose Doc Google cannot find, as the person
+        asks: the old link goes, and the Doc is made again from the file as it stands."""
+        root = self._held(path)
+        with self.files:
+            if self._busy_on(root, artifact):
+                raise WorkspaceError('It is being worked on. Make the new Google Doc once it '
+                                     'stops.')
+            self.copies.remake(root, artifact)
+            record = self._load(root)
+            ((record.get('copies') or {}).get('problems') or {}).pop(artifact, None)
+            ((record.get('copies') or {}).get('remote') or {}).pop(artifact, None)
+            self._store(root, record)
+            self._commit(root, 'make a new Google Doc of ' + workspace.label(artifact)
+                         + ', as asked on the page')
+        return {**self.view(root), 'said': 'A new Google Doc of '
+                + workspace.label(artifact) + ' is made.'}
+
+    def check_copies(self, path) -> dict:
+        """Look for changes made in the Google Docs, as the person asks: the one time
+        Google is asked about them. Refused while a worker writes any of their files."""
+        root = self._held(path)
+        with self.files:
+            record = self._load(root)
+            linked = [entry['artifact'] for entry in self._wanted(root, record)
+                      if entry['kind'] == 'google' and entry['link']]
+            if any(self._busy_on(root, name) for name in linked):
+                raise WorkspaceError('It is being worked on. Look for changes in Google Docs '
+                                     'once it stops.')
+        # Google is asked with nothing held, so a slow answer holds up nothing else.
+        found = self.copies.check(root)
+        with self.files:
+            record = self._load(root)
+            record['copies'] = {**(record.get('copies') or {}),
+                                'remote': {name: state for name, state in found.items()
+                                           if not state.startswith('unchecked')},
+                                'checked_at': home.now()}
+            self._store(root, record)
+            self._commit(root, 'look for changes in the Google Docs, as asked on the page')
+        unchecked = {workspace.label(name): state.partition(': ')[2]
+                     for name, state in found.items() if state.startswith('unchecked')}
+        changed = [name for name, state in found.items()
+                   if state in ('remote changed', 'both changed')]
+        said = (workspace.sentence(', '.join(unchecked)) + ' could not be checked: '
+                + (next(iter(unchecked.values())) or 'Google could not be asked.')
+                if unchecked else
+                f'{len(changed)} Google Doc{"s were" if len(changed) != 1 else " was"} '
+                'changed there.' if changed else 'No Google Doc was changed there.')
+        return {**self.view(root), 'said': said}
 
     def copies_again(self, path) -> dict:
         """Make the copies that are not made, again, as the person asks. One that still
@@ -4373,18 +4528,31 @@ class Engine(Reviewing):
             note.append(NO_PDF)
         if given.get('count') and not any(entry.get('readable') for entry in added):
             note.append(NOT_HERE)
+        later = [{'name': entry.get('name'), 'added_at': entry.get('added_at')}
+                 for entry in given.get('later') or () if isinstance(entry, dict)]
+        price = self.research_price(root) if later else None
         return {'waiting': waiting,
                 'added': [{key: entry.get(key) for key in ('name', 'bytes', 'readable',
                                                            'problem')} for entry in added],
-                'types': types, 'limits': dict(self.documents.LIMITS), 'note': ' '.join(note)}
+                'types': types, 'limits': dict(self.documents.LIMITS), 'note': ' '.join(note),
+                # Added after the research was planned: kept, and not read until updated.
+                **({} if waiting else {'later': later}),
+                **({'update_price': price or {'words': UPDATE_UNPRICED}} if later else {})}
 
     @staticmethod
-    def _copies(found: pipeline.Survey) -> list[dict]:
+    def _copies(found: pipeline.Survey, remote=None) -> list[dict]:
         """The copies the page shows: each one of a file that is approved, and each that
         is behind a file that has changed since. One not made of a file not approved yet
         is left out, since there is nothing to make it from. A copy's label is the core's
         name for its file, to read in the middle of a sentence."""
+        remote = remote if isinstance(remote, dict) else {}
         return [{**({'conflict': True} if entry.get('conflict') else {}),
+                 # A Doc Google could not find is made again from here.
+                 **({'missing': True} if entry.get('problem') == MISSING_DOC else {}),
+                 # What Google was found to hold, when the person last asked.
+                 **({'remote': remote[entry['artifact']]} if entry['kind'] == 'google'
+                    and remote.get(entry['artifact']) in ('remote changed', 'both changed')
+                    else {}),
                  **{key: entry.get(key) for key in ('artifact', 'kind', 'state', 'link',
                                                     'problem')},
                  'label': workspace.label(entry['artifact'])} for entry in found.copies
@@ -4433,7 +4601,11 @@ class Engine(Reviewing):
         mine, who, state, sentence, last = self._whose(root, record, found, state, sentence)
         asked, problem = record.get('question'), record.get('problem')
         if problem is None and found.next.kind == 'stuck':
-            problem = {'what': found.next.why, 'action': None, 'label': None,
+            # Answers that are missing cannot be put right here: a new training can be
+            # started in its place, and this one deleted.
+            fresh = found.next.why == pipeline.MISSING_ANSWERS
+            problem = {'what': found.next.why, 'action': 'new' if fresh else None,
+                       'label': 'New training' if fresh else None,
                        'kept': 'Everything in the training\'s folder is as it was.'}
         dollars, tokens = spent(record)
         # The limit this run stops at: Settings' limit, raised by every Carry on.
@@ -4473,7 +4645,7 @@ class Engine(Reviewing):
                         if problem else None),
             'documents': self._supplied(root, record, found),
             'research_from': self._research_view(record),
-            'copies': self._copies(found),
+            'copies': self._copies(found, (record.get('copies') or {}).get('remote')),
             'outline': outline,
             'look': pipeline.look_view(root, found, level) if drawing else None,
             'deck': (pipeline.deck_view(root, found, level, self._live(run, drawing),
@@ -5031,8 +5203,16 @@ class Engine(Reviewing):
         if session.get('research_contract'):
             record['research_contract'] = session['research_contract']
             record['schema'] = 3
-        if record['documents'] and planned != 'not-started':
-            record['documents'].update(done=home.now(), count=0)
+        # Documents the conversation added are all added: research does not wait for them
+        # again, whether or not its plan was started.
+        readable = [entry for entry in self.documents.listed(root) if entry.get('readable')] \
+            if record['documents'] else []
+        if record['documents'] and (planned != 'not-started' or readable):
+            record['documents'].update(done=home.now(), count=len(readable))
+            if readable:   # as That is all of them marks them
+                (root / pipeline.ADDED).parent.mkdir(parents=True, exist_ok=True)
+                (root / pipeline.ADDED).write_text(f"{record['documents']['done']}\n",
+                                                   encoding='utf-8')
         research = workspace.research_record(root)
         if planned == 'approved' and research and research.get('run'):
             record['research'] = {'run': research['run'],

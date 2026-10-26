@@ -41,7 +41,7 @@
       </section>
       <section id="settings" hidden>
         <div class="intro"><p id="step-label" class="quiet"></p><h2 id="settings-title" class="large-title">Shared settings</h2><p id="settings-intro" class="lede">New work in every studio starts with these choices.</p></div>
-        <ol id="setup-progress" class="workflow-steps" aria-label="Setup progress" hidden><li class="workflow-step">You and your assistant</li><li class="workflow-step">Your workspace</li><li class="workflow-step">Brand and delivery</li></ol>
+        <ol id="setup-progress" class="workflow-steps" aria-label="Setup progress" hidden><li class="workflow-step">1. You and your assistant</li><li class="workflow-step">2. Your workspace</li><li class="workflow-step">3. Brand and delivery</li></ol>
         <form id="settings-form" class="setup-form">
           <section class="card" data-step="0"><h3 class="card-title">You and your assistant</h3><p class="quiet">Use your signed-in assistant for research, writing, and slide work.</p>
             <div class="field-grid">
@@ -55,28 +55,28 @@
               <div class="model-heading"><div><h4 class="sheet-part">Models for your work</h4><p class="quiet">Keep one model for everything, or choose a model for each kind of task.</p></div>
                 <div class="field"><p class="field-label" id="model-mode-label">Model routing</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="model-mode-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="models.mode" value="single" checked>One model</label><label class="seg-option"><input type="radio" name="models.mode" value="by_task">By task</label></div></div></div>
               <div id="model-profiles" hidden>
-                <p class="field-hint quiet">Quick handles extraction, classification and Presentation Studio outlines. Main handles research, drafting, slides, review and the first repair. Complex handles repeated slide findings and other dedicated repairs. New work saves these choices; existing work keeps its models.</p>
+                <p class="field-hint quiet">Quick handles extraction, classification and Presentation Studio outlines. Main handles research, drafting, slides, review and the first repair. Complex handles repeated slide findings and other dedicated repairs. Blog Studio uses Main for every job. New work saves these choices; existing work keeps its models.</p>
                 <div id="profile-cards" class="profile-cards"></div>
                 <div id="profile-review" class="paper callout" data-kind="yours" role="status" hidden><p>The assistant changed. Check the model IDs and reasoning levels before using these profiles with this assistant.</p><button type="button" id="confirm-profiles" class="button">Use these profiles with this assistant</button></div>
                 <p class="field-hint quiet">Use model IDs available in your signed-in account. The studios send your choice directly to the selected assistant and stop if it cannot be used.</p>
               </div>
             </div>
-            <div class="setup-part"><h4 class="sheet-part">Review level</h4>
-              <div class="field"><label class="field-label" for="review-level">When should work stop for your review?</label><select id="review-level" class="input" name="review.level" aria-describedby="review-level-help"><option value="balanced">Balanced — direction and finished work</option><option value="automatic">Automatic draft — finished work only</option><option value="step_by_step">Step by step — every stage</option></select>
-                <p id="review-level-help" class="field-hint quiet">Balanced brings research and the planned direction together for one review, then shows the finished work. Automatic draft continues to the finished draft. Checks, visual review, repairs and spending limits still apply. Publishing is a separate action. New work saves this choice; existing runs keep their review level.</p></div>
+            <div id="review-part" class="setup-part"><h4 class="sheet-part">Where new work stops</h4>
+              <div class="field"><label class="field-label" for="review-level">Level</label><select id="review-level" class="input" name="review.level" aria-describedby="review-level-help"><option value="balanced">Balanced — direction and finished work</option><option value="automatic">Automatic draft — finished work only</option><option value="step_by_step">Step by step — every stage</option></select>
+                <p id="review-level-help" class="field-hint quiet">Balanced brings research and the planned direction together for one review, then shows the finished work. Automatic draft continues to the finished draft. Checks, visual review, repairs and spending limits still apply. Publishing is a separate action. New work saves this choice; existing runs keep their review level. A blog on the writing desk has no stops: this sets where new decks, trainings and blogs run step by step in chat stop.</p></div>
             </div>
           </section>
-          <section class="card" data-step="1"><h3 class="card-title">Where your work lives</h3><p class="quiet">Keep a Git history on this computer, or share work through a repository.</p>
+          <section class="card" data-step="1"><h3 class="card-title">Your workspace</h3><p class="quiet">Keep a Git history on this computer, or share work through a repository.</p>
             <div class="field"><p class="field-label" id="storage-label">Workspace storage</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="storage-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="storage" value="local" checked>Local Git on this computer</label><label class="seg-option"><input type="radio" name="storage" value="remote">Shared repository</label></div></div>
-            <div id="local-fields" class="field"><label class="field-label" for="local-root">Work folder</label><input id="local-root" class="input" name="local.root" placeholder="~/Studios" aria-describedby="local-root-hint"><p id="local-root-hint" class="field-hint quiet">Each studio keeps a local repository inside this folder.</p></div>
+            <div id="local-fields" class="field"><label class="field-label" for="local-root">Workspace folder</label><input id="local-root" class="input" name="local.root" placeholder="~/Studios" aria-describedby="local-root-hint"><p id="local-root-hint" class="field-hint quiet">Each studio keeps a local repository inside this folder.</p></div>
             <div id="remote-fields" class="field-grid" hidden>
               <div class="field full"><label class="field-label" for="team-repository">Repository address</label><input id="team-repository" class="input" name="team.repository" placeholder="https://github.com/your-team/studio-work.git" autocomplete="off" aria-describedby="team-repository-hint"><p id="team-repository-hint" class="field-hint quiet">Use an existing repository without credentials in its address.</p></div>
               <div class="field"><label class="field-label" for="team-branch">Branch</label><input id="team-branch" class="input" name="team.branch" placeholder="main"></div>
-              <div class="field"><label class="field-label" for="share">Share changes</label><select id="share" class="input" name="share"><option value="decision">After each decision</option><option value="asked">When I ask</option></select></div>
+              <div class="field"><label class="field-label" for="share">Share changes</label><select id="share" class="input" name="share"><option value="decision">After each decision or applied change</option><option value="asked">When I ask</option></select></div>
             </div>
             <p class="field-hint quiet">Finishing setup prepares installed studios that have no workspace yet. Existing work stays where it is.</p>
           </section>
-          <section class="card" data-step="2"><h3 class="card-title">Brand and delivery</h3><p class="quiet">Choose the brand new work starts with. You can change it for each blog, presentation, or training. Existing work keeps its saved choice.</p>
+          <section class="card" data-step="2"><h3 class="card-title">Brand and delivery</h3><p class="quiet">Choose the brand new work starts with. You can change it for each presentation or training. Blogs written step by step in chat use it too. Existing work keeps its saved choice.</p>
             <h4 class="sheet-part">Where is your brand skill?</h4>
             <div class="bar"><button type="button" id="find-brands" class="button">Find installed brands</button></div>
             <p id="brand-catalog-status" role="status" class="field-hint quiet">Look up brand and variant IDs from installed skills, or enter them below. This does not install anything.</p>
@@ -91,7 +91,7 @@
             <details class="setup-more"><summary class="setup-more-label">Brand skill release options</summary>
               <div class="field"><label class="field-label" for="brand-release">Brand skill release <span class="quiet">(optional)</span></label><input id="brand-release" class="input" name="brand.release" placeholder="Newest release" aria-describedby="brand-release-hint"><p id="brand-release-hint" class="field-hint quiet">Pin a release tag from the repository, such as v1.4.0, or leave blank for the newest release.</p></div>
             </details>
-            <div class="setup-part"><h4 class="sheet-part">Delivery and previews</h4>
+            <div id="delivery-part" class="setup-part"><h4 class="sheet-part">Delivery and previews</h4>
               <div class="field-grid">
                 <div class="field"><label class="field-label" for="output">Deliver as</label><select id="output" class="input" name="output"><option value="pptx">PowerPoint and Word files</option><option value="google">Google Slides and Docs</option></select></div>
                 <div class="field"><label class="field-label" for="render-previews">Slide previews</label><select id="render-previews" class="input" name="render.previews" aria-describedby="render-previews-hint"><option value="">Match delivery format</option><option value="local">Local rendering (LibreOffice)</option><option value="drive">Google Drive</option></select><p id="render-previews-hint" class="field-hint quiet">Local rendering needs LibreOffice and image tools; Google Drive needs sign-in. Each studio checks availability.</p></div>
@@ -105,10 +105,10 @@
               <div class="copy-row"><input id="research-site-input" class="input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="docs.example.com/guide" aria-describedby="research-site-hint"><button type="button" id="research-site-add" class="button">Add site</button></div>
               <p id="research-site-hint" class="field-hint quiet" role="status">An https address: a host and an optional path. Pages are saved only from under it, so docs.example.com/guide covers docs.example.com/guide/install but not docs.example.com/blog. At most 50 sites. Save settings to keep the list.</p></div>
           </section>
+          <section id="installations" class="card" data-step="settings" hidden><h3 class="card-title">Studio installations</h3><p class="quiet">Installed studios and sibling checkouts are found automatically. Set a folder if yours is somewhere else. Save settings keeps them with the rest.</p><div id="path-fields" class="field-grid"></div></section>
           <p id="prepare-note" class="field-hint quiet" hidden>Finish setup will prepare installed studios with these choices. Your existing workspaces stay in place. For a shared repository, this creates a separate clone for each studio.</p>
           <div class="bar form-actions"><button type="button" id="back" class="button" hidden>Back</button><button type="submit" id="save" class="button button-filled">Save settings</button></div>
         </form>
-        <section id="installations" class="card" hidden><h3 class="card-title">Studio installations</h3><p class="quiet">Installed studios and sibling checkouts are found automatically. Set a folder if yours is somewhere else.</p><form id="paths-form"><div id="path-fields" class="field-grid"></div><div class="bar form-actions"><button type="submit" class="button">Save installation folders</button></div></form></section>
       </section>
       <section id="computer" hidden>
         <div class="intro"><h2 class="large-title">This computer</h2><p class="lede">Check the tools available to your studios. Each studio checks sign-in when you use it.</p></div>

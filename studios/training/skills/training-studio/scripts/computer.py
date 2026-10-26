@@ -21,6 +21,9 @@ COMMANDS = {
     'codex-sign-in': ('codex', 'login', 'status'),
     'node': ('node', '--version'),
     'gcloud': ('gcloud', '--version'),
+    # Read from this computer's own gcloud settings: no network.
+    'gcloud-account': ('gcloud', 'auth', 'list', '--filter=status:ACTIVE',
+                       '--format=value(account)'),
     'pandoc': ('pandoc', '--version'),
 }
 SERVICE = {'claude': 'api.anthropic.com', 'codex': 'chatgpt.com', 'codex-key': 'api.openai.com'}
@@ -119,6 +122,24 @@ def tool(ident: str, name: str, ran: dict, fix: str, optional: bool = False) -> 
                 [fact('Installed', 'problem', found)], fix, optional)
 
 
+GOOGLE_SIGN_IN = ('Not signed in. In a terminal, run `gcloud auth login '
+                  '--enable-gdrive-access`, then check this computer again.')
+
+
+def google_cli(ran: dict, account: dict, fix: str, optional: bool) -> dict:
+    """The Google Cloud CLI: installed, and the account it is signed in with, as this
+    computer's own gcloud settings say. Nothing is asked of Google."""
+    found = tool('gcloud', 'Google Cloud CLI', ran, fix, optional)
+    if found['state'] != 'ok':
+        return found
+    named = (account.get('output') or '').splitlines() if account.get('ok') else []
+    if named and named[0].strip():
+        found['facts'].append(fact('Signed in', 'ok', named[0].strip()))
+        return found
+    found['facts'].append(fact('Signed in', 'problem', 'not signed in'))
+    return {**found, 'state': 'problem', 'fix': GOOGLE_SIGN_IN}
+
+
 def skill(name: str, why: str, home: Path) -> dict:
     places = [harness for harness, parts in SKILL_FOLDERS.items()
               if home.joinpath(*parts, name).exists()]
@@ -152,10 +173,10 @@ def check(home: Path | None = None, google: bool = False) -> dict:
         tool('node', 'Node', node, f'Install Node {NODE_NEEDED} or newer. The research and '
              'slide skills run on it.'),
         *(skill(name, why, home) for name, why in SKILLS.items()),
-        tool('gcloud', 'Google Cloud CLI', ran['gcloud'],
-             'Install the Google Cloud CLI, then run `gcloud auth login '
-             '--enable-gdrive-access`. It is used only for Google Docs and Google Slides.',
-             optional=not google),
+        google_cli(ran['gcloud'], ran['gcloud-account'],
+                   'Install the Google Cloud CLI, then run `gcloud auth login '
+                   '--enable-gdrive-access`. It is used only for Google Docs and Google '
+                   'Slides.', optional=not google),
         tool('pandoc', 'pandoc', ran['pandoc'],
              'Optional. Install pandoc if you want Word copies of guides and briefs.',
              optional=True),

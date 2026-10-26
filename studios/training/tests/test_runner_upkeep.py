@@ -246,6 +246,16 @@ class CompanionTests(UpkeepCase):
         self.assertTrue((self.claude / 'harness-slides' / 'SKILL.md').is_file(),
                         "a companion's own links are never touched here")
 
+    def test_a_suite_install_offers_no_companion_update(self):
+        keep = self.keeper()
+        self.companion(self.claude, 'harness-research', '0.7.0')
+        keep.check()
+        self.assertTrue(keep.report()['update']['offered'], 'a companion is wanted')
+        with mock.patch.object(keep, 'suite_managed', return_value=True):
+            shown = keep.report()
+        self.assertFalse(shown['update']['offered'])
+        self.assertEqual(shown['versions']['suite'], 'marketing-studio')
+
     def test_companions_as_new_as_their_pins_offer_nothing(self):
         keep = self.keeper()
         for skills in (self.claude, self.codex):

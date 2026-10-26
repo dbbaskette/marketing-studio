@@ -1195,11 +1195,11 @@ class PlainWordsTests(PageCase):
         self.assertEqual((first['state'], first['sentence'], first['stage_name'],
                           first['approval']), ('in-progress', 'Complete intake', 'Start', 'chat'))
         self.assertEqual([(stage['name'], stage['state']) for stage in first['stages']],
-                         [('Start', 'current'), ('Questions', 'not-started'),
+                         [('Start', 'current'), ('Research plan', 'not-started'),
                           ('Research', 'not-started'), ('Blueprint', 'not-started'),
                           ('Guide', 'not-started'), ('Brief', 'not-started'),
                           ('Deck', 'not-started'), ('Practice', 'not-started'),
-                          ('Wrap-up', 'not-started')])
+                          ('Index', 'not-started')])
         self.cli('checkpoint', '--next', '')
         self.assertEqual(self.shown()['sentence'], 'At the Start stage.')
 
@@ -1213,10 +1213,10 @@ class PlainWordsTests(PageCase):
         self.cli('checkpoint', '--stage', 'package')
         shown = self.shown()
         self.assertEqual([(stage['name'], stage['words']) for stage in shown['stages']],
-                         [('Start', 'done'), ('Questions', 'done'), ('Research', 'done'),
+                         [('Start', 'done'), ('Research plan', 'done'), ('Research', 'done'),
                           ('Blueprint', 'done'), ('Guide', 'done'), ('Brief', 'left out'),
                           ('Deck', 'could not be made'), ('Practice', 'done'),
-                          ('Wrap-up', 'done')])
+                          ('Index', 'done')])
         self.assertEqual((shown['state'], shown['sentence']),
                          ('finished', 'Finished, with 2 things left out or limited.'))
 
@@ -1309,7 +1309,8 @@ class ComputerTests(PageCase):
 
     FOUND = {'claude': '2.1.0 (Claude Code)', 'codex': 'codex-cli 0.48.0',
              'codex-sign-in': 'Logged in using ChatGPT', 'node': 'v22.3.0',
-             'gcloud': 'Google Cloud SDK 501.0.0\nbq 2.1.9', 'pandoc': 'pandoc 3.5'}
+             'gcloud': 'Google Cloud SDK 501.0.0\nbq 2.1.9', 'gcloud-account': 'ana@example.com',
+             'pandoc': 'pandoc 3.5'}
 
     def looked(self, found: dict | None = None, unreachable: dict | None = None,
                skills=('harness-research', 'harness-slides'), google: bool = False) -> dict:
@@ -1361,7 +1362,9 @@ class ComputerTests(PageCase):
         self.looked()
         self.assertEqual(sorted(self.ran), sorted([
             ('claude', '--version'), ('codex', '--version'), ('codex', 'login', 'status'),
-            ('node', '--version'), ('gcloud', '--version'), ('pandoc', '--version')]))
+            ('node', '--version'), ('gcloud', '--version'),
+            ('gcloud', 'auth', 'list', '--filter=status:ACTIVE', '--format=value(account)'),
+            ('pandoc', '--version')]))
         self.assertEqual(sorted(self.reached),
                          ['api.anthropic.com', 'api.openai.com', 'chatgpt.com'])
         for command in computer.COMMANDS.values():
@@ -1924,6 +1927,27 @@ class PageScriptTests(ScriptedPage, PageCase):
     left a control without a name, or put a click on something that is not a control fails.
     """
 
+    def test_a_gate_says_why_it_cannot_be_skipped_while_yoodli_is_on(self):
+        self.research()
+        for name, file in (('blueprint', 'blueprint.md'), ('document', 'document.md'),
+                           ('brief', 'product-brief.md')):
+            self.make(name, file, test_cli.example(file))
+        session = workspace.load(self.root)
+        session['artifacts']['brief'].pop('approved', None)
+        workspace.store(self.root, session)
+        self.cli('checkpoint', '--approval', 'page', '--gate', 'brief', '--stage', 'brief',
+                 '--question', 'Ready?')
+        gate = self.read('gate', path=str(self.root), artifact='brief')
+        self.assertEqual(gate['body']['held_by'], 'yoodli')
+        self.assertNotIn('skip', gate['body']['decisions'])
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')], 'GET /api/gate': [gate]}
+        result = self.run_page(answers, [{'click': 'Review the brief'}, {'click': 'More'},
+                                         {'snapshot': 'menu'}])
+        self.assertIn('The brief and the practice scenarios cannot be skipped while Make '
+                      'scenarios for Yoodli is on: Yoodli uses both.',
+                      result['snapshots']['menu']['text'])
+
     def test_every_deliverable_can_be_downloaded(self):
         self.research()
         self.complete()
@@ -1944,6 +1968,25 @@ class PageScriptTests(ScriptedPage, PageCase):
         sent = next(r for r in result['requests'] if r['address'].startswith('/api/download?'))
         self.assertEqual(sent['headers'], {desk.TOKEN_HEADER: 'the-test-key'})
         self.assertIn('artifact=deck', sent['address'])
+
+    def test_a_download_takes_the_name_the_runner_gives(self):
+        self.research()
+        self.complete()
+        session = workspace.load(self.root)
+        session['artifacts']['deck'].pop('approved', None)
+        workspace.store(self.root, session)
+        self.cli('checkpoint', '--approval', 'page', '--gate', 'deck', '--stage', 'deck',
+                 '--question', 'Ready?')
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')],
+                   'GET /api/gate': [self.read('gate', path=str(self.root), artifact='deck')],
+                   'GET /api/download': [{'status': 200, 'picture': 'UEs=', 'headers': {
+                       'Content-Disposition': 'attachment; filename="rolling-restarts-deck.pptx"'},
+                       'type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'}]}
+        result = self.run_page(answers, [{'click': 'Review the slide deck'},
+                                         {'click': 'Download deck.pptx'}, {'snapshot': 'saved'}])
+        self.assertIn('Downloaded rolling-restarts-deck.pptx.',
+                      result['snapshots']['saved']['toasts'])
 
     def test_the_research_stop_leads_with_the_brief_and_the_check(self):
         from synthesis_fixture import research_stop
@@ -2455,8 +2498,8 @@ TYPES = ['.txt', '.md', '.html', '.htm', '.docx']
 NO_PDF = 'A PDF cannot be read on this computer. Save it as text or Word first.'
 KEPT_HERE = ('Your documents stay on this computer and are never shared with your team. '
              'Passages quoted from them appear in the research report, which is shared.')
-DECK_LEFT = ('Everything but the slide deck is made: make the deck with your assistant, or '
-             'leave it out.')
+DECK_LEFT = ('Everything but the slide deck is made: check this computer again once a deck '
+             'can be made on it, or leave the deck out.')
 
 
 def a_step(name: str, label: str, kind: str, status: str, **more) -> dict:
@@ -2655,8 +2698,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_google_doc_conflicts_have_explicit_confirmed_choices(self):
         self.started()
         problem = 'Someone has changed the Google Doc since it was last sent.'
-        copy = a_copy('document', 'the learner guide', 'google', 'out-of-date',
-                      'https://docs.example.com/d/one/edit', problem)
+        copy = {**a_copy('document', 'the learner guide', 'google', 'out-of-date',
+                         'https://docs.example.com/d/one/edit', problem),
+                'remote': 'both changed'}
         first = a_run('waiting', 'Waiting for your review.', copies=[copy])
         both = a_run('waiting', 'Waiting for your review.', copies=[{**copy, 'conflict': True}])
         both['body']['said'] = 'Both versions kept.'
@@ -2670,6 +2714,34 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('replaces the local learner guide', result['snapshots']['theirs']['sheet'])
         self.assertIn('replaces the changes in the Google Doc', result['snapshots']['ours']['sheet'])
         self.assertEqual(self.posts(result), [('/api/copies', {'path': str(self.root), 'pull': 'document'})])
+
+    def test_a_doc_changed_in_google_offers_to_bring_it_in(self):
+        self.started()
+        copy = a_copy('document', 'the learner guide', 'google', 'made',
+                      'https://docs.example.com/d/one/edit', None)
+        before = a_run('waiting', 'Waiting for your review.', copies=[copy])
+        changed = a_run('waiting', 'Waiting for your review.',
+                        copies=[{**copy, 'remote': 'remote changed'}])
+        pulled = a_run('waiting', 'Waiting for your review.', copies=[copy])
+        unplaced = ("These headings were brought in but not placed in the guide's sections, "
+                    'because their hidden note was removed in the Doc: Why it matters. Put '
+                    'them back under a heading, or ask for changes.')
+        pulled['body'].update(said="The Doc's changes are in.", unplaced=unplaced)
+        answers = self.answers(**{'GET /api/trainings': [self.listed('waiting')],
+            'GET /api/training': [self.detail('waiting', '')], 'GET /api/run': [before],
+            'POST /api/copies': [changed, pulled]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+            {'snapshot': 'before'}, {'click': 'Look for changes in Google Docs'},
+            {'snapshot': 'changed'}, {'click': "Bring the Doc's changes in"},
+            {'snapshot': 'pulled'}])
+        shots = result['snapshots']
+        self.assertNotIn("Bring the Doc's changes in", shots['before']['buttons'])
+        self.assertIn('Changed in Google Docs', shots['changed']['text'])
+        self.assertIn("Bring the Doc's changes in", shots['changed']['buttons'])
+        self.assertIn(unplaced, ' '.join(shots['pulled']['toasts']) + shots['pulled']['text'])
+        self.assertEqual([body for _, body in self.posts(result)], [
+            {'path': str(self.root), 'action': 'check'},
+            {'path': str(self.root), 'pull': 'document'}])
 
     def test_a_changed_google_conflict_can_be_refreshed_and_confirmed_again(self):
         self.started()
@@ -2920,13 +2992,34 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                 self.assertIn(phrase, text)
                 if policy == 'balanced':
                     self.assertNotIn('direction review', text)
-                    self.assertIn('Review the first drafts comes after research and the '
-                                  'blueprint, guide and brief for each level', text)
+                    self.assertIn('Review the first drafts comes after research, the '
+                                  'blueprint and the learner guide of each level. Briefs are '
+                                  'written after it.', text)
                 if policy != 'step_by_step':
                     self.assertNotIn('at least 5 decisions', text)
                 self.assertFalse([link for link in result['snapshots']['ready']['links']
                                   if link['href'].startswith('/onboarding/')],
                                  'nothing on the form leaves it')
+                self.assertEqual(self.posts(result), [])
+
+    def test_research_questions_are_checked_before_start(self):
+        for lines, said in ((['Why?'] * 9, 'Ask research at most 8 questions.'),
+                            (['x' * 301], 'Keep each research question to 300 characters.')):
+            with self.subTest(said=said):
+                result = self.run_page(self.answers(), [
+                    {'click': 'New training'},
+                    {'fill': 'A short title', 'value': 'Restart practice'},
+                    {'fill': 'What should it teach?', 'value': 'Choose a safe restart.'},
+                    {'fill': 'Who is it for?', 'value': 'New operators'},
+                    {'click': 'Continue'}, {'click': 'Learner guide'}, {'click': 'Continue'},
+                    {'fill': 'What should the research answer? (optional)',
+                     'value': '\n'.join(lines)}, {'snapshot': 'typed'},
+                    {'click': 'Start the training'}, {'snapshot': 'refused'}])
+                shots = result['snapshots']
+                self.assertIn(said, shots['typed']['text'])
+                self.assertIn(said, shots['refused']['text'])
+                self.assertIn('One question a line, at most 8, each up to 300 characters.',
+                              shots['typed']['text'])
                 self.assertEqual(self.posts(result), [])
 
     def test_where_this_training_stops_is_on_the_form(self):
@@ -3009,7 +3102,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Stops to read the research plan', shots['shared']['text'])
         self.assertIn('Balanced: it stops for the research plan, the first drafts and the '
                       'finished materials', shots['shared']['text'])
-        self.assertIn('Stops only for the finished materials', shots['picked']['text'])
+        self.assertIn('Stops for the finished materials', shots['picked']['text'])
         # The stops line follows the pick.
         self.assertIn('Automatic draft: it stops for the finished materials', shots['picked']['text'])
         self.assertNotIn('Balanced: it stops', shots['picked']['text'])
@@ -3144,14 +3237,14 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
             {'click': 'Try again'}, {'snapshot': 'again'}])
         self.assertIn(failed, result['snapshots']['review']['text'])
-        self.assertIn('Carry on in the brand\u2019s default look',
+        self.assertIn('Use the brand\u2019s default look',
                       result['snapshots']['review']['buttons'])
         self.assertEqual(self.posts(result), [('/api/review', {
             'path': str(self.root), 'expected': 'v1', 'decision': 'approve', 'target': None,
             'note': None, 'looks': {'': {'choice': 'again', 'words': ''}}})])
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'},
-            {'click': 'Carry on in the brand\u2019s default look'},
+            {'click': 'Use the brand\u2019s default look'},
             {'click': 'Approve the first drafts'}, {'click': 'Approve'}])
         self.assertEqual(self.posts(result)[-1][1]['looks'],
                          {'': {'choice': 'default', 'words': ''}})
@@ -3299,6 +3392,50 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                  and request['address'].startswith('/api/file')]
         self.assertTrue(asked and 'artifact=reviews%2Fresearch.md' in asked[-1]['address'], asked)
 
+    def test_a_final_review_download_has_its_extension(self):
+        self.started()
+        waiting = a_run('waiting', 'Review the finished materials.')
+        waiting['body']['review'] = {
+            'phase': 'final', 'label': 'Review the finished materials', 'expected': 'v1',
+            'commits': None,
+            'items': [{'target': 'document@101', 'label': 'the level 101 learner guide',
+                       'file': '101/document.md', 'text': '# Guide', 'rewrites': []}]}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', 'Review the finished materials.')],
+            'GET /api/training': [self.detail('waiting', 'Review the finished materials.')],
+            'GET /api/run': [waiting],
+            'GET /api/download': [{'status': 200, 'picture': 'IyBHdWlkZQo=',
+                                   'type': 'text/markdown'}]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'},
+            {'click': 'Download the level 101 learner guide'}, {'snapshot': 'saved'}])
+        toasts = result['snapshots']['saved']['toasts']
+        self.assertIn('Downloaded document.md.', toasts)
+        self.assertNotIn('Downloaded the level 101 learner guide.', toasts)
+
+    def test_a_final_change_says_what_comes_back(self):
+        self.started()
+        waiting = a_run('waiting', 'Review the finished materials.')
+        waiting['body']['review'] = {
+            'phase': 'final', 'label': 'Review the finished materials', 'expected': 'v1',
+            'commits': None,
+            'items': [
+                {'target': 'document@101', 'label': 'the level 101 learner guide',
+                 'text': '# Guide', 'rewrites': ['the level 101 slide deck'],
+                 'returns': True, 'deck_again': True},
+                {'target': 'deck@101', 'label': 'the level 101 slide deck', 'text': '',
+                 'rewrites': [], 'returns': False, 'deck_again': False}]}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', 'Review the finished materials.')],
+            'GET /api/training': [self.detail('waiting', 'Review the finished materials.')],
+            'GET /api/run': [waiting]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'},
+            {'click': 'Needs changes in the level 101 learner guide'}, {'snapshot': 'asked'}])
+        self.assertIn('If it changes, these are written again from it: the level 101 slide '
+                      'deck. They come back to this review. The deck is drawn again and stops '
+                      'for you first.', result['snapshots']['asked']['text'])
+
     def test_grouped_change_requests_go_together_and_say_what_they_rewrite(self):
         self.started()
         waiting = a_run('waiting', 'Review the direction.')
@@ -3333,6 +3470,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       '101 blueprint, the level 101 learner guide, the level 201 blueprint and '
                       'Deck direction · Level 101.', one['text'])
         self.assertIn('Send 1 request', one['buttons'])
+        self.assertNotIn('They come back to this review.', one['text'])
         two = result['snapshots']['two']
         self.assertIn('2 items are marked for changes.', two['text'])
         self.assertIn('If the research report and the level 101 blueprint change, these are '
@@ -3383,7 +3521,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(folded['filled'], ['Approve the finished materials'])
         self.assertIn('1 of 3 looked at. Nothing is marked for changes.', result['snapshots']['good']['text'])
         self.assertIn('Approve the finished materials?', result['snapshots']['confirm']['sheet'])
-        self.assertIn('Approving finishes this draft.', result['snapshots']['confirm']['sheet'])
+        self.assertIn('Approving finishes this training.', result['snapshots']['confirm']['sheet'])
         self.assertEqual(self.posts(result), [('/api/review', {
             'path': str(self.root), 'expected': 'final-v1', 'decision': 'approve',
             'target': None, 'note': None})])
@@ -3984,8 +4122,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         label = 'Walk through each slide’s design before it is built'
         self.assertIn(label, two['text'])
         self.assertNotIn(label, two['chosen'], 'off unless asked')
-        self.assertIn('Usually the deck is approved on what it says and on its look. Choose '
-                      'this to approve how each slide is drawn, one at a time.', two['text'])
+        self.assertIn('Usually the deck is approved on its outline and on its look. Choose '
+                      'this to see how each slide is drawn, and approve the design in one '
+                      'decision.', two['text'])
         started = [body for address, body in self.posts(result) if address == '/api/trainings']
         self.assertIs(started[0]['walkthrough'], True)
 
@@ -4269,7 +4408,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Technical upskilling'},
             {'click': 'Continue'}, {'snapshot': 'two'},
             {'click': 'Learner guide'}, {'click': 'Reference brief'}, {'click': 'Practice scenarios'},
-            {'click': '301'}, {'click': 'Depth and reference brief'}, {'click': 'A comparison'}, {'click': 'Google Slides'}, {'click': 'Deck brand'},
+            {'click': '301'}, {'click': 'About the reference brief'}, {'click': 'A comparison'}, {'click': 'Google Slides'}, {'click': 'Deck brand'},
             {'fill': 'The brand’s variant', 'value': 'dark'}, {'click': 'Extra copies and Yoodli'}, {'click': 'Google Docs'},
             {'fill': 'How long it should take', 'value': '30 minutes', 'stay': True},
             {'enter': 'How long it should take'}, {'click': 'Assistant and limits'}, {'snapshot': 'three'},
@@ -4643,6 +4782,62 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('Carry on with your assistant', shots['detail']['text'])
         self.assertNotIn('Start your assistant in this folder', shots['detail']['text'])
 
+    def test_a_finished_runner_training_sends_nobody_to_an_assistant(self):
+        self.started()
+        done = 'This training is finished.'
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('done', done)],
+            'GET /api/training': [self.detail('done', done)],
+            'GET /api/run': [a_run('done', done, steps=steps('done', 'done', 'done'))]})
+        result = self.run_page(answers, [
+            {'click': 'Trainings'}, {'click': 'Open Rolling restarts'},
+            {'click': 'Everything about this training'}, {'snapshot': 'detail'}])
+        self.assertNotIn('Carry on with your assistant', result['snapshots']['detail']['text'])
+
+    def test_an_unusable_assistant_offers_open_status(self):
+        self.started()
+        said = ('Claude Code could not be used. It is not signed in. Check this computer, on '
+                'the Status screen, says what it needs.')
+        stopped = a_run('failed', said, steps=steps('done', 'failed'),
+                        problem={'what': said, 'kept': 'Everything kept so far is still here.',
+                                 'action': 'status', 'label': 'Open Status'})
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('failed', said)],
+            'GET /api/training': [self.detail('failed', said)], 'GET /api/run': [stopped]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'stopped'}, {'click': 'Open Status'},
+                                         {'snapshot': 'status'}])
+        shots = result['snapshots']
+        self.assertEqual(shots['stopped']['filled'], ['Open Status'])
+        self.assertIn('Try again', shots['stopped']['buttons'])
+        self.assertEqual(shots['status']['current'], ['Status'])
+
+    def test_missing_answers_offer_a_new_training(self):
+        self.started()
+        said = ('The answers this training was started from are missing, so it cannot go on. '
+                'Start a new training in its place, or delete this one.')
+        stuck = a_run('failed', said, steps=steps('failed'),
+                      problem={'what': said, 'kept': "Everything in the training's folder is "
+                               'as it was.', 'action': 'new', 'label': 'New training'})
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('failed', said)],
+            'GET /api/training': [self.detail('failed', said)], 'GET /api/run': [stuck]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'stuck'}, {'click': 'New training'},
+                                         {'snapshot': 'new'}])
+        shot = result['snapshots']['stuck']
+        self.assertEqual(shot['filled'], ['New training'])
+        self.assertIn('Delete this training', shot['buttons'])
+        self.assertNotEqual(result['snapshots']['new']['heading'], 'Rolling restarts')
+
+    def test_runner_notices_name_training_studio(self):
+        page = (Path(__file__).resolve().parents[1] / 'skills' / 'training-studio' / 'scripts'
+                / 'desk' / 'app.js').read_text(encoding='utf-8')
+        self.assertIn('Open Training Studio again and use the new link.', page)
+        self.assertNotIn('make the deck with your assistant', page)
+        self.assertIn('Run the desk command again in your terminal', page,
+                      'training desk keeps its own words')
+
     def test_a_run_is_paused_resumed_and_stopped_and_a_refusal_changes_nothing(self):
         self.started()
         going, held = 'Doing the research.', 'Paused at the research.'
@@ -4661,13 +4856,20 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Open Rolling restarts'},
             {'click': 'Pause'}, {'snapshot': 'paused'},
             {'click': 'Resume'}, {'snapshot': 'resumed'},
-            {'click': 'Stop'}, {'snapshot': 'refused'},
-            {'click': 'Stop'}, {'snapshot': 'stopped'},
+            {'click': 'Stop'}, {'snapshot': 'asked'}, {'click': 'Cancel'},
+            {'snapshot': 'kept'},
+            {'click': 'Stop'}, {'click': 'Stop it'}, {'snapshot': 'refused'},
+            {'click': 'Stop'}, {'click': 'Stop it'}, {'snapshot': 'stopped'},
         ])
         shots = result['snapshots']
         self.assertEqual(self.posts(result), [
             ('/api/run', {'path': str(self.root), 'action': action})
             for action in ('pause', 'resume', 'stop', 'stop')])
+        # Stop asks first: its work so far is lost, and nothing is sent until Stop it.
+        self.assertIn('Its work so far is lost. Pause lets it finish first.',
+                      shots['asked']['sheet'])
+        self.assertTrue(shots['asked']['sheet'].startswith('Stop '), shots['asked']['sheet'])
+        self.assertEqual(shots['kept']['sheet'], '')
         paused_shot = shots['paused']
         # The control that was pressed is gone; the focus is on the one that undoes it.
         self.assertEqual((paused_shot['filled'], paused_shot['focus']), (['Resume'], 'Resume'))
@@ -4687,8 +4889,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('It stops and asks you at', paused_shot['text'])
         self.assertIn('Carrying on.', shots['resumed']['toasts'])
         self.assertIn('Pause', shots['resumed']['buttons'])
-        self.assertEqual((shots['resumed']['focus'], shots['refused']['focus']),
-                         ('Pause', 'Stop'))
+        self.assertEqual(shots['resumed']['focus'], 'Pause')
         # What was refused is said where it happened, and nothing has changed.
         self.assertIn('It is in the middle of saving a step. Nothing was changed.',
                       shots['refused']['text'])
@@ -4984,7 +5185,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     self.assertEqual((sent['levels'], sent['deck_target'], sent['yoodli']),
                                      ([], None, True))
                     self.assertIn(plain, three['text'])
-                    self.assertIn('plus each practice scenario and each Yoodli layout', three['text'])
+                    self.assertIn('plus each practice scenario and each set of Yoodli '
+                                  'scenarios', three['text'])
                     self.assertIn('In all, it stops and asks for your decision at least 5 '
                                   'times.', landed['text'])
 
@@ -5060,6 +5262,52 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Research ' + research_sites.summary(chosen) + '.', shots['ready']['text'])
         (address, sent), = [post for post in self.posts(result) if post[0] == '/api/trainings']
         self.assertEqual(sent['research_from'], chosen)
+
+    def test_a_document_added_after_the_research_offers_a_priced_update(self):
+        self.started()
+        waits = 'Waiting for your review of the research plan.'
+        price = ('Asking for changes runs the research again: up to 3 rounds of writing and '
+                 'checking. No time or money was recorded for its last try.')
+        held = {**supplied(a_document('handbook.txt', 8), a_document('more.txt', 6),
+                           waiting=False),
+                'later': [{'name': 'more.txt', 'added_at': '2026-10-26T09:00:00Z'}],
+                'update_price': {'words': price}}
+        run = a_run('waiting', waits, steps=steps('done'), documents=held)
+        after = a_run('working', 'Researching.', steps=steps('done'),
+                      documents={**held, 'later': [], 'update_price': None})
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', waits, needs=True)],
+            'GET /api/training': [self.detail('waiting', waits)],
+            'GET /api/run': [run, run, after], 'POST /api/documents': [after]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'card'},
+            {'click': 'Update the research'}, {'snapshot': 'asked'}, {'click': 'Cancel'},
+            {'click': 'Update the research'}, {'click': 'Update it'}])
+        shots = result['snapshots']
+        self.assertIn('Added after the research: not read yet.', shots['card']['text'])
+        self.assertIn(price, shots['asked']['sheet'])
+        self.assertIn('Cancel', shots['asked']['buttons'])
+        self.assertEqual(self.posts(result), [('/api/documents', {'path': str(self.root),
+                                                                  'action': 'update'})])
+
+    def test_a_later_document_waits_for_a_review_to_be_decided(self):
+        self.started()
+        waits = 'Waiting for you to review the first drafts.'
+        held = {**supplied(a_document('handbook.txt', 8), a_document('more.txt', 6),
+                           waiting=False),
+                'later': [{'name': 'more.txt', 'added_at': '2026-10-26T09:00:00Z'}],
+                'update_price': {'words': 'Asking for changes runs the research again.'}}
+        run = a_run('waiting', waits, steps=steps('done'), documents=held)
+        run['body']['review'] = {'phase': 'direction', 'label': 'Review the first drafts',
+                                 'expected': 'v1', 'commits': None, 'items': []}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', waits, needs=True)],
+            'GET /api/training': [self.detail('waiting', waits)], 'GET /api/run': [run]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'card'}])
+        shot = result['snapshots']['card']
+        self.assertNotIn('Update the research', shot['buttons'])
+        self.assertIn('Update the research once this review is decided.', shot['text'])
 
     def test_documents_are_added_refused_removed_and_then_that_is_all_of_them(self):
         self.started()
@@ -5304,13 +5552,13 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'snapshot': 'offered'},
             {'click': 'Finish this level, then wait'}, {'snapshot': 'finishing'},
-            {'click': 'Skip the deck for now'}, {'snapshot': 'sheet'},
+            {'click': 'Leave the deck out'}, {'snapshot': 'sheet'},
             {'type': reason}, {'click': 'Skip this stage'}, {'snapshot': 'left out'}])
         shots = result['snapshots']
         for shown in ('Steer it', 'Level 201 is in hand', 'Nothing of the deck is drawn yet'):
             self.assertIn(shown, shots['offered']['text'])
         self.assertIn('Finish this level, then wait', shots['offered']['buttons'])
-        self.assertIn('Skip the deck for now', shots['offered']['buttons'])
+        self.assertIn('Leave the deck out', shots['offered']['buttons'])
         self.assertEqual(shots['offered']['filled'], [])
         self.assertIn('It finishes level 201, then waits.', shots['finishing']['text'])
         self.assertNotIn('Finish this level, then wait', shots['finishing']['buttons'])
@@ -6183,8 +6431,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         going = 'Drawing the slides, in two sections.'
         icon = an_asset('icon_instance', 'icon', 'server', 'recorded', alt='Server')
         wanted = an_asset('console_view', 'screenshot', 'The console', 'wanted', supply=True)
-        problem = {'what': waits, 'kept': 'Nothing needs approving again.', 'action': 'retry',
-                   'label': 'Try again'}
+        problem = {'what': waits, 'kept': 'Nothing needs approving again.', 'action': 'asset',
+                   'label': 'Add the picture', 'waits': 'assets'}
 
         def run(state: str, said: str, *assets: dict, stopped=None) -> dict:
             return a_run(state, said, outline=an_outline(waiting=False), problem=stopped,
@@ -6200,12 +6448,13 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'POST /api/asset': [run('working', going, icon, recorded)]})
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'snapshot': 'waiting'},
-            {'click': 'Add the picture'}, {'snapshot': 'unchosen'},
+            {'click': 'Add the picture'}, {'snapshot': 'led'},
+            {'click': 'Save the picture'}, {'snapshot': 'unchosen'},
             {'attach': 'Supply the picture', 'files': [{'name': 'console.png',
                                                         'bytes': [137, 80, 78, 71]}]},
             {'fill': 'What it shows', 'value': 'The console mid-restart'},
             {'fill': 'Where it came from', 'value': 'Course author'},
-            {'click': 'Add the picture'}, {'snapshot': 'given'}])
+            {'click': 'Save the picture'}, {'snapshot': 'given'}])
         shots = result['snapshots']
         first = shots['waiting']
         for shown in ('It is waiting for you', waits, 'Pictures and icons',
@@ -6213,8 +6462,14 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'Recorded', 'Screenshot: The console', 'Still needed',
                       'Supply the picture', 'What it shows', 'Where it came from'):
             self.assertIn(shown, first['text'])
-        self.assertEqual(first['buttons'].count('Add the picture'), 1,
+        self.assertEqual(first['buttons'].count('Save the picture'), 1,
                          'only a picture the person gives can be supplied here')
+        # The stop leads with the picture: its filled button takes you to the form.
+        self.assertEqual(first['filled'], ['Add the picture'])
+        self.assertIn('The deck is drawn once its pictures are here. Without one, redesign '
+                      'the deck or leave it out.', first['text'])
+        self.assertNotIn('Try again re-runs', first['text'])
+        self.assertEqual(shots['led']['focus'], 'asset-1-file')
         self.assertIn('Choose the picture first.', shots['unchosen']['text'])
         self.assertEqual(self.posts(result), [('/api/asset', {
             'path': str(self.root), 'level': None, 'asset': 'console_view',
@@ -6823,7 +7078,7 @@ class TeamScreenTests(ScriptedPage, PageCase):
         run = shots['run']
         self.assertEqual((run['heading'], run['filled'], run['fields']),
                          ('Rolling restarts', [], {}))
-        for shown in ('Run by Pat', 'Run from another computer', says,
+        for shown in ('Run by Pat', 'Run by your teammates', says,
                       'Pat is running this training', took, known, READ_ONLY,
                       'All production steps', 'Your review of the blueprint', 'Made so far',
                       'A question is waiting', 'The research asks:', 'Which platform version?',
@@ -7601,6 +7856,7 @@ class TeamScreenTests(ScriptedPage, PageCase):
         for shown in ('Run Rolling restarts from here?',
                       'It is copied into your workspace as a new training.',
                       'The original folder is left exactly as it was, with nothing deleted.',
+                      'Its own Git history stays where it is.',
                       'From then on the copy is the one to work on, and this page takes you '
                       'to it.'):
             self.assertIn(shown, asked['sheet'])
@@ -8469,6 +8725,25 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
             ('/api/brand', {'repository': address, 'release': 'v0.13.1',
                             'shared_seen': later['shared']})])
 
+    def test_a_suite_install_says_marketing_studio_updates_it(self):
+        said = ('Marketing Studio installs and updates this studio. To update it, unpack a newer '
+         'Marketing Studio release and run marketing-studio update --from <the '
+         'unpacked folder> --yes.')
+        own = row('training-studio', '0.18.0', '0.18.0', 'current',
+                  'Updates are delivered by the Marketing Studio installer.')
+        found = kept(versions=versions(own=own, suite='marketing-studio'),
+                     update={'offered': False, 'state': None, 'since': None, 'says': None})
+        answers = self.answers(**{'GET /api/setup': [ok({**SET_UP, 'upkeep': found})] * 4})
+        result = self.run_page(answers, [{'snapshot': 'home'}, {'click': 'Status'},
+                                         {'snapshot': 'status'}])
+        for screen in ('home', 'status'):
+            shot = result['snapshots'][screen]
+            with self.subTest(screen=screen):
+                self.assertIn(said, shot['text'])
+                self.assertNotIn('Newer versions are ready for this computer:', shot['text'])
+                for button in ('Update', 'Update the skills', 'Upgrade', 'Upgrade everything'):
+                    self.assertNotIn(button, shot['buttons'])
+
     def test_versions_can_be_dismissed_until_a_newer_one_is_out(self):
         found = kept(versions=versions(CURRENT))
         gone = kept(versions={**versions(CURRENT), 'dismissed': True})
@@ -8809,6 +9084,82 @@ class PackageTests(unittest.TestCase):
         self.assertIn('desk reference', self.guidance('gates'))
         self.assertIn('--gate', self.guidance('gates'))
         self.assertIn('--approval page', self.guidance('intake'))
+
+
+
+class TrainingNamesTests(unittest.TestCase):
+    """Training Studio says each thing one way, true at every review level."""
+
+    def test_old_names_are_gone_and_new_ones_said(self):
+        page = (Path(__file__).resolve().parents[1] / 'skills' / 'training-studio' / 'scripts'
+                / 'desk' / 'app.js').read_text(encoding='utf-8')
+        here = Path(__file__).resolve().parents[1] / 'runner'
+        runner = ''.join((here / name).read_text(encoding='utf-8')
+                         for name in ('engine.py', 'reviews.py'))
+        # A sentence split over lines is read whole: 'a ' + 'b' and 'a '\n'b' are 'a b'.
+        page = re.sub(r"'\s*\n\s*\+\s*'", '', page)
+        runner = re.sub(r"(['\"])\s*\n\s*f?(['\"])", '', runner)
+        for old in ('Stops only for the finished materials.', 'Approving finishes this draft',
+                    'approve how each slide is drawn, one at a time',
+                    'has cost about', 'Depth and reference brief', 'knowledge brief',
+                    'Yoodli field layouts', 'Finished, but not ready to use',
+                    'Skip the deck for now', 'Run from another computer',
+                    'Review the first drafts comes after research and the blueprint, guide '
+                    'and brief', 'stops each time it needs your decision', 'Deck direction'):
+            with self.subTest(old=old):
+                self.assertNotIn(old, page + runner)
+        for new in ('Approving finishes this training.',
+                    'Choose this to see how each slide is drawn, and approve the design in '
+                    'one decision.', 'Use the brand’s default look',
+                    'a fixed estimate per slide, not this computer', 'Reference brief',
+                    'Yoodli scenarios', 'Not ready to use yet', 'Leave the deck out',
+                    'Review the first drafts comes after research, the blueprint and the '
+                    "learner guide of ' + levels + '. Briefs are written after it.",
+                    'stops where its review level says, for your decision.',
+                    'A training brought in runs Step by step.',
+                    'A copy that is out of date must be sent again before the training is '
+                    'ready.', 'A change to the deck writes its outline again and draws every '
+                    'slide again.', 'Run by your teammates'):
+            with self.subTest(new=new):
+                self.assertIn(new, page + runner)
+
+    def test_the_stages_are_named_once(self):
+        import desk
+        self.assertEqual((desk.STAGE_NAMES['research-plan'], desk.STAGE_NAMES['package']),
+                         ('Research plan', 'Index'))
+        import workspace
+        self.assertEqual(workspace.AHEAD['yoodli'], 'Write {the} Yoodli scenarios')
+
+
+@unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
+class ReviewSaysTests(unittest.TestCase):
+    """The review level card says what the level does for this training's own plan."""
+
+    def says(self, level: str, planned: bool, deck: bool) -> str:
+        script = (Path(__file__).resolve().parents[1] / 'skills' / 'training-studio' /
+                  'scripts' / 'desk' / 'app.js').read_text(encoding='utf-8')
+        start = script.index('function reviewSays(')
+        end = script.index('\n}\n', start) + 3
+        code = script[start:end] + (f'\nprocess.stdout.write(reviewSays({json.dumps(level)}, '
+                                    f'{json.dumps(planned)}, {json.dumps(deck)}));')
+        done = subprocess.run([NODE, '-e', code], capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
+
+    def test_balanced_and_automatic_follow_the_plan_and_the_deck(self):
+        self.assertEqual(self.says('balanced', True, True),
+                         'Stops to read the research plan, then the first drafts of every '
+                         'level together, then each drawn deck, then the finished materials '
+                         'together.')
+        self.assertEqual(self.says('balanced', False, False),
+                         'Stops for the first drafts of every level together, then the '
+                         'finished materials together.')
+        self.assertEqual(self.says('automatic', True, True),
+                         'Stops for each drawn deck and the finished materials. It costs more '
+                         'before you first see anything, and the spending limit still holds.')
+        self.assertEqual(self.says('automatic', True, False),
+                         'Stops for the finished materials. It costs more before you first see '
+                         'anything, and the spending limit still holds.')
 
 
 if __name__ == '__main__':

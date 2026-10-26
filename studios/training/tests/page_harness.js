@@ -655,7 +655,11 @@ async function app(file) {
       }
       // A picture is answered as bytes: what the page is handed says what kind they are, how
       // many there are, and which request they answer.
+      // Its headers, as the server sent them, are read by name in any case.
+      const sent = Object.fromEntries(Object.entries(answer.headers || {})
+        .map(([name, value]) => [name.toLowerCase(), value]));
       return { ok: true, status: 200, json: async () => { throw new Error('Not JSON.'); },
+        headers: { get: (name) => sent[String(name).toLowerCase()] ?? null },
         blob: async () => ({ type: answer.type || 'image/png',
           size: Buffer.from(answer.picture, 'base64').length, from: address }) };
     },

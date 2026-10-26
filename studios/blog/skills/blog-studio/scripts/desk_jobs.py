@@ -1231,8 +1231,29 @@ def begin(root, ident):
 def stalled(root, ident, start):
     """Why a start that has not ended is not moving, or '' while its step is under way. A
     step interrupted when Blog Studio closed, or whose job is gone, stops it too."""
+    return stalled_detail(root, ident, start)['problem']
+
+
+LONGEST_STEP = 3600
+
+
+def _longest(root):
+    """The most time Try again with more time may give a start's step: twice the step time
+    limit in Settings, and never more than an hour, as a run's retry allows."""
+    return min(LONGEST_STEP, 2 * blog_runner.settings(root)['defaults']['seconds'])
+
+
+def stalled_detail(root, ident, start):
+    """Why a start stopped, and what the page may offer for it: {'problem', 'reason',
+    'said', 'step', 'seconds', 'more'}. `reason` is 'cli' or 'time-limit' as the assistant's
+    job ended, else 'research' when the research step stopped, else None. `said` holds the
+    last lines a failed assistant printed (kept on this computer). `seconds` is the limit
+    the stopped step had, and `more` the limit Try again with more time gives it, or None.
+    Every value is empty while the step is under way or the start is done."""
+    found = dict.fromkeys(('reason', 'said', 'step', 'seconds', 'more'), None)
+    found['problem'] = ''
     if not start or start.get('ended_at'):
-        return ''
+        return found
     job = None
     if start.get('job'):
         try:
@@ -1240,21 +1261,68 @@ def stalled(root, ident, start):
         except (ValueError, OSError):
             job = None
     if job is not None and busy(job):
-        return ''
-    return (
-        transient(root, ident).get('problem')
-        or (job or {}).get('error')
-        or 'This step stopped. Choose Retry to start it again.'
-    )
+        return found
+    job = job or {}
+    reason = job.get('reason') if job.get('reason') in ('cli', 'time-limit') else None
+    if reason is None and start.get('step') == 'research':
+        reason = 'research'
+    seconds = job.get('seconds') if isinstance(job.get('seconds'), int) else None
+    # Settings are read only for a step out of time: the blog list asks this of every start.
+    longest = _longest(root) if reason == 'time-limit' and seconds else 0
+    return {
+        'problem': (
+            transient(root, ident).get('problem')
+            or job.get('error')
+            or 'This step stopped. Choose Retry to start it again.'
+        ),
+        'reason': reason,
+        'said': (job.get('said') or None) if reason == 'cli' else None,
+        'step': start.get('step'),
+        'seconds': seconds,
+        'more': min(longest, 2 * seconds)
+        if reason == 'time-limit' and seconds and seconds < longest
+        else None,
+    }
 
 
-def retry(root, ident):
-    """Run the step a start stopped at again, in a new job."""
+def retry(root, ident, seconds=None, skip_research=False):
+    """Run the step a start stopped at again, in a new job. With `seconds`, the step runs
+    with that time limit, at most twice the setting. With `skip_research`, a start stopped
+    at its research goes on without it: the step leaves the start, the start records that
+    it has no research, and the next step is queued."""
     start = desk.read_start(root, ident)
     if not stalled(root, ident, start):
         raise ValueError('Nothing to retry: this start is under way or done.')
+    if seconds is not None:
+        longest = _longest(root)
+        if type(seconds) is not int or not 30 <= seconds <= longest:
+            raise ValueError(
+                'Choose a step time limit from 30 seconds to '
+                + str(longest)
+                + ' seconds, at most twice the step time limit in Settings.'
+            )
+    if skip_research is not False:
+        if skip_research is not True:
+            raise ValueError('Say whether to continue without research.')
+        if start.get('step') != 'research':
+            raise ValueError('Continue without research is for a start stopped at its research.')
     _busy(root, ident)
-    _queue_step(root, ident, start['step'])
+    if skip_research:
+        steps = [step for step in start['steps'] if step != 'research']
+        start.update(
+            steps=steps,
+            step=steps[0],
+            research_from=None,
+            contract=None,
+            research_skipped={'at': studio.now()},
+        )
+        desk.write_start(root, ident, start)
+        shutil.rmtree(staging(root, ident), ignore_errors=True)
+    job = _queue_step(root, ident, start['step'])
+    if seconds is not None:
+        saved = tool_jobs.read(root, job['id'])
+        saved['seconds'] = seconds
+        tool_jobs.write(root, saved)
 
 
 TIMES = 20  # step durations kept per step, for the estimate
@@ -1359,11 +1427,17 @@ def _start_view(root, ident, rows):
         return None
     job = next((row for row in rows if row['id'] == start.get('job')), None)
     timing = _timing(root, ident, start, job)
+    detail = stalled_detail(root, ident, start)
     return {
         **timing,
         **{key: value for key, value in start.items() if key not in ('notes', 'contract')},
         'phase': transient(root, ident).get('phase') or '',
-        'problem': stalled(root, ident, start),
+        'problem': detail['problem'],
+        # Why it stopped and what the page offers: more time, no research, or Status.
+        'reason': detail['reason'],
+        'said': detail['said'],
+        'seconds': detail['seconds'],
+        'more': detail['more'],
         'busy': bool(job and job['busy']),
         'status': job['status'] if job else None,
         'doing': STEP_WORDS.get(start.get('step') or '', ''),
@@ -2015,8 +2089,58 @@ def view(root, ident):
         'finishing': desk_finish.summary(root, ident, draft),
         # Review mode's check: whether it also suggests human-sounding wording, and how much.
         'review': review_view(root, ident),
+        # Whether research was read for this draft, and how many sources it drew on.
+        'research': _research_read(directory),
         # Whether the blog's Google Doc can take the desk's wording as suggestions.
         'google_suggestions': sendable,
-        # The blog record's version, for Mark as published and Delete.
-        'expected': studio.digest((directory / 'session.json').read_bytes()),
+        # The blog record's version, for Mark as published, Delete and changing its driver.
+        'expected': expected(root, ident),
+        # In a team workspace, who drives the blog, as a run says it (blog_runner.describe).
+        # While another computer drives it, or nobody does, the desk is read only.
+        **_team(root, ident),
+    }
+
+
+LINK = re.compile(r'https?://[^\s)<>\]"\']+')
+
+
+def _research_read(directory):
+    """{'sources': n} when research was read for this draft: the reviewed bundle's sources,
+    or the distinct links in a plain research report. None when no research ran."""
+    from studio_core import research_contract
+
+    if (directory / 'research' / 'output.json').is_file():
+        try:
+            facts, _ = research_contract.read_bundle(directory / 'research')
+            return {'sources': len(facts.get('sources') or [])}
+        except (ValueError, OSError, KeyError, TypeError):
+            return {'sources': None}
+    report = directory / 'derived' / 'blog-research.md'
+    if report.is_file():
+        try:
+            links = {link.rstrip('.,;:') for link in LINK.findall(report.read_text())}
+        except (ValueError, OSError):
+            return {'sources': None}
+        return {'sources': len(links) or None}
+    return None
+
+
+def expected(root, ident):
+    """The version of a desk blog's record the page last read: a change of driver, Mark as
+    published and Delete each refuse a view whose blog has changed since."""
+    directory, _ = studio.item(root, 'articles', ident)
+    return studio.digest((directory / 'session.json').read_bytes())
+
+
+def _team(root, ident):
+    from studio_sync import team as drivers
+    from team_workspace import driver, record, space
+
+    found = space(root)
+    if not found or not found.address:
+        return {'team': False, 'driver': None, 'elsewhere': None}
+    return {
+        'team': True,
+        'driver': driver(root, ident),
+        'elsewhere': drivers.elsewhere(found, record(root, ident)),
     }

@@ -841,8 +841,10 @@ class StudioCase(unittest.TestCase):
 
     def setUp(self):
         from unittest import mock
+        # New work starts at the case's own review level: Step by step unless it says.
         self.review_capture = mock.patch('studio_core.review_policy.capture',
-                                         return_value={'schema': 1, 'level': 'step_by_step'})
+                                         side_effect=lambda: {'schema': 1, 'level': getattr(
+                                             self, 'review_level', 'step_by_step')})
         self.review_capture.start()
         self.addCleanup(self.review_capture.stop)
         from dataclasses import replace
@@ -938,6 +940,29 @@ class StudioCase(unittest.TestCase):
 
     def view(self, root: Path) -> dict:
         return self.engine.view(root)
+
+    def existing_deck(self, review: str, level: str, **changes) -> Path:
+        """An existing deck started at `level` under the review level `review`, read word
+        for word by the extract worker, as test_flow_routes reads one."""
+        from unittest import mock
+        from runner.steps import outline as outlines
+        from test_flow_routes import DECK, read_in
+
+        def extract(tools, job):
+            if tools.job['artifacts']['outline'].get('rules'):
+                found = next(Path(self.space.repo).rglob(Path(outlines.INVENTORY).name))
+                said = read_in(json.loads(found.read_text(encoding='utf-8')))
+                self.workers.outline_said = said
+                self.workers._ok(tools.submit_outline(json.dumps(said)))
+            else:
+                self.workers.outline(tools, job)
+        self.workers.queued['outline'] = [extract] * 4
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': review}):
+            return self.start(route='existing', level=level, title='Old deck',
+                              source={'kind': 'upload', 'name': 'old.pptx'},
+                              uploads={'old.pptx': DECK}, **changes)
+
 
     def state(self, root: Path) -> str:
         return self.view(root)['state']

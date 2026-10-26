@@ -289,10 +289,11 @@ def default_name(root, shown: dict) -> str:
         or DEFAULT_NAME
 
 
-def choose_default(root, brand_skill) -> dict | None:
-    """Under Automatic draft: the brand's default look, recorded with why, whether or not
-    its looks could be rendered. None where the brand was not asked for looks, or where the
-    outline changed since they were drawn."""
+def choose_default(root, brand_skill, level: str = 'automatic') -> dict | None:
+    """A look gate the level passes with no look picked: the brand's default look, recorded
+    with why, whether or not its looks could be rendered. Under Automatic draft it says so;
+    at any other level it says no look was picked in the direction review. None where the
+    brand was not asked for looks, or where the outline changed since they were drawn."""
     shown = shown_looks(root)
     if shown is None:
         return None
@@ -306,8 +307,9 @@ def choose_default(root, brand_skill) -> dict | None:
         return choose(root, brand_skill, DEFAULT, deck_flow.UNRENDERED_WORDS.format(
             why=shown.get('failed') or 'no samples', name=default_name(root, shown)),
             by='review-policy')
-    return choose(root, brand_skill, default['id'],
-                  deck_flow.DEFAULT_WORDS.format(name=default['name']), by='review-policy')
+    words = deck_flow.DEFAULT_WORDS if level == 'automatic' else deck_flow.DEFAULT_KEPT
+    return choose(root, brand_skill, default['id'], words.format(name=default['name']),
+                  by='review-policy')
 
 
 def _markdown(form: dict, shown: dict | None = None) -> str:
@@ -382,7 +384,10 @@ def approve(root, run: dict, note: str | None = None, by: str = 'page') -> None:
         # Kept in the run, which every computer reads: whether the look was seen rendered.
         run['look_shown'] = picked.get('shown') or 'rendered'
         run['look_by'] = picked.get('by') or by
-        words.append(f"Look chosen: {picked['name']} ({picked['choice']}). In their words: "
+        # A look the saved level chose is recorded as it was; only a look the person
+        # picked is in their words.
+        whose = 'Recorded' if picked.get('by') == 'review-policy' else 'In their words'
+        words.append(f"Look chosen: {picked['name']} ({picked['choice']}). {whose}: "
                      f"\"{picked['words']}\"")
     words += [line for line in (said, note) if line]
     # The look the person chose, or the brand's default where it offered none to choose.

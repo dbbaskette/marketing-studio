@@ -222,8 +222,8 @@ class HonestStopTests(StudioCase):
                 self.start(route='document', source={
                     'kind': 'google', 'link': 'https://docs.google.com/document/d/abc/edit'})
         self.assertEqual(str(caught.exception), existing.NOT_READY)
-        self.assertEqual(existing.NOT_READY, 'Sign in to Google on Status, under Check this '
-                         'computer, or download the file and upload it.')
+        self.assertEqual(existing.NOT_READY, 'Sign in to Google first: Status → Check this '
+                         'computer says how. Or download the file and upload it.')
         self.assertEqual(self.engine.decks(), before, 'nothing is made')
 
     def test_an_unexpected_failure_says_its_message_without_its_class(self):
@@ -1687,6 +1687,18 @@ class ExistingTests(StudioCase):
         self.assertEqual(gate['pictures'][0], {'kind': 'original', 'ref': 1})
         self.assertTrue(self.engine.picture(root, 'original', 2).startswith(b'\x89PNG'))
 
+    def test_balanced_redesign_says_it_stops_for_the_look(self):
+        root = self.existing_deck('balanced', 'redesign')
+        ahead = self.view(root)['ahead']
+        self.assertEqual(ahead['next_gate'], 'gate:look')
+        from studio_core import review_policy
+        record = self.engine._load(root)
+        self.assertEqual(review_policy.ahead(record, 'presentation',
+                                             ['gate:look', 'gate:build'],
+                                             run_gates=[s.name for s in
+                                                        stages.steps(record)]),
+                         ['gate:look', 'gate:build'])
+
     def test_a_google_deck_while_google_is_not_reached_starts_nothing(self):
         self.slides.run.drive = False
         before = self.log()
@@ -2245,7 +2257,7 @@ class HoldingTests(StudioCase):
         build.write_state(root, state)
         self.assertEqual(self.engine._holding(root, 'gate:build'),
                          ['Major on what-it-does: The boxes crowd.',
-                          'Audit blocker: Slide 2: Restore the logo. (error)'])
+                          'Brand check: Slide 2: Restore the logo. (error)'])
         self.assertEqual(self.engine._holding(root, 'gate:look'), [])
 
 
@@ -2344,6 +2356,42 @@ class SlideNoteTests(StudioCase):
 
 
 class DirectionClassifyTests(StudioCase):
+    def test_the_direction_review_prices_reading_the_document_the_other_way(self):
+        from runner import engine as engines
+        from studio_core import review_policy
+        self.workers.classified = {'kind': 'spec', 'reason': 'Reads as a slide script.',
+                                   'slides': 2}
+        for research in (True, False):
+            with self.subTest(research=research):
+                with mock.patch.object(review_policy, 'capture',
+                                       return_value={'schema': 1, 'level': 'balanced'}):
+                    root = self.start(route='document', research=research,
+                                      title=f'Read {research}',
+                                      **({'research_sources': 'both'} if research else {}),
+                                      source={'kind': 'paste', 'text': 'A slide script.'})
+                shown = self.view(root)['gate']
+                self.assertEqual((shown['name'], shown['classify']['verdict']),
+                                 ('gate:outline', 'spec'))
+                says = shown['reclassify_price']['says']
+                self.assertTrue(says.startswith('Drawn again: “'), says)
+                self.assertEqual(says.endswith(engines.FIRST_RESEARCH), research, says)
+
+    def test_the_synthesis_research_stop_says_how_many_questions_it_takes(self):
+        from synthesis_fixture import research_stop
+        root = self.start(research=True, title='Room for questions')
+        self.decide(root, 'gate:research-plan')
+        research_stop(root / 'research')
+        plan = json.loads((root / 'research' / 'plan.json').read_text())
+        item = plan['items'][0]
+        plan['items'] = [{**item, 'id': f'question-{n}'} for n in range(5)]
+        (root / 'research' / 'plan.json').write_text(json.dumps(plan))
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2}
+        self.engine._store(root, record)
+        gate = self.view(root)['gate']
+        self.assertEqual(gate['name'], 'gate:research')
+        self.assertEqual((gate['room'], gate['most']), (3, worker_tools.PLAN_MOST))
+
     def test_the_direction_review_shows_the_verdict_and_takes_a_correction(self):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',

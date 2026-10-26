@@ -117,6 +117,20 @@ class ReviewPolicyTests(IsolatedHome):
         self.assertTrue(str(caught.exception).endswith(shared.REFUSED), str(caught.exception))
         self.assertEqual(shared.path().read_text(), '{')
 
+    def test_balanced_redesign_stops_at_its_look(self):
+        run = {'review_policy': {'schema': 1, 'level': 'balanced'}}
+        redesign = ['gate:classify', 'gate:look', 'gate:build']
+        self.assertFalse(review.automatic(run, 'presentation', 'gate:look',
+                                          run_gates=redesign))
+        self.assertEqual(review.ahead(run, 'presentation', ['gate:look', 'gate:build'],
+                                      run_gates=redesign), ['gate:look', 'gate:build'])
+
+    def test_still_to_come_does_not_move_the_host(self):
+        run = {'review_policy': {'schema': 1, 'level': 'balanced'}}
+        self.assertEqual(review.ahead(run, 'presentation', ['gate:look', 'gate:build'],
+                                      run_gates=['gate:outline', 'gate:look', 'gate:build']),
+                         ['gate:build'])
+
     def test_ahead_agrees_with_automatic_for_every_product_and_level(self):
         products = [
             ('blog', ['outline', 'draft', 'review', 'package'], 'package'),
@@ -124,13 +138,19 @@ class ReviewPolicyTests(IsolatedHome):
                               'gate:build'], None),
             ('training', ['gate:research-plan', 'review:direction', 'gate:deck-outline@101',
                           'gate:deck-look@101', 'gate:deck@101', 'review:final'], None)]
+        run_sets = (None, ['gate:classify', 'gate:look', 'gate:build'],
+                    ['gate:outline', 'gate:look', 'gate:build'],
+                    ['review:direction', 'gate:deck-outline@101', 'gate:deck-look@101',
+                     'gate:deck@101'])
         for level in review.LEVELS:
             run = {'review_policy': {'schema': 1, 'level': level}}
             for product, gates, last in products:
-                with self.subTest(level=level, product=product):
-                    self.assertEqual(review.ahead(run, product, gates, last=last),
-                                     [g for g in gates
-                                      if not review.automatic(run, product, g, last=last)])
+                for names in run_sets:
+                    with self.subTest(level=level, product=product, run_gates=names):
+                        self.assertEqual(
+                            review.ahead(run, product, gates, last=last, run_gates=names),
+                            [g for g in gates if not review.automatic(
+                                run, product, g, last=last, run_gates=names)])
         run = {'review_policy': {'schema': 1, 'level': 'balanced'}}
         self.assertEqual(review.ahead(run, 'blog', ['draft', 'review', 'package'],
                                       last='package', first='draft'), ['draft', 'package'])
@@ -141,7 +161,7 @@ class ReviewPolicyTests(IsolatedHome):
                             {'severity': 'critical', 'number': 3, 'detail': 'Misleads.'}],
                            [{'code': 'LOGO', 'says': 'Restore the logo.'}])
         self.assertEqual(held, ['Major on close01: Too high.', 'Critical on 3: Misleads.',
-                                'Audit blocker: Restore the logo.'])
+                                'Brand check: Restore the logo.'])
         self.assertEqual(review.held([{'severity': 'minor', 'note': 'x'}], []), [])
         self.assertEqual(review.held(None, None), [])
         for mode in ('balanced', 'automatic'):

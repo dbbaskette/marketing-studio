@@ -256,7 +256,12 @@ LOOKS_STALE = ('What the deck says changed since its looks were drawn, so they a
                'again. Choose once they are.')
 ON_ITS_WAY = 'This deck is on its way to Google Slides already. Wait for it.'
 STILL_NOT_CONNECTED = ("Google still isn't connected on this computer. Sign in with gcloud, "
-                       'then deliver it again.')
+                       'then send it to Google Slides again.')
+# Reading a document as material, when research was asked for, runs research this deck never ran.
+FIRST_RESEARCH = ('The research runs first, for the first time; this computer has no record of '
+                  'what it costs.')
+NOT_HERE = ("This delivery's PowerPoint file is on the computer that made it. Deliver it "
+            'again there to share it.')
 UNDO_NOT = ('The last step cannot be undone: only the last thing done, when it was this '
             "deck's and is not shared yet, can be.")
 NO_PICTURE = 'There is no picture of that slide on this computer.'
@@ -980,9 +985,8 @@ class Engine(Jobs, Researching):
                 step = first(record)
                 if step is None:
                     return
-                if step.kind == 'gate' and not (step.name == 'gate:look' and record.get('look_again')) and review_policy.automatic(
-                        record, 'presentation', step.name,
-                        holding=self._holding(root, step.name)):
+                if step.kind == 'gate' and not (step.name == 'gate:look' and record.get('look_again')) and self._automatic(
+                        record, step.name, holding=self._holding(root, step.name)):
                     self._policy_gate(root, step)
                     continue
                 if step.kind == 'gate' and gate_state(record, step.name) == 'waiting':
@@ -1130,12 +1134,19 @@ class Engine(Jobs, Researching):
         blockers = [line for line in audit.get('messages') or () if str(line).endswith('(error)')]
         return review_policy.held(((last or {}).get('review') or {}).get('findings'), blockers)
 
+    @staticmethod
+    def _automatic(record: dict, gate: str, holding=()) -> bool:
+        """Whether the run's level accepts `gate` without the person, with every gate this
+        deck has, so a combined stop is held where the deck has a stop."""
+        return review_policy.automatic(record, 'presentation', gate, holding=holding,
+                                       run_gates=[step.name for step in stages.steps(record)])
+
     def _policy_gate(self, root: Path, step: stages.Step) -> None:
         """Continue under the saved policy, without claiming a person's approval."""
         with self.files:
             record = self._load(root)
-            if not review_policy.automatic(record, 'presentation', step.name,
-                                           holding=self._holding(root, step.name)):
+            if not self._automatic(record, step.name,
+                                   holding=self._holding(root, step.name)):
                 raise WorkspaceError('This step needs your review.')
             evidence = getattr(self, f"_show_{step.name.partition(':')[2].replace('-', '_')}")(root, record)
             if step.name == 'gate:look':
@@ -2267,7 +2278,7 @@ class Engine(Jobs, Researching):
                 record['look_again'] = {'name': picked.get('name') or picked.get('choice'),
                                         'choice': picked.get('choice')}
         else:
-            made = looks.choose_default(root, self._skill())
+            made = looks.choose_default(root, self._skill(), review_policy.level(record))
         return made is not None
 
     def _edit_outline(self, root: Path, record: dict, edited) -> None:
@@ -2351,7 +2362,7 @@ class Engine(Jobs, Researching):
                     if halted.get('action') != 'resume':
                         raise WorkspaceError('This deck is not paused or stopped, so there is '
                                              'nothing to resume.')
-                elif halted.get('action') not in ('retry', stops.MORE_TIME) or (
+                elif halted.get('action') not in ('retry', stops.STATUS, stops.MORE_TIME) or (
                         action == stops.MORE_TIME and halted.get('action') != stops.MORE_TIME):
                     raise WorkspaceError('Nothing here failed, so there is nothing to try '
                                          'again.')
@@ -2486,7 +2497,7 @@ class Engine(Jobs, Researching):
         if root is None:
             raise WorkspaceError('There is no deck there.')
         record = self._load(root)
-        deck = build.delivered_deck(root, record)
+        deck = delivering.shared_file(root) or build.delivered_deck(root, record)
         return f'{root.name}' + ('-unreviewed-first-draft' if decks.user_first(record) else '') + '.pptx', deck.read_bytes()
 
     # --- sharing -----------------------------------------------------------------------------
@@ -2754,10 +2765,11 @@ class Engine(Jobs, Researching):
         for row in rows:
             if row['name'] == 'research-plan' and (record.get('research') or {}).get('plan_from') == 'form':
                 row['label'] = FROM_FORM
-            if row['name'].startswith('gate:') and not (row['name'] == 'gate:look' and record.get('look_again')) and review_policy.automatic(
-                    record, 'presentation', row['name'],
+            if row['name'].startswith('gate:') and not (row['name'] == 'gate:look' and record.get('look_again')) and self._automatic(
+                    record, row['name'],
                     holding=self._holding(root, row['name']) if root else ()):
                 row['label'] = 'Continue the ' + WORDS[row['name']] + ' automatically'
+                row['automatic'] = True
             tried = attempts(record, row['name'])
             dollars = [attempt['dollars'] for attempt in tried
                        if attempt.get('dollars') is not None]
@@ -2797,6 +2809,7 @@ class Engine(Jobs, Researching):
             # shown here, where a wrong reading can be put right.
             if record['route'] == 'document':
                 shown['classify'] = self._show_classify(root, record)
+                shown['reclassify_price'] = self._reclassify_price(record)
         return shown
 
     def _direction_signature(self, root: Path, record: dict) -> str:
@@ -2829,12 +2842,29 @@ class Engine(Jobs, Researching):
     def _show_research_plan(self, root: Path, record: dict) -> dict:
         plan = home.read_json(root / PLAN, None)
         items = plan.get('items') if isinstance(plan, dict) else None
-        return {'text': text_of(root / PLAN_MD) or '',
+        looks = self._research_from(root, record)
+        return {'text': text_of(root / PLAN_MD) or '', **self._room(record, items),
+                # Where the questions not searched on the web are answered from.
+                'looks': {'documents': bool(looks.get('documents')),
+                          'sites': list(looks.get('sites') or ()),
+                          'web': bool(looks.get('web'))},
                 'questions': [{'id': item['id'], 'title': marks.title(item['id']),
                                'question': str(item.get('question') or ''),
                                'search': item.get('public_query')}
                               for item in items or ()
                               if isinstance(item, dict) and isinstance(item.get('id'), str)]}
+
+    @staticmethod
+    def _room(record: dict, items) -> dict:
+        """How many questions the plan takes now, as `room`, and the most it holds, as
+        `most`: a contract run's plan holds PLAN_MOST, another's QUESTIONS, and no more than
+        ADDED are added at once."""
+        planned = len([item for item in items or () if isinstance(item, dict)])
+        most = worker_tools.PLAN_MOST if record.get('research_contract') \
+            else worker_tools.QUESTIONS
+        room = max(0, most - planned)
+        return {'room': room if record.get('research_contract') else min(marks.ADDED, room),
+                'most': most}
 
     def _show_research(self, root: Path, record: dict) -> dict:
         contract = bool(record.get('research_contract'))
@@ -2846,7 +2876,9 @@ class Engine(Jobs, Researching):
         price = research_view.price({name: entry.get('tries') or [] for name, entry in kept.items()
                                      if isinstance(entry, dict)}, redone, drafted=self._drafted(root)) if contract else None
         looks = self._research_from(root, record)
+        planned = home.read_json(root / PLAN, None)
         return {'text': text_of(root / REPORT) or '', 'items': self._findings_shown(root, record),
+                **self._room(record, planned.get('items') if isinstance(planned, dict) else None),
                 'contract': contract, 'research_price': price, 'research': research_view.account(root / 'research',
                     [{'id': i, 'question': q} for i, q in self._questions(root).items()]) if contract else None,
                 # Where the research looked, with the sites named, and what it could not save.
@@ -3116,9 +3148,22 @@ class Engine(Jobs, Researching):
                          'download': self._rendered(root, record),
                          'slides': self._delivered_slides(root),
                          'last_build': self._last_build(record),
-                         'to_google': said.get('output') == 'pptx'}
+                         'to_google': said.get('output') == 'pptx',
+                         'file': self._pptx_where(root, record, said),
+                         **({'not_here': NOT_HERE} if self._pptx_where(root, record, said)
+                            == 'maker' else {})}
                         if said else None),
-            'contactSheet': (root / build.SHEET).is_file()}
+            'contactSheet': (root / build.SHEET).is_file(),
+            'undo': bool(mine and state != 'working' and not run.busy and self._can_undo(root))}
+
+    def _can_undo(self, root: Path) -> bool:
+        """Whether Undo the last step would be done, not refused: the last step is this
+        deck's and is not shared yet."""
+        space = self.workspace
+        try:
+            return bool(space and gitstate.known(space, root) and gitstate.can_undo(space, root))
+        except (OSError, hub.GitError):   # an unreadable repository offers no undo
+            return False
 
     @staticmethod
     def _assistant_attempt(name: str, attempt: dict) -> bool:
@@ -3131,6 +3176,17 @@ class Engine(Jobs, Researching):
         step = stages.BY_NAME.get(name.partition(':')[0])
         return (not attempt.get('runner') and name not in ('build-sections', 'build-repair')
                 and (step is None or step.kind == 'agent'))
+
+    def _reclassify_price(self, record: dict) -> dict:
+        """What reading the document the other way, from the direction review, draws again
+        and what that last took, said before it is sent. Taken as material with research
+        asked for, the research runs for the first time, which this computer has no price
+        for."""
+        price = dict(self._redo(record, 'gate:classify') or {'says': ''})
+        other = 'material' if record.get('classified') == 'spec' else 'spec'
+        if other == 'material' and (record.get('form') or {}).get('research'):
+            price['says'] = ' '.join(filter(None, (price.get('says'), FIRST_RESEARCH)))
+        return price
 
     def _redo(self, record: dict, gate: str) -> dict | None:
         """The steps Ask for changes at `gate` runs again, and what they took the last time
@@ -3172,7 +3228,8 @@ class Engine(Jobs, Researching):
         only when every one of them reported its cost."""
         rows = [row for row in stages.timeline(record) if row['state'] not in ('done', 'later')]
         gates = review_policy.ahead(record, 'presentation',
-                                    [row['name'] for row in rows if row['name'].startswith('gate:')])
+                                    [row['name'] for row in rows if row['name'].startswith('gate:')],
+                                    run_gates=[step.name for step in stages.steps(record)])
         if record.get('look_again') and any(row['name'] == 'gate:look' for row in rows):
             gates = ['gate:look', *[name for name in gates if name != 'gate:look']]
         nxt = next((row for row in rows if gates and row['name'] == gates[0]), None)
@@ -3243,11 +3300,27 @@ class Engine(Jobs, Researching):
 
     @staticmethod
     def _rendered(root: Path, record: dict) -> bool:
+        if delivering.shared_file(root) is not None:
+            return True
         try:
             build.delivered_deck(root, record)
             return True
         except WorkspaceError:
             return False
+
+    @staticmethod
+    def _pptx_where(root: Path, record: dict, said: dict) -> str | None:
+        """Where a PowerPoint delivery's file is: 'shared' beside the deck, 'here' only in
+        this computer's work/, or 'maker' when only the computer that made it has it."""
+        if said.get('output') != 'pptx':
+            return None
+        if delivering.shared_file(root) is not None:
+            return 'shared'
+        try:
+            build.delivered_deck(root, record)
+            return 'here'
+        except WorkspaceError:
+            return 'maker'
 
     def _brief(self, root: Path) -> dict:
         """A deck in a few words, for a list."""
@@ -3271,6 +3344,7 @@ class Engine(Jobs, Researching):
                 'sentence': sentence, 'needs': needs and mine, 'mine': mine, 'driver': who,
                 'notice': self._notice(root, record), 'link': said.get('url'),
                 'pptx': bool(said.get('pptx')), 'revision': said.get('revision'),
+                'pptx_where': self._pptx_where(root, record, said),
                 'contactSheet': (root / build.SHEET).is_file(), 'last_shared': last}
 
     def decks(self) -> dict:

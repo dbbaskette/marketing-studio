@@ -82,6 +82,25 @@ class ReviewLevelsTests(StudioCase):
         from studio_core import research_contract
         research_contract.read_bundle(root / 'research')
 
+    def test_balanced_redesign_stops_at_the_look_and_keeps_the_pick(self):
+        import json
+        from runner.steps import look
+        self.brand.run.offers_looks = True
+        root = self.existing_deck('balanced', 'redesign')
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown['sentence'])
+        self.assertEqual(shown['gate']['name'], 'gate:look')
+        run = decks.read_run(root)
+        self.assertEqual(run['gates']['gate:classify']['by'], 'review-policy')
+        self.decide(root, extra={'look': 'example-bold'})
+        run = decks.read_run(root)
+        self.assertNotEqual(run['gates']['gate:look'].get('by'), 'review-policy')
+        approval = ' '.join(json.loads((root / 'outline.json').read_text())['approval'])
+        self.assertIn('Look chosen:', approval)
+        self.assertIn('In their words:', approval)
+        self.assertEqual(look.chosen(root)['choice'], 'example-bold')
+        self.assertEqual(self.view(root)['gate']['name'], 'gate:build')
+
     def test_balanced_combines_direction_then_deck_and_keeps_snapshot(self):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
             root = self.start(research=True)

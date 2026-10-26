@@ -52,12 +52,14 @@ def change(update, level, seen):
     return update({'review': {'level': level}}, guard=guard)
 
 
-def ahead(record, product, gates, last=None, first='outline'):
+def ahead(record, product, gates, last=None, first='outline', run_gates=None):
     """The gates of `gates`, in order, that the run's level always stops at: those the
     policy does not accept with nothing holding them. A gate a grave finding may still
-    keep is not among them."""
+    keep is not among them. `run_gates`, every gate the run has, says where a combined
+    stop is held, as deck_flow.stops does; `gates` may be only those still to come."""
     return [gate for gate in gates
-            if not automatic(record, product, gate, last=last, holding=(), first=first)]
+            if not automatic(record, product, gate, last=last, holding=(), first=first,
+                             run_gates=run_gates)]
 
 
 def capture():
@@ -79,7 +81,7 @@ def level(record):
 
 
 # What a reviewer or an audit may still find when a gate comes up: a finding this grave, or
-# an audit blocker, keeps the gate for the person whatever the saved level.
+# a brand check blocker, keeps the gate for the person whatever the saved level.
 GRAVE = ('critical', 'major')
 # Training Studio gates the policy never accepts: the person's own steps (adding documents,
 # the form, a deck made in a conversation). A deck's own gates follow studio_core.deck_flow.
@@ -98,25 +100,27 @@ def held(findings=(), blockers=()):
                         + str(finding.get('note') or finding.get('detail') or '').strip())
     for blocker in blockers or ():
         if isinstance(blocker, dict):
-            kept.append('Audit blocker: ' + str(blocker.get('says') or blocker.get('code')
+            kept.append('Brand check: ' + str(blocker.get('says') or blocker.get('code')
                                                 or '').strip())
         elif blocker:
-            kept.append('Audit blocker: ' + str(blocker))
+            kept.append('Brand check: ' + str(blocker))
     return kept
 
 
-def automatic(record, product, gate, last=None, holding=(), first='outline'):
+def automatic(record, product, gate, last=None, holding=(), first='outline',
+              run_gates=None):
     """Whether the saved level accepts `gate` without the person. Never while `holding`, what
     `held()` found still open, has anything in it. A Training Studio gate may carry its
     level, as `gate:deck@101`: the policy reads the gate without it. A blog under Balanced
     stops at `first`, its first writing stage (the outline when it has one, else the draft),
-    and at `last`."""
+    and at `last`. `run_gates`, every gate the run has, lets a combined deck stop be held
+    where the run has a stop (deck_flow.stops)."""
     chosen = level(record)
     if chosen == 'step_by_step' or holding:
         return False
     # A deck's checkpoints pause the same way in every studio: the brand's draft, look and
     # final, as deck_flow.PAUSES says for this level.
-    deck = deck_flow.stops(product, chosen, gate)
+    deck = deck_flow.stops(product, chosen, gate, gates=run_gates)
     if deck is not None:
         return not deck
     if product == 'presentation':

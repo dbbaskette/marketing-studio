@@ -482,7 +482,7 @@ class RunnerPage(desk.Page):
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
             reply = super().decide(path, target, decision, note, seen, refresh)
-            driven = self.engine.decided(path, reply['decided'])
+            driven = self.engine.decided(path, reply['decided'], checked=True)
         if not driven:
             return reply
         self.engine.carry_on(path)
@@ -763,7 +763,7 @@ class RunnerPage(desk.Page):
         if action not in engines.SUPPLYING:
             raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'A document can be: '
                                + ', '.join(engines.SUPPLYING) + '.')
-        name, data = desk.text(sent, 'name', action != 'done'), None
+        name, data = desk.text(sent, 'name', action not in ('done', 'update')), None
         if action == 'add':
             content = sent.get('content')
             if not isinstance(content, str) or not content:
@@ -786,6 +786,17 @@ class RunnerPage(desk.Page):
             if choose not in (None, 'ours', 'theirs'):
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Choose the Doc’s version or this version.')
             return self.engine.pull_copy(path, artifact, choose)
+        action = sent.get('action')
+        if action == 'check':
+            return self.engine.check_copies(path)
+        if action == 'remake':
+            artifact = desk.text(sent, 'artifact')
+            desk.artifact_of(path, artifact)
+            return self.engine.remake_copy(path, artifact)
+        if action is not None:
+            raise desk.Refusal(HTTPStatus.BAD_REQUEST,
+                               'Ask to check the copies, make a Doc again, or make them '
+                               'again.')
         return self.engine.copies_again(path)
 
 

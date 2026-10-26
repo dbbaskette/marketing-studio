@@ -663,18 +663,25 @@ def forget(workspace: Workspace, kept: str | None) -> None:
         hub.run(workspace.repo, 'update-ref', '-d', kept)
 
 
+def can_undo(workspace: Workspace, path) -> bool:
+    """Whether `undo` would take back the last commit, changing nothing: it touched only one
+    path under the folder, it is not shared yet, there is a commit before it, and nothing is
+    left uncommitted."""
+    repo, scope = workspace.repo, inside(workspace, path)
+    names = hub.git(repo, 'show', '--name-only', '--format=', 'HEAD').splitlines()
+    within = all(name == scope or name.startswith(f'{scope}/') for name in names)
+    return bool(names and within and hub.ahead(repo, tracking(workspace))
+                and hub.passes(repo, 'rev-parse', '--verify', '--quiet', 'HEAD~1')
+                and not changed(workspace))
+
+
 def undo(workspace: Workspace, path) -> bool:
     """Take back the last commit, when it was never shared and touched nothing but one
     path under the folder. The path is put back as the commit before had it. False, with
     nothing changed, for any other commit."""
-    repo, scope = workspace.repo, inside(workspace, path)
-    names = hub.git(repo, 'show', '--name-only', '--format=', 'HEAD').splitlines()
-    within = all(name == scope or name.startswith(f'{scope}/') for name in names)
-    if not names or not within or not hub.ahead(repo, tracking(workspace)) \
-            or not hub.passes(repo, 'rev-parse', '--verify', '--quiet', 'HEAD~1') \
-            or changed(workspace):
+    if not can_undo(workspace, path):
         return False
-    hub.git(repo, 'checkout', '--quiet', '-B', workspace.branch, 'HEAD~1')
+    hub.git(workspace.repo, 'checkout', '--quiet', '-B', workspace.branch, 'HEAD~1')
     return True
 
 

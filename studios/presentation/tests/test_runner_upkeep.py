@@ -560,6 +560,16 @@ class InstalledUpdateTests(InstalledCase):
         self.assertEqual(sorted(state['companions']), ['harness-research', 'harness-slides'])
 
 
+    def test_a_suite_install_offers_no_companion_update(self):
+        keep = self.keeper(self.installed())
+        keep.check()
+        self.assertTrue(keep.report()['update']['offered'], 'a companion is wanted')
+        with mock.patch.object(keep, 'suite_managed', return_value=True):
+            shown = keep.report()
+        self.assertFalse(shown['update']['offered'])
+        self.assertEqual(shown['versions']['suite'], 'marketing-studio')
+
+
 class UpgradeTests(InstalledCase):
     """Upgrading Presentation Studio itself, through the installer of the version fetched."""
 

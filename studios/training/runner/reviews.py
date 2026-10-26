@@ -115,10 +115,22 @@ def group(root, session, run, listed, done):
         boundaries[phase] = pipeline.Step(ident, 'review', label,
                                            'Waiting for you to ' + label.lower(), 'review')
         accepted = (run.get('review_decisions') or {}).get(phase) or {}
-        if accepted.get('signature') == signature(root, session, run, phase):
+        # A change asked for at the finished materials review keeps the first drafts
+        # approved, though what they hold is written again.
+        if accepted.get('signature') == signature(root, session, run, phase) \
+                or (phase == 'direction' and accepted.get('carried')):
             completed.add(ident)
     return tuple([*prep, *samples, *([boundaries['direction']] if mode == 'balanced' else []),
                   *build, boundaries['final'], *package]), frozenset(completed)
+
+
+def uncarry(record: dict) -> None:
+    """A change made outside the finished materials review, to what the first drafts hold:
+    a first drafts approval kept through a final-review change no longer stands, so they
+    are reviewed again."""
+    decisions = record.get('review_decisions') or {}
+    if (decisions.get('direction') or {}).get('carried'):
+        decisions.pop('direction', None)
 
 
 def rewritten(root, session, decks, target):
@@ -297,6 +309,7 @@ class Reviewing:
             document = desk.document(root, found.session, name)
             plan = desk.document(root, found.session, 'research-plan') if name == 'research' else {}
             items.append({'target': name, 'label': workspace.label(name),
+                          'file': spec['file'],
                           'text': file.read_text(encoding='utf-8') if file.suffix == '.md' else '',
                           **({'document': document} if name == 'research-plan' else {}),
                           **({'research': self._outside(record, research_view.account(
@@ -309,7 +322,8 @@ class Reviewing:
         for level, mine in found.decks.items():
             if phase == 'direction':
                 item = {'target': 'outline:' + (level or ''),
-                        'label': 'Deck direction' + (f' · Level {level}' if level else ''),
+                        'label': (f'the level {level} deck outline' if level
+                                  else 'the deck outline'),
                         'text': outline_text(pipeline.outline_view(root, found, level))}
                 saved = (record.get('review_samples') or {}).get(level or '') or {}
                 looks = pipeline.look_view(root, found, level)
@@ -334,17 +348,28 @@ class Reviewing:
         for item in items:
             below = rewritten(root, found.session, found.decks, item['target'])
             item['rewrites'] = [labels[name] for name in labels if name in below]
+            # At the finished materials review, what a change rewrites comes back to it; a
+            # deck drawn again stops at its own gate first.
+            item['returns'] = phase == 'final' and bool(item['rewrites'])
+            item['deck_again'] = phase == 'final' and any(
+                workspace.split(name)[0] == 'deck' for name in below if name != item['target'])
             # What a change to it writes again, and what that took, said before it is sent.
             item['redo'] = self._redo_view(root, record, found, item['target'], below)
         return {'phase': phase, 'label': found.next.step.label, 'items': items,
                 'commits': commits(root, found.session, found.decks, phase),
                 'expected': signature(root, found.session, record, phase)}
 
-    def _request(self, root, record, decisions, target, note):
-        """Record one change asked for from a combined review. Call it holding `files`."""
+    def _request(self, root, record, decisions, target, note, phase):
+        """Record one change asked for from a combined review. Call it holding `files`.
+        A change asked for at the first drafts review brings that review back; one asked
+        for at the finished materials review keeps it, and what it rewrites comes back to
+        the review it was asked at."""
         base = target.partition('@')[0].partition(':')[0]
-        if base not in ('scenario', 'yoodli'):
+        if phase == 'direction' and base not in ('scenario', 'yoodli'):
             decisions.pop('direction', None)
+        elif phase != 'direction' and decisions.get('direction'):
+            # The first drafts stay approved: what this rewrites comes back to this review.
+            decisions['direction']['carried'] = True
         if target.startswith('outline:'):
             level = target.partition(':')[2] or None
             self._decided(record, level)['asked'] = {
@@ -401,7 +426,8 @@ class Reviewing:
                         continue
                     if choice not in allowed:
                         raise WorkspaceError('Pick a look for ' + item['label'].lower()
-                                             + ' before you approve the direction.')
+                                             .removesuffix(' outline')
+                                             + ' before you approve the first drafts.')
                     words = pick.get('words') if isinstance(pick.get('words'), str) else ''
                     picks[level or ''] = {'choice': choice, 'words': words.strip()[:2000],
                                           'by': 'page', 'at': home.now()}
@@ -414,6 +440,13 @@ class Reviewing:
                 if not again:
                     record.setdefault('review_decisions', {})[phase] = {
                         'signature': expected, 'by': 'page', 'at': home.now()}
+                    # The finished materials approved: a first drafts approval kept through
+                    # a change made there now stands for the drafts as they are.
+                    kept = record['review_decisions'].get('direction') or {}
+                    if phase == 'final' and kept.get('carried'):
+                        record['review_decisions']['direction'] = {
+                            **{key: value for key, value in kept.items() if key != 'carried'},
+                            'signature': signature(root, found.session, record, 'direction')}
             else:
                 known = [item['target'] for item in view['items']]
                 for ask in asked:
@@ -427,7 +460,8 @@ class Reviewing:
                 decisions = record.setdefault('review_decisions', {})
                 decisions.pop('final', None)
                 for ask in asked:
-                    self._request(root, record, decisions, ask['target'], ask['note'])
+                    self._request(root, record, decisions, ask['target'], ask['note'],
+                                  phase)
             self._store(root, record)
             if decision != 'approve' or not again:
                 self._remember_decision(root, record, view['label'].removeprefix('Review '), decision)
