@@ -257,6 +257,9 @@ LOOKS_STALE = ('What the deck says changed since its looks were drawn, so they a
 ON_ITS_WAY = 'This deck is on its way to Google Slides already. Wait for it.'
 STILL_NOT_CONNECTED = ("Google still isn't connected on this computer. Sign in with gcloud, "
                        'then deliver it again.')
+# Reading a document as material, when research was asked for, runs research this deck never ran.
+FIRST_RESEARCH = ('The research runs first, for the first time; this computer has no record of '
+                  'what it costs.')
 UNDO_NOT = ('The last step cannot be undone: only the last thing done, when it was this '
             "deck's and is not shared yet, can be.")
 NO_PICTURE = 'There is no picture of that slide on this computer.'
@@ -2803,6 +2806,7 @@ class Engine(Jobs, Researching):
             # shown here, where a wrong reading can be put right.
             if record['route'] == 'document':
                 shown['classify'] = self._show_classify(root, record)
+                shown['reclassify_price'] = self._reclassify_price(record)
         return shown
 
     def _direction_signature(self, root: Path, record: dict) -> str:
@@ -3147,6 +3151,17 @@ class Engine(Jobs, Researching):
         step = stages.BY_NAME.get(name.partition(':')[0])
         return (not attempt.get('runner') and name not in ('build-sections', 'build-repair')
                 and (step is None or step.kind == 'agent'))
+
+    def _reclassify_price(self, record: dict) -> dict:
+        """What reading the document the other way, from the direction review, draws again
+        and what that last took, said before it is sent. Taken as material with research
+        asked for, the research runs for the first time, which this computer has no price
+        for."""
+        price = dict(self._redo(record, 'gate:classify') or {'says': ''})
+        other = 'material' if record.get('classified') == 'spec' else 'spec'
+        if other == 'material' and (record.get('form') or {}).get('research'):
+            price['says'] = ' '.join(filter(None, (price.get('says'), FIRST_RESEARCH)))
+        return price
 
     def _redo(self, record: dict, gate: str) -> dict | None:
         """The steps Ask for changes at `gate` runs again, and what they took the last time

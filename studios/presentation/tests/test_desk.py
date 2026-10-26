@@ -2222,6 +2222,30 @@ class ScreenTests(ScriptedPage, PageCase):
         self.post('decide', body)
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:outline')
 
+    def test_that_s_wrong_asks_first_and_says_its_price(self):
+        from studio_core import review_policy
+        self.workers.classified = {'kind': 'spec', 'reason': 'Reads as a slide script.',
+                                   'slides': 2}
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'balanced'}):
+            path = self.started(route='document', research=True, research_sources='both',
+                                source={'kind': 'paste', 'text': 'A slide script.'})
+        gate = self.run_of(path)['gate']
+        price = gate['reclassify_price']['says']
+        result = self.deck_screen(path, [
+            {'click': 'That’s wrong'}, {'snapshot': 'asked'}, {'click': 'Cancel'},
+            {'snapshot': 'cancelled'}, {'click': 'That’s wrong'}, {'click': 'Read it again'}],
+            **{'POST /api/decide': [ok(self.run_of(path))]})
+        asked = result['snapshots']['asked']
+        self.assertIn('Read it as material to build from?', asked['sheet'])
+        self.assertIn(price, asked['sheet'])
+        self.assertIn('Read it again', asked['buttons'])
+        self.assertIn('Cancel', asked['buttons'])
+        self.assertEqual(result['snapshots']['cancelled']['posts'], 0)
+        (address, body), = self.posts(result)
+        self.assertEqual(address, '/api/decide')
+        self.assertEqual(body['extra'], {'direction_target': 'gate:classify', 'kind': 'material'})
+
     def test_the_direction_review_shows_how_the_document_was_read(self):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
@@ -2230,7 +2254,8 @@ class ScreenTests(ScriptedPage, PageCase):
                                 source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['classify']['verdict']), ('gate:outline', 'material'))
-        result = self.deck_screen(path, [{'snapshot': 'direction'}, {'click': 'That’s wrong'}],
+        result = self.deck_screen(path, [{'snapshot': 'direction'}, {'click': 'That’s wrong'},
+                                         {'click': 'Read it again'}],
                                   **{'POST /api/decide': [ok(self.run_of(path))]})
         shot = result['snapshots']['direction']
         self.assertIn('Your document was read as material to build from.', shot['text'])

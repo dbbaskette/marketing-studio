@@ -2356,6 +2356,26 @@ class SlideNoteTests(StudioCase):
 
 
 class DirectionClassifyTests(StudioCase):
+    def test_the_direction_review_prices_reading_the_document_the_other_way(self):
+        from runner import engine as engines
+        from studio_core import review_policy
+        self.workers.classified = {'kind': 'spec', 'reason': 'Reads as a slide script.',
+                                   'slides': 2}
+        for research in (True, False):
+            with self.subTest(research=research):
+                with mock.patch.object(review_policy, 'capture',
+                                       return_value={'schema': 1, 'level': 'balanced'}):
+                    root = self.start(route='document', research=research,
+                                      title=f'Read {research}',
+                                      **({'research_sources': 'both'} if research else {}),
+                                      source={'kind': 'paste', 'text': 'A slide script.'})
+                shown = self.view(root)['gate']
+                self.assertEqual((shown['name'], shown['classify']['verdict']),
+                                 ('gate:outline', 'spec'))
+                says = shown['reclassify_price']['says']
+                self.assertTrue(says.startswith('Drawn again: “'), says)
+                self.assertEqual(says.endswith(engines.FIRST_RESEARCH), research, says)
+
     def test_the_direction_review_shows_the_verdict_and_takes_a_correction(self):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',

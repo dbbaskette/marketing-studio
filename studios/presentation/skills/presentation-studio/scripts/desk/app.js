@@ -1336,6 +1336,7 @@ function drawSheet() {
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
   else if (view.sheet === 'rebrand') body = rebrandSheet();
+  else if (view.sheet === 'reclassify') body = reclassifySheet();
   else body = undoSheet();
   holder.replaceChildren(...body);
 }
@@ -4524,9 +4525,9 @@ function classifyLine(gate, readonly) {
   const other = verdict === 'spec' ? 'material' : 'spec';
   const node = make('div', 'card-part');
   const problem = alertLine('direction-classify-problem');
-  const wrong = capsule('That’s wrong', 'quiet', (event) => decide('changes', '', problem,
-    event.currentTarget, { direction_target: 'gate:classify', kind: other }),
-  'direction-classify');
+  // It asks first, with what reading it again draws and what that last took.
+  const wrong = capsule('That’s wrong', 'quiet', openSheet('reclassify', 'direction-classify'),
+    'direction-classify');
   wrong.setAttribute('aria-label', 'That’s wrong: it is ' + KINDS[other]);
   return add(node, add(make('p', ''), 'Your document was read as ' + KINDS[verdict] + '.'
     + (read.corrected ? ' You said so.' : '')), make('p', 'quiet', 'If it is really '
@@ -5570,6 +5571,24 @@ function rebrandSheet() {
     + 'the one you choose and come back here for your decision.'), problem,
   add(make('div', 'bar'), submit, cancel));
   return [title, form];
+}
+
+// Reading the person's document the other way, from the direction review: what is drawn
+// again and its price, before anything is sent.
+function reclassifySheet() {
+  const gate = view.run && view.run.gate;
+  const read = (gate && gate.classify) || {};
+  const verdict = KINDS[read.verdict] ? read.verdict : 'material';
+  const other = verdict === 'spec' ? 'material' : 'spec';
+  const problem = problemLine();
+  const price = gate && gate.reclassify_price && gate.reclassify_price.says;
+  const confirm = capsule('Read it again', 'filled', (event) => decide('changes', '', problem,
+    event.currentTarget, { direction_target: 'gate:classify', kind: other }), 'send');
+  return [sheetTitle('Read it as ' + KINDS[other] + '?'),
+    make('p', '', 'The outline is drafted again from the right reading.'),
+    price ? make('p', 'quiet', price) : null,
+    problem, add(make('div', 'bar'), confirm, capsule('Cancel', 'quiet', closeSheet,
+      'cancel'))];
 }
 
 function undoSheet() {
