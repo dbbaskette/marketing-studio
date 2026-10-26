@@ -180,6 +180,7 @@ input.desk-text{min-height:44px}
 .desk-image{display:grid;gap:.25rem;justify-items:start;margin:0;max-width:10rem;min-width:0}
 .desk-thumb{display:block;max-width:10rem;max-height:7.5rem;width:auto;height:auto;object-fit:contain;border:1px solid var(--hair);border-radius:8px;background:var(--paper)}
 .desk-image>figcaption{font-size:.8rem;overflow-wrap:anywhere}
+.desk-thumb-missing{display:grid;place-items:center;width:10rem;height:6rem;box-sizing:border-box;padding:.5rem;border:1px dashed var(--hair);border-radius:8px;background:var(--paper);color:var(--late);font-size:.85rem;text-align:center}
 .desk-note>.input{flex:1 1 16rem;min-width:0;max-width:none}
 .desk-note-text{resize:vertical}
 .desk-working{border-color:var(--yours)}

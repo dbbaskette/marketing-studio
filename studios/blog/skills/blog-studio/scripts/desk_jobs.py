@@ -1760,7 +1760,8 @@ def _row(job):
 def images_view(root, ident):
     """The data of a desk blog's images, which the page reads once and keeps; the desk view
     lists them by key only, so a poll never carries them."""
-    return {'id': ident, 'images': desk_images.served(desk.read(root, ident))}
+    desk.read(root, ident)
+    return {'id': ident, 'images': desk_images.served(desk._data(root, ident))}
 
 
 def view(root, ident):
@@ -1806,6 +1807,8 @@ def view(root, ident):
         # The images are listed without their data, read once from `images_view`.
         **{key: value for key, value in draft.items() if key != 'images'},
         'images': desk_images.shown(draft),
+        # Images the text names that are kept nowhere: the page says each is missing.
+        'missing_images': desk_images.missing(draft),
         'markdown': desk.join(draft, images=False),
         'jobs': rows,
         'chain': chain,

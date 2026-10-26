@@ -2,7 +2,8 @@
 
 DRAFT.md is rewritten on every save so Copy, Download, Google Docs, the team library and the
 pre-publish check read the same text as before. Images held as data are kept beside the text
-(desk_images): a part holds only their short references, and DRAFT.md ends with them.
+(desk_images): a part holds only their short references, desk/images.json holds their data,
+and DRAFT.md ends with them.
 """
 
 import json
@@ -193,9 +194,10 @@ def _title_line(text):
     return found.group(1).strip()[:500] if found else ''
 
 
-def join(draft, images=True):
+def join(draft, images=True, data=None):
     """The Markdown the parts make, as DRAFT.md keeps it: then the definitions of the images
-    the text refers to, at the end. Without `images`, the text alone, as the page shows it."""
+    the text refers to, at the end, from `data` (desk/images.json) or as just taken from
+    text. Without `images`, the text alone, as the page shows it."""
     parts = []
     if draft.get('title'):
         parts.append('# ' + draft['title'])
@@ -205,7 +207,7 @@ def join(draft, images=True):
         parts.append(
             '## ' + section['heading'] + ('\n\n' + section['text'] if section['text'] else '')
         )
-    held = desk_images.definitions(draft) if images else []
+    held = desk_images.definitions(draft, data) if images else []
     return '\n\n'.join(parts + held) + '\n'
 
 
@@ -387,10 +389,10 @@ def create(root, data):
         directory.mkdir()
         studio.save_artifact(directory, 'original', manuscript, record, 'supplied manuscript')
     studio.save_artifact(directory, 'draft', join(draft), record, 'brought to the desk')
-    studio.write_json(studio.inside(directory, DESK, 'draft.json'), draft)
+    _keep_images(directory, draft)
     studio.persist(directory, 'articles', record)
     studio.write_json(studio.inside(root, '.active-article.json'), {'id': ident})
-    return draft
+    return desk_images.stored(draft)
 
 
 START = 'start.json'
@@ -599,40 +601,88 @@ def open_run(root, ident):
         'created_at': now,
         'updated_at': now,
     }
-    studio.write_json(target, draft)
-    return draft
+    _keep_images(directory, draft)
+    return desk_images.stored(draft)
+
+
+IMAGES = 'images.json'  # {label: data URI} for a desk draft's images (desk_images)
+
+
+def _data_at(path):
+    if not path.is_file() or path.is_symlink():
+        return {}
+    try:
+        found = studio.read_json(path)
+    except (ValueError, OSError):
+        return {}
+    if not isinstance(found, dict):
+        return {}
+    return {label: uri for label, uri in found.items() if isinstance(uri, str)}
+
+
+def _data(root, ident):
+    """The data of a desk blog's images, by label. Read only to write DRAFT.md or to serve
+    the page its images once, never for a view."""
+    directory, _ = _paths(root, ident)
+    return _data_at(studio.inside(directory, DESK, IMAGES))
+
+
+def _keep_images(directory, draft, before=None):
+    """Keep desk/images.json in step with the draft's images, when that changes, then
+    desk/draft.json without any image data. Returns the data, by label. `before` is the
+    file as already read, if it was."""
+    path = studio.inside(directory, DESK, IMAGES)
+    before = _data_at(path) if before is None else before
+    data = desk_images.data_of(draft, before)
+    if data != before and (data or path.exists()):
+        studio.write_json(path, data)
+    studio.write_json(studio.inside(directory, DESK, 'draft.json'), desk_images.stored(draft))
+    return data
 
 
 def read(root, ident):
+    """The desk draft, with its images listed but not their data. A record kept before
+    images moved out of the text, or whose text names an image kept nowhere, is cleaned as
+    it is read (`_images_out`); a clean one is only read."""
     _, target = _paths(root, ident)
     if not target.is_file() or target.is_symlink():
         raise ValueError('This blog is not on the desk.')
     draft = studio.read_json(target)
-    if desk_images.inside(draft):
-        draft = _images_out(root, ident, draft)
+    sought = set(draft.get('sought') or [])
+    lost = [label for label in desk_images.missing(draft) if desk_images.key(label) not in sought]
+    if desk_images.inside(draft) or desk_images.unstored(draft) or lost:
+        draft = _images_out(root, ident, draft, lost)
     return draft
 
 
-def _images_out(root, ident, draft):
-    """A record kept before images moved out of the text, cleaned as it is first read.
+def _images_out(root, ident, draft, lost=()):
+    """A record kept before images moved out of the text, cleaned as it is first read: the
+    image data in its text moves to desk/images.json, and an image its text names that is
+    kept nowhere is looked for where it was last written (`_recovered`). No word changes.
 
     Under the studio lock, on the computer that drives the blog, the clean record is written
     once with no new revision and no part marked changed, so no open form is refused for it
-    alone; DRAFT.md already ends with the same definitions. In a team workspace the change is
-    recorded on its own. Otherwise the clean draft is only what this read returns."""
+    alone, and DRAFT.md ends with the images again; a label looked for and not found is
+    noted in `sought`, so it is looked for once. In a team workspace the change is recorded
+    on its own. Otherwise the clean draft is only what this read returns."""
     draft = desk_images.moved_out(draft)
+    if lost:
+        draft = _recovered(root, ident, draft, lost)
+        sought = {desk_images.key(label) for label in desk_images.missing(draft)}
+        draft['sought'] = sorted(set(draft.get('sought') or []) | sought)
+    draft = desk_images.with_alts(draft)
     if not studio.lock_held():
-        return draft
+        return desk_images.stored(draft)
     from team_workspace import guard, keep_desk, space
 
     try:
         guard(root, ident)
     except ValueError:
-        return draft  # Another computer drives it: cleaned there.
-    directory, target = _paths(root, ident)
-    studio.write_json(target, draft)
+        return desk_images.stored(draft)  # Another computer drives it: cleaned there.
+    directory, _ = _paths(root, ident)
+    data = _keep_images(directory, draft)
     record = studio.read_json(studio.metadata_path(directory, 'articles'))
-    current, body = studio.inside(directory, 'DRAFT.md'), join(draft).encode()
+    current, body = studio.inside(directory, 'DRAFT.md'), join(draft, data=data).encode()
     recorded = record.get('artifact_hashes', {}).get('draft')
     if current.is_file() and current.read_bytes() != body:
         if studio.digest(current.read_bytes()) == recorded:  # Never text changed elsewhere.
@@ -640,8 +690,55 @@ def _images_out(root, ident, draft):
             record['artifact_hashes']['draft'] = studio.digest(body)
             studio.persist(directory, 'articles', record)
     if space(root):
-        keep_desk(root, ident, 'Move the images of ' + ident + ' out of its desk text')
-    return draft
+        keep_desk(root, ident, 'Keep the images of ' + ident + ' apart from its desk text')
+    return desk_images.stored(draft)
+
+
+def _recovered(root, ident, draft, labels):
+    """The draft with the data of each image its text names but keeps nowhere, found where it
+    was last written: the versions of the part that names it, newest first, then the other
+    parts' versions, then ORIGINAL.md, then the Google Doc the blog started from."""
+    directory, _ = _paths(root, ident)
+    images = dict(draft.get('images') or {})
+    folder = studio.inside(directory, DESK, 'versions')
+    kept = sorted(
+        path.stem
+        for path in (folder.glob('*.jsonl') if folder.is_dir() and not folder.is_symlink() else [])
+        if path.stem in PARTS or PART.fullmatch(path.stem)
+    )
+
+    def versions_of(part):
+        try:
+            return [entry['text'] for entry in _kept(root, ident, part)]
+        except ValueError:
+            return []
+
+    def elsewhere():
+        original = studio.inside(directory, 'ORIGINAL.md')
+        if original.is_file() and not original.is_symlink():
+            yield original.read_text()
+        try:
+            from google_workflow import snapshot_path
+
+            record = studio.read_json(studio.metadata_path(directory, 'articles'))
+            base = (record.get('google') or {}).get('baselines', {}).get('draft') or {}
+            if base.get('transfer'):
+                snapshot = snapshot_path(directory, base['transfer'], 'document')
+                if snapshot.is_file():
+                    yield snapshot.read_text()
+        except (ValueError, OSError, KeyError, TypeError):
+            return
+
+    for label in labels:
+        part = desk_images.part_of(draft, label)
+        order = ([part] if part in kept else []) + [name for name in kept if name != part]
+        texts = (text for name in order for text in versions_of(name))
+        for text in (*texts, *elsewhere()):
+            entry = desk_images.defined_in(text, label)
+            if entry:
+                images[label] = {**entry, 'alt': ''}
+                break
+    return {**draft, 'images': images}
 
 
 def _part(draft, part):
@@ -671,14 +768,15 @@ def _write(root, ident, draft, parts=()):
     """Keep the draft, DRAFT.md and the blog's record in step, one revision on. Each part
     in `parts` records the revision it last changed at, for the stale check."""
     _require_lock()
-    directory, target = _paths(root, ident)
+    directory, _ = _paths(root, ident)
     record = studio.read_json(studio.metadata_path(directory, 'articles'))
     draft['revision'] += 1
     draft['updated_at'] = studio.now()
     changed = draft.setdefault('changed', {})
     for part in parts:
         changed[part] = draft['revision']
-    body = join(draft)
+    before = _data(root, ident)
+    body = join(draft, data=before)
     current = studio.inside(directory, 'DRAFT.md')
     if current.is_file() and studio.digest(current.read_bytes()) != record['artifact_hashes'].get(
         'draft'
@@ -697,13 +795,13 @@ def _write(root, ident, draft, parts=()):
             }
         )
         record['artifact_events'] = record['artifact_events'][-100:]
-    studio.write_json(target, draft)
+    _keep_images(directory, draft, before)
     studio.atomic(current, body.encode())
     record['artifact_hashes']['draft'] = studio.digest(body.encode())
     record['stage'] = 'draft'
     record['title'] = draft['title']
     studio.persist(directory, 'articles', record)
-    return draft
+    return desk_images.stored(draft)
 
 
 def checked(draft, seen, parts=None):

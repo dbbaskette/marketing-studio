@@ -530,6 +530,28 @@ class DeskTeamImageTests(TeamCase):
         self.assertEqual(gitstate.changed(self.found), [])
         self.assertIn('More.', (self.folder(ident) / 'DRAFT.md').read_text())
 
+    def test_an_image_pasted_on_the_desk_is_committed_with_the_draft(self):
+        from test_desk import IMAGE_ONE
+
+        ident = self.made['id']
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': ident,
+                'seen': 1,
+                'part': self.part,
+                'text': 'First.\n\n![](' + IMAGE_ONE + ')',
+                'session': 'f' * 16,
+            },
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+        files = support.git(self.found.repo, 'show', '--name-only', '--format=', 'HEAD').split()
+        self.assertIn('blogs/' + ident + '/desk/images.json', files)
+        self.assertIn('blogs/' + ident + '/desk/draft.json', files)
+        self.assertNotIn('data:image', (self.folder(ident) / 'desk' / 'draft.json').read_text())
+        self.assertIn(IMAGE_ONE, (self.folder(ident) / 'DRAFT.md').read_text())
+
 
 if __name__ == '__main__':
     unittest.main()

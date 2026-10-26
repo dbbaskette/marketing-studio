@@ -3,9 +3,11 @@
 A Google Doc's Markdown export writes each image as a short reference where it sits
 (`![][image1]`) and a reference-style definition with the image's base64 data at the end
 (`[image1]: <data:image/png;base64,...>`). On the desk a part's text keeps only the
-references: the definitions move to the draft record's `images`, {label: {'uri', 'alt'[,
-'title']}}, so nobody types among walls of base64 and no job sends image data to the
-assistant. `desk.join` writes them back at the end, so DRAFT.md, Copy and Download keep every
+references, so nobody types among walls of base64 and no job sends image data to the
+assistant. The draft record's `images` lists each image, {label: {'alt', 'key', 'size'[,
+'title']}}; its data is kept apart in `desk/images.json`, {label: data URI}, read only to
+write DRAFT.md or to serve the page once. An entry just taken from text also carries its
+`uri` until it is stored (`stored`, `data_of`). `desk.join` writes them back at the end, so DRAFT.md, Copy and Download keep every
 image exactly. An inline `![alt](data:image/...)` becomes a reference to a new `imageN` the
 same way. Ordinary http(s) images, and anything inside fenced code, stay as they are.
 """
@@ -67,7 +69,7 @@ def _masked(text):
 
 
 def _entry(uri, alt='', title=None):
-    entry = {'uri': uri, 'alt': alt}
+    entry = {'alt': alt, 'key': digest(uri), 'size': len(uri), 'uri': uri}
     if title:
         entry['title'] = title
     return entry
@@ -106,11 +108,11 @@ def take(text, images=None):
     shown = _masked(text)
     taken = set(names) | {key(m.group(2) or m.group(1)) for m in REFERENCE.finditer(shown)}
     taken |= {key(label) for label in LABELS.findall(shown)}
-    held = {entry['uri']: name for name, entry in images.items()}
+    held = {entry.get('key') or digest(entry['uri']): name for name, entry in images.items()}
 
     def inline(found):
         alt, uri, title = found.group(1), found.group(2) or found.group(3), found.group(4)
-        name = held.get(uri)
+        name = held.get(digest(uri))
         if name is None:
             number = 1
             while key('image' + str(number)) in taken:
@@ -118,7 +120,7 @@ def take(text, images=None):
             name = 'image' + str(number)
             taken.add(key(name))
             images[name] = _entry(uri, alt, title)
-            held[uri] = name
+            held[digest(uri)] = name
             names[key(name)] = name
         return '![' + alt + '][' + name + ']'
 
@@ -193,22 +195,45 @@ def written(draft):
     return [label for label in draft.get('images') or {} if key(label) in used]
 
 
-def definitions(draft):
-    """The definition lines DRAFT.md ends with, one for each image the text refers to."""
-    images = draft.get('images') or {}
-    return [
-        '['
-        + label
-        + ']: <'
-        + images[label]['uri']
-        + '>'
-        + (' ' + images[label]['title'] if images[label].get('title') else '')
-        for label in written(draft)
-    ]
+def definitions(draft, data=None):
+    """The definition lines DRAFT.md ends with, one for each image the text refers to whose
+    data is in hand: just taken from text, or in `data` as desk/images.json keeps it."""
+    images, data = draft.get('images') or {}, data or {}
+    lines = []
+    for label in written(draft):
+        uri = images[label].get('uri') or data.get(label)
+        if uri:
+            title = images[label].get('title')
+            lines.append('[' + label + ']: <' + uri + '>' + (' ' + title if title else ''))
+    return lines
 
 
 def digest(uri):
     return hashlib.sha256(uri.encode()).hexdigest()[:16]
+
+
+def stored(draft):
+    """The draft as desk/draft.json keeps it: each image's label, alt text, title, key and
+    size, and no data."""
+    images = draft.get('images') or {}
+    return {
+        **draft,
+        'images': {
+            label: {name: value for name, value in entry.items() if name != 'uri'}
+            for label, entry in images.items()
+        },
+    }
+
+
+def data_of(draft, data):
+    """desk/images.json for this draft: the data kept for each of its images, with any just
+    taken from text, and nothing for an image it no longer has."""
+    images, data = draft.get('images') or {}, data or {}
+    return {
+        label: entry.get('uri') or data[label]
+        for label, entry in images.items()
+        if entry.get('uri') or label in data
+    }
 
 
 def shown(draft):
@@ -220,31 +245,92 @@ def shown(draft):
             'label': label,
             'alt': images[label].get('alt', ''),
             'title': images[label].get('title', ''),
-            'key': digest(images[label]['uri']),
-            'size': len(images[label]['uri']),
+            'key': images[label].get('key') or digest(images[label].get('uri', '')),
+            'size': images[label].get('size', 0),
         }
         for label in written(draft)
     ]
 
 
-def served(draft):
-    images = draft.get('images') or {}
-    return [{'key': digest(entry['uri']), 'uri': entry['uri']} for entry in images.values()]
+def served(data):
+    """Each image's data with the key the desk view lists it by."""
+    return [{'key': digest(uri), 'uri': uri} for uri in (data or {}).values()]
+
+
+def unstored(draft):
+    """Whether a record holds image data in its own file's place, as one written before
+    images had their own file did."""
+    return any('uri' in entry for entry in (draft.get('images') or {}).values())
+
+
+def missing(draft):
+    """The labels the text refers to as images with none kept and no definition in the text
+    (such as a link's), each once, as first written."""
+    images = {key(label) for label in draft.get('images') or {}}
+    defined, found = set(), []
+    for text in _texts(draft):
+        shown_text = _masked(text)
+        defined |= {key(label) for label in LABELS.findall(shown_text)}
+    for text in _texts(draft):
+        for match in REFERENCE.finditer(_masked(text)):
+            label = (match.group(2) or match.group(1)).strip()
+            if key(label) not in images | defined and key(label) not in map(key, found):
+                found.append(label)
+    return found
+
+
+def part_of(draft, label):
+    """The part whose text first refers to a label: 'title', 'opening' or a section id."""
+    parts = [('title', draft.get('title') or ''), ('opening', draft.get('opening') or '')]
+    parts += [(s['id'], s.get('text') or '') for s in draft.get('sections') or []]
+    for part, text in parts:
+        if any(key(m.group(2) or m.group(1)) == key(label) for m in REFERENCE.finditer(text)):
+            return part
+    return None
+
+
+def defined_in(text, label):
+    """The image data a text defines for a label, as an entry, or None."""
+    if not holds(text):
+        return None
+    for name, entry in take(text)[1].items():
+        if key(name) == key(label):
+            return entry
+    return None
+
+
+def with_alts(draft):
+    """Each image without alt text takes the alt of the first reference to it that has one."""
+    images = dict(draft.get('images') or {})
+    names = {key(label): label for label in images}
+    for text in _texts(draft):
+        for found in REFERENCE.finditer(_masked(text)):
+            name = names.get(key(found.group(2) or found.group(1)))
+            if name and found.group(1) and found.group(2) and not images[name].get('alt'):
+                images[name] = {**images[name], 'alt': found.group(1)}
+    return {**draft, 'images': images}
 
 
 def fitted(draft):
     """The draft within the image limits: an image no part refers to any longer is let go
     first when they come to more than the total; a refusal says which limit it meets."""
     images = draft.get('images') or {}
-    if any(len(entry['uri']) > EACH for entry in images.values()):
+
+    def size(entry):
+        return entry.get('size') or len(entry.get('uri') or '')
+
+    if any(size(entry) > EACH for entry in images.values()):
         raise ValueError(TOO_BIG)
-    if sum(len(entry['uri']) for entry in images.values()) <= TOTAL:
+    if sum(size(entry) for entry in images.values()) <= TOTAL:
         return draft
     used = _referenced(draft)
     images = {label: entry for label, entry in images.items() if key(label) in used}
-    if sum(len(entry['uri']) for entry in images.values()) > TOTAL:
+    if sum(size(entry) for entry in images.values()) > TOTAL:
         raise ValueError(TOO_MANY)
     return {**draft, 'images': images}
+
+
+BREAK = re.compile(r'\n[ \t]*\n(?:[ \t]*\n)*')
 
 
 def _references(text, known):
@@ -254,9 +340,6 @@ def _references(text, known):
         for m in REFERENCE.finditer(_masked(text))
         if key(m.group(2) or m.group(1)) in known
     ]
-
-
-BREAK = re.compile(r'\n[ \t]*\n(?:[ \t]*\n)*')
 
 
 def kept(before, after, images):

@@ -804,14 +804,24 @@ SECTIONED = (
 )
 
 
+def uris(images):
+    """{label: (data, alt)} of images as split finds them, with their data still in hand."""
+    return {label: (entry['uri'], entry['alt']) for label, entry in images.items()}
+
+
+def stored(case, ident):
+    """The image data a desk blog keeps in desk/images.json, by label."""
+    target = case.folder(ident) / 'desk' / 'images.json'
+    return json.loads(target.read_text()) if target.is_file() else {}
+
+
 class ImageSplitJoinTests(unittest.TestCase):
     def test_definitions_leave_the_text_and_references_stay_where_they_sit(self):
         found = desk.split(GOOGLE)
         self.assertEqual(found['opening'], OPENING)
         self.assertNotIn('data:image', found['opening'])
         self.assertEqual(
-            found['images'],
-            {'image1': {'uri': IMAGE_ONE, 'alt': ''}, 'image2': {'uri': IMAGE_TWO, 'alt': ''}},
+            uris(found['images']), {'image1': (IMAGE_ONE, ''), 'image2': (IMAGE_TWO, '')}
         )
 
     def test_join_writes_the_definitions_back_at_the_end_exactly(self):
@@ -835,7 +845,7 @@ class ImageSplitJoinTests(unittest.TestCase):
             'See ![Chart][image1] here, and ![Logo](https://example.com/l.png).\n\n'
             '![Again][image1]',
         )
-        self.assertEqual(found['images'], {'image1': {'uri': IMAGE_ONE, 'alt': 'Chart'}})
+        self.assertEqual(uris(found['images']), {'image1': (IMAGE_ONE, 'Chart')})
         self.assertEqual(
             desk.join(found), desk.join(found, images=False) + '\n[image1]: <' + IMAGE_ONE + '>\n'
         )
@@ -866,6 +876,12 @@ class ImageRecordTests(DeskCase):
         directory = self.folder(made['id'])
         self.assertEqual((directory / 'DRAFT.md').read_text(), GOOGLE)
         self.assertEqual((directory / 'ORIGINAL.md').read_text(), GOOGLE)
+        # The data is kept in its own file; the draft record holds labels, alt text and keys.
+        self.assertNotIn('data:image', (directory / 'desk' / 'draft.json').read_text())
+        self.assertEqual(stored(self, made['id']), {'image1': IMAGE_ONE, 'image2': IMAGE_TWO})
+        self.assertEqual(
+            set(desk.read(self.root, made['id'])['images']['image1']), {'alt', 'key', 'size'}
+        )
 
     def test_a_save_keeps_the_images_and_a_pasted_one_moves_out(self):
         made = self.make_images()
@@ -877,7 +893,7 @@ class ImageRecordTests(DeskCase):
         three = png(10, 200, 10)
         saved = desk.save(self.root, made['id'], 2, 'opening', typed + '\n\n![New](' + three + ')')
         self.assertTrue(saved['opening'].endswith('![New][image3]'))
-        self.assertEqual(saved['images']['image3']['uri'], three)
+        self.assertEqual(stored(self, made['id'])['image3'], three)
         self.assertNotIn('data:image', json_text(desk.versions(self.root, made['id'], 'opening')))
 
     def test_part_and_draft_limits_count_text_without_image_data(self):
@@ -916,7 +932,7 @@ class ImageRecordTests(DeskCase):
         self.assertEqual(shown[0]['text'], 'Older opening.\n\n![][image1]')
         restored = desk.restore(self.root, made['id'], 1, 'opening', 0)
         self.assertEqual(restored['opening'], 'Older opening.\n\n![][image1]')
-        self.assertEqual(restored['images']['image1']['uri'], IMAGE_TWO)
+        self.assertEqual(stored(self, made['id'])['image1'], IMAGE_TWO)
 
 
 def owner_shaped(case, made):
@@ -1037,6 +1053,86 @@ class ImageRouteTests(RouteCase):
         self.assertNotIn('data:image', json_text(shown))
         kept = studio.read_json(self.folder(made['id']) / 'desk' / 'draft.json')
         self.assertEqual(set(kept['images']), {'image1', 'image2'})
+
+
+def lost_images(case, made, versions=True):
+    """Rewrite a desk record as the owner's is now: references to image1 and image2 in the
+    opening with no image behind them, the data kept only in the opening's History (or only
+    in ORIGINAL.md), revision 2."""
+    directory = case.folder(made['id'])
+    draft = studio.read_json(directory / 'desk' / 'draft.json')
+    draft.pop('images', None)
+    draft.update(revision=2, opening=OPENING, sections=[], changed={'opening': 2})
+    studio.write_json(directory / 'desk' / 'draft.json', draft)
+    (directory / 'desk' / 'images.json').unlink(missing_ok=True)
+    body = '# ' + draft['title'] + '\n\n' + OPENING + '\n'
+    (directory / 'DRAFT.md').write_text(body)
+    record = studio.read_json(directory / 'session.json')
+    record['artifact_hashes']['draft'] = studio.digest(body.encode())
+    studio.write_json(directory / 'session.json', record)
+    folder = directory / 'desk' / 'versions'
+    folder.mkdir(parents=True, exist_ok=True)
+    older = 'An older opening.\n\n![][image1]\n\n![][image2]\n\n' + DEFINITIONS
+    (folder / 'opening.jsonl').write_text(
+        json.dumps({'at': studio.now(), 'source': 'revise-all', 'text': older}) + '\n'
+        if versions
+        else ''
+    )
+    (directory / 'ORIGINAL.md').write_text('# T\n\n' + older + '\n' if not versions else '# T\n')
+    return body
+
+
+class ImageRecoveryTests(RouteCase):
+    def test_data_kept_only_in_history_is_recovered_without_changing_a_word(self):
+        made = self.start()
+        lost_images(self, made)
+        directory = self.folder(made['id'])
+        shown = self.get('desk', id=made['id'])
+        self.assertEqual((shown['opening'], shown['revision']), (OPENING, 2))
+        self.assertEqual([image['label'] for image in shown['images']], ['image1', 'image2'])
+        self.assertEqual(shown['missing_images'], [])
+        self.assertNotIn('data:image', json_text(shown))
+        self.assertEqual(stored(self, made['id']), {'image1': IMAGE_ONE, 'image2': IMAGE_TWO})
+        # DRAFT.md ends with the images again; no part was marked changed.
+        self.assertTrue((directory / 'DRAFT.md').read_text().endswith(DEFINITIONS + '\n'))
+        self.assertEqual(desk.read(self.root, made['id'])['changed'], {'opening': 2})
+        self.assertEqual(desk.versions(self.root, made['id'], 'opening')[0]['source'], 'revise-all')
+        # A form open from before saves as it would have.
+        saved = self.post(
+            'desk-save', {'id': made['id'], 'seen': 2, 'part': 'title', 'text': 'Renamed'}
+        )
+        self.assertEqual(saved['revision'], 3)
+
+    def test_data_kept_only_in_the_original_is_recovered(self):
+        made = self.start()
+        lost_images(self, made, versions=False)
+        self.get('desk', id=made['id'])
+        self.assertEqual(stored(self, made['id']), {'image1': IMAGE_ONE, 'image2': IMAGE_TWO})
+
+    def test_an_image_found_nowhere_is_named_as_missing_and_sought_once(self):
+        made = self.start()
+        lost_images(self, made)
+        directory = self.folder(made['id'])
+        draft = studio.read_json(directory / 'desk' / 'draft.json')
+        draft['opening'] = OPENING + '\n\n![][image7]'
+        studio.write_json(directory / 'desk' / 'draft.json', draft)
+        shown = self.get('desk', id=made['id'])
+        self.assertEqual(shown['missing_images'], ['image7'])
+        self.assertEqual(len(shown['images']), 2)
+        before = (directory / 'desk' / 'draft.json').read_bytes()
+        with patch('desk._recovered', side_effect=AssertionError('searched again')):
+            self.assertEqual(self.get('desk', id=made['id'])['missing_images'], ['image7'])
+        self.assertEqual((directory / 'desk' / 'draft.json').read_bytes(), before)
+
+    def test_a_view_poll_never_reads_the_image_data(self):
+        made = self.post(
+            'desk-create',
+            {'operation': 'c' * 32, 'title': 'Images synthetic', 'manuscript': GOOGLE},
+        )
+        with patch('desk._data', side_effect=AssertionError('read the image data')):
+            shown = self.get('desk', id=made['id'])
+        self.assertEqual(len(shown['images']), 2)
+        self.assertEqual(len(self.get('desk-images', id=made['id'])['images']), 2)
 
 
 if __name__ == '__main__':

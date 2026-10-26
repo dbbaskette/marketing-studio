@@ -233,7 +233,9 @@ class ImageReimportTests(ReimportCase):
         bare = '# Images synthetic\n\n' + OPENING.replace('The end.', 'Bare.') + '\n'
         with studio.locked(self.root):
             draft = desk.reimport(self.root, ident, bare, 'google')
-        self.assertEqual(draft['images']['image1']['uri'], IMAGE_ONE)
+        self.assertEqual(draft['opening'], OPENING.replace('The end.', 'Bare.'))
+        kept = json.loads((self.folder(ident) / 'desk' / 'images.json').read_text())
+        self.assertEqual(kept['image1'], IMAGE_ONE)
         self.assertTrue(
             (self.folder(ident) / 'DRAFT.md').read_text().endswith('Bare.\n\n' + DEFINITIONS + '\n')
         )

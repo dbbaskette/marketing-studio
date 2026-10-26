@@ -773,6 +773,9 @@ class ImageJobTests(DeskCase):
         self.assertEqual(len(set(kinds)), 11)
         self.assertEqual(desk.read(self.root, self.ident)['images'], draft['images'])
 
+    def body(self):
+        return (self.folder(self.ident) / 'DRAFT.md').read_text()
+
     def ready(self, job, content):
         saved = tool_jobs.read(self.root, job['id'])
         saved.update(status='ready', result={'content': content, 'notes': ''}, finished_at='x')
@@ -785,7 +788,7 @@ class ImageJobTests(DeskCase):
         saved, draft = self.ready(job, 'Text two, shorter.')
         self.assertTrue(saved['applied'])
         self.assertEqual(draft['sections'][1]['text'], 'Text two, shorter.\n\n![][image2]')
-        self.assertIn('[image2]: <' + IMAGE_TWO + '>', desk.join(draft))
+        self.assertIn('[image2]: <' + IMAGE_TWO + '>', self.body())
 
     def test_an_altered_or_invented_reference_is_undone(self):
         job = desk_jobs.section(self.root, self.ident, 1, self.one, 'More.')
@@ -825,7 +828,7 @@ class ImageJobTests(DeskCase):
         self.assertEqual(
             [s['text'] for s in draft['sections']], ['![][image1]\n\nMore.', '![][image2]\n\nEnd.']
         )
-        self.assertEqual(desk.join(draft).count('data:image'), 2)
+        self.assertEqual(self.body().count('data:image'), 2)
 
     def test_a_whole_draft_revision_of_an_opening_keeps_its_images(self):
         made = desk.create(self.root, {'manuscript': GOOGLE})

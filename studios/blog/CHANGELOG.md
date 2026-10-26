@@ -12,10 +12,14 @@ changes for authors first, then what changes for maintainers.
   and the pre-publish check keep them exactly, and no rewrite, note, selection edit, first
   pass, Finishing tool or voice sends them to the assistant. A rewrite that drops a
   reference has it put back where it was. Blogs already on the desk are cleaned the first
-  time they are opened. For maintainers: `desk/draft.json` has `images` ({label: {uri,
-  alt}}) and `desk_images.py` moves them in and out; the desk view lists them by key and
-  `GET /api/desk-images` serves their data once; part limits count text only, with images
-  capped at 5 MB each and 12 MB in all; the page's `img-src` allows `data:`.
+  time they are opened, and an image an earlier rewrite dropped is found again in History,
+  the original draft or the Google Doc, with no word changed; one found nowhere shows
+  **Image missing**. For maintainers: `desk/draft.json` lists `images` ({label: {alt, key,
+  size}}) and their data is in `desk/images.json` ({label: data URI}), read only to write
+  `DRAFT.md` or by `GET /api/desk-images`, never on a view poll; `desk_images.py` moves
+  them in and out; the view's `missing_images` names labels kept nowhere; part limits count
+  text only, with images capped at 5 MB each and 12 MB in all; the page's `img-src` allows
+  `data:`.
 - **Polish a draft without choosing a kind of post.** **Edit or polish a draft**, **Polish
   another document**, a saved blog's draft and **A draft** on the start open one screen
   with no step tabs: your draft, then **Proofread and tighten** (the default), **Just give

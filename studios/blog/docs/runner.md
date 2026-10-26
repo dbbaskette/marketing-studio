@@ -127,7 +127,10 @@ The desk is one page: the title, the opening, then a card for each section.
   **Download**, the Google Doc and the pre-publish check keep it. A rewrite that leaves a
   reference out has it put back where it was; one that changes or adds a reference has
   that taken out, and Finishing flags it. Each image can be up to 5 MB, and a draft's
-  images up to 12 MB together; the 200,000-character limit counts the text only.
+  images up to 12 MB together; the 200,000-character limit counts the text only. An image
+  the text names but that was lost (as an earlier rewrite could drop it) is found again in
+  the part's History, the other parts' History, the original draft or the Google Doc it
+  came from, without changing a word; one found nowhere shows **Image missing**.
 
 One job works on a blog at a time; the desk shows it and offers Stop. An edit from a form
 that is out of date is refused rather than written over newer text.
@@ -465,8 +468,8 @@ and shared-value saves are refused until it can be read.
 ## Saved work and teams
 
 A desk blog keeps its draft in `desk/draft.json` (the title, the opening, each section
-with its brief, and the images the text refers to) and earlier versions in
-`desk/versions/`, and rewrites `DRAFT.md` on every
+with its brief, and each image's label and alt text), its images' data in
+`desk/images.json`, and earlier versions in `desk/versions/`, and rewrites `DRAFT.md` on every
 save so Copy, Download, Google Docs and the pre-publish check read the same text. A draft
 saved in chat, restored from its history or accepted from Google comes onto the desk as a
 new version of each part it changes, so the next desk save keeps it.

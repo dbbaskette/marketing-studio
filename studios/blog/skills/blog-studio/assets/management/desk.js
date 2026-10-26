@@ -55,14 +55,22 @@ function deskImagesIn(view,text){
   }
   return out;
 }
+// The images a part's text names that are kept nowhere, each once.
+function deskImagesMissing(view,text){
+  const lost=(view.missing_images||[]).map(deskImageLabel),out=[];
+  for(const found of String(text||'').matchAll(DESK_IMAGE_REF)){const label=found[2]||found[1];if(lost.includes(deskImageLabel(label))&&!out.some(name=>deskImageLabel(name)===deskImageLabel(label)))out.push(label);}
+  return out;
+}
 function sDeskThumbs(held,part){
-  const found=deskImagesIn(held.view,deskTextOf(held.view,part));if(!found.length)return null;
+  const text=deskTextOf(held.view,part),found=deskImagesIn(held.view,text),lost=deskImagesMissing(held.view,text);if(!found.length&&!lost.length)return null;
   const row=sNode('div','desk-images');row.setAttribute('aria-label','Images in this part');
   for(const image of found){
     const img=sNode('img','desk-thumb');img.alt=image.alt||'Image '+image.label;img.dataset.key=image.key;
     const data=deskImageData()[image.key];if(data)img.src=data;
     row.append(sAdd(sNode('figure','desk-image'),img,sNode('figcaption','quiet',image.label)));
   }
+  // Named in the text, kept nowhere: said in its place, so the reference can be fixed or cut.
+  for(const label of lost)row.append(sAdd(sNode('figure','desk-image desk-image-missing'),sNode('span','desk-thumb-missing','Image missing'),sNode('figcaption','quiet',label)));
   return row;
 }
 // Read the images not kept yet, once, then fill the thumbnails waiting for them.
