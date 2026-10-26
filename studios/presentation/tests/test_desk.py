@@ -905,9 +905,21 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(shot['filled'], ['Approve'])
         self.assertIn('0 slides to change', shot['text'])
 
+    def test_undo_is_not_offered_once_the_last_step_is_shared(self):
+        path = self.started()
+        shown = self.run_of(path)
+        self.assertIs(shown['undo'], True)
+        shown['undo'] = False
+        result = self.deck_screen(path, [{'snapshot': 'deck'}, {'click': 'More'},
+                                         {'snapshot': 'menu'}], narrow=True,
+                                  **{'GET /api/run': [ok(shown)]})
+        for shot in ('deck', 'menu'):
+            self.assertNotIn('Undo the last step', result['snapshots'][shot]['buttons'])
+
     def test_undo_names_the_last_step_with_its_time_and_cost(self):
         path = self.started()
         shown = self.run_of(path)
+        shown['undo'] = True
         done = [row for row in shown['timeline'] if row['state'] == 'done'][-1]
         done.update(seconds=180, dollars=0.6)
         result = self.deck_screen(path, [{'click': 'Undo the last step'}, {'snapshot': 'undo'}],

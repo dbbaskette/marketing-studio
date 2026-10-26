@@ -356,6 +356,13 @@ class DriverTests(Team):
         self.assertEqual(self.as_(self.alex, self.engine.share)['shared'], True)
         self.assertEqual(self.seen(self.alex, root)['notice'], None)
 
+    def test_undo_is_offered_only_while_the_step_is_not_shared(self):
+        root = self.started()   # the claim is shared; the work up to the gate is not yet
+        with self.be(self.alex):
+            self.assertIs(self.engine.view(root)['undo'], True)
+            self.assertEqual(self.engine.share()['shared'], True)
+            self.assertIs(self.engine.view(root)['undo'], False)
+
     def test_undo_takes_back_only_what_was_not_shared(self):
         root = self.started()   # the claim is shared; the work up to the gate is not yet
         before = self.head(self.alex)

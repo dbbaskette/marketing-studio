@@ -3124,7 +3124,17 @@ class Engine(Jobs, Researching):
                          'last_build': self._last_build(record),
                          'to_google': said.get('output') == 'pptx'}
                         if said else None),
-            'contactSheet': (root / build.SHEET).is_file()}
+            'contactSheet': (root / build.SHEET).is_file(),
+            'undo': bool(mine and state != 'working' and not run.busy and self._can_undo(root))}
+
+    def _can_undo(self, root: Path) -> bool:
+        """Whether Undo the last step would be done, not refused: the last step is this
+        deck's and is not shared yet."""
+        space = self.workspace
+        try:
+            return bool(space and gitstate.known(space, root) and gitstate.can_undo(space, root))
+        except (OSError, hub.GitError):   # an unreadable repository offers no undo
+            return False
 
     @staticmethod
     def _assistant_attempt(name: str, attempt: dict) -> bool:

@@ -5721,7 +5721,8 @@ function deckActions(run, lead) {
   if (['paused', 'stopped'].includes(run.state) && !offered) {
     press('Resume', lead === 'resume' ? 'filled' : '', 'resume');
   }
-  if (run.state !== 'working') {
+  // Offered only when it would be done: the last step is this deck's and not shared yet.
+  if (run.state !== 'working' && run.undo) {
     actions.push(capsule('Undo the last step', 'quiet', openSheet('undo', 'undo'), 'undo'));
   }
   return actions;
