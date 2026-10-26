@@ -4133,7 +4133,9 @@ function researchPanel(gate, readonly, direction = false) {
     findings.id = 'findings';
     add(node, findings);
     paintFindings(gate, findings, readonly);
-    if (!readonly && !direction) add(node, reviewBar(gate));
+    // A question can be added here too: it runs the investigation again, priced on the
+    // sheet as every research request is.
+    if (!readonly && !direction) add(node, addedPart(gate), reviewBar(gate));
     return add(node, fullText('Read the full report', 'The research report', found.report, 'report-text'),
       fullText('The evidence and the check’s notes', 'The evidence', found.evidence, 'evidence-text'), ...gateSaid(gate));
   }
@@ -5492,11 +5494,20 @@ function paintAdded(gate, node) {
     items.append(add(make('li', 'review-row'), make('p', '', text),
       add(make('div', 'bar'), take)));
   });
-  // The runner refuses more than ADDED at once, so no more are taken here.
-  const full = held.added.length >= ADDED;
+  // The runner refuses more than ADDED at once, and more than the plan holds, so no more
+  // are taken here: the gate says how many the plan has room for.
+  const room = Number.isInteger(gate.room) ? Math.min(gate.room, ADDED) : ADDED;
+  const full = held.added.length >= room;
+  const most = Number.isInteger(gate.most) ? gate.most : null;
+  // At the research stop an added question runs the investigation again: its price is said
+  // before it is sent.
+  const price = gate.name === 'gate:research' ? gate.research_price?.words || '' : '';
+  const hint = !full ? price : room === ADDED ? 'You have added ' + ADDED + ', as many as can '
+    + 'be added at once. Send these, and add more next time round.'
+    : 'The plan holds ' + (most === null ? 'as many questions as it can' : most
+      + ' questions, the most it can') + '.';
   const box = field('added-question', 'A question to add', held, 'asking',
-    { long: true, limit: LINE, hint: full ? 'You have added ' + ADDED + ', as many as can '
-      + 'be added at once. Send these, and add more next time round.' : '' });
+    { long: true, limit: LINE, hint });
   const go = capsule('Add the question', 'quiet', () => {
     const text = String(held.asking || '').trim();
     if (!text) {

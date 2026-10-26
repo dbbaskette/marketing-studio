@@ -2376,6 +2376,22 @@ class DirectionClassifyTests(StudioCase):
                 self.assertTrue(says.startswith('Drawn again: “'), says)
                 self.assertEqual(says.endswith(engines.FIRST_RESEARCH), research, says)
 
+    def test_the_synthesis_research_stop_says_how_many_questions_it_takes(self):
+        from synthesis_fixture import research_stop
+        root = self.start(research=True, title='Room for questions')
+        self.decide(root, 'gate:research-plan')
+        research_stop(root / 'research')
+        plan = json.loads((root / 'research' / 'plan.json').read_text())
+        item = plan['items'][0]
+        plan['items'] = [{**item, 'id': f'question-{n}'} for n in range(5)]
+        (root / 'research' / 'plan.json').write_text(json.dumps(plan))
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2}
+        self.engine._store(root, record)
+        gate = self.view(root)['gate']
+        self.assertEqual(gate['name'], 'gate:research')
+        self.assertEqual((gate['room'], gate['most']), (3, worker_tools.PLAN_MOST))
+
     def test_the_direction_review_shows_the_verdict_and_takes_a_correction(self):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',

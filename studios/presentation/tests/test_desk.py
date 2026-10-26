@@ -21,7 +21,7 @@ from runner_support import LONG_OUTLINE, QUOTE, URL, unsettled
 from test_runner_page import PageCase
 
 import server
-from runner import marks
+from runner import marks, worker_tools
 from runner.steps import build
 
 PAGE = helpers.SCRIPTS / 'desk'
@@ -1230,6 +1230,29 @@ class ScreenTests(ScriptedPage, PageCase):
             'add': ['What does a restart cost?']}))
         self.post('decide', body)
         self.assertEqual(self.run_of(path)['gate']['round'], 2)
+
+    def test_a_question_can_be_added_at_the_synthesis_research_stop(self):
+        from synthesis_fixture import research_stop
+        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        research_stop(Path(path) / 'research')
+        record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
+        self.engine._store(Path(path), record)
+        shown = self.run_of(path)
+        result = self.deck_screen(path, [
+            {'snapshot': 'stop'}, {'fill': 'A question to add', 'value': 'What about drains?'},
+            {'click': 'Add the question'}, {'snapshot': 'before-sending'},
+            {'click': 'Send 1 change'}], **{'POST /api/decide': [ok(shown)]})
+        self.assertIn('A question to add', result['snapshots']['stop']['text'])
+        self.assertIn(shown['gate']['research_price']['words'],
+                      result['snapshots']['before-sending']['text'])
+        (_, body), = self.posts(result)
+        self.assertEqual(body['extra']['add'], ['What about drains?'])
+        full = {**shown, 'gate': {**shown['gate'], 'room': 0}}
+        result = self.deck_screen(path, [{'snapshot': 'full'}],
+                                  **{'GET /api/run': [ok(full)]})
+        self.assertIn(f'The plan holds {worker_tools.PLAN_MOST} questions, the most it can.',
+                      result['snapshots']['full']['text'])
+        self.assertIn('Add the question', result['snapshots']['full']['off'])
 
     def test_no_more_questions_are_added_than_the_runner_takes_at_once(self):
         path = self.started(research=True)

@@ -2839,12 +2839,24 @@ class Engine(Jobs, Researching):
     def _show_research_plan(self, root: Path, record: dict) -> dict:
         plan = home.read_json(root / PLAN, None)
         items = plan.get('items') if isinstance(plan, dict) else None
-        return {'text': text_of(root / PLAN_MD) or '',
+        return {'text': text_of(root / PLAN_MD) or '', **self._room(record, items),
                 'questions': [{'id': item['id'], 'title': marks.title(item['id']),
                                'question': str(item.get('question') or ''),
                                'search': item.get('public_query')}
                               for item in items or ()
                               if isinstance(item, dict) and isinstance(item.get('id'), str)]}
+
+    @staticmethod
+    def _room(record: dict, items) -> dict:
+        """How many questions the plan takes now, as `room`, and the most it holds, as
+        `most`: a contract run's plan holds PLAN_MOST, another's QUESTIONS, and no more than
+        ADDED are added at once."""
+        planned = len([item for item in items or () if isinstance(item, dict)])
+        most = worker_tools.PLAN_MOST if record.get('research_contract') \
+            else worker_tools.QUESTIONS
+        room = max(0, most - planned)
+        return {'room': room if record.get('research_contract') else min(marks.ADDED, room),
+                'most': most}
 
     def _show_research(self, root: Path, record: dict) -> dict:
         contract = bool(record.get('research_contract'))
@@ -2856,7 +2868,9 @@ class Engine(Jobs, Researching):
         price = research_view.price({name: entry.get('tries') or [] for name, entry in kept.items()
                                      if isinstance(entry, dict)}, redone, drafted=self._drafted(root)) if contract else None
         looks = self._research_from(root, record)
+        planned = home.read_json(root / PLAN, None)
         return {'text': text_of(root / REPORT) or '', 'items': self._findings_shown(root, record),
+                **self._room(record, planned.get('items') if isinstance(planned, dict) else None),
                 'contract': contract, 'research_price': price, 'research': research_view.account(root / 'research',
                     [{'id': i, 'question': q} for i, q in self._questions(root).items()]) if contract else None,
                 # Where the research looked, with the sites named, and what it could not save.
