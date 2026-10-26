@@ -120,6 +120,14 @@ The desk is one page: the title, the opening, then a card for each section.
   as a release date, is listed under **Needs you before publishing**, never in the prose.
 - **Toolbar.** **Copy**, **Download**, **Google Doc**, **Mark as published** and
   **Finishing**.
+- **Images.** An image in the draft, such as one a Google Doc brings, shows in the text as
+  its short reference (`![][image1]`), with a thumbnail under the part that uses it. Keep
+  the reference where the image belongs. The image itself is kept beside the draft, never
+  sent to the assistant, and written back at the end of `DRAFT.md`, so **Copy**,
+  **Download**, the Google Doc and the pre-publish check keep it. A rewrite that leaves a
+  reference out has it put back where it was; one that changes or adds a reference has
+  that taken out, and Finishing flags it. Each image can be up to 5 MB, and a draft's
+  images up to 12 MB together; the 200,000-character limit counts the text only.
 
 One job works on a blog at a time; the desk shows it and offers Stop. An edit from a form
 that is out of date is refused rather than written over newer text.
@@ -456,8 +464,9 @@ and shared-value saves are refused until it can be read.
 
 ## Saved work and teams
 
-A desk blog keeps its draft in `desk/draft.json` (the title, the opening and each section
-with its brief) and earlier versions in `desk/versions/`, and rewrites `DRAFT.md` on every
+A desk blog keeps its draft in `desk/draft.json` (the title, the opening, each section
+with its brief, and the images the text refers to) and earlier versions in
+`desk/versions/`, and rewrites `DRAFT.md` on every
 save so Copy, Download, Google Docs and the pre-publish check read the same text. A draft
 saved in chat, restored from its history or accepted from Google comes onto the desk as a
 new version of each part it changes, so the next desk save keeps it.

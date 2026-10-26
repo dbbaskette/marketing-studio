@@ -40,6 +40,50 @@ function deskAge(at){const then=Date.parse(at||'');if(!then)return '';const minu
 function deskPartName(view,part){if(part==='title')return 'the title';if(part==='opening')return 'the opening';if(part==='sections')return 'every section';const found=(view.sections||[]).find(section=>section.id===part);return found?'“'+found.heading+'”':'a section';}
 function deskTextOf(view,part){if(part==='title'||part==='opening')return view[part]||'';return (view.sections||[]).find(section=>section.id===part)?.text||'';}
 
+// Images: a part's text holds only its short reference, ![][image1], as typed. The desk view
+// lists the images by key without their data; the page reads the data once (desk-images),
+// keeps it here, shows a thumbnail under each part that refers to one, and writes the images
+// back at the end for Copy and Download. No form field or autosave ever holds the data.
+const DESK_IMAGE_REF=/!\[([^\[\]\n]*)\]\[([^\[\]\n]*)\]/g;
+function deskImageLabel(label){return String(label||'').split(/\s+/).filter(Boolean).join(' ').toLowerCase();}
+function deskImageData(){return studio.deskImages||(studio.deskImages={});}
+function deskImagesIn(view,text){
+  const listed=view.images||[],out=[],seen=new Set();
+  for(const found of String(text||'').matchAll(DESK_IMAGE_REF)){
+    const label=deskImageLabel(found[2]||found[1]),image=listed.find(item=>deskImageLabel(item.label)===label);
+    if(image&&!seen.has(image.key)){seen.add(image.key);out.push({...image,alt:found[2]?found[1]:''});}
+  }
+  return out;
+}
+function sDeskThumbs(held,part){
+  const found=deskImagesIn(held.view,deskTextOf(held.view,part));if(!found.length)return null;
+  const row=sNode('div','desk-images');row.setAttribute('aria-label','Images in this part');
+  for(const image of found){
+    const img=sNode('img','desk-thumb');img.alt=image.alt||'Image '+image.label;img.dataset.key=image.key;
+    const data=deskImageData()[image.key];if(data)img.src=data;
+    row.append(sAdd(sNode('figure','desk-image'),img,sNode('figcaption','quiet',image.label)));
+  }
+  return row;
+}
+// Read the images not kept yet, once, then fill the thumbnails waiting for them.
+async function sDeskImagesLoad(held){
+  if(!(held.view.images||[]).some(image=>!deskImageData()[image.key]))return;
+  if(held.imagesLoading)return held.imagesLoading;
+  held.imagesLoading=(async()=>{try{
+    const found=await api('desk-images?'+new URLSearchParams({id:held.id}));
+    for(const image of found.images||[])deskImageData()[image.key]=image.uri;
+    for(const img of $('studio-page').querySelectorAll('.desk-thumb')){const data=deskImageData()[img.dataset.key];if(data&&!img.src)img.src=data;}
+  }catch(_){/* The thumbnails wait; Copy and Download ask again. */}finally{held.imagesLoading=null;}})();
+  return held.imagesLoading;
+}
+// The Markdown as DRAFT.md keeps it: the text, then each image it refers to.
+async function sDeskMarkdown(held){
+  const view=held.view,images=view.images||[];if(!images.length)return view.markdown;
+  await sDeskImagesLoad(held);
+  const lines=images.map(image=>{const data=deskImageData()[image.key];if(!data)throw new Error('The images could not be read. Reload the desk, then try again.');return '['+image.label+']: <'+data+'>'+(image.title?' '+image.title:'');});
+  return view.markdown.replace(/\n$/,'')+'\n\n'+lines.join('\n\n')+'\n';
+}
+
 // A new blog: 1. the kind of post, 2. sources and settings, 3. what the person brings (a
 // topic, an outline or notes, or a draft), then Start. Nothing stops for the person after it.
 // A draft to polish or review is one screen instead (sDeskPolish), with no kind of post.
@@ -335,8 +379,8 @@ function sDeskStatusWords(held){const job=held.view.working;if(!job)return '';if
 function sDeskTabs(held){return sChoice('Work on',[['draft','Draft'],['outline','Outline']],held,'tab',async()=>{await sDeskOutlineFlush(held);held.outline=null;sDeskRender(held);});}
 function sDeskToolbar(held){
   const view=held.view,editable=access.actions.edit;
-  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');await navigator.clipboard.writeText(held.view.markdown);sToast('Markdown copied.');});
-  const download=sButton('Download',()=>sDownload({content:held.view.markdown,name:'DRAFT.md'}));
+  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');await navigator.clipboard.writeText(await sDeskMarkdown(held));sToast('Markdown copied.');});
+  const download=sButton('Download',async()=>sDownload({content:await sDeskMarkdown(held),name:'DRAFT.md'}));
   const google=view.google?.url?link(view.google.url,'Google Doc ↗'):null;if(google)google.className='button';
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
   const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held));finishing.setAttribute('aria-pressed',String(!!held.finish));
@@ -363,6 +407,7 @@ function sDeskRender(held){
   held.panel=finishing?sDeskPanel(held):null;held.panelKey=finishing?sDeskPanelKey(held):null;
   const lede=held.tab==='outline'?'Rename, reorder, add and remove sections and say what each must do. Write the draft from the outline, or one section at a time.':'Edit any part in place, give a section a note to rewrite it, or select text for a quick change. Every change keeps the earlier text in History.';
   sPage(sNode('p','lede',lede),status,sDeskTabs(held),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
+  sDeskImagesLoad(held);
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the
 // person is typing in keeps its focus and caret.
@@ -382,6 +427,7 @@ function sDeskRefresh(held,before){
   }
   const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;
   sDeskPanelSync(held);
+  sDeskImagesLoad(held);
 }
 // What the last job left: a result not applied, or a job that failed.
 function sDeskProblem(held){
@@ -414,6 +460,7 @@ function sDeskPart(held,part){
   if(part!=='title'){for(const kind of ['select','mouseup','keyup'])input.addEventListener(kind,()=>sDeskSelected(held,part,input));}
   else input.addEventListener('select',()=>sDeskSelected(held,part,input));
   card.append(input);
+  const thumbs=part==='title'?null:sDeskThumbs(held,part);if(thumbs)card.append(thumbs);
   const comments=sDeskComments(held,part);if(comments)card.append(comments);
   if(working){const note=sNode('p','desk-working-note','Working on this section');note.setAttribute('role','status');card.append(note);if(view.working.note)card.append(sNode('p','quiet','Your note: '+view.working.note));}
   if(section){
@@ -462,6 +509,8 @@ async function sDeskSave(held,part){
     const before=held.view;held.view=view;held.saved='Saved.';
     if(held.status&&!held.stale)held.status.textContent='Saved.';
     sDeskCounts(held);
+    // An image pasted as data is kept beside the text: its card shows the reference instead.
+    if(/data:image\//i.test(text)&&!held.pending[part]&&held.cards?.[part]&&sDeskCurrent(held)){const card=sDeskPart(held,part);held.cards[part].replaceWith(card);held.cards[part]=card;await sDeskImagesLoad(held);}
     if(!!before.working!==!!view.working&&sDeskCurrent(held))sDeskRefresh(held,before);
   }catch(error){
     if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}
