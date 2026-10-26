@@ -61,11 +61,11 @@ class GoogleTests(Case):
         self.assertEqual(record['notice'], deliver.NOT_CONNECTED)
         self.assertEqual(record['notice'],
                          "Google isn't connected, so this deck was made as a PowerPoint file.")
-        self.assertEqual(record['pptx'], 'work/deck.pptx')
+        self.assertEqual(record['pptx'], 'deck.pptx')
         self.assertIsNone(record['url'])
         self.assertEqual(self.imports(), 0)
         self.assertIn('PowerPoint file', (self.space / 'README.md').read_text())
-        self.assertEqual(decks.read_run(self.root)['revisions'][0]['pptx'], 'work/deck.pptx')
+        self.assertEqual(decks.read_run(self.root)['revisions'][0]['pptx'], 'deck.pptx')
 
     def test_a_deck_not_rendered_is_refused(self):
         build.write_state(self.root, build.EMPTY)
@@ -88,9 +88,44 @@ class PowerPointTests(Case):
 
     def test_pptx_asks_nothing_of_google(self):
         record = deliver.deliver(self.root, self.run_, self.slides)
-        self.assertEqual((record['output'], record['pptx']), ('pptx', 'work/deck.pptx'))
+        self.assertEqual((record['output'], record['pptx']), ('pptx', 'deck.pptx'))
         self.assertNotIn('notice', record)
         self.assertEqual([call for call in self.tool.calls if call != ['--version']], [])
+
+    def test_a_powerpoint_delivery_is_kept_beside_the_deck(self):
+        record = deliver.deliver(self.root, self.run_, self.slides)
+        self.assertEqual(record['pptx'], deliver.SHARED.as_posix())
+        self.assertEqual((self.root / 'deck.pptx').read_bytes(),
+                         (self.root / build.DECK).read_bytes())
+        self.assertEqual(deliver.shared_file(self.root), self.root / 'deck.pptx')
+        import fnmatch
+        from runner import gitstate
+        self.assertFalse([pattern for pattern in gitstate.IGNORED
+                          if fnmatch.fnmatch('deck.pptx', pattern.rstrip('/'))
+                          or fnmatch.fnmatch('restarts/deck.pptx', pattern)],
+                         'the shared file is committed with the deck')
+
+    def test_a_new_delivery_replaces_the_shared_file(self):
+        deliver.deliver(self.root, self.run_, self.slides)
+        (self.root / build.DECK).write_bytes(b'PK\x03\x04 revision two')
+        run = decks.read_run(self.root)
+        record = deliver.deliver(self.root, run, self.slides)
+        self.assertEqual(record['revision'], 2)
+        self.assertEqual((self.root / 'deck.pptx').read_bytes(), b'PK\x03\x04 revision two')
+
+    def test_a_google_delivery_takes_the_shared_file_away(self):
+        deliver.deliver(self.root, self.run_, self.slides)
+        run = decks.read_run(self.root)
+        deliver.record(self.root, run, deliver.upload(self.root, run, self.slides,
+                                                      output='google'))
+        self.assertIsNone(deliver.shared_file(self.root), 'the file shared is the latest')
+
+    def test_send_to_google_slides_uses_the_shared_file_without_work(self):
+        deliver.deliver(self.root, self.run_, self.slides)
+        (self.root / build.DECK).unlink()
+        run = decks.read_run(self.root)
+        made = deliver.upload(self.root, run, self.slides, output='google')
+        self.assertTrue(made['url'])
 
 
 class AgainTests(Case):

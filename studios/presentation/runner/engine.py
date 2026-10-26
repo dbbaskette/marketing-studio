@@ -260,6 +260,8 @@ STILL_NOT_CONNECTED = ("Google still isn't connected on this computer. Sign in w
 # Reading a document as material, when research was asked for, runs research this deck never ran.
 FIRST_RESEARCH = ('The research runs first, for the first time; this computer has no record of '
                   'what it costs.')
+NOT_HERE = ("This delivery's PowerPoint file is on the computer that made it. Deliver it "
+            'again there to share it.')
 UNDO_NOT = ('The last step cannot be undone: only the last thing done, when it was this '
             "deck's and is not shared yet, can be.")
 NO_PICTURE = 'There is no picture of that slide on this computer.'
@@ -2495,7 +2497,7 @@ class Engine(Jobs, Researching):
         if root is None:
             raise WorkspaceError('There is no deck there.')
         record = self._load(root)
-        deck = build.delivered_deck(root, record)
+        deck = delivering.shared_file(root) or build.delivered_deck(root, record)
         return f'{root.name}' + ('-unreviewed-first-draft' if decks.user_first(record) else '') + '.pptx', deck.read_bytes()
 
     # --- sharing -----------------------------------------------------------------------------
@@ -3146,7 +3148,10 @@ class Engine(Jobs, Researching):
                          'download': self._rendered(root, record),
                          'slides': self._delivered_slides(root),
                          'last_build': self._last_build(record),
-                         'to_google': said.get('output') == 'pptx'}
+                         'to_google': said.get('output') == 'pptx',
+                         'file': self._pptx_where(root, record, said),
+                         **({'not_here': NOT_HERE} if self._pptx_where(root, record, said)
+                            == 'maker' else {})}
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file(),
             'undo': bool(mine and state != 'working' and not run.busy and self._can_undo(root))}
@@ -3295,11 +3300,27 @@ class Engine(Jobs, Researching):
 
     @staticmethod
     def _rendered(root: Path, record: dict) -> bool:
+        if delivering.shared_file(root) is not None:
+            return True
         try:
             build.delivered_deck(root, record)
             return True
         except WorkspaceError:
             return False
+
+    @staticmethod
+    def _pptx_where(root: Path, record: dict, said: dict) -> str | None:
+        """Where a PowerPoint delivery's file is: 'shared' beside the deck, 'here' only in
+        this computer's work/, or 'maker' when only the computer that made it has it."""
+        if said.get('output') != 'pptx':
+            return None
+        if delivering.shared_file(root) is not None:
+            return 'shared'
+        try:
+            build.delivered_deck(root, record)
+            return 'here'
+        except WorkspaceError:
+            return 'maker'
 
     def _brief(self, root: Path) -> dict:
         """A deck in a few words, for a list."""
@@ -3323,6 +3344,7 @@ class Engine(Jobs, Researching):
                 'sentence': sentence, 'needs': needs and mine, 'mine': mine, 'driver': who,
                 'notice': self._notice(root, record), 'link': said.get('url'),
                 'pptx': bool(said.get('pptx')), 'revision': said.get('revision'),
+                'pptx_where': self._pptx_where(root, record, said),
                 'contactSheet': (root / build.SHEET).is_file(), 'last_shared': last}
 
     def decks(self) -> dict:

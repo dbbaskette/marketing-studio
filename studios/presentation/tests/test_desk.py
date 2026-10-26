@@ -1006,6 +1006,22 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(shot['filled'], ['Approve'])
         self.assertIn('0 slides to change', shot['text'])
 
+    def test_home_says_where_an_older_powerpoint_file_is(self):
+        path = self.started(output='pptx')
+        self.to_end(Path(path))
+        listed = self.get('decks')
+        for where, said in (('maker', 'A .pptx on the computer that made it.'),
+                            ('shared', 'A .pptx, to download from its own screen.')):
+            changed = json.loads(json.dumps(listed))
+            for group in changed.values():
+                for brief in group if isinstance(group, list) else ():
+                    if isinstance(brief, dict) and brief.get('path') == path:
+                        brief['pptx_where'] = where
+            result = self.run_page(self.answers(**{'GET /api/decks': [ok(changed)]}),
+                                   [{'click': 'Decks'}, {'snapshot': 'decks'}])
+            with self.subTest(where=where):
+                self.assertIn(said, result['snapshots']['decks']['text'])
+
     def test_undo_is_not_offered_once_the_last_step_is_shared(self):
         path = self.started()
         shown = self.run_of(path)

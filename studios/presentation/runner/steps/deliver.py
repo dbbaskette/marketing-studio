@@ -10,8 +10,12 @@ What a caller needs to know
 - Output 'google' puts the rendered deck into Google Drive as Google Slides, always as a
   new file: an earlier revision's file is never written over, so one that is gone is no
   matter. When Google cannot be reached the deck is delivered as a PowerPoint file
-  instead, and deliver.json says so in `notice` (NOT_CONNECTED). Output 'pptx' keeps the
-  deck under work/, which is never shared, for the page to offer as a download.
+  instead, and deliver.json says so in `notice` (NOT_CONNECTED). Output 'pptx' copies the
+  rendered deck to deck.pptx in the deck's folder (SHARED), which is committed and shared
+  with the deck, for the page to offer as a download on any computer; a new delivery
+  replaces it, and a Google delivery takes it away. A delivery made before this recorded
+  work/deck.pptx, which stays on the computer that made it.
+    deliver.shared_file(root)              # the shared delivered file, or None
 - deliver.json (decks.DELIVER) is {'output', 'url', 'fileId', 'pptx', 'revision', 'at'},
   with 'notice' when the deck was not delivered as asked. `revision` counts deliveries:
   each is added to run['revisions'] as {'revision', 'at', 'url' or 'pptx'}. The deck's
@@ -25,6 +29,7 @@ What a caller needs to know
 from __future__ import annotations
 
 import json
+import shutil
 import types
 from pathlib import Path
 
@@ -36,6 +41,7 @@ from runner import decks, stages
 from runner.steps import build
 
 GATE = 'gate:build'
+SHARED = Path('deck.pptx')   # a PowerPoint delivery, kept beside the deck and shared
 NOT_CONNECTED = "Google isn't connected, so this deck was made as a PowerPoint file."
 NOTE = 4000
 
@@ -59,11 +65,23 @@ def deliver(root, run: dict, slides, space=None) -> dict:
     return record(root, run, upload(root, run, slides), space)
 
 
+def shared_file(root) -> Path | None:
+    """The delivered PowerPoint file shared with the deck, when there is one."""
+    found = Path(root) / SHARED
+    return found if found.is_file() else None
+
+
 def upload(root, run: dict, slides, output=None) -> dict:
     """Put the rendered deck where the form asked, and say what deliver.json will record.
-    Nothing in the deck's folder is written."""
+    Nothing in the deck's folder is written. On a computer that did not render it, the
+    shared delivered file is what is sent."""
     root = Path(root)
-    deck = build.delivered_deck(root, run)
+    try:
+        deck = build.delivered_deck(root, run)
+    except WorkspaceError:
+        deck = shared_file(root)
+        if deck is None:
+            raise
     revision, at = len(run.get('revisions') or []) + 1, home.now()
     output = output or (run.get('form') or {}).get('output') or 'google'
     record = {'output': output, 'url': None, 'fileId': None, 'pptx': None,
@@ -86,6 +104,14 @@ def record(root, run: dict, made: dict, space=None) -> dict:
     revisions = run.setdefault('revisions', [])
     revision, at = len(revisions) + 1, made['at']
     record = {**made, 'revision': revision}
+    if record['output'] == 'pptx':
+        # Kept beside the deck, so a teammate's computer can download it too.
+        made_here = root / record['pptx']
+        if made_here.resolve() != (root / SHARED).resolve():
+            shutil.copyfile(made_here, root / SHARED)
+        record['pptx'] = SHARED.as_posix()
+    else:
+        (root / SHARED).unlink(missing_ok=True)   # what is shared is the latest delivery
     write_atomic(root / decks.DELIVER, json.dumps(record, indent=2, ensure_ascii=False)
                  + '\n')
     where = {'url': record['url']} if record['url'] else {'pptx': record['pptx']}

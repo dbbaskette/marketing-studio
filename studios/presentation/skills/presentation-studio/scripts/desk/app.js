@@ -1395,7 +1395,8 @@ function deliveredLine(brief) {
     add(node, outLink(brief.link, 'Open in Google Slides',
       'Open ' + (brief.title || 'the deck') + ' in Google Slides'));
   } else {
-    add(node, make('span', 'quiet', 'A .pptx, to download from its own screen.'));
+    add(node, make('span', 'quiet', brief.pptx_where === 'maker'
+      ? 'A .pptx on the computer that made it.' : 'A .pptx, to download from its own screen.'));
   }
   return node;
 }
@@ -5113,6 +5114,8 @@ function deliverPart(run) {
     add(bar, go);
   }
   add(node, bar);
+  // A delivery made before its file was shared is on the computer that made it.
+  if (found.not_here) add(node, make('p', 'quiet', found.not_here));
   if (found.notice) add(node, make('p', 'fix', found.notice));
   if (found.to_google && !theirs(run) && googleReady()) {
     const google = capsule(view.delivering ? 'Delivering…' : 'Send to Google Slides', '',
