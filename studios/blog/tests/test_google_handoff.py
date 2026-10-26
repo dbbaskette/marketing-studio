@@ -180,3 +180,94 @@ class HandoffTests(RunnerCase):
         with self.assertRaisesRegex(ValueError, 'Finish the blog first'):
             handoff.open_as_doc(self.root, ident, self.drive)
         self.assertEqual(self.drive.imports, [])
+
+
+def titled(doc, title):
+    """The stand-in Doc with the draft's title as its first heading, as a desk draft has."""
+    from google_roundtrip import utf16
+
+    blocks = doc['tabs'][0]['documentTab']['body']['content']
+    heading = {'namedStyleType': 'HEADING_1'}
+    line = {'textRun': {'content': title + '\n', 'textStyle': {}}}
+    blocks.insert(1, {'paragraph': {'paragraphStyle': heading, 'elements': [line]}})
+    start = 1
+    for block in blocks:
+        if 'paragraph' not in block:
+            continue
+        block['startIndex'] = start
+        for element in block['paragraph']['elements']:
+            element['startIndex'] = start
+            start += utf16(element['textRun']['content'])
+            element['endIndex'] = start
+        block['endIndex'] = start
+    return doc
+
+
+class DeskHandoffTests(RunnerCase):
+    """A blog on the writing desk gets its private Google Doc without a step-by-step run."""
+
+    def setUp(self):
+        super().setUp()
+        self.drive = Drive()
+        titled(self.drive.doc, 'Desk title')
+        signed_in = patch.object(gd, 'active_account', return_value='test@example.invalid')
+        signed_in.start()
+        self.addCleanup(signed_in.stop)
+        import management
+
+        self.made = management.dispatch(
+            self.root,
+            'desk-create',
+            {
+                'operation': 'e' * 32,
+                'title': 'Desk title',
+                'manuscript': accepted_markdown(self.drive.doc).decode('utf-8'),
+            },
+        )
+        self.ident = self.made['id']
+
+    def open(self, **data):
+        import management
+
+        with patch.object(gd, 'Client', return_value=self.drive):
+            return management.dispatch(self.root, 'desk-google-open', {'id': self.ident, **data})
+
+    def test_a_desk_blog_becomes_its_linked_doc_once(self):
+        result = handoff.open_as_doc(self.root, self.ident, self.drive, desk=True)
+        self.assertEqual(result['url'], 'https://docs.google.com/document/d/fixture-doc/edit')
+        directory, record = studio.item(self.root, 'articles', self.ident)
+        self.assertEqual(editorial.doc_link(record)['url'], result['url'])
+        self.assertEqual(record['google']['transfers'][result['transfer']]['status'], 'confirmed')
+        self.assertEqual(self.drive.imports, [((directory / 'DRAFT.md').read_bytes(), None)])
+        again = handoff.open_as_doc(self.root, self.ident, self.drive, desk=True)
+        self.assertEqual(again['url'], result['url'])
+        self.assertEqual(len(self.drive.imports), 1)
+        import management
+
+        shown = management.view(self.root, 'desk', {'id': [self.ident]})
+        self.assertEqual(shown['google']['url'], result['url'])
+        self.assertTrue(shown['google_suggestions'], 'later desk changes go to it as suggestions')
+
+    def test_a_desk_doc_refuses_a_changed_desk_view(self):
+        with self.assertRaisesRegex(ValueError, 'Confirm'):
+            self.open(expected=self.made['expected'])
+        with self.assertRaisesRegex(handoff.Conflict, 'This blog changed. Reload'):
+            self.open(expected='old', confirmed=True)
+        self.assertEqual(self.drive.imports, [])
+        result = self.open(expected=self.made['expected'], confirmed=True)
+        self.assertEqual(result['url'], 'https://docs.google.com/document/d/fixture-doc/edit')
+        self.assertEqual(result['id'], self.ident)
+        self.assertEqual(len(self.drive.imports), 1)
+
+    def test_a_desk_doc_needs_google_signed_in(self):
+        with patch.object(gd, 'active_account', return_value=None):
+            with self.assertRaisesRegex(handoff.Conflict, '^' + handoff.NOT_SIGNED_IN + '$'):
+                self.open(expected=self.made['expected'], confirmed=True)
+        self.assertEqual(self.drive.imports, [])
+
+    def test_a_desk_doc_needs_a_draft(self):
+        directory, _ = studio.item(self.root, 'articles', self.ident)
+        (directory / 'DRAFT.md').unlink()
+        with self.assertRaisesRegex(handoff.Conflict, 'no draft'):
+            handoff.open_as_doc(self.root, self.ident, self.drive, desk=True)
+        self.assertEqual(self.drive.imports, [])

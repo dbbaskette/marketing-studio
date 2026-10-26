@@ -124,7 +124,8 @@ function sDeskPolish(held){
   const tone=fold('Tone (optional)',!!held.toneOpen,open=>{held.toneOpen=open;},sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational. It guides any rewriting.'}));
   const facts=fold('Check facts against your sources (optional)',held.factsOpen??held.files.length>0,open=>{held.factsOpen=open;},sNode('p','quiet','Finishing’s fact check reads these. They stay with this blog unless you keep them in the team library.'),...[...sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}).children].slice(1));
   const instead=sButton('Writing something new? Start from a topic or an outline',()=>{held.have='topic';if(held.kind===null)held.step=0;else{held.style=held.kind;sStyleSamples(held);}sTop();sDeskStart();});instead.className+=' desk-instead';
-  sAdd(form,...sDeskDraftIn(held),first,tone,facts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)),held.source==='saved'?null:instead);
+  const linked=held.linkedRun;delete held.linkedRun;const run=linked?sButton('Open its run',()=>sRoute('run',linked)):null;
+  sAdd(form,...sDeskDraftIn(held),first,tone,facts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),held.source==='saved'?null:instead);
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
     await busy(go,reading?'Reading…':'Starting…',async()=>{try{if(reading)await sDeskReadGoogle(held);else await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
@@ -216,7 +217,8 @@ async function sDeskReadGoogle(held){
   if(found?.status==='already-linked'&&found.id){
     // The Doc is already a blog here: open it on the desk, or bring it there.
     let made=null;try{made=await api('desk?id='+encodeURIComponent(found.id));}catch(_){made=null;}
-    if(!made)made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});
+    // A Doc an older step-by-step run links stays with that run: the start offers it.
+    if(!made){try{made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}catch(error){if(!/step-by-step run/.test(error.message))throw error;if(turn!==studio.turn)return;held.problem=error.message;held.linkedRun=found.id;return sDeskStart();}}
     if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};return sRoute('desk',made.id);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;sDeskStart();
@@ -359,7 +361,7 @@ function sDeskToolbar(held){
   const view=held.view,editable=sDeskCan(held);
   const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');await navigator.clipboard.writeText(held.view.markdown);sToast('Markdown copied.');});
   const download=sButton('Download',()=>sDownload({content:held.view.markdown,name:'DRAFT.md'}));
-  const google=view.google?.url?link(view.google.url,'Google Doc ↗'):null;if(google)google.className='button';
+  const google=view.google?.url?link(view.google.url,'Google Doc ↗'):sButton('Make a Google Doc',()=>sDeskMakeDoc(held));if(view.google?.url)google.className='button';else google.disabled=!editable;
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
   const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held));finishing.setAttribute('aria-pressed',String(!!held.finish));
   const stop=held.view.working?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:held.view.working.id});sDeskRefresh(held,before);});}):null;
@@ -566,6 +568,14 @@ async function sDeskHistory(held,part){
   sOpenSheet('History of '+deskPartName(held.view,part),found.versions.length?list:sNode('p','','Nothing kept yet.'),compare);
 }
 
+// Make a Google Doc: a private Doc of the draft, made once and linked to this blog. The desk
+// then sends its later wording to it as suggestions, from Before publishing.
+function sDeskMakeDoc(held){
+  const problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
+  const make=sButton('Make the Doc',async button=>{await busy(button,'Making…',async()=>{try{await sDeskFlush(held);await api('desk-google-open',{id:held.id,expected:held.view.expected,confirmed:true});sCloseSheet();sToast('Google Doc made. Later desk changes are sent to it as suggestions.');await sDesk(held.id);}catch(error){problem.textContent=error.message;}});},'filled');
+  make.disabled=!sDeskCan(held);
+  sOpenSheet('Make a Google Doc?',sNode('p','','A private Google Doc of this draft is made in your Drive. Later desk changes are sent to it as suggestions.'),problem,sAdd(sNode('div','bar'),make,sButton('Cancel',sCloseSheet)));
+}
 // Mark as published: where it went, said by the person. Nothing is posted.
 function sDeskPublish(held){
   const draft={url:held.view.publication||''},problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
@@ -924,7 +934,8 @@ function sDeskRepurposeFollow(held,p){
 }
 function sDeskGoogleCard(held,p){
   const view=held.view,card=sCard('Send to Google Doc as suggestions');
-  if(!view.google_suggestions){card.append(sNode('p','','This blog has no Google Doc to send to. A blog started from a Google Doc can send its desk changes back to that Doc as suggestions for its owner to accept.'));return card;}
+  if(!view.google_suggestions&&!view.google?.url){const make=sButton('Make a Google Doc',()=>sDeskMakeDoc(held));make.disabled=!sDeskCan(held);card.append(sNode('p','','This blog has no Google Doc yet. Make a private one of this draft, and later desk changes are sent to it as suggestions for you to accept.'),sAdd(sNode('div','bar'),make));return card;}
+  if(!view.google_suggestions){card.append(sNode('p','','This blog’s Google Doc cannot take suggestions yet: it has no confirmed copy of the draft to compare with.'));return card;}
   card.append(sNode('p','quiet','Your desk wording goes to the Google Doc as suggestions its owner accepts or rejects. Paragraphs added or removed stay here.'));
   if(view.google?.url){const doc=link(view.google.url,'Open the Google Doc ↗');card.append(sAdd(sNode('p',''),doc));}
   if(p.googleProblem)card.append(sNode('p','problem',p.googleProblem));

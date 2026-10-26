@@ -1934,6 +1934,20 @@ def _dispatch(root, route, data):
             except ValueError as error:
                 raise google_handoff.Conflict(str(error)) from None
             return google_handoff.open_as_doc(root, data['id'])
+        if route == 'desk-google-open':
+            # A private Google Doc of a blog on the writing desk, against the desk shown.
+            import desk_jobs
+            import google_handoff
+
+            if set(data) - {'id', 'expected', 'confirmed'} or not isinstance(data.get('id'), str):
+                raise ValueError('This request has fields the page does not take.')
+            if data.get('confirmed') is not True:
+                raise ValueError('Confirm making a private Google Doc first.')
+            if data.get('expected') != desk_jobs.expected(root, data['id']):
+                raise google_handoff.Conflict(
+                    'This blog changed. Reload it before making its Google Doc.'
+                )
+            return google_handoff.open_as_doc(root, data['id'], desk=True)
         if route in ('google-preview', 'google-start'):
             import google_intake
 
