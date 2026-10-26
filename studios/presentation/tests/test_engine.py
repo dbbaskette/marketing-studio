@@ -222,8 +222,8 @@ class HonestStopTests(StudioCase):
                 self.start(route='document', source={
                     'kind': 'google', 'link': 'https://docs.google.com/document/d/abc/edit'})
         self.assertEqual(str(caught.exception), existing.NOT_READY)
-        self.assertEqual(existing.NOT_READY, 'Sign in to Google on Status, under Check this '
-                         'computer, or download the file and upload it.')
+        self.assertEqual(existing.NOT_READY, 'Sign in to Google first: Status → Check this '
+                         'computer says how. Or download the file and upload it.')
         self.assertEqual(self.engine.decks(), before, 'nothing is made')
 
     def test_an_unexpected_failure_says_its_message_without_its_class(self):

@@ -1060,7 +1060,8 @@ class ScreenTests(ScriptedPage, PageCase):
 
     def test_google_slides_without_google_says_it_makes_a_powerpoint_file(self):
         said = ('Google is not connected on this computer, so approving makes a PowerPoint '
-                'file. Sign in on Status and Deliver to Google Slides afterwards.')
+                'file. Sign in to Google (Status → Check this computer says how), then choose '
+                'Send to Google Slides.')
         path = self.started(output='google')
         self.to_gate(Path(path), 'gate:build')
         unsigned = self.setup_with(google=False)

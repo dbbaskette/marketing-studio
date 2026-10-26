@@ -2523,6 +2523,46 @@ class SettingsTests(StudioCase):
         self.assertEqual(settings.load(), kept, 'nothing that was refused was kept')
 
 
+class GoogleSignInTests(unittest.TestCase):
+    """Status says whether Google is signed in, from this computer's own gcloud settings."""
+
+    def checked(self, account: str | None) -> dict:
+        def run(command):
+            if command[0] == 'gcloud':
+                if account is None:
+                    return {'found': False, 'ok': False, 'output': ''}
+                if command == computer.COMMANDS['gcloud-account']:
+                    return {'found': True, 'ok': True, 'output': account}
+                return {'found': True, 'ok': True, 'output': 'Google Cloud SDK 500.0.0'}
+            return {'found': True, 'ok': True, 'output': '1.0.0'}
+        with mock.patch.object(computer, 'run', run), \
+                mock.patch.object(computer, 'reach', lambda host: None):
+            found = computer.check(google=True)
+        return next(entry for entry in found['items'] if entry['id'] == 'gcloud')
+
+    def test_the_account_is_asked_of_this_computer_only(self):
+        self.assertEqual(computer.COMMANDS['gcloud-account'],
+                         ('gcloud', 'auth', 'list', '--filter=status:ACTIVE',
+                          '--format=value(account)'))
+
+    def test_a_signed_in_account_is_named(self):
+        gcloud = self.checked('ana@example.com')
+        self.assertEqual(gcloud['state'], 'ok')
+        self.assertIn(computer.fact('Signed in', 'ok', 'ana@example.com'), gcloud['facts'])
+
+    def test_no_account_says_how_to_sign_in(self):
+        gcloud = self.checked('')
+        self.assertEqual(gcloud['state'], 'problem')
+        self.assertIn(computer.fact('Signed in', 'problem', 'not signed in'), gcloud['facts'])
+        self.assertEqual(gcloud['fix'], 'Not signed in. In a terminal, run `gcloud auth login '
+                         '--enable-gdrive-access`, then check this computer again.')
+
+    def test_no_gcloud_asks_nothing_more(self):
+        gcloud = self.checked(None)
+        self.assertEqual(gcloud['state'], 'missing')
+        self.assertEqual([entry['label'] for entry in gcloud['facts']], ['Installed'])
+
+
 if __name__ == '__main__':
     unittest.main()
 

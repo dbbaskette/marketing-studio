@@ -5064,7 +5064,8 @@ function gateLine(run) {
 
 // Google Slides asked for, and Google not connected here: approving makes PowerPoint.
 const NOT_CONNECTED = 'Google is not connected on this computer, so approving makes a '
-  + 'PowerPoint file. Sign in on Status and Deliver to Google Slides afterwards.';
+  + 'PowerPoint file. Sign in to Google (Status → Check this computer says how), then '
+  + 'choose Send to Google Slides.';
 function googleReady() {
   return !(view.setup && view.setup.google === false);
 }
@@ -5097,7 +5098,8 @@ function deliverPart(run) {
       + 'is built again.'), add(make('div', 'bar'), google));
   }
   if (found.to_google && !theirs(run) && !googleReady()) add(node, make('p', 'quiet',
-    'Sign in to Google on Status to send this deck to Google Slides later.'));
+    'Sign in to Google (Status → Check this computer says how) to send this deck to '
+    + 'Google Slides later.'));
   const revisions = list(found.revisions);
   if (revisions.length > 1) {
     const items = make('ul', 'rows');
