@@ -2,7 +2,6 @@
 // section, selection edits and quiet version history. Built with runner.js's helpers; every
 // text from the draft is set with textContent.
 'use strict';
-const DESK_FIRST_PASSES=[['tighten','Tighten and proofread'],['reshape','Reshape to fit this kind of post'],['leave','Leave it as it is']];
 const DESK_SELECTION=[['rephrase','Rephrase'],['shorten','Shorten'],['expand','Expand'],['fix','Fix']];
 const DESK_SOURCES={save:'Before your edit',rewrite:'Before a rewrite','revise-all':'Before a whole-draft revision',selection:'Before a selection edit','first-pass':'Before the first pass',finishing:'Before a finishing change',restore:'Before a restore',draft:'Before the draft was written',chat:'Before an edit in chat',google:'Before Google’s accepted text'};
 const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback','finish-voice':'Rewriting the draft in a voice guide'};
@@ -43,6 +42,7 @@ function deskTextOf(view,part){if(part==='title'||part==='opening')return view[p
 
 // A new blog: 1. the kind of post, 2. sources and settings, 3. what the person brings (a
 // topic, an outline or notes, or a draft), then Start. Nothing stops for the person after it.
+// A draft to polish or review is one screen instead (sDeskPolish), with no kind of post.
 const DESK_HAVE=[['topic','A topic'],['outline','An outline or notes'],['draft','A draft']];
 const DESK_OUTLINE_WAYS=[['outline','Write from my outline'],['shape','Shape an outline with me first']];
 const DESK_START_STEPS=['Kind of post','Sources and settings','What you have'];
@@ -54,7 +54,7 @@ function sDeskResearchDefault(value){const ticks=OLD_RESEARCH[value]||(value&&ty
 function sDeskHeld(){
   if(studio.deskStart)return studio.deskStart;
   const defaults=studio.options?.settings?.defaults||{},preset=studio.deskPreset||{};studio.deskPreset=null;
-  return studio.deskStart={step:0,kind:null,style:'',have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:'leave',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
+  return studio.deskStart={step:0,kind:null,style:'',have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:null,files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
 }
 // Home's tasks, New blog, the library's "Write a blog from these", an interview's outline and
 // a saved blog's details all start here.
@@ -62,6 +62,7 @@ function sDeskBegin(preset={}){studio.deskStart=null;studio.deskPreset=preset;re
 async function sDeskStart(){
   if(!studio.options)studio.options=await api('run-options');
   const held=sDeskHeld();
+  if(held.have==='draft')return sDeskPolish(held);
   sFrame('New blog',[],'New writing',()=>sRoute('home'));
   const steps=sWorkflowSteps(DESK_START_STEPS,held.step,index=>{if(index&&held.kind===null)return notice('Choose a kind of post first, or Something else.',true);held.step=index;sTop();sDeskStart();});
   sPage(sNode('p','lede',DESK_START_LEDES[held.step]),steps,held.step===0?sDeskKinds(held):held.step===1?sDeskSettings(held):sDeskHave(held));
@@ -95,15 +96,40 @@ function sDeskSettings(held){
 function sDeskHave(held){
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem');problem.setAttribute('role','alert');
   const parts=[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
-  if(held.have==='topic')parts.push(...sDeskTopic(held));else if(held.have==='outline')parts.push(sDeskOutlineIn(held));else parts.push(...sDeskDraftIn(held));
-  const reading=held.have==='draft'&&held.source==='google'&&!held.preview;
-  const go=sNode('button','button button-filled',reading?'Read Google Doc':'Start');go.type='submit';go.disabled=!access.actions.edit;
+  // A draft chosen here switches to the one polishing screen.
+  parts.push(...(held.have==='topic'?sDeskTopic(held):[sDeskOutlineIn(held)]));
+  const go=sNode('button','button button-filled','Start');go.type='submit';go.disabled=!access.actions.edit;
   form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
+  form.addEventListener('submit',async event=>{
+    event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
+    await busy(go,'Starting…',async()=>{try{await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
+  });
+  return form;
+}
+// Polishing or reviewing a draft: the draft, what happens first, then Start. A kind of post
+// is asked for only to reshape the draft; sources are optional, for the fact check.
+const DESK_POLISH_FIRST=[['tighten','Proofread and tighten'],['feedback','Just give feedback'],['reshape','Reshape to fit a kind of post'],['leave','Leave it as it is']];
+const DESK_POLISH_SAYS={tighten:'Spelling, grammar and wordy sentences are fixed section by section. Your text is kept as a version first.',feedback:'Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.',reshape:'The sections and length are reshaped to the kind of post. Your text is kept as a version first.',leave:'The draft opens on the desk as it is, for your own edits and notes.'};
+function sDeskPolish(held){
+  if(!DESK_POLISH_FIRST.some(([value])=>value===held.first_pass))held.first_pass=held.source==='saved'?'leave':'tighten';
+  // The kind of post goes with the draft only to reshape it, with a learned kind's samples.
+  const style=held.first_pass==='reshape'?held.kind||'':'';if(held.style!==style){held.style=style;sStyleSamples(held);}
+  sFrame('Polish a draft',[],'Writing desk',()=>sRoute('home'));
+  const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
+  const again=()=>sDeskStartAgain(held),reading=held.source==='google'&&!held.preview;
+  const go=sNode('button','button button-filled',reading?'Read Google Doc':'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
+  const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]));
+  if(held.first_pass==='reshape'){const kinds=(studio.options?.styles||[]).filter(kind=>kind.status!=='retired');first.append(sField('desk-kind','Kind of post',held,'kind',{options:[['','Choose a kind of post'],...kinds.map(kind=>[kind.id,kind.name])],changed:()=>again()}),sNode('p','quiet field-hint',kinds.length?'Its usual shape and length.':'No kinds of post yet. Set them up from Home, under Kinds of post.'));}
+  const fold=(label,open,remember,...content)=>{const box=sAdd(sNode('details','card desk-fold'),sAdd(sNode('summary',''),sNode('span','card-title',label)),...content);box.open=open;box.addEventListener('toggle',()=>remember(box.open));return box;};
+  const tone=fold('Tone (optional)',!!held.toneOpen,open=>{held.toneOpen=open;},sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational. It guides any rewriting.'}));
+  const facts=fold('Check facts against your sources (optional)',held.factsOpen??held.files.length>0,open=>{held.factsOpen=open;},sNode('p','quiet','Finishing’s fact check reads these. They stay with this blog unless you keep them in the team library.'),...[...sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}).children].slice(1));
+  const instead=sButton('Writing something new? Start from a topic or an outline',()=>{held.have='topic';if(held.kind===null)held.step=0;sTop();sDeskStart();});instead.className+=' desk-instead';
+  sAdd(form,...sDeskDraftIn(held),first,tone,facts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)),held.source==='saved'?null:instead);
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
     await busy(go,reading?'Reading…':'Starting…',async()=>{try{if(reading)await sDeskReadGoogle(held);else await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
   });
-  return form;
+  sPage(sNode('p','lede','Bring your draft and choose what happens first. No kind of post needed.'),form);
 }
 function sDeskHaveProblem(held){
   if(held.have==='topic'&&!(held.title.trim()&&held.point.trim()))return 'Add a working title and the point to make, or pick an angle.';
@@ -116,7 +142,7 @@ function sDeskHaveProblem(held){
     if(held.source==='paste'&&!held.manuscript.trim())return 'Paste your draft first.';
     if(held.source==='file'&&!held.file)return 'Choose a draft to upload.';
     if(held.source==='google'&&!held.url.trim())return 'Paste the Google Doc link first.';
-    if(held.first_pass==='reshape'&&!held.kind)return 'Choose a kind of post to reshape the draft to, on step 1.';
+    if(held.first_pass==='reshape'&&!held.kind)return 'Choose a kind of post to reshape the draft to.';
   }
   return '';
 }
@@ -166,8 +192,8 @@ function sDeskOutlineIn(held){
   card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Blank uses the outline’s # heading.'}),sChoice('Then',DESK_OUTLINE_WAYS,held,'outlineWay',()=>sDeskStart()),sNode('p','quiet field-hint',held.outlineWay==='shape'?'The outline opens on the desk for you to shape first.':'The draft is written from your outline.'));
   return card;
 }
-// A draft: paste, upload or a Google Doc (every tab), with an optional first pass. A start
-// opened from a saved blog's details also offers that blog's own draft, brought as it is.
+// A draft: paste, upload or a Google Doc (every tab). A start opened from a saved blog's
+// details also offers that blog's own draft, brought as it is.
 function sDeskDraftIn(held){
   const saved=held.article?sCheck('desk-saved','Use this blog’s saved draft',{on:held.source==='saved'},'on','It comes to the desk as it is, in the same blog. Its history is kept.',on=>{held.source=on?'saved':'paste';held.preview=null;sDeskStart();}):null;
   const card=sCard('Your draft',saved,held.source==='saved'?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
@@ -183,23 +209,23 @@ function sDeskDraftIn(held){
     if(held.preview){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','Google Doc preview');paper.append(window.TrainingStudioMarkdown?window.TrainingStudioMarkdown.render(held.preview.content):sNode('p','',held.preview.content));card.append(sNode('p','','Check the text below, then start.'),paper);}
   }
   card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Blank uses the draft’s # heading or the Doc’s name.'}));
-  if(held.searchSites||held.searchWeb)card.append(sNode('p','quiet','A draft you bring is edited as it is, without research.'));
-  return [card,sCard('A first pass',sChoice('Before you edit',DESK_FIRST_PASSES,held,'first_pass'),sNode('p','quiet','Optional. Your text is kept as a version first.'))];
+  return [card];
 }
 async function sDeskReadGoogle(held){
   const turn=studio.turn,found=await api('google-preview',{url:held.url.trim()});if(turn!==studio.turn)return;
   if(found?.status==='already-linked'&&found.id){
     // The Doc is already a blog here: open it on the desk, or bring it there.
     let made=null;try{made=await api('desk?id='+encodeURIComponent(found.id));}catch(_){made=null;}
-    if(!made)made=await api('desk-create',{operation:held.operation,style:held.kind||'',tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});
+    if(!made)made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});
     if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};return sRoute('desk',made.id);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;sDeskStart();
 }
 async function sDeskGo(held){
-  if(held.kind===null){held.step=0;sDeskStart();throw new Error('Choose a kind of post first.');}
+  if(held.have!=='draft'&&held.kind===null){held.step=0;sDeskStart();throw new Error('Choose a kind of post first.');}
   const turn=studio.turn;
-  const common={operation:held.operation,style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),...(held.title.trim()?{title:held.title.trim()}:{})};
+  // A draft takes a kind of post only to be reshaped to it (sDeskPolish keeps held.style so).
+  const common={operation:held.operation,style:held.have==='draft'?held.style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),...(held.title.trim()?{title:held.title.trim()}:{})};
   let made;
   if(held.have==='draft'){
     const settings={...common,first_pass:held.first_pass};

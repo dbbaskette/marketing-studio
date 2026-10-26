@@ -1132,9 +1132,10 @@ def _create(root, data):
     if picked is not None:
         desk_jobs._angles_path(root, picked)  # A bad ID is refused before anything is made.
     kept = _kept_ids(data.pop('keep', []), data.get('sources') or [])
+    # Feedback first is Finishing's feedback, queued once the blog is made: comments only.
     choice = data.pop('first_pass', 'leave')
-    if choice not in desk_jobs.FIRST_PASSES:
-        raise ValueError('Choose tighten, reshape or leave it as it is.')
+    if choice not in (*desk_jobs.FIRST_PASSES, 'feedback'):
+        raise ValueError('Choose tighten, feedback, reshape or leave it as it is.')
     if data.get('way', 'draft') != 'draft' and choice != 'leave':
         raise ValueError('A first pass is for a draft you bring.')
     if choice == 'reshape' and not data.get('style'):
@@ -1164,7 +1165,10 @@ def _create(root, data):
             'keep_problem': keep_problem,
         }
     try:
-        desk_jobs.first_pass(root, made['id'], 1, choice)
+        if choice == 'feedback':
+            desk_jobs.finish(root, made['id'], 1, 'feedback')
+        else:
+            desk_jobs.first_pass(root, made['id'], 1, choice)
     except ValueError as error:
         problem = str(error)  # The blog is on the desk either way; the page says why.
     return {

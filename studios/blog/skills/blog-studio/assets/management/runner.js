@@ -353,7 +353,7 @@ function sSetupTasks(){
 function sStartTasks(){
   const list=sNode('div','pick-cards');
   // Every new blog starts on the writing desk's start.
-  const tasks=[['Write from a topic or my documents','Add files, links or Google Docs as sources, then give the point or get three angles. The outline and draft are written for you.',()=>sDeskBegin({have:'topic'})],['Work from my outline or notes','Write the draft from your outline, or shape an outline together first.',()=>sDeskBegin({have:'outline'})],['Edit or polish a draft','Paste, upload or bring a Google Doc to the writing desk: notes per section, selection edits and versions.',()=>sDeskBegin({have:'draft'})]];
+  const tasks=[['Write from a topic or my documents','Add files, links or Google Docs as sources, then give the point or get three angles. The outline and draft are written for you.',()=>sDeskBegin({have:'topic'})],['Work from my outline or notes','Write the draft from your outline, or shape an outline together first.',()=>sDeskBegin({have:'outline'})],['Edit or polish a draft','Paste, upload or bring a Google Doc. Proofread and tighten it, or get feedback. No kind of post needed.',()=>sDeskBegin({have:'draft'})]];
   for(const [title,description,action] of tasks){const button=sPickCard(title,description,action);button.disabled=!access.actions.edit;list.append(button);}return sCard('What would you like to do?',list);
 }
 function sPolishIntake(initial='google'){

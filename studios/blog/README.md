@@ -81,9 +81,15 @@ Once the page is open, use its controls to drive the work:
      and a **Tone**.
    - **What do you have?** **A topic** (a title, who it is for and the point, or
      **Suggest three angles** to pick and edit one), **An outline or notes** (**Write
-     from my outline**, or **Shape an outline with me first**), or **A draft** (pasted,
-     uploaded or a Google Doc, with an optional first pass that tightens it or reshapes it
-     to the kind of post).
+     from my outline**, or **Shape an outline with me first**), or **A draft**, which
+     switches to the polishing screen below.
+
+   To polish or review a draft, choose **Edit or polish a draft** on Home. It is one
+   screen with no kind of post: your draft (pasted, uploaded or a Google Doc), then **What
+   should happen first**: **Proofread and tighten** (the default), **Just give feedback**
+   (comments beside each part, nothing rewritten), **Reshape to fit a kind of post** (only
+   this asks for a kind) or **Leave it as it is**. **Tone** and **Check facts against your
+   sources** are optional folds.
 3. **Press Start.** Nothing is needed from you after that. The page shows each step and
    opens the draft on the desk when it is ready.
 4. **Edit on the desk.** The draft is one page: the title, the opening, and a card per

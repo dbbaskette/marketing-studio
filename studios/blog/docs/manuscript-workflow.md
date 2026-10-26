@@ -12,8 +12,8 @@ confirm a specific delivery.
 | --- | --- | --- |
 | A topic and point of view | New blog → A topic, with your documents as sources | Type the point, or pick one of three angles |
 | An outline or notes | New blog → An outline or notes | Write from it, or shape the outline first |
-| A draft, a file or a Google Doc | New blog → A draft | An optional first pass; then notes on the desk |
-| Someone else's Google Doc | New blog → A draft → Google Doc | Edit on the desk, then **Finishing → Before publishing → Send to Google Doc** as suggestions |
+| A draft, a file or a Google Doc | Home → Edit or polish a draft (no kind of post) | Proofread and tighten, just give feedback, reshape to a kind of post, or leave it; then notes on the desk |
+| Someone else's Google Doc | Home → Edit or polish a draft → Google Doc | Edit on the desk, then **Finishing → Before publishing → Send to Google Doc** as suggestions |
 | A blog in the manuscript editor | Blogs → Continue editing | Choose the precise editing scope |
 
 The brief's audience and purpose matter for technical/product marketing: a
@@ -56,8 +56,9 @@ assistant assessments unless the record identifies a performed mechanical check.
 ## Edit another author's Google Doc in the manuscript editor
 
 1. Open a blog already in the editor, imported from a Google Doc, with **Continue
-   editing**. A new Doc goes to the writing desk instead (**New blog → A draft → Google
-   Doc**), and so does **Polish another document** after you finish. Importing starts no
+   editing**. A new Doc goes to the writing desk instead (**Edit or polish a draft → Google
+   Doc**, one screen with no kind of post), and so does **Polish another document** after
+   you finish. Importing starts no
    model.
 2. In **Polish**, optionally name a concern, then choose **Polish writing**.
    This combines proofreading, copy editing and natural wording without research.
