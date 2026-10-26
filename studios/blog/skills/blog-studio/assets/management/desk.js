@@ -405,12 +405,13 @@ function sDeskRender(held){
   const column=sNode('div','desk-column');held.tab=held.tab||'draft';held.shownTab=held.tab;
   held.problemSlot=sNode('div','desk-problem-slot');const problem=sDeskProblem(held);if(problem)held.problemSlot.append(problem);
   held.cards={};
-  if(held.tab==='outline'){held.wholeCard=null;column.append(held.problemSlot,...sDeskOutline(held));}
+  held.column=column;held.outlineStale=false;
+  if(held.tab==='outline'){held.wholeCard=null;held.wholeGo=null;column.append(held.problemSlot,...sDeskOutline(held));column.addEventListener('focusout',()=>setTimeout(()=>{if(held.outlineStale&&held.column===column&&!held.outlineTimer&&!sDeskTyping(column)&&sDeskCurrent(held)){held.outline=null;sDeskRender(held);}},0));}
   else{
     held.wholeCard=sDeskWhole(held);
     for(const part of ['title','opening',...view.sections.map(section=>section.id)])held.cards[part]=sDeskPart(held,part);
     column.append(held.problemSlot,held.wholeCard,...Object.values(held.cards));
-    if(!view.sections.length)column.append(sCard('No sections yet',sNode('p','','This draft has no ## headings, so it is one opening. Add headings in the text, or add sections on the Outline tab.')));
+    if(!view.sections.length)column.append(sCard('No sections yet',sNode('p','','This draft has no headings, so it is one opening. Add sections on the Outline tab.')));
   }
   held.bar=sDeskSelectionBar(held);held.aside=sDeskAside(held);
   // Finishing sits beside the draft in place of the sources; on a phone it is a full-screen sheet.
@@ -422,23 +423,40 @@ function sDeskRender(held){
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the
 // person is typing in keeps its focus and caret.
+// A field the person is typing in is never drawn again under them: its card is brought up to
+// date in place, and drawn again once focus leaves it.
+function sDeskFocused(){return typeof document.activeElement==='object'?document.activeElement:null;}
+function sDeskTyping(node){const focused=sDeskFocused();return !!(node&&focused&&['INPUT','TEXTAREA','SELECT'].includes(String(focused.tagName).toUpperCase())&&typeof node.contains==='function'&&node.contains(focused));}
 function sDeskRefresh(held,before){
+  if(held.mode==='review')return sDeskReviewRefresh(held,before);
   const view=held.view,order=found=>(found?.sections||[]).map(section=>section.id).join(',');
-  if(held.tab==='outline'||held.shownTab!==held.tab){if(held.outlineTimer&&sDeskCurrent(held)){sDeskToolbar(held);const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sDeskPanelSync(held);return;}held.outline=null;return sDeskRender(held);}
+  if(held.tab==='outline'||held.shownTab!==held.tab){if((held.outlineTimer||held.tab==='outline'&&sDeskTyping(held.column))&&sDeskCurrent(held)){if(!held.outlineTimer)held.outlineStale=true;sDeskToolbar(held);const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sDeskPanelSync(held);return;}held.outline=null;return sDeskRender(held);}
   if(!held.cards||!before||order(before)!==order(view)||!sDeskCurrent(held))return sDeskRender(held);
   sDeskToolbar(held);
   held.problemSlot.replaceChildren(...[sDeskProblem(held)].filter(Boolean));
-  const whole=sDeskWhole(held);if(held.wholeCard)held.wholeCard.replaceWith(whole);held.wholeCard=whole;
-  const focused=typeof document.activeElement==='object'?document.activeElement:null;
+  sDeskWholeState(held);
   for(const part of Object.keys(held.cards)){
     const was=sDeskWorkingIn(before,part),now=sDeskWorking(held,part),old=held.cards[part];
     const changed=was!==now||deskTextOf(before,part)!==deskTextOf(view,part)||(before.versions||{})[part]!==(view.versions||{})[part]||sDeskCommentKey(before,part)!==sDeskCommentKey(view,part);
-    const typing=focused&&typeof old.contains==='function'&&old.contains(focused);
-    if(changed&&(!typing||was||now)){const card=sDeskPart(held,part);old.replaceWith(card);held.cards[part]=card;}
+    if(changed&&!sDeskTyping(old)){const card=sDeskPart(held,part);old.replaceWith(card);held.cards[part]=card;}
+    else{if(changed)old.deskStale=true;sDeskPartState(held,part,old);}
   }
   const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;
   sDeskPanelSync(held);
   sDeskImagesLoad(held);
+}
+// A card brought up to date in place: whether its part is being worked on, its text when it
+// is not the field typed in, and whether its notes can start a job now.
+function sDeskPartState(held,part,card){
+  const view=held.view,working=sDeskWorking(held,part),focused=sDeskFocused(),input=card.deskInput;
+  card.className='card desk-part'+(working?' desk-working':'');
+  if(input){input.readOnly=working||!access.actions.edit;if(input!==focused&&!held.pending[part]){const text=deskTextOf(view,part);if(input.value!==text)input.value=text;}}
+  if(card.deskGo)card.deskGo.disabled=!access.actions.edit||!!view.working;
+  if(!working&&card.deskWorkingNotes){for(const note of card.deskWorkingNotes)note.remove();card.deskWorkingNotes=null;}
+}
+// Drawn again once focus leaves a card brought up to date in place.
+function sDeskPartLeft(held,part,card){
+  setTimeout(()=>{if(!card.deskStale||held.cards?.[part]!==card||sDeskTyping(card)||!sDeskCurrent(held)||held.mode==='review')return;const fresh=sDeskPart(held,part);card.replaceWith(fresh);held.cards[part]=fresh;sDeskImagesLoad(held);},0);
 }
 // What the last job left: a result not applied, or a job that failed.
 function sDeskProblem(held){
@@ -454,9 +472,11 @@ function sDeskWhole(held){
   const box=sNode('textarea','input');box.id='desk-whole-note';box.rows=2;box.maxLength=4000;box.setAttribute('aria-label','Note for the whole draft');box.value=held.wholeNote||'';box.placeholder='For example: tighten throughout, or make it more casual.';
   box.addEventListener('input',()=>{held.wholeNote=box.value;});
   const go=sButton('Revise the draft',async button=>{const text=(held.wholeNote||'').trim();if(!text){notice('Write the note for the whole draft.',true);return;}await sDeskJob(held,button,'desk-revise',{note:text},()=>{held.wholeNote='';});},'filled');
-  go.disabled=!access.actions.edit||!!held.view.working;
+  go.disabled=!access.actions.edit||!!held.view.working;held.wholeGo=go;
   return sAdd(card,box,sNode('p','quiet field-hint','Each section is revised for the note with the whole draft in view. Your text is kept as a version first.'),sAdd(sNode('div','bar'),go));
 }
+// The note for the whole draft is never drawn again by a poll: only its button follows the job.
+function sDeskWholeState(held){if(held.wholeGo)held.wholeGo.disabled=!access.actions.edit||!!held.view.working;}
 function sDeskPart(held,part){
   const view=held.view,section=(view.sections||[]).find(row=>row.id===part),working=sDeskWorking(held,part);
   const card=sNode('section','card desk-part'+(working?' desk-working':''));card.dataset.part=part;
@@ -466,22 +486,23 @@ function sDeskPart(held,part){
   const text=held.pending[part]?.text??deskTextOf(view,part);
   const input=sNode(part==='title'?'input':'textarea','input desk-text');input.value=text;input.setAttribute('aria-label',part==='title'?'Title':part==='opening'?'Opening':'Text of '+section.heading);
   if(part==='title'){input.type='text';input.maxLength=500;}else{input.rows=Math.min(24,Math.max(3,Math.ceil(text.length/90)+text.split('\n').length));}
-  input.readOnly=working||!access.actions.edit;
+  input.readOnly=working||!access.actions.edit;card.deskInput=input;
   input.addEventListener('input',()=>sDeskTyped(held,part,input.value));
   if(part!=='title'){for(const kind of ['select','mouseup','keyup'])input.addEventListener(kind,()=>sDeskSelected(held,part,input));}
   else input.addEventListener('select',()=>sDeskSelected(held,part,input));
   card.append(input);
   const thumbs=part==='title'?null:sDeskThumbs(held,part);if(thumbs)card.append(thumbs);
   const comments=sDeskComments(held,part);if(comments)card.append(comments);
-  if(working){const note=sNode('p','desk-working-note','Working on this section');note.setAttribute('role','status');card.append(note);if(view.working.note)card.append(sNode('p','quiet','Your note: '+view.working.note));}
+  if(working){const note=sNode('p','desk-working-note','Working on this section');note.setAttribute('role','status');card.append(note);card.deskWorkingNotes=[note];if(view.working.note){const said=sNode('p','quiet','Your note: '+view.working.note);card.append(said);card.deskWorkingNotes.push(said);}}
   if(section){
     const typed=(held.notes||{})[part]||'',row=sNode('div','desk-note');
     const box=sNode('textarea','input desk-note-text');box.rows=typed.includes('\n')?4:1;box.maxLength=4000;box.value=typed;box.placeholder='How should this change?';box.setAttribute('aria-label','How should '+section.heading+' change?');
     const go=sButton(typed.trim()?'Rewrite':'Write again',async button=>{const note=((held.notes||{})[part]||'').trim();await sDeskJob(held,button,'desk-note',{part,note},()=>{if(held.notes)delete held.notes[part];});});
-    go.disabled=!access.actions.edit||!!view.working;
+    go.disabled=!access.actions.edit||!!view.working;card.deskGo=go;
     box.addEventListener('input',()=>{held.notes=held.notes||{};held.notes[part]=box.value;go.textContent=box.value.trim()?'Rewrite':'Write again';});
     card.append(sAdd(row,box,go));
   }
+  card.addEventListener('focusout',()=>sDeskPartLeft(held,part,card));
   return card;
 }
 function sDeskAside(held){
