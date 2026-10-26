@@ -109,7 +109,7 @@ function sDeskResearchDefault(value){const ticks=OLD_RESEARCH[value]||(value&&ty
 function sDeskHeld(){
   if(studio.deskStart)return studio.deskStart;
   const defaults=studio.options?.settings?.defaults||{},preset=studio.deskPreset||{};studio.deskPreset=null;
-  return studio.deskStart={step:0,kind:null,style:'',have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:null,files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
+  return studio.deskStart={step:0,kind:null,style:'',have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:null,humanizeOn:false,humanizeLevel:'light',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
 }
 // Home's tasks, New blog, the library's "Write a blog from these", an interview's outline and
 // a saved blog's details all start here.
@@ -175,6 +175,9 @@ function sDeskPolish(held){
   const again=()=>sDeskStartAgain(held),reading=held.source==='google'&&!held.preview;
   const go=sNode('button','button button-filled',reading?'Read Google Doc':'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
   const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]));
+  // Check spelling and grammar may also suggest more human-sounding wording, at a strength,
+  // mixed in with the fixes. Ticking it shows the strength in place, so focus stays put.
+  if(held.first_pass==='copyedit'){const strength=sChoice('Strength',DESK_LEVELS,held,'humanizeLevel');strength.hidden=!held.humanizeOn;first.append(sCheck('desk-humanize','Also suggest more human-sounding wording',held,'humanizeOn',REVIEW_HUMAN_SAYS,on=>{strength.hidden=!on;}),strength);}
   if(held.first_pass==='reshape'){const kinds=(studio.options?.styles||[]).filter(kind=>kind.status!=='retired');first.append(sField('desk-kind','Kind of post',held,'kind',{options:[['','Choose a kind of post'],...kinds.map(kind=>[kind.id,kind.name])],changed:()=>again()}),sNode('p','quiet field-hint',kinds.length?'Its usual shape and length.':'No kinds of post yet. Set them up from Home, under Kinds of post.'));}
   const fold=(label,open,remember,...content)=>{const box=sAdd(sNode('details','card desk-fold'),sAdd(sNode('summary',''),sNode('span','card-title',label)),...content);box.open=open;box.addEventListener('toggle',()=>remember(box.open));return box;};
   const tone=fold('Tone (optional)',!!held.toneOpen,open=>{held.toneOpen=open;},sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational. It guides any rewriting.'}));
@@ -272,11 +275,13 @@ async function sDeskReadGoogle(held){
   if(found?.status==='already-linked'&&found.id){
     // The Doc is already a blog here: open it on the desk, or bring it there.
     let made=null,created=false;try{made=await api('desk?id='+encodeURIComponent(found.id));}catch(_){made=null;}
-    if(!made){created=true;made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}
+    if(!made){created=true;made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,...sDeskHumanize(held),sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}
     if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};return sRoute('desk',made.id,created&&held.first_pass==='copyedit'?'review':null);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;sDeskStart();
 }
+// Check spelling and grammar's strength of human-sounding suggestions, or null for none.
+function sDeskHumanize(held){return held.first_pass==='copyedit'?{humanize:held.humanizeOn?held.humanizeLevel:null}:{};}
 async function sDeskGo(held){
   if(held.have!=='draft'&&held.kind===null){held.step=0;sDeskStart();throw new Error('Choose a kind of post first.');}
   const turn=studio.turn;
@@ -284,7 +289,7 @@ async function sDeskGo(held){
   const common={operation:held.operation,style:held.have==='draft'?held.style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),...(held.title.trim()?{title:held.title.trim()}:{})};
   let made;
   if(held.have==='draft'){
-    const settings={...common,first_pass:held.first_pass};
+    const settings={...common,first_pass:held.first_pass,...sDeskHumanize(held)};
     if(held.source==='saved')made=await api('desk-create',{...settings,article:held.article});
     else if(held.source==='paste')made=await api('desk-create',{...settings,manuscript:held.manuscript});
     else if(held.source==='file'){
@@ -580,7 +585,9 @@ async function sDeskSave(held,part){
     sDeskCounts(held);
     // An image pasted as data is kept beside the text: its card shows the reference instead.
     if(/data:image\//i.test(text)&&!held.pending[part]&&held.cards?.[part]&&sDeskCurrent(held)){const card=sDeskPart(held,part);held.cards[part].replaceWith(card);held.cards[part]=card;await sDeskImagesLoad(held);}
-    if(!!before.working!==!!view.working&&sDeskCurrent(held))sDeskRefresh(held,before);
+    // A job starting or ending, or sections added, removed or moved elsewhere, is drawn.
+    const order=found=>(found?.sections||[]).map(section=>section.id).join(',');
+    if((!!before.working!==!!view.working||order(before)!==order(view))&&sDeskCurrent(held))sDeskRefresh(held,before);
   }catch(error){
     if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}
     else if(held.status)held.status.textContent=error.message+' Your text is kept here.';
@@ -612,7 +619,7 @@ function sDeskWatch(held){
     if(!sDeskCurrent(held)){held.watching=false;return;}
     try{await sDeskFlush(held);const view=await api('desk?id='+encodeURIComponent(held.id));if(!sDeskCurrent(held)){held.watching=false;return;}
       const ended=!view.working,before=held.view;held.view=view;sDeskRefresh(held,before);
-      if(ended){held.watching=false;const last=(view.jobs||[]).at(-1);if(last?.applied)sToast(held.mode==='review'&&last.kind==='finish-copyedit'?'The fixes are marked in your text.':/^finish-/.test(last.kind)?'Suggestions are ready in Finishing.':'Done. The earlier text is in History.');if(held.finish?.tool==='proofread'&&!/^finish-/.test(last?.kind||''))await sDeskProofread(held);return;}
+      if(ended){held.watching=false;const last=(view.jobs||[]).at(-1);if(last?.applied)sToast(held.mode==='review'&&last.kind==='finish-copyedit'?'The fixes are marked in your text.':held.mode==='review'&&last.kind==='finish-humanize'?'The suggestions are marked in your text.':/^finish-/.test(last.kind)?'Suggestions are ready in Finishing.':'Done. The earlier text is in History.');if(held.finish?.tool==='proofread'&&!/^finish-/.test(last?.kind||''))await sDeskProofread(held);return;}
     }catch(error){if(held.status)held.status.textContent=error.message;}
     setTimeout(follow,DESK_POLL);
   };
@@ -883,7 +890,7 @@ function sDeskProposal(held,set,item,key){
   if(item.note)card.append(sNode('p','quiet',item.note));
   if(item.verdict&&item.verdict!=='supported'&&!item.passage)card.append(sNode('p','quiet','No passage in your sources says this.'));
   if(item.passage)card.append(sNode('p','quiet','From '+(item.source||'your sources')+': “'+item.passage+'”'));
-  if(item.state!=='open'){card.append(sNode('p','quiet',item.state==='applied'?'Applied. The earlier text is in History.':item.verdict?'Kept as it is.':'Skipped.'));return card;}
+  if(item.state!=='open'){card.append(sNode('p','quiet',item.state==='applied'?'Applied. The earlier text is in History.':item.state==='retired'?'No longer fits: another change replaced these words.':item.verdict?'Kept as it is.':'Skipped.'));return card;}
   const skip=sButton(item.verdict?'Keep it':'Skip',button=>sDeskSkip(held,set,[item.id],button));skip.disabled=!access.actions.edit;
   if(!item.present){card.append(sNode('p','quiet','The text changed since this was suggested, so it no longer fits.'),sAdd(sNode('div','bar'),skip));return card;}
   if(item.verdict==='supported')return card;
@@ -1039,16 +1046,33 @@ function sDeskGoogleCard(held,p){
 }
 
 // Review mode ("Check spelling and grammar"): where polishing a draft lands. Copy edit runs on
-// its own; the draft then reads section by section with each fix marked in place, struck words
-// out and highlighted words in, its reason under the paragraph, and Accept or Reject on each.
-// Accept is Finishing's apply of that fix, keeping a version; Reject sets it aside. A flagged
-// fix (it changes a fact, code or shape) waits to be checked one by one. Any paragraph can be
-// clicked and edited in place; it saves after a short pause or when focus leaves it, and a fix
-// whose words are no longer in the text drops out. Every text is set with textContent.
-const REVIEW_CHECKING='Checking spelling and grammar…';
+// its own, and when the person asked for more human-sounding wording Humanize follows it at the
+// chosen strength, queued once Copy edit settles; the fixes can be accepted while it looks. The
+// draft then reads section by section with the suggestions from both marked in place, in
+// reading order, each with a small label (Spelling, Grammar, Punctuation, Wording or Sounds
+// human), struck words out and highlighted words in, its reason under the paragraph, and Accept
+// or Reject on each. A wording fix may offer alternatives to pick from before Accept. Accept is
+// Finishing's apply, keeping a version, and retires any other suggestion that covered the same
+// words; Reject sets one aside. A flagged suggestion (it changes a fact, code or shape) waits
+// to be checked one by one. Any paragraph can be clicked and edited in place; it saves after a
+// short pause or when focus leaves it, and a suggestion whose words are no longer in the text
+// drops out. Every text is set with textContent.
+const REVIEW_CHECKING='Checking spelling and grammar…',REVIEW_HUMAN='Looking for machine-like wording…';
+const REVIEW_HUMAN_SAYS='Rewrites for sentences that read as machine-written, mixed in with the fixes, each yours to accept or reject.';
+const REVIEW_TOOLS=['copyedit','humanize'];
+// A copy edit's kind as its label; consistency (one name or term written two ways) reads as spelling.
+const REVIEW_KINDS={spelling:'Spelling',grammar:'Grammar',punctuation:'Punctuation',consistency:'Spelling',wording:'Wording'};
+const REVIEW_SHOW=[['all','All'],['fixes','Fixes'],['human','Sounds human']];
 const REVIEW_INLINE=/(\*\*|__)(?=\S)([^\n]*?\S)\1|(?<![*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])|`([^`\n]+)`|!\[[^\[\]\n]*\]\[[^\[\]\n]*\]|!\[[^\[\]\n]*\]\([^)\n]*\)|\[([^\[\]\n]+)\]\(([^)\s]+)[^)\n]*\)|\\([\\`*_{}\[\]()#+\-.!<>|~])/g;
 function deskHeading(text){return String(text||'').replace(/^(\*\*|__)(.+)\1$/,'$2');}
-function sReviewOn(held){held.mode='review';held.review=held.review||{editing:null,parts:{},google:null};sDeskModeUrl(held);}
+function sReviewOn(held){held.mode='review';const r=held.review=held.review||{editing:null,parts:{},google:null};r.picks=r.picks||{};r.dismissed=r.dismissed||{};r.filter=r.filter||'all';sDeskModeUrl(held);}
+// A suggestion's small label: a copy edit's kind, or Humanize's own.
+function reviewLabel(item){return item.tool==='humanize'?'Sounds human':REVIEW_KINDS[item.kind]||'Grammar';}
+// Whether a suggestion can be accepted now: nothing works on the draft, or only a Finishing
+// tool does (Humanize looking while Copy edit's fixes wait), which changes no part.
+function sReviewFree(held){const job=held.view.working;return !job||job.part==='finishing';}
+// Accept's request for one suggestion: the alternative picked, if one was.
+function sReviewPick(item){return {id:item.id,...(Number.isInteger(item.picked)?{alternative:item.picked}:{})};}
 // The desk's address says which view is shown, without a new history entry.
 function sDeskModeUrl(held){const review=held.mode==='review';if(studio.screen!=='desk'||(studio.stage==='review')===review)return;studio.stage=review?'review':null;history.replaceState(null,'',location.pathname+'?'+new URLSearchParams({screen:'desk',id:held.id,...(review?{stage:'review'}:{})}));}
 // Markdown as plain reading: bold, emphasis, code and link words shown, list marks as bullets,
@@ -1084,26 +1108,54 @@ function reviewBlocks(text,marks){
   blocks.push({start,end:text.length});
   return blocks.filter(block=>block.end>block.start||!text).map(block=>({...block,text:text.slice(block.start,block.end)}));
 }
-// The newest Copy edit and what is left of it: open fixes whose words are still in the text,
-// placed where they sit, in reading order and numbered; the flagged ones; the gone ones.
+// The newest Copy edit, and Humanize when it is on, and what is left of them: open suggestions
+// whose words are still in the text, placed where they sit, in reading order (by part, then
+// by place in it) and numbered across both; the flagged ones; the gone and retired ones.
 function sReviewState(held){
-  const view=held.view,set=(view.finishing||{}).copyedit||null,working=view.working&&view.working.kind==='finish-copyedit'?view.working:null;
+  const view=held.view,finishing=view.finishing||{},human=view.review?.humanize||null,r=held.review||{};
+  const kind=view.working?.kind,working=kind==='finish-copyedit'||kind==='finish-humanize'?view.working:null;
   const parts=['title','opening',...(view.sections||[]).map(section=>section.id)];
-  const open=set?set.items.filter(item=>item.state==='open'):[],pending=[],gone=[];
-  for(const item of open){const text=deskTextOf(view,item.part),at=item.present&&parts.includes(item.part)?text.indexOf(item.before):-1;if(at<0||!('after' in item))gone.push(item);else pending.push({...item,at});}
-  pending.sort((a,b)=>parts.indexOf(a.part)-parts.indexOf(b.part)||a.at-b.at);pending.forEach((item,index)=>{item.number=index+1;});
-  const last=(view.jobs||[]).filter(job=>job.kind==='finish-copyedit').at(-1);
-  const failed=!working&&last&&!last.busy&&last.error&&(!set||set.job!==last.id)?last.error:'';
-  return {set,working,parts,pending,gone,ready:pending.filter(item=>!item.flag),flagged:pending.filter(item=>item.flag),failed,applied:set?set.items.filter(item=>item.state==='applied').length:0};
+  // While Copy edit checks, nothing from the check before is shown; while Humanize looks, the
+  // fixes Copy edit just found are, to accept or reject meanwhile.
+  const hidden=tool=>!!working&&(kind==='finish-copyedit'||kind==='finish-'+tool);
+  const sets=REVIEW_TOOLS.map(tool=>[tool,tool==='humanize'&&!human?null:finishing[tool]||null]).filter(([tool,set])=>set&&!hidden(tool));
+  const pending=[],gone=[];
+  for(const [tool,set] of sets)for(const item of set.items){
+    const row={...item,tool,job:set.job,key:tool+':'+item.id};
+    if(item.state==='retired'){gone.push(row);continue;}  // Another accepted change took its words.
+    if(item.state!=='open')continue;
+    const text=deskTextOf(view,item.part),at=item.present&&parts.includes(item.part)?text.indexOf(item.before):-1;
+    if(at<0||!('after' in item)){gone.push(row);continue;}
+    // The wording picked from a fix's alternatives, with its own flag.
+    const pick=r.picks?.[row.key],alternative=Number.isInteger(pick)?(item.alternatives||[])[pick]:null;
+    pending.push({...row,at,base:item.after,baseFlag:item.flag||'',...(alternative?{picked:pick,after:alternative.after,flag:alternative.flag||''}:{})});
+  }
+  pending.sort((a,b)=>parts.indexOf(a.part)-parts.indexOf(b.part)||a.at-b.at||REVIEW_TOOLS.indexOf(a.tool)-REVIEW_TOOLS.indexOf(b.tool));
+  pending.forEach((item,index)=>{item.number=index+1;});
+  const filter=human&&REVIEW_SHOW.some(([value])=>value===r.filter)?r.filter:'all',fits=tool=>filter==='all'||(filter==='human')===(tool==='humanize');
+  const shown=pending.filter(item=>fits(item.tool));
+  // A check that did not finish: Copy edit's, and Humanize's when it came after it.
+  const jobs=view.jobs||[],failed=[],copy=jobs.filter(job=>job.kind==='finish-copyedit').at(-1);
+  for(const tool of REVIEW_TOOLS){
+    if(hidden(tool)||tool==='humanize'&&!human)continue;
+    const last=jobs.filter(job=>job.kind==='finish-'+tool).at(-1);
+    if(tool==='humanize'&&last&&copy&&jobs.indexOf(last)<jobs.indexOf(copy))continue;
+    if(last&&!last.busy&&last.error&&(!finishing[tool]||finishing[tool].job!==last.id))failed.push([tool,last.error]);
+  }
+  if(human&&!working&&view.review?.problem)failed.push(['humanize',view.review.problem]);
+  const all=sets.flatMap(([,set])=>set.items);
+  return {sets,working,human,parts,pending,shown,filter,fits,gone,ready:shown.filter(item=>!item.flag),flagged:shown.filter(item=>item.flag),failed,any:sets.length>0,total:all.length,applied:all.filter(item=>item.state==='applied').length};
 }
 // Drawn again only when what it shows changes, so a poll never swaps a button being pressed.
 function sReviewToolbar(held,state,force=false){
-  const key=JSON.stringify([held.view.title,!!state.working,!!held.view.working,access.actions.edit,sNarrow()]);
+  const key=JSON.stringify([held.view.title,state.working?.kind||null,!!held.view.working,access.actions.edit,sNarrow()]);
   if(!force&&held.review?.toolbarKey===key&&studio.screen==='desk')return;if(held.review)held.review.toolbarKey=key;
   const again=sButton('Check again',button=>sReviewCheck(held,button));again.disabled=!access.actions.edit||!!held.view.working;
   const full=sButton('Open the full desk',async()=>{await sReviewFlush(held);held.mode=null;sDeskModeUrl(held);held.tab='draft';sDeskRender(held);sDeskWatch(held);});
-  sFrame(held.view.title,sFold([again,full]),state.working?REVIEW_CHECKING:'Check spelling and grammar',()=>sRoute('blogs'));
+  sFrame(held.view.title,sFold([again,full]),state.working?sReviewDoing(state):'Check spelling and grammar',()=>sRoute('blogs'));
 }
+// What the check under way is doing, said in the toolbar and above the draft.
+function sReviewDoing(state){return state.working?.kind==='finish-humanize'?REVIEW_HUMAN:REVIEW_CHECKING;}
 function sDeskReview(held){
   sReviewOn(held);const state=sReviewState(held);sReviewToolbar(held,state,true);held.layout=sDeskLayout();held.cards=null;held.wholeCard=null;held.wholeGo=null;
   const status=sNode('p','quiet desk-save-state');status.setAttribute('role','status');status.setAttribute('aria-live','polite');held.status=status;
@@ -1111,31 +1163,49 @@ function sDeskReview(held){
   held.review.head=sReviewHead(held,state);held.review.headKey=sReviewHeadKey(held,state);held.review.paper=sReviewPaper(held,state);
   held.review.lede=sNode('p','lede',sReviewLede(state));
   sPage(held.review.lede,status,held.review.head,held.review.paper);
-  sDeskImagesLoad(held);
+  sDeskImagesLoad(held);sReviewProof(held);
 }
 // What needs the person first: the check under way, a problem, the count with Accept all and
 // Reject all, or, once nothing is left, where the draft goes next.
 function sReviewHead(held,state){
-  const head=sNode('div','review-head'),editable=access.actions.edit&&!held.view.working;
+  const head=sNode('div','review-head'),editable=access.actions.edit&&sReviewFree(held),noun=state.human?['suggestion','suggestions']:['fix','fixes'];
   if(state.working){
-    const line=sNode('p','desk-working-note',REVIEW_CHECKING);line.setAttribute('role','status');
+    const line=sNode('p','desk-working-note',sReviewDoing(state));line.setAttribute('role','status');
     const stop=sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{try{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:state.working.id});sDeskRefresh(held,before);}catch(error){notice(error.message,true);}});});stop.disabled=!access.actions.edit;
-    return sAdd(head,sAdd(sNode('div','card review-checking'),line,sAdd(sNode('div','bar'),stop)));
+    head.append(sAdd(sNode('div','card review-checking'),line,sAdd(sNode('div','bar'),stop)));
   }
-  if(state.failed){const again=sButton('Check again',button=>sReviewCheck(held,button),'filled');again.disabled=!access.actions.edit;return sAdd(head,sAdd(sNode('div','decision-notice desk-problem'),sNode('p','','The check did not finish: '+state.failed),again));}
-  if(!state.set){const go=sButton('Check spelling and grammar',button=>sReviewCheck(held,button),'filled');go.disabled=!access.actions.edit;return sAdd(head,sCard('Check spelling and grammar',sNode('p','','Each fix is marked in your text for you to accept or reject.'),sAdd(sNode('div','bar'),go)));}
+  state.failed.forEach(([tool,error],index)=>{
+    const said=sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',(tool==='humanize'?'The check for machine-like wording did not finish: ':'The check did not finish: ')+error));
+    if(!state.working&&index===state.failed.length-1){const again=sButton('Check again',button=>sReviewCheck(held,button),'filled');again.disabled=!access.actions.edit;said.append(again);}
+    head.append(said);
+  });
+  if(!state.any&&!state.working&&!state.failed.length)return sAdd(head,sReviewStart(held));
   if(state.pending.length){
-    const count=sNode('p','review-count',state.pending.length+(state.pending.length===1?' fix to review':' fixes to review'));count.setAttribute('role','status');
-    const all=sButton('Accept all ('+state.ready.length+')',button=>sReviewAccept(held,state.set,state.ready.map(item=>item.id),button),'filled');all.disabled=!editable||!state.ready.length;
-    const none=sButton('Reject all',button=>sReviewReject(held,state.set,state.set.items.filter(item=>item.state==='open').map(item=>item.id),button));none.disabled=!access.actions.edit;
-    const flagged=state.flagged.length?sNode('p','quiet',state.flagged.length+(state.flagged.length===1?' fix changes a fact, code or the shape of a part, so Accept all leaves it for you to check.':' fixes change a fact, code or the shape of a part, so Accept all leaves them for you to check.')):null;
-    return sAdd(head,sAdd(sNode('div','card review-tally'),count,sAdd(sNode('div','bar'),all,none)),flagged);
-  }
-  return sAdd(head,sReviewDone(held,state));
+    const count=sNode('p','review-count',state.pending.length+' '+noun[state.pending.length===1?0:1]+' to review');count.setAttribute('role','status');
+    const all=sButton('Accept all ('+state.ready.length+')',button=>sReviewAcceptAll(held,state.ready.map(item=>item.key),button),'filled');all.disabled=!editable||!state.ready.length;
+    const open=state.sets.filter(([tool])=>state.fits(tool)).flatMap(([,set])=>set.items.filter(item=>item.state==='open').map(item=>({job:set.job,id:item.id})));
+    const none=sButton('Reject all',button=>sReviewRejectAll(held,open,button));none.disabled=!access.actions.edit||!open.length;
+    const both=state.pending.some(item=>item.tool==='humanize')&&state.pending.some(item=>item.tool!=='humanize');
+    const filter=state.human&&(both||state.filter!=='all')?sReviewFilter(held):null;
+    const flagged=state.flagged.length?sNode('p','quiet',state.flagged.length===1?'1 '+noun[0]+' changes a fact, code or the shape of a part, so Accept all leaves it for you to check.':state.flagged.length+' '+noun[1]+' change a fact, code or the shape of a part, so Accept all leaves them for you to check.'):null;
+    sAdd(head,sAdd(sNode('div','card review-tally'),count,sAdd(sNode('div','bar'),all,none)),filter,flagged);
+  }else if(state.any&&!state.working)head.append(sReviewDone(held,state));
+  return sAdd(head,sReviewQuick(held,state));
 }
+// Before the first check: Check spelling and grammar, and whether to suggest more
+// human-sounding wording too, at a strength. The choice is kept for Check again.
+function sReviewStart(held){
+  const r=held.review,pinned=held.view.review?.humanize||null,ask=r.ask||(r.ask={on:!!pinned,level:pinned||'light'});
+  const strength=sChoice('Strength',DESK_LEVELS,ask,'level');strength.hidden=!ask.on;
+  const go=sButton('Check spelling and grammar',button=>sReviewCheck(held,button,ask.on?ask.level:null),'filled');go.disabled=!access.actions.edit;
+  return sCard('Check spelling and grammar',sNode('p','','Each fix is marked in your text for you to accept or reject.'),sCheck('review-humanize','Also suggest more human-sounding wording',ask,'on',REVIEW_HUMAN_SAYS,on=>{strength.hidden=!on;}),strength,sAdd(sNode('div','bar'),go));
+}
+// Show: All · Fixes · Sounds human. Accept all and Reject all act on what is shown.
+function sReviewFilter(held){const box=sChoice('Show',REVIEW_SHOW,held.review,'filter',()=>sDeskReview(held));box.className+=' review-filter';return box;}
 function sReviewDone(held,state){
-  const said=state.set.items.length?'Accepted '+state.applied+' of '+state.set.items.length+(state.set.items.length===1?' fix.':' fixes.'):'No fixes were needed.';
-  const card=sCard('Nothing left to review',sNode('p','',said+' Every accepted fix kept the earlier text in History.'));card.className+=' review-done';
+  const noun=state.human?['suggestion','suggestions']:['fix','fixes'];
+  const said=state.total?'Accepted '+state.applied+' of '+state.total+' '+noun[state.total===1?0:1]+'.':'No '+noun[1]+' were needed.';
+  const card=sCard('Nothing left to review',sNode('p','',said+' Every accepted '+noun[0]+' kept the earlier text in History.'));card.className+=' review-done';
   if(held.view.google_suggestions)return sAdd(card,...sReviewGoogle(held));
   const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));},'filled');
   const download=sButton('Download',async()=>{const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
@@ -1159,11 +1229,12 @@ function sReviewGoogle(held){
   return out;
 }
 function sReviewLede(state){
-  if(state.working)return 'Copy edit is reading your draft for spelling, grammar and wordy sentences. Read or edit it meanwhile.';
-  if(state.set&&!state.pending.length&&!state.failed)return 'Every fix is reviewed. Click any paragraph to keep editing, or Check again for the latest text.';
-  return 'Each fix is marked in your text: struck words go, highlighted words come in. Accept or reject each one, or click a paragraph to edit it yourself. Nothing changes until you accept.';
+  if(state.working?.kind==='finish-humanize')return 'The fixes are marked in your text while the wording check looks for sentences that read as machine-written. Accept or reject them meanwhile.';
+  if(state.working)return state.human?'Copy edit is reading your draft for spelling, grammar and wordy sentences, then the wording check looks for sentences that read as machine-written. Read or edit it meanwhile.':'Copy edit is reading your draft for spelling, grammar and wordy sentences. Read or edit it meanwhile.';
+  if(state.any&&!state.pending.length&&!state.failed.length)return (state.human?'Every suggestion is reviewed.':'Every fix is reviewed.')+' Click any paragraph to keep editing, or Check again for the latest text.';
+  return state.human?'Each suggestion is marked in your text, labelled as a fix or as more human-sounding wording: struck words go, highlighted words come in. Accept or reject each one, or click a paragraph to edit it yourself. Nothing changes until you accept.':'Each fix is marked in your text: struck words go, highlighted words come in. Accept or reject each one, or click a paragraph to edit it yourself. Nothing changes until you accept.';
 }
-function sReviewHeadKey(held,state){const g=held.review?.google;return JSON.stringify([state.working?.id||null,state.failed,state.set?.job||null,state.set?.items.length||0,state.applied,state.pending.map(item=>[item.id,item.flag]),!!held.view.working,access.actions.edit,!!held.view.google_suggestions,held.view.google?.url||'',g?[!!g.plan,!!g.sent,g.problem]:null]);}
+function sReviewHeadKey(held,state){const g=held.review?.google,proof=sReviewFindings(held,state);return JSON.stringify([state.working?.id||null,state.working?.kind||null,state.failed,state.sets.map(([tool,set])=>[tool,set.job,set.items.length]),state.applied,state.pending.map(item=>[item.key,item.flag]),state.filter,state.human,sReviewFree(held),!!held.view.working,access.actions.edit,!!held.view.google_suggestions,held.view.google?.url||'',g?[!!g.plan,!!g.sent,g.problem]:null,proof?[proof.findings.map(found=>found.key),proof.revision===held.view.revision]:null]);}
 function sReviewHeadShow(held){if(!held.review?.head)return;const state=sReviewState(held),head=sReviewHead(held,state);held.review.head.replaceWith(head);held.review.head=head;held.review.headKey=sReviewHeadKey(held,state);}
 // The reading surface: the title, the opening and each section, every paragraph with its
 // fixes marked, opaque like any document.
@@ -1172,22 +1243,26 @@ function sReviewPaper(held,state){
   for(const part of state.parts){const box=sReviewPart(held,part,state);if(box){held.review.parts[part]=box;paper.append(box);}}
   return paper;
 }
-function sReviewKey(held,part,state){const editing=held.review.editing;return JSON.stringify([deskTextOf(held.view,part),!!state.working,state.pending.filter(item=>item.part===part).map(item=>[item.id,item.number,item.at,item.after,item.flag,item.note]),state.gone.filter(item=>item.part===part).length,editing&&editing.part===part?editing.start:null,(held.view.sections||[]).find(section=>section.id===part)?.heading||'']);}
+function sReviewKey(held,part,state){const editing=held.review.editing;return JSON.stringify([deskTextOf(held.view,part),!!state.working,sReviewFree(held),state.shown.filter(item=>item.part===part).map(item=>[item.key,item.number,item.at,item.after,item.flag,item.note,item.picked??null]),state.gone.filter(item=>item.part===part).length,editing&&editing.part===part?editing.start:null,(held.view.sections||[]).find(section=>section.id===part)?.heading||'']);}
 function sReviewPart(held,part,state){
   const view=held.view,text=deskTextOf(view,part),section=(view.sections||[]).find(row=>row.id===part);
-  const marks=state.working?[]:state.pending.filter(item=>item.part===part),gone=state.working?[]:state.gone.filter(item=>item.part===part);
+  const marks=state.shown.filter(item=>item.part===part),gone=state.gone.filter(item=>item.part===part);
   if(part==='opening'&&!text.trim()&&!marks.length)return null;
   const box=sNode(part==='title'?'header':'section','review-part');box.dataset.part=part;box.deskKey=sReviewKey(held,part,state);
   if(section)box.append(sNode('h3','review-heading',deskHeading(section.heading)));
-  // Fixes that overlap one another are listed under the part, not marked in it.
+  // Suggestions that overlap one another, from either tool, are listed under the part, not
+  // marked in it; accepting one retires the others.
   const placed=[],loose=[];let end=-1;
   for(const item of marks){if(item.at>=end){placed.push(item);end=item.at+item.before.length;}else loose.push(item);}
   const blocks=part==='title'?[{start:0,end:text.length,text}]:reviewBlocks(text,placed);
   for(const block of blocks)box.append(sReviewBlock(held,part,block,placed.filter(item=>item.at>=block.start&&item.at<block.end||!block.text&&item.at===block.start)));
-  if(loose.length)box.append(sReviewFixes(held,state.set,loose,true));
-  if(gone.length)box.append(sNode('p','quiet review-gone',gone.length+(gone.length===1?' fix no longer fits this text, so it was left out.':' fixes no longer fit this text, so they were left out.')));
+  if(loose.length)box.append(sReviewFixes(held,loose,true));
+  if(gone.length){const noun=state.human?['suggestion','suggestions']:['fix','fixes'];box.append(sNode('p','quiet review-gone',gone.length===1?'1 '+noun[0]+' no longer fits this text, so it was left out.':gone.length+' '+noun[1]+' no longer fit this text, so they were left out.'));}
+  // A part kept as it was while a choice in it had focus is drawn again once focus leaves.
+  box.addEventListener('focusout',()=>setTimeout(()=>{if(box.deskStale&&held.review?.parts?.[part]===box&&!sDeskTyping(box)&&sDeskCurrent(held))sReviewPartShow(held,part);},0));
   return box;
 }
+function sReviewPartShow(held,part){const old=held.review.parts[part],box=sReviewPart(held,part,sReviewState(held));if(old&&box){old.replaceWith(box);held.review.parts[part]=box;}return box;}
 function sReviewBlock(held,part,block,marks){
   const view=held.view,wrap=sNode('div','review-block'),editing=held.review.editing;
   if(editing&&editing.part===part&&editing.start===block.start){const note=sNode('p','quiet review-editing',editing.said||'Saves as you type. Click outside the box to finish; its fixes come back.');note.setAttribute('aria-live','polite');editing.note=note;wrap.append(sReviewEditor(held,editing),note);return wrap;}
@@ -1197,7 +1272,7 @@ function sReviewBlock(held,part,block,marks){
     let at=block.start;const text=deskTextOf(view,part);
     for(const item of marks){
       if(item.at>at)shown.append(...reviewInline(text.slice(at,item.at),at===0||text[at-1]==='\n'));
-      const mark=sNode('span','review-mark'+(item.flag?' review-flagged':''));mark.dataset.item=item.id;
+      const mark=sNode('span','review-mark'+(item.tool==='humanize'?' review-human':'')+(item.flag?' review-flagged':''));mark.dataset.item=item.id;mark.dataset.tool=item.tool;mark.title=reviewLabel(item);
       const found=diffWords(item.before,item.after);
       if(!found)mark.append(sNode('del','review-old',item.before),document.createTextNode(' '),sNode('ins','review-new',item.after));
       else found.forEach((piece,index)=>{if(index)mark.append(document.createTextNode(' '));if(piece.op==='same')mark.append(...reviewInline(piece.text,false));else mark.append(sNode(piece.op==='added'?'ins':'del',piece.op==='added'?'review-new':'review-old',piece.text));});
@@ -1210,25 +1285,46 @@ function sReviewBlock(held,part,block,marks){
     wrap.append(shown);
   }
   if(part!=='title'){const thumbs=sDeskThumbsFor(view,block.text);if(thumbs)wrap.append(thumbs);}
-  if(marks.length)wrap.append(sReviewFixes(held,(view.finishing||{}).copyedit,marks,false));
+  if(marks.length)wrap.append(sReviewFixes(held,marks,false));
   return wrap;
 }
 // Each fix's number, reason and flag, with Accept and Reject; stacked on a phone.
-function sReviewFixes(held,set,items,loose){
+function sReviewFixes(held,items,loose){
   const list=sNode('ol','review-fixes');list.setAttribute('aria-label',loose?'Fixes that overlap others':'Fixes in this paragraph');
-  const editable=access.actions.edit&&!held.view.working;
+  const editable=access.actions.edit&&sReviewFree(held);
   for(const item of items){
-    const row=sNode('li','review-fix'+(item.flag?' review-flagged':''));row.dataset.item=item.id;
-    const said=sAdd(sNode('div','review-why'),sNode('span','review-num',String(item.number)),sNode('span','',item.note||'A fix.'));
+    const human=item.tool==='humanize',what=human?'suggestion ':'fix ';
+    const row=sNode('li','review-fix'+(human?' review-human':'')+(item.flag?' review-flagged':''));row.dataset.item=item.id;row.dataset.tool=item.tool;
+    const said=sAdd(sNode('div','review-why'),sNode('span','review-num',String(item.number)),sNode('span','tag review-kind'+(human?' review-kind-human':''),reviewLabel(item)),sNode('span','',item.note||(human?'Reads as machine-written.':'A fix.')));
     if(item.flag)said.append(sNode('span','tag','Check this'));
     row.append(said);
     if(item.flag)row.append(sNode('p','quiet',item.flag));
+    if(item.alternatives?.length)row.append(sReviewChoices(held,item));
     if(loose)row.append(deskSides(item.before,item.after));
-    const accept=sButton('Accept',button=>sReviewAccept(held,set,[item.id],button));accept.disabled=!editable;accept.setAttribute('aria-label','Accept fix '+item.number);
-    const reject=sButton('Reject',button=>sReviewReject(held,set,[item.id],button));reject.disabled=!access.actions.edit;reject.setAttribute('aria-label','Reject fix '+item.number);
+    const accept=sButton('Accept',button=>sReviewAccept(held,item,button));accept.disabled=!editable;accept.setAttribute('aria-label','Accept '+what+item.number);
+    const reject=sButton('Reject',button=>sReviewReject(held,item.job,[item.id],button));reject.disabled=!access.actions.edit;reject.setAttribute('aria-label','Reject '+what+item.number);
     row.append(sAdd(sNode('div','bar'),accept,reject));list.append(row);
   }
   return list;
+}
+// A wording fix's alternatives: the suggested wording or one of the others, picked before
+// Accept, each with its own flag. The paragraph shows the one picked; Accept applies it.
+function sReviewChoices(held,item){
+  const r=held.review,box=sNode('fieldset','review-choices'),name='review-pick-'+item.tool+'-'+item.id;
+  box.append(sNode('legend','quiet','Choose the wording'));
+  [{after:item.base,flag:item.baseFlag},...item.alternatives].forEach((option,index)=>{
+    const pick=index-1,row=sNode('label','check review-choice'),input=sNode('input','');
+    input.type='radio';input.name=name;input.id=name+'-'+index;input.checked=(item.picked??-1)===pick;
+    input.addEventListener('change',()=>{
+      if(!input.checked)return;if(pick<0)delete r.picks[item.key];else r.picks[item.key]=pick;
+      r.pickFocus=input.id;sReviewPartShow(held,item.part);sReviewHeadShow(held);
+      const again=r.pickInput;r.pickFocus=r.pickInput=null;if(again)again.focus();
+    });
+    if(r.pickFocus===input.id)r.pickInput=input;
+    row.append(input,sNode('span','',option.after));if(option.flag)row.append(sNode('span','tag','Check this'));
+    box.append(row);
+  });
+  return box;
 }
 // A poll, a save or a job landing redraws only what changed, never a paragraph being edited.
 function sDeskReviewRefresh(held,before){
@@ -1243,13 +1339,16 @@ function sDeskReviewRefresh(held,before){
   // unless a paragraph is being edited, when it waits for the editor to close.
   const drawn=Object.keys(held.review.parts).join(','),wanted=state.parts.filter(part=>held.review.parts[part]||part!=='opening'||deskTextOf(held.view,part).trim()).join(',');
   if(drawn!==wanted){if(!held.review.editing)sDeskReview(held);return;}
+  // A part with the paragraph being edited, or a choice with focus, is kept as it is: a
+  // second job landing never takes the caret or the words.
   for(const part of state.parts){
     const old=held.review.parts[part];
     if(!old||held.review.editing?.part===part||old.deskKey===sReviewKey(held,part,state))continue;
+    if(sDeskTyping(old)){old.deskStale=true;continue;}
     const box=sReviewPart(held,part,state);if(!box)continue;
     old.replaceWith(box);held.review.parts[part]=box;
   }
-  sDeskImagesLoad(held);
+  sDeskImagesLoad(held);sReviewProof(held);
 }
 function sReviewEditor(held,editing){
   const title=editing.part==='title',box=sNode(title?'input':'textarea','input review-editor');
@@ -1293,21 +1392,96 @@ async function sReviewSave(held){
 function sReviewSaid(held,editing,words){editing.said=words;if(editing.note)editing.note.textContent=words;if(held.status&&!held.stale)held.status.textContent=words;}
 async function sReviewClose(held){const editing=held.review?.editing;if(!editing)return;await sReviewSave(held);if(held.review.editing!==editing||editing.dirty)return;held.review.editing=null;if(held.status&&!held.stale&&editing.said)held.status.textContent=/^Saved/.test(editing.said)?'Saved.':editing.said;if(sDeskCurrent(held)&&held.mode==='review')sDeskReviewRefresh(held,held.view);}
 async function sReviewFlush(held){if(held.review?.editing)await sReviewClose(held);}
-async function sReviewCheck(held,button){
-  await busy(button,'Starting…',async()=>{try{await sReviewFlush(held);await sDeskFlush(held);if(held.stale)return;const before=held.view;held.view=await api('desk-finish',{id:held.id,seen:held.view.revision,tool:'copyedit'});if(held.review)held.review.google=null;sDeskRefresh(held,before);sDeskWatch(held);}catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
+async function sReviewCheck(held,button,humanize){
+  await busy(button,'Starting…',async()=>{try{
+    await sReviewFlush(held);await sDeskFlush(held);if(held.stale)return;
+    // Check again sends no strength: the server reuses the one pinned for this blog.
+    const before=held.view;held.view=await api('desk-review',{id:held.id,seen:held.view.revision,...(humanize===undefined?{}:{humanize})});
+    if(held.review){held.review.google=null;held.review.picks={};held.review.ask=null;}
+    sDeskRefresh(held,before);sDeskWatch(held);
+  }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
 }
-async function sReviewAccept(held,set,ids,button){
+async function sReviewAccept(held,item,button){
   await busy(button,'Accepting…',async()=>{try{
     await sReviewFlush(held);if(held.stale)return;
-    const before=held.view;held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:set.job,items:ids.map(id=>({id}))});
-    const done=held.view.finished||{applied:ids.length,left:[]},left=(done.left||[]).length;
-    if(held.review)held.review.google=null;
-    sToast((done.applied===1?'Accepted.':'Accepted '+done.applied+'.')+' The earlier text is in History.'+(left?' '+left+(left===1?' no longer fits and is':' no longer fit and are')+' left for you.':''));
+    const before=held.view;held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:item.job,items:[sReviewPick(item)]});
+    if(held.review){held.review.google=null;delete held.review.picks[item.key];}
+    sToast('Accepted. The earlier text is in History.');
     sDeskRefresh(held,before);
   }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
 }
-async function sReviewReject(held,set,ids,button){
-  await busy(button,'Rejecting…',async()=>{try{await sReviewFlush(held);const before=held.view;held.view=await api('desk-skip',{id:held.id,job:set.job,items:ids});sDeskRefresh(held,before);}catch(error){notice(error.message,true);}});
+// Accept all: every shown suggestion that still fits and is not flagged, the fixes first, then
+// what still fits of the rest. One that covered words a fix just changed is retired by the
+// server, never applied over it.
+async function sReviewAcceptAll(held,keys,button){
+  await busy(button,'Accepting…',async()=>{
+    const before=held.view;let applied=0,left=0;
+    try{
+      await sReviewFlush(held);if(held.stale)return;
+      for(const tool of REVIEW_TOOLS){
+        const items=sReviewState(held).ready.filter(item=>item.tool===tool&&keys.includes(item.key));if(!items.length)continue;
+        held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:items[0].job,items:items.map(sReviewPick)});
+        const done=held.view.finished||{applied:items.length,left:[]};applied+=done.applied;left+=(done.left||[]).length;
+        for(const item of items)delete held.review.picks[item.key];
+      }
+      if(held.review)held.review.google=null;
+      if(applied)sToast((applied===1?'Accepted.':'Accepted '+applied+'.')+' The earlier text is in History.'+(left?' '+left+(left===1?' no longer fits and is':' no longer fit and are')+' left out.':''));
+    }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}
+    if(held.view!==before)sDeskRefresh(held,before);
+  });
+}
+async function sReviewReject(held,job,ids,button){
+  await busy(button,'Rejecting…',async()=>{try{await sReviewFlush(held);const before=held.view;held.view=await api('desk-skip',{id:held.id,job,items:ids});sDeskRefresh(held,before);}catch(error){notice(error.message,true);}});
+}
+// Reject all: every open suggestion shown, set by set.
+async function sReviewRejectAll(held,open,button){
+  await busy(button,'Rejecting…',async()=>{
+    const before=held.view;
+    try{await sReviewFlush(held);for(const job of [...new Set(open.map(item=>item.job))])held.view=await api('desk-skip',{id:held.id,job,items:open.filter(item=>item.job===job).map(item=>item.id)});}
+    catch(error){notice(error.message,true);}
+    if(held.view!==before)sDeskRefresh(held,before);
+  });
+}
+// With human-sounding wording on, Quick check's mechanical findings (dashes, words that often
+// read as machine-written, repetition) are listed at the top, read from the latest text with
+// no assistant: a short list, not marks, so they never crowd the suggestions in the text. Fix
+// rewrites only the sentence a finding is in, as Quick check's Fix does; Dismiss hides it here.
+function sReviewProof(held){
+  const r=held.review,revision=held.view.revision;
+  if(!r||!held.view.review?.humanize||r.proofing||r.proof?.revision===revision||r.proofTried===revision)return;
+  r.proofing=true;r.proofTried=revision;
+  (async()=>{
+    try{const found=await api('desk-proofread?'+new URLSearchParams({id:held.id}));if(found&&Array.isArray(found.findings))r.proof=found;}catch(_){/* Quick check is a hint: the review goes on without it. */}
+    finally{r.proofing=false;}
+    if(held.review===r&&sDeskCurrent(held)&&held.mode==='review')sDeskReviewRefresh(held,held.view);
+  })();
+}
+function sReviewFindings(held,state){
+  const proof=held.review?.proof;if(!state.human||!proof)return null;
+  const dismissed=held.review.dismissed||{};
+  const findings=proof.findings.map(found=>({...found,key:[found.part,found.at,found.rule,found.target].join(':')})).filter(found=>!dismissed[found.key]);
+  return {revision:proof.revision,findings,more:proof.more||0};
+}
+function sReviewQuick(held,state){
+  const found=sReviewFindings(held,state);if(!found||!found.findings.length)return null;
+  const r=held.review,box=sNode('details','card review-quick'),count=found.findings.length;box.open=!!r.quickOpen;box.addEventListener('toggle',()=>{r.quickOpen=box.open;});
+  box.append(sAdd(sNode('summary',''),sNode('span','card-title','Sounds human (quick check)'),sNode('span','quiet review-quick-count',count+(count===1?' thing to look at':' things to look at'))));
+  box.append(sNode('p','quiet','Dashes, words that often read as machine-written, and repetition, found with no assistant. Fix rewrites only the sentence a finding is in and keeps the earlier text in History; Dismiss hides it here.'));
+  if(found.revision!==held.view.revision)box.append(sNode('p','quiet','Checking the latest text…'));
+  const list=sNode('ol','review-fixes review-quick-list');list.setAttribute('aria-label','Quick check findings');
+  for(const finding of found.findings){
+    const row=sNode('li','review-fix review-human');row.dataset.finding=finding.key;
+    row.append(sAdd(sNode('div','review-why'),sNode('span','tag review-kind review-kind-human','Sounds human (quick check)'),sNode('span','',finding.label)));
+    const said=sNode('p','desk-plain desk-quote'),at=finding.at-finding.start;
+    if(at>=0&&finding.sentence.slice(at,at+finding.target.length)===finding.target)said.append(document.createTextNode(finding.sentence.slice(0,at)),sNode('mark','',finding.target),document.createTextNode(finding.sentence.slice(at+finding.target.length)));
+    else said.textContent=finding.sentence;
+    const still=deskTextOf(held.view,finding.part).slice(finding.start,finding.start+finding.sentence.length)===finding.sentence;
+    const fix=sButton('Fix',button=>sDeskJob(held,button,'desk-selection',{part:finding.part,text:finding.sentence,start:finding.start,action:'fix',instruction:finding.fix}));fix.disabled=!access.actions.edit||!!held.view.working||!still;fix.setAttribute('aria-label','Fix: '+finding.label);
+    const dismiss=sButton('Dismiss',()=>{r.dismissed[finding.key]=true;sReviewHeadShow(held);});dismiss.setAttribute('aria-label','Dismiss: '+finding.label);
+    row.append(said,sAdd(sNode('div','bar'),fix,dismiss));if(!still)row.append(sNode('p','quiet','This sentence changed since the check.'));
+    list.append(row);
+  }
+  return sAdd(box,list,found.more?sNode('p','quiet','And '+found.more+' more. Fix some, then look again.'):null);
 }
 
 // A sheet opened over the desk (Add a source, History…) is always on top: on a screen too
