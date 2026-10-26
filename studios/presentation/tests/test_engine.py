@@ -76,6 +76,68 @@ class ReviewLevelFormTests(StudioCase):
         self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
 
 
+class SynthesisAtStartTests(StudioCase):
+    """A deck's research is not started on a Harness Research that cannot synthesize: the
+    start is refused with nothing made. A deck without research, and a deck brought in, are
+    not refused."""
+
+    def setUp(self):
+        super().setUp()
+        patch = mock.patch.object(self.engines, 'LEGACY_RESEARCH', False)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def made(self):
+        """What a start could leave behind: the workspace's folders, the decks this computer
+        remembers, the workspace's commits and the shared studios config's bytes."""
+        import home
+        config = self.base / 'studios-config.json'
+        return (sorted(path.name for path in self.space.root.iterdir()),
+                [entry['path'] for entry in home.decks()], self.log(),
+                config.read_bytes() if config.exists() else None)
+
+    def refused(self, **changes):
+        before = self.made()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.start(research=True, review_level='automatic', review_seen='automatic',
+                       review_default=True, **changes)
+        self.assertEqual(str(caught.exception), self.engines.NO_SYNTHESIS)
+        self.assertEqual(self.made(), before, 'nothing is made')
+
+    def test_a_deck_with_research_is_refused_without_synthesis(self):
+        self.start(title='Earlier deck')
+        self.refused()
+
+    def test_a_deck_without_research_starts_as_before(self):
+        root = self.start(research=False)
+        self.assertNotIn('research_contract', decks.read_run(root))
+        self.assertIn(str(root), [entry['path'] for entry in __import__('home').decks()])
+
+    def test_a_read_error_is_refused_the_same_way(self):
+        from runner import research as tool
+        from stand_ins import research as research_stand_in
+        runtime = self.base / 'harness-research'
+        (runtime / 'scripts' / 'lib').mkdir(parents=True)
+        (runtime / 'package.json').write_text('{"version": "1.0.0"}\n', encoding='utf-8')
+        (runtime / 'scripts' / 'lib' / 'synthesis-cli.mjs').write_text('', encoding='utf-8')
+        self.research = tool.Research(runtime=runtime, run=research_stand_in.StandIn())
+        from studio_core import research_contract
+        with mock.patch.object(research_contract, 'snapshot', return_value=None):
+            self.refused()
+
+    def test_a_deck_brought_in_is_not_refused(self):
+        import shutil
+        root = self.start(research=False)
+        outside = self.base / 'outside' / 'restarts'
+        shutil.copytree(root, outside, ignore=shutil.ignore_patterns('work', 'sources'))
+        record = decks.read_run(outside)
+        record['form']['research'] = True
+        record.pop('research_contract', None)
+        decks.write_run(outside, record)
+        made = self.engine.bring(outside)
+        self.assertNotIn('research_contract', decks.read_run(Path(made['path'])))
+
+
 class AheadTests(StudioCase):
     """Each deck's view says how many steps are left, where it next stops for the person
     under its own level, and what its agent's jobs have spent so far."""
