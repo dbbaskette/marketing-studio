@@ -92,6 +92,58 @@ class WhereThisTrainingStopsTests(StudioCase):
             pipeline.check_form({**FORM, 'review_default': 'yes'})
 
 
+class SynthesisAtStartTests(StudioCase):
+    """A training is not started on a Harness Research that cannot synthesize: the start is
+    refused with nothing made. A training brought in from a conversation is not a start, and
+    is not refused. Matrix row 137."""
+
+    def setUp(self):
+        super().setUp()
+        patch = mock.patch.object(self.engines, 'LEGACY_RESEARCH', False)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def made(self):
+        """What a start could leave behind: the trainings driven and remembered, the
+        workspace's folders and commits, and the shared studios config's bytes."""
+        config = self.base / 'studios.json'
+        return (self.engine.trainings(), [entry['path'] for entry in home.trainings()],
+                sorted(path.name for path in self.space.root.iterdir()), self.log(),
+                config.read_bytes() if config.exists() else None)
+
+    def test_row_137_a_training_is_not_started_without_synthesis(self):
+        before = self.made()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.start(review_level='automatic', review_seen='automatic', review_default=True)
+        self.assertEqual(str(caught.exception), self.engines.NO_SYNTHESIS)
+        self.assertEqual(self.made(), before, 'nothing is made')
+        # A read error is refused the same way, with a real-looking Harness Research found.
+        from stand_ins import research as research_stand_in
+        from studio_core import research_contract
+        runtime = self.base / 'harness-research'
+        (runtime / 'scripts' / 'lib').mkdir(parents=True)
+        (runtime / 'package.json').write_text('{"version": "1.0.0"}\n', encoding='utf-8')
+        (runtime / 'scripts' / 'lib' / 'synthesis-cli.mjs').write_text('', encoding='utf-8')
+        self.research = research.Research(runtime=runtime, run=research_stand_in.StandIn())
+        with mock.patch.object(research_contract, 'snapshot', return_value=None), \
+                self.assertRaises(WorkspaceError) as caught:
+            self.start()
+        self.assertEqual(str(caught.exception), self.engines.NO_SYNTHESIS)
+        self.assertEqual(self.made(), before, 'nothing is made')
+
+    def test_a_conversation_training_brought_in_is_not_refused(self):
+        chat = self.base / 'started-in-a-chat'
+        chat.mkdir()
+        workspace.init(chat, 'Started in a chat')
+        workspace.write_atomic(chat / 'intake.md', pipeline.intake_text(
+            pipeline.check_form({**FORM, 'title': 'Started in a chat'})).encode())
+        workspace.save(chat, 'intake', built=True)
+        workspace.approve(chat, 'intake')
+        self.assertNotIn('research_contract', workspace.load(chat))
+        made = self.engine.bring(chat)
+        self.assertNotIn('research_contract', self.engine._load(Path(made['path'])))
+
+
 class ObjectionsTests(StudioCase):
     def test_read_every_objection_is_offered_only_where_the_check_objected(self):
         root = self.start()

@@ -328,6 +328,11 @@ STALE = {'review-stale', 'asset-hash-changed', 'asset-file-missing', 'input-miss
 # What a slides tool says of an asset an approved design names and that is not to hand.
 CANDIDATE = ('asset-unresolved', 'provider-missing', 'asset-conflict')
 ASSETS_WAIT = ('The deck is not drawn until what its approved design uses is to hand. {said}')
+NO_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
+                'here cannot do it. Update Harness Research, then start again.')
+# True lets a new run start on the legacy question queue. Only the test suites that still
+# drive the queue through its stand-in set it; piece 7 removes it with the queue.
+LEGACY_RESEARCH = False
 ASSETS_KEPT = ('What you approved the deck should say, and how it is drawn, is kept, and so is '
                'everything made before. Nothing needs approving again.')
 NOT_SUPPLIED = ('{asset} is not a picture the approved design of this deck asks you for. '
@@ -1006,6 +1011,14 @@ class Engine(Reviewing):
         ready = self.ready(agent)
         if not ready.ready:
             raise WorkspaceError(ready.problem)
+        # The research contract is taken before anything is written: a training on a Harness
+        # Research that cannot synthesize is refused with nothing made.
+        try:
+            contract = research_contract.snapshot(self.research())
+        except WorkspaceError:
+            contract = None
+        if contract is None and not LEGACY_RESEARCH:
+            raise WorkspaceError(NO_SYNTHESIS)
         with self.files:
             record = new_record(agent, model, chosen, form['source_scope'], effort,
                                 form.get('research_from'))
@@ -1028,10 +1041,6 @@ class Engine(Reviewing):
             try:
                 if review_policy.level(record) != 'step_by_step':
                     record['schema'] = 2
-                try:
-                    contract = research_contract.snapshot(self.research())
-                except WorkspaceError:
-                    contract = None
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
