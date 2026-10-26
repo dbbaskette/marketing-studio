@@ -755,6 +755,7 @@ class ImageJobTests(DeskCase):
         ] + [
             functools.partial(desk_jobs.finish, self.root, self.ident, 1, tool, **extra)
             for tool, extra in (
+                ('copyedit', {}),
                 ('humanize', {'level': 'light'}),
                 ('facts', {}),
                 ('headline', {}),
@@ -770,7 +771,7 @@ class ImageJobTests(DeskCase):
             self.assertNotIn('data:image', saved['guidance'], saved['kind'])
             # The guidance says to keep every reference where it is and to add none.
             self.assertIn('![…][imageN]', saved['guidance'], saved['kind'])
-        self.assertEqual(len(set(kinds)), 11)
+        self.assertEqual(len(set(kinds)), 12)
         self.assertEqual(desk.read(self.root, self.ident)['images'], draft['images'])
 
     def body(self):

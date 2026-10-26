@@ -32,13 +32,21 @@ KINDS = (
     'desk-outline',
     'desk-draft',
     # Finishing (desk_finish.py): each proposes changes the person applies, edits or skips.
+    'finish-copyedit',
     'finish-humanize',
     'finish-facts',
     'finish-headline',
     'finish-feedback',
     'finish-voice',
 )  # A blog's own desk jobs; desk-angles runs before there is a blog.
-FINISH = ('finish-humanize', 'finish-facts', 'finish-headline', 'finish-feedback', 'finish-voice')
+FINISH = (
+    'finish-copyedit',
+    'finish-humanize',
+    'finish-facts',
+    'finish-headline',
+    'finish-feedback',
+    'finish-voice',
+)
 ACTIVE = ('queued', 'working')
 ACTIONS = {
     'rephrase': 'Rewrite the passage in fresh words with the same meaning.',

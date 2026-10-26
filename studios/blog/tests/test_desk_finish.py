@@ -12,6 +12,7 @@ import desk_jobs
 import studio
 import tool_jobs
 from test_desk import DRAFT, GOOGLE, IMAGE_TWO, DeskCase
+from test_desk_team import TeamCase
 
 
 class FinishCase(DeskCase):
@@ -474,6 +475,202 @@ class HumanizeTests(ToolCase):
         kept = desk.versions(self.root, self.ident, self.first)[0]
         self.assertEqual(kept['source'], 'finishing')
         self.assertTrue(kept['text'].startswith('We leverage'))
+
+
+class CopyEditTests(ToolCase):
+    """Copy edit: grammar, spelling, punctuation, consistency, clarity and concision fixes,
+    each a located sentence the person approves before it lands."""
+
+    def setUp(self):
+        super().setUp()
+        desk.save(
+            self.root,
+            self.ident,
+            self.seen,
+            self.second,
+            'Their are two parser. Use `run --fast` to start it.',
+        )
+        self.seen += 1
+
+    def fix(self, before, after, part=None, why='Grammar.'):
+        return {'part': part or self.second, 'before': before, 'after': after, 'why': why}
+
+    def test_payload_and_guidance_are_the_copy_editing_rules(self):
+        import manuscript_editor
+
+        job = self.queue('copyedit')
+        self.assertEqual(job['kind'], 'finish-copyedit')
+        self.assertIn(manuscript_editor.CHECKS['copyedit'], job['guidance'])
+        self.assertIn(manuscript_editor.CHECKS['proofread'], job['guidance'])
+        guide = desk_finish._reference('modules', 'copy-editing.md')
+        self.assertIn(guide, job['guidance'])
+        self.assertIn(desk_finish.COPYEDIT, job['guidance'])
+        self.assertIn('"suggestions"', job['guidance'])
+        self.assertIn(blog_runner.house_guide(), job['guidance'])
+        for kept in ('voice', 'quotation', 'link', 'image reference'):
+            self.assertIn(kept, desk_finish.COPYEDIT)
+        self.assertEqual([s['id'] for s in job['payload']['sections']], [self.first, self.second])
+        self.assertEqual(job['payload']['opening'], 'An opening paragraph.')
+        self.assertNotIn('response_kind', job['payload'])
+        self.assertNotIn('level', job['payload'])
+        self.assertEqual(job['metadata']['desk']['part'], 'finishing')
+        self.assertEqual(job['metadata']['desk']['action'], 'copyedit')
+        self.assertIn('finish-copyedit', desk_jobs.KINDS)
+        self.assertIn('finish-copyedit', desk_jobs.FINISH)
+        self.assertIn('finish-copyedit', tool_jobs.KINDS)
+        self.assertIn('finish-copyedit', tool_jobs.DESK)
+        self.assertEqual(desk_finish.TOOLS['finish-copyedit'], 'copyedit')
+
+    def test_no_sources_are_needed_but_written_text_is(self):
+        self.assertEqual(self.draft()['sources'], [])
+        self.assertEqual(self.queue('copyedit')['kind'], 'finish-copyedit')
+        made = desk.create(self.root, {'title': 'Empty', 'way': 'topic', 'point': 'A point.'})
+        with self.assertRaisesRegex(ValueError, 'Write the draft first'):
+            desk_jobs.finish(self.root, made['id'], 1, 'copyedit')
+
+    def test_a_result_is_read_strictly(self):
+        draft = self.draft()
+
+        def settle(value):
+            job = {
+                'id': secrets.token_hex(16),
+                'kind': 'finish-copyedit',
+                'result': {'content': value if isinstance(value, str) else json.dumps(value)},
+                'metadata': {},
+            }
+            return desk_finish.settle(self.root, self.ident, draft, job)
+
+        for value in (
+            'Here are my edits.',
+            [1, 2],
+            {'edits': []},
+            {'suggestions': 'all of them'},
+            {'suggestions': [None, 3]},
+            {'suggestions': [{'part': ['x'], 'before': 'A.', 'after': 'B.'}]},
+            {'suggestions': [{'part': self.second, 'before': 'Their are two parser.'}]},
+        ):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'cannot read'):
+                settle(value)
+        self.assertNotIn('copyedit', desk_jobs.view(self.root, self.ident)['finishing'])
+        # Fenced JSON is read; an odd row among good ones is dropped and counted.
+        kept = settle(
+            '```json\n'
+            + json.dumps(
+                {
+                    'suggestions': [
+                        {'part': 7},
+                        self.fix('Their are two parser.', 'There are two parsers.'),
+                    ]
+                }
+            )
+            + '\n```'
+        )
+        self.assertEqual((len(kept['items']), kept['dropped']), (1, 1))
+        self.assertEqual(kept['kind'], 'finish-copyedit')
+
+    def test_a_before_not_in_its_part_and_other_odd_rows_are_dropped(self):
+        before = self.draft()
+        self.ready(
+            self.queue('copyedit'),
+            {
+                'suggestions': [
+                    self.fix('Their are two parser.', 'There are two parsers.', why='Agreement.'),
+                    self.fix('Not in the text.', 'X.'),
+                    self.fix('Their are two parser.', 'There are two parsers.', part=self.first),
+                    self.fix('Second text.', 'Y.', part='zzzzzzzz'),
+                    self.fix('Their are two parser.', 'There are two parsers!'),  # Twice.
+                    self.fix('An opening paragraph.', 'An opening paragraph.', part='opening'),
+                    self.fix('An opening paragraph.', '## A heading\n\nText.', part='opening'),
+                ]
+            },
+        )
+        self.assertEqual(self.draft()['revision'], before['revision'])
+        shown = self.shown('copyedit')
+        self.assertEqual(shown['dropped'], 6)
+        self.assertEqual(
+            [(i['part'], i['before'], i['after'], i['note'], i['flag']) for i in shown['items']],
+            [(self.second, 'Their are two parser.', 'There are two parsers.', 'Agreement.', '')],
+        )
+        self.assertTrue(shown['items'][0]['present'])
+
+    def test_a_changed_fact_code_or_shape_is_flagged(self):
+        self.ready(
+            self.queue('copyedit'),
+            {
+                'suggestions': [
+                    self.fix(
+                        'It reads 12 files in 3 seconds at Acme Labs.',
+                        'It reads 15 files in 3 seconds at Acme Labs.',
+                        part=self.first,
+                    ),
+                    self.fix('We leverage a robust parser.', 'We use a parser.', part=self.first),
+                    self.fix('Use `run --fast` to start it.', 'Use `run --slow` to start it.'),
+                    self.fix('Their are two parser.', 'There are two parsers.\n\n- One more.'),
+                ]
+            },
+        )
+        flags = [i['flag'] for i in self.shown('copyedit')['items']]
+        self.assertIn('a number', flags[0])
+        self.assertEqual(flags[1], '')
+        self.assertIn(desk_finish.STRUCTURE, flags[2])
+        self.assertIn(desk_finish.STRUCTURE, flags[3])
+
+    def test_a_fake_worker_runs_it_end_to_end_and_apply_keeps_a_version(self):
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(options)
+            return {
+                'content': json.dumps(
+                    {
+                        'suggestions': [
+                            self.fix('Their are two parser.', 'There are two parsers.'),
+                            self.fix(
+                                'We leverage a robust parser.',
+                                'We use a sturdy parser.',
+                                part=self.first,
+                            ),
+                        ]
+                    }
+                ),
+                'notes': '',
+            }
+
+        job = self.queue('copyedit')
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(calls[0]['web'], False)
+        self.assertTrue(tool_jobs.read(self.root, job['id'])['settled_at'])
+        self.assertEqual(self.draft()['revision'], self.seen, 'nothing lands before Apply')
+        shown = self.act('apply', seen=self.seen, job=job['id'], items=[{'id': 'p1'}])
+        self.assertEqual(shown['finished'], {'applied': 1, 'left': []})
+        self.assertEqual(
+            self.draft()['sections'][1]['text'],
+            'There are two parsers. Use `run --fast` to start it.',
+        )
+        kept = desk.versions(self.root, self.ident, self.second)[0]
+        self.assertEqual(kept['source'], 'finishing')
+        self.assertTrue(kept['text'].startswith('Their are two parser.'))
+        # Edit applies the person's own wording; Skip changes nothing in the draft.
+        revision = self.draft()['revision']
+        self.act('skip', job=job['id'], items=['p2'])
+        self.assertEqual(self.draft()['revision'], revision)
+        items = self.shown('copyedit')['items']
+        self.assertEqual([i['state'] for i in items], ['applied', 'skipped'])
+
+    def test_no_image_data_reaches_the_job(self):
+        from test_desk import GOOGLE as WITH_IMAGES
+
+        made = desk.create(self.root, {'manuscript': WITH_IMAGES})
+        shown = desk.dispatch(
+            self.root, 'finish', {'id': made['id'], 'seen': 1, 'tool': 'copyedit'}
+        )
+        job = tool_jobs.read(self.root, shown['working']['id'])
+        self.assertEqual(job['kind'], 'finish-copyedit')
+        self.assertNotIn('data:image', json.dumps(job['payload']))
+        self.assertNotIn('data:image', job['guidance'])
+        self.assertNotIn(IMAGE_TWO, json.dumps(job))
+        self.assertIn('![][image1]', job['payload']['opening'])
+        self.assertIn('![…][imageN]', job['guidance'])
 
 
 class VoiceTests(ToolCase):
@@ -1468,6 +1665,56 @@ class ImageFinishingTests(DeskCase):
         self.assertNotIn('unfinished-note', codes)
         self.assertEqual(codes.count('image-alt'), 2)  # image1 and the missing one
         self.assertEqual(codes.count('image-source'), 1)  # a reference with no image
+
+
+class CopyEditTeamTests(TeamCase):
+    """Copy edit in a team workspace: waiting and skipped suggestions stay on this computer;
+    only an Apply is a decision, committed and shared."""
+
+    def test_settle_and_skip_leave_the_tree_clean_and_apply_is_shared(self):
+        import management
+        from studio_sync import gitstate, support
+
+        ident = self.made['id']
+        fix = {'part': self.part, 'before': 'First text.', 'after': 'The first text.'}
+
+        def worker(engine, payload, guidance, **options):
+            return {'content': json.dumps({'suggestions': [fix]}), 'notes': ''}
+
+        def run():
+            seen = management.view(self.root, 'desk', {'id': [ident]})['revision']
+            management.dispatch(
+                self.root, 'desk-finish', {'id': ident, 'seen': seen, 'tool': 'copyedit'}
+            )
+            tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+            return management.view(self.root, 'desk', {'id': [ident]})
+
+        remote = self.remote_commits()
+        shown = run()
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertEqual(self.remote_commits(), remote)
+        job = shown['finishing']['copyedit']['job']
+        management.dispatch(self.root, 'desk-skip', {'id': ident, 'job': job, 'items': ['p1']})
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertEqual(self.remote_commits(), remote)
+        shown = run()
+        management.dispatch(
+            self.root,
+            'desk-apply',
+            {
+                'id': ident,
+                'seen': shown['revision'],
+                'job': shown['finishing']['copyedit']['job'],
+                'items': [{'id': 'p1'}],
+            },
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertGreater(self.remote_commits(), remote)
+        self.assertEqual(self.remote_commits(), self.local_commits())
+        self.assertIn(
+            'The first text.',
+            support.git(self.remote, 'show', 'main:blogs/' + ident + '/DRAFT.md'),
+        )
 
 
 if __name__ == '__main__':

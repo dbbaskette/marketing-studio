@@ -17,6 +17,7 @@ import studio
 
 # The finishing job kinds and the tool each one is in the panel.
 TOOLS = {
+    'finish-copyedit': 'copyedit',
     'finish-humanize': 'humanize',
     'finish-facts': 'facts',
     'finish-headline': 'headline',
@@ -310,7 +311,8 @@ def skip(root, ident, job, ids):
     return {'skipped': skipped}
 
 
-# Proofread: mechanical checks in process, no job. Advisory, never an authorship verdict.
+# Quick check (the route and functions keep the name proofread): mechanical checks in
+# process, no job. Advisory, never an authorship verdict.
 AI_TELLS = ('blogforge', 'voice', 'assets', 'ai-tells')
 COMMON_STARTS = frozenset({'the', 'a', 'an'})
 PROOF_LIMIT = 300  # findings shown at once
@@ -564,6 +566,21 @@ LEVELS = {
     'strong': 'Intensity: strong. Rework sentences that read as generic so they sound like a '
     'person explaining their own work, keeping every fact.',
 }
+COPYEDIT = (
+    'Copy edit this draft. Find the sentences with a spelling, grammar or punctuation error, '
+    'an inconsistency (a name, term, number style or capitalisation written two ways), or '
+    'wording that is unclear or needlessly long, and suggest the corrected sentence for each. '
+    'Change only what the fix needs. Preserve the author’s voice and stance, every fact, '
+    'number and name, each quotation and link exactly, and every image reference where it is; '
+    'never change code. Leave sentences that are already correct alone. Do not research or '
+    'add a claim.'
+)
+COPYEDIT_JSON = (
+    'Return JSON in content: {"suggestions": [{"part": ..., "before": ..., "after": ..., '
+    '"why": ...}]}, at most 60. part is "opening" or the id of a section in sections; before is '
+    'one or two whole sentences copied exactly from that part, character for character; after '
+    'replaces before; why names the fix in a few words, such as "Subject and verb agree".'
+)
 HUMANIZE = (
     'Find the sentences in this draft that read as machine-written: formulaic or stock '
     'wording, monotonous rhythm, repeated entrances, generic stance. Suggest a rewrite for each. '
@@ -690,7 +707,14 @@ def request(root, ident, draft, tool, level=None, guide=None):
     extra.pop('response_kind', None)  # The suggestions are JSON in content.
     extra.pop('gaps', None)
     meta = {}
-    if tool == 'humanize':
+    if tool == 'copyedit':
+        payload = _payload(draft, extra)
+        guidance = COPYEDIT + ' ' + manuscript_editor.CHECKS['copyedit'] + ' '
+        guidance += manuscript_editor.CHECKS['proofread'] + '\n\n'
+        guidance += (
+            _reference('modules', 'copy-editing.md') + '\n\n' + shared + '\n' + COPYEDIT_JSON
+        )
+    elif tool == 'humanize':
         if level not in LEVELS:
             raise ValueError('Choose light, medium or strong.')
         meta['level'] = level
@@ -885,6 +909,8 @@ def _rows(found, key, fields):
 
 
 def _read_humanize(draft, found):
+    """Sentence rewrites (Humanize and Copy edit): each `before` found once in its part, and
+    an `after` that changes it without adding a heading. Any other row is dropped."""
     rows, dropped = _rows(found, 'suggestions', ('part', 'before', 'after'))
     items, seen = [], set()
     for row in rows:
@@ -1046,6 +1072,7 @@ def _read_voice(draft, found):
 
 
 READERS = {
+    'finish-copyedit': _read_humanize,  # Located sentence fixes, read as Humanize's are.
     'finish-humanize': _read_humanize,
     'finish-facts': _read_facts,
     'finish-headline': _read_headline,
