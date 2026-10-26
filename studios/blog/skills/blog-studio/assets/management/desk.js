@@ -37,7 +37,7 @@ function deskCompare(before,after){
   return sAdd(box,text);
 }
 function deskAge(at){const then=Date.parse(at||'');if(!then)return '';const minutes=Math.round((Date.now()-then)/60000);if(minutes<1)return 'just now';if(minutes<60)return minutes+(minutes===1?' minute ago':' minutes ago');const hours=Math.round(minutes/60);if(hours<24)return hours+(hours===1?' hour ago':' hours ago');const days=Math.round(hours/24);return days+(days===1?' day ago':' days ago');}
-function deskPartName(view,part){if(part==='title')return 'the title';if(part==='opening')return 'the opening';if(part==='sections')return 'every section';const found=(view.sections||[]).find(section=>section.id===part);return found?'“'+found.heading+'”':'a section';}
+function deskPartName(view,part){if(part==='title')return 'the title';if(part==='opening')return 'the opening';if(part==='sections')return 'every section';const found=(view.sections||[]).find(section=>section.id===part);return found?'“'+deskHeading(found.heading)+'”':'a section';}
 function deskTextOf(view,part){if(part==='title'||part==='opening')return view[part]||'';return (view.sections||[]).find(section=>section.id===part)?.text||'';}
 
 // Images: a part's text holds only its short reference, ![][image1], as typed. The desk view
@@ -486,11 +486,11 @@ function sDeskWholeState(held){if(held.wholeGo)held.wholeGo.disabled=!access.act
 function sDeskPart(held,part){
   const view=held.view,section=(view.sections||[]).find(row=>row.id===part),working=sDeskWorking(held,part);
   const card=sNode('section','card desk-part'+(working?' desk-working':''));card.dataset.part=part;
-  const heading=sNode('h2','card-title',part==='title'?'Title':part==='opening'?'Opening':section.heading);
+  const heading=sNode('h2','card-title',part==='title'?'Title':part==='opening'?'Opening':deskHeading(section.heading));
   const count=(view.versions||{})[part]||0,history=sButton(count?'History ('+count+')':'History',()=>sDeskHistory(held,part));history.disabled=!count;
   card.append(sAdd(sNode('div','desk-part-head'),heading,history));
   const text=held.pending[part]?.text??deskTextOf(view,part);
-  const input=sNode(part==='title'?'input':'textarea','input desk-text');input.value=text;input.setAttribute('aria-label',part==='title'?'Title':part==='opening'?'Opening':'Text of '+section.heading);
+  const input=sNode(part==='title'?'input':'textarea','input desk-text');input.value=text;input.setAttribute('aria-label',part==='title'?'Title':part==='opening'?'Opening':'Text of '+deskHeading(section.heading));
   if(part==='title'){input.type='text';input.maxLength=500;}else{input.rows=Math.min(24,Math.max(3,Math.ceil(text.length/90)+text.split('\n').length));}
   input.readOnly=working||!access.actions.edit;card.deskInput=input;
   input.addEventListener('input',()=>sDeskTyped(held,part,input.value));
@@ -502,7 +502,7 @@ function sDeskPart(held,part){
   if(working){const note=sNode('p','desk-working-note','Working on this section');note.setAttribute('role','status');card.append(note);card.deskWorkingNotes=[note];if(view.working.note){const said=sNode('p','quiet','Your note: '+view.working.note);card.append(said);card.deskWorkingNotes.push(said);}}
   if(section){
     const typed=(held.notes||{})[part]||'',row=sNode('div','desk-note');
-    const box=sNode('textarea','input desk-note-text');box.rows=typed.includes('\n')?4:1;box.maxLength=4000;box.value=typed;box.placeholder='How should this change?';box.setAttribute('aria-label','How should '+section.heading+' change?');
+    const box=sNode('textarea','input desk-note-text');box.rows=typed.includes('\n')?4:1;box.maxLength=4000;box.value=typed;box.placeholder='How should this change?';box.setAttribute('aria-label','How should '+deskHeading(section.heading)+' change?');
     const go=sButton(typed.trim()?'Rewrite':'Write again',async button=>{const note=((held.notes||{})[part]||'').trim();await sDeskJob(held,button,'desk-note',{part,note},()=>{if(held.notes)delete held.notes[part];});});
     go.disabled=!access.actions.edit||!!view.working;card.deskGo=go;
     box.addEventListener('input',()=>{held.notes=held.notes||{};held.notes[part]=box.value;go.textContent=box.value.trim()?'Rewrite':'Write again';});

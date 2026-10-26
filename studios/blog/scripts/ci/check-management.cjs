@@ -3588,9 +3588,10 @@ async function deskReviewMode(){
   // 8. A blog not from a Google Doc offers Copy and Download once nothing is left.
   f.set('next',{...view,google_suggestions:false,google:null,working:null});await f.run('studio.desk.view=next;sDeskRender(studio.desk)');
   assert.deepEqual(descendants(head()).filter(n=>n.tagName==='button').map(n=>n.textContent),['Copy','Download']);
-  // 9. The full desk stays reachable, and leads back.
+  // 9. The full desk stays reachable, and leads back; its cards name bold headings plainly.
   await descendants(f.get('actions')).find(n=>n.textContent==='Open the full desk').listeners.click();
   assert.equal(f.run('studio.desk.mode'),null);assert.ok(nodes().some(n=>n.dataset?.part==='aaaaaaaa'&&/desk-part/.test(n.className)));
+  assert.ok(nodes().some(n=>n.className==='card-title'&&n.textContent==='Building synthetic workflows'));
   assert.equal(f.run('studio.stage'),null,'the address says the full desk');
   await descendants(f.get('actions')).find(n=>n.textContent==='Review fixes').listeners.click();
   assert.equal(f.run('studio.desk.mode'),'review');assert.equal(f.run('studio.stage'),'review');

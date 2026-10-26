@@ -249,6 +249,26 @@ class ProofreadTests(FinishCase):
             text[again['start'] : again['start'] + len(again['sentence'])], again['sentence']
         )
 
+    def test_findings_sit_in_their_sections_at_any_heading_level(self):
+        text = (
+            '# Levels\n\nOpen.\n\n### **One**\n\nFirst.\n\n### **Two**\n\nWe leverage it — twice.\n'
+        )
+        ident = desk.create(self.root, {'manuscript': text})['id']
+        draft = desk.read(self.root, ident)
+        found = desk_finish.proofread(self.root, ident)['findings']
+        self.assertTrue(found)
+        for finding in found:
+            part = desk.text_of(draft, finding['part'])
+            self.assertEqual(
+                part[finding['start'] : finding['start'] + len(finding['sentence'])],
+                finding['sentence'],
+            )
+        self.assertEqual({f['part'] for f in found}, {draft['sections'][1]['id']})
+        word = next(f for f in found if f['rule'] == 'banished:leverage')
+        self.assertEqual(word['target'], 'leverage')
+        part = draft['sections'][1]['text']
+        self.assertEqual(part[word['at'] : word['at'] + len('leverage')], 'leverage')
+
     def test_code_and_quotations_are_left_out(self):
         setup = self.parts['sections'][0]
         hits = [

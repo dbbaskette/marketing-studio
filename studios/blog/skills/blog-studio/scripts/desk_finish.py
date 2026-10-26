@@ -393,8 +393,9 @@ def _offsets(draft):
     if draft.get('opening'):
         places.append(('opening', at, draft['opening']))
         at += len(draft['opening']) + 2
+    mark = desk.level(draft) + 1  # The heading's marks and its space, as join writes them.
     for section in draft['sections']:
-        at += 3 + len(section['heading'])
+        at += mark + len(section['heading'])
         if section['text']:
             places.append((section['id'], at + 2, section['text']))
             at += 2 + len(section['text'])
