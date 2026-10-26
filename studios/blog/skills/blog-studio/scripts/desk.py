@@ -325,7 +325,7 @@ def create(root, data):
     The blog writes with its tone only: no default or pinned voice is applied."""
     _require_lock()
     if not isinstance(data, dict) or set(data) - CREATE:
-        raise ValueError('This request has fields the desk does not take.')
+        raise ValueError('This request has fields the page does not take.')
     given = [key for key in ('manuscript', 'source', 'article') if data.get(key)]
     if len(given) > 1:
         raise ValueError('Bring one draft: pasted, uploaded or from a Google Doc.')
@@ -1572,7 +1572,7 @@ ROUTES = {
         'replaces',
     },
     'unremove': {'id', 'seen', 'index'},
-    'retry': {'id'},
+    'retry': {'id', 'seconds', 'skip_research'},
     'outline-save': {'id', 'seen', 'sections'},
     'draft': {'id', 'seen'},
     'sources': {'id', 'sources', 'library', 'keep'},
@@ -1663,7 +1663,7 @@ def dispatch(root, action, data):
     if action not in ROUTES:
         raise ValueError('Unknown desk action.')
     if not isinstance(data, dict) or set(data) - ROUTES[action]:
-        raise ValueError('This request has fields the desk does not take.')
+        raise ValueError('This request has fields the page does not take.')
     if action == 'create':
         return _create(root, data)
     if action == 'angles':
@@ -1681,7 +1681,7 @@ def dispatch(root, action, data):
         return desk_jobs.view(root, ident)
     if action == 'retry':
         desk_jobs.settle(root, ident)
-        desk_jobs.retry(root, ident)
+        desk_jobs.retry(root, ident, data.get('seconds'), data.get('skip_research', False))
         return desk_jobs.view(root, ident)
     # A result an older process finished lands before anything else changes the draft. Not on
     # requests that record no decision for the team, which would leave what landed unshared.

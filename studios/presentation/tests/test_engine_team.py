@@ -229,6 +229,50 @@ class DriverTests(Team):
         self.assertFalse(theirs['mine'])
         self.assertEqual(theirs['driver']['name'], 'Alex')
 
+    def test_a_teammate_downloads_the_delivered_powerpoint(self):
+        root = self.started(output='pptx')
+        with self.be(self.alex):
+            self.to_end(root)
+            made = self.alex.engine.download(root)[1]
+        self.assertIn(f'presentations/{root.name}/deck.pptx',
+                      self.git('ls-tree', '-r', '--name-only', 'main', repo=self.remote).split())
+        self.fetch(self.blake)
+        theirs = self.seen(self.blake, root)
+        self.assertEqual((theirs['deliver']['download'], theirs['deliver']['file']),
+                         (True, 'shared'))
+        with self.be(self.blake):
+            self.assertEqual(self.blake.engine.download(self.theirs(self.blake, root))[1], made)
+
+    def test_an_older_delivery_says_where_its_file_is(self):
+        from runner import decks
+        from runner.steps import build
+        root = self.started(output='pptx')
+        with self.be(self.alex):
+            self.to_end(root)
+        said = json.loads((root / decks.DELIVER).read_text())
+        (root / decks.DELIVER).write_text(json.dumps({**said, 'pptx': 'work/deck.pptx'}))
+        (root / 'deck.pptx').unlink()
+        (root / build.read_state(root)['deck']).unlink()
+        view = self.seen(self.alex, root)
+        self.assertEqual((view['deliver']['file'], view['deliver']['download']),
+                         ('maker', False))
+        self.assertEqual(view['deliver']['not_here'], engines.NOT_HERE)
+        with self.be(self.alex):
+            brief = next(entry for group in self.alex.engine.decks().values()
+                         if isinstance(group, list) for entry in group
+                         if isinstance(entry, dict) and entry.get('path') == str(root))
+        self.assertEqual(brief['pptx_where'], 'maker')
+
+    def test_send_to_google_slides_uses_the_shared_file(self):
+        from runner.steps import build
+        root = self.started(output='pptx')
+        with self.be(self.alex):
+            self.to_end(root)
+            (root / build.read_state(root)['deck']).unlink()
+            shown = self.alex.engine.deliver_again(root)
+        self.assertEqual(shown['deliver']['output'], 'google')
+        self.assertTrue(shown['deliver']['url'])
+
     def test_a_teammates_delivered_deck_still_needs_taking(self):
         root = self.started()
         with self.be(self.alex):
@@ -355,6 +399,13 @@ class DriverTests(Team):
                           for ref in self.kept(self.alex)], [mine])
         self.assertEqual(self.as_(self.alex, self.engine.share)['shared'], True)
         self.assertEqual(self.seen(self.alex, root)['notice'], None)
+
+    def test_undo_is_offered_only_while_the_step_is_not_shared(self):
+        root = self.started()   # the claim is shared; the work up to the gate is not yet
+        with self.be(self.alex):
+            self.assertIs(self.engine.view(root)['undo'], True)
+            self.assertEqual(self.engine.share()['shared'], True)
+            self.assertIs(self.engine.view(root)['undo'], False)
 
     def test_undo_takes_back_only_what_was_not_shared(self):
         root = self.started()   # the claim is shared; the work up to the gate is not yet

@@ -1,4 +1,5 @@
-"""One explicitly requested, private Google Doc of an approved Blog Studio draft.
+"""One explicitly requested, private Google Doc of an approved Blog Studio draft, or of a
+draft on the writing desk.
 
 The caller holds the workspace lock. A durable reservation names one transfer and one
 upload receipt; a crash or an uncertain response never permits a second import.
@@ -18,6 +19,7 @@ NOT_SIGNED_IN = (
 )
 NOT_FINISHED = 'Finish the blog first; its approved draft is what goes to Google.'
 RECONCILING = 'The last upload is being checked. Wait for it, then look at the blog again.'
+NO_DRAFT = 'This blog has no draft yet. Write some on the desk first, then make its Google Doc.'
 
 
 class Conflict(ValueError):
@@ -34,8 +36,31 @@ def pending_link(record):
     return {'url': 'https://docs.google.com/document/d/' + document + '/edit'}
 
 
-def open_as_doc(root, ident, client=None, capture=None):
-    directory, record, run = blog_runner.load(root, ident)
+def _ready(root, ident, desk):
+    """Whether the draft may go to Google: a finished run's approved draft, or any draft on
+    the writing desk, which has no run and is never finished first."""
+    directory, _ = studio.item(root, 'articles', ident)
+    draft = directory / 'DRAFT.md'
+    if desk:
+        if not draft.is_file() or not draft.read_text().strip():
+            raise Conflict(NO_DRAFT)
+        return
+    if not blog_runner.survey(root, ident)['complete'] or not draft.is_file():
+        raise Conflict(NOT_FINISHED)
+
+
+def open_as_doc(root, ident, client=None, capture=None, desk=False):
+    """Make the blog's private Google Doc once and link it, with the draft as its baseline.
+    With `desk`, the blog is on the writing desk: its item and DRAFT.md are read as they
+    are, with no run to load or finish."""
+    if desk:
+        import desk as writing_desk
+
+        directory, record = studio.item(root, 'articles', ident)
+        if not writing_desk.on_desk(directory):
+            raise Conflict('This blog is not on the writing desk.')
+    else:
+        directory, record, run = blog_runner.load(root, ident)
     linked = editorial.doc_link(record)
     google = workflow.state(record)
     if linked:
@@ -46,8 +71,7 @@ def open_as_doc(root, ident, client=None, capture=None):
         }
     if not drive.active_account():
         raise Conflict(NOT_SIGNED_IN)
-    if not blog_runner.survey(root, ident)['complete'] or not (directory / 'DRAFT.md').is_file():
-        raise Conflict(NOT_FINISHED)
+    _ready(root, ident, desk)
     client = client or drive.Client(drive.account_for(root))
     capture = capture or roundtrip.capture
     pending = google.get('page_handoff')
@@ -118,8 +142,7 @@ def open_as_doc(root, ident, client=None, capture=None):
             'The Google Doc readback does not match the approved draft. The existing Doc is kept; no second Doc is made.'
         )
     workflow.formatted_snapshot(snapshot, observation, body)
-    if not blog_runner.survey(root, ident)['complete']:
-        raise Conflict(NOT_FINISHED)
+    _ready(root, ident, desk)
     observation['structure_verified'] = True
     studio.write_json(snapshot / 'observation.json', observation)
     workflow.confirm_transfer(root, ident, 'draft', transfer, snapshot)

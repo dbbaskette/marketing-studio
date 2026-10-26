@@ -318,7 +318,7 @@ class Jobs:
                             **self._cost(outcome))
                 record['question'] = {
                     'id': secrets.token_hex(6), 'step': name, 'text': handed['question'],
-                    'from': f'The worker {step.doing[0].lower()}{step.doing[1:]}',
+                    'from': f'The assistant {step.doing[0].lower()}{step.doing[1:]}',
                     'at': home.now()}
                 self._store(root, record)
                 self._commit(root, f'a worker asks a question: {step.label}')
@@ -517,7 +517,8 @@ class Jobs:
             self._spend_stop(root, label)
         elif stops.agent_stopped('', outcome, detail) is not None:
             self._problem(root, step, 'failed', stops.agent_stopped(
-                self._title(record.get('agent')), outcome, detail), KEPT)
+                self._title(record.get('agent')), outcome, detail), KEPT,
+                action=stops.agent_action(outcome))
         elif not question and entry['failed'] >= ATTEMPTS:
             if outcome.reason == 'timeout':
                 return self._out_of_time(root, step, label, record, ATTEMPTS)

@@ -395,6 +395,90 @@ class SettingsPageJourneyTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         return json.loads(done.stdout)
 
+    def page(self, steps, **plan):
+        import subprocess
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as temp:
+            file = Path(temp) / 'steps.json'
+            file.write_text(json.dumps({'steps': steps, **plan}))
+            done = subprocess.run(['node', str(Path(__file__).with_name('settings_page_harness.js')), str(file)],
+                                  capture_output=True, text=True, timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    SHOWN = ("snapshot = {shared: {person: {name: 'Ana'}, research: {sites: []}, review: {level: 'balanced'}, "
+             "output: 'pptx', render: {previews: null}}, efforts: {claude: [], '': []}, setup: {done: true}, "
+             "studios: [{id: 'blog', name: 'Blog Studio', configured_path: '', path: '/opt/blog'}]};")
+
+    def test_a_setup_step_has_one_title(self):
+        shots = self.page([{'run': self.SHOWN + " setup = true; step = 0; show('settings');"},
+                           {'snapshot': 'first', 'read': ['#step-label', '#settings-title']}])
+        read = shots['first']['read']
+        self.assertTrue(read['#step-label']['hidden'] or not read['#step-label']['text'])
+        self.assertTrue(read['#settings-title']['hidden'])
+        from pathlib import Path
+        html = (Path(__file__).resolve().parents[1] / 'core/studio_core/setup_web/index.html').read_text()
+        for item in ('1. You and your assistant', '2. Your workspace', '3. Brand and delivery'):
+            self.assertIn(item, html)
+        self.assertIn('<section class="card" data-step="1"><h3 class="card-title">Your workspace</h3>', html)
+
+    def test_one_save_writes_settings_and_folders(self):
+        shots = self.page([
+            {'run': self.SHOWN + " setup = false; fill(); renderHome(); show('settings');"},
+            {'run': "form.elements['person.name'].value = 'Bea';"
+                    " $('#path-fields').children[0].children[1].value = '/srv/blog';"},
+            {'responses': {'shared': {'shared': {'person': {'name': 'Bea'}}, 'efforts': {'claude': [], '': []}, 'setup': {'done': True}, 'studios': []},
+                           'paths': {'shared': {}, 'efforts': {'claude': [], '': []}, 'setup': {'done': True}, 'studios': []}}},
+            {'submit': True}, {'snapshot': 'saved', 'read': ['#problem']}])
+        urls = [request['url'] for request in shots['saved']['requests']]
+        self.assertEqual([url.split('/api/')[1] for url in urls if url.endswith(('shared', 'paths'))],
+                         ['shared', 'paths'])
+        sent = [request['sent'] for request in shots['saved']['requests'] if request['url'].endswith('paths')]
+        self.assertEqual(sent, [{'paths': {'blog': '/srv/blog'}}])
+        from pathlib import Path
+        html = (Path(__file__).resolve().parents[1] / 'core/studio_core/setup_web/index.html').read_text()
+        self.assertNotIn('id="paths-form"', html)
+        self.assertNotIn('Save installation folders', html)
+
+    def test_a_folder_that_fails_says_the_settings_were_saved(self):
+        shots = self.page([
+            {'run': self.SHOWN + " setup = false; fill(); renderHome(); show('settings');"},
+            {'run': " $('#path-fields').children[0].children[1].value = '/nowhere';"},
+            {'responses': {'shared': {'shared': {}, 'efforts': {'claude': [], '': []}, 'setup': {'done': True}, 'studios': []},
+                           'paths': {'error': 'That folder does not hold Blog Studio.'}}},
+            {'submit': True}, {'snapshot': 'refused', 'read': ['#problem']}])
+        self.assertEqual(shots['refused']['read']['#problem']['text'],
+                         'Your shared settings were saved. The installation folders were not: '
+                         'That folder does not hold Blog Studio.')
+
+    def test_blog_studio_s_own_setup_asks_only_what_it_uses(self):
+        shots = self.page([
+            {'run': self.SHOWN + " setup = true; step = 0; fill(); show('settings');"},
+            {'run': "form.elements['review.level'].value = 'automatic';"
+                    " form.elements['output'].value = 'google';"
+                    " $('#probe-0').textContent = JSON.stringify(changesForStep());"
+                    " step = 2; show('settings');"
+                    " $('#probe-2').textContent = JSON.stringify(changesForStep());"},
+            {'snapshot': 'first', 'read': ['#review-part', '#delivery-part', '#probe-0',
+                                           '#probe-2']}], product='Blog Studio', standalone=True)
+        read = shots['first']['read']
+        self.assertTrue(read['#review-part']['hidden'])
+        self.assertTrue(read['#delivery-part']['hidden'])
+        first, last = json.loads(read['#probe-0']['text']), json.loads(read['#probe-2']['text'])
+        self.assertNotIn('review', first)
+        self.assertNotIn('output', last)
+        self.assertNotIn('render', last)
+
+    def test_blog_studio_s_shared_settings_after_setup_keep_every_choice(self):
+        shots = self.page([
+            {'run': self.SHOWN + " setup = false; fill(); show('settings');"},
+            {'snapshot': 'later', 'read': ['#review-part', '#delivery-part']}],
+            product='Blog Studio', standalone=True)
+        read = shots['later']['read']
+        self.assertFalse(read['#review-part']['hidden'])
+        self.assertFalse(read['#delivery-part']['hidden'])
+
     def test_add_remove_refuse_and_save_the_list(self):
         shots = self.journey([
             {'sites': [TANZU]}, {'snapshot': 'shown'},

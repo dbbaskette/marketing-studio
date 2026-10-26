@@ -478,6 +478,29 @@ class LocalTests(WorkspaceCase):
 
 
 class CommitTests(WorkspaceCase):
+    def test_can_undo_agrees_with_undo(self):
+        workspace = self.join()
+        self.write(workspace, 'rolling-restarts/intake.md')
+        gitstate.commit(workspace, 'Start rolling-restarts')
+        self.assertTrue(gitstate.sync(workspace)['shared'])
+        deck = workspace.root / 'rolling-restarts'
+        self.assertFalse(gitstate.can_undo(workspace, deck), 'a shared step')
+        self.write(workspace, 'rolling-restarts/outline.md')
+        gitstate.commit(workspace, 'Draft the outline of rolling-restarts')
+        self.assertTrue(gitstate.can_undo(workspace, deck))
+        loose = self.write(workspace, 'rolling-restarts/notes.md')
+        self.assertFalse(gitstate.can_undo(workspace, deck), 'something not committed')
+        loose.unlink()
+        head = git(workspace.repo, 'rev-parse', 'HEAD')
+        self.assertTrue(gitstate.can_undo(workspace, deck))
+        self.assertEqual(git(workspace.repo, 'rev-parse', 'HEAD'), head, 'nothing changed')
+        self.assertTrue(gitstate.undo(workspace, deck))
+        self.write(workspace, 'rolling-restarts/outline.md')
+        gitstate.commit(workspace, 'Draft the outline of rolling-restarts')
+        self.assertTrue(gitstate.sync(workspace)['shared'])
+        self.assertFalse(gitstate.can_undo(workspace, deck))
+        self.assertFalse(gitstate.undo(workspace, deck))
+
     def test_everything_that_changed_in_the_folder_is_committed_with_its_message(self):
         workspace = self.join()
         self.write(workspace, 'rolling-restarts/intake.md')

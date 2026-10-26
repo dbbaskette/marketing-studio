@@ -912,6 +912,21 @@ class BlogRunnerTests(RunnerCase):
         self.assertEqual(found['next'], 'review')
 
 
+class DeskRunViewTests(RunnerCase):
+    def test_the_run_view_of_a_desk_blog_says_it_is_on_the_desk(self):
+        made = management.dispatch(
+            self.root,
+            'desk-create',
+            {'operation': 'f' * 32, 'title': 'Desk', 'manuscript': '# Desk\n\n## One\n\nText.\n'},
+        )
+        shown = management.view(self.root, 'run', {'id': [made['id']]})
+        self.assertEqual(shown, {'id': made['id'], 'on_desk': True})
+        with self.assertRaisesRegex(
+            ValueError, '^This blog has no step-by-step run. Open it from Blogs.$'
+        ):
+            runner.load(self.root, made['id'])
+
+
 class WorkerProcessTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

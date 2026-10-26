@@ -24,6 +24,17 @@ const NOTICES = {
   refused: 'This link does not match the page that is running. '
     + 'Run the desk command again in your terminal and use the link it prints, whole.',
 };
+// Under the runner, opened from Open Training Studio, the way back is the same.
+const RUNNER_NOTICES = {
+  stopped: 'This page has lost touch with Training Studio, so it cannot read or save anything. '
+    + 'Open Training Studio again and use the new link.',
+  refused: 'This link does not match the page that is running. '
+    + 'Open Training Studio again and use the new link.',
+};
+
+function noticeOf(kind) {
+  return (view.runner ? RUNNER_NOTICES : NOTICES)[kind];
+}
 // Every icon is drawn here, on a 24 by 24 grid, in one weight of line.
 const ICONS = {
   studio: ['M2 8 12 3l10 5-10 5z', 'M6 10v8c4 3 8 3 12 0v-8', 'M22 8v10'],
@@ -120,7 +131,7 @@ const RUN_WORDS = {
   failed: ['late', 'Stopped: something went wrong'],
   done: ['done', 'Finished here'],
   // A training a teammate's computer runs: only what was last shared is known here.
-  elsewhere: ['none', 'Run from another computer'],
+  elsewhere: ['none', 'Run by your teammates'],
 };
 const STEP_WORDS = {
   done: ['done', 'Done'], working: ['current', 'Working'], waiting: ['review', 'Waiting for you'],
@@ -168,13 +179,20 @@ const MATERIALS = [['document', 'Learner guide'], ['brief', 'Reference brief'],
 // Where the research looks. What each answer means is said under the choice.
 const REVIEW_LEVELS = [['balanced', 'Balanced'], ['automatic', 'Automatic draft'],
   ['step_by_step', 'Step by step']];
-const REVIEW_SAYS = {
-  balanced: 'Stops to read the research plan, then the first drafts of every level together, '
-    + 'then the finished materials together.',
-  automatic: 'Stops only for the finished materials. It costs more before you first see '
-    + 'anything, and the spending limit still holds.',
-  step_by_step: 'Stops at every stage of every level.',
-};
+// What a review level does for this training: from the same rule as the Ready card. A
+// plan written from the form has no stop of its own; a drawn deck always stops.
+function reviewSays(level, planned, deck) {
+  if (level === 'balanced') {
+    return (planned ? 'Stops to read the research plan, then the first drafts'
+      : 'Stops for the first drafts') + ' of every level together, then '
+      + (deck ? 'each drawn deck, then ' : '') + 'the finished materials together.';
+  }
+  if (level === 'automatic') {
+    return 'Stops for ' + (deck ? 'each drawn deck and ' : '') + 'the finished materials. '
+      + 'It costs more before you first see anything, and the spending limit still holds.';
+  }
+  return 'Stops at every stage of every level.';
+}
 // Where research may look: your documents, your sites and/or the public web, any of them
 // together. Your sites start as the list every studio shares; a site added on the form is
 // for that training only. The words are the ones every studio uses
@@ -197,14 +215,15 @@ const RESEARCH_EMPTY = 'Choose where research may look: your documents, your sit
 const RESEARCH_NO_SITES = 'Choose at least one of your sites, or turn your sites off.';
 const SITES_NAMED = 5;   // sites a summary names before "and N more"
 // A training where the run has made everything it can, and the deck is all that is left.
-const DECK_LEFT = 'Everything but the slide deck is made: make the deck with your assistant, '
-  + 'or leave it out.';
+const DECK_LEFT = 'Everything but the slide deck is made: check this computer again once a '
+  + 'deck can be made on it, or leave the deck out.';
 const SETTLED = ['done', 'left-out', 'unavailable'];
 // Who wrote a practice scenario. A person's own file is never rewritten for them.
 const WHOSE = {
   you: 'This file is yours: you wrote it, and Training Studio does not rewrite it. If you ask '
     + 'for changes, your own wording is laid out under the headings, and you are asked for '
-    + 'anything that is missing.',
+    + 'anything that is missing. A scenario file written in a conversation training’s folder '
+    + 'is used as it is.',
   runner: 'This file is Training Studio’s draft, written from the practice plan in the '
     + 'blueprint.',
 };
@@ -300,10 +319,18 @@ const NOTIFY_SAYS = 'When no page is open and a training needs you, this compute
   + 'decision, once for each thing that needs you.';
 const NOTIFY_DIFFERS = 'This is not the browser’s notification above. That one works only '
   + 'while this page is open in a tab; this one is for when no page is open at all.';
+// Whether the research plan is read at a stop of its own: not when research reads the
+// documents alone, whose plan is written from the form.
+function plannedOf(draft) {
+  const chosen = researchChoice(draft);
+  return !chosen.documents || chosen.web || chosen.sites.length > 0;
+}
+
 // Deleting a training: what the card offers, and what its confirmation says. The runner says
 // what goes and what stays for each training; these are the words around it.
 const DELETE_SAYS = 'If you no longer want this training, delete it. It goes from this '
-  + 'computer and from your team’s workspace.';
+  + 'computer';
+const DELETE_TEAM = ' and from your team’s workspace';
 const DELETE_STOPS = 'It is working now. Deleting it stops it first, and ends everything it '
   + 'is running.';
 const DELETE_SHARED = { decision: 'Your team sees it gone straight away.',
@@ -842,7 +869,7 @@ async function reach(endpoint, options) {
   try {
     return await fetch('/api/' + endpoint, options);
   } catch (failure) {
-    throw new PageError('stopped', NOTICES.stopped);
+    throw new PageError('stopped', noticeOf('stopped'));
   }
 }
 
@@ -892,13 +919,23 @@ async function picture(params) {
   return held;
 }
 
-async function downloadFile(path, params, name, pressed) {
+// The file's name as the runner sends it, in Content-Disposition's filename="…", else
+// the name the caller passed, which always has its extension.
+function sentName(response, fallback) {
+  const said = response.headers && typeof response.headers.get === 'function'
+    ? String(response.headers.get('Content-Disposition') || '') : '';
+  const found = /filename="([^"\\/]+)"/.exec(said);
+  return found ? found[1] : fallback;
+}
+
+async function downloadFile(path, params, fallback, pressed) {
   if (pressed.disabled) return;
   pressed.disabled = true;
   try {
     const response = await reach('download?' + new URLSearchParams({path, ...params}),
       {headers: {[TOKEN_HEADER]: view.token}, cache: 'no-store'});
     if (!response.ok) throw refusal(response, await saidBy(response));
+    const name = sentName(response, fallback);
     const held = URL.createObjectURL(await response.blob());
     const link = make('a', 'offscreen', 'Download');
     link.href = held;
@@ -1388,7 +1425,11 @@ function noteSheet(kind) {
   const researchPrice = !outlined() && view.gate && view.gate.artifact === 'research' && view.gate.research_price;
   const redo = kind === 'revise' && researchPrice ? ' ' + researchPrice.words
     : kind === 'revise' && price ? ' ' + price.says : '';
-  const hint = make('p', 'quiet', (runOf(view.path) ? spec.hint.replace('Your assistant makes',
+  // A change to a deck draws it again whole: said before the price.
+  const decked = kind === 'revise' && !outlined() && view.gate
+    && String(view.gate.artifact || '').split('@')[0] === 'deck';
+  const hint = make('p', 'quiet', (decked ? 'A change to the deck writes its outline again and '
+    + 'draws every slide again.' : runOf(view.path) ? spec.hint.replace('Your assistant makes',
     'Training Studio makes') : spec.hint) + redo);
   hint.id = 'note-hint';
   // At the research stop, the sources may be read again: the whole research, brought up to
@@ -1451,7 +1492,8 @@ function drawSheet() {
   const holder = byId('sheet');
   const shown = view.after || (view.sheet && (view.gate || view.deciding || outlined()
     || TEAM_SHEETS.includes(view.sheet)
-    || ['delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice'].includes(view.sheet)
+    || ['delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
+      'update-research', 'stop-run'].includes(view.sheet)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
@@ -1471,6 +1513,8 @@ function drawSheet() {
   else if (view.sheet === 'redesign') body = redesignSheet();
   else if (view.sheet === 'brand') body = brandSheet();
   else if (view.sheet === 'copy-choice') body = copyChoiceSheet();
+  else if (view.sheet === 'update-research') body = updateResearchSheet();
+  else if (view.sheet === 'stop-run') body = stopSheet();
   else if (view.sheet === 'approve-combined') body = combinedConfirm();
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
@@ -1677,7 +1721,7 @@ function invitation() {
       make('h2', 'invite-title', 'Start your first training'),
       make('p', '', 'Say what it is about and who it is for. Training Studio does the '
         + 'research and writes the blueprint, the learner guide, the brief and the practice '
-        + 'scenarios on its own, and stops each time it needs your decision.'),
+        + 'scenarios on its own, and stops where its review level says, for your decision.'),
       add(make('div', 'bar'), newButton('filled')),
       make('p', 'quiet', 'It takes three short steps, and this page tells you each time it '
         + 'needs you.'));
@@ -2494,6 +2538,10 @@ function gateActions(found) {
   if (offers.includes('rebuild') && lead !== 'rebuild') rest.push(item('Rebuild it', 'rebuild'));
   if (offers.includes('accept')) rest.push(item('Accept as it is', 'accept'));
   if (offers.includes('skip')) rest.push(item('Skip this stage', 'skip'));
+  if (found.held_by === 'yoodli') {
+    rest.push(make('p', 'menu-note quiet', 'The brief and the practice scenarios cannot be '
+      + 'skipped while Make scenarios for Yoodli is on: Yoodli uses both.'));
+  }
   if (rest.length) {
     const more = make('details', 'menu');
     const opener = make('summary', 'button button-round shine');
@@ -3103,8 +3151,7 @@ function paintTraining(fresh) {
     practiceCard(training), researchCard(training.status), guidanceCard(training.status),
     decisionsCard(training),
     // One driver for a training: while the page runs it, nobody is sent to an assistant.
-    theirs || (training.run && training.run.state !== 'done') ? null
-      : folderCard(training),
+    theirs || training.run ? null : folderCard(training),
     // A training the runner drives can be deleted from here too; one a conversation made
     // is never the runner's to delete.
     training.run && deletable({ mine: known.mine, driver: known.driver,
@@ -4545,8 +4592,9 @@ function shapeStep(draft) {
   const walk = add(make('div', 'field'),
     chip('Walk through each slide’s design before it is built', draft.walkthrough,
       (on) => { draft.walkthrough = on; }, 'walkthrough'),
-    make('p', 'quiet field-hint', 'Usually the deck is approved on what it says and on its '
-      + 'look. Choose this to approve how each slide is drawn, one at a time.'));
+    make('p', 'quiet field-hint', 'Usually the deck is approved on its outline and on its '
+      + 'look. Choose this to see how each slide is drawn, and approve the design in one '
+      + 'decision.'));
   walk.hidden = used.hidden;
   const deck = choice('The slide deck', DECKS.map((kind) => kind[1]), draft.deck, (index) => {
     draft.deck = index;
@@ -4559,7 +4607,7 @@ function shapeStep(draft) {
     option.classList.add('seg-absent');
   }
   return [add(card('What would you like to make?'),
-    make('p', 'quiet', 'Choose only what you need. Research and a teaching plan connect every selected material.'),
+    make('p', 'quiet', 'Choose only what you need. Research and a blueprint connect every selected material.'),
     materialChoices(draft),
     chips('Levels', LEVELS.map((level) => [level, level]),
       (level) => draft.levels.includes(level), toggle('levels'), 'level',
@@ -4568,7 +4616,7 @@ function shapeStep(draft) {
     deck, used, walk, brand,
     field('new-time', 'How long it should take (optional)', draft, 'time',
       { hint: 'The learner’s time, including examples and practice: “30 minutes” or “a half-day workshop”.' }),
-    trainingOptions('Depth and reference brief', 'training-depth',
+    trainingOptions('About the reference brief', 'training-depth',
       choice('What the brief is about', ['One product or technology', 'A comparison'],
         draft.brief, (index) => { draft.brief = index; }, 'brief')),
     trainingOptions('Extra copies and Yoodli', 'training-copies',
@@ -4586,7 +4634,7 @@ function shapeStep(draft) {
           }
           draft.yoodli = on;
           say(byId('new-problem'), '');
-        }, 'practice', 'Prepares fields to copy into Yoodli and a knowledge brief to upload. Nothing is posted to Yoodli.')))];
+        }, 'practice', 'Prepares Yoodli scenarios to copy into Yoodli and a reference brief to upload. Nothing is posted to Yoodli.')))];
 }
 
 // Where this one training stops for you. The shared level is its default; a level picked
@@ -4605,7 +4653,8 @@ function reviewLevelCard(draft, line) {
     }, 'review-level');
   const shared = REVIEW_LEVELS.find(([id]) => id === draft.review_seen);
   return add(card('Where this training stops'), control, line,
-    make('p', 'quiet', REVIEW_SAYS[draft.review_level]),
+    make('p', 'quiet', reviewSays(draft.review_level, plannedOf(draft),
+      Boolean(DECKS[draft.deck][0]))),
     make('p', 'quiet', (shared ? 'Shared default: ' + shared[1] + '. ' : '')
       + 'This training keeps the level it starts with.'),
     add(make('div', 'field'), chip('Use this for new work in every studio',
@@ -4655,7 +4704,7 @@ function startStep(draft) {
   const policy = draft.review_level;
   const selected = MATERIALS.filter(([id]) => draft.materials.includes(id)).map(([, label]) => label);
   if (DECKS[draft.deck][0]) selected.push(DECKS[draft.deck][1] + ' deck');
-  if (draft.yoodli) selected.push('Yoodli field layouts');
+  if (draft.yoodli) selected.push('Yoodli scenarios');
   const looks = make('p', 'quiet research-line');
   const tell = () => {
     const chosen = researchChoice(draft);
@@ -4664,7 +4713,7 @@ function startStep(draft) {
       : 'Research starts after you start the training.';
     looks.textContent = researchProblem(draft) || 'Research ' + researchSummary(chosen) + '.';
     // Documents alone are planned from the form, so there is no research plan to read.
-    const planned = !supplied || chosen.web || chosen.sites.length > 0;
+    const planned = plannedOf(draft);
     // A drawn deck always comes to the person, whatever the level.
     const deck = Boolean(DECKS[draft.deck][0]);
     const stops = policy === 'balanced' ? (planned ? 'the research plan, the first drafts' : 'the first drafts')
@@ -4674,12 +4723,12 @@ function startStep(draft) {
           + (deck ? ', the selected teaching materials and each deck'
             : ' and the selected teaching materials')
           + (draft.materials.includes('scenario') ? ', plus each practice scenario' : '')
-          + (draft.yoodli ? ' and each Yoodli layout' : '');
+          + (draft.yoodli ? ' and each set of Yoodli scenarios' : '');
     then.textContent = REVIEW_WORDS[policy] + ': it stops for ' + stops;
     const levels = draft.levels.length ? 'each level' : 'the training';
     comes.textContent = (policy === 'balanced'
-      ? 'Review the first drafts comes after research and the blueprint, guide and brief for '
-        + levels + ', so the first stop is some minutes in. '
+      ? 'Review the first drafts comes after research, the blueprint and the learner guide '
+        + 'of ' + levels + '. Briefs are written after it. The first stop is some minutes in. '
       : policy === 'automatic' ? 'Intermediate drafts continue automatically. ' : '')
       + (DECKS[draft.deck][0] ? (policy === 'step_by_step'
         ? 'A deck adds three stops per level: its outline, its look and the deck.'
@@ -4688,12 +4737,11 @@ function startStep(draft) {
   tell();
   return [add(card('Ready to start'), make('p', 'lede', series(selected)),
     make('p', 'quiet', (draft.levels.length ? 'Levels: ' + draft.levels.join(', ') : 'One training without levels')
-      + (draft.time ? ' · ' + draft.time : ' · Sized from the teaching plan')),
+      + (draft.time ? ' · ' + draft.time : ' · Sized from the blueprint')),
     first, looks, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
   reviewLevelCard(draft, then),
   add(card('Sources'), researchFields(draft, tell),
-    field('research-questions', 'What should the research answer? (optional)', draft,
-      'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' })),
+    questionsField(draft)),
   trainingOptions('Assistant and limits', 'training-assistant',
     ...agentFields(draft, 'new', 'For this training', told), drafted,
     make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
@@ -4744,6 +4792,29 @@ function drawNew(fresh) {
   }
 }
 
+// The research questions, checked as they are typed against what the runner takes.
+const QUESTIONS_MOST = 8;
+const QUESTION_LONGEST = 300;
+
+function questionsProblem(text) {
+  const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  if (lines.length > QUESTIONS_MOST) return 'Ask research at most 8 questions.';
+  if (lines.some((line) => line.split(/\s+/).join(' ').length > QUESTION_LONGEST)) {
+    return 'Keep each research question to 300 characters.';
+  }
+  return '';
+}
+
+function questionsField(draft) {
+  const node = field('research-questions', 'What should the research answer? (optional)',
+    draft, 'researchQuestions', { long: true, rows: 4,
+      hint: 'One question a line, at most 8, each up to 300 characters.' });
+  const box = node.querySelector('textarea');
+  if (box) box.addEventListener('input', () => refuse('research-questions',
+    questionsProblem(draft.researchQuestions)));
+  return node;
+}
+
 function nextStep() {
   const draft = view.draft;
   draft.start_problem = '';
@@ -4782,6 +4853,12 @@ async function startTraining(pressed) {
   if (nowhere) {
     say(problem, nowhere);
     focusKey(draft.research.sites ? 'research sites' : 'research web');
+    return;
+  }
+  const asked = questionsProblem(draft.researchQuestions);
+  if (asked) {
+    say(problem, asked);
+    refuse('research-questions', asked).focus();
     return;
   }
   const deck = DECKS[settleDeck(draft).deck][0];
@@ -4910,7 +4987,7 @@ function adding(run) {
 function runStanding(run) {
   if (run.finished) {
     return run.finished.ready ? ['done', 'Finished']
-      : ['late', 'Finished, but not ready to use'];
+      : ['late', 'Not ready to use yet'];
   }
   if (run.deck_left) return ['done', 'Everything but the slide deck is made'];
   if (run.mine === false) {
@@ -4992,6 +5069,10 @@ function failedStep(run, found) {
 // What the one action a problem offers does, and roughly what it costs, in the way a
 // deck's cost is said before it is drawn: from what the same work took before.
 function actionSays(run, found) {
+  if (found.waits === 'assets') {
+    return 'The deck is drawn once its pictures are here. Without one, redesign the deck or '
+      + 'leave it out.';
+  }
   if (found.action === 'resume') {
     return 'Carry on starts that step again; everything finished before it is kept.';
   }
@@ -5135,8 +5216,18 @@ function problemPart(run, lead) {
   const found = run.problem;
   const theirs = run.mine === false;
   const label = found.label || (found.action === 'retry' ? 'Try again' : 'Resume');
+  // An agent that could not be used: Status says what it needs. Missing answers: a new
+  // training in its place.
+  const goes = found.action === 'status' ? () => show('status')
+    : found.action === 'new' ? () => show('new')
+    // A deck waiting for a picture leads to the deck's picture form, and to its file.
+    : found.action === 'asset' ? () => {
+    const at = list(run.deck && run.deck.assets).findIndex((asset) => asset.supply);
+    const box = at < 0 ? null : byId('asset-' + at + '-file');
+    if (box) box.focus();
+  } : () => steer(found.action, go);
   const go = found.action && !theirs
-    ? capsule(label, lead ? 'filled' : '', () => steer(found.action, go), 'problem-action')
+    ? capsule(label, lead ? 'filled' : '', goes, 'problem-action')
     : capsule('See everything it made', '', () => show('training', { path: view.path }),
       'problem-open');
   const title = run.state === 'waiting' ? 'It is waiting for you'
@@ -5164,7 +5255,20 @@ function problemPart(run, lead) {
     add(make('p', ''), make('strong', '', 'What happened: '), found.what),
     keptPart(found.kept),
     does ? make('p', 'quiet', does) : null,
-    add(make('div', 'bar'), go, read), shown);
+    add(make('div', 'bar'), go, read, theirs ? null : alsoPart(found)), shown);
+}
+
+// Beside a stop's one action: Try again once Status has been put right, and deleting a
+// training whose answers are missing.
+function alsoPart(found) {
+  if (found.action === 'status') {
+    const again = capsule('Try again', '', () => steer('retry', again), 'problem-retry');
+    return again;
+  }
+  if (found.action === 'new') {
+    return capsule('Delete this training', 'quiet', askDelete('delete'), 'problem-delete');
+  }
+  return null;
 }
 
 function questionPart(run, title) {
@@ -5470,9 +5574,11 @@ async function settleDocuments(action, name, pressed) {
   refresh();
 }
 
-function documentItem(found, waiting) {
+function documentItem(found, waiting, later = false) {
   const text = add(make('div', 'row-text'), make('p', 'step-name', found.name),
     make('p', 'quiet', size(Number(found.bytes) || 0)));
+  // Added once the research was planned: kept, and read when the research is updated.
+  if (later) add(text, make('p', '', 'Added after the research: not read yet.'));
   if (!found.readable) {
     add(text, make('p', 'problem', 'It could not be read' + (found.problem ? ': '
       + found.problem : '.')), make('p', 'quiet', 'It is kept, and is not used for the '
@@ -5482,11 +5588,48 @@ function documentItem(found, waiting) {
   item.dataset.state = found.readable ? 'read' : 'unread';
   add(item, bead(found.readable ? 'done' : 'late'), text,
     make('span', 'step-words', found.readable ? 'Can be read' : 'Cannot be read'));
-  if (!waiting) return item;
+  if (!waiting && !later) return item;
   const remove = capsule('Remove', 'quiet',
     () => settleDocuments('remove', found.name, remove), 'remove ' + found.name);
   remove.setAttribute('aria-label', 'Remove ' + found.name);
   return add(item, remove);
+}
+
+// Stop, asked first: what is lost, and that Pause lets the step finish.
+function stopSheet() {
+  const run = view.run || {};
+  const step = list(run.steps).find((one) => one.status === 'working');
+  const go = capsule('Stop it', 'filled', () => {
+    closeSheet();
+    steer('stop', go);
+  }, 'confirm-stop');
+  return [sheetTitle('Stop ' + (step ? '“' + step.label + '”' : 'the training') + '?'),
+    make('p', '', 'Its work so far is lost. Pause lets it finish first.'),
+    add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
+}
+
+// Reading the documents added since the research: priced before it is asked for.
+function updateResearchSheet() {
+  const held = (view.run && view.run.documents) || {};
+  const names = list(held.later).map((entry) => entry.name);
+  const problem = problemLine();
+  const go = capsule('Update it', 'filled', async () => {
+    go.disabled = true;
+    try {
+      view.run = await send('documents', { path: view.path, action: 'update' });
+      closeSheet();
+      toast('The research runs again with ' + series(names) + '.');
+      paintRun(false);
+    } catch (failure) {
+      say(problem, failure.message + ' Nothing was changed.');
+      go.disabled = false;
+    }
+  }, 'confirm-update-research');
+  return [sheetTitle('Update the research?'),
+    make('p', '', 'The research reads ' + series(names) + ' with the documents it read '
+      + 'before.'),
+    held.update_price ? make('p', 'quiet', held.update_price.words) : null,
+    problem, add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
 }
 
 function documentsCard(run, lead) {
@@ -5514,15 +5657,28 @@ function documentsCard(run, lead) {
       : 'None were added.'));
   }
   if (held.note) add(node, make('p', 'quiet', held.note));
+  const later = new Set(list(held.later).map((entry) => entry.name));
   if (added.length) {
     const items = make('ul', 'rows');
-    for (const found of added) items.append(documentItem(found, held.waiting));
+    for (const found of added) {
+      items.append(documentItem(found, held.waiting, later.has(found.name)));
+    }
     add(node, make('h3', 'row-title', count(added.length, 'document', 'documents')
       + ' added'), items);
   } else if (held.waiting) {
     add(node, make('p', 'quiet', 'Nothing is added yet.'));
   }
-  if (!held.waiting) return node;
+  if (!held.waiting) {
+    if (!later.size || run.mine === false) return node;
+    // While a combined review waits, the research is changed from that review.
+    if (run.review) {
+      return add(node, make('p', 'quiet', 'Update the research once this review is '
+        + 'decided.'));
+    }
+    const update = capsule('Update the research', '', openSheet('update-research',
+      'update-research'), 'update-research');
+    return add(node, alertLine('documents-problem'), add(make('div', 'bar'), update));
+  }
   const problem = alertLine('documents-problem');
   say(problem, view.undone);
   const done = capsule('That is all of them', lead ? 'filled' : '',
@@ -5557,6 +5713,11 @@ function copyItem(found) {
   if (found.state === 'out-of-date') {
     add(text, make('p', '', 'Its file has changed since this copy was made.'));
   }
+  // What Google was found to hold, when the person last looked.
+  if (found.remote === 'remote changed') add(text, make('p', '', 'Changed in Google Docs.'));
+  if (found.remote === 'both changed') {
+    add(text, make('p', '', 'Changed in Google Docs, and here too.'));
+  }
   const why = found.problem || (found.state === 'not-made' ? 'No reason was given.' : '');
   if (found.state !== 'made' && why) add(text, make('p', '', why));
   add(text, copyLink(found, kind, what));
@@ -5570,10 +5731,14 @@ function copyItem(found) {
         }, 'choose-copy-' + choose + '-' + found.artifact));
       }
     }
-    if (found.conflict || /^Someone has changed the Google Doc/.test(found.problem || '')) {
+    if (found.conflict || ['remote changed', 'both changed'].includes(found.remote)) {
       add(text, capsule("Bring the Doc's changes in", 'quiet', (event) =>
         pullCopy(found, null, event.currentTarget), 'pull-copy-' + found.artifact));
     }
+  }
+  if (found.kind === 'google' && found.missing && view.run?.mine !== false) {
+    add(text, capsule('Make a new Google Doc', 'quiet', (event) =>
+      remakeCopy(found, event.currentTarget), 'remake-copy-' + found.artifact));
   }
   if (found.kind === 'word' && found.link && found.state !== 'not-made') {
     add(text, capsule('Download the Word copy', 'quiet', (event) =>
@@ -5599,13 +5764,27 @@ function copyChoiceSheet() {
     add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
 }
 
+async function remakeCopy(found, pressed) {
+  pressed.disabled = true;
+  try {
+    view.run = await send('copies', { path: view.path, action: 'remake',
+      artifact: found.artifact });
+    toast(view.run.said);
+    paintRun(false);
+  } catch (failure) {
+    toast(failure.message + ' Nothing was changed.');
+  } finally {
+    pressed.disabled = false;
+  }
+}
+
 async function pullCopy(found, choose, pressed) {
   pressed.disabled = true;
   try {
     const run = await send('copies', {path: view.path, pull: found.artifact,
       ...(choose ? {choose} : {})});
     view.run = run;
-    toast(run.said);
+    toast(run.unplaced ? run.said + ' ' + run.unplaced : run.said);
     paintRun(false);
     return true;
   } catch (failure) {
@@ -5643,11 +5822,39 @@ async function tryCopies() {
   if (!focusKey('copies-again')) byId('title').focus({ preventScroll: true });
 }
 
+// Asked for by the person: the one time Google is asked whether a Doc was changed there.
+async function checkCopies(pressed) {
+  if (view.checking) return;
+  view.checking = true;
+  pressed.disabled = true;
+  try {
+    const run = await send('copies', { path: view.path, action: 'check' });
+    view.run = run;
+    const changed = list(run.copies).filter((found) => found.remote).length;
+    // The runner says what it found, including a Doc Google could not be asked about.
+    toast(run.said || (changed ? count(changed, 'Google Doc was', 'Google Docs were')
+      + ' changed there.' : 'No Google Doc was changed there.'));
+  } catch (failure) {
+    toast(failure.message + ' Nothing was changed.');
+  } finally {
+    view.checking = false;
+    pressed.disabled = false;
+  }
+  paintRun(false);
+  focusKey('check-copies');
+}
+
 function copiesCard(run) {
   const node = card('Copies');
   const items = make('ul', 'rows');
   for (const found of list(run.copies)) items.append(copyItem(found));
   add(node, items);
+  const docs = list(run.copies).some((found) => found.kind === 'google' && found.link);
+  if (docs && run.mine !== false) {
+    const look = capsule('Look for changes in Google Docs', 'quiet',
+      (event) => checkCopies(event.currentTarget), 'check-copies');
+    add(node, add(make('div', 'bar'), look));
+  }
   if (!list(run.copies).some((found) => found.state !== 'made')) return node;
   // Making them again is a change, which only the computer that runs the training makes.
   if (run.mine === false) {
@@ -5658,8 +5865,9 @@ function copiesCard(run) {
   if (view.copying) go.setAttribute('aria-busy', 'true');
   const problem = alertLine('copies-problem');
   say(problem, view.uncopied);
-  return add(node, make('p', 'quiet', 'The training itself is complete without them. A copy '
-    + 'that is not made is listed as a limitation.'), problem, add(make('div', 'bar'), go));
+  return add(node, make('p', 'quiet', 'A copy that is not made is listed as a limitation. A '
+    + 'copy that is out of date must be sent again before the training is ready.'), problem,
+  add(make('div', 'bar'), go));
 }
 
 // A deck this computer cannot make is the one stage a run leaves. It says what is missing in
@@ -5702,7 +5910,7 @@ function controlsPart(run) {
   if (found.skip_deck) {
     add(node, make('p', 'quiet', 'Nothing of the deck is drawn yet. Leaving it out takes a '
       + 'reason, which is kept with the training; you can bring the deck back later.'));
-    add(bar, capsule('Skip the deck for now', '', () => {
+    add(bar, capsule('Leave the deck out', '', () => {
       view.deciding = 'deck';
       openSheet('skip', 'skip-deck')();
       paintRun(false);
@@ -5786,7 +5994,10 @@ function runActions(run, waiting, lead) {
   };
   const offered = run.problem && run.problem.action;
   if (run.state === 'working') press('Pause', '', 'pause');
-  if (['working', 'waiting', 'paused'].includes(run.state)) press('Stop', 'quiet', 'stop');
+  // Stop asks first: the step in hand loses its work.
+  if (['working', 'waiting', 'paused'].includes(run.state)) {
+    actions.push(capsule('Stop', 'quiet', openSheet('stop-run', 'stop'), 'stop'));
+  }
   if (['paused', 'stopped'].includes(run.state) && offered !== 'resume') {
     press('Resume', lead === 'resume' ? 'filled' : '', 'resume');
   }
@@ -5954,7 +6165,7 @@ function assetForm(found, index) {
     held.file = (input.files || [])[0] || null;
   }, accept: '.png,.jpg,.jpeg,.gif', hint: 'A PNG, JPEG or GIF file.' });
   picture.querySelector('input').multiple = false;
-  const send = capsule('Add the picture', '', () => supplyAsset(found, index, send),
+  const send = capsule('Save the picture', '', () => supplyAsset(found, index, send),
     id + '-send');
   return add(make('div', 'asset-supply'), picture,
     field(id + '-alt', 'What it shows', held, 'alt'),
@@ -6057,11 +6268,11 @@ function marked(review) {
 function commitsSays(review) {
   const commits = review.commits;
   if (review.phase !== 'direction' || !commits) {
-    return 'Approving finishes this draft. Everything is kept as it stands, and publishing '
-      + 'is a separate action.';
+    return 'Approving finishes this training. Everything is kept as it stands, and '
+      + 'publishing is a separate action.';
   }
   const names = { document: 'learner guides', brief: 'briefs', scenario: 'practice scenarios',
-    yoodli: 'Yoodli layouts' };
+    yoodli: 'Yoodli scenarios' };
   // The runner lists only work still unwritten in this run, including legacy runs.
   const made = list(commits.materials)
     .map((stage) => names[stage] || stage);
@@ -6284,7 +6495,7 @@ function combinedReview(run) {
         const lookProblem = alertLine('look-problem-' + item.looks.artifact);
         const again = capsule('Try again', '', () => redrawLooks(review, item.looks,
           lookProblem, again), 'looks-again-' + item.looks.artifact);
-        const proceed = capsule('Carry on in the brand’s default look', '', () => {
+        const proceed = capsule('Use the brand’s default look', '', () => {
           held.choice = held.choice === 'default' ? '' : 'default';
           proceed.setAttribute('aria-pressed', String(held.choice === 'default'));
         }, 'looks-default-' + item.looks.artifact);
@@ -6307,7 +6518,8 @@ function combinedReview(run) {
     if (item.target.startsWith('yoodli:')) add(part, yoodliCopies({artifact: item.target, text: item.text}));
     if (review.phase === 'final' && /^(document|brief|deck)(@|$)|^(scenario|yoodli):/.test(item.target)) {
       add(part, capsule('Download ' + lower(item.label), 'quiet', (event) =>
-        downloadFile(view.path, {artifact: item.target}, item.label, event.currentTarget),
+        downloadFile(view.path, {artifact: item.target},
+          String(item.file || '').split('/').pop() || item.target, event.currentTarget),
         'download-' + item.target));
     }
     if (item.notes) add(part, window.TrainingStudioMarkdown.render(item.notes));
@@ -6323,7 +6535,10 @@ function combinedReview(run) {
       request.value = view.notes[key] || '';
       request.addEventListener('input', () => { view.notes[key] = request.value; });
       const hint = make('p', 'quiet', (list(item.rewrites).length ? 'If it changes, these are '
-        + 'written again from it: ' + series(item.rewrites) + '.' : 'Nothing else is built from it.')
+        + 'written again from it: ' + series(item.rewrites) + '.'
+        + (item.returns ? ' They come back to this review.' : '')
+        + (item.deck_again ? ' The deck is drawn again and stops for you first.' : '')
+        : 'Nothing else is built from it.')
         + (item.research_price ? ' ' + item.research_price.words : item.redo ? ' ' + item.redo.says : ''));
       const asking = add(make('div', 'review-request'), label, request, hint);
       asking.hidden = mark !== 'changes';
@@ -7083,7 +7298,7 @@ function adoptCard(training) {
   return add(card('Run it from this page'),
     make('p', '', 'This training is not run from this page: it lives in a folder of its '
       + 'own, outside your workspace. Training Studio can carry it on from here instead, '
-      + 'working on its own and stopping each time it needs your decision.'),
+      + 'working on its own, and stops where its review level says, for your decision.'),
     add(make('div', 'bar'), capsule('Run this from here', '', askTeam('adopt', 'adopt'),
       'adopt')));
 }
@@ -7141,9 +7356,10 @@ function teamAsks(kind, title) {
     says: [make('p', '', 'It is copied into your workspace as a new training. Training '
       + 'Studio carries the copy on from wherever the training has got to, with each '
       + 'decision made on this page.'),
-    make('p', '', 'The original folder is left exactly as it was, with nothing deleted.'),
+    make('p', '', 'The original folder is left exactly as it was, with nothing deleted. '
+      + 'Its own Git history stays where it is.'),
     make('p', '', 'From then on the copy is the one to work on, and this page takes you '
-      + 'to it.')] };
+      + 'to it. A training brought in runs Step by step.')] };
 }
 
 function teamSheet(kind) {
@@ -7222,7 +7438,9 @@ function deletable(run) {
 }
 
 function deleteCard() {
-  return add(card('Delete this training'), make('p', 'quiet', DELETE_SAYS),
+  // From a team's workspace it goes for the team too; from a local one, from here only.
+  return add(card('Delete this training'), make('p', 'quiet', DELETE_SAYS
+    + (teamSpace() ? DELETE_TEAM : '') + '.'),
     add(make('div', 'bar'), capsule('Delete this training', 'quiet', askDelete('delete'),
       'delete')));
 }
@@ -7697,6 +7915,17 @@ function versionsBar(found, dismiss) {
 }
 
 // Home: said only when something is newer or missing, or an upgrade is in hand.
+// A studio Marketing Studio installed is updated by it, and by nothing here.
+const SUITE_SAYS = 'Marketing Studio installs and updates this studio. To update it, unpack a '
+  + 'newer Marketing Studio release and run marketing-studio update --from <the unpacked '
+  + 'folder> --yes.';
+
+function suiteLine() {
+  const [before, rest] = SUITE_SAYS.split('marketing-studio update');
+  return add(make('p', ''), before,
+    make('code', '', 'marketing-studio update' + rest.replace(/\.$/, '')), '.');
+}
+
 function updatesCard() {
   const upkeep = upkeepOf();
   if (!upkeep) return null;
@@ -7705,7 +7934,10 @@ function updatesCard() {
   const node = card('Updates');
   if (found && versionsNotice()) {
     const wanted = wantedRows(found);
-    if (wanted.length && !['restart', 'restarting'].includes(upgradeOf(found).state)) {
+    if (found.suite === 'marketing-studio') {
+      add(node, suiteLine());
+      for (const row of wanted) add(node, add(make('p', ''), state('review', row.says)));
+    } else if (wanted.length && !['restart', 'restarting'].includes(upgradeOf(found).state)) {
       add(node, make('p', '', 'Newer versions are ready for this computer:'),
         bullets(wanted.map(versionStep)));
       for (const row of wanted) add(node, add(make('p', ''), state('review', row.says)));
@@ -7750,7 +7982,8 @@ function versionsCard() {
       make('span', '', said)));
     }
   }
-  add(node, facts, ...upgradeParts(found), ...brandParts(found), ...versionsBar(found, false));
+  add(node, facts, found.suite === 'marketing-studio' ? suiteLine() : null,
+    ...upgradeParts(found), ...brandParts(found), ...versionsBar(found, false));
   const releases = (upkeepOf() || {}).releases || {};
   const known = (list(found.rows)[0] || {}).known_at;
   add(node, releasesLine(upkeepOf()));
@@ -8378,7 +8611,7 @@ async function catchUp() {
     }
   } catch (failure) {
     // Reading the list needs nothing but the key, so a refusal here is about the link.
-    notify(failure.kind === 'refused' ? NOTICES.refused : failure.message);
+    notify(failure.kind === 'refused' ? noticeOf('refused') : failure.message);
   }
 }
 
@@ -8493,7 +8726,7 @@ function begin() {
   });
   if (!view.token) {
     place({ title: 'This page needs its link' }, [], true);
-    notify(NOTICES.refused);
+    notify(noticeOf('refused'));
     return;
   }
   open(window.history.state || { screen: 'home' });

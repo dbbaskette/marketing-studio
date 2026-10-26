@@ -70,10 +70,10 @@ SECURITY_HEADERS = _security.SECURITY_HEADERS
 WORDS = {'approved': 'approved', 'draft': 'not approved yet', 'stale': 'out of date',
          'not-started': 'not started', 'skipped': 'left out',
          'unavailable': 'could not be made'}
-STAGE_NAMES = {'intake': 'Start', 'research-plan': 'Questions', 'research': 'Research',
+STAGE_NAMES = {'intake': 'Start', 'research-plan': 'Research plan', 'research': 'Research',
                'blueprint': 'Blueprint', 'document': 'Guide', 'brief': 'Brief',
                'deck': 'Deck', 'scenario': 'Practice', 'yoodli': 'Yoodli',
-               'package': 'Wrap-up'}
+               'package': 'Index'}
 STAGE_STATES = {'done': 'done', 'current': 'in progress', 'review': 'yours to review',
                 'not-started': 'not started', 'left-out': 'left out',
                 'unavailable': 'could not be made'}
@@ -552,6 +552,11 @@ def gate(path: str, name: str) -> dict:
         'approved': ({'at': approved.get('at'), 'by': approved.get('by', 'chat')}
                      if state[name] == 'approved' else None),
         'decisions': offers, 'first': first,
+        # Why a stage that can be left out is not offered so: Yoodli uses the brief and the
+        # practice scenarios.
+        **({'held_by': 'yoodli'} if spec['stage'] in ('brief', 'scenario') and 'skip' not in
+           offers and 'yoodli' in session['settings']['stages']
+           and state[name] not in ('skipped', 'unavailable') else {}),
     }
 
 

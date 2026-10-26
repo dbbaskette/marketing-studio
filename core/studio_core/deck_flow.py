@@ -5,7 +5,7 @@ What a caller needs to know
     deck_flow.STEPS                         # the canonical steps, in order
     deck_flow.canonical(product, gate)      # 'draft', 'look' or 'final' for a deck gate
     deck_flow.pauses(level)                 # where a deck stops for the person, by level
-    deck_flow.stops(product, level, gate)   # whether that studio's gate is a real stop
+    deck_flow.stops(product, level, gate, gates=None)   # whether that gate is a real stop
     deck_flow.OUTLINE_READING, COMPOSER_READING, REVIEW_READING   # what each worker reads
     deck_flow.for_workers(has_worker)       # what of the brand's own a worker is handed
     deck_flow.route(renderer, has)          # how look samples and previews are rendered
@@ -83,6 +83,8 @@ SHARED_INPUTS = frozenset({'outline contract', 'composition contract', *OUTLINE_
 LOOK_FAILED = ("The brand's looks could not be rendered here ({why}). Nothing was picked for "
                "you: try again, or carry on in the brand's default look.")
 DEFAULT_WORDS = "Automatic draft: the brand's default look, {name}, was used."
+DEFAULT_KEPT = ("The brand's default look, {name}, was used: no look was picked in the "
+                'direction review.')
 UNRENDERED_WORDS = ("Automatic draft: the brand's looks could not be rendered ({why}), so its "
                     'default look, {name}, was used without anyone seeing it.')
 UNREVIEWED = ('The look of this deck was chosen without its samples being seen rendered: '
@@ -103,12 +105,24 @@ def pauses(level: str) -> tuple[str, ...]:
     return PAUSES[level]
 
 
-def stops(product: str, level: str, gate: str) -> bool | None:
+def stops(product: str, level: str, gate: str, gates=None) -> bool | None:
     """Whether a studio's own gate is a real stop at this level: True, False, or None for a
     gate that is not a deck checkpoint. A checkpoint a combined stop hosts continues on its
-    own; the stop that hosts it is a stop."""
+    own; the stop that hosts it is a stop. When `gates`, every gate name the run has, leaves
+    out a combined stop's host, the stop is held at the gate of its last folded checkpoint
+    that the run does have, so a Redesign deck under Balanced still stops for its look."""
     base = gate.partition('@')[0]
-    hosts = HOSTS.get(product, {}).get(level, {})
+    hosts = dict(HOSTS.get(product, {}).get(level, {}))
+    if gates is not None:
+        bases = {name.partition('@')[0] for name in gates}
+        for stop, host in hosts.items():
+            if host in bases:
+                continue
+            kept = [name for checkpoint in FOLDED.get(stop, ())
+                    for name, kind in GATES.get(product, {}).items()
+                    if kind == checkpoint and name in bases]
+            if kept:
+                hosts[stop] = kept[-1]
     if base in hosts.values() and base in GATES.get(product, {}):
         return True
     checkpoint = canonical(product, gate)

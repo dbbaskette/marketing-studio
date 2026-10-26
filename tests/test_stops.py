@@ -85,6 +85,14 @@ class StopWordsTests(unittest.TestCase):
     def test_no_job_starts_with_less_than_the_floor_left(self):
         self.assertEqual((stops.floor(20), stops.floor(1), stops.floor(0)), (0.5, 0.25, 0.0))
 
+    def test_an_agent_that_cannot_be_used_is_offered_open_status(self):
+        unusable = SimpleNamespace(reason='unavailable', detail='It is not signed in.')
+        self.assertEqual(stops.agent_action(unusable), 'status')
+        self.assertEqual(stops.ACTION_LABELS['status'], 'Open Status')
+        for other in (SimpleNamespace(reason='limit', budget=False, detail='usage limit'),
+                      SimpleNamespace(reason='timeout', detail='')):
+            self.assertEqual(stops.agent_action(other), 'retry')
+
     def test_an_agent_that_cannot_be_used_points_at_the_status_screen(self):
         self.assertEqual(stops.unusable('Claude Code', 'It is not signed in.'), (
             'Claude Code could not be used. It is not signed in. Check this computer, on the '

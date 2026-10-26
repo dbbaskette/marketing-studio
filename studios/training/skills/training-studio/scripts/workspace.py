@@ -80,7 +80,7 @@ AHEAD = {'intake': 'Complete intake', 'research-plan': 'Draft the research quest
          'research': 'Run the research', 'blueprint': 'Draft the blueprint',
          'document': 'Write {the} learner guide', 'brief': 'Write {the} brief',
          'deck': 'Hand {the} deck to harness-slides', 'scenario': 'Prepare {the} scenarios',
-         'yoodli': 'Build {the} Yoodli scenarios', 'package': 'Write the index',
+         'yoodli': 'Write {the} Yoodli scenarios', 'package': 'Write the index',
          'done': 'Nothing pending'}
 
 

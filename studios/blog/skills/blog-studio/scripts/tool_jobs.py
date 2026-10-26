@@ -282,6 +282,14 @@ def once(engine):
             current = _working(root, ident)
             if current is not None:
                 current.update(status='failed', error=str(error)[:1000], finished_at=studio.now())
+                # Why it stopped, as the worker said it ('cli' or 'time-limit'), and the last
+                # lines the assistant printed, kept with the job on this computer only.
+                reason = getattr(error, 'reason', None)
+                if reason in ('cli', 'time-limit'):
+                    current['reason'] = reason
+                    said = getattr(error, 'said', None)
+                    if reason == 'cli' and said:
+                        current['said'] = [str(line)[:500] for line in list(said)[-20:]]
                 write(root, current)
                 shared = _ended(root, current)
         _share(root, shared)

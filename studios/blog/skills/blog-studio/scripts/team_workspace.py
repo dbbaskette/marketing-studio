@@ -402,8 +402,17 @@ def action(root, ident, action, expected=None):
             gitstate.commit(found, 'Keep local work before changing a driver')
         if expected is not None:
             import blog_runner
+            import desk
+            import desk_jobs
 
-            if blog_runner.survey(root, ident)['expected'] != expected:
+            # A blog on the desk has no run: its version is the desk view's.
+            directory, _ = studio.item(root, 'articles', ident)
+            current = (
+                desk_jobs.expected(root, ident)
+                if desk.on_desk(directory)
+                else blog_runner.survey(root, ident)['expected']
+            )
+            if current != expected:
                 raise ValueError(
                     'This blog changed. Reload before changing its driver or publishing it.'
                 )

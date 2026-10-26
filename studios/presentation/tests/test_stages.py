@@ -26,6 +26,17 @@ class SavedRehearseTests(unittest.TestCase):
 
 
 class NameTests(unittest.TestCase):
+    def test_balanced_puts_the_direction_review_under_the_look(self):
+        balanced = run('scratch')
+        balanced['review_policy'] = {'schema': 1, 'level': 'balanced'}
+        found = next(s for s in stages.steps(balanced) if s.name == 'gate:outline')
+        self.assertEqual((found.stage, found.label), ('look', 'Review the direction'))
+        stepped = next(s for s in stages.steps(run('scratch')) if s.name == 'gate:outline')
+        self.assertEqual(stepped.stage, 'outline')
+
+    def test_the_classify_stop_says_what_you_gave(self):
+        self.assertEqual(stages.BY_NAME['gate:classify'].label, 'Confirm what you gave')
+
     def test_the_look_stop_is_named_choose_the_look(self):
         self.assertEqual(stages.BY_NAME['gate:look'].label, 'Choose the look')
         self.assertEqual(stages.BY_NAME['gate:look'].doing, 'Waiting for you to choose the look')

@@ -1306,7 +1306,7 @@ class Drive:
     """A pretend Google Drive, kept in memory, for the stand-in below."""
 
     def __init__(self):
-        self.docs = {}
+        self.docs, self.calls = {}, []
 
     def create(self, title: str, markdown: str) -> dict:
         ident = f'doc{len(self.docs) + 1}'
@@ -1317,6 +1317,7 @@ class Drive:
         self.docs[file_id] = markdown
 
     def export(self, file_id: str) -> str:
+        self.calls.append(('export', file_id))
         return self.docs[file_id]
 
 
@@ -1350,6 +1351,14 @@ class Copies:
     def pull(self, root: Path, name: str, google=None, choose=None):
         from runner import copies
         return copies.pull(root, name, google or self.drive, choose)
+
+    def check(self, root: Path, google=None) -> dict:
+        from runner import copies
+        return copies.check(root, google or self.drive)
+
+    def remake(self, root: Path, name: str, google=None) -> dict:
+        from runner import copies
+        return copies.remake(root, name, google or self.drive)
 
     def make(self, root: Path, google=None, word=None) -> tuple[list[dict], dict]:
         import gdocs

@@ -120,7 +120,7 @@ def written_here(root, article):
     return None, None
 
 
-def keep_written(root, record, text, kind=None):
+def keep_written(root, record, text, kind=None, note='Finished here as a guided blog.'):
     """Keep a finished blog's draft in the library as a reference and an example of its kind
     of post, by its author. Idempotent: the blog's one item gets a new revision when the
     draft or title changed, and is left alone otherwise. A later Finish changes only the
@@ -147,7 +147,7 @@ def keep_written(root, record, text, kind=None):
                     origin=ident,
                     purpose=['reference', 'inspiration'],
                     author=author,
-                    note='Finished here as a guided blog.',
+                    note=note,
                     status='ready',
                     library=fields,
                 ),

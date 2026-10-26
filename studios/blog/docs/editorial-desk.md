@@ -61,8 +61,9 @@ Only a tag or note you actually change counts as your correction; saving a note
 does not stop automatic tags from being added later.
 
 **Upload** accepts Markdown, text, HTML, DOCX and PDF. Originals remain saved.
-PDFs need text extraction in chat. Check **Start an editable blog** only when you
-want a manuscript; an ordinary reference upload does not start a new blog. A
+PDFs need text extraction in chat. Check **Then edit it on the desk** to open the
+file's text on the writing desk's draft screen; an ordinary reference upload does not
+start a new blog. A
 DOCX that cannot be opened is refused with a message; nothing is saved from it.
 
 **Team memory** lets you read and save notes, context and writing rules. Choose

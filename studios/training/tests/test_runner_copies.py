@@ -355,7 +355,9 @@ class GoogleTests(Built):
         self.assertEqual(problems, {'document': copies.REWORDED[1][1]})
         for said in (copies.NOT_SET_UP, copies.NO_PANDOC, *(ours for _, ours in copies.REWORDED)):
             self.assertFalse([word for word in FORBIDDEN if word in said.lower()], said)
-            self.assertIn('try the copies again', said)
+            # A Doc Google cannot find is made anew from here, not tried again.
+            self.assertIn('Make a new Google Doc from here' if said == copies.MISSING_DOC
+                          else 'try the copies again', said)
 
     def test_a_drive_that_fails_in_a_way_nobody_expected_does_not_stop_the_run(self):
         self.built('google', 'word')
@@ -538,6 +540,88 @@ class PandocTests(Built):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+
+class CheckTests(Built):
+    """Look for changes in Google Docs: asked for by the person, never otherwise."""
+
+    def linked(self):
+        self.built('google', levels=('101',))
+        self.copy()
+        return gdocs.read_links(self.root)['docs']['document@101']['file_id']
+
+    def test_row_131_a_doc_edited_elsewhere_is_found_when_asked(self):
+        ident = self.linked()
+        self.drive.docs[ident] += '\nRemote addition.\n'
+        found = copies.check(self.root, self.drive)
+        self.assertEqual(found['document@101'], 'remote changed')
+        self.assertEqual({state for name, state in found.items() if name != 'document@101'},
+                         {'made'})
+        pulled = copies.pull(self.root, 'document@101', self.drive)
+        self.assertEqual(pulled['result'], 'pulled', 'unchanged here, so it comes in cleanly')
+        self.assertIn('Remote addition.', (self.root / '101/document.md').read_text())
+        state = workspace.statuses(self.root, workspace.load(self.root))
+        self.assertEqual(state['document@101'], 'draft', 'as row 121 says')
+
+    def test_a_doc_changed_on_both_sides_is_said_to_be(self):
+        ident = self.linked()
+        local = self.root / '101/document.md'
+        local.write_text(local.read_text() + '\nLocal addition.\n')
+        self.drive.docs[ident] += '\nRemote addition.\n'
+        self.assertEqual(copies.check(self.root, self.drive)['document@101'], 'both changed')
+
+    def test_nothing_asks_google_unasked(self):
+        self.linked()
+        before = list(self.drive.calls)
+
+        def never():
+            raise AssertionError('Google was asked')
+        with mock.patch.object(gdocs, 'GcloudTransport', never):
+            copies.wanted(self.root)
+        self.assertEqual(self.drive.calls, before)
+
+    def test_pulled_headings_without_their_note_are_named(self):
+        ident = self.linked()
+        anchors = gdocs.read_links(self.root)['docs']['document@101']['anchors']
+        title = next(anchor[0] for anchor in anchors if anchor[0])
+        doc = self.drive.docs[ident]
+        heading = next(line for line in doc.splitlines()
+                       if line.startswith('#') and line.lstrip('#').strip() == title)
+        self.drive.docs[ident] = doc.replace(heading, heading.split(' ', 1)[0]
+                                             + ' A heading renamed in the Doc', 1)
+        pulled = copies.pull(self.root, 'document@101', self.drive)
+        self.assertEqual(pulled['result'], 'pulled')
+        self.assertIn(title, pulled['unplaced'])
+
+
+class RemakeTests(Built):
+    def test_row_135_a_missing_doc_is_made_again(self):
+        self.built('google', levels=('101',))
+        self.copy()
+        old = gdocs.read_links(self.root)['docs']['document@101']['file_id']
+        del self.drive.docs[old]
+        made = copies.remake(self.root, 'document@101', self.drive)
+        entry = gdocs.read_links(self.root)['docs']['document@101']
+        self.assertNotEqual(entry['file_id'], old)
+        self.assertIn(entry['file_id'], self.drive.docs)
+        self.assertEqual(made['state'], 'made')
+        self.assertEqual({(e['artifact'], e['state']) for e in copies.wanted(self.root)
+                          if e['artifact'] == 'document@101'}, {('document@101', 'made')})
+
+    def test_a_missing_doc_says_to_make_a_new_one_here(self):
+        said = dict(copies.REWORDED)['could not find the Doc']
+        self.assertEqual(said, 'Google could not find the Doc. It may have been deleted, or '
+                         'the signed-in account cannot open it. Make a new Google Doc from '
+                         'here.')
+        self.assertNotIn('assistant', said)
+
+
+class SentenceTests(unittest.TestCase):
+    def test_a_sentence_never_starts_lower_case(self):
+        said = copies.worded(copies.BOTH, 'the level 101 learner guide')
+        self.assertTrue(said[0].isupper(), said)
+        self.assertTrue(said.startswith('The level 101 learner guide was changed here'))
 
 
 class PullTests(Built):
