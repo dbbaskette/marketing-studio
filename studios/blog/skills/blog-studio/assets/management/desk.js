@@ -363,7 +363,8 @@ function sDeskProgress(held){
   const view=held.view,start=view.start,problem=start.problem,what=start.open==='outline'?'The outline':'The draft';
   const stop=start.busy?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{try{held.view=await api('desk-stop',{id:held.id,job:start.job});sDeskProgress(held);}catch(error){notice(error.message,true);}});}):null;
   if(stop)stop.disabled=!sDeskCan(held);
-  sFrame(view.title,[stop],problem?'Stopped':'Writing on its own',()=>sRoute('blogs'));
+  // Driven on another computer, or by nobody: the start says so, and offers to take it.
+  sFrame(view.title,[sDeskTeam(view),stop],sDeskDriverWords(view)||(problem?'Stopped':'Writing on its own'),()=>sRoute('blogs'));
   const first=sNode('p','lede',problem?'This start stopped before '+what.toLowerCase()+' was ready. Retry the step when you are ready.':sDeskEstimate(start,what));
   first.setAttribute('role','status');
   const steps=sNode('ol','rows desk-steps'),at=start.steps.indexOf(start.step);steps.setAttribute('aria-label','Steps of this start');
@@ -372,7 +373,7 @@ function sDeskProgress(held){
     const now=index===at&&!problem?(start.phase||(start.status==='queued'?'Reading your sources':'Under way')):'';
     steps.append(sAdd(sNode('li','row step'),sBead(state),sAdd(sNode('div','row-text'),sNode('h3','row-title',DESK_STEPS[step]||step),now?sNode('p','row-says',now):null)));
   });
-  const parts=[first];
+  const parts=[first,sDeskElsewhere(view)];
   if(problem)parts.push(sDeskStopped(held));
   parts.push(sCard('Progress',steps,sNode('p','quiet desk-clock',sDeskClock(start))));
   sPage(...parts);
@@ -418,6 +419,15 @@ function sDeskTabs(held){return sChoice('Work on',[['draft','Draft'],['outline',
 // does, the desk is read only and the toolbar offers Take over or Take this blog.
 function sDeskCan(held){return sCanEdit(held?.view||{});}
 function sDeskDriverWords(view){if(!view.team||view.driver?.here)return '';return view.driver?view.driver.name+' · driving on another computer':'Nobody is running this blog';}
+// Hand over, Take over or Take this blog, in a team workspace; on the desk and on a start's
+// progress screen alike. Each confirms against the desk's version.
+function sDeskTeam(view){
+  if(!view.team)return null;
+  const action=view.driver?.here?'handover':view.driver?'takeover':'take';
+  const team=sButton({handover:'Hand over',takeover:'Take over',take:'Take this blog'}[action],()=>sTeamDecision(view,action,'desk'),action==='handover'?'':'filled');
+  team.disabled=!access.actions.edit;return team;
+}
+function sDeskElsewhere(view){return view.elsewhere?sNode('p','decision-notice desk-driver',view.elsewhere):null;}
 function sDeskToolbar(held){
   const view=held.view,editable=sDeskCan(held);
   const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));});
@@ -426,9 +436,7 @@ function sDeskToolbar(held){
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
   const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held));finishing.setAttribute('aria-pressed',String(!!held.finish));
   const stop=held.view.working?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:held.view.working.id});sDeskRefresh(held,before);});}):null;
-  const action=view.driver?.here?'handover':view.driver?'takeover':'take';
-  const team=view.team?sButton({handover:'Hand over',takeover:'Take over',take:'Take this blog'}[action],()=>sTeamDecision(view,action,'desk'),action==='handover'?'':'filled'):null;
-  if(team)team.disabled=!access.actions.edit;
+  const team=sDeskTeam(view);
   sFrame(view.title,sFold([team,stop,copy,download,google,publish,finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||'On the desk',()=>sRoute('blogs'));
 }
 function sDeskRender(held){
@@ -450,7 +458,7 @@ function sDeskRender(held){
   const finishing=!!held.finish,sheet=finishing&&sNarrow();
   held.panel=finishing?sDeskPanel(held):null;held.panelKey=finishing?sDeskPanelKey(held):null;
   const lede=held.tab==='outline'?'Rename, reorder, add and remove sections and say what each must do. Write the draft from the outline, or one section at a time.':'Edit any part in place, give a section a note to rewrite it, or select text for a quick change. Every change keeps the earlier text in History.';
-  sPage(sNode('p','lede',lede),view.elsewhere?sNode('p','decision-notice desk-driver',view.elsewhere):null,status,sDeskTabs(held),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
+  sPage(sNode('p','lede',lede),sDeskElsewhere(view),status,sDeskTabs(held),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
   sDeskImagesLoad(held);
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the
