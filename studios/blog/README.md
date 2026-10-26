@@ -86,10 +86,20 @@ Once the page is open, use its controls to drive the work:
 
    To polish or review a draft, choose **Edit or polish a draft** on Home. It is one
    screen with no kind of post: your draft (pasted, uploaded or a Google Doc), then **What
-   should happen first**: **Proofread and tighten** (the default), **Just give feedback**
-   (comments beside each part, nothing rewritten), **Reshape to fit a kind of post** (only
-   this asks for a kind) or **Leave it as it is**. **Tone** and **Check facts against your
-   sources** are optional folds.
+   should happen first**: **Check spelling and grammar** (the default: each fix is marked
+   in your text to accept or reject, and nothing changes until you accept), **Just give
+   feedback** (comments beside each part, nothing rewritten), **Reshape to fit a kind of
+   post** (only this asks for a kind) or **Leave it as it is**. **Tone** and **Check facts
+   against your sources** are optional folds. A draft's headings start its sections at
+   whatever level it uses, such as the `###` headings of a Google Doc's export.
+
+   **Check spelling and grammar** opens the blog in **Review mode**: the draft reads as a
+   document, section by section, with each fix marked in place (struck words out,
+   highlighted words in) and its reason, **Accept** and **Reject**. **Accept all** leaves a
+   fix that changes a fact, code or shape for you to check. Click any paragraph to edit it
+   yourself; **Check again** reruns the check. When nothing is left, a blog from a Google
+   Doc sends only the accepted changes to the Doc as suggestions; others offer **Copy** and
+   **Download**. **Open the full desk** has everything else.
 3. **Press Start.** Nothing is needed from you after that. The page shows each step and
    opens the draft on the desk when it is ready.
 4. **Edit on the desk.** The draft is one page: the title, the opening, and a card per

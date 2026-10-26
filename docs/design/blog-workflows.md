@@ -12,7 +12,7 @@ approve an internal review artifact before choosing edits.
 | --- | --- | --- |
 | Write from a topic or my documents | Kind of post → sources and settings (files, links, Google Docs) → title, reader and point, or three angles → Start | A draft on the writing desk |
 | Work from an outline or notes | Kind of post → sources and settings → the outline → write from it, or shape it first | A draft, or an outline to shape, on the desk |
-| Edit or polish a draft | One screen, no kind of post: pasted text, a file or a Google Doc → what happens first (proofread and tighten, just give feedback, reshape to fit a kind of post, or leave it) → optional tone and sources for the fact check → Start | The draft on the desk, with notes, selection edits, History and Finishing |
+| Edit or polish a draft | One screen, no kind of post: pasted text, a file or a Google Doc → what happens first (check spelling and grammar, just give feedback, reshape to fit a kind of post, or leave it) → optional tone and sources for the fact check → Start | Check spelling and grammar: Review mode, each fix marked in the text to accept or reject, then send the accepted ones to the Google Doc; otherwise the draft on the desk, with notes, selection edits, History and Finishing |
 | Polish a blog already in the manuscript editor | Continue editing → polish → choose changes → finish | Google feedback or a revised local draft with retained history; **Polish another document** then opens the polishing screen |
 
 Blogs started before the desk keep their step-by-step run (brief, research, outline,
