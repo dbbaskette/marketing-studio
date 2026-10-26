@@ -12,6 +12,7 @@ import re
 import shutil
 
 import desk
+import desk_images
 import studio
 
 # The finishing job kinds and the tool each one is in the panel.
@@ -156,7 +157,8 @@ def present(draft, item):
     if 'comment' in item:
         return True
     if item.get('whole'):
-        return text == item.get('before')
+        # A whole part is kept as the job saw it: image data kept as text is a token.
+        return desk_images.scrub(text) == item.get('before')
     before = item.get('before') or ''
     return bool(before) and text.count(before) == 1
 
@@ -236,9 +238,10 @@ def apply(root, ident, seen, job, chosen):
             if not after.strip():
                 raise ValueError(EMPTY)
             text = texts[part] if part in texts else desk.text_of(draft, part)
-            fits = text == item['before'] if item.get('whole') else text.count(item['before']) == 1
-            if not item['before'] and not item.get('whole'):
-                fits = False
+            if item.get('whole'):
+                fits = desk_images.scrub(text) == item['before']
+            else:
+                fits = bool(item['before']) and text.count(item['before']) == 1
             if not fits:
                 raise ValueError(GONE)
             if item.get('whole'):
@@ -246,6 +249,17 @@ def apply(root, ident, seen, job, chosen):
             else:
                 at = text.index(item['before'])
                 updated = text[:at] + after + text[at + len(item['before']) :]
+            if part != 'title':
+                # Image data kept as text comes back exactly, and no image reference the
+                # part had is lost: one the change left out goes back where it was.
+                updated = desk_images.restored(text, updated)
+                # Image data typed into the change moves out under a label of its own; the
+                # limits are checked when the draft is written (desk._write).
+                own = set()
+                updated, draft['images'] = desk_images.take(
+                    updated, draft.get('images'), rename=True, previous=text, touched=own
+                )
+                updated = desk_images.kept(text, updated, draft['images'], own)
             desk.checked_text(part, updated)
             if part == 'title' and not updated.strip():
                 raise ValueError('Keep the title to one line, up to 500 characters.')
@@ -514,7 +528,7 @@ def proofread(root, ident):
     draft = desk.read(root, ident)
     places = _offsets(draft)
     findings = []
-    for hit in lint(_mask_indented(desk.join(draft)), proof_rules())['findings']:
+    for hit in lint(_mask_indented(desk.join(draft, images=False)), proof_rules())['findings']:
         if 'start' not in hit:
             continue
         for part, offset, text in places:
@@ -766,8 +780,8 @@ QUOTE_LINE = re.compile(r'^\s{0,3}>')
 
 def _shape(text, paragraphs=True):
     """The code and quotations a part holds, exactly (fenced blocks with their opening
-    line, indented code, inline code spans, blockquote lines), and the count of its
-    blocks: paragraphs, list items, fenced blocks and tables."""
+    line, indented code, inline code spans, blockquote lines), its image references in
+    order, and the count of its blocks: paragraphs, list items, fenced blocks and tables."""
     fences, inline, outside = [], [], []
     block, inside = None, False
     for line in text.splitlines():
@@ -815,12 +829,14 @@ def _shape(text, paragraphs=True):
         if paragraphs
         else 0
     )
-    return fences, indented, inline, quotes, (count, items, len(fences), tables)
+    images = [match.group(0) for match in desk_images.REFERENCE.finditer(prose)]
+    return fences, indented, inline, quotes, images, (count, items, len(fences), tables)
 
 
 def changes_structure(before, after, paragraphs=True):
-    """STRUCTURE when a rewrite changes code (fenced blocks or inline code spans, exactly)
-    or the part's block structure; '' otherwise."""
+    """STRUCTURE when a rewrite changes code (fenced blocks or inline code spans, exactly),
+    drops, adds or alters an image reference, or changes the part's block structure; ''
+    otherwise."""
     return STRUCTURE if _shape(before, paragraphs) != _shape(after, paragraphs) else ''
 
 
@@ -948,14 +964,15 @@ def _read_headline(draft, found):
             ):
                 dropped += 1
                 continue
+            shown = desk_images.scrub(draft[part])
             items.append(
                 {
                     'part': part,
-                    'before': draft[part],
+                    'before': shown,
                     'after': text,
                     'note': _text(row.get('why'), 500),
                     # An alternative opening may reshape its paragraphs; code and lists stay.
-                    'flag': changes_structure(draft[part], text, paragraphs=False),
+                    'flag': changes_structure(shown, text, paragraphs=False),
                     'whole': True,
                     'group': part,
                 }
@@ -999,12 +1016,17 @@ def _read_voice(draft, found):
             dropped += 1
             continue
         seen.add(part)
-        before, after = desk.text_of(draft, part), row['text'].strip()
+        before, after = desk_images.scrub(desk.text_of(draft, part)), row['text'].strip()
         if not before.strip():
             dropped += 1
             continue
         if after == before.strip():
             kept += 1
+            continue
+        try:
+            desk_images.restored(desk.text_of(draft, part), after)
+        except ValueError:
+            dropped += 1  # It lost or changed image data the part keeps as text.
             continue
         if not after or desk.has_heading(after):
             dropped += 1
@@ -1069,6 +1091,7 @@ ESCAPED = re.compile(r'\\([\\`*_{}\[\]()#+\-.!<>|~])')
 VISIBLE = (
     (re.compile(r'^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d{1,3}[.)]\s+)'), ''),  # line markers
     (re.compile(r'!\[[^\]]*\]\([^)]*\)'), ''),  # images
+    (re.compile(r'!\[[^\]\n]*\]\[[^\]\n]*\]'), ''),  # images by reference, as Google exports
     (re.compile(r'\[\^[^\]]+\]'), ''),  # footnote markers
     (re.compile(r'\[([^\]]*)\]\([^)]*\)'), r'\1'),  # links show their text, not their target
     (re.compile(r'<(https?://[^>\s]+)>'), r'\1'),
@@ -1080,8 +1103,8 @@ def _visible(line):
     """A Markdown line as the Doc's body paragraph shows it, or None for a line that is not
     one (a table row, a fence, a footnote's own text)."""
     bare = line.strip()
-    if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[\^[^\]]+\]:', bare):
-        return None
+    if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[[^\]]+\]:', bare):
+        return None  # Also a footnote's or a link's definition, such as an image's data.
     # An escaped mark is the character itself, as Google's Markdown export writes it.
     line = ESCAPED.sub(lambda found: '\x00' + str(ord(found.group(1))) + '\x00', line)
     for pattern, replacement in VISIBLE:
@@ -1092,7 +1115,10 @@ def _visible(line):
 def _hidden_spans(line):
     """Where a line holds what the Doc shows no text for: link targets and whole images."""
     return [m.span(1) for m in re.finditer(r'\]\(([^)]*)\)', line)] + [
-        m.span() for m in re.finditer(r'!\[[^\]]*\]\([^)]*\)|<https?://[^>\s]+>', line)
+        m.span()
+        for m in re.finditer(
+            r'!\[[^\]]*\]\([^)]*\)|!\[[^\]\n]*\]\[[^\]\n]*\]|<https?://[^>\s]+>', line
+        )
     ]
 
 
@@ -1446,6 +1472,24 @@ def repurpose(root, ident, job_id, title, content):
             data['style'] = source['style']['style_id']
         except (ValueError, KeyError, TypeError):
             pass  # A retired kind of post: the copy is a blog of no particular kind.
+    # The images the copy names come with it, so the new blog does not open without them.
+    images = source.get('images') or {}
+    if images and desk_images.REFERENCE.search(content):
+        held = desk._data(root, ident)
+        named = desk_images.written(
+            {'title': '', 'opening': content, 'sections': [], 'images': images}
+        )
+        lines = desk_images.definitions(
+            {
+                'title': '',
+                'opening': content,
+                'sections': [],
+                'images': {n: images[n] for n in named},
+            },
+            held,
+        )
+        if lines:
+            data['manuscript'] = content.rstrip() + '\n\n' + '\n\n'.join(lines) + '\n'
     made = desk.create(root, data)
     job['applied'] = {'desk': {'id': made['id'], 'title': made['title']}, 'posted': False}
     job['saved_content'] = content
