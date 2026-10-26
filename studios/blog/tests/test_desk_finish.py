@@ -11,7 +11,8 @@ import desk_finish
 import desk_jobs
 import studio
 import tool_jobs
-from test_desk import DRAFT, DeskCase
+from test_desk import DRAFT, GOOGLE, IMAGE_TWO, DeskCase
+from test_desk_team import TeamCase
 
 
 class FinishCase(DeskCase):
@@ -474,6 +475,303 @@ class HumanizeTests(ToolCase):
         kept = desk.versions(self.root, self.ident, self.first)[0]
         self.assertEqual(kept['source'], 'finishing')
         self.assertTrue(kept['text'].startswith('We leverage'))
+
+
+class CopyEditTests(ToolCase):
+    """Copy edit: grammar, spelling, punctuation, consistency, clarity and concision fixes,
+    each a located sentence the person approves before it lands."""
+
+    def setUp(self):
+        super().setUp()
+        desk.save(
+            self.root,
+            self.ident,
+            self.seen,
+            self.second,
+            'Their are two parser. Use `run --fast` to start it.',
+        )
+        self.seen += 1
+
+    def fix(self, before, after, part=None, why='Grammar.'):
+        return {'part': part or self.second, 'before': before, 'after': after, 'why': why}
+
+    def test_payload_and_guidance_are_the_copy_editing_rules(self):
+        job = self.queue('copyedit')
+        self.assertEqual(job['kind'], 'finish-copyedit')
+        self.assertIn(desk_jobs.desk_check('copyedit'), job['guidance'])
+        self.assertIn(desk_jobs.desk_check('proofread'), job['guidance'])
+        self.assertIn(desk_finish.COPYEDIT, job['guidance'])
+        self.assertIn('"suggestions"', job['guidance'])
+        self.assertIn(blog_runner.house_guide(), job['guidance'])
+        for kept in ('voice', 'quotation', 'link', 'image reference'):
+            self.assertIn(kept, desk_finish.COPYEDIT)
+        self.assertEqual([s['id'] for s in job['payload']['sections']], [self.first, self.second])
+        self.assertEqual(job['payload']['opening'], 'An opening paragraph.')
+        self.assertNotIn('response_kind', job['payload'])
+        self.assertNotIn('level', job['payload'])
+        self.assertEqual(job['metadata']['desk']['part'], 'finishing')
+        self.assertEqual(job['metadata']['desk']['action'], 'copyedit')
+        self.assertIn('finish-copyedit', desk_jobs.KINDS)
+        self.assertIn('finish-copyedit', desk_jobs.FINISH)
+        self.assertIn('finish-copyedit', tool_jobs.KINDS)
+        self.assertIn('finish-copyedit', tool_jobs.DESK)
+        self.assertEqual(desk_finish.TOOLS['finish-copyedit'], 'copyedit')
+
+    def test_only_the_copy_editing_lenses_and_no_sources_or_examples_are_sent(self):
+        fact = self.source('A synthetic source on how the parser was benchmarked.')
+        desk.add_sources(self.root, self.ident, {'sources': [fact]})
+        self.seen = desk.read(self.root, self.ident)['revision']
+        self.assertTrue(self.draft()['sources'])
+        job = self.queue('copyedit')
+        for left_out in ('sources', 'examples', 'style', 'research', 'gaps'):
+            self.assertNotIn(left_out, job['payload'])
+        self.assertNotIn('benchmarked', json.dumps(job['payload']))
+        guidance = job['guidance']
+        # Clarity and voice from the copy-editing guide, and none of its broader lenses.
+        self.assertIn('**Clarity:**', guidance)
+        self.assertIn('**Voice:**', guidance)
+        for lens in (
+            '**Evidence:**',
+            '**Persuasion',
+            '**Structure:**',
+            '**Reader relevance:**',
+            '**Specificity:**',
+            'Make useful repairs',
+            'developmental feedback',
+        ):
+            self.assertNotIn(lens, guidance)
+        # Before the house guide every desk job shares, nothing points to sources.
+        own = guidance.split(blog_runner.house_guide())[0]
+        self.assertNotIn('source', own.lower())
+        self.assertNotIn('examples show', guidance)
+        # Claims, qualifiers and the argument stay; the desk has no pinned author rules.
+        for kept in ('claim', 'qualifier', 'argument'):
+            self.assertIn(kept, desk_finish.COPYEDIT)
+        self.assertNotIn('pinned author', guidance)
+
+    def test_desk_jobs_never_mention_pinned_author_rules(self):
+        import manuscript_editor
+
+        for name in ('copyedit', 'proofread'):
+            self.assertIn('pinned author', manuscript_editor.CHECKS[name])
+            self.assertNotIn('pinned author', desk_jobs.desk_check(name))
+            self.assertIn('house rules', desk_jobs.desk_check(name))
+        tighten = desk_jobs.first_pass(self.root, self.ident, self.seen, 'tighten')
+        self.assertNotIn('pinned author', tool_jobs.read(self.root, tighten['id'])['guidance'])
+
+    def test_the_title_can_be_fixed_by_copy_edit_but_not_humanize(self):
+        self.assertIn('"title"', desk_finish.COPYEDIT_JSON)
+        draft = self.draft()
+        title = draft['title']
+        found = {
+            'suggestions': [
+                {'part': 'title', 'before': 'synthetic', 'after': 'Synthetic', 'why': 'Case.'},
+                {'part': 'title', 'before': title, 'after': 'Two\nlines', 'why': ''},
+            ]
+        }
+        items, dropped, _ = desk_finish._read_copyedit(draft, found)
+        self.assertEqual([(i['part'], i['after']) for i in items], [('title', 'Synthetic')])
+        self.assertEqual(dropped, 1)
+        items, dropped, _ = desk_finish._read_humanize(draft, found)
+        self.assertEqual((items, dropped), ([], 2))
+        job = self.offer(
+            [{'part': 'title', 'before': title, 'after': 'A synthetic title, fixed'}],
+            kind='finish-copyedit',
+        )
+        self.act('apply', seen=self.seen, job=job, items=[{'id': 'p1'}])
+        self.assertEqual(self.draft()['title'], 'A synthetic title, fixed')
+        self.assertEqual(desk.versions(self.root, self.ident, 'title')[0]['source'], 'finishing')
+        # A title fix, suggested or edited, never brings image data into the title.
+        title = self.draft()['title']
+        pasted = 'A synthetic title ![][image9] [image9]: <' + IMAGE_TWO + '>'
+        job = self.offer(
+            [
+                {'part': 'title', 'before': title, 'after': pasted},
+                {'part': 'title', 'before': 'title', 'after': 'heading'},
+            ],
+            kind='finish-copyedit',
+        )
+        seen = self.draft()['revision']
+        with self.assertRaisesRegex(ValueError, 'Keep images out of the title'):
+            self.act('apply', seen=seen, job=job, items=[{'id': 'p1'}])
+        with self.assertRaisesRegex(ValueError, 'Keep images out of the title'):
+            self.act('apply', seen=seen, job=job, items=[{'id': 'p2', 'after': pasted}])
+        self.assertEqual(self.draft()['title'], title)
+        shown = self.act('apply', seen=seen, job=job, items=[{'id': 'p1'}, {'id': 'p2'}])
+        self.assertEqual(shown['finished'], {'applied': 1, 'left': ['p1']})
+        self.assertEqual(self.draft()['title'], 'A synthetic heading, fixed')
+        self.assertNotIn('data:image', json.dumps(self.draft()))
+
+    def test_a_text_found_twice_overlapping_is_not_once(self):
+        desk.save(self.root, self.ident, self.seen, self.second, 'Go, go, go, go.')
+        self.seen += 1
+        draft = self.draft()
+        self.assertEqual(draft['sections'][1]['text'].count('go, go'), 1)  # Overlaps twice.
+        self.assertFalse(desk_finish._once('Go, go, go, go.', 'go, go'))
+        self.assertTrue(desk_finish._once('Go, go, go, go.', 'Go, go'))
+        self.assertIsNone(desk_finish._located(draft, self.second, 'go, go'))
+        row = {'part': self.second, 'before': 'go, go', 'after': 'go', 'why': ''}
+        self.assertEqual(desk_finish._read_copyedit(draft, {'suggestions': [row]})[1], 1)
+        self.assertEqual(desk_finish._read_humanize(draft, {'suggestions': [row]})[1], 1)
+        claim = {'part': self.second, 'before': 'go, go', 'verdict': 'supported'}
+        self.assertEqual(desk_finish._read_facts(draft, {'claims': [claim]})[1], 1)
+        item = {'part': self.second, 'before': 'go, go', 'after': 'go'}
+        self.assertFalse(desk_finish.present(draft, item))
+        job = self.offer([item], kind='finish-copyedit')
+        with self.assertRaisesRegex(ValueError, 'no longer in this part'):
+            self.act('apply', seen=self.seen, job=job, items=[{'id': 'p1'}])
+        self.assertEqual(self.draft()['sections'][1]['text'], 'Go, go, go, go.')
+
+    def test_no_sources_are_needed_but_written_text_is(self):
+        self.assertEqual(self.draft()['sources'], [])
+        self.assertEqual(self.queue('copyedit')['kind'], 'finish-copyedit')
+        made = desk.create(self.root, {'title': 'Empty', 'way': 'topic', 'point': 'A point.'})
+        with self.assertRaisesRegex(ValueError, 'Write the draft first'):
+            desk_jobs.finish(self.root, made['id'], 1, 'copyedit')
+
+    def test_a_result_is_read_strictly(self):
+        draft = self.draft()
+
+        def settle(value):
+            job = {
+                'id': secrets.token_hex(16),
+                'kind': 'finish-copyedit',
+                'result': {'content': value if isinstance(value, str) else json.dumps(value)},
+                'metadata': {},
+            }
+            return desk_finish.settle(self.root, self.ident, draft, job)
+
+        for value in (
+            'Here are my edits.',
+            [1, 2],
+            {'edits': []},
+            {'suggestions': 'all of them'},
+            {'suggestions': [None, 3]},
+            {'suggestions': [{'part': ['x'], 'before': 'A.', 'after': 'B.'}]},
+            {'suggestions': [{'part': self.second, 'before': 'Their are two parser.'}]},
+        ):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'cannot read'):
+                settle(value)
+        self.assertNotIn('copyedit', desk_jobs.view(self.root, self.ident)['finishing'])
+        # Fenced JSON is read; an odd row among good ones is dropped and counted.
+        kept = settle(
+            '```json\n'
+            + json.dumps(
+                {
+                    'suggestions': [
+                        {'part': 7},
+                        self.fix('Their are two parser.', 'There are two parsers.'),
+                    ]
+                }
+            )
+            + '\n```'
+        )
+        self.assertEqual((len(kept['items']), kept['dropped']), (1, 1))
+        self.assertEqual(kept['kind'], 'finish-copyedit')
+
+    def test_a_before_not_in_its_part_and_other_odd_rows_are_dropped(self):
+        before = self.draft()
+        self.ready(
+            self.queue('copyedit'),
+            {
+                'suggestions': [
+                    self.fix('Their are two parser.', 'There are two parsers.', why='Agreement.'),
+                    self.fix('Not in the text.', 'X.'),
+                    self.fix('Their are two parser.', 'There are two parsers.', part=self.first),
+                    self.fix('Second text.', 'Y.', part='zzzzzzzz'),
+                    self.fix('Their are two parser.', 'There are two parsers!'),  # Twice.
+                    self.fix('An opening paragraph.', 'An opening paragraph.', part='opening'),
+                    self.fix('An opening paragraph.', '## A heading\n\nText.', part='opening'),
+                ]
+            },
+        )
+        self.assertEqual(self.draft()['revision'], before['revision'])
+        shown = self.shown('copyedit')
+        self.assertEqual(shown['dropped'], 6)
+        self.assertEqual(
+            [(i['part'], i['before'], i['after'], i['note'], i['flag']) for i in shown['items']],
+            [(self.second, 'Their are two parser.', 'There are two parsers.', 'Agreement.', '')],
+        )
+        self.assertTrue(shown['items'][0]['present'])
+
+    def test_a_changed_fact_code_or_shape_is_flagged(self):
+        self.ready(
+            self.queue('copyedit'),
+            {
+                'suggestions': [
+                    self.fix(
+                        'It reads 12 files in 3 seconds at Acme Labs.',
+                        'It reads 15 files in 3 seconds at Acme Labs.',
+                        part=self.first,
+                    ),
+                    self.fix('We leverage a robust parser.', 'We use a parser.', part=self.first),
+                    self.fix('Use `run --fast` to start it.', 'Use `run --slow` to start it.'),
+                    self.fix('Their are two parser.', 'There are two parsers.\n\n- One more.'),
+                ]
+            },
+        )
+        flags = [i['flag'] for i in self.shown('copyedit')['items']]
+        self.assertIn('a number', flags[0])
+        self.assertEqual(flags[1], '')
+        self.assertIn(desk_finish.STRUCTURE, flags[2])
+        self.assertIn(desk_finish.STRUCTURE, flags[3])
+
+    def test_a_fake_worker_runs_it_end_to_end_and_apply_keeps_a_version(self):
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(options)
+            return {
+                'content': json.dumps(
+                    {
+                        'suggestions': [
+                            self.fix('Their are two parser.', 'There are two parsers.'),
+                            self.fix(
+                                'We leverage a robust parser.',
+                                'We use a sturdy parser.',
+                                part=self.first,
+                            ),
+                        ]
+                    }
+                ),
+                'notes': '',
+            }
+
+        job = self.queue('copyedit')
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(calls[0]['web'], False)
+        self.assertTrue(tool_jobs.read(self.root, job['id'])['settled_at'])
+        self.assertEqual(self.draft()['revision'], self.seen, 'nothing lands before Apply')
+        shown = self.act('apply', seen=self.seen, job=job['id'], items=[{'id': 'p1'}])
+        self.assertEqual(shown['finished'], {'applied': 1, 'left': []})
+        self.assertEqual(
+            self.draft()['sections'][1]['text'],
+            'There are two parsers. Use `run --fast` to start it.',
+        )
+        kept = desk.versions(self.root, self.ident, self.second)[0]
+        self.assertEqual(kept['source'], 'finishing')
+        self.assertTrue(kept['text'].startswith('Their are two parser.'))
+        # Edit applies the person's own wording; Skip changes nothing in the draft.
+        revision = self.draft()['revision']
+        self.act('skip', job=job['id'], items=['p2'])
+        self.assertEqual(self.draft()['revision'], revision)
+        items = self.shown('copyedit')['items']
+        self.assertEqual([i['state'] for i in items], ['applied', 'skipped'])
+
+    def test_no_image_data_reaches_the_job(self):
+        from test_desk import GOOGLE as WITH_IMAGES
+
+        made = desk.create(self.root, {'manuscript': WITH_IMAGES})
+        shown = desk.dispatch(
+            self.root, 'finish', {'id': made['id'], 'seen': 1, 'tool': 'copyedit'}
+        )
+        job = tool_jobs.read(self.root, shown['working']['id'])
+        self.assertEqual(job['kind'], 'finish-copyedit')
+        self.assertNotIn('data:image', json.dumps(job['payload']))
+        self.assertNotIn('data:image', job['guidance'])
+        self.assertNotIn(IMAGE_TWO, json.dumps(job))
+        self.assertIn('![][image1]', job['payload']['opening'])
+        self.assertIn('![…][imageN]', job['guidance'])
 
 
 class VoiceTests(ToolCase):
@@ -1390,6 +1688,178 @@ class DeskGoogleTests(unittest.TestCase):
         again = self.act('google-plan', mode='auto')
         self.assertEqual(
             [(p['before'], p['after']) for p in again['proposals']], [('slow', 'very late')]
+        )
+
+
+class ImageFinishingTests(DeskCase):
+    """Finishing, the Google suggestion plan and the pre-publish check with images present."""
+
+    def test_a_dropped_or_altered_image_reference_changes_the_structure(self):
+        before = 'A paragraph.\n\n![][image1]\n\nAnother.'
+        self.assertEqual(desk_finish.changes_structure(before, before), '')
+        self.assertEqual(
+            desk_finish.changes_structure(before, 'A paragraph.\n\nAnother.'),
+            desk_finish.STRUCTURE,
+        )
+        self.assertEqual(
+            desk_finish.changes_structure(before, before.replace('![]', '![A chart]')),
+            desk_finish.STRUCTURE,
+        )
+        # Without counting paragraphs, as an alternative opening is compared, it still counts.
+        self.assertEqual(
+            desk_finish.changes_structure(before, 'A paragraph. Another.', paragraphs=False),
+            desk_finish.STRUCTURE,
+        )
+
+    def test_a_word_after_an_image_reference_is_not_taken_for_a_name(self):
+        before = 'Intro.\n\n![][image1]\n\nThe end.'
+        self.assertEqual(
+            desk_finish.changes_facts(before, 'Intro.\n\n![][image1]\n\nThat is all.'), ''
+        )
+        self.assertEqual(
+            desk_finish.changes_facts(
+                'See ![Diagram][image1] Here.', 'Look: ![Diagram][image1] Here.'
+            ),
+            '',
+        )
+        self.assertEqual(desk_finish._names('Intro ![Diagram][image1] Then [Acme] More'), {'Acme'})
+        self.assertNotIn('image1', desk_finish._names('Ask Acme ![][image1] now.'))
+        self.assertIn('a name', desk_finish.changes_facts('Ask Acme Labs.', 'Ask the lab.'))
+        self.assertIn(
+            'a name',
+            desk_finish.changes_facts(before, 'Intro.\n\n![][image1]\n\nThe end, at Acme.', True),
+        )
+
+    def test_a_change_only_to_an_image_reference_is_nothing_to_apply(self):
+        made = desk.create(self.root, {'manuscript': GOOGLE})
+        ident = made['id']
+        before = 'An opening paragraph.\n\n![][image1]'
+        offered = secrets.token_hex(16)
+        desk_finish.keep(
+            self.root,
+            ident,
+            offered,
+            'finish-copyedit',
+            [
+                {'part': 'opening', 'before': before, 'after': before.replace('![]', '![A chart]')},
+                {'part': 'opening', 'before': 'The end.', 'after': 'That is all.'},
+            ],
+        )
+        seen = desk.read(self.root, ident)['revision']
+        act = lambda **data: desk.dispatch(self.root, 'apply', {'id': ident, 'seen': seen, **data})  # noqa: E731
+        with self.assertRaisesRegex(ValueError, 'Nothing would change'):
+            act(job=offered, items=[{'id': 'p1'}])
+        self.assertEqual(desk.read(self.root, ident)['revision'], seen)
+        self.assertEqual(desk.versions(self.root, ident, 'opening'), [])
+        shown = act(job=offered, items=[{'id': 'p1'}, {'id': 'p2'}])
+        self.assertEqual(shown['finished'], {'applied': 1, 'left': ['p1']})
+        states = [i['state'] for i in desk_finish.read(self.root, ident, offered)['items']]
+        self.assertEqual(states, ['open', 'applied'])
+
+    def test_a_suggestion_that_drops_an_image_is_flagged_and_left_out_of_apply_all(self):
+        made = desk.create(self.root, {'manuscript': GOOGLE})
+        draft = desk.read(self.root, made['id'])
+        items, dropped, _ = desk_finish._read_humanize(
+            draft,
+            {
+                'suggestions': [
+                    {
+                        'part': 'opening',
+                        'before': 'An opening paragraph.\n\n![][image1]',
+                        'after': 'A first paragraph.',
+                        'why': 'Stock wording.',
+                    },
+                    {
+                        'part': 'opening',
+                        'before': 'The end.',
+                        'after': 'That is all.',
+                        'why': 'Flat.',
+                    },
+                ]
+            },
+        )
+        self.assertEqual(dropped, 0)
+        self.assertIn(desk_finish.STRUCTURE, items[0]['flag'])
+        self.assertEqual(items[1]['flag'], '')
+
+    def test_the_google_plan_reads_draft_md_with_its_images_as_the_doc_shows_them(self):
+        baseline = GOOGLE.replace('The end.', 'See ![][image1] here.\n\nThe end.')
+        body = baseline.replace('More text after', 'More words after').replace('here.', 'there.')
+        found, left, paragraphs = desk_finish.google_changes(baseline, body)
+        self.assertEqual(
+            sorted((f['before'], f['after']) for f in found), [('here', 'there'), ('text', 'words')]
+        )
+        self.assertEqual(left, 0)
+        self.assertNotIn('data:image', json.dumps([found, paragraphs]))
+        # An image moved or removed is made in the Doc by hand, never sent as words.
+        _, left = desk_finish.google_changes(baseline, baseline.replace('![][image2]\n\n', ''))[:2]
+        self.assertEqual(left, 1)
+
+    def test_the_prepublish_check_reads_images_sensibly(self):
+        import prepublish
+
+        # Synthetic data that happens to hold a placeholder word between base64 marks.
+        odd = 'data:image/png;base64,iVBORw0KGgo/TODO+AAAA/TK+AAAA'
+        manuscript = (
+            '# Images synthetic\n\nText.\n\n![][image1]\n\n![A chart][image2]\n\n![][missing]\n\n'
+            '[image1]: <' + odd + '>\n\n[image2]: <' + IMAGE_TWO + '>\n'
+        )
+        made = desk.create(self.root, {'manuscript': manuscript})
+        body = (self.folder(made['id']) / 'DRAFT.md').read_text()
+        self.assertIn('[image1]: <' + odd + '>', body)
+        codes = [f['code'] for f in prepublish.report(self.root, made['id'])['findings']]
+        self.assertNotIn('unfinished-note', codes)
+        self.assertEqual(codes.count('image-alt'), 2)  # image1 and the missing one
+        self.assertEqual(codes.count('image-source'), 1)  # a reference with no image
+
+
+class CopyEditTeamTests(TeamCase):
+    """Copy edit in a team workspace: waiting and skipped suggestions stay on this computer;
+    only an Apply is a decision, committed and shared."""
+
+    def test_settle_and_skip_leave_the_tree_clean_and_apply_is_shared(self):
+        import management
+        from studio_sync import gitstate, support
+
+        ident = self.made['id']
+        fix = {'part': self.part, 'before': 'First text.', 'after': 'The first text.'}
+
+        def worker(engine, payload, guidance, **options):
+            return {'content': json.dumps({'suggestions': [fix]}), 'notes': ''}
+
+        def run():
+            seen = management.view(self.root, 'desk', {'id': [ident]})['revision']
+            management.dispatch(
+                self.root, 'desk-finish', {'id': ident, 'seen': seen, 'tool': 'copyedit'}
+            )
+            tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+            return management.view(self.root, 'desk', {'id': [ident]})
+
+        remote = self.remote_commits()
+        shown = run()
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertEqual(self.remote_commits(), remote)
+        job = shown['finishing']['copyedit']['job']
+        management.dispatch(self.root, 'desk-skip', {'id': ident, 'job': job, 'items': ['p1']})
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertEqual(self.remote_commits(), remote)
+        shown = run()
+        management.dispatch(
+            self.root,
+            'desk-apply',
+            {
+                'id': ident,
+                'seen': shown['revision'],
+                'job': shown['finishing']['copyedit']['job'],
+                'items': [{'id': 'p1'}],
+            },
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertGreater(self.remote_commits(), remote)
+        self.assertEqual(self.remote_commits(), self.local_commits())
+        self.assertIn(
+            'The first text.',
+            support.git(self.remote, 'show', 'main:blogs/' + ident + '/DRAFT.md'),
         )
 
 

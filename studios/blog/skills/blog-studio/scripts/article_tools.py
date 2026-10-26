@@ -468,8 +468,10 @@ def request(root, data):
                 **voice,
                 'guide': (location / 'revisions' / str(voice['revision']) / 'VOICE.md').read_text(),
             }
+        import desk_images
+
         payload = {
-            'source': current['content'],
+            'source': desk_images.without(current['content']),  # Its images' data stays here.
             'voice': voice,
             'format': FORMATS[chosen],
             'target_words': length,

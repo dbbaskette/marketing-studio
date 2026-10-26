@@ -133,6 +133,7 @@ async function check(){
   await deskOutlineTab();
   await deskAddSource();
   await deskFinishing();
+  await deskImages();
   await oneNameEach();
   await deskStartOrder();
   await deskPasteAndUpload();
@@ -141,7 +142,7 @@ async function check(){
   await deskStartRecovery();
   await deskTakeOver();
   pageDefinesEveryElement();
-  const checks=['Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Proofread with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, proofread and tighten by default with no style and the opening included, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit previewed before and after with Apply, Edit, Skip and Apply all (a flagged fix left), Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, proofread and tighten by default with no style and the opening included, a line pointing to Copy edit to approve each fix first, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start asks what you are writing, then what you have, then sources and settings','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','element ids'];
@@ -3181,6 +3182,10 @@ async function deskPolishStart(){
   assert.deepEqual(first().children.filter(n=>n.tagName==='button').map(n=>n.textContent),['Proofread and tighten','Just give feedback','Reshape to fit a kind of post','Leave it as it is']);
   assert.deepEqual(pressed(),['Proofread and tighten'],'proofreading is the default');
   assert.ok(t.nodes().some(n=>n.textContent==='Spelling, grammar and wordy sentences are fixed throughout, with no headings added. Your text is kept as a version first.'));
+  // To approve each fix before it lands, the screen points to Copy edit in Finishing.
+  const hint='To approve each fix first, choose Leave it as it is, then use Copy edit in Finishing.';
+  const firstCard=()=>t.nodes().find(n=>n.tagName==='section'&&descendants(n).includes(first()));
+  assert.ok(descendants(firstCard()).some(n=>n.tagName==='p'&&n.textContent===hint),'the hint sits under the choices');
   // The first pass works on the opening too, so its card waits with the sections.
   assert.equal(t.f.run("sDeskWorkingIn({working:{kind:'desk-first-pass',part:'sections'}},'opening')"),true);assert.equal(t.f.run("sDeskWorkingIn({working:{kind:'desk-first-pass',part:'sections'}},'title')"),false);
   for(const kind of ['desk-outline','desk-draft'])assert.equal(t.f.run("sDeskWorkingIn({working:{kind:'"+kind+"',part:'sections'}},'opening')"),false,kind+' leaves the opening to type in');
@@ -3223,6 +3228,7 @@ async function deskPolishStart(){
   await t.click('Reshape to fit a kind of post');t.type('desk-kind','how-to');
   await t.click('Leave it as it is');
   assert.equal(t.byId('desk-kind'),undefined);
+  assert.ok(!t.nodes().some(n=>n.textContent===hint),'no hint once Leave it as it is is chosen');
   const picker=t.byId('files-input');picker.files=[{name:'facts.md',size:20,arrayBuffer:async()=>new TextEncoder().encode('Synthetic facts.').buffer}];await picker.listeners.change();
   assert.equal(fold('Check facts against your sources (optional)').open,true,'the fold stays open with a source in it');
   await t.submit();
@@ -3426,7 +3432,10 @@ async function deskFinishing(){
   assert.ok(panel(),'the panel is open');
   assert.match(nodes().find(n=>/desk-layout/.test(n.className)).className,/desk-finishing/);
   assert.match(descendants(panel()).find(n=>/desk-finish-head/.test(n.className)).className,/\bglass\b/,'transient chrome uses the material');
-  assert.deepEqual(descendants(panel()).filter(n=>n.className==='pick-card').map(n=>n.textContent),['Humanize','Apply a voice','Proofread','Check facts against sources','Headline and opening','Feedback without a rewrite','Before publishing']);
+  const tools=descendants(panel()).filter(n=>n.className==='pick-card').map(n=>n.textContent);
+  assert.deepEqual(tools,['Copy edit','Humanize','Quick check','Check facts against sources','Headline and opening','Feedback without a rewrite','Apply a voice','Before publishing']);
+  assert.ok(!tools.includes('Proofread'),'the mechanical check is Quick check, not Proofread');
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'),'Quick check says what it checks');
   assert.equal(descendants(panel()).find(n=>n.textContent==='Apply a voice').disabled,false);
   // 2. Humanize at medium: one job that writes no part, so every card stays editable.
   await inPanel('Humanize').listeners.click();
@@ -3500,9 +3509,49 @@ async function deskFinishing(){
   assert.ok(descendants(panel()).some(n=>n.textContent==='1 part that changes a fact, code or the part’s shape is left for you to check one by one.'));
   await inItem('p3','Skip').listeners.click();
   assert.deepEqual(last('/api/desk-skip'),{id:'desk-blog',job:view.finishing.voice.job,items:['p3']});
-  // 4. Proofread: at once, no job; Fix rewrites only the sentence.
+  // Copy edit: grammar and wording fixes, each previewed before and after, then applied,
+  // edited or skipped; Apply all leaves a flagged fix to check one by one.
   await inPanel('All tools').listeners.click();
-  await inPanel('Proofread').listeners.click();
+  await inPanel('Copy edit').listeners.click();
+  assert.equal(descendants(panel()).find(n=>/desk-finish-title/.test(n.className)).textContent,'Copy edit');
+  assert.ok(!descendants(panel()).some(n=>n.textContent==='Medium'),'no intensity to choose');
+  const seenCopy=view.revision;await inPanel('Find fixes').listeners.click();
+  assert.deepEqual(last('/api/desk-finish'),{id:'desk-blog',seen:seenCopy,tool:'copyedit'});
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Finding grammar, spelling and wording fixes…'));
+  view={...view,working:null,jobs:[{id:'f'+job,kind:'finish-copyedit',status:'ready',applied:true,error:''}],finishing:{...view.finishing,copyedit:finishSet('copyedit',[
+    {part:'aaaaaaaa',before:'Their are two parser.',after:'There are two parsers.',note:'Subject and verb agree.'},
+    {part:'bbbbbbbb',before:'Second text.',after:'The second text.'},
+    {part:'cccccccc',before:'Third text, 3 times.',after:'Third text, three times.',flag:'Check the facts: this changes a number.'},
+    {part:'title',before:'synthetic',after:'Synthetic',note:'Capital letter.'},
+  ])}};
+  f.set('next',view);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
+  assert.ok(descendants(panel()).some(n=>n.textContent==='4 suggestions · 4 to review.'));
+  assert.ok(descendants(item('p4')).some(n=>n.textContent==='In the title'),'the title can be fixed too');
+  assert.deepEqual(descendants(item('p1')).filter(n=>n.tagName==='h4').map(n=>n.textContent),['Before','After']);
+  assert.ok(descendants(item('p1')).some(n=>n.tagName==='del'&&n.textContent==='Their'));
+  assert.ok(descendants(item('p1')).some(n=>n.tagName==='ins'&&n.textContent==='There'));
+  assert.ok(descendants(item('p1')).some(n=>n.textContent==='Subject and verb agree.'),'each fix says why');
+  assert.ok(descendants(item('p3')).some(n=>n.textContent==='Check the facts: this changes a number.'),'a changed fact is flagged');
+  assert.ok(inPanel('Apply all (3)'),'Apply all leaves the flagged fix');
+  await inItem('p1','Apply').listeners.click();
+  assert.deepEqual(last('/api/desk-apply'),{id:'desk-blog',seen:seenCopy,job:view.finishing.copyedit.job,items:[{id:'p1'}]});
+  await inItem('p2','Edit').listeners.click();
+  const fixBox=descendants(item('p2')).find(n=>n.tagName==='textarea');assert.equal(fixBox.value,'The second text.');
+  fixBox.value='My second text.';fixBox.listeners.input();
+  assert.ok(descendants(item('p2')).some(n=>n.tagName==='ins'&&/My/.test(n.textContent)),'the After side follows the edit');
+  await inItem('p2','Apply this').listeners.click();
+  assert.deepEqual(last('/api/desk-apply').items,[{id:'p2',after:'My second text.'}]);
+  await inItem('p3','Skip').listeners.click();
+  assert.deepEqual(last('/api/desk-skip'),{id:'desk-blog',job:view.finishing.copyedit.job,items:['p3']});
+  view={...view,finishing:{...view.finishing,copyedit:finishSet('copyedit',[{part:'aaaaaaaa',before:'A.',after:'B.'},{part:'bbbbbbbb',before:'C.',after:'D.'},{part:'cccccccc',before:'E 1.',after:'F 2.',flag:'Check the facts: this changes a number.'}])}};
+  f.set('next',view);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
+  await inPanel('Apply all (2)').listeners.click();
+  assert.deepEqual(last('/api/desk-apply').items,[{id:'p1'},{id:'p2'}]);
+  assert.ok(descendants(panel()).some(n=>n.textContent==='1 flagged suggestion is left for you to check one by one.'));
+  await inPanel('All tools').listeners.click();
+  assert.ok(descendants(panel()).some(n=>n.className==='pick-card'&&n.textContent==='Copy edit'));
+  // 4. Quick check: at once, no job; Fix rewrites only the sentence.
+  await inPanel('Quick check').listeners.click();
   assert.ok(requests.some(r=>r.url==='/api/desk-proofread?id=desk-blog'));
   const says=descendants(panel()).find(n=>/Fix rewrites only the sentence/.test(n.textContent)).textContent;
   assert.ok(says.startsWith('Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'),says);
@@ -3616,6 +3665,71 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
   f.run('document.activeElement=null');await kept.listeners.focusout();for(const fn of t.timers.splice(0))await fn();
   assert.notEqual(panel(),kept,'it redraws once focus leaves the panel');
   f.run("window.matchMedia=undefined");
+}
+// Images on the desk: a part's text holds only its short references; the images are read
+// once, shown as thumbnails under the parts that use them, and written back for Copy and
+// Download. No form field, autosave or other request carries their data.
+async function deskImages(){
+  const requests=[],timers=[],uri='data:image/png;base64,iVBORw0KGgoSYNTHETIC',pasted='data:image/png;base64,iVBORw0KGgoPASTED';
+  const opening='An opening.\n\n![][image1]\n\nAfter it.';
+  let view=deskView({opening,sections:[{id:'aaaaaaaa',heading:'First part',brief:'',text:'![A chart][image1]\n\nFirst text.'},{id:'bbbbbbbb',heading:'Second part',brief:'',text:'No image here.'},{id:'cccccccc',heading:'Third part',brief:'',text:'Lost.\n\n![][image9]'}],images:[{label:'image1',alt:'',title:'',key:'k1',size:uri.length}],missing_images:['image9'],markdown:'# A synthetic title\n\n'+opening+'\n'});
+  const f=fixture((url,options)=>{
+    const body=options?.body||'',data=body?JSON.parse(body):null;requests.push({url,body});
+    if(url.startsWith('/api/desk-images?'))return {id:'desk-blog',images:[{key:'k1',uri},{key:'k2',uri:pasted}]};
+    if(url.startsWith('/api/desk?'))return view;
+    if(url==='/api/desk-save'){
+      // The server keeps a pasted image beside the text and answers with its reference.
+      const text=data.text.replace('![]('+pasted+')','![][image2]');
+      view={...view,revision:view.revision+1,images:text.includes('image2')?[...view.images,{label:'image2',alt:'',title:'',key:'k2',size:pasted.length}]:view.images,sections:view.sections.map(s=>s.id===data.part?{...s,text}:s)};return view;
+    }
+    if(url==='/api/desk-share')return {id:'desk-blog',shared:false};
+    return {items:[],total:0};
+  });
+  f.loadRunner();f.set('setTimeout',fn=>{timers.push(fn);return timers.length;});f.set('clearTimeout',()=>{});
+  const settle=()=>new Promise(r=>setImmediate(r)),tick=async()=>{for(const fn of timers.splice(0))await fn();await settle();};
+  const nodes=()=>descendants(f.get('studio-page')),card=part=>nodes().find(n=>n.dataset?.part===part),thumbs=part=>descendants(card(part)).filter(n=>n.tagName==='img');
+  const fields=()=>nodes().filter(n=>['textarea','input'].includes(n.tagName));
+  await f.run("sRoute('desk','desk-blog')");await settle();
+  // The text shows each reference as typed, and no field holds image data.
+  assert.equal(descendants(card('opening')).find(n=>n.tagName==='textarea').value,opening);
+  assert.ok(fields().length>3&&fields().every(n=>!/data:image/.test(n.value||'')),'no form field holds image data');
+  // A thumbnail under each part that refers to an image, with its alt text, read once.
+  assert.equal(thumbs('opening').length,1);assert.equal(thumbs('opening')[0].src,uri);assert.equal(thumbs('opening')[0].alt,'Image image1');
+  assert.equal(thumbs('aaaaaaaa')[0].alt,'A chart');assert.equal(thumbs('aaaaaaaa')[0].src,uri);
+  assert.equal(thumbs('bbbbbbbb').length,0);assert.equal(thumbs('title').length,0);
+  // An image the text names but that is kept nowhere is said to be missing, in its place.
+  assert.equal(thumbs('cccccccc').length,0);
+  assert.ok(descendants(card('cccccccc')).some(n=>n.textContent==='Image missing'));
+  assert.ok(descendants(card('cccccccc')).some(n=>n.tagName==='figcaption'&&n.textContent==='image9'));
+  assert.equal(requests.filter(r=>r.url.startsWith('/api/desk-images?')).length,1);
+  // Typing saves the references only; drawing the desk again reads no image again.
+  const text=descendants(card('aaaaaaaa')).find(n=>n.tagName==='textarea');text.value='![A chart][image1]\n\nFirst text, edited.';text.listeners.input();await tick();
+  const saved=requests.filter(r=>r.url==='/api/desk-save');assert.equal(saved.length,1);assert.doesNotMatch(saved[0].body,/data:image/);
+  await f.run('sDeskRender(studio.desk)');await settle();
+  assert.equal(thumbs('aaaaaaaa')[0].src,uri);assert.equal(requests.filter(r=>r.url.startsWith('/api/desk-images?')).length,1);
+  // An image pasted as data is shown as its reference once saved, with its thumbnail.
+  const second=descendants(card('bbbbbbbb')).find(n=>n.tagName==='textarea');second.value='No image here.\n\n![]('+pasted+')';second.listeners.input();await tick();
+  assert.equal(descendants(card('bbbbbbbb')).find(n=>n.tagName==='textarea').value,'No image here.\n\n![][image2]');
+  assert.equal(thumbs('bbbbbbbb')[0].src,pasted);
+  assert.ok(fields().every(n=>!/data:image/.test(n.value||'')));
+  // Copy and Download write the images back at the end of the Markdown.
+  const all=()=>[...f.nodes.values()].flatMap(n=>[n,...descendants(n)]);
+  f.run('sDownload=async value=>{window.downloaded=value;}');
+  await all().find(n=>n.tagName==='button'&&n.textContent==='Download').listeners.click();
+  assert.equal(f.run('window.downloaded.content'),view.markdown.replace(/\n$/,'')+'\n\n[image1]: <'+uri+'>\n\n[image2]: <'+pasted+'>\n');
+  f.run("navigator={clipboard:{writeText:async value=>{window.copied=value;}}}");
+  await all().find(n=>n.tagName==='button'&&n.textContent==='Copy').listeners.click();
+  assert.equal(f.run('window.copied'),f.run('window.downloaded.content'));
+  // An image whose data cannot be read is left out of Copy and Download, which say so.
+  f.set('lost',{label:'image5',alt:'',title:'',key:'k5',size:9});f.run('studio.desk.view={...studio.desk.view,images:[...studio.desk.view.images,lost]}');
+  await all().find(n=>n.tagName==='button'&&n.textContent==='Download').listeners.click();
+  assert.equal(f.run('window.downloaded.content'),view.markdown.replace(/\n$/,'')+'\n\n[image1]: <'+uri+'>\n\n[image2]: <'+pasted+'>\n');
+  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Downloaded without image9, image5: their images could not be read.'),descendants(f.get('toasts')).map(e=>e.textContent).join('|'));
+  await all().find(n=>n.tagName==='button'&&n.textContent==='Copy').listeners.click();
+  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Markdown copied without image9, image5: their images could not be read.'));
+  // Only the paste itself carried image data; every autosave after it carries references.
+  assert.ok(requests.filter(r=>/data:image/.test(r.body)).every(r=>r.url==='/api/desk-save'&&r.body.includes(pasted)));
+  assert.ok(requests.filter(r=>r.url!=='/api/desk-save').every(r=>!/data:image/.test(r.body)));
 }
 async function deskAddSource(){
   let view=deskView();

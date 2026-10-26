@@ -5,7 +5,9 @@ for. The worker settles a result as soon as it is ready (tool_jobs.once calls `e
 lands only while that text is unchanged, with the text it replaces kept as a version first,
 and in a team workspace it is then recorded as a decision (`share`). A result an older
 process finished is settled by the next desk request. Like desk.py, every function except
-`share` expects the caller to hold the studio lock.
+`share` expects the caller to hold the studio lock. A job never carries image data: a part's
+text holds only its image references (desk_images), every payload is scrubbed of any data a
+source brings, and a result keeps the references the text had.
 """
 
 import json
@@ -17,6 +19,7 @@ from pathlib import Path
 
 import blog_runner
 import desk
+import desk_images
 import studio
 import tool_jobs
 
@@ -29,13 +32,21 @@ KINDS = (
     'desk-outline',
     'desk-draft',
     # Finishing (desk_finish.py): each proposes changes the person applies, edits or skips.
+    'finish-copyedit',
     'finish-humanize',
     'finish-facts',
     'finish-headline',
     'finish-feedback',
     'finish-voice',
 )  # A blog's own desk jobs; desk-angles runs before there is a blog.
-FINISH = ('finish-humanize', 'finish-facts', 'finish-headline', 'finish-feedback', 'finish-voice')
+FINISH = (
+    'finish-copyedit',
+    'finish-humanize',
+    'finish-facts',
+    'finish-headline',
+    'finish-feedback',
+    'finish-voice',
+)
 ACTIVE = ('queued', 'working')
 ACTIONS = {
     'rephrase': 'Rewrite the passage in fresh words with the same meaning.',
@@ -88,6 +99,16 @@ GAPS = 50
 
 def _guide(name):
     return (blog_runner.REFERENCES / 'modules' / name).read_text().rstrip()
+
+
+def desk_check(name):
+    """A manuscript editor check as a desk job reads it: the desk is tone-only, so there are
+    house rules but no pinned author rules."""
+    import manuscript_editor
+
+    return manuscript_editor.CHECKS[name].replace(
+        'the pinned author and house rules', 'the house rules'
+    )
 
 
 INDEXED = 60  # desk jobs a blog's index names, newest last
@@ -275,6 +296,8 @@ def _context(root, draft, length=False):
             '\nThe documents in examples show the kind of post wanted; take their shape, '
             'not their facts.'
         )
+    if draft.get('images'):
+        guidance += '\n' + desk_images.GUIDANCE
     return extra, guidance
 
 
@@ -296,7 +319,7 @@ def _create(root, ident, kind, payload, guidance, meta):
         root,
         secrets.token_hex(16),
         kind,
-        payload,
+        desk_images.scrubbed(payload),  # A source's image data never reaches a job.
         guidance,
         basis=None,
         metadata={'article': ident, 'desk': meta},
@@ -634,7 +657,7 @@ def angles(root, data):
         root,
         secrets.token_hex(16),
         'desk-angles',
-        payload,
+        desk_images.scrubbed(payload),
         guidance,
         basis=None,
         metadata={'article': None, 'desk': {'operation': data['operation']}},
@@ -882,6 +905,7 @@ def _apply_draft(root, ident, draft, job, result):
     found = desk.split(text)
     if not found['sections']:
         raise ValueError('The draft came back without its ## sections. Write it again.')
+    images = {**(draft.get('images') or {}), **found['images']}
     outline, taken = draft['sections'], {s['id'] for s in draft['sections']}
     # Each written section goes with the outline section of the same heading, then with the
     # one in its place, so its id, brief and History follow the right text.
@@ -898,13 +922,17 @@ def _apply_draft(root, ident, draft, job, result):
             used.add(outline[at]['id'])
     merged = []
     for at, written in enumerate(found['sections']):
-        desk.checked_text('opening', written['text'])
+        was = planned[at]['text'] if planned[at] else ''
+        # Image data the text kept as text must come back; a part with none may be new text.
+        text = desk_images.restored(was, written['text'], strict=desk_images.holds(was))
+        text = desk_images.kept(was, text, images)
+        desk.checked_text('opening', text)
         merged.append(
             {
                 'id': planned[at]['id'] if planned[at] else desk._id(taken),
                 'heading': written['heading'][:200],
                 'brief': planned[at].get('brief', '') if planned[at] else '',
-                'text': written['text'],
+                'text': text,
             }
         )
     merged += [s for s in outline if s['id'] not in used]  # Left out: they stay as they were.
@@ -914,11 +942,16 @@ def _apply_draft(root, ident, draft, job, result):
             desk.keep(root, ident, section['id'], before[section['id']], 'draft')
     typed = fingerprint(draft['opening']) != job['metadata']['desk'].get('opening')
     if found['opening'] and not typed:  # An opening typed meanwhile is the person's.
-        desk.checked_text('opening', found['opening'])
-        if draft['opening'] and draft['opening'] != found['opening']:
+        opening = desk_images.restored(
+            draft['opening'], found['opening'], strict=desk_images.holds(draft['opening'])
+        )
+        opening = desk_images.kept(draft['opening'], opening, images)
+        desk.checked_text('opening', opening)
+        if draft['opening'] and draft['opening'] != opening:
             desk.keep(root, ident, 'opening', draft['opening'], 'draft')
-        draft['opening'] = found['opening']
+        draft['opening'] = opening
     draft['sections'] = merged
+    draft['images'] = images
     _merge_gaps(draft, result)
     return desk._write(root, ident, draft, [s['id'] for s in merged] + ['opening', 'outline'])
 
@@ -1458,11 +1491,10 @@ def first_pass(root, ident, seen, choice):
             'This draft is too long for one first pass. Edit it section by section: a note '
             'on each section, or a note for the whole draft.'
         )
-    import manuscript_editor
 
     extra, shared = _context(root, draft, length=choice == 'reshape')
     rule = (
-        TIGHTEN + ' ' + manuscript_editor.CHECKS['copyedit'] + '\n\n' + _guide('desk-edit.md')
+        TIGHTEN + ' ' + desk_check('copyedit') + '\n\n' + _guide('desk-edit.md')
         if choice == 'tighten'
         else RESHAPE
     )
@@ -1514,6 +1546,20 @@ def _opening_text(text):
     text = _clean(text)
     first, _, rest = text.partition('\n')
     return rest.strip() if desk.TITLE.fullmatch(first.strip()) else text
+
+
+def _landed(draft, before, text):
+    """A returned text as it lands: each token for image data kept as text (in code, say)
+    put back as that data, and refused when one was lost or changed (desk_images.restored);
+    any image data in it moved to the draft's images under labels of its own; and the image
+    references `before` had kept: one left out goes back where it was, one changed or made
+    up is taken out (desk_images.kept)."""
+    text = desk_images.restored(before, text)
+    own = set()
+    text, draft['images'] = desk_images.take(
+        text, draft.get('images'), rename=True, previous=before, touched=own
+    )
+    return desk_images.kept(before, text, draft['images'], own)
 
 
 def _no_heading(text):
@@ -1572,7 +1618,7 @@ def _apply(root, ident, draft, job):
         if part == 'opening' and kind == 'desk-revise-all':
             if fingerprint(draft['opening']) != meta.get('basis'):
                 raise ValueError(STALE)
-            text = _opening_text(content)
+            text = _landed(draft, draft['opening'], _opening_text(content))
             _no_heading(text)
             desk.checked_text(part, text)
             desk.keep(root, ident, part, draft['opening'], 'revise-all')
@@ -1585,7 +1631,7 @@ def _apply(root, ident, draft, job):
             raise ValueError(STALE) from None
         if fingerprint(section['text']) != meta.get('basis'):
             raise ValueError(STALE)
-        text = _clean(content, section['heading'])
+        text = _landed(draft, section['text'], _clean(content, section['heading']))
         _no_heading(text)
         desk.checked_text(part, text)
         desk.keep(
@@ -1622,6 +1668,8 @@ def _apply(root, ident, draft, job):
         if part == 'title':
             replacement = ' '.join(replacement.split())
         updated = whole[:at] + lead + replacement + trail + whole[at + len(passage) :]
+        if part != 'title':
+            updated = _landed(draft, whole, updated)
         _no_heading(replacement)
         desk.checked_text(part, updated)
         desk.keep(root, ident, part, whole, 'selection')
@@ -1647,6 +1695,9 @@ def _apply(root, ident, draft, job):
             section = sections[item['id']]
             before, text = section['text'], _clean(item['text'], section['heading'])
         if not text or text == before:
+            continue
+        text = _landed(draft, before, text)
+        if text == before:
             continue
         if item['id'] == 'opening' and meta.get('action') == 'reshape' and not sections:
             # Reshaping a draft with no headings may divide it into sections.
@@ -1809,6 +1860,15 @@ def _row(job):
     }
 
 
+def images_view(root, ident):
+    """The data of a desk blog's images, which the page reads once and keeps; the desk view
+    lists them by key only, so a poll never carries them."""
+    desk.read(root, ident)
+    # A record cleaned here but not written (another computer drives it) is served as cleaned.
+    data = {**desk.cleaned_data(root, ident), **desk._data(root, ident)}
+    return {'id': ident, 'images': desk_images.served(data)}
+
+
 def view(root, ident):
     """The desk as the page reads it: the draft, its Markdown, its jobs and version counts."""
     import desk_finish
@@ -1849,8 +1909,17 @@ def view(root, ident):
             'problems': tally.get('problems', []),
         }
     return {
-        **draft,
-        'markdown': desk.join(draft),
+        # The images are listed without their data, read once from `images_view`.
+        **{key: value for key, value in draft.items() if key != 'images'},
+        'images': desk_images.shown(draft),
+        # Images the text names that are kept nowhere: the page says each is missing.
+        'missing_images': desk_images.missing(
+            draft,
+            set(desk._held(root, ident)) | set(desk.cleaned_data(root, ident))
+            if draft.get('images')
+            else None,
+        ),
+        'markdown': desk.join(draft, images=False),
         'jobs': rows,
         'chain': chain,
         'working': next((row for row in reversed(rows) if row['busy']), None),

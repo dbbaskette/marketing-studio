@@ -1,6 +1,7 @@
 """The desk record: a draft as title, opening and sections, with versions."""
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
+import json
 import os
 import tempfile
 import unittest
@@ -811,6 +812,380 @@ class MoreRecordTests(DeskCase):
     def test_a_draft_longer_than_a_job_can_return_is_refused(self):
         with self.assertRaisesRegex(ValueError, 'up to 200,000 characters'):
             desk.create(self.root, {'title': 'T', 'manuscript': 'x' * 200_001})
+
+
+def png(red, green, blue, size=2):
+    """A tiny, real PNG as a data URI: synthetic image data for the image tests."""
+    import base64
+    import struct
+    import zlib
+
+    def chunk(kind, data):
+        return (
+            struct.pack('>I', len(data))
+            + kind
+            + data
+            + struct.pack('>I', zlib.crc32(kind + data) & 0xFFFFFFFF)
+        )
+
+    rows = b''.join(b'\x00' + bytes([red, green, blue]) * size for _ in range(size))
+    data = (
+        b'\x89PNG\r\n\x1a\n'
+        + chunk(b'IHDR', struct.pack('>IIBBBBB', size, size, 8, 2, 0, 0, 0))
+        + chunk(b'IDAT', zlib.compress(rows))
+        + chunk(b'IEND', b'')
+    )
+    return 'data:image/png;base64,' + base64.b64encode(data).decode()
+
+
+IMAGE_ONE = png(200, 40, 40)
+IMAGE_TWO = png(40, 40, 200, size=3)
+# As a Google Doc's Markdown export writes images: a short reference where each sits, and a
+# reference-style definition with its base64 data at the end.
+OPENING = (
+    '**A bold lead line**\n\nAn opening paragraph.\n\n![][image1]\n\n'
+    'More text after the image.\n\n![][image2]\n\nThe end.'
+)
+DEFINITIONS = '[image1]: <' + IMAGE_ONE + '>\n\n[image2]: <' + IMAGE_TWO + '>'
+GOOGLE = '# Images synthetic\n\n' + OPENING + '\n\n' + DEFINITIONS + '\n'
+SECTIONED = (
+    '# Sectioned\n\nOpen.\n\n## One\n\n![A diagram][image1]\n\nText one.\n\n## Two\n\n'
+    'Text two.\n\n![][image2]\n\n' + DEFINITIONS + '\n'
+)
+
+
+def uris(images):
+    """{label: (data, alt)} of images as split finds them, with their data still in hand."""
+    return {label: (entry['uri'], entry['alt']) for label, entry in images.items()}
+
+
+def stored(case, ident):
+    """The image data a desk blog keeps in desk/images.json, by label."""
+    target = case.folder(ident) / 'desk' / 'images.json'
+    return json.loads(target.read_text()) if target.is_file() else {}
+
+
+class ImageSplitJoinTests(unittest.TestCase):
+    def test_definitions_leave_the_text_and_references_stay_where_they_sit(self):
+        found = desk.split(GOOGLE)
+        self.assertEqual(found['opening'], OPENING)
+        self.assertNotIn('data:image', found['opening'])
+        self.assertEqual(
+            uris(found['images']), {'image1': (IMAGE_ONE, ''), 'image2': (IMAGE_TWO, '')}
+        )
+
+    def test_join_writes_the_definitions_back_at_the_end_exactly(self):
+        self.assertEqual(desk.join(desk.split(GOOGLE)), GOOGLE)
+        sectioned = desk.split(SECTIONED)
+        self.assertEqual(sectioned['sections'][1]['text'], 'Text two.\n\n![][image2]')
+        self.assertEqual(sectioned['images']['image1']['alt'], 'A diagram')
+        self.assertEqual(desk.join(sectioned), SECTIONED)
+        # Without the images, as the page reads it: the text only.
+        self.assertNotIn('data:image', desk.join(sectioned, images=False))
+        self.assertTrue(desk.join(sectioned, images=False).endswith('![][image2]\n'))
+
+    def test_an_inline_data_image_becomes_a_reference_and_a_link_stays(self):
+        text = (
+            '# T\n\nSee ![Chart](' + IMAGE_ONE + ') here, and ![Logo](https://example.com/l.png)'
+            '.\n\n![Again](' + IMAGE_ONE + ')\n'
+        )
+        found = desk.split(text)
+        self.assertEqual(
+            found['opening'],
+            'See ![Chart][image1] here, and ![Logo](https://example.com/l.png).\n\n'
+            '![Again][image1]',
+        )
+        self.assertEqual(uris(found['images']), {'image1': (IMAGE_ONE, 'Chart')})
+        self.assertEqual(
+            desk.join(found), desk.join(found, images=False) + '\n[image1]: <' + IMAGE_ONE + '>\n'
+        )
+
+    def test_a_new_label_never_takes_one_the_text_uses(self):
+        text = '![x][image1]\n\n![y](' + IMAGE_TWO + ')\n\n[image1]: https://example.com/a.png\n'
+        found = desk.split(text, title='T')
+        self.assertIn('![y][image2]', found['opening'])
+        self.assertIn('[image1]: https://example.com/a.png', found['opening'])
+        self.assertEqual(list(found['images']), ['image2'])
+
+    def test_a_definition_inside_code_is_text(self):
+        text = '# T\n\n```\n[image1]: <' + IMAGE_ONE + '>\n```\n'
+        found = desk.split(text)
+        self.assertIn('data:image', found['opening'])
+        self.assertEqual(found.get('images') or {}, {})
+        self.assertEqual(desk.join(found), text)
+
+
+class ImageRecordTests(DeskCase):
+    def make_images(self, manuscript=GOOGLE):
+        return desk.create(self.root, {'title': 'Images synthetic', 'manuscript': manuscript})
+
+    def test_create_keeps_the_images_beside_the_text_and_DRAFT_md_has_them(self):
+        made = self.make_images()
+        self.assertEqual(made['opening'], OPENING)
+        self.assertEqual(set(made['images']), {'image1', 'image2'})
+        directory = self.folder(made['id'])
+        self.assertEqual((directory / 'DRAFT.md').read_text(), GOOGLE)
+        self.assertEqual((directory / 'ORIGINAL.md').read_text(), GOOGLE)
+        # The data is kept in its own file; the draft record holds labels, alt text and keys.
+        self.assertNotIn('data:image', (directory / 'desk' / 'draft.json').read_text())
+        self.assertEqual(stored(self, made['id']), {'image1': IMAGE_ONE, 'image2': IMAGE_TWO})
+        self.assertEqual(
+            set(desk.read(self.root, made['id'])['images']['image1']), {'alt', 'key', 'size'}
+        )
+
+    def test_a_save_keeps_the_images_and_a_pasted_one_moves_out(self):
+        made = self.make_images()
+        typed = OPENING.replace('The end.', 'The end, edited.')
+        saved = desk.save(self.root, made['id'], 1, 'opening', typed)
+        self.assertEqual(saved['opening'], typed)
+        body = (self.folder(made['id']) / 'DRAFT.md').read_text()
+        self.assertIn('The end, edited.\n\n' + DEFINITIONS + '\n', body)
+        three = png(10, 200, 10)
+        saved = desk.save(self.root, made['id'], 2, 'opening', typed + '\n\n![New](' + three + ')')
+        self.assertTrue(saved['opening'].endswith('![New][image3]'))
+        self.assertEqual(stored(self, made['id'])['image3'], three)
+        self.assertNotIn('data:image', json_text(desk.versions(self.root, made['id'], 'opening')))
+
+    def test_part_and_draft_limits_count_text_without_image_data(self):
+        big = 'data:image/png;base64,' + 'A' * 300_000
+        made = desk.create(
+            self.root,
+            {'title': 'T', 'manuscript': 'Short text.\n\n![][image1]\n\n[image1]: <' + big + '>'},
+        )
+        self.assertEqual(made['opening'], 'Short text.\n\n![][image1]')
+        saved = desk.save(
+            self.root, made['id'], 1, 'opening', 'Longer text.\n\n![](' + big[:-5] + 'B' * 5 + ')'
+        )
+        self.assertIn('![][image2]', saved['opening'])
+        with self.assertRaisesRegex(ValueError, 'up to 200,000 characters'):
+            desk.create(self.root, {'title': 'T', 'manuscript': 'x' * 200_001})
+
+    def test_images_have_their_own_caps_with_a_readable_refusal(self):
+        huge = 'data:image/png;base64,' + 'A' * (5 * 1024 * 1024)
+        with self.assertRaisesRegex(ValueError, 'larger than 5 MB'):
+            desk.create(self.root, {'title': 'T', 'manuscript': '![][a]\n\n[a]: <' + huge + '>'})
+        parts = ''.join('![][i%d]\n\n' % n for n in range(4)) + '\n\n'.join(
+            '[i%d]: <data:image/png;base64,%s>' % (n, chr(65 + n) * (4 * 1024 * 1024))
+            for n in range(4)
+        )
+        with self.assertRaisesRegex(ValueError, 'more than 12 MB together'):
+            desk.create(self.root, {'title': 'T', 'manuscript': parts})
+
+    def test_history_shows_a_version_without_image_data_and_restore_keeps_the_images(self):
+        made = self.make_images()
+        target = self.folder(made['id']) / 'desk' / 'versions' / 'opening.jsonl'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # A version kept before images moved out of the text: definitions and all.
+        older = 'Older opening.\n\n![][image1]\n\n[image1]: <' + IMAGE_TWO + '>'
+        target.write_text(json.dumps({'at': studio.now(), 'source': 'revise-all', 'text': older}))
+        shown = desk.versions(self.root, made['id'], 'opening')
+        self.assertEqual(shown[0]['text'], 'Older opening.\n\n![][image1]')
+        restored = desk.restore(self.root, made['id'], 1, 'opening', 0)
+        # Its image1 is the data the draft keeps as image2: the reference follows the data,
+        # and the image1 other text refers to is left as it is.
+        self.assertEqual(restored['opening'], 'Older opening.\n\n![][image2]')
+        self.assertEqual(stored(self, made['id']), {'image1': IMAGE_ONE, 'image2': IMAGE_TWO})
+
+
+def owner_shaped(case, made):
+    """Rewrite a desk record as one kept before images moved out of the text: revision 2,
+    an opening of references and definitions, no sections, gaps, and a version with data."""
+    directory = case.folder(made['id'])
+    draft = studio.read_json(directory / 'desk' / 'draft.json')
+    draft.pop('images', None)
+    draft.update(
+        revision=2,
+        opening=OPENING + '\n\n' + DEFINITIONS,
+        sections=[],
+        changed={'opening': 2},
+        gaps=['A synthetic gap.'],
+    )
+    studio.write_json(directory / 'desk' / 'draft.json', draft)
+    body = '# ' + draft['title'] + '\n\n' + draft['opening'] + '\n'
+    (directory / 'DRAFT.md').write_text(body)
+    record = studio.read_json(directory / 'session.json')
+    record['artifact_hashes']['draft'] = studio.digest(body.encode())
+    studio.write_json(directory / 'session.json', record)
+    (directory / 'desk' / 'versions').mkdir(parents=True, exist_ok=True)
+    (directory / 'desk' / 'versions' / 'opening.jsonl').write_text(
+        json.dumps({'at': studio.now(), 'source': 'revise-all', 'text': draft['opening']}) + '\n'
+    )
+    return body
+
+
+def json_text(value):
+    return json.dumps(value, ensure_ascii=False)
+
+
+class ImageMigrationTests(DeskCase):
+    def test_an_older_record_is_cleaned_once_as_it_is_read(self):
+        made = self.make()
+        body = owner_shaped(self, made)
+        directory = self.folder(made['id'])
+        draft = desk.read(self.root, made['id'])
+        self.assertEqual(draft['opening'], OPENING)
+        self.assertEqual(set(draft['images']), {'image1', 'image2'})
+        # No new revision and no part marked changed: no open form is refused for it.
+        self.assertEqual((draft['revision'], draft['changed']), (2, {'opening': 2}))
+        kept = studio.read_json(directory / 'desk' / 'draft.json')
+        self.assertEqual(kept['opening'], OPENING)
+        self.assertEqual((directory / 'DRAFT.md').read_text(), body)
+        before = (directory / 'desk' / 'draft.json').read_bytes()
+        desk.read(self.root, made['id'])
+        self.assertEqual((directory / 'desk' / 'draft.json').read_bytes(), before)
+
+    def test_a_form_open_before_the_cleaning_still_saves(self):
+        made = self.make()
+        owner_shaped(self, made)
+        saved = desk.save(self.root, made['id'], 2, 'title', 'Renamed')
+        self.assertEqual(saved['revision'], 3)
+        saved = desk.save(self.root, made['id'], 2, 'opening', OPENING + ' More.')
+        self.assertEqual(saved['opening'], OPENING + ' More.')
+        self.assertIn(DEFINITIONS, (self.folder(made['id']) / 'DRAFT.md').read_text())
+
+    def test_image_data_inside_code_is_text_and_reading_writes_nothing(self):
+        made = desk.create(
+            self.root, {'title': 'T', 'manuscript': '```\n[image1]: <' + IMAGE_ONE + '>\n```'}
+        )
+        target = self.folder(made['id']) / 'desk' / 'draft.json'
+        before = target.read_bytes()
+        self.assertIn('data:image', desk.read(self.root, made['id'])['opening'])
+        self.assertEqual(target.read_bytes(), before)
+
+    def test_without_the_lock_a_read_is_cleaned_but_nothing_is_written(self):
+        made = self.make()
+        owner_shaped(self, made)
+        target = self.folder(made['id']) / 'desk' / 'draft.json'
+        before = target.read_bytes()
+        held = studio._HELD.set(False)
+        try:
+            draft = desk.read(self.root, made['id'])
+        finally:
+            studio._HELD.reset(held)
+        self.assertEqual(draft['opening'], OPENING)
+        self.assertEqual(target.read_bytes(), before)
+
+
+class ImageRouteTests(RouteCase):
+    def test_the_desk_view_and_a_save_carry_no_image_data_and_the_images_come_once(self):
+        made = self.post(
+            'desk-create',
+            {'operation': 'b' * 32, 'title': 'Images synthetic', 'manuscript': GOOGLE},
+        )
+        self.assertNotIn('data:image', json_text(made))
+        self.assertEqual(
+            [(image['label'], image['alt']) for image in made['images']],
+            [('image1', ''), ('image2', '')],
+        )
+        self.assertTrue(all(image['key'] and image['size'] for image in made['images']))
+        shown = self.get('desk', id=made['id'])
+        self.assertNotIn('data:image', json_text(shown))
+        self.assertEqual(shown['markdown'], desk.join(desk.read(self.root, made['id']), False))
+        saved = self.post(
+            'desk-save',
+            {'id': made['id'], 'seen': 1, 'part': 'opening', 'text': OPENING + ' Edited.'},
+        )
+        self.assertNotIn('data:image', json_text(saved))
+        found = self.get('desk-images', id=made['id'])
+        self.assertEqual(
+            {image['key']: image['uri'] for image in found['images']},
+            {
+                image['key']: uri
+                for image, uri in zip(made['images'], (IMAGE_ONE, IMAGE_TWO), strict=True)
+            },
+        )
+        versions = self.get('desk-versions', id=made['id'], part='opening')
+        self.assertNotIn('data:image', json_text(versions))
+
+    def test_an_older_record_is_cleaned_when_the_desk_is_viewed(self):
+        made = self.start()
+        owner_shaped(self, made)
+        shown = self.get('desk', id=made['id'])
+        self.assertEqual(shown['opening'], OPENING)
+        self.assertNotIn('data:image', json_text(shown))
+        kept = studio.read_json(self.folder(made['id']) / 'desk' / 'draft.json')
+        self.assertEqual(set(kept['images']), {'image1', 'image2'})
+
+
+def lost_images(case, made, versions=True):
+    """Rewrite a desk record as the owner's is now: references to image1 and image2 in the
+    opening with no image behind them, the data kept only in the opening's History (or only
+    in ORIGINAL.md), revision 2."""
+    directory = case.folder(made['id'])
+    draft = studio.read_json(directory / 'desk' / 'draft.json')
+    draft.pop('images', None)
+    draft.update(revision=2, opening=OPENING, sections=[], changed={'opening': 2})
+    studio.write_json(directory / 'desk' / 'draft.json', draft)
+    (directory / 'desk' / 'images.json').unlink(missing_ok=True)
+    body = '# ' + draft['title'] + '\n\n' + OPENING + '\n'
+    (directory / 'DRAFT.md').write_text(body)
+    record = studio.read_json(directory / 'session.json')
+    record['artifact_hashes']['draft'] = studio.digest(body.encode())
+    studio.write_json(directory / 'session.json', record)
+    folder = directory / 'desk' / 'versions'
+    folder.mkdir(parents=True, exist_ok=True)
+    older = 'An older opening.\n\n![][image1]\n\n![][image2]\n\n' + DEFINITIONS
+    (folder / 'opening.jsonl').write_text(
+        json.dumps({'at': studio.now(), 'source': 'revise-all', 'text': older}) + '\n'
+        if versions
+        else ''
+    )
+    (directory / 'ORIGINAL.md').write_text('# T\n\n' + older + '\n' if not versions else '# T\n')
+    return body
+
+
+class ImageRecoveryTests(RouteCase):
+    def test_data_kept_only_in_history_is_recovered_without_changing_a_word(self):
+        made = self.start()
+        lost_images(self, made)
+        directory = self.folder(made['id'])
+        shown = self.get('desk', id=made['id'])
+        self.assertEqual((shown['opening'], shown['revision']), (OPENING, 2))
+        self.assertEqual([image['label'] for image in shown['images']], ['image1', 'image2'])
+        self.assertEqual(shown['missing_images'], [])
+        self.assertNotIn('data:image', json_text(shown))
+        self.assertEqual(stored(self, made['id']), {'image1': IMAGE_ONE, 'image2': IMAGE_TWO})
+        # DRAFT.md ends with the images again; no part was marked changed.
+        self.assertTrue((directory / 'DRAFT.md').read_text().endswith(DEFINITIONS + '\n'))
+        self.assertEqual(desk.read(self.root, made['id'])['changed'], {'opening': 2})
+        self.assertEqual(desk.versions(self.root, made['id'], 'opening')[0]['source'], 'revise-all')
+        # A form open from before saves as it would have.
+        saved = self.post(
+            'desk-save', {'id': made['id'], 'seen': 2, 'part': 'title', 'text': 'Renamed'}
+        )
+        self.assertEqual(saved['revision'], 3)
+
+    def test_data_kept_only_in_the_original_is_recovered(self):
+        made = self.start()
+        lost_images(self, made, versions=False)
+        self.get('desk', id=made['id'])
+        self.assertEqual(stored(self, made['id']), {'image1': IMAGE_ONE, 'image2': IMAGE_TWO})
+
+    def test_an_image_found_nowhere_is_named_as_missing_and_sought_once(self):
+        made = self.start()
+        lost_images(self, made)
+        directory = self.folder(made['id'])
+        draft = studio.read_json(directory / 'desk' / 'draft.json')
+        draft['opening'] = OPENING + '\n\n![][image7]'
+        studio.write_json(directory / 'desk' / 'draft.json', draft)
+        shown = self.get('desk', id=made['id'])
+        self.assertEqual(shown['missing_images'], ['image7'])
+        self.assertEqual(len(shown['images']), 2)
+        before = (directory / 'desk' / 'draft.json').read_bytes()
+        with patch('desk._recovered', side_effect=AssertionError('searched again')):
+            self.assertEqual(self.get('desk', id=made['id'])['missing_images'], ['image7'])
+        self.assertEqual((directory / 'desk' / 'draft.json').read_bytes(), before)
+
+    def test_a_view_poll_never_reads_the_image_data(self):
+        made = self.post(
+            'desk-create',
+            {'operation': 'c' * 32, 'title': 'Images synthetic', 'manuscript': GOOGLE},
+        )
+        # The file was written here, so a poll needs no parse of it to know its labels.
+        with patch('desk_images.usable', side_effect=AssertionError('parsed the image data')):
+            shown = self.get('desk', id=made['id'])
+        self.assertEqual(len(shown['images']), 2)
+        self.assertEqual(len(self.get('desk-images', id=made['id'])['images']), 2)
 
 
 if __name__ == '__main__':

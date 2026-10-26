@@ -72,7 +72,8 @@ desk. A topic or an outline takes three steps; a draft takes one screen (below):
 - **Your draft**, pasted, uploaded or from a Google Doc (every tab is read, and the Doc is
   not changed). The title is optional.
 - **What should happen first**: **Proofread and tighten** (the default, with no kind of
-  post), **Just give feedback** (Finishing's **Feedback without a rewrite** starts as the
+  post; it fixes spelling, grammar and wordy sentences throughout, kept in History to
+  review afterwards), **Just give feedback** (Finishing's **Feedback without a rewrite** starts as the
   desk opens: comments beside each part, and nothing in the text changes), **Reshape to
   fit a kind of post** (only this one shows **Kind of post**, and needs one) or **Leave
   it as it is**. The opening is worked on with the sections, and a draft with no `##`
@@ -80,7 +81,8 @@ desk. A topic or an outline takes three steps; a draft takes one screen (below):
   into the kind of post's sections; restoring the opening's **Before the first pass** in
   History undoes that division as a whole, and the sections it added can be brought back on
   the Outline tab. A **Note for the whole draft** revises a draft with no headings as one
-  part too.
+  part too. To approve each fix before it lands instead, choose **Leave it as it is**, then
+  use **Copy edit** in Finishing; the screen says so under the choices.
 - **Tone (optional)**, folded, starting from Settings.
 - **Check facts against your sources (optional)**, folded: the same files, Google Docs,
   links and library posts as above, for Finishing's fact check. There is no research and
@@ -120,6 +122,20 @@ The desk is one page: the title, the opening, then a card for each section.
   as a release date, is listed under **Needs you before publishing**, never in the prose.
 - **Toolbar.** **Copy**, **Download**, **Google Doc**, **Mark as published** and
   **Finishing**.
+- **Images.** An image in the draft, such as one a Google Doc brings, shows in the text as
+  its short reference (`![][image1]`), with a thumbnail under the part that uses it. Keep
+  the reference where the image belongs. The image itself is kept beside the draft, never
+  sent to the assistant, and written back at the end of `DRAFT.md`, so **Copy**,
+  **Download**, the Google Doc and the pre-publish check keep it. A rewrite that leaves a
+  reference out has it put back where it was; one that changes or adds a reference has
+  that taken out, and Finishing flags it. Each image can be up to 5 MB, and a draft's
+  images up to 12 MB together; the 200,000-character limit counts the text only. An image
+  the text names but that was lost (as an earlier rewrite could drop it) is found again in
+  the part's History, the other parts' History, the original draft or the Google Doc it
+  came from, without changing a word; one found nowhere shows **Image missing**. Image data
+  you keep as text, such as in a code example, stays as it is: a rewrite sees a short token
+  for it and must give each one back unchanged, or it is not applied. **Copy** and
+  **Download** leave out, and name, any image whose data cannot be read.
 
 One job works on a blog at a time; the desk shows it and offers Stop. An edit from a form
 that is out of date is refused rather than written over newer text.
@@ -129,11 +145,17 @@ that is out of date is refused rather than written over newer text.
 **Finishing** opens a side panel (a full-screen sheet on a phone). Every tool suggests;
 nothing changes until you apply.
 
+- **Copy edit**: grammar, spelling, punctuation, consistency, clarity and concision in the
+  title and the text, each fix shown before and after with a short note on why, for you
+  to approve. Claims, qualifiers and the argument are not changed; the author's voice,
+  facts, quotes, links and image references are kept, and a fix that
+  would change a fact, code or the part's shape is flagged. It is **Proofread and tighten**
+  with each change approved first.
 - **Humanize** at light, medium or strong: sentences that read as machine-written, each
   with a rewrite. Numbers, names, quotes and links are kept, and a rewrite that would
   change one is flagged.
-- **Proofread**: dashes, words that often read as machine-written and repetition, checked
-  at once, with **Fix** on each finding.
+- **Quick check**: dashes, words that often read as machine-written, and repetition,
+  checked at once with no assistant, with **Fix** on each finding.
 - **Check facts against sources**: each claim supported, not in your sources, or
   contradicted, with the passage, **Add a source** and **Keep it**.
 - **Headline and opening**: alternatives to apply.
@@ -147,7 +169,8 @@ nothing changes until you apply.
   Doc.
 
 Each suggestion shows before and after side by side. **Apply**, **Edit** or **Skip** it,
-or **Apply all** (flagged ones wait to be checked one by one). Each Apply keeps the
+or **Apply all** for Copy edit, Humanize and Apply a voice (flagged ones wait to be checked
+one by one). Each Apply keeps the
 earlier text in History. Suggestions wait on this computer until you decide; only what
 you apply is shared with a team.
 
@@ -456,8 +479,9 @@ and shared-value saves are refused until it can be read.
 
 ## Saved work and teams
 
-A desk blog keeps its draft in `desk/draft.json` (the title, the opening and each section
-with its brief) and earlier versions in `desk/versions/`, and rewrites `DRAFT.md` on every
+A desk blog keeps its draft in `desk/draft.json` (the title, the opening, each section
+with its brief, and each image's label and alt text), its images' data in
+`desk/images.json`, and earlier versions in `desk/versions/`, and rewrites `DRAFT.md` on every
 save so Copy, Download, Google Docs and the pre-publish check read the same text. A draft
 saved in chat, restored from its history or accepted from Google comes onto the desk as a
 new version of each part it changes, so the next desk save keeps it.
