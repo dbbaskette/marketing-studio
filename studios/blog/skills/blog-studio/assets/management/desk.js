@@ -4,7 +4,7 @@
 'use strict';
 const DESK_SELECTION=[['rephrase','Rephrase'],['shorten','Shorten'],['expand','Expand'],['fix','Fix']];
 const DESK_SOURCES={save:'Before your edit',rewrite:'Before a rewrite','revise-all':'Before a whole-draft revision',selection:'Before a selection edit','first-pass':'Before the first pass',finishing:'Before a finishing change',restore:'Before a restore',draft:'Before the draft was written',chat:'Before an edit in chat',google:'Before Google’s accepted text'};
-const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback','finish-voice':'Rewriting the draft in a voice guide'};
+const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-copyedit':'Copy editing the draft','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback','finish-voice':'Rewriting the draft in a voice guide'};
 // A start's steps, as the progress screen names them.
 const DESK_STEPS={research:'Researching',outline:'Outlining',draft:'Drafting'};
 const DESK_SAVE_WAIT=1000,DESK_POLL=3000,DESK_DIFF_LIMIT=4000;
@@ -163,6 +163,7 @@ function sDeskHave(held){
 // Polishing or reviewing a draft: the draft, what happens first, then Start. A kind of post
 // is asked for only to reshape the draft; sources are optional, for the fact check.
 const DESK_POLISH_FIRST=[['tighten','Proofread and tighten'],['feedback','Just give feedback'],['reshape','Reshape to fit a kind of post'],['leave','Leave it as it is']];
+const DESK_POLISH_APPROVE='To approve each fix first, choose Leave it as it is, then use Copy edit in Finishing.';
 const DESK_POLISH_SAYS={tighten:'Spelling, grammar and wordy sentences are fixed throughout, with no headings added. Your text is kept as a version first.',feedback:'Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.',reshape:'The sections and length are reshaped to the kind of post; a draft with no headings may be divided into sections. Your text is kept as a version first.',leave:'The draft opens on the desk as it is, for your own edits and notes.'};
 function sDeskPolish(held){
   if(!DESK_POLISH_FIRST.some(([value])=>value===held.first_pass))held.first_pass=held.source==='saved'?'leave':'tighten';
@@ -172,7 +173,7 @@ function sDeskPolish(held){
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
   const again=()=>sDeskStartAgain(held),reading=held.source==='google'&&!held.preview;
   const go=sNode('button','button button-filled',reading?'Read Google Doc':'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
-  const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]));
+  const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]),sNode('p','quiet field-hint',DESK_POLISH_APPROVE));
   if(held.first_pass==='reshape'){const kinds=(studio.options?.styles||[]).filter(kind=>kind.status!=='retired');first.append(sField('desk-kind','Kind of post',held,'kind',{options:[['','Choose a kind of post'],...kinds.map(kind=>[kind.id,kind.name])],changed:()=>again()}),sNode('p','quiet field-hint',kinds.length?'Its usual shape and length.':'No kinds of post yet. Set them up from Home, under Kinds of post.'));}
   const fold=(label,open,remember,...content)=>{const box=sAdd(sNode('details','card desk-fold'),sAdd(sNode('summary',''),sNode('span','card-title',label)),...content);box.open=open;box.addEventListener('toggle',()=>remember(box.open));return box;};
   const tone=fold('Tone (optional)',!!held.toneOpen,open=>{held.toneOpen=open;},sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational. It guides any rewriting.'}));
@@ -681,17 +682,19 @@ async function sDeskWriteDraft(held,button){
 // Finishing: an optional side panel of tools that propose. Each proposal is previewed before
 // and after, side by side, then applied, edited or skipped; nothing changes until Apply, and
 // each Apply keeps the earlier text in History. On a phone the panel is a full-screen sheet.
+// Quick check keeps the key proofread, as its route desk-proofread does.
 const DESK_TOOLS=[
+  ['copyedit','Copy edit','Grammar, spelling, punctuation, consistency and wordy sentences, each fix shown before and after for you to approve. Voice, facts, quotes and links are kept.'],
   ['humanize','Humanize','Sentences that read as machine-written, each with a rewrite. Numbers, names, quotes and links are kept.'],
-  ['voice','Apply a voice','The draft rewritten in one of your voice guides, section by section. Its facts, quotes, links and shape are kept.'],
-  ['proofread','Proofread','Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'],
+  ['proofread','Quick check','Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'],
   ['facts','Check facts against sources','Each claim marked supported, not in your sources, or contradicted, with the passage.'],
   ['headline','Headline and opening','Alternatives for the title and the opening, to use or adjust.'],
   ['feedback','Feedback without a rewrite','Comments on shape, argument, audience and claims. Nothing in the text changes.'],
+  ['voice','Apply a voice','The draft rewritten in one of your voice guides, section by section. Its facts, quotes, links and shape are kept.'],
   ['publish','Before publishing','The pre-publish check, Repurpose, and Send to Google Doc as suggestions.'],
 ];
 const DESK_LEVELS=[['light','Light'],['medium','Medium'],['strong','Strong']];
-const DESK_RUN={humanize:['Find sentences','Finding sentences that read as machine-written…'],facts:['Check facts','Checking each claim against your sources…'],headline:['Suggest alternatives','Suggesting headlines and openings…'],feedback:['Get feedback','Reading the draft for feedback…'],voice:['Apply the voice','Rewriting the draft in the voice guide, section by section…']};
+const DESK_RUN={copyedit:['Find fixes','Finding grammar, spelling and wording fixes…'],humanize:['Find sentences','Finding sentences that read as machine-written…'],facts:['Check facts','Checking each claim against your sources…'],headline:['Suggest alternatives','Suggesting headlines and openings…'],feedback:['Get feedback','Reading the draft for feedback…'],voice:['Apply the voice','Rewriting the draft in the voice guide, section by section…']};
 const DESK_VERDICTS={supported:'Supported','not-in-sources':'Not in your sources',contradicted:'Contradicted'};
 const DESK_ASPECTS={shape:'Shape',argument:'Argument',audience:'Audience',claims:'Claims'};
 const DESK_FORMATS=[['linkedin','LinkedIn feed copy'],['newsletter','Newsletter introduction'],['email','Announcement email'],['summary','Short summary'],['thread','Short thread']];
@@ -776,10 +779,10 @@ function sDeskProposals(held,key,set){
   if(voice&&set.kept)said.push(set.kept+(set.kept===1?' part already reads':' parts already read')+' in this voice');
   if(set.dropped)said.push(set.dropped+' left out because '+(set.dropped===1?'it did not':'they did not')+' match the text');
   out.push(sNode('p','quiet',said.join(' · ')+'.'));
-  if(!items.length){out.push(sNode('p','',key==='facts'?'No claims to check.':voice?'Nothing to change: the draft already reads in this voice.':'Nothing to change at this level.'));return out;}
+  if(!items.length){out.push(sNode('p','',key==='facts'?'No claims to check.':key==='copyedit'?'Nothing to fix.':voice?'Nothing to change: the draft already reads in this voice.':'Nothing to change at this level.'));return out;}
   // Apply all: every open proposal that still fits; flagged ones wait to be checked one by one.
   const ready=open.filter(item=>item.present&&!item.flag&&'after' in item);
-  if((key==='humanize'||voice)&&ready.length>1){
+  if((key==='copyedit'||key==='humanize'||voice)&&ready.length>1){
     const flagged=open.filter(item=>item.flag).length;
     const all=sButton('Apply all ('+ready.length+')',button=>sDeskApply(held,set,ready.map(item=>({id:item.id})),button));all.disabled=!access.actions.edit||!!held.view.working;
     out.push(sAdd(sNode('div','bar'),all),flagged?sNode('p','quiet',voice?flagged+(flagged===1?' part that changes a fact, code or the part’s shape is':' parts that change a fact, code or a part’s shape are')+' left for you to check one by one.':flagged+(flagged===1?' flagged suggestion is':' flagged suggestions are')+' left for you to check one by one.'):null);
@@ -889,7 +892,7 @@ function sDeskToNote(held,item){
   if(target){target.focus();if(typeof target.scrollIntoView==='function')target.scrollIntoView({block:'center'});}
   sToast(section?'Now the note for “'+section.heading+'”. Choose Rewrite when you are ready.':'Now the note for the whole draft. Choose Revise the draft when you are ready.');
 }
-// Proofread: in place, at once; Fix rewrites only the sentence a finding is in.
+// Quick check (proofread): in place, at once; Fix rewrites only the sentence a finding is in.
 async function sDeskProofread(held,button){
   const go=async()=>{try{await sDeskFlush(held);const found=await api('desk-proofread?'+new URLSearchParams({id:held.id}));if(!held.finish)return;held.finish.proof=found;held.finish.proofProblem='';}catch(error){if(held.finish)held.finish.proofProblem=error.message;}sDeskPanelShow(held);};
   if(button)await busy(button,'Checking…',go);else await go();
@@ -897,7 +900,7 @@ async function sDeskProofread(held,button){
 function sDeskProofView(held){
   const f=held.finish,found=f.proof;
   const again=sButton(found?'Check again':'Check now',button=>sDeskProofread(held,button),'filled');
-  const parts=[sNode('p','quiet',DESK_TOOLS[1][2]+' Fix rewrites only the sentence a finding is in, and keeps the earlier text in History.'),sAdd(sNode('div','bar'),again)];
+  const parts=[sNode('p','quiet',DESK_TOOLS.find(([key])=>key==='proofread')[2]+' Fix rewrites only the sentence a finding is in, and keeps the earlier text in History.'),sAdd(sNode('div','bar'),again)];
   if(f.proofProblem)parts.push(sNode('p','problem',f.proofProblem));
   if(!found)return parts;
   if(found.revision!==held.view.revision)parts.push(sNode('p','quiet','The draft changed since this check. Check again for the latest.'));
