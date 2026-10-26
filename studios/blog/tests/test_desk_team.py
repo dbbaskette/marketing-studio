@@ -265,6 +265,43 @@ class DeskTeamTests(TeamCase):
             },
         )
 
+    def test_check_spelling_and_grammar_leaves_the_tree_clean_and_shares_only_accepts(self):
+        made = management.dispatch(
+            self.root,
+            'desk-create',
+            {'operation': 'c' * 32, 'title': 'T2', 'manuscript': DRAFT, 'first_pass': 'copyedit'},
+        )
+        ident = made['id']
+        self.assertEqual(made['working']['kind'], 'finish-copyedit')
+        clean = lambda: self.assertEqual(gitstate.changed(self.found), [])  # noqa: E731
+        clean()
+        part = made['sections'][0]['id']
+        self.finish_worker(
+            {
+                'suggestions': [
+                    {'part': part, 'before': 'First text.', 'after': 'The first text.'},
+                    {'part': 'opening', 'before': 'An opening paragraph.', 'after': 'An opening.'},
+                ]
+            }
+        )
+        clean()
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        job = shown['finishing']['copyedit']['job']
+        remote = self.remote_commits()
+        management.dispatch(self.root, 'desk-skip', {'id': ident, 'job': job, 'items': ['p2']})
+        clean()
+        self.assertEqual(self.remote_commits(), remote)
+        management.dispatch(
+            self.root,
+            'desk-apply',
+            {'id': ident, 'seen': shown['revision'], 'job': job, 'items': [{'id': 'p1'}]},
+        )
+        clean()
+        self.assertEqual(self.remote_commits(), self.local_commits())
+        body = support.git(self.remote, 'show', 'main:blogs/' + ident + '/DRAFT.md')
+        self.assertIn('The first text.', body)
+        self.assertIn('An opening paragraph.', body)
+
     def test_typing_is_kept_locally_once_per_session_and_shared_on_leaving(self):
         remote, local = self.remote_commits(), self.local_commits()
         seen = 1
@@ -668,6 +705,49 @@ class DeskTeamImageTests(TeamCase):
         self.assertIn('blogs/' + ident + '/desk/draft.json', files)
         self.assertNotIn('data:image', (self.folder(ident) / 'desk' / 'draft.json').read_text())
         self.assertIn(IMAGE_ONE, (self.folder(ident) / 'DRAFT.md').read_text())
+
+
+class DeskTeamHeadingTests(TeamCase):
+    def test_an_opening_only_record_is_divided_on_viewing_as_its_own_recorded_change(self):
+        import studio
+        import json
+
+        from test_desk import EXPORTED, EXPORTED_HEADINGS, opening_only
+
+        made = management.dispatch(
+            self.root, 'desk-create', {'operation': 'b' * 32, 'manuscript': EXPORTED}
+        )
+        ident = made['id']
+        self.folder = lambda name: studio.inside(self.root, 'articles', name)
+        opening_only(self, made)
+        gitstate.commit(self.found, 'A record kept before deeper headings were read', [ident])
+        self.assertEqual(gitstate.changed(self.found), [])
+        commits = self.local_commits()
+        markdown = (self.folder(ident) / 'DRAFT.md').read_bytes()
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        self.assertEqual([s['heading'] for s in shown['sections']], EXPORTED_HEADINGS)
+        self.assertEqual(shown['revision'], 3)
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertEqual(self.local_commits(), commits + 1)
+        self.assertIn('headings', support.git(self.found.repo, 'log', '-1', '--format=%s'))
+        self.assertEqual((self.folder(ident) / 'DRAFT.md').read_bytes(), markdown)
+        # Viewing again records nothing more, and a form open before on another part saves.
+        # The division is recorded here and shared with the next decision.
+        management.view(self.root, 'desk', {'id': [ident]})
+        self.assertEqual(self.local_commits(), commits + 1)
+        remote = self.remote_commits()
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {'id': ident, 'seen': 2, 'part': 'title', 'text': 'Renamed', 'session': 'c' * 16},
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+        management.dispatch(self.root, 'desk-share', {'id': ident})
+        self.assertGreater(self.remote_commits(), remote)
+        shared = json.loads(
+            support.git(self.remote, 'show', 'main:blogs/' + ident + '/desk/draft.json')
+        )
+        self.assertEqual([s['heading'] for s in shared['sections']], EXPORTED_HEADINGS)
 
 
 if __name__ == '__main__':

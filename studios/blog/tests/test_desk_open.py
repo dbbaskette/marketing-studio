@@ -44,6 +44,15 @@ class OpenOnTheDeskTests(RunnerCase):
         row = next(r for r in runner.catalog(self.root)['items'] if r['id'] == found['id'])
         self.assertEqual(row['flow'], 'desk')
 
+    def test_a_finished_draft_of_more_than_sixty_sections_is_refused_readably(self):
+        found = self.finished()
+        directory, _, _ = runner.load(self.root, found['id'])
+        many = '# Many\n\n' + '\n\n'.join('## H%d\n\nText.' % n for n in range(61)) + '\n'
+        (directory / 'DRAFT.md').write_text(many)
+        with self.assertRaisesRegex(ValueError, 'Keep the draft to 60 sections.'):
+            management.dispatch(self.root, 'desk-open', {'id': found['id']})
+        self.assertFalse((directory / 'desk' / 'draft.json').exists())
+
     def test_opening_twice_returns_the_same_desk(self):
         found = self.finished()
         with studio.locked(self.root):

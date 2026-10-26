@@ -249,6 +249,26 @@ class ProofreadTests(FinishCase):
             text[again['start'] : again['start'] + len(again['sentence'])], again['sentence']
         )
 
+    def test_findings_sit_in_their_sections_at_any_heading_level(self):
+        text = (
+            '# Levels\n\nOpen.\n\n### **One**\n\nFirst.\n\n### **Two**\n\nWe leverage it — twice.\n'
+        )
+        ident = desk.create(self.root, {'manuscript': text})['id']
+        draft = desk.read(self.root, ident)
+        found = desk_finish.proofread(self.root, ident)['findings']
+        self.assertTrue(found)
+        for finding in found:
+            part = desk.text_of(draft, finding['part'])
+            self.assertEqual(
+                part[finding['start'] : finding['start'] + len(finding['sentence'])],
+                finding['sentence'],
+            )
+        self.assertEqual({f['part'] for f in found}, {draft['sections'][1]['id']})
+        word = next(f for f in found if f['rule'] == 'banished:leverage')
+        self.assertEqual(word['target'], 'leverage')
+        part = draft['sections'][1]['text']
+        self.assertEqual(part[word['at'] : word['at'] + len('leverage')], 'leverage')
+
     def test_code_and_quotations_are_left_out(self):
         setup = self.parts['sections'][0]
         hits = [
@@ -772,6 +792,103 @@ class CopyEditTests(ToolCase):
         self.assertNotIn(IMAGE_TWO, json.dumps(job))
         self.assertIn('![][image1]', job['payload']['opening'])
         self.assertIn('![…][imageN]', job['guidance'])
+
+
+class ReviewTests(ToolCase):
+    """Check spelling and grammar: Copy edit's fixes accepted, rejected, accepted all at once
+    (a flagged one left), and a paragraph edited in place, through the page's routes."""
+
+    def setUp(self):
+        super().setUp()
+        desk.save(
+            self.root,
+            self.ident,
+            self.seen,
+            self.second,
+            'Their are two parser.\n\nIt read every files. It is quick.',
+        )
+        self.seen += 1
+
+    def post(self, route, **data):
+        import management
+
+        return management.dispatch(self.root, route, {'id': self.ident, **data})
+
+    def test_accept_reject_accept_all_and_a_paragraph_edit_through_the_routes(self):
+        job = self.queue('copyedit')
+        rows = [
+            ('Their are two parser.', 'There are two parsers.', self.second),
+            ('It read every files.', 'It reads every file.', self.second),
+            (
+                'It reads 12 files in 3 seconds at Acme Labs.',
+                'It reads 14 files in 3 seconds at Acme Labs.',
+                self.first,
+            ),
+            ('We leverage a robust parser.', 'We use a robust parser.', self.first),
+        ]
+        self.ready(
+            job,
+            {
+                'suggestions': [
+                    {'part': part, 'before': before, 'after': after, 'why': 'A fix.'}
+                    for before, after, part in rows
+                ]
+            },
+        )
+        items = self.shown('copyedit')['items']
+        self.assertEqual(
+            [(i['id'], i['part']) for i in items][::2], [('p1', self.second), ('p3', self.first)]
+        )
+        flagged = [i['id'] for i in items if i['flag']]
+        self.assertEqual(flagged, ['p3'])
+        # A paragraph edited in place: the fix in it no longer fits; the others still do.
+        shown = self.post(
+            'desk-save',
+            seen=self.seen,
+            part=self.second,
+            text='Their are two parser.\n\nIt reads each file. It is quick.',
+            session='a' * 16,
+        )
+        present = {i['id']: i['present'] for i in shown['finishing']['copyedit']['items']}
+        self.assertEqual(present, {'p1': True, 'p2': False, 'p3': True, 'p4': True})
+        with self.assertRaisesRegex(ValueError, 'no longer in this part'):
+            self.post('desk-apply', seen=shown['revision'], job=job['id'], items=[{'id': 'p2'}])
+        # Accept all, as the page sends it: open, still fitting and not flagged.
+        ready = [
+            {'id': i['id']}
+            for i in shown['finishing']['copyedit']['items']
+            if i['state'] == 'open' and i['present'] and not i['flag']
+        ]
+        self.assertEqual(ready, [{'id': 'p1'}, {'id': 'p4'}])
+        done = self.post('desk-apply', seen=shown['revision'], job=job['id'], items=ready)
+        self.assertEqual(done['finished'], {'applied': 2, 'left': []})
+        self.assertEqual(
+            self.draft()['sections'][1]['text'],
+            'There are two parsers.\n\nIt reads each file. It is quick.',
+        )
+        self.assertTrue(self.draft()['sections'][0]['text'].startswith('We use a robust parser.'))
+        self.assertEqual(
+            desk.versions(self.root, self.ident, self.second)[0]['source'], 'finishing'
+        )
+        # Reject sets aside, with nothing in the draft changed.
+        revision = self.draft()['revision']
+        left = self.post('desk-skip', job=job['id'], items=['p3', 'p2'])
+        self.assertEqual(self.draft()['revision'], revision)
+        states = {i['id']: i['state'] for i in left['finishing']['copyedit']['items']}
+        self.assertEqual(
+            states, {'p1': 'applied', 'p2': 'skipped', 'p3': 'skipped', 'p4': 'applied'}
+        )
+        self.assertIn('12 files', self.draft()['sections'][0]['text'])
+
+    def test_check_again_reads_the_current_text(self):
+        first = self.queue('copyedit')
+        self.ready(first, {'suggestions': []})
+        desk.save(self.root, self.ident, self.seen, self.second, 'Changed text here.')
+        self.seen += 1
+        again = self.queue('copyedit')
+        self.assertNotEqual(again['id'], first['id'])
+        texts = [s['text'] for s in again['payload']['sections']]
+        self.assertIn('Changed text here.', texts)
 
 
 class VoiceTests(ToolCase):

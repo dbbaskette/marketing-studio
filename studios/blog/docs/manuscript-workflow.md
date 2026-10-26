@@ -12,7 +12,7 @@ confirm a specific delivery.
 | --- | --- | --- |
 | A topic and point of view | New blog → A topic, with your documents as sources | Type the point, or pick one of three angles |
 | An outline or notes | New blog → An outline or notes | Write from it, or shape the outline first |
-| A draft, a file or a Google Doc | Home → Edit or polish a draft (no kind of post) | Proofread and tighten, just give feedback, reshape to a kind of post, or leave it; then notes on the desk |
+| A draft, a file or a Google Doc | Home → Edit or polish a draft (no kind of post) | Check spelling and grammar (each fix marked in Review mode to accept or reject), just give feedback, reshape to a kind of post, or leave it; then notes on the desk |
 | Someone else's Google Doc | Home → Edit or polish a draft → Google Doc | Edit on the desk, then **Finishing → Before publishing → Send to Google Doc** as suggestions |
 | A blog in the manuscript editor | Blogs → Continue editing | Choose the precise editing scope |
 
