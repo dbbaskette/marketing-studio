@@ -256,7 +256,7 @@ LOOKS_STALE = ('What the deck says changed since its looks were drawn, so they a
                'again. Choose once they are.')
 ON_ITS_WAY = 'This deck is on its way to Google Slides already. Wait for it.'
 STILL_NOT_CONNECTED = ("Google still isn't connected on this computer. Sign in with gcloud, "
-                       'then deliver it again.')
+                       'then send it to Google Slides again.')
 # Reading a document as material, when research was asked for, runs research this deck never ran.
 FIRST_RESEARCH = ('The research runs first, for the first time; this computer has no record of '
                   'what it costs.')
@@ -2767,6 +2767,7 @@ class Engine(Jobs, Researching):
                     record, row['name'],
                     holding=self._holding(root, row['name']) if root else ()):
                 row['label'] = 'Continue the ' + WORDS[row['name']] + ' automatically'
+                row['automatic'] = True
             tried = attempts(record, row['name'])
             dollars = [attempt['dollars'] for attempt in tried
                        if attempt.get('dollars') is not None]
@@ -2839,7 +2840,12 @@ class Engine(Jobs, Researching):
     def _show_research_plan(self, root: Path, record: dict) -> dict:
         plan = home.read_json(root / PLAN, None)
         items = plan.get('items') if isinstance(plan, dict) else None
+        looks = self._research_from(root, record)
         return {'text': text_of(root / PLAN_MD) or '', **self._room(record, items),
+                # Where the questions not searched on the web are answered from.
+                'looks': {'documents': bool(looks.get('documents')),
+                          'sites': list(looks.get('sites') or ()),
+                          'web': bool(looks.get('web'))},
                 'questions': [{'id': item['id'], 'title': marks.title(item['id']),
                                'question': str(item.get('question') or ''),
                                'search': item.get('public_query')}

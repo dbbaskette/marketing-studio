@@ -27,7 +27,7 @@ PIPELINE: tuple[Step, ...] = (
        'Working out whether your document is a finished script or raw material'),
     _s('inventory', 'classify', 'code', 'Look through your deck',
        'Listing every slide in your deck'),
-    _s('gate:classify', 'classify', 'gate', 'Confirm what you gave us',
+    _s('gate:classify', 'classify', 'gate', 'Confirm what you gave',
        'Waiting for you to confirm what kind of material this is'),
     _s('research-plan', 'research', 'agent', 'Plan the research',
        'Deciding what to look up'),
@@ -120,7 +120,8 @@ def steps(run: dict) -> list[Step]:
         if direction:
             listed.remove(direction)
             at = next(i for i, s in enumerate(listed) if s.name == 'gate:look')
-            listed.insert(at, Step(direction.name, direction.stage, direction.kind,
+            # It is shown under the look: its samples are on screen in it.
+            listed.insert(at, Step(direction.name, 'look', direction.kind,
                                    'Review the direction', 'Waiting for your review of the direction'))
     return listed
 

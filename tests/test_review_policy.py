@@ -161,7 +161,7 @@ class ReviewPolicyTests(IsolatedHome):
                             {'severity': 'critical', 'number': 3, 'detail': 'Misleads.'}],
                            [{'code': 'LOGO', 'says': 'Restore the logo.'}])
         self.assertEqual(held, ['Major on close01: Too high.', 'Critical on 3: Misleads.',
-                                'Audit blocker: Restore the logo.'])
+                                'Brand check: Restore the logo.'])
         self.assertEqual(review.held([{'severity': 'minor', 'note': 'x'}], []), [])
         self.assertEqual(review.held(None, None), [])
         for mode in ('balanced', 'automatic'):

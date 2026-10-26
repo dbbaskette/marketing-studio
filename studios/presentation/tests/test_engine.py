@@ -2257,7 +2257,7 @@ class HoldingTests(StudioCase):
         build.write_state(root, state)
         self.assertEqual(self.engine._holding(root, 'gate:build'),
                          ['Major on what-it-does: The boxes crowd.',
-                          'Audit blocker: Slide 2: Restore the logo. (error)'])
+                          'Brand check: Slide 2: Restore the logo. (error)'])
         self.assertEqual(self.engine._holding(root, 'gate:look'), [])
 
 

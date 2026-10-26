@@ -81,7 +81,7 @@ def level(record):
 
 
 # What a reviewer or an audit may still find when a gate comes up: a finding this grave, or
-# an audit blocker, keeps the gate for the person whatever the saved level.
+# a brand check blocker, keeps the gate for the person whatever the saved level.
 GRAVE = ('critical', 'major')
 # Training Studio gates the policy never accepts: the person's own steps (adding documents,
 # the form, a deck made in a conversation). A deck's own gates follow studio_core.deck_flow.
@@ -100,10 +100,10 @@ def held(findings=(), blockers=()):
                         + str(finding.get('note') or finding.get('detail') or '').strip())
     for blocker in blockers or ():
         if isinstance(blocker, dict):
-            kept.append('Audit blocker: ' + str(blocker.get('says') or blocker.get('code')
+            kept.append('Brand check: ' + str(blocker.get('says') or blocker.get('code')
                                                 or '').strip())
         elif blocker:
-            kept.append('Audit blocker: ' + str(blocker))
+            kept.append('Brand check: ' + str(blocker))
     return kept
 
 

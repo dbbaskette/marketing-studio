@@ -318,7 +318,7 @@ class Jobs:
                             **self._cost(outcome))
                 record['question'] = {
                     'id': secrets.token_hex(6), 'step': name, 'text': handed['question'],
-                    'from': f'The worker {step.doing[0].lower()}{step.doing[1:]}',
+                    'from': f'The assistant {step.doing[0].lower()}{step.doing[1:]}',
                     'at': home.now()}
                 self._store(root, record)
                 self._commit(root, f'a worker asks a question: {step.label}')
