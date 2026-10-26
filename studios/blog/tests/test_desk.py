@@ -452,6 +452,47 @@ class RouteTests(RouteCase):
         )
         self.assertEqual(saved['revision'], 2)
 
+    def test_human_sounding_suggestions_go_with_check_spelling_and_grammar_at_a_strength(self):
+        import tool_jobs
+
+        made = self.start(style='', first_pass='copyedit', humanize='medium')
+        self.assertIsNone(made['first_pass_problem'])
+        self.assertEqual(made['review'], {'humanize': 'medium', 'problem': ''})
+        self.assertEqual([row['kind'] for row in made['jobs']], ['finish-copyedit'])
+        meta = tool_jobs.read(self.root, made['working']['id'])['metadata']['desk']
+        self.assertEqual(meta['then'], 'medium', 'Humanize is queued once Copy edit settles')
+        # Retrying the same start is the same blog with the same one job; a changed strength
+        # is a changed request.
+        again = self.start(style='', first_pass='copyedit', humanize='medium')
+        self.assertEqual(again['id'], made['id'])
+        self.assertEqual([row['kind'] for row in again['jobs']], ['finish-copyedit'])
+        with self.assertRaisesRegex(ValueError, 'request changed'):
+            self.start(style='', first_pass='copyedit', humanize='strong')
+        # Off is no strength at all, and a start that never asked keeps its old fingerprint.
+        plain = self.post(
+            'desk-create',
+            {
+                'operation': 'b' * 32,
+                'title': 'Plain',
+                'manuscript': DRAFT,
+                'first_pass': 'copyedit',
+                'humanize': None,
+            },
+        )
+        self.assertEqual(plain['review']['humanize'], None)
+        self.assertNotIn(
+            'then', tool_jobs.read(self.root, plain['working']['id'])['metadata']['desk']
+        )
+
+    def test_a_human_sounding_strength_is_checked_strictly(self):
+        for value in ('loud', 'Light', 1, True, ['light']):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'light, medium'):
+                self.start(first_pass='copyedit', humanize=value)
+        for choice in ('feedback', 'tighten', 'leave'):
+            with self.subTest(choice=choice), self.assertRaisesRegex(ValueError, 'go with Check'):
+                self.start(first_pass=choice, humanize='light')
+        self.assertFalse(list(self.root.glob('articles/*/session.json')), 'nothing was made')
+
     def test_check_spelling_and_grammar_needs_written_text_and_a_draft_you_bring(self):
         made = self.post(
             'desk-create',

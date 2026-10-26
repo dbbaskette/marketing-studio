@@ -302,6 +302,67 @@ class DeskTeamTests(TeamCase):
         self.assertIn('The first text.', body)
         self.assertIn('An opening paragraph.', body)
 
+    def test_the_human_sounding_chain_leaves_the_tree_clean_and_shares_only_accepts(self):
+        made = management.dispatch(
+            self.root,
+            'desk-create',
+            {
+                'operation': 'd' * 32,
+                'title': 'T3',
+                'manuscript': DRAFT,
+                'first_pass': 'copyedit',
+                'humanize': 'light',
+            },
+        )
+        ident, part = made['id'], made['sections'][0]['id']
+        clean = lambda: self.assertEqual(gitstate.changed(self.found), [])  # noqa: E731
+        remote = self.remote_commits()
+        self.finish_worker(
+            {'suggestions': [{'part': part, 'before': 'First text.', 'after': 'The first text.'}]}
+        )
+        clean()
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        self.assertEqual(shown['working']['kind'], 'finish-humanize')
+        self.finish_worker(
+            {
+                'suggestions': [
+                    {'part': 'opening', 'before': 'An opening paragraph.', 'after': 'An opening.'}
+                ]
+            }
+        )
+        clean()
+        self.assertEqual(self.remote_commits(), remote, 'waiting suggestions are not decisions')
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        self.assertIsNone(shown['working'])
+        self.assertEqual(sorted(shown['finishing']), ['copyedit', 'humanize'])
+        # Check again reruns both and still writes nothing tracked.
+        management.dispatch(self.root, 'desk-review', {'id': ident, 'seen': shown['revision']})
+        clean()
+        self.assertEqual(self.remote_commits(), remote)
+        management.dispatch(
+            self.root,
+            'desk-stop',
+            {
+                'id': ident,
+                'job': management.view(self.root, 'desk', {'id': [ident]})['working']['id'],
+            },
+        )
+        clean()
+        management.dispatch(
+            self.root,
+            'desk-apply',
+            {
+                'id': ident,
+                'seen': shown['revision'],
+                'job': shown['finishing']['humanize']['job'],
+                'items': [{'id': 'p1'}],
+            },
+        )
+        clean()
+        self.assertEqual(self.remote_commits(), self.local_commits())
+        body = support.git(self.remote, 'show', 'main:blogs/' + ident + '/DRAFT.md')
+        self.assertIn('An opening.', body)
+
     def test_typing_is_kept_locally_once_per_session_and_shared_on_leaving(self):
         remote, local = self.remote_commits(), self.local_commits()
         seen = 1

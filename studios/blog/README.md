@@ -87,7 +87,9 @@ Once the page is open, use its controls to drive the work:
    To polish or review a draft, choose **Edit or polish a draft** on Home. It is one
    screen with no kind of post: your draft (pasted, uploaded or a Google Doc), then **What
    should happen first**: **Check spelling and grammar** (the default: each fix is marked
-   in your text to accept or reject, and nothing changes until you accept), **Just give
+   in your text to accept or reject, and nothing changes until you accept; tick **Also
+   suggest more human-sounding wording** to mix in Humanize's rewrites, at Light, Medium
+   or Strong), **Just give
    feedback** (comments beside each part, nothing rewritten), **Reshape to fit a kind of
    post** (only this asks for a kind) or **Leave it as it is**. **Tone** and **Check facts
    against your sources** are optional folds. A draft's headings start its sections at
@@ -95,9 +97,13 @@ Once the page is open, use its controls to drive the work:
 
    **Check spelling and grammar** opens the blog in **Review mode**: the draft reads as a
    document, section by section, with each fix marked in place (struck words out,
-   highlighted words in) and its reason, **Accept** and **Reject**. **Accept all** leaves a
-   fix that changes a fact, code or shape for you to check. Click any paragraph to edit it
-   yourself; **Check again** reruns the check. When nothing is left, a blog from a Google
+   highlighted words in) and its reason, **Accept** and **Reject**. Each is labelled
+   **Spelling**, **Grammar**, **Punctuation**, **Consistency**, **Wording** or, from
+   Humanize, **Sounds human**; a wording fix may offer alternatives to pick from before **Accept**, and
+   accepting one suggestion retires any other that covered the same words. **Accept all**
+   leaves a suggestion that changes a fact, code or shape for you to check. With
+   human-sounding wording on, Quick check's findings are listed at the top with **Fix** and
+   **Dismiss**. Click any paragraph to edit it yourself; **Check again** reruns the check. When nothing is left, a blog from a Google
    Doc sends only the accepted changes to the Doc as suggestions; others offer **Copy** and
    **Download**. **Open the full desk** has everything else.
 3. **Press Start.** Nothing is needed from you after that. The page shows each step and

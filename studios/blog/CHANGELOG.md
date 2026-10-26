@@ -5,6 +5,33 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Human-sounding suggestions, mixed into Check spelling and grammar.** Under **Check
+  spelling and grammar**, tick **Also suggest more human-sounding wording** and choose
+  **Light**, **Medium** or **Strong**: Humanize runs after Copy edit ("Looking for
+  machine-like wording…", with **Stop** for both), and Copy edit's fixes can be accepted
+  meanwhile. In Review mode every suggestion is labelled **Spelling**, **Grammar**,
+  **Punctuation**, **Consistency**, **Wording** or **Sounds human**, both tools read together in order
+  under one count, and **Show: All · Fixes · Sounds human** narrows them. A wording fix may
+  offer up to three alternatives to pick from before **Accept**. Accepting a suggestion
+  retires the others, from either tool, that covered the same words, so two never both
+  land; **Accept all** applies the fixes first, still leaves flagged ones from both, and
+  never applies a rewrite over a fix still waiting for you.
+  Quick check's findings are listed at the top with **Fix** and **Dismiss**, and **Check
+  again** reruns both. A save that finds sections reordered elsewhere now shows the new
+  order. For maintainers: `desk-create` takes `humanize: "light" | "medium" | "strong" |
+  null` with `first_pass: "copyedit"` (part of the start's fingerprint when set); the new
+  `desk-review` route (`{id, seen, humanize?}`) queues `finish-copyedit` with
+  `metadata.desk.review` and `then`, and `finish-humanize` is queued once it settles or
+  fails, once, unless Stop ended the check. The strength is pinned in the ignored
+  `.blog-runs/desk-proposals/<blog>/review.json`, so a team tree stays clean; the desk view
+  carries `review: {humanize, problem}`. Copy edit items carry `kind` (spelling, grammar,
+  punctuation, consistency or wording, else grammar) and, for wording, up to three
+  `alternatives` `[{after, flag}]`; `desk-apply` takes `{id, alternative}` items and
+  `all: true` for Accept all, which leaves out a pick covering an open flagged Copy edit or
+  Humanize item. Apply leaves out a pick that overlaps one applied in the same call, or one
+  already retired, and marks overlapping open Copy edit and Humanize items `retired`. A Copy
+  edit that fails at model routing or is interrupted (`tool_jobs.recover`) still queues its
+  Humanize, once.
 - **Workflow fixes on the writing desk.** A teammate can take over a desk blog (**Take
   over**, **Take this blog**, **Hand over**), and the desk is read-only while someone else
   drives it. A stopped start offers **Try again with more time**, **Continue without
@@ -14,7 +41,6 @@ changes for authors first, then what changes for maintainers.
   edit it on the desk** opens the draft screen, the paste field takes up to 200,000
   characters, and the stepped start asks what you have before sources and settings. Page
   words name each thing once.
-
 - **Check spelling and grammar, reviewed in your text.** Polishing a draft now starts
   with **Check spelling and grammar**: Copy edit runs and the blog opens in **Review
   mode**, where the draft reads as a document, section by section, with each fix marked in

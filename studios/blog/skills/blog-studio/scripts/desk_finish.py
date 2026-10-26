@@ -38,6 +38,9 @@ SAME = (
 EMPTY = (
     'Write the words to use. To cut text, edit the part itself; a suggestion is not applied empty.'
 )
+OVERLAP = 'Another suggestion applied here covers the same words, so this one was not applied.'
+RETIRED = 'This suggestion no longer fits: another change replaced its words.'
+FLAGGED = 'It covers words a flagged suggestion still waits on, so Accept all left it for you.'
 
 
 def _require_lock():
@@ -203,21 +206,26 @@ def _busy_parts(root, ident):
     return parts
 
 
-def apply(root, ident, seen, job, chosen):
+def apply(root, ident, seen, job, chosen, every=False):
     """Apply chosen proposals, each with its suggested text or the person's own (Edit).
 
     One proposal that no longer fits is refused with nothing changed. Several at once
-    (Apply all) apply every one that still fits and leave the rest open, counted in `left`.
-    Each part changed keeps one `finishing` version first."""
+    (Apply all) apply every one that still fits and leave the rest open, counted in `left`;
+    one retired meanwhile is left out too. `every` is Review mode's Accept all: a suggestion
+    that covers words a flagged one from Copy edit or Humanize still waits on is left out,
+    so the flagged one is never retired without the person deciding on it. Each part
+    changed keeps one `finishing` version first."""
     found = read(root, ident, job)
     if not isinstance(chosen, list) or not chosen or len(chosen) > ITEMS:
         raise ValueError('Choose the suggestions to apply.')
+    if type(every) is not bool:
+        raise ValueError('Choose suggestions from this set.')
     items = {item['id']: item for item in found['items']}
-    picks, named = [], set()
+    picks, named, gone = [], set(), []
     for entry in chosen:
         if (
             not isinstance(entry, dict)
-            or set(entry) - {'id', 'after'}
+            or set(entry) - {'id', 'after', 'alternative'}
             or entry.get('id') not in items
             or entry['id'] in named
         ):
@@ -228,9 +236,21 @@ def apply(root, ident, seen, job, chosen):
             raise ValueError('A comment changes nothing. Make it a note, or skip it.')
         if 'after' not in item and 'after' not in entry:
             raise ValueError('Write the wording to use, then apply it.')
+        if item['state'] == 'retired':
+            if len(chosen) == 1 and not every:
+                raise ValueError(RETIRED)
+            gone.append(item['id'])  # Another change took its words; the rest still apply.
+            continue
         if item['state'] != 'open':
             raise ValueError('This suggestion was already applied or skipped.')
         after = entry['after'] if 'after' in entry else item['after']
+        if 'alternative' in entry:
+            # One of a wording fix's alternatives, by its place in the list.
+            others = item.get('alternatives') or []
+            number = entry['alternative']
+            if 'after' in entry or type(number) is not int or not 0 <= number < len(others):
+                raise ValueError('Choose one of this suggestion’s alternatives.')
+            after = others[number]['after']
         if not isinstance(after, str) or len(after) > desk.LIMIT:
             raise ValueError('Keep one part under 200,000 characters.')
         picks.append((item, after))
@@ -240,13 +260,23 @@ def apply(root, ident, seen, job, chosen):
     working = _busy_parts(root, ident)
     if any(part in working or ('sections' in working and part not in desk.PARTS) for part in parts):
         raise ValueError('A desk job is working on this part. Wait for it, or stop it, then apply.')
-    single = len(picks) == 1
-    texts, applied, left = {}, [], []
+    single = len(chosen) == 1 and not every  # Accept all never refuses: it leaves out.
+    texts, applied, left = {}, [], gone
+    # Where each applied suggestion sat in its part as it was, so two that cover the same
+    # words never both land, and the others it covered are retired once it does.
+    originals = {part: desk.text_of(draft, part) for part in parts}
+    spans = {part: [] for part in parts}
+    waiting = _flagged_spans(root, ident, job, found, originals, named) if every else {}
     for item, after in picks:
         part = item['part']
         try:
             if not after.strip():
                 raise ValueError(EMPTY)
+            span = _span(originals[part], item)
+            if span is not None and _covers(spans[part], span):
+                raise ValueError(OVERLAP)
+            if span is not None and _covers(waiting.get(part, []), span):
+                raise ValueError(FLAGGED)
             text = texts[part] if part in texts else desk.text_of(draft, part)
             if item.get('whole'):
                 fits = desk_images.scrub(text) == item['before']
@@ -283,7 +313,11 @@ def apply(root, ident, seen, job, chosen):
             continue
         texts[part] = updated
         applied.append(item)
+        if span is not None:
+            spans[part].append(span)
     if not applied:
+        if every:
+            return {'applied': 0, 'left': left}  # Each left for the person; nothing changed.
         raise ValueError(NONE_LEFT)
     changed = []
     for part, text in texts.items():
@@ -303,7 +337,87 @@ def apply(root, ident, seen, job, chosen):
                 if other.get('group') == item['group'] and other['state'] == 'open':
                     other['state'] = 'skipped'  # An alternative to the one chosen.
     studio.write_json(_path(root, ident, job), found)
+    _retire(root, ident, job, found, originals, spans)
     return {'applied': len(applied), 'left': left}
+
+
+def _sentence_sets(root, ident, job, found):
+    """[(job, set)] for the waiting Copy edit and Humanize sets, this one as it is held."""
+    found_sets = [(job, found)]
+    if found.get('kind') not in SENTENCES:
+        return found_sets
+    for tool, other in _latest(root, ident).items():
+        kind = next(kind for kind, name in TOOLS.items() if name == tool)
+        if kind in SENTENCES and other != job:
+            try:
+                found_sets.append((other, read(root, ident, other)))
+            except (ValueError, OSError):
+                continue
+    return found_sets
+
+
+def _flagged_spans(root, ident, job, found, originals, named):
+    """{part: [span]} of open, flagged suggestions still in the text that Accept all leaves
+    for the person, from either tool, other than the ones being applied."""
+    spans = {}
+    for name, value in _sentence_sets(root, ident, job, found):
+        for item in value.get('items', []):
+            part = item.get('part')
+            if (
+                item.get('state') != 'open'
+                or not item.get('flag')
+                or part not in originals
+                or (name == job and item.get('id') in named)
+            ):
+                continue
+            span = _span(originals[part], item)
+            if span is not None:
+                spans.setdefault(part, []).append(span)
+    return spans
+
+
+def _span(text, item):
+    """Where a suggestion sits in its part's text, (start, end), or None when it is not
+    there once. A whole-part alternative covers the whole part."""
+    if item.get('whole'):
+        return (0, max(1, len(text)))
+    before = item.get('before') or ''
+    if 'comment' in item or not _once(text, before):
+        return None
+    at = text.index(before)
+    return (at, at + len(before))
+
+
+def _covers(spans, span):
+    """Whether `span` shares any character with one of `spans`: two suggestions that start
+    at the same place overlap too."""
+    start, end = span
+    return any(start < b and a < end for a, b in spans)
+
+
+# The tools whose sentence rewrites Review mode shows together; accepting one retires the
+# others, from either tool, that covered the same words.
+SENTENCES = ('finish-copyedit', 'finish-humanize')
+
+
+def _retire(root, ident, job, found, originals, spans):
+    """Mark open suggestions that covered words an applied one replaced as retired: they
+    no longer fit, whether or not their words still happen to be in the text. Only this
+    computer's waiting sets change."""
+    if not any(spans.values()):
+        return
+    for name, value in _sentence_sets(root, ident, job, found):
+        changed = False
+        for item in value.get('items', []):
+            part = item.get('part')
+            if item.get('state') != 'open' or part not in spans or not spans[part]:
+                continue
+            span = _span(originals[part], item)
+            if span is not None and _covers(spans[part], span):
+                item['state'] = 'retired'
+                changed = True
+        if changed:
+            studio.write_json(_path(root, ident, name), value)
 
 
 def skip(root, ident, job, ids):
@@ -589,12 +703,19 @@ COPYEDIT = (
     'code. Leave sentences that are already correct alone. Do not research.'
 )
 COPYEDIT_JSON = (
-    'Return JSON in content: {"suggestions": [{"part": ..., "before": ..., "after": ..., '
-    '"why": ...}]}, at most 60. part is "title", "opening" or the id of a section in sections; '
-    'before is one or two whole sentences copied exactly from that part, character for '
-    'character (for the title, the words to change); after replaces before, on one line for '
-    'the title; why names the fix in a few words, such as "Subject and verb agree".'
+    'Return JSON in content: {"suggestions": [{"part": ..., "kind": ..., "before": ..., '
+    '"after": ..., "why": ...}]}, at most 60. part is "title", "opening" or the id of a section '
+    'in sections; kind is "spelling", "grammar", "punctuation", "consistency" or "wording" '
+    '(clarity and concision); before is one or two whole sentences copied exactly from that '
+    'part, character for character (for the title, the words to change); after replaces '
+    'before, on one line for the title; why names the fix in a few words, such as "Subject and '
+    'verb agree". A wording suggestion may also have "alternatives": up to three other '
+    'replacements for the same before, each a different way to say it. Spelling, grammar, '
+    'punctuation and consistency fixes have one right answer and no alternatives.'
 )
+# The kinds of fix a copy edit names; anything else is read as grammar.
+COPYEDIT_KINDS = ('spelling', 'grammar', 'punctuation', 'consistency', 'wording')
+ALTERNATIVES = 3  # at most, for one wording suggestion
 # The copy-editing guide's lenses a copy edit uses; the others (evidence, structure,
 # persuasion and the rest) belong to a fuller edit.
 COPYEDIT_LENSES = ('Clarity', 'Voice')
@@ -942,38 +1063,71 @@ def _rows(found, key, fields):
     return good, len(rows[:60]) - len(good)
 
 
-def _read_humanize(draft, found, title=False):
+def _replacement(draft, part, before, after):
+    """`after` as a replacement for `before` in its part, stripped, or None when it is not
+    one: empty, the same, adding a heading, or more than one line in the title."""
+    if not isinstance(after, str) or not after.strip() or len(after) > desk.LIMIT:
+        return None
+    after = after.strip()
+    if (
+        after == before
+        or desk.has_heading(after, desk.limit(draft))
+        or (part == 'title' and '\n' in after)
+    ):
+        return None
+    return after
+
+
+def _alternatives(draft, part, before, after, found):
+    """A wording suggestion's other replacements, read strictly: a list of at most three
+    strings, each a replacement for the same `before` that differs from it and from the ones
+    before; another shape gives none. Each is flagged as a suggestion is."""
+    if not isinstance(found, list) or not found or len(found) > ALTERNATIVES:
+        return []
+    kept, taken = [], {after}
+    for value in found:
+        text = _replacement(draft, part, before, value)
+        if text is None or text in taken:
+            continue
+        taken.add(text)
+        kept.append({'after': text, 'flag': _flags(before, text)})
+    return kept
+
+
+def _read_humanize(draft, found, title=False, kinds=False):
     """Sentence rewrites (Humanize, and Copy edit with the title too): each `before` found
     once in its part, and an `after` that changes it without adding a heading, on one line
-    for the title. Any other row is dropped."""
+    for the title. Any other row is dropped. With `kinds` (Copy edit), each fix names its
+    kind, grammar when it names none it may, and a wording fix may bring alternatives."""
     rows, dropped = _rows(found, 'suggestions', ('part', 'before', 'after'))
     parts = _prose_parts(draft) | ({'title'} if title else set())
     items, seen = [], set()
     for row in rows:
-        part, after = row.get('part'), row.get('after')
+        part = row.get('part')
         before = _located(draft, part, row.get('before')) if part in parts else None
-        if (
-            before is None
-            or not isinstance(after, str)
-            or not after.strip()
-            or after.strip() == before
-            or desk.has_heading(after, desk.limit(draft))
-            or (part == 'title' and '\n' in after.strip())
-            or (part, before) in seen
-        ):
+        after = None if before is None else _replacement(draft, part, before, row.get('after'))
+        if after is None or (part, before) in seen:
             dropped += 1
             continue
         seen.add((part, before))
-        after = after.strip()
-        items.append(
-            {
-                'part': part,
-                'before': before,
-                'after': after,
-                'note': _text(row.get('why'), 500),
-                'flag': _flags(before, after),
-            }
-        )
+        item = {
+            'part': part,
+            'before': before,
+            'after': after,
+            'note': _text(row.get('why'), 500),
+            'flag': _flags(before, after),
+        }
+        if kinds:
+            kind = row.get('kind')
+            item['kind'] = kind if isinstance(kind, str) and kind in COPYEDIT_KINDS else 'grammar'
+            others = (
+                _alternatives(draft, part, before, after, row.get('alternatives'))
+                if item['kind'] == 'wording'
+                else []
+            )
+            if others:
+                item['alternatives'] = others
+        items.append(item)
     return items, dropped, {}
 
 
@@ -1114,8 +1268,9 @@ def _read_voice(draft, found):
 
 
 def _read_copyedit(draft, found):
-    """Located sentence fixes, read as Humanize's are, and the title's too."""
-    return _read_humanize(draft, found, title=True)
+    """Located sentence fixes, read as Humanize's are, and the title's too, each with its
+    kind and a wording fix with any alternatives."""
+    return _read_humanize(draft, found, title=True, kinds=True)
 
 
 READERS = {

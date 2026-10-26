@@ -1444,9 +1444,10 @@ def _start_view(root, ident, rows):
     }
 
 
-def finish(root, ident, seen, tool, level=None, guide=None):
+def finish(root, ident, seen, tool, level=None, guide=None, chain=None):
     """Queue a finishing tool. It writes no part, so no card waits for it and no form is
-    refused for it; its proposals are read against the draft when they come back."""
+    refused for it; its proposals are read against the draft when they come back. `chain`
+    is Review mode's: what to queue once this one settles."""
     import desk_finish
 
     draft = desk.read(root, ident)
@@ -1459,9 +1460,130 @@ def finish(root, ident, seen, tool, level=None, guide=None):
         kind,
         payload,
         guidance,
-        {'part': 'finishing', 'action': tool, **meta},
+        {'part': 'finishing', 'action': tool, **meta, **(chain or {})},
         parts=[],
     )
+
+
+# Review mode ("Check spelling and grammar"): Copy edit, and when the person asked for it,
+# Humanize at the strength they chose, queued once Copy edit settles. The choice is pinned
+# on this computer beside the blog's waiting suggestions, so Check again asks for the same.
+REVIEW = 'review.json'
+PINNED = object()  # Check again: the strength pinned for this blog.
+HUMANIZE_LEVELS = ('light', 'medium', 'strong')
+NO_LEVEL = 'Choose light, medium or strong for the human-sounding suggestions, or leave them off.'
+
+
+def _review_path(root, ident):
+    return studio.inside(root, '.blog-runs', 'desk-proposals', studio.identifier(ident), REVIEW)
+
+
+def review_record(root, ident):
+    """{humanize, chain, copyedit, next, ended, problem} for this blog's latest check."""
+    target = _review_path(root, ident)
+    if not target.is_file() or target.is_symlink():
+        return {}
+    try:
+        found = studio.read_json(target)
+    except (ValueError, OSError):
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
+def humanize_level(value):
+    """A start's or Check again's strength for the human-sounding suggestions, or None."""
+    if value is not None and value not in HUMANIZE_LEVELS:
+        raise ValueError(NO_LEVEL)
+    return value
+
+
+def review(root, ident, seen, humanize=PINNED):
+    """Queue Check spelling and grammar: Copy edit, then Humanize at the pinned strength.
+    One job runs at a time per blog; the second is queued when the first settles."""
+    record = review_record(root, ident)
+    level = record.get('humanize') if humanize is PINNED else humanize_level(humanize)
+    if level not in HUMANIZE_LEVELS:
+        level = None
+    _busy(root, ident)  # A check under way keeps its own record.
+    record = {'humanize': level}
+    studio.write_json(_review_path(root, ident), record)  # The choice stays either way.
+    chain = secrets.token_hex(8)
+    job = finish(
+        root, ident, seen, 'copyedit', chain={'review': chain, **({'then': level} if level else {})}
+    )
+    record.update(chain=chain, copyedit=job['id'], next=None, ended=not level, problem='')
+    studio.write_json(_review_path(root, ident), record)
+    return job
+
+
+def _review_next(root, job):
+    """After Copy edit settles, ready or not, queue Humanize for the same check, once. A
+    problem queuing it is kept on the check's record for the page to say."""
+    import desk_finish
+
+    meta, ident = job['metadata']['desk'], job['metadata']['article']
+    record = review_record(root, ident)
+    if record.get('chain') != meta.get('review') or record.get('ended'):
+        return None
+    record['ended'] = True  # Whatever happens next, this step is taken once.
+    try:
+        if any(busy(other) for other in jobs(root, ident) if other['id'] != job['id']):
+            raise ValueError('Another desk job started first, so the wording check did not.')
+        draft = desk.read(root, ident)
+        kind, payload, guidance, extra = desk_finish.request(
+            root, ident, draft, 'humanize', meta['then']
+        )
+        made = _create(
+            root,
+            ident,
+            kind,
+            payload,
+            guidance,
+            {
+                'part': 'finishing',
+                'action': 'humanize',
+                **extra,
+                'review': meta['review'],
+                'seen': draft['revision'],
+            },
+        )
+        record['next'] = made['id']
+    except Exception as error:  # noqa: BLE001 - said on the page, never silently stuck.
+        record['problem'] = (str(error) or type(error).__name__)[:1000]
+    studio.write_json(_review_path(root, ident), record)
+    return record.get('next')
+
+
+def interrupted(root, job):
+    """A desk job Blog Studio found working when it started again (tool_jobs.recover), now
+    failed: a check's Copy edit still lets its Humanize go ahead, once. Nothing else
+    continues by itself."""
+    if not (job.get('metadata', {}).get('desk') or {}).get('then'):
+        return
+    try:
+        _guard(root, job['metadata']['article'])
+        _review_next(root, job)
+    except Exception:  # noqa: BLE001 - recovery never stops for one blog.
+        return
+
+
+def _review_end(root, ident):
+    """Stop ends the check: nothing more is queued for it."""
+    record = review_record(root, ident)
+    if record.get('chain') and not record.get('ended'):
+        record['ended'] = True
+        studio.write_json(_review_path(root, ident), record)
+
+
+def review_view(root, ident):
+    """What Review mode needs of the check: the pinned strength and any problem queuing
+    its second step."""
+    record = review_record(root, ident)
+    level = record.get('humanize')
+    return {
+        'humanize': level if level in HUMANIZE_LEVELS else None,
+        'problem': str(record.get('problem') or '')[:1000],
+    }
 
 
 FIRST_PASSES = ('tighten', 'reshape', 'leave')
@@ -1775,6 +1897,8 @@ def _settle(root, job):
     if (job['metadata'].get('desk') or {}).get('start'):
         _advance(root, job)
     if job['kind'] in FINISH:
+        if (job['metadata'].get('desk') or {}).get('then'):
+            _review_next(root, job)  # Review mode's Humanize, after its Copy edit.
         return None  # Its proposals wait on this computer: nothing for the team to record.
     return ident
 
@@ -1793,6 +1917,13 @@ def ended(root, job):
         except ValueError:
             return None
         return job['metadata']['article']  # Shared, so nothing it touched is left behind.
+    if job.get('status') == 'failed' and (job['metadata'].get('desk') or {}).get('then'):
+        try:
+            _guard(root, job['metadata']['article'])
+        except ValueError:
+            return None
+        _review_next(root, job)  # A Copy edit that failed still lets its Humanize go ahead.
+        return None
     if job.get('status') == 'failed' and job['kind'] == 'desk-revise-all':
         try:
             _guard(root, job['metadata']['article'])
@@ -1835,6 +1966,7 @@ def stop(root, ident, job_id):
     if not any(job['id'] == job_id for job in found):
         raise ValueError('Choose a job on this blog.')
     start = desk.read_start(root, ident)
+    _review_end(root, ident)  # A check's Humanize is not queued after Stop.
     for job in found:
         if job['status'] in ACTIVE or unsettled(job):
             if job['kind'] == 'desk-revise-all':
@@ -1955,6 +2087,8 @@ def view(root, ident):
         'start': _start_view(root, ident, rows),
         # Finishing: the newest suggestions from each tool, waiting on this computer.
         'finishing': desk_finish.summary(root, ident, draft),
+        # Review mode's check: whether it also suggests human-sounding wording, and how much.
+        'review': review_view(root, ident),
         # Whether research was read for this draft, and how many sources it drew on.
         'research': _research_read(directory),
         # Whether the blog's Google Doc can take the desk's wording as suggestions.
