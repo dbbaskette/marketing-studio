@@ -10,8 +10,8 @@ approve an internal review artifact before choosing edits.
 
 | Job | Steps | Result |
 | --- | --- | --- |
-| Write from a topic or my documents | Kind of post → sources and settings (files, links, Google Docs) → title, reader and point, or three angles → Start | A draft on the writing desk |
-| Work from an outline or notes | Kind of post → sources and settings → the outline → write from it, or shape it first | A draft, or an outline to shape, on the desk |
+| Write from a topic or my documents | What are you writing (kind of post) → what do you have (a topic: title, reader and point, or three angles) → sources and settings (files, links, Google Docs; research and Length for a topic) → Start | A draft on the writing desk |
+| Work from an outline or notes | What are you writing → what do you have (the outline: write from it, or shape it first) → sources and settings → Start | A draft, or an outline to shape, on the desk |
 | Edit or polish a draft | One screen, no kind of post: pasted text, a file or a Google Doc → what happens first (proofread and tighten, just give feedback, reshape to fit a kind of post, or leave it) → optional tone and sources for the fact check → Start | The draft on the desk, with notes, selection edits, History and Finishing |
 | Polish a blog already in the manuscript editor | Continue editing → polish → choose changes → finish | Google feedback or a revised local draft with retained history; **Polish another document** then opens the polishing screen |
 
@@ -26,7 +26,10 @@ after Start. A draft brought to the desk asks for the input method: pasted text,
 uploaded text/Markdown/Word/PDF file, or a Google Doc link. These are source choices within
 one task, rather than separate workflows. Polishing or reviewing a draft never asks for a
 kind of post, except to reshape the draft to one; choosing A draft on the stepped start
-switches to that one screen. Blogs open the relevant next step.
+switches to that one screen. A file uploaded to the team library with **Then edit it on
+the desk** opens that screen with the file's text. A blog on the desk can get a Google Doc
+with **Make a Google Doc**: a private Doc of the draft in your Drive, to which later desk
+changes are sent as suggestions. Blogs open the relevant next step.
 The editor has three explicit steps: Polish, Choose changes, Finish.
 Polish combines proofreading, copy editing and natural wording, without research.
 Fact checking, structure review and scoped revision remain available under other

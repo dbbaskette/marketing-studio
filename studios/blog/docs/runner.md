@@ -400,7 +400,7 @@ pasted links, and a Google Doc, with each post's text, title, author and date re
 kept. **Each post's own author** is the default, read from each page's byline; one typed
 author and no author remain choices. Under **More ways to add**, **Import a blog or site**
 previews a whole folder, website, feed, sitemap or export, and **Upload one file**
-summarizes and tags a file or starts an editable blog from it.
+summarizes and tags a file, or opens it on the writing desk to edit.
 
 Filters sit in one row (search, role, kind of post, author, status), with the collection
 under **More filters**; on a phone, **Filters** opens them. Tick rows, or **Select all on

@@ -113,9 +113,9 @@ host, path at a segment boundary, every redirect checked); see
 [the design](superpowers/specs/2026-10-23-research-sites-design.md) and
 `core/studio_core/research_sites.py`.
 
-## Review level
+## Where new work stops
 
-Choose the shared **Review level** under You and your assistant. New browser
+Choose **Where new work stops** under You and your assistant. New browser
 runs in Presentation Studio and Training Studio, and Blog Studio runs started step by step
 in chat, save this choice. A new blog on Blog Studio's writing desk has no stops: its
 outline and draft are written after Start, and you edit them when you choose.
@@ -142,6 +142,16 @@ Training Studio reads the research plan before any research is run, then groups
 all selected levels into one stop, **Review the first drafts**, with each deck's
 wireframe draft and the brand's looks to pick from, stops at each drawn deck, then
 one review of the completed documents, decks and scenarios.
+
+### One save, and Blog Studio's own setup
+
+Shared settings is one form: **Studio installations** is its last card, and **Save
+settings** writes the shared choices and then any installation folder that changed. When
+the folders are refused after the shared choices were saved, the page says so: "Your shared
+settings were saved. The installation folders were not: …". Each setup step is named once,
+in the numbered list. Blog Studio's own first run asks only what Blog Studio uses: no
+review level, delivery format or slide previews, and their saved values are left as they
+are.
 
 ### Where a run stops
 

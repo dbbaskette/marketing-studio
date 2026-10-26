@@ -1,6 +1,6 @@
 # Presentation Studio
 
-Presentation Studio makes slide decks in your brand. You give it an idea, a document or a deck you already have, and it builds the deck with you one step at a time. New browser runs use your shared review level: Balanced brings research, the outline and the brand's looks together for one review, where you pick the look, then shows the finished deck. Automatic draft stops at the finished deck and uses the brand's default look; Step by step reviews every stage. Existing runs keep their saved flow.
+Presentation Studio makes slide decks in your brand. You give it an idea, a document or a deck you already have, and it builds the deck with you one step at a time. New browser runs use your shared review level: Balanced brings research, the outline and the brand's looks together for one review, where you pick the look, then shows the finished deck; a deck redesigned with its content kept, which has no outline stop, stops for its look instead. Automatic draft stops at the finished deck and uses the brand's default look; Step by step reviews every stage. Existing runs keep their saved flow.
 
 The work is done by an AI assistant you already have, Claude Code or Codex. Presentation Studio guides it, checks what it makes, and keeps track of what you have approved. The runner works within your selected permissions and limits. Automatic continuation is recorded separately from your own approvals; publishing remains a separate action.
 
@@ -126,7 +126,7 @@ If the file cannot be read, Presentation Studio works on its built-in defaults, 
 | What you see | What it means |
 | --- | --- |
 | The page says it needs LibreOffice or Poppler | Slides cannot be drawn on this computer. Install them, or sign in to Google and use Drive previews |
-| You get a PowerPoint file, not Google Slides | You are not signed in to Google. Sign in with gcloud, then press **Deliver to Google Slides** on the deck's screen: the same deck goes to Google Slides as the next revision |
+| You get a PowerPoint file, not Google Slides | You are not signed in to Google. Status → Check this computer says how to sign in; then press **Send to Google Slides** on the deck's screen: the same deck goes to Google Slides as the next revision |
 | A step failed | The page says why in one sentence. Choose Try again, or Carry on if offered |
 | A step ran out of time | The page says how long a step may take. Choose **Give it more time and try again**, or raise the limit in Settings, under Limits |
 | A deck spent what it may | It stops before the next step, or when a step uses up what is left. Choose Resume to let it spend as much again, or raise the limit in Settings, under Limits |
@@ -161,4 +161,4 @@ installing a companion remains an explicit action. Comments during construction 
 tracked separately in
 [the live-preview issue](https://github.com/dbbaskette/marketing-studio/issues/15).
 
-The Balanced direction review requires a look from the samples shown. Editing the outline redraws those samples and asks you to choose again before the build. Delivered team decks stay their maker's to request changes; teammates still take them explicitly. A PowerPoint delivery can later be sent to Google Slides as a new revision from the page, without rebuilding.
+The Balanced direction review requires a look from the samples shown. Editing the outline redraws those samples and asks you to choose again before the build. Delivered team decks stay their maker's to request changes; teammates still take them explicitly. A PowerPoint delivery is shared beside the deck as `deck.pptx`, so any teammate can download it, and can later be sent to Google Slides as a new revision from the page, without rebuilding.

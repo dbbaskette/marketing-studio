@@ -5,6 +5,16 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Workflow fixes on the writing desk.** A teammate can take over a desk blog (**Take
+  over**, **Take this blog**, **Hand over**), and the desk is read-only while someone else
+  drives it. A stopped start offers **Try again with more time**, **Continue without
+  research** and **Open Status** with what the assistant said, beside Retry. A restored
+  desk blog opens on the desk. **Make a Google Doc** gives a desk blog its Google Doc.
+  **Mark as published** keeps the draft in the team library. The library upload's **Then
+  edit it on the desk** opens the draft screen, the paste field takes up to 200,000
+  characters, and the stepped start asks what you have before sources and settings. Page
+  words name each thing once.
+
 - **Copy edit in Finishing, with each fix approved first.** **Finishing → Copy edit**
   finds grammar, spelling, punctuation, consistency, clarity and concision fixes in the
   title and the text and shows each one before and after with a note on why, to

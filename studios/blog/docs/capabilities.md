@@ -41,6 +41,7 @@ it does not claim every low-level CLI flag is a browser control.
 | Report-only pre-publish checks | Tools → Pre-publish | `prepublish --id ID` |
 | Advisory topic overlap | Tools → Check topic overlap | `plan --topic TOPIC`, local library index |
 | Board, due dates, owners, ready/published decisions | Blogs → Library and team tools | `editorial` commands; explicit decisions |
+| Mark a desk blog as published, which keeps its draft in the team library | The desk's **Mark as published**; marking it again updates that item | `schedule` with `desk` and stage `published`; `blog_library.keep_written` |
 | Source search, collections, analysis, retire/undo | Team library | `library`/`source`, explicit per-operation analysis |
 | Every finished blog and kept file in one library, with role, kind of post and author | Finish; the files card's Keep in the team library | `library.origin_kind`, `kind` and `article` on a source; `library find --role --kind --author` |
 | Add files, links and Google Docs to the library; each post's own author | Team library → Add to library | `library-add-preview`, `library-add` (the `urls` import per site with bylines), `library-add-author`, `library-add-samples` through `source-purpose` |
