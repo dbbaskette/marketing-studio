@@ -570,6 +570,41 @@ class DeskDriverTests(TeamCase):
         self.assertTrue(shown['driver']['here'])
         self.save(other, shown['revision'], 'Taken')
 
+    def test_a_teammate_takes_over_a_start_that_stopped_and_retries_it(self):
+        started = management.dispatch(
+            self.root,
+            'desk-create',
+            {'operation': 'c' * 32, 'title': 'Stalled topic', 'way': 'topic', 'point': 'P.'},
+        )
+
+        def worker(engine, payload, guidance, **options):
+            raise ValueError('The assistant stopped.')
+
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(
+            management.view(self.root, 'desk', {'id': [started['id']]})['start']['problem'],
+            'The assistant stopped.',
+        )
+        other = self.other()
+        shown = management.view(other, 'desk', {'id': [started['id']]})
+        self.assertIsNone(shown['start']['ended_at'])
+        self.assertTrue(shown['start']['problem'], 'stopped, as this computer sees it')
+        self.assertFalse(shown['driver']['here'])
+        self.assertIn('Take it over to change it.', shown['elsewhere'])
+        with self.assertRaisesRegex(ValueError, 'another computer'):
+            management.dispatch(other, 'desk-retry', {'id': started['id']})
+        management.dispatch(
+            other,
+            'team-takeover',
+            {'id': started['id'], 'expected': shown['expected'], 'confirmed': True},
+        )
+        shown = management.view(other, 'desk', {'id': [started['id']]})
+        self.assertTrue(shown['driver']['here'])
+        self.assertIsNone(shown['elsewhere'])
+        retried = management.dispatch(other, 'desk-retry', {'id': started['id']})
+        self.assertEqual(retried['working']['kind'], 'desk-outline')
+        self.assertEqual(retried['start']['problem'], '')
+
 
 class DeskTeamImageTests(TeamCase):
     def folder(self, ident):
