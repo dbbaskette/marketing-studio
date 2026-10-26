@@ -388,6 +388,7 @@ class RunnerTests(InstallerCase):
         self.assertFalse((staged / 'runner' / 'claude-code-models.json').exists())
         self.assertTrue((staged / 'scripts' / 'studio_core' / 'claude-code-models.json')
                         .is_file())
+        self.assertTrue((staged / 'scripts' / 'studio_core' / 'shared_runner' / '__init__.py').is_file())
         self.assertFalse(list((staged / 'runner').rglob('__pycache__')))
         self.assertEqual(result['runner']['installed'], True)
         state = json.loads((self.root / 'installation.json').read_text())
