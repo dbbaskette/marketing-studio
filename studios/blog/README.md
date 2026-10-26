@@ -101,8 +101,10 @@ Once the page is open, use its controls to drive the work:
    renames, reorders, adds and removes sections and writes the draft or one section from
    it. **Add a source** takes more sources at any time.
 5. **Finish before publishing.** **Finishing** opens a panel of tools that suggest changes:
-   **Humanize** (light, medium or strong), **Proofread**, **Check facts against sources**,
-   **Headline and opening**, **Feedback without a rewrite**, **Apply a voice** and
+   **Copy edit** (grammar and wording fixes, each approved first), **Humanize** (light,
+   medium or strong), **Quick check** (dashes, machine-sounding words and repetition, with
+   no assistant), **Check facts against sources**, **Headline and opening**, **Feedback
+   without a rewrite**, **Apply a voice** and
    **Before publishing** (the pre-publish check, **Repurpose**, and **Send to Google Doc**
    as suggestions). Each suggestion shows before and after. **Apply**, **Edit** or
    **Skip** it, or **Apply all**. Nothing changes until you apply, and the earlier text

@@ -5,9 +5,10 @@
 example), research ticks, length and tone, then a topic (with three angles if asked), an
 outline or notes, or a draft. Nothing stops after Start. The desk has section notes and
 **Rewrite**, a note for the whole draft, selection edits, **History**, an **Outline** tab,
-**Add a source** and **Needs you before publishing**. **Finishing** proposes Humanize,
-Proofread, fact checks, headlines, feedback, **Apply a voice** and Before publishing;
-nothing changes until Apply. Blogs started before the desk keep their step-by-step run.
+**Add a source** and **Needs you before publishing**. **Finishing** proposes **Copy edit**
+(grammar and wording fixes, each approved first), Humanize, **Quick check** (the mechanical
+check, no assistant), fact checks, headlines, feedback, **Apply a voice** and Before
+publishing; nothing changes until Apply. Blogs started before the desk keep their step-by-step run.
 
 In a manuscript, choose **Tools**. From Blogs, use **Library and team tools
 → Tools** for global tasks. Normal writing and polishing require none of

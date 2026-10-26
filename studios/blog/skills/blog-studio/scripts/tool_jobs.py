@@ -24,6 +24,7 @@ KINDS = {
     'desk-outline',
     'desk-draft',
     # Finishing on the desk: proposals to preview, then apply, edit or skip.
+    'finish-copyedit',
     'finish-humanize',
     'finish-facts',
     'finish-headline',
@@ -39,6 +40,7 @@ DESK = (
     'desk-research',
     'desk-outline',
     'desk-draft',
+    'finish-copyedit',
     'finish-humanize',
     'finish-facts',
     'finish-headline',

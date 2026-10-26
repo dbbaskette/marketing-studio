@@ -32,13 +32,21 @@ KINDS = (
     'desk-outline',
     'desk-draft',
     # Finishing (desk_finish.py): each proposes changes the person applies, edits or skips.
+    'finish-copyedit',
     'finish-humanize',
     'finish-facts',
     'finish-headline',
     'finish-feedback',
     'finish-voice',
 )  # A blog's own desk jobs; desk-angles runs before there is a blog.
-FINISH = ('finish-humanize', 'finish-facts', 'finish-headline', 'finish-feedback', 'finish-voice')
+FINISH = (
+    'finish-copyedit',
+    'finish-humanize',
+    'finish-facts',
+    'finish-headline',
+    'finish-feedback',
+    'finish-voice',
+)
 ACTIVE = ('queued', 'working')
 ACTIONS = {
     'rephrase': 'Rewrite the passage in fresh words with the same meaning.',
@@ -91,6 +99,16 @@ GAPS = 50
 
 def _guide(name):
     return (blog_runner.REFERENCES / 'modules' / name).read_text().rstrip()
+
+
+def desk_check(name):
+    """A manuscript editor check as a desk job reads it: the desk is tone-only, so there are
+    house rules but no pinned author rules."""
+    import manuscript_editor
+
+    return manuscript_editor.CHECKS[name].replace(
+        'the pinned author and house rules', 'the house rules'
+    )
 
 
 INDEXED = 60  # desk jobs a blog's index names, newest last
@@ -1399,11 +1417,10 @@ def first_pass(root, ident, seen, choice):
             'This draft is too long for one first pass. Edit it section by section: a note '
             'on each section, or a note for the whole draft.'
         )
-    import manuscript_editor
 
     extra, shared = _context(root, draft, length=choice == 'reshape')
     rule = (
-        TIGHTEN + ' ' + manuscript_editor.CHECKS['copyedit'] + '\n\n' + _guide('desk-edit.md')
+        TIGHTEN + ' ' + desk_check('copyedit') + '\n\n' + _guide('desk-edit.md')
         if choice == 'tighten'
         else RESHAPE
     )
