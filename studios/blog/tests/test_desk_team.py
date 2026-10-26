@@ -593,6 +593,8 @@ class DeskTeamImageTests(TeamCase):
 class DeskTeamHeadingTests(TeamCase):
     def test_an_opening_only_record_is_divided_on_viewing_as_its_own_recorded_change(self):
         import studio
+        import json
+
         from test_desk import EXPORTED, EXPORTED_HEADINGS, opening_only
 
         made = management.dispatch(
@@ -607,20 +609,28 @@ class DeskTeamHeadingTests(TeamCase):
         markdown = (self.folder(ident) / 'DRAFT.md').read_bytes()
         shown = management.view(self.root, 'desk', {'id': [ident]})
         self.assertEqual([s['heading'] for s in shown['sections']], EXPORTED_HEADINGS)
-        self.assertEqual(shown['revision'], 2)
+        self.assertEqual(shown['revision'], 3)
         self.assertEqual(gitstate.changed(self.found), [])
         self.assertEqual(self.local_commits(), commits + 1)
         self.assertIn('headings', support.git(self.found.repo, 'log', '-1', '--format=%s'))
         self.assertEqual((self.folder(ident) / 'DRAFT.md').read_bytes(), markdown)
-        # Viewing again records nothing more, and a form open before saves as it would have.
+        # Viewing again records nothing more, and a form open before on another part saves.
+        # The division is recorded here and shared with the next decision.
         management.view(self.root, 'desk', {'id': [ident]})
         self.assertEqual(self.local_commits(), commits + 1)
+        remote = self.remote_commits()
         management.dispatch(
             self.root,
             'desk-save',
             {'id': ident, 'seen': 2, 'part': 'title', 'text': 'Renamed', 'session': 'c' * 16},
         )
         self.assertEqual(gitstate.changed(self.found), [])
+        management.dispatch(self.root, 'desk-share', {'id': ident})
+        self.assertGreater(self.remote_commits(), remote)
+        shared = json.loads(
+            support.git(self.remote, 'show', 'main:blogs/' + ident + '/desk/draft.json')
+        )
+        self.assertEqual([s['heading'] for s in shared['sections']], EXPORTED_HEADINGS)
 
 
 if __name__ == '__main__':

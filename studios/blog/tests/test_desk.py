@@ -1264,6 +1264,15 @@ class HeadingLevelTests(unittest.TestCase):
         self.assertEqual([s['heading'] for s in found['sections']], ['One', 'Two'])
         self.assertEqual(desk.join(found), text)
 
+    def test_an_indented_heading_and_a_tab_after_the_marks_are_headings(self):
+        text = '# T\n\nOpen.\n\n   ### A\n\na\n\n###\tB\n\nb\n\n    ### Code, not a heading\n'
+        found = desk.split(text)
+        self.assertEqual([s['heading'] for s in found['sections']], ['A', 'B'])
+        self.assertIn('    ### Code, not a heading', found['sections'][1]['text'])
+        self.assertEqual(desk.join(found), text)
+        self.assertTrue(desk.has_heading('  ### A', 3))
+        self.assertTrue(desk.has_heading('###\tA', 3))
+
     def test_a_part_may_hold_only_headings_deeper_than_the_section_level(self):
         self.assertTrue(desk.has_heading('A.\n\n### B', 3))
         self.assertTrue(desk.has_heading('## B', 3))
@@ -1296,6 +1305,13 @@ class HeadingLevelRecordTests(DeskCase):
             desk.save(self.root, made['id'], 1, 'opening', '### Sneaky')
         saved = desk.save(self.root, made['id'], 1, part, 'X.\n\n#### Detail\n\nMore.')
         self.assertEqual(len(desk.split(desk.join(saved))['sections']), 3)
+
+    def test_a_draft_of_more_than_sixty_sections_is_refused_readably(self):
+        text = '# Many\n\n' + '\n\n'.join('### H%d\n\nText.' % n for n in range(61))
+        with self.assertRaisesRegex(ValueError, 'Keep the draft to 60 sections.'):
+            desk.create(self.root, {'manuscript': text})
+        made = desk.create(self.root, {'manuscript': text.rsplit('\n\n### H60', 1)[0]})
+        self.assertEqual(len(made['sections']), 60)
 
     def test_a_draft_with_no_sections_keeps_headings_out_of_its_opening(self):
         made = desk.create(self.root, {'title': 'Flat', 'manuscript': 'Just prose.'})
@@ -1334,7 +1350,9 @@ def opening_only(case, made):
 
 class HeadingMigrationTests(DeskCase):
     """A record whose opening holds headings, kept before the desk read them below ##, is read
-    into sections once, by the computer that drives it, with no new revision."""
+    into sections once, by the computer that drives it, one revision on, with the opening and
+    the outline marked changed: a page left open on them is refused as outdated, and a form
+    on any other part still saves."""
 
     def setUp(self):
         super().setUp()
@@ -1351,8 +1369,8 @@ class HeadingMigrationTests(DeskCase):
         self.assertEqual(draft['opening'], EXPORTED_OPENING)
         self.assertEqual([s['heading'] for s in draft['sections']], EXPORTED_HEADINGS)
         self.assertEqual({s['level'] for s in draft['sections']}, {3})
-        # No new revision and no part marked changed, so no open form is refused for it.
-        self.assertEqual((draft['revision'], draft['changed']), (2, {'opening': 2}))
+        # One revision on, with the opening and the outline marked changed.
+        self.assertEqual((draft['revision'], draft['changed']), (3, {'opening': 3, 'outline': 3}))
         self.assertEqual((self.directory / 'DRAFT.md').read_bytes(), markdown)
         self.assertEqual(
             (self.directory / 'desk' / 'versions' / 'opening.jsonl').read_bytes(), kept
@@ -1363,10 +1381,48 @@ class HeadingMigrationTests(DeskCase):
         self.assertEqual(target.read_bytes(), written)
         self.assertEqual([s['id'] for s in again['sections']], [s['id'] for s in draft['sections']])
 
-    def test_a_form_open_before_still_saves(self):
+    def test_a_form_on_another_part_still_saves_and_one_on_the_opening_is_refused(self):
         saved = desk.save(self.root, self.ident, 2, 'title', 'Renamed')
-        self.assertEqual((saved['revision'], len(saved['sections'])), (3, 3))
+        self.assertEqual((saved['revision'], len(saved['sections'])), (4, 3))
         self.assertIn('### **Closing thoughts**', (self.directory / 'DRAFT.md').read_text())
+        # An opening form from before, its headings taken out, would duplicate the sections.
+        with self.assertRaisesRegex(ValueError, 'changed since you opened it'):
+            desk.save(self.root, self.ident, 2, 'opening', EXPORTED_OPENING + ' Typed.')
+        with self.assertRaisesRegex(ValueError, 'changed since you opened it'):
+            desk.save(
+                self.root, self.ident, 2, 'opening', desk.join(desk.split(EXPORTED), images=False)
+            )
+        with self.assertRaisesRegex(ValueError, 'changed since you opened it'):
+            desk.outline_save(self.root, self.ident, 2, [])
+        self.assertEqual(len(desk.read(self.root, self.ident)['sections']), 3)
+
+    def test_an_opening_kept_before_the_division_restores_as_its_sections(self):
+        before = 'Before the tighten.\n\n### **Old one**\n\nOld text.\n\n### **Old two**\n\nMore.'
+        target = self.directory / 'desk' / 'versions' / 'opening.jsonl'
+        target.write_text(
+            target.read_text()
+            + json.dumps({'at': studio.now(), 'source': 'first-pass', 'text': before})
+            + '\n'
+        )
+        draft = desk.read(self.root, self.ident)
+        shown = desk.versions(self.root, self.ident, 'opening')
+        self.assertEqual(shown[0]['text'], before)
+        restored = desk.restore(self.root, self.ident, draft['revision'], 'opening', 0)
+        self.assertEqual(restored['opening'], 'Before the tighten.')
+        self.assertEqual(
+            [(s['heading'], s['text'], s.get('level')) for s in restored['sections']],
+            [('**Old one**', 'Old text.', 3), ('**Old two**', 'More.', 3)],
+        )
+        # The sections it replaces can be brought back from the Outline tab.
+        self.assertEqual(
+            [r['heading'] for r in desk.removed(self.root, self.ident)], EXPORTED_HEADINGS
+        )
+        self.assertEqual(
+            desk.versions(self.root, self.ident, 'opening')[0]['text'], EXPORTED_OPENING
+        )
+        body = (self.directory / 'DRAFT.md').read_text()
+        self.assertIn('Before the tighten.\n\n### **Old one**\n\nOld text.', body)
+        self.assertEqual(len(desk.split(body)['sections']), 2)
 
     def test_without_the_lock_nothing_is_written_and_the_record_is_as_it_was(self):
         target = self.directory / 'desk' / 'draft.json'
@@ -1378,6 +1434,31 @@ class HeadingMigrationTests(DeskCase):
             studio._HELD.reset(held)
         self.assertEqual(draft['sections'], [])
         self.assertEqual(target.read_bytes(), before)
+
+    def test_an_undivided_record_keeps_the_old_rule_for_its_opening(self):
+        # Waiting for a job, or with more headings than a draft has sections, the record stays
+        # one opening, and its headings are text there as they were.
+        self.assertEqual(desk.limit({'sections': [], 'opening': 'A.\n\n### B'}), 2)
+        self.assertEqual(desk.limit({'sections': [], 'opening': 'A.'}), 6)
+        with patch.object(desk, '_sectioned', lambda root, ident, draft: draft):
+            saved = desk.save(
+                self.root, self.ident, 2, 'opening', EXPORTED_OPENING + '\n\n### Kept as text'
+            )
+        self.assertEqual(saved['sections'], [])
+        with self.assertRaisesRegex(ValueError, 'A ## heading would start a new section'):
+            with patch.object(desk, '_sectioned', lambda root, ident, draft: draft):
+                desk.save(self.root, self.ident, 3, 'opening', 'A.\n\n## Sneaky')
+
+    def test_more_headings_than_sections_leave_the_record_as_it_is(self):
+        draft = studio.read_json(self.directory / 'desk' / 'draft.json')
+        draft['opening'] = 'Intro.\n\n' + '\n\n'.join(
+            '### H%d\n\nText %d.' % (n, n) for n in range(61)
+        )
+        studio.write_json(self.directory / 'desk' / 'draft.json', draft)
+        shown = desk.read(self.root, self.ident)
+        self.assertEqual((shown['sections'], shown['revision']), ([], 2))
+        saved = desk.save(self.root, self.ident, 2, 'opening', draft['opening'] + ' Typed.')
+        self.assertTrue(saved['opening'].endswith('Typed.'))
 
     def test_a_job_under_way_on_the_blog_waits_for_it(self):
         import desk_jobs

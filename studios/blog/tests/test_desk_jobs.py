@@ -8,6 +8,7 @@ import unittest
 import blog_runner
 import desk
 import desk_jobs
+import studio
 import tool_jobs
 from test_desk import DRAFT, GOOGLE, IMAGE_TWO, SECTIONED, DeskCase
 
@@ -675,8 +676,15 @@ class RobustSettleTests(DeskJobCase):
         self.assertRegex(chain['problems'][-1]['error'], 'Taken')
 
     def test_a_long_chain_counts_every_section(self):
-        sections = ''.join('## Part %d\n\nText %d.\n\n' % (n, n) for n in range(70))
-        made = desk.create(self.root, {'title': 'Long', 'manuscript': sections})
+        # A record kept before drafts were held to 60 sections: more than a blog's job index.
+        made = desk.create(self.root, {'title': 'Long', 'manuscript': '## Part 0\n\nText 0.'})
+        target = studio.inside(self.root, 'articles', made['id'], 'desk', 'draft.json')
+        record = studio.read_json(target)
+        record['sections'] = [
+            {'id': '%08x' % (n + 1), 'heading': 'Part %d' % n, 'brief': '', 'text': 'Text %d.' % n}
+            for n in range(70)
+        ]
+        studio.write_json(target, record)
 
         def worker(engine, payload, guidance, **options):
             return {'content': payload['part']['text'] + ' Warm.', 'notes': '', 'gaps': []}
