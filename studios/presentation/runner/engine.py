@@ -172,7 +172,7 @@ PICTURE_WORDS = 300         # characters of what a picture shows, and of where i
 SHEET = 'contact-sheet'
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
-# opened the same way; rehearse is never next.
+# opened the same way.
 RUN = {
     'intake-source': '_intake_source', 'classify': '_classify', 'inventory': '_inventory',
     'gate:classify': '_gate', 'research-plan': '_research_plan',
@@ -183,7 +183,7 @@ RUN = {
     'build-start': '_build_start', 'build-sections': '_build_sections',
     'build-whole': '_build_whole', 'build-review': '_build_review',
     'build-repair': '_build_repair', 'build-render': '_build_render', 'gate:build': '_gate',
-    'deliver': '_deliver', 'rehearse': None}
+    'deliver': '_deliver'}
 # What each gate decides on, as a commit and a sentence say it.
 WORDS = {'gate:classify': 'classification', 'gate:research-plan': 'research plan',
          'gate:research': 'research', 'gate:outline': 'outline', 'gate:look': 'look',
@@ -3194,7 +3194,7 @@ class Engine(Jobs, Researching):
         every one of them reported its cost. None of it when one has never run here."""
         names = self._reopened(record, gate)
         again = [step for step in stages.steps(record) if step.name in names
-                 and step.kind != 'gate' and step.name != 'rehearse']
+                 and step.kind != 'gate']
         if not again:
             return None
         kept = record.get('steps') or {}
@@ -3226,7 +3226,7 @@ class Engine(Jobs, Researching):
         among them its own level always stops at (one a grave finding may still hold is not
         counted), and the seconds of every try with the dollars of its agent's jobs, said
         only when every one of them reported its cost."""
-        rows = [row for row in stages.timeline(record) if row['state'] not in ('done', 'later')]
+        rows = [row for row in stages.timeline(record) if row['state'] != 'done']
         gates = review_policy.ahead(record, 'presentation',
                                     [row['name'] for row in rows if row['name'].startswith('gate:')],
                                     run_gates=[step.name for step in stages.steps(record)])

@@ -124,9 +124,8 @@ def automatic(record, product, gate, last=None, holding=(), first='outline',
     if deck is not None:
         return not deck
     if product == 'presentation':
-        # Rehearsal is the person's own, and never comes up yet.
-        return gate not in (('gate:outline', 'gate:build', 'rehearse') if chosen == 'balanced'
-                            else ('gate:build', 'rehearse'))
+        return gate not in (('gate:outline', 'gate:build') if chosen == 'balanced'
+                            else ('gate:build',))
     if product == 'blog':
         return gate not in ((first, last) if chosen == 'balanced' else (last,))
     if product == 'training':

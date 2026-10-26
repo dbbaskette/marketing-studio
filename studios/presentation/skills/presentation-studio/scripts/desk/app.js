@@ -3627,7 +3627,6 @@ async function sendNote(run, box, problem, pressed) {
 // --- one deck: its stages ------------------------------------------------------------------
 
 // Each stage of the deck, as the steps it has say: done, the one it is at, still to come.
-// A saved deck's rehearse gate is never come to, so it is not shown.
 function stagesOf(run) {
   const rows = list(run.timeline);
   const found = [];
@@ -3707,7 +3706,7 @@ function stepsCard(run) {
   const node = make('details', 'card shine steps');
   node.dataset.key = 'steps';
   const items = make('ol', 'rows');
-  for (const step of list(run.timeline)) if (step.name !== 'rehearse') items.append(stepItem(step));
+  for (const step of list(run.timeline)) items.append(stepItem(step));
   return add(node, make('summary', 'card-title', 'Every step'), items);
 }
 

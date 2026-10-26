@@ -1,7 +1,7 @@
 import unittest
 
 import helpers  # noqa: F401
-from runner import stages
+from runner import decks, stages
 
 
 def run(route, level=None, research=False, classified=None):
@@ -15,14 +15,43 @@ def names(r):
     return [s.name for s in stages.steps(r)]
 
 
+def delivered(route, level=None):
+    """A deck with every step done and every gate approved."""
+    record = run(route, level)
+    for s in stages.steps(record):
+        if s.kind == 'gate':
+            record['gates'][s.name] = {'state': 'approved'}
+        else:
+            record['steps'][s.name] = {'done': True}
+    return record
+
+
 class SavedRehearseTests(unittest.TestCase):
-    def test_a_saved_deck_with_the_rehearse_gate_still_surveys(self):
-        saved = run('scratch')
-        saved['gates']['rehearse'] = {'state': 'absent'}
-        self.assertIn('rehearse', names(saved), 'the gate stays in the pipeline')
-        found = stages.survey(saved)
-        self.assertEqual(found.next.name, 'intake-source')
-        self.assertIn('rehearse', [row['name'] for row in stages.timeline(saved)])
+    def test_no_deck_has_a_rehearse_step(self):
+        for route in ('scratch', 'document', 'existing'):
+            with self.subTest(route=route):
+                self.assertNotIn('rehearse', names(run(route)))
+
+    def test_a_saved_deck_with_a_rehearse_gate_reads_as_before(self):
+        # A deck delivered before the placeholder went holds its gate and its step.
+        for route, level in (('scratch', None), ('existing', 'selected')):
+            with self.subTest(route=route):
+                before = delivered(route, level)
+                saved = delivered(route, level)
+                saved['gates']['rehearse'] = {'state': 'absent'}
+                saved['steps']['rehearse'] = {}
+                self.assertIsNone(stages.survey(saved).next)
+                rows = stages.timeline(saved)
+                self.assertNotIn('rehearse', [row['name'] for row in rows])
+                self.assertTrue(all(row['state'] == 'done' for row in rows), rows)
+                self.assertEqual(rows, stages.timeline(before))
+                self.assertEqual(decks.state(saved), decks.state(before))
+                # Still on its way, it goes on to the same next step.
+                going = run(route, level)
+                going['gates']['rehearse'] = {'state': 'absent'}
+                going['steps']['rehearse'] = {}
+                self.assertEqual(stages.survey(going).next.name, 'intake-source')
+                self.assertEqual(decks.state(going), decks.state(run(route, level)))
 
 
 class NameTests(unittest.TestCase):
@@ -47,19 +76,18 @@ class SkipMapTests(unittest.TestCase):
         (run('scratch'), ['intake-source', 'outline', 'gate:outline', 'brand',
                           'look-preview', 'gate:look', 'build-start', 'build-sections',
                           'build-whole', 'build-review', 'build-repair', 'build-render',
-                          'gate:build', 'deliver', 'rehearse']),
+                          'gate:build', 'deliver']),
         (run('existing', 'brand-only'), ['intake-source', 'inventory', 'gate:classify',
                                          'extract', 'brand', 'build-start', 'build-sections',
                                          'build-whole', 'build-review', 'build-repair',
-                                         'build-render', 'gate:build', 'deliver', 'rehearse']),
+                                         'build-render', 'gate:build', 'deliver']),
         (run('existing', 'selected'), ['intake-source', 'inventory', 'gate:classify', 'brand',
-                                       'patch', 'build-render', 'gate:build', 'deliver',
-                                       'rehearse']),
+                                       'patch', 'build-render', 'gate:build', 'deliver']),
         (run('existing', 'rework'), ['intake-source', 'inventory', 'gate:classify', 'extract',
                                      'outline', 'gate:outline', 'brand', 'look-preview',
                                      'gate:look', 'build-start', 'build-sections', 'build-whole',
                                      'build-review', 'build-repair', 'build-render',
-                                     'gate:build', 'deliver', 'rehearse']),
+                                     'gate:build', 'deliver']),
     ]
 
     def test_cases(self):
@@ -108,9 +136,9 @@ class SurveyTests(unittest.TestCase):
                 r['steps'][s.name] = {'done': True}
         self.assertIsNone(stages.survey(r).next)
 
-    def test_rehearse_is_later_in_the_timeline(self):
+    def test_the_last_row_of_the_timeline_is_the_delivery(self):
         rows = stages.timeline(run('scratch'))
-        self.assertEqual(rows[-1]['state'], 'later')
+        self.assertEqual((rows[-1]['name'], rows[-1]['state']), ('deliver', 'upcoming'))
 
 
 class FeedAndReopenTests(unittest.TestCase):

@@ -28,8 +28,7 @@ class DispatchTests(unittest.TestCase):
         from runner import engine
         self.assertEqual(set(engine.RUN), {step.name for step in stages.PIPELINE})
         for name, method in engine.RUN.items():
-            if name != 'rehearse':
-                self.assertTrue(callable(getattr(engine.Engine, method)), name)
+            self.assertTrue(callable(getattr(engine.Engine, method)), name)
 
 
 class ReviewLevelFormTests(StudioCase):
@@ -102,7 +101,7 @@ class AheadTests(StudioCase):
         self.assertEqual(ahead['next_stop'], 'Review the direction')
         self.assertEqual(ahead['next_gate'], 'gate:outline')
         self.assertEqual(ahead['steps_left'], len([row for row in shown['timeline']
-                                                    if row['state'] not in ('done', 'later')]))
+                                                    if row['state'] != 'done']))
         self.assertEqual(ahead['steps_left'], 10)
         # The scripted agents report no cost: the line says so, never $0.00.
         self.assertIsNone(ahead['dollars'])
@@ -181,7 +180,7 @@ class RedoTests(StudioCase):
         record = decks.read_run(root)
         redo = self.view(root)['gate']['redo']
         again = [step for step in stages.steps(stages.reopen(record, 'gate:outline'))
-                 if step.kind != 'gate' and step.name != 'rehearse'
+                 if step.kind != 'gate'
                  and step.name in self.engine._reopened(record, 'gate:outline')]
         self.assertEqual(redo['names'][0], 'Draft the outline')
         self.assertEqual(redo['steps'], len(again))
@@ -277,8 +276,8 @@ class ScratchTests(StudioCase):
         self.assertEqual(view['deliver']['revision'], 1)
         self.assertTrue(view['deliver']['url'].startswith('https://docs.google.com/'))
         self.assertIsNone(view['gate'])
-        self.assertEqual([row['state'] for row in view['timeline']][-1], 'later')
-        self.assertTrue(all(row['state'] == 'done' for row in view['timeline'][:-1]))
+        self.assertNotIn('rehearse', [row['name'] for row in view['timeline']])
+        self.assertTrue(all(row['state'] == 'done' for row in view['timeline']))
         decisions = [line for line in self.log()[before:]
                      if line.startswith('Rolling restarts: approve the ')]
         self.assertEqual(decisions, ['Rolling restarts: approve the outline',
