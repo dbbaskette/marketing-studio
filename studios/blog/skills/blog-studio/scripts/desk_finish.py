@@ -31,6 +31,10 @@ DAY = 86_400  # an older set no longer shown is let go after this long
 LATEST = 'latest.json'  # the newest set for each tool, so a poll reads only those
 GONE = 'That text is no longer in this part, so the suggestion was not applied. Skip it.'
 NONE_LEFT = 'None of these suggestions match the text now, so nothing was applied.'
+SAME = (
+    'Nothing would change: image references stay as they are, and the rest of this '
+    'suggestion is the text already there. Skip it.'
+)
 EMPTY = (
     'Write the words to use. To cut text, edit the part itself; a suggestion is not applied empty.'
 )
@@ -146,6 +150,12 @@ def forget(root, ident):
         shutil.rmtree(folder)
 
 
+def _once(text, before):
+    """Whether `before` occurs in `text` exactly once, counting overlapping occurrences."""
+    at = text.find(before) if before else -1
+    return at != -1 and text.find(before, at + 1) == -1
+
+
 def present(draft, item):
     """Whether a proposal still fits the draft: its text is in its part, once, or the whole
     part is as it was for an alternative to the whole part. A comment needs only its part."""
@@ -160,8 +170,7 @@ def present(draft, item):
     if item.get('whole'):
         # A whole part is kept as the job saw it: image data kept as text is a token.
         return desk_images.scrub(text) == item.get('before')
-    before = item.get('before') or ''
-    return bool(before) and text.count(before) == 1
+    return _once(text, item.get('before') or '')
 
 
 def summary(root, ident, draft):
@@ -242,7 +251,7 @@ def apply(root, ident, seen, job, chosen):
             if item.get('whole'):
                 fits = desk_images.scrub(text) == item['before']
             else:
-                fits = bool(item['before']) and text.count(item['before']) == 1
+                fits = _once(text, item['before'])
             if not fits:
                 raise ValueError(GONE)
             if item.get('whole'):
@@ -261,6 +270,9 @@ def apply(root, ident, seen, job, chosen):
                     updated, draft.get('images'), rename=True, previous=text, touched=own
                 )
                 updated = desk_images.kept(text, updated, draft['images'], own)
+            # A change that only an image reference made, put back as it was, is no change.
+            if updated.strip() == text.strip():
+                raise ValueError(SAME)
             desk.checked_text(part, updated)
             if part == 'title' and not updated.strip():
                 raise ValueError('Keep the title to one line, up to 500 characters.')
@@ -567,20 +579,24 @@ LEVELS = {
     'person explaining their own work, keeping every fact.',
 }
 COPYEDIT = (
-    'Copy edit this draft. Find the sentences with a spelling, grammar or punctuation error, '
-    'an inconsistency (a name, term, number style or capitalisation written two ways), or '
-    'wording that is unclear or needlessly long, and suggest the corrected sentence for each. '
-    'Change only what the fix needs. Preserve the author’s voice and stance, every fact, '
-    'number and name, each quotation and link exactly, and every image reference where it is; '
-    'never change code. Leave sentences that are already correct alone. Do not research or '
-    'add a claim.'
+    'Copy edit this draft and its title: spelling, grammar, punctuation, consistency (a name, '
+    'term, number style or capitalisation written two ways), clarity and concision only. Find '
+    'the sentences that need such a fix and suggest the corrected sentence for each, changing '
+    'only what the fix needs. Never change a claim, a qualifier or the argument, and never add, '
+    'move or cut a point. Preserve the author’s voice and stance, every fact, number and name, '
+    'each quotation and link exactly, and every image reference where it is; never change '
+    'code. Leave sentences that are already correct alone. Do not research.'
 )
 COPYEDIT_JSON = (
     'Return JSON in content: {"suggestions": [{"part": ..., "before": ..., "after": ..., '
-    '"why": ...}]}, at most 60. part is "opening" or the id of a section in sections; before is '
-    'one or two whole sentences copied exactly from that part, character for character; after '
-    'replaces before; why names the fix in a few words, such as "Subject and verb agree".'
+    '"why": ...}]}, at most 60. part is "title", "opening" or the id of a section in sections; '
+    'before is one or two whole sentences copied exactly from that part, character for '
+    'character (for the title, the words to change); after replaces before, on one line for '
+    'the title; why names the fix in a few words, such as "Subject and verb agree".'
 )
+# The copy-editing guide's lenses a copy edit uses; the others (evidence, structure,
+# persuasion and the rest) belong to a fuller edit.
+COPYEDIT_LENSES = ('Clarity', 'Voice')
 HUMANIZE = (
     'Find the sentences in this draft that read as machine-written: formulaic or stock '
     'wording, monotonous rhythm, repeated entrances, generic stance. Suggest a rewrite for each. '
@@ -662,6 +678,19 @@ def _reference(*path):
     return blog_runner.REFERENCES.joinpath(*path).read_text(encoding='utf-8').rstrip()
 
 
+def _lenses():
+    """The copy-editing guide's clarity and voice lenses, as the guide words them."""
+    lines, keeping = [], False
+    for line in _reference('modules', 'copy-editing.md').splitlines():
+        if line.startswith('- **'):
+            keeping = any(line.startswith('- **' + name + ':**') for name in COPYEDIT_LENSES)
+        elif not line.startswith('  '):
+            keeping = False
+        if keeping:
+            lines.append(line)
+    return 'Editing lenses for this copy edit:\n' + '\n'.join(lines)
+
+
 def _payload(draft, extra):
     return {
         'title': draft['title'],
@@ -708,12 +737,14 @@ def request(root, ident, draft, tool, level=None, guide=None):
     extra.pop('gaps', None)
     meta = {}
     if tool == 'copyedit':
-        payload = _payload(draft, extra)
-        guidance = COPYEDIT + ' ' + manuscript_editor.CHECKS['copyedit'] + ' '
-        guidance += manuscript_editor.CHECKS['proofread'] + '\n\n'
-        guidance += (
-            _reference('modules', 'copy-editing.md') + '\n\n' + shared + '\n' + COPYEDIT_JSON
-        )
+        # Only the draft and its tone: no sources, examples or kind of post to edit towards.
+        payload = _payload(draft, {'tone': extra.get('tone', '')})
+        guidance = COPYEDIT + ' ' + desk_jobs.desk_check('copyedit') + ' '
+        guidance += desk_jobs.desk_check('proofread') + '\n\n' + _lenses() + '\n\n'
+        guidance += blog_runner.shared_guidance(None, draft.get('tone', ''))
+        if draft.get('images'):
+            guidance += '\n' + desk_images.GUIDANCE
+        guidance += '\n' + COPYEDIT_JSON
     elif tool == 'humanize':
         if level not in LEVELS:
             raise ValueError('Choose light, medium or strong.')
@@ -760,11 +791,13 @@ def _text(value, limit):
 
 
 def _names(text):
-    """Capitalised words that are not the first word of a sentence: likely names."""
+    """Capitalised words that are not the first word of a sentence: likely names. An image
+    reference is not text: its alt and label are left out, and a word after it starts afresh."""
+    text = desk_images.REFERENCE.sub('. ', text)
     found = set()
     for match in NAME.finditer(text):
         before = text[: match.start()].rstrip()
-        if before and before[-1] not in '.!?:"“(' and len(match.group()) > 1:
+        if before and before[-1] not in '.!?:"“(]' and len(match.group()) > 1:
             found.add(match.group())
     return found
 
@@ -883,7 +916,7 @@ def _located(draft, part, before):
     except ValueError:
         return None
     before = before.strip() if isinstance(before, str) else ''
-    if not before or text.count(before) != 1:
+    if not _once(text, before):
         return None
     return before
 
@@ -908,20 +941,23 @@ def _rows(found, key, fields):
     return good, len(rows[:60]) - len(good)
 
 
-def _read_humanize(draft, found):
-    """Sentence rewrites (Humanize and Copy edit): each `before` found once in its part, and
-    an `after` that changes it without adding a heading. Any other row is dropped."""
+def _read_humanize(draft, found, title=False):
+    """Sentence rewrites (Humanize, and Copy edit with the title too): each `before` found
+    once in its part, and an `after` that changes it without adding a heading, on one line
+    for the title. Any other row is dropped."""
     rows, dropped = _rows(found, 'suggestions', ('part', 'before', 'after'))
+    parts = _prose_parts(draft) | ({'title'} if title else set())
     items, seen = [], set()
     for row in rows:
         part, after = row.get('part'), row.get('after')
-        before = _located(draft, part, row.get('before')) if part in _prose_parts(draft) else None
+        before = _located(draft, part, row.get('before')) if part in parts else None
         if (
             before is None
             or not isinstance(after, str)
             or not after.strip()
             or after.strip() == before
             or desk.has_heading(after)
+            or (part == 'title' and '\n' in after.strip())
             or (part, before) in seen
         ):
             dropped += 1
@@ -1071,8 +1107,13 @@ def _read_voice(draft, found):
     return items, dropped, {'kept': kept}
 
 
+def _read_copyedit(draft, found):
+    """Located sentence fixes, read as Humanize's are, and the title's too."""
+    return _read_humanize(draft, found, title=True)
+
+
 READERS = {
-    'finish-copyedit': _read_humanize,  # Located sentence fixes, read as Humanize's are.
+    'finish-copyedit': _read_copyedit,
     'finish-humanize': _read_humanize,
     'finish-facts': _read_facts,
     'finish-headline': _read_headline,

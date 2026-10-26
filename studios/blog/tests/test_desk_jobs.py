@@ -164,7 +164,8 @@ class WholeDraftTests(DeskJobCase):
 
         saved = self.saved(desk_jobs.first_pass(self.root, self.ident, 1, 'tighten'))
         self.assertEqual(saved['kind'], 'desk-first-pass')
-        self.assertIn(manuscript_editor.CHECKS['copyedit'], saved['guidance'])
+        self.assertIn(desk_jobs.desk_check('copyedit'), saved['guidance'])
+        self.assertNotIn(manuscript_editor.CHECKS['copyedit'], saved['guidance'])
         self.assertEqual(saved['metadata']['desk']['action'], 'tighten')
 
     def test_reshape_needs_a_kind_of_post_and_reads_its_shape(self):
