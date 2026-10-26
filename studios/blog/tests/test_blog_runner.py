@@ -728,7 +728,9 @@ class BlogRunnerTests(RunnerCase):
             'research': 'none',
         }
         self.assertEqual(self.post_to_the_page('run-create', data), unknown)
-        self.assertFalse((self.root / 'articles').exists() and any((self.root / 'articles').iterdir()))
+        self.assertFalse(
+            (self.root / 'articles').exists() and any((self.root / 'articles').iterdir())
+        )
         self.assertFalse((self.root / '.blog-runs' / 'creations').exists())
 
     def test_the_page_has_no_source_keep_route(self):

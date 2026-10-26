@@ -822,9 +822,7 @@ def source_keep(root, data, blog=None):
                 'It is already shared with your team; remove it from the library screen.'
             )
         if record.get('revision') != 1 or not uploaded_here(root, record['id']):
-            raise ValueError(
-                'Only a new file added on this computer can move out of the library.'
-            )
+            raise ValueError('Only a new file added on this computer can move out of the library.')
     target = (
         studio.inside(root, 'sources', record['id'])
         if keep
