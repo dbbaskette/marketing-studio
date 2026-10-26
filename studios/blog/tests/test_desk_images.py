@@ -501,5 +501,97 @@ class RecheckTests(ImageCase):
         )
 
 
+class PositionTests(ImageCase):
+    """From the final check: which references a pasted image takes, decided by where they are."""
+
+    def made(self):
+        made = self.make(
+            '# T\n\nOpen ![][image1]\n\n## S\n\nMine ![][image1]\n\n[image1]: <' + IMAGE_ONE + '>\n'
+        )
+        return made, made['sections'][0]['id']
+
+    def save(self, made, part, text):
+        return self.post('desk-save', {'id': made['id'], 'seen': 1, 'part': part, 'text': text})
+
+    def test_pasting_above_or_below_an_image_leaves_it_and_names_the_new_one(self):
+        for text, want in (
+            (
+                'Mine ![][image1]\n\nPasted ![][image1]\n\n[image1]: <' + IMAGE_TWO + '>',
+                'Mine ![][image1]\n\nPasted ![][image2]',
+            ),
+            (
+                'Pasted ![][image1]\n\n[image1]: <' + IMAGE_TWO + '>\n\nMine ![][image1]',
+                'Pasted ![][image2]\n\nMine ![][image1]',
+            ),
+        ):
+            made, part = self.made()
+            saved = self.save(made, part, text)
+            self.assertEqual(saved['sections'][0]['text'], want)
+            self.assertEqual(stored(self, made['id']), {'image1': IMAGE_ONE, 'image2': IMAGE_TWO})
+
+    def test_a_new_definition_for_a_label_in_use_never_takes_its_reference(self):
+        made, part = self.made()
+        job = self.note(made, part)
+        landed = self.settle(job['id'], 'Mine, shorter.\n\n[image1]: <' + IMAGE_TWO + '>')
+        self.assertTrue(landed['applied'], landed['error'])
+        draft = desk.read(self.root, made['id'])
+        self.assertEqual(draft['sections'][0]['text'], 'Mine, shorter.\n\n![][image1]')
+        self.assertEqual(stored(self, made['id'])['image1'], IMAGE_ONE)
+
+    def test_an_apply_that_swaps_a_reference_for_a_definition_keeps_the_reference(self):
+        made, part = self.made()
+        job = secrets.token_hex(16)
+        with studio.locked(self.root):
+            desk_finish.keep(
+                self.root,
+                made['id'],
+                job,
+                'finish-humanize',
+                [{'part': part, 'before': 'Mine ![][image1]', 'after': 'x'}],
+            )
+        self.post(
+            'desk-apply',
+            {
+                'id': made['id'],
+                'seen': 1,
+                'job': job,
+                'items': [{'id': 'p1', 'after': 'Mine.\n\n[image1]: <' + IMAGE_TWO + '>'}],
+            },
+        )
+        draft = desk.read(self.root, made['id'])
+        self.assertEqual(draft['sections'][0]['text'], 'Mine.\n\n![][image1]')
+        self.assertEqual(stored(self, made['id'])['image1'], IMAGE_ONE)
+
+    def test_image_data_is_refused_in_the_title(self):
+        made, _ = self.made()
+        with self.assertRaisesRegex(ValueError, 'Keep images out of the title'):
+            self.post(
+                'desk-save',
+                {'id': made['id'], 'seen': 1, 'part': 'title', 'text': 'T ![](' + IMAGE_TWO + ')'},
+            )
+        job = secrets.token_hex(16)
+        with studio.locked(self.root):
+            desk_finish.keep(
+                self.root,
+                made['id'],
+                job,
+                'finish-headline',
+                [{'part': 'title', 'before': 'T', 'after': 'x', 'whole': True}],
+            )
+        with self.assertRaisesRegex(ValueError, 'Keep images out of the title'):
+            self.post(
+                'desk-apply',
+                {
+                    'id': made['id'],
+                    'seen': 1,
+                    'job': job,
+                    'items': [{'id': 'p1', 'after': 'New ' + IMAGE_TWO}],
+                },
+            )
+        with self.assertRaisesRegex(ValueError, 'Keep images out of the title'):
+            desk.create(self.root, {'manuscript': '# A ![](' + IMAGE_TWO + ')\n\nText.\n'})
+        self.assertEqual(desk.read(self.root, made['id'])['title'], 'T')
+
+
 if __name__ == '__main__':
     unittest.main()

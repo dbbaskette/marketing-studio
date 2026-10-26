@@ -140,7 +140,34 @@ def _fresh(taken):
     return 'image' + str(number)
 
 
-def take(text, images=None, rename=False, previous=''):
+def _unchanged(previous, text):
+    """The stretches of `text` (start, end) that are as they were in `previous`: lines the
+    two share, and within lines that changed, the characters they share."""
+    import difflib
+
+    if not previous:
+        return []
+    old, new = previous.replace('\r\n', '\n').split('\n'), text.split('\n')
+    starts = [0]
+    for line in new:
+        starts.append(starts[-1] + len(line) + 1)
+    spans = []
+    lines = difflib.SequenceMatcher(None, old, new, autojunk=False)
+    for tag, i1, i2, j1, j2 in lines.get_opcodes():
+        if tag == 'equal':
+            spans.append((starts[j1], starts[j2]))
+        elif tag == 'replace':
+            was, now = '\n'.join(old[i1:i2]), '\n'.join(new[j1:j2])
+            if len(was) * len(now) > 4_000_000:
+                continue  # Too much changed at once to compare: all of it is new.
+            chars = difflib.SequenceMatcher(None, was, now, autojunk=False)
+            for part, _, _, k1, k2 in chars.get_opcodes():
+                if part == 'equal':
+                    spans.append((starts[j1] + k1, starts[j1] + k2))
+    return spans
+
+
+def take(text, images=None, rename=False, previous='', touched=None):
     """The text with its image data moved out, and the images with it added.
 
     Each data definition outside code leaves its line (and the blank line it leaves behind);
@@ -150,8 +177,10 @@ def take(text, images=None, rename=False, previous=''):
     with other data takes the text's data, as a whole draft brought in defines its images;
     with `rename`, as for one part typed, pasted or rewritten, the text's image gets a label
     of its own instead, and the text's references follow it, so no other part's image ever
-    changes; a reference the part's `previous` text already had stays with the image it
-    named. An entry that is not an image entry is left out (and so shows as missing).
+    changes; a reference where the part's `previous` text already had it (in a stretch the
+    two share) stays with the image it named, so only what was pasted or written anew moves.
+    `touched`, a set, is given each label the text's references now name because of this
+    take: a new image's, or one a clashing label moved to. An entry that is not an image entry is left out (and so shows as missing).
     `images` is not changed; a copy comes back."""
     images = {label: entry for label, entry in (images or {}).items() if isinstance(entry, dict)}
     if not holds(text):
@@ -190,18 +219,21 @@ def take(text, images=None, rename=False, previous=''):
     while removed and out and not out[-1].strip():
         out.pop()
     text = '\n'.join(out)
+    touched = set() if touched is None else touched
+    touched.update(renamed.values())
     if renamed:
         shown = _masked(text)
-        had = Counter(found.group(0) for found in REFERENCE.finditer(_masked(previous or '')))
+        kept_spans = _unchanged(previous or '', text)
         pieces, at = [], 0
         for found in REFERENCE.finditer(shown):
             label = found.group(2) or found.group(1)
-            if key(label) in renamed and had[found.group(0)] > 0:
-                had[found.group(0)] -= 1  # The part had it before: it keeps its image.
-            elif key(label) in renamed:
-                alt = found.group(1) if found.group(2) else ''
-                pieces += [text[at : found.start()], '![' + alt + '][' + renamed[key(label)] + ']']
-                at = found.end()
+            if key(label) not in renamed:
+                continue
+            if any(a <= found.start() and found.end() <= b for a, b in kept_spans):
+                continue  # Where the part had it before: it keeps its image.
+            alt = found.group(1) if found.group(2) else ''
+            pieces += [text[at : found.start()], '![' + alt + '][' + renamed[key(label)] + ']']
+            at = found.end()
         text = ''.join(pieces) + text[at:]
     shown = _masked(text)
 
@@ -213,6 +245,7 @@ def take(text, images=None, rename=False, previous=''):
             images[name] = _entry(uri, alt, title)
             held[digest(uri)] = name
             names[key(name)] = name
+        touched.add(name)
         return '![' + alt + '][' + name + ']'
 
     pieces, at = [], 0
@@ -477,12 +510,13 @@ def _references(text, known):
     ]
 
 
-def kept(before, after, images):
+def kept(before, after, images, own=()):
     """A job's text with the image references the text before it had: a reference it left
     out goes back where it was (into its list item, when it was in one, or as its own
     paragraph at the same paragraph number), and one it changed or made up is taken out.
     The images themselves never reach a job, so a result can lose a reference but never an
-    image."""
+    image. `own` names labels the new text brought itself (`take`'s `touched`), whose
+    references are not made up."""
     before, after = before.replace('\r\n', '\n'), after.replace('\r\n', '\n')
     known = {key(label) for label in images or {}}
     if not known:
@@ -496,6 +530,7 @@ def kept(before, after, images):
         }
     # A label the new text defines itself, as pasted with its data, is its own and not made up.
     known -= {key(label) for label in LABELS.findall(_masked(after))}
+    known -= {key(label) for label in own}
     want, have = _references(before, known), _references(after, known)
     if Counter(ref for *_, ref in want) == Counter(ref for *_, ref in have):
         return after
@@ -515,7 +550,10 @@ def kept(before, after, images):
             left[ref] -= 1
             breaks_before = list(BREAK.finditer(before[:start]))
             paragraph = len(breaks_before)
-            line = before[breaks_before[-1].end() if breaks_before else 0 : start].count('\n')
+            opened = breaks_before[-1].end() if breaks_before else 0
+            line = before[opened:start].count('\n')
+            if before[opened:start].strip() and not LIST_LINE.match(before[opened:start]):
+                paragraph += 1  # It followed words in its paragraph: it goes back after them.
             whole = before[before.rfind('\n', 0, start) + 1 : start]
             missing_refs.append((paragraph, line if LIST_LINE.match(whole) else None, ref))
     if not missing_refs:

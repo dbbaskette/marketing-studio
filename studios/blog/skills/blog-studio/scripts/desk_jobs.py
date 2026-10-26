@@ -1464,11 +1464,11 @@ def _landed(draft, before, text):
     references `before` had kept: one left out goes back where it was, one changed or made
     up is taken out (desk_images.kept)."""
     text = desk_images.restored(before, text)
-    text = desk_images.kept(before, text, draft.get('images'))
+    own = set()
     text, draft['images'] = desk_images.take(
-        text, draft.get('images'), rename=True, previous=before
+        text, draft.get('images'), rename=True, previous=before, touched=own
     )
-    return text
+    return desk_images.kept(before, text, draft['images'], own)
 
 
 def _no_heading(text):

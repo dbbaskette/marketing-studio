@@ -253,12 +253,13 @@ def apply(root, ident, seen, job, chosen):
                 # Image data kept as text comes back exactly, and no image reference the
                 # part had is lost: one the change left out goes back where it was.
                 updated = desk_images.restored(text, updated)
-                updated = desk_images.kept(text, updated, draft.get('images'))
                 # Image data typed into the change moves out under a label of its own; the
                 # limits are checked when the draft is written (desk._write).
+                own = set()
                 updated, draft['images'] = desk_images.take(
-                    updated, draft.get('images'), rename=True, previous=text
+                    updated, draft.get('images'), rename=True, previous=text, touched=own
                 )
+                updated = desk_images.kept(text, updated, draft['images'], own)
             desk.checked_text(part, updated)
             if part == 'title' and not updated.strip():
                 raise ValueError('Keep the title to one line, up to 500 characters.')

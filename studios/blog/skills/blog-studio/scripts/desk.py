@@ -21,6 +21,7 @@ KEEP = 20  # versions kept per part
 PARTS = ('title', 'opening')  # plus each section id
 LIMIT = 200_000  # characters in one part, not counting image data (desk_images)
 ON_DESK = 'This blog is on the desk. Edit it there.'
+TITLE_IMAGE = 'Keep images out of the title. Put the image in the opening or a section.'
 LENGTHS = ('style', 'short', 'deep')  # as blog_runner.LENGTHS: usual, short, in depth
 CREATE = frozenset(
     {
@@ -75,11 +76,12 @@ def split(markdown, title=''):
     is text, and deeper headings stay inside their section. Images held as data leave the
     text first, for `images`; their references stay where they sit.
     """
-    markdown, images = desk_images.take(markdown.replace('\r\n', '\n'))
-    lines = markdown.strip('\n').split('\n')
+    lines = markdown.replace('\r\n', '\n').strip('\n').split('\n')
     found = TITLE.fullmatch(lines[0]) if lines else None
     if found:
-        title, lines = found.group(1), lines[1:]
+        title, lines = found.group(1), lines[1:]  # As it is: image data is refused there.
+    body, images = desk_images.take('\n'.join(lines))
+    lines = body.strip('\n').split('\n')
     opening, sections, current, fence, taken = [], [], None, None, set()
     for line in lines:
         marker = FENCE.match(line)
@@ -334,6 +336,8 @@ def create(root, data):
     if not manuscript.strip():
         raise ValueError('Paste or upload a draft to start on the desk.')
     draft = split(manuscript, title=title.strip())
+    if desk_images.holds(draft['title']):
+        raise ValueError(TITLE_IMAGE)
     if len(join(draft, images=False)) > LIMIT:
         # As runs take, and as much as one part may hold or one job may return. Image data
         # is not counted: it is kept beside the text, within its own limits.
@@ -918,6 +922,8 @@ def checked(draft, seen, parts=None):
 def checked_text(part, text):
     if not isinstance(text, str) or len(text) > LIMIT:
         raise ValueError('Keep one part under 200,000 characters.')
+    if part == 'title' and desk_images.holds(text):
+        raise ValueError(TITLE_IMAGE)
     if part == 'title' and (not text.strip() or '\n' in text.strip() or len(text.strip()) > 500):
         raise ValueError('Keep the title to one line, up to 500 characters.')
     if part != 'title' and has_heading(text):
