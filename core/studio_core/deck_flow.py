@@ -44,7 +44,6 @@ from studio_core import deck_direction
 
 STEPS = ('brand', 'outline', 'draft', 'look-samples', 'look', 'sections', 'whole', 'screens',
          'review', 'repair', 'render', 'final')
-CHECKPOINTS = ('draft', 'look', 'final')
 # Where each review level stops for the brand's checkpoints. `direction` is the draft and the
 # look, asked together in one stop.
 PAUSES = {'step_by_step': ('draft', 'look', 'final'),
