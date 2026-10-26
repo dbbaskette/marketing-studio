@@ -313,7 +313,8 @@ class Reviewing:
         for level, mine in found.decks.items():
             if phase == 'direction':
                 item = {'target': 'outline:' + (level or ''),
-                        'label': 'Deck direction' + (f' · Level {level}' if level else ''),
+                        'label': (f'the level {level} deck outline' if level
+                                  else 'the deck outline'),
                         'text': outline_text(pipeline.outline_view(root, found, level))}
                 saved = (record.get('review_samples') or {}).get(level or '') or {}
                 looks = pipeline.look_view(root, found, level)
@@ -416,7 +417,8 @@ class Reviewing:
                         continue
                     if choice not in allowed:
                         raise WorkspaceError('Pick a look for ' + item['label'].lower()
-                                             + ' before you approve the direction.')
+                                             .removesuffix(' outline')
+                                             + ' before you approve the first drafts.')
                     words = pick.get('words') if isinstance(pick.get('words'), str) else ''
                     picks[level or ''] = {'choice': choice, 'words': words.strip()[:2000],
                                           'by': 'page', 'at': home.now()}

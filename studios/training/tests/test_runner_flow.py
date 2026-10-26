@@ -482,8 +482,7 @@ class DeckTests(FlowCase):
         self.assertEqual((view['state'], view['sentence'], view['finished']), (
             'done', 'Everything but the slide deck is made. A deck cannot be made on this '
             f'computer yet: {NO_SLIDES} {NO_BRAND_SKILL} Put that right and check this '
-            'computer again, make the deck in a conversation with your assistant, or leave '
-            'it out.', None))
+            'computer again, or leave the deck out.', None))
         self.assertEqual(view['deck_left'], {'says': view['sentence'], 'artifact': 'deck'})
         steps = self.steps(root)
         self.assertEqual((steps['deck']['status'], steps['deck']['kind'],
@@ -546,7 +545,7 @@ class DeckTests(FlowCase):
         self.to_end(root)
         (root / 'deck.pptx').write_bytes(b'PK\x03\x04 a deck made in a conversation\n')
         self.assertEqual(self.view(root)['deck_left']['says'], left(pipeline.DECK_AGAIN))
-        self.assertIn('finish the deck in a conversation with your assistant, or leave it out',
+        self.assertIn('Put that right and check this computer again, or leave the deck out.',
                       left(pipeline.DECK_AGAIN))
 
     def test_bringing_the_deck_back_to_a_finished_training_waits_for_the_deck_again(self):

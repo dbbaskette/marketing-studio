@@ -228,6 +228,12 @@ UNPLACED = ("These headings were brought in but not placed in the guide's sectio
             "heading, or ask for changes.")
 
 
+def worded(said: str, label: str) -> str:
+    """A sentence about a copy, with its label in it, that never starts lower-case."""
+    text = said.format(label=label)
+    return text[:1].upper() + text[1:]
+
+
 def pull(root: Path, name: str, google=None, choose=None) -> dict:
     """Bring in an edit, preserving both sides of a conflict until an explicit choice."""
     if choose not in (None, 'theirs', 'ours'):

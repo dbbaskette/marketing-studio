@@ -617,6 +617,13 @@ class RemakeTests(Built):
         self.assertNotIn('assistant', said)
 
 
+class SentenceTests(unittest.TestCase):
+    def test_a_sentence_never_starts_lower_case(self):
+        said = copies.worded(copies.BOTH, 'the level 101 learner guide')
+        self.assertTrue(said[0].isupper(), said)
+        self.assertTrue(said.startswith('The level 101 learner guide was changed here'))
+
+
 class PullTests(Built):
     def linked(self):
         self.built('google', levels=('101',))

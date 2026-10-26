@@ -131,7 +131,7 @@ const RUN_WORDS = {
   failed: ['late', 'Stopped: something went wrong'],
   done: ['done', 'Finished here'],
   // A training a teammate's computer runs: only what was last shared is known here.
-  elsewhere: ['none', 'Run from another computer'],
+  elsewhere: ['none', 'Run by your teammates'],
 };
 const STEP_WORDS = {
   done: ['done', 'Done'], working: ['current', 'Working'], waiting: ['review', 'Waiting for you'],
@@ -179,13 +179,20 @@ const MATERIALS = [['document', 'Learner guide'], ['brief', 'Reference brief'],
 // Where the research looks. What each answer means is said under the choice.
 const REVIEW_LEVELS = [['balanced', 'Balanced'], ['automatic', 'Automatic draft'],
   ['step_by_step', 'Step by step']];
-const REVIEW_SAYS = {
-  balanced: 'Stops to read the research plan, then the first drafts of every level together, '
-    + 'then the finished materials together.',
-  automatic: 'Stops only for the finished materials. It costs more before you first see '
-    + 'anything, and the spending limit still holds.',
-  step_by_step: 'Stops at every stage of every level.',
-};
+// What a review level does for this training: from the same rule as the Ready card. A
+// plan written from the form has no stop of its own; a drawn deck always stops.
+function reviewSays(level, planned, deck) {
+  if (level === 'balanced') {
+    return (planned ? 'Stops to read the research plan, then the first drafts'
+      : 'Stops for the first drafts') + ' of every level together, then '
+      + (deck ? 'each drawn deck, then ' : '') + 'the finished materials together.';
+  }
+  if (level === 'automatic') {
+    return 'Stops for ' + (deck ? 'each drawn deck and ' : '') + 'the finished materials. '
+      + 'It costs more before you first see anything, and the spending limit still holds.';
+  }
+  return 'Stops at every stage of every level.';
+}
 // Where research may look: your documents, your sites and/or the public web, any of them
 // together. Your sites start as the list every studio shares; a site added on the form is
 // for that training only. The words are the ones every studio uses
@@ -312,10 +319,18 @@ const NOTIFY_SAYS = 'When no page is open and a training needs you, this compute
   + 'decision, once for each thing that needs you.';
 const NOTIFY_DIFFERS = 'This is not the browser’s notification above. That one works only '
   + 'while this page is open in a tab; this one is for when no page is open at all.';
+// Whether the research plan is read at a stop of its own: not when research reads the
+// documents alone, whose plan is written from the form.
+function plannedOf(draft) {
+  const chosen = researchChoice(draft);
+  return !chosen.documents || chosen.web || chosen.sites.length > 0;
+}
+
 // Deleting a training: what the card offers, and what its confirmation says. The runner says
 // what goes and what stays for each training; these are the words around it.
 const DELETE_SAYS = 'If you no longer want this training, delete it. It goes from this '
-  + 'computer and from your team’s workspace.';
+  + 'computer';
+const DELETE_TEAM = ' and from your team’s workspace';
 const DELETE_STOPS = 'It is working now. Deleting it stops it first, and ends everything it '
   + 'is running.';
 const DELETE_SHARED = { decision: 'Your team sees it gone straight away.',
@@ -1410,7 +1425,11 @@ function noteSheet(kind) {
   const researchPrice = !outlined() && view.gate && view.gate.artifact === 'research' && view.gate.research_price;
   const redo = kind === 'revise' && researchPrice ? ' ' + researchPrice.words
     : kind === 'revise' && price ? ' ' + price.says : '';
-  const hint = make('p', 'quiet', (runOf(view.path) ? spec.hint.replace('Your assistant makes',
+  // A change to a deck draws it again whole: said before the price.
+  const decked = kind === 'revise' && !outlined() && view.gate
+    && String(view.gate.artifact || '').split('@')[0] === 'deck';
+  const hint = make('p', 'quiet', (decked ? 'A change to the deck writes its outline again and '
+    + 'draws every slide again.' : runOf(view.path) ? spec.hint.replace('Your assistant makes',
     'Training Studio makes') : spec.hint) + redo);
   hint.id = 'note-hint';
   // At the research stop, the sources may be read again: the whole research, brought up to
@@ -1702,7 +1721,7 @@ function invitation() {
       make('h2', 'invite-title', 'Start your first training'),
       make('p', '', 'Say what it is about and who it is for. Training Studio does the '
         + 'research and writes the blueprint, the learner guide, the brief and the practice '
-        + 'scenarios on its own, and stops each time it needs your decision.'),
+        + 'scenarios on its own, and stops where its review level says, for your decision.'),
       add(make('div', 'bar'), newButton('filled')),
       make('p', 'quiet', 'It takes three short steps, and this page tells you each time it '
         + 'needs you.'));
@@ -4573,8 +4592,9 @@ function shapeStep(draft) {
   const walk = add(make('div', 'field'),
     chip('Walk through each slide’s design before it is built', draft.walkthrough,
       (on) => { draft.walkthrough = on; }, 'walkthrough'),
-    make('p', 'quiet field-hint', 'Usually the deck is approved on what it says and on its '
-      + 'look. Choose this to approve how each slide is drawn, one at a time.'));
+    make('p', 'quiet field-hint', 'Usually the deck is approved on its outline and on its '
+      + 'look. Choose this to see how each slide is drawn, and approve the design in one '
+      + 'decision.'));
   walk.hidden = used.hidden;
   const deck = choice('The slide deck', DECKS.map((kind) => kind[1]), draft.deck, (index) => {
     draft.deck = index;
@@ -4587,7 +4607,7 @@ function shapeStep(draft) {
     option.classList.add('seg-absent');
   }
   return [add(card('What would you like to make?'),
-    make('p', 'quiet', 'Choose only what you need. Research and a teaching plan connect every selected material.'),
+    make('p', 'quiet', 'Choose only what you need. Research and a blueprint connect every selected material.'),
     materialChoices(draft),
     chips('Levels', LEVELS.map((level) => [level, level]),
       (level) => draft.levels.includes(level), toggle('levels'), 'level',
@@ -4596,7 +4616,7 @@ function shapeStep(draft) {
     deck, used, walk, brand,
     field('new-time', 'How long it should take (optional)', draft, 'time',
       { hint: 'The learner’s time, including examples and practice: “30 minutes” or “a half-day workshop”.' }),
-    trainingOptions('Depth and reference brief', 'training-depth',
+    trainingOptions('About the reference brief', 'training-depth',
       choice('What the brief is about', ['One product or technology', 'A comparison'],
         draft.brief, (index) => { draft.brief = index; }, 'brief')),
     trainingOptions('Extra copies and Yoodli', 'training-copies',
@@ -4614,7 +4634,7 @@ function shapeStep(draft) {
           }
           draft.yoodli = on;
           say(byId('new-problem'), '');
-        }, 'practice', 'Prepares fields to copy into Yoodli and a knowledge brief to upload. Nothing is posted to Yoodli.')))];
+        }, 'practice', 'Prepares Yoodli scenarios to copy into Yoodli and a reference brief to upload. Nothing is posted to Yoodli.')))];
 }
 
 // Where this one training stops for you. The shared level is its default; a level picked
@@ -4633,7 +4653,8 @@ function reviewLevelCard(draft, line) {
     }, 'review-level');
   const shared = REVIEW_LEVELS.find(([id]) => id === draft.review_seen);
   return add(card('Where this training stops'), control, line,
-    make('p', 'quiet', REVIEW_SAYS[draft.review_level]),
+    make('p', 'quiet', reviewSays(draft.review_level, plannedOf(draft),
+      Boolean(DECKS[draft.deck][0]))),
     make('p', 'quiet', (shared ? 'Shared default: ' + shared[1] + '. ' : '')
       + 'This training keeps the level it starts with.'),
     add(make('div', 'field'), chip('Use this for new work in every studio',
@@ -4683,7 +4704,7 @@ function startStep(draft) {
   const policy = draft.review_level;
   const selected = MATERIALS.filter(([id]) => draft.materials.includes(id)).map(([, label]) => label);
   if (DECKS[draft.deck][0]) selected.push(DECKS[draft.deck][1] + ' deck');
-  if (draft.yoodli) selected.push('Yoodli field layouts');
+  if (draft.yoodli) selected.push('Yoodli scenarios');
   const looks = make('p', 'quiet research-line');
   const tell = () => {
     const chosen = researchChoice(draft);
@@ -4692,7 +4713,7 @@ function startStep(draft) {
       : 'Research starts after you start the training.';
     looks.textContent = researchProblem(draft) || 'Research ' + researchSummary(chosen) + '.';
     // Documents alone are planned from the form, so there is no research plan to read.
-    const planned = !supplied || chosen.web || chosen.sites.length > 0;
+    const planned = plannedOf(draft);
     // A drawn deck always comes to the person, whatever the level.
     const deck = Boolean(DECKS[draft.deck][0]);
     const stops = policy === 'balanced' ? (planned ? 'the research plan, the first drafts' : 'the first drafts')
@@ -4702,12 +4723,12 @@ function startStep(draft) {
           + (deck ? ', the selected teaching materials and each deck'
             : ' and the selected teaching materials')
           + (draft.materials.includes('scenario') ? ', plus each practice scenario' : '')
-          + (draft.yoodli ? ' and each Yoodli layout' : '');
+          + (draft.yoodli ? ' and each set of Yoodli scenarios' : '');
     then.textContent = REVIEW_WORDS[policy] + ': it stops for ' + stops;
     const levels = draft.levels.length ? 'each level' : 'the training';
     comes.textContent = (policy === 'balanced'
-      ? 'Review the first drafts comes after research and the blueprint, guide and brief for '
-        + levels + ', so the first stop is some minutes in. '
+      ? 'Review the first drafts comes after research, the blueprint and the learner guide '
+        + 'of ' + levels + '. Briefs are written after it. The first stop is some minutes in. '
       : policy === 'automatic' ? 'Intermediate drafts continue automatically. ' : '')
       + (DECKS[draft.deck][0] ? (policy === 'step_by_step'
         ? 'A deck adds three stops per level: its outline, its look and the deck.'
@@ -4716,7 +4737,7 @@ function startStep(draft) {
   tell();
   return [add(card('Ready to start'), make('p', 'lede', series(selected)),
     make('p', 'quiet', (draft.levels.length ? 'Levels: ' + draft.levels.join(', ') : 'One training without levels')
-      + (draft.time ? ' · ' + draft.time : ' · Sized from the teaching plan')),
+      + (draft.time ? ' · ' + draft.time : ' · Sized from the blueprint')),
     first, looks, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
   reviewLevelCard(draft, then),
   add(card('Sources'), researchFields(draft, tell),
@@ -4966,7 +4987,7 @@ function adding(run) {
 function runStanding(run) {
   if (run.finished) {
     return run.finished.ready ? ['done', 'Finished']
-      : ['late', 'Finished, but not ready to use'];
+      : ['late', 'Not ready to use yet'];
   }
   if (run.deck_left) return ['done', 'Everything but the slide deck is made'];
   if (run.mine === false) {
@@ -5838,8 +5859,9 @@ function copiesCard(run) {
   if (view.copying) go.setAttribute('aria-busy', 'true');
   const problem = alertLine('copies-problem');
   say(problem, view.uncopied);
-  return add(node, make('p', 'quiet', 'The training itself is complete without them. A copy '
-    + 'that is not made is listed as a limitation.'), problem, add(make('div', 'bar'), go));
+  return add(node, make('p', 'quiet', 'A copy that is not made is listed as a limitation. A '
+    + 'copy that is out of date must be sent again before the training is ready.'), problem,
+  add(make('div', 'bar'), go));
 }
 
 // A deck this computer cannot make is the one stage a run leaves. It says what is missing in
@@ -5882,7 +5904,7 @@ function controlsPart(run) {
   if (found.skip_deck) {
     add(node, make('p', 'quiet', 'Nothing of the deck is drawn yet. Leaving it out takes a '
       + 'reason, which is kept with the training; you can bring the deck back later.'));
-    add(bar, capsule('Skip the deck for now', '', () => {
+    add(bar, capsule('Leave the deck out', '', () => {
       view.deciding = 'deck';
       openSheet('skip', 'skip-deck')();
       paintRun(false);
@@ -6240,11 +6262,11 @@ function marked(review) {
 function commitsSays(review) {
   const commits = review.commits;
   if (review.phase !== 'direction' || !commits) {
-    return 'Approving finishes this draft. Everything is kept as it stands, and publishing '
-      + 'is a separate action.';
+    return 'Approving finishes this training. Everything is kept as it stands, and '
+      + 'publishing is a separate action.';
   }
   const names = { document: 'learner guides', brief: 'briefs', scenario: 'practice scenarios',
-    yoodli: 'Yoodli layouts' };
+    yoodli: 'Yoodli scenarios' };
   // The runner lists only work still unwritten in this run, including legacy runs.
   const made = list(commits.materials)
     .map((stage) => names[stage] || stage);
@@ -6467,7 +6489,7 @@ function combinedReview(run) {
         const lookProblem = alertLine('look-problem-' + item.looks.artifact);
         const again = capsule('Try again', '', () => redrawLooks(review, item.looks,
           lookProblem, again), 'looks-again-' + item.looks.artifact);
-        const proceed = capsule('Carry on in the brand’s default look', '', () => {
+        const proceed = capsule('Use the brand’s default look', '', () => {
           held.choice = held.choice === 'default' ? '' : 'default';
           proceed.setAttribute('aria-pressed', String(held.choice === 'default'));
         }, 'looks-default-' + item.looks.artifact);
@@ -7270,7 +7292,7 @@ function adoptCard(training) {
   return add(card('Run it from this page'),
     make('p', '', 'This training is not run from this page: it lives in a folder of its '
       + 'own, outside your workspace. Training Studio can carry it on from here instead, '
-      + 'working on its own and stopping each time it needs your decision.'),
+      + 'working on its own, and stops where its review level says, for your decision.'),
     add(make('div', 'bar'), capsule('Run this from here', '', askTeam('adopt', 'adopt'),
       'adopt')));
 }
@@ -7331,7 +7353,7 @@ function teamAsks(kind, title) {
     make('p', '', 'The original folder is left exactly as it was, with nothing deleted. '
       + 'Its own Git history stays where it is.'),
     make('p', '', 'From then on the copy is the one to work on, and this page takes you '
-      + 'to it.')] };
+      + 'to it. A training brought in runs Step by step.')] };
 }
 
 function teamSheet(kind) {
@@ -7410,7 +7432,9 @@ function deletable(run) {
 }
 
 function deleteCard() {
-  return add(card('Delete this training'), make('p', 'quiet', DELETE_SAYS),
+  // From a team's workspace it goes for the team too; from a local one, from here only.
+  return add(card('Delete this training'), make('p', 'quiet', DELETE_SAYS
+    + (teamSpace() ? DELETE_TEAM : '') + '.'),
     add(make('div', 'bar'), capsule('Delete this training', 'quiet', askDelete('delete'),
       'delete')));
 }

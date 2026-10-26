@@ -209,7 +209,7 @@ from runner import agents, companion, deck, gitstate, pipeline, settings, team, 
 from runner import brand as brand_skill
 from runner import brand_source
 from runner import copies as copies_made
-from runner.copies import BOTH, CHANGED_THERE, KEPT_OURS, MISSING_DOC, PULLED, UNPLACED
+from runner.copies import BOTH, CHANGED_THERE, KEPT_OURS, MISSING_DOC, PULLED, UNPLACED, worded
 from runner import documents as documents_kept
 from runner import index as index_written
 from runner import research as research_cli
@@ -1054,13 +1054,15 @@ class Engine(Reviewing):
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
             and not needs['design_update' if form.get('walkthrough') else 'update'] \
             and not needs['old_brand']
-        # Balanced stops three times: the research plan, the direction, the finished materials;
-        # Automatic draft once, at the finished materials. Each deck drawn here stops too.
+        # Balanced stops three times: the research plan, the direction, the finished materials,
+        # or twice when the plan is written from the form; Automatic draft once, at the
+        # finished materials. Each deck drawn here stops too.
         chosen = review_policy.level(record)
         decks = max(1, len(form['levels'])) if drawn else 0
+        balanced = 2 if pipeline.planned_from_form(record) else 3
         return {'path': str(root), 'id': root.name, 'gates': (
             pipeline.gates(form, drawn) if chosen == 'step_by_step'
-            else (3 if chosen == 'balanced' else 1) + decks)}
+            else (balanced if chosen == 'balanced' else 1) + decks)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
         """Share the claim a new training was committed with, before any work is done
@@ -2943,9 +2945,10 @@ class Engine(Reviewing):
         """What a deck of this size has cost before, said before any of it is drawn."""
         slides = len(deck.slides_of(found.decks[self._level(step.step)].outline))
         cost = deck.before(slides)
-        return (f" A deck of {slides} slides has cost about ${cost['dollars']:,.2f} and "
-                f"{cost['minutes']:g} minutes of agent time to draw before, and as much "
-                'again each time its slides were drawn again after a review.')
+        return (f" A deck of {slides} slides is estimated at about ${cost['dollars']:,.2f} "
+                f"and {cost['minutes']:g} minutes of assistant time (a fixed estimate per "
+                "slide, not this computer's history), and as much again each time its slides "
+                'are drawn again after a review.')
 
     def _live(self, run: _Run, drawing: pipeline.Step | None) -> dict:
         """The sections workers are drawing now, each with how many previews it has taken
@@ -3981,7 +3984,7 @@ class Engine(Reviewing):
                 PULLED if outcome['result'] == 'pulled' else
                 'The Doc has no new changes to bring in.')
         unplaced = outcome.get('unplaced') or []
-        return {**self.view(root), 'said': said.format(label=workspace.label(artifact)),
+        return {**self.view(root), 'said': worded(said, workspace.label(artifact)),
                 **({'unplaced': UNPLACED.format(headings=', '.join(unplaced))}
                    if unplaced else {})}
 

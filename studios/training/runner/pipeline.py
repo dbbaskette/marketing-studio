@@ -1364,7 +1364,7 @@ def _about(root: Path, session: dict) -> str:
                                   else 'product'),
              f"Time limit: {said.get('time limit') or 'none given'}"]
     names = {'document': 'learner guide', 'brief': 'reference brief', 'deck': 'slide deck',
-             'scenario': 'practice scenarios', 'yoodli': 'Yoodli field layouts'}
+             'scenario': 'practice scenarios', 'yoodli': 'Yoodli scenarios'}
     lines.append('Selected materials: ' + ', '.join(names[stage]
                  for stage in session['settings']['stages'] if stage in names))
     return '\n'.join(lines)
@@ -1471,6 +1471,13 @@ def plan_work(root: Path, found: Survey, request: dict | None, error: str | None
 
 
 FROM_FORM = 'Research plan: written from your form'
+
+
+def planned_from_form(record: dict) -> bool:
+    """Whether this training's research plan is written from its form, with no stop of its
+    own: research done as one report and one check, from the person's documents alone."""
+    return bool(record.get('research_contract')) and (
+        (record.get('documents') or {}).get('scope') == 'supplied-only')
 
 
 def plan_from_form(root: Path, found: Survey, asked) -> str:

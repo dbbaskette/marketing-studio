@@ -1195,11 +1195,11 @@ class PlainWordsTests(PageCase):
         self.assertEqual((first['state'], first['sentence'], first['stage_name'],
                           first['approval']), ('in-progress', 'Complete intake', 'Start', 'chat'))
         self.assertEqual([(stage['name'], stage['state']) for stage in first['stages']],
-                         [('Start', 'current'), ('Questions', 'not-started'),
+                         [('Start', 'current'), ('Research plan', 'not-started'),
                           ('Research', 'not-started'), ('Blueprint', 'not-started'),
                           ('Guide', 'not-started'), ('Brief', 'not-started'),
                           ('Deck', 'not-started'), ('Practice', 'not-started'),
-                          ('Wrap-up', 'not-started')])
+                          ('Index', 'not-started')])
         self.cli('checkpoint', '--next', '')
         self.assertEqual(self.shown()['sentence'], 'At the Start stage.')
 
@@ -1213,10 +1213,10 @@ class PlainWordsTests(PageCase):
         self.cli('checkpoint', '--stage', 'package')
         shown = self.shown()
         self.assertEqual([(stage['name'], stage['words']) for stage in shown['stages']],
-                         [('Start', 'done'), ('Questions', 'done'), ('Research', 'done'),
+                         [('Start', 'done'), ('Research plan', 'done'), ('Research', 'done'),
                           ('Blueprint', 'done'), ('Guide', 'done'), ('Brief', 'left out'),
                           ('Deck', 'could not be made'), ('Practice', 'done'),
-                          ('Wrap-up', 'done')])
+                          ('Index', 'done')])
         self.assertEqual((shown['state'], shown['sentence']),
                          ('finished', 'Finished, with 2 things left out or limited.'))
 
@@ -2992,8 +2992,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                 self.assertIn(phrase, text)
                 if policy == 'balanced':
                     self.assertNotIn('direction review', text)
-                    self.assertIn('Review the first drafts comes after research and the '
-                                  'blueprint, guide and brief for each level', text)
+                    self.assertIn('Review the first drafts comes after research, the '
+                                  'blueprint and the learner guide of each level. Briefs are '
+                                  'written after it.', text)
                 if policy != 'step_by_step':
                     self.assertNotIn('at least 5 decisions', text)
                 self.assertFalse([link for link in result['snapshots']['ready']['links']
@@ -3101,7 +3102,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Stops to read the research plan', shots['shared']['text'])
         self.assertIn('Balanced: it stops for the research plan, the first drafts and the '
                       'finished materials', shots['shared']['text'])
-        self.assertIn('Stops only for the finished materials', shots['picked']['text'])
+        self.assertIn('Stops for the finished materials', shots['picked']['text'])
         # The stops line follows the pick.
         self.assertIn('Automatic draft: it stops for the finished materials', shots['picked']['text'])
         self.assertNotIn('Balanced: it stops', shots['picked']['text'])
@@ -3236,14 +3237,14 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
             {'click': 'Try again'}, {'snapshot': 'again'}])
         self.assertIn(failed, result['snapshots']['review']['text'])
-        self.assertIn('Carry on in the brand\u2019s default look',
+        self.assertIn('Use the brand\u2019s default look',
                       result['snapshots']['review']['buttons'])
         self.assertEqual(self.posts(result), [('/api/review', {
             'path': str(self.root), 'expected': 'v1', 'decision': 'approve', 'target': None,
             'note': None, 'looks': {'': {'choice': 'again', 'words': ''}}})])
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'},
-            {'click': 'Carry on in the brand\u2019s default look'},
+            {'click': 'Use the brand\u2019s default look'},
             {'click': 'Approve the first drafts'}, {'click': 'Approve'}])
         self.assertEqual(self.posts(result)[-1][1]['looks'],
                          {'': {'choice': 'default', 'words': ''}})
@@ -3520,7 +3521,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(folded['filled'], ['Approve the finished materials'])
         self.assertIn('1 of 3 looked at. Nothing is marked for changes.', result['snapshots']['good']['text'])
         self.assertIn('Approve the finished materials?', result['snapshots']['confirm']['sheet'])
-        self.assertIn('Approving finishes this draft.', result['snapshots']['confirm']['sheet'])
+        self.assertIn('Approving finishes this training.', result['snapshots']['confirm']['sheet'])
         self.assertEqual(self.posts(result), [('/api/review', {
             'path': str(self.root), 'expected': 'final-v1', 'decision': 'approve',
             'target': None, 'note': None})])
@@ -4121,8 +4122,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         label = 'Walk through each slide’s design before it is built'
         self.assertIn(label, two['text'])
         self.assertNotIn(label, two['chosen'], 'off unless asked')
-        self.assertIn('Usually the deck is approved on what it says and on its look. Choose '
-                      'this to approve how each slide is drawn, one at a time.', two['text'])
+        self.assertIn('Usually the deck is approved on its outline and on its look. Choose '
+                      'this to see how each slide is drawn, and approve the design in one '
+                      'decision.', two['text'])
         started = [body for address, body in self.posts(result) if address == '/api/trainings']
         self.assertIs(started[0]['walkthrough'], True)
 
@@ -4406,7 +4408,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Technical upskilling'},
             {'click': 'Continue'}, {'snapshot': 'two'},
             {'click': 'Learner guide'}, {'click': 'Reference brief'}, {'click': 'Practice scenarios'},
-            {'click': '301'}, {'click': 'Depth and reference brief'}, {'click': 'A comparison'}, {'click': 'Google Slides'}, {'click': 'Deck brand'},
+            {'click': '301'}, {'click': 'About the reference brief'}, {'click': 'A comparison'}, {'click': 'Google Slides'}, {'click': 'Deck brand'},
             {'fill': 'The brand’s variant', 'value': 'dark'}, {'click': 'Extra copies and Yoodli'}, {'click': 'Google Docs'},
             {'fill': 'How long it should take', 'value': '30 minutes', 'stay': True},
             {'enter': 'How long it should take'}, {'click': 'Assistant and limits'}, {'snapshot': 'three'},
@@ -5183,7 +5185,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     self.assertEqual((sent['levels'], sent['deck_target'], sent['yoodli']),
                                      ([], None, True))
                     self.assertIn(plain, three['text'])
-                    self.assertIn('plus each practice scenario and each Yoodli layout', three['text'])
+                    self.assertIn('plus each practice scenario and each set of Yoodli '
+                                  'scenarios', three['text'])
                     self.assertIn('In all, it stops and asks for your decision at least 5 '
                                   'times.', landed['text'])
 
@@ -5530,13 +5533,13 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'snapshot': 'offered'},
             {'click': 'Finish this level, then wait'}, {'snapshot': 'finishing'},
-            {'click': 'Skip the deck for now'}, {'snapshot': 'sheet'},
+            {'click': 'Leave the deck out'}, {'snapshot': 'sheet'},
             {'type': reason}, {'click': 'Skip this stage'}, {'snapshot': 'left out'}])
         shots = result['snapshots']
         for shown in ('Steer it', 'Level 201 is in hand', 'Nothing of the deck is drawn yet'):
             self.assertIn(shown, shots['offered']['text'])
         self.assertIn('Finish this level, then wait', shots['offered']['buttons'])
-        self.assertIn('Skip the deck for now', shots['offered']['buttons'])
+        self.assertIn('Leave the deck out', shots['offered']['buttons'])
         self.assertEqual(shots['offered']['filled'], [])
         self.assertIn('It finishes level 201, then waits.', shots['finishing']['text'])
         self.assertNotIn('Finish this level, then wait', shots['finishing']['buttons'])
@@ -7056,7 +7059,7 @@ class TeamScreenTests(ScriptedPage, PageCase):
         run = shots['run']
         self.assertEqual((run['heading'], run['filled'], run['fields']),
                          ('Rolling restarts', [], {}))
-        for shown in ('Run by Pat', 'Run from another computer', says,
+        for shown in ('Run by Pat', 'Run by your teammates', says,
                       'Pat is running this training', took, known, READ_ONLY,
                       'All production steps', 'Your review of the blueprint', 'Made so far',
                       'A question is waiting', 'The research asks:', 'Which platform version?',
@@ -9062,6 +9065,82 @@ class PackageTests(unittest.TestCase):
         self.assertIn('desk reference', self.guidance('gates'))
         self.assertIn('--gate', self.guidance('gates'))
         self.assertIn('--approval page', self.guidance('intake'))
+
+
+
+class TrainingNamesTests(unittest.TestCase):
+    """Training Studio says each thing one way, true at every review level."""
+
+    def test_old_names_are_gone_and_new_ones_said(self):
+        page = (Path(__file__).resolve().parents[1] / 'skills' / 'training-studio' / 'scripts'
+                / 'desk' / 'app.js').read_text(encoding='utf-8')
+        here = Path(__file__).resolve().parents[1] / 'runner'
+        runner = ''.join((here / name).read_text(encoding='utf-8')
+                         for name in ('engine.py', 'reviews.py'))
+        # A sentence split over lines is read whole: 'a ' + 'b' and 'a '\n'b' are 'a b'.
+        page = re.sub(r"'\s*\n\s*\+\s*'", '', page)
+        runner = re.sub(r"(['\"])\s*\n\s*f?(['\"])", '', runner)
+        for old in ('Stops only for the finished materials.', 'Approving finishes this draft',
+                    'approve how each slide is drawn, one at a time',
+                    'has cost about', 'Depth and reference brief', 'knowledge brief',
+                    'Yoodli field layouts', 'Finished, but not ready to use',
+                    'Skip the deck for now', 'Run from another computer',
+                    'Review the first drafts comes after research and the blueprint, guide '
+                    'and brief', 'stops each time it needs your decision', 'Deck direction'):
+            with self.subTest(old=old):
+                self.assertNotIn(old, page + runner)
+        for new in ('Approving finishes this training.',
+                    'Choose this to see how each slide is drawn, and approve the design in '
+                    'one decision.', 'Use the brand’s default look',
+                    'a fixed estimate per slide, not this computer', 'Reference brief',
+                    'Yoodli scenarios', 'Not ready to use yet', 'Leave the deck out',
+                    'Review the first drafts comes after research, the blueprint and the '
+                    "learner guide of ' + levels + '. Briefs are written after it.",
+                    'stops where its review level says, for your decision.',
+                    'A training brought in runs Step by step.',
+                    'A copy that is out of date must be sent again before the training is '
+                    'ready.', 'A change to the deck writes its outline again and draws every '
+                    'slide again.', 'Run by your teammates'):
+            with self.subTest(new=new):
+                self.assertIn(new, page + runner)
+
+    def test_the_stages_are_named_once(self):
+        import desk
+        self.assertEqual((desk.STAGE_NAMES['research-plan'], desk.STAGE_NAMES['package']),
+                         ('Research plan', 'Index'))
+        import workspace
+        self.assertEqual(workspace.AHEAD['yoodli'], 'Write {the} Yoodli scenarios')
+
+
+@unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
+class ReviewSaysTests(unittest.TestCase):
+    """The review level card says what the level does for this training's own plan."""
+
+    def says(self, level: str, planned: bool, deck: bool) -> str:
+        script = (Path(__file__).resolve().parents[1] / 'skills' / 'training-studio' /
+                  'scripts' / 'desk' / 'app.js').read_text(encoding='utf-8')
+        start = script.index('function reviewSays(')
+        end = script.index('\n}\n', start) + 3
+        code = script[start:end] + (f'\nprocess.stdout.write(reviewSays({json.dumps(level)}, '
+                                    f'{json.dumps(planned)}, {json.dumps(deck)}));')
+        done = subprocess.run([NODE, '-e', code], capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
+
+    def test_balanced_and_automatic_follow_the_plan_and_the_deck(self):
+        self.assertEqual(self.says('balanced', True, True),
+                         'Stops to read the research plan, then the first drafts of every '
+                         'level together, then each drawn deck, then the finished materials '
+                         'together.')
+        self.assertEqual(self.says('balanced', False, False),
+                         'Stops for the first drafts of every level together, then the '
+                         'finished materials together.')
+        self.assertEqual(self.says('automatic', True, True),
+                         'Stops for each drawn deck and the finished materials. It costs more '
+                         'before you first see anything, and the spending limit still holds.')
+        self.assertEqual(self.says('automatic', True, False),
+                         'Stops for the finished materials. It costs more before you first see '
+                         'anything, and the spending limit still holds.')
 
 
 if __name__ == '__main__':
