@@ -3178,13 +3178,13 @@ async function deskPolishStart(){
   assert.equal(sent.first_pass,'copyedit');assert.equal(sent.style,'');assert.match(sent.manuscript,/## One/);assert.equal(sent.tone,'Clear');
   for(const key of ['way','length','research_from','point'])assert.equal(sent[key],undefined,key);
   assert.deepEqual(sent.sources,[],'no sources needed');
-  assert.equal(t.f.run('studio.screen'),'desk');assert.equal(t.f.run('studio.desk.mode'),'review','it lands in Review mode');
+  assert.equal(t.f.run('studio.screen'),'desk');assert.equal(t.f.run('studio.desk.mode'),'review','it lands in Review mode');assert.equal(t.f.run('studio.stage'),'review','kept in the address');
   // Just give feedback: Finishing's feedback is queued as the desk opens; nothing is rewritten.
   await t.f.run("sDeskBegin({have:'draft'})");paste();
   await t.click('Just give feedback');
   assert.ok(t.nodes().some(n=>n.textContent==='Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.'));
   await t.submit();
-  sent=made();assert.equal(sent.first_pass,'feedback');assert.equal(sent.style,'');assert.equal(t.f.run('studio.desk.mode'),undefined,'feedback opens the full desk');
+  sent=made();assert.equal(sent.first_pass,'feedback');assert.equal(sent.style,'');assert.equal(t.f.run('studio.desk.mode'),null,'feedback opens the full desk');assert.equal(t.f.run('studio.stage'),null);
   // Reshape reveals the kind of post, the same catalog, and needs one.
   await t.f.run("sDeskBegin({have:'draft'})");paste();
   await t.click('Reshape to fit a kind of post');
@@ -3514,6 +3514,9 @@ async function deskReviewMode(){
   assert.ok(!words(f.get('studio-page')).includes('![][image1]'),'an image reference is not shown as text');
   const thumb=descendants(part('aaaaaaaa')).find(n=>n.tagName==='img'&&/desk-thumb/.test(n.className));
   assert.ok(thumb,'the image shows as a thumbnail where it sits');assert.equal(thumb.src,'data:image/png;base64,AAAA');
+  // A poll that changes nothing in the toolbar leaves its buttons as they are.
+  const toolbar=descendants(f.get('actions')).find(n=>n.textContent==='Open the full desk');await tick();
+  assert.equal(descendants(f.get('actions')).find(n=>n.textContent==='Open the full desk'),toolbar,'a poll does not swap a toolbar button');
   // 2. The fixes land, each marked in its paragraph with its reason, Accept and Reject.
   view={...view,working:null,jobs:[{id:'c1',kind:'finish-copyedit',status:'ready',applied:true,error:''}],finishing:{copyedit:finishSet('copyedit',REVIEW_FIXES)}};
   await tick();
@@ -3547,13 +3550,16 @@ async function deskReviewMode(){
   caretOnSet(editor);f.set('focused',editor);f.run('document.activeElement=focused');
   editor.value='A workflow links the agents together.';editor.selectionStart=editor.selectionEnd=10;editor.listeners.input();
   assert.equal(nodes().find(n=>/desk-save-state/.test(n.className)).textContent,'Saving…');
+  assert.equal(descendants(part('aaaaaaaa')).find(n=>/review-editing/.test(n.className)).textContent,'Saving…','said under the editor too');
   await tick();
+  assert.equal(descendants(part('aaaaaaaa')).find(n=>/review-editing/.test(n.className)).textContent,'Saved. Click outside the box to finish.');
   assert.deepEqual(last('/api/desk-save'),{id:'review-blog',seen:2,part:'aaaaaaaa',text:'A workflow links the agents together.\n\n![][image1]\n\nTiming and context is everything.',session:f.run('studio.desk.session')});
   assert.ok(nodes().includes(editor),'the editor stays while it saves');assert.equal(editor.selectionStart,10,'with its caret');
   editor.value='A workflow links the agents together well.';editor.listeners.input();await tick();
   assert.equal(last('/api/desk-save').text,'A workflow links the agents together well.\n\n![][image1]\n\nTiming and context is everything.','a second save finds the paragraph again');
   f.run('document.activeElement=null');editor.listeners.blur();await tick();
   assert.ok(!nodes().some(n=>/review-editor/.test(n.className)),'leaving the paragraph shows it marked again');
+  assert.equal(nodes().find(n=>/desk-save-state/.test(n.className)).textContent,'Saved.');
   assert.equal(mark('p3'),undefined);assert.ok(words(part('aaaaaaaa')).includes('1 fix no longer fits this text, so it was left out.'));
   assert.ok(mark('p4'),'the other fix in that section still fits');
   assert.equal(nodes().find(n=>n.className==='review-count').textContent,'3 fixes to review');
@@ -3565,6 +3571,7 @@ async function deskReviewMode(){
   await press(row('p5'),'Reject');
   // 6. Nothing left: the accepted changes go to the Google Doc, the plan saying how many.
   assert.ok(nodes().some(n=>n.textContent==='Nothing left to review'));
+  assert.equal(nodes().find(n=>n.className==='lede').textContent,'Every fix is reviewed. Click any paragraph to keep editing, or Check again for the latest text.');
   assert.ok(words(head()).includes('Accepted 3 of 6 fixes.'));
   await press(head(),'Send accepted changes to Google Doc');
   assert.deepEqual(last('/api/desk-google-plan'),{id:'review-blog',mode:'auto'});
@@ -3584,12 +3591,17 @@ async function deskReviewMode(){
   // 9. The full desk stays reachable, and leads back.
   await descendants(f.get('actions')).find(n=>n.textContent==='Open the full desk').listeners.click();
   assert.equal(f.run('studio.desk.mode'),null);assert.ok(nodes().some(n=>n.dataset?.part==='aaaaaaaa'&&/desk-part/.test(n.className)));
+  assert.equal(f.run('studio.stage'),null,'the address says the full desk');
   await descendants(f.get('actions')).find(n=>n.textContent==='Review fixes').listeners.click();
-  assert.equal(f.run('studio.desk.mode'),'review');
+  assert.equal(f.run('studio.desk.mode'),'review');assert.equal(f.run('studio.stage'),'review');
+  // Its address keeps Review mode on a reload; the desk’s own address opens the full desk.
+  await f.run("sRoute('desk','review-blog','review')");assert.ok(nodes().some(n=>/review-paper/.test(n.className)));
+  await f.run("sRoute('desk','review-blog')");assert.ok(!nodes().some(n=>/review-paper/.test(n.className)));
+  await f.run("sRoute('desk','review-blog','review')");
   // 10. On a phone the fixes stack under their paragraph and every button stays in reach.
   f.set('next',{...view,finishing:{copyedit:finishSet('copyedit',[REVIEW_FIXES[1],REVIEW_FIXES[4]])}});
-  f.run("window.matchMedia=()=>({matches:true})");await f.run('studio.desk.view=next;sDeskRender(studio.desk)');
-  assert.ok(row('p1')&&row('p2'));for(const id of ['p1','p2'])assert.ok(descendants(row(id)).every(n=>n.tagName!=='button'||!n.hidden));
+  f.run("window.matchMedia=()=>({matches:true})");await f.run('studio.desk.view=next;sDeskResized()');
+  assert.ok(row('p1')&&row('p2'),'turning to a phone draws Review mode again');for(const id of ['p1','p2'])assert.ok(descendants(row(id)).every(n=>n.tagName!=='button'||!n.hidden));
   assert.ok(descendants(f.get('actions')).some(n=>n.tagName==='details'&&/menu/.test(n.className)),'the toolbar folds into its menu');
   f.run("window.matchMedia=()=>({matches:false})");
 }

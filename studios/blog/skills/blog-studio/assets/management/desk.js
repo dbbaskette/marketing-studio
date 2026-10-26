@@ -254,7 +254,7 @@ function sDeskDraftIn(held){
   const saved=held.article?sCheck('desk-saved','Use this blog’s saved draft',{on:held.source==='saved'},'on','It comes to the desk as it is, in the same blog. Its history is kept.',on=>{held.source=on?'saved':'paste';held.preview=null;sDeskStart();}):null;
   const card=sCard('Your draft',saved,held.source==='saved'?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
   if(held.source==='saved'){/* The blog's own draft: nothing to paste or read. */}
-  else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Each ## heading starts a section.'}));
+  else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Its headings start the sections, at whatever level it uses.'}));
   else if(held.source==='file'){
     const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload a draft');
     const note=sNode('p','quiet field-hint',held.file?'Selected: '+held.file.name:'Text, Markdown, Word or PDF.');
@@ -273,7 +273,7 @@ async function sDeskReadGoogle(held){
     // The Doc is already a blog here: open it on the desk, or bring it there.
     let made=null,created=false;try{made=await api('desk?id='+encodeURIComponent(found.id));}catch(_){made=null;}
     if(!made){created=true;made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}
-    if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId(),...(created&&held.first_pass==='copyedit'?{mode:'review'}:{})};return sRoute('desk',made.id);
+    if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};return sRoute('desk',made.id,created&&held.first_pass==='copyedit'?'review':null);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;sDeskStart();
 }
@@ -313,7 +313,7 @@ async function sDeskGo(held){
   if(made.first_pass_problem)sToast('The first pass did not start: '+made.first_pass_problem);
   if(made.keep_problem)sToast(made.keep_problem);
   // Check spelling and grammar lands in Review mode; every other start on the full desk.
-  studio.desk={id:made.id,view:made,session:operationId(),...(held.have==='draft'&&held.first_pass==='copyedit'?{mode:'review'}:{})};await sRoute('desk',made.id);
+  studio.desk={id:made.id,view:made,session:operationId()};await sRoute('desk',made.id,held.have==='draft'&&held.first_pass==='copyedit'?'review':null);
 }
 
 // Add a source on the desk: the same files card, saved with this blog; a kept one goes to
@@ -339,6 +339,8 @@ async function sDesk(ident){
   // Coming back reads the desk afresh: nothing typed before leaving is saved over it.
   for(const pending of Object.values(held.pending||{}))if(pending?.timer&&typeof clearTimeout==='function')clearTimeout(pending.timer);
   held.view=view;held.pending={};held.stale=false;held.outline=null;if(held.review)held.review.editing=null;
+  // Review mode is in the address (stage=review), so a reload or Back keeps it.
+  held.mode=studio.stage==='review'?'review':null;
   if(sDeskStarting(view))return sDeskProgress(held);
   if(!held.tab)held.tab=view.start?.open==='outline'&&!sDeskHasText(view)?'outline':'draft';
   sDeskRender(held);
@@ -1013,7 +1015,9 @@ function sDeskGoogleCard(held,p){
 const REVIEW_CHECKING='Checking spelling and grammar…';
 const REVIEW_INLINE=/(\*\*|__)(?=\S)([^\n]*?\S)\1|(?<![*\w])\*(?=[^\s*])([^*\n]*?[^\s*])\*(?![*\w])|`([^`\n]+)`|!\[[^\[\]\n]*\]\[[^\[\]\n]*\]|!\[[^\[\]\n]*\]\([^)\n]*\)|\[([^\[\]\n]+)\]\(([^)\s]+)[^)\n]*\)|\\([\\`*_{}\[\]()#+\-.!<>|~])/g;
 function deskHeading(text){return String(text||'').replace(/^(\*\*|__)(.+)\1$/,'$2');}
-function sReviewOn(held){held.mode='review';held.review=held.review||{editing:null,parts:{},google:null};}
+function sReviewOn(held){held.mode='review';held.review=held.review||{editing:null,parts:{},google:null};sDeskModeUrl(held);}
+// The desk's address says which view is shown, without a new history entry.
+function sDeskModeUrl(held){const review=held.mode==='review';if(studio.screen!=='desk'||(studio.stage==='review')===review)return;studio.stage=review?'review':null;history.replaceState(null,'',location.pathname+'?'+new URLSearchParams({screen:'desk',id:held.id,...(review?{stage:'review'}:{})}));}
 // Markdown as plain reading: bold, emphasis, code and link words shown, list marks as bullets,
 // image references left to their thumbnails. `lineStart` says whether the text starts a line.
 function reviewInline(text,lineStart=true){
@@ -1059,17 +1063,21 @@ function sReviewState(held){
   const failed=!working&&last&&!last.busy&&last.error&&(!set||set.job!==last.id)?last.error:'';
   return {set,working,parts,pending,gone,ready:pending.filter(item=>!item.flag),flagged:pending.filter(item=>item.flag),failed,applied:set?set.items.filter(item=>item.state==='applied').length:0};
 }
-function sReviewToolbar(held,state){
+// Drawn again only when what it shows changes, so a poll never swaps a button being pressed.
+function sReviewToolbar(held,state,force=false){
+  const key=JSON.stringify([held.view.title,!!state.working,!!held.view.working,access.actions.edit,sNarrow()]);
+  if(!force&&held.review?.toolbarKey===key&&studio.screen==='desk')return;if(held.review)held.review.toolbarKey=key;
   const again=sButton('Check again',button=>sReviewCheck(held,button));again.disabled=!access.actions.edit||!!held.view.working;
-  const full=sButton('Open the full desk',async()=>{await sReviewFlush(held);held.mode=null;held.tab='draft';sDeskRender(held);sDeskWatch(held);});
+  const full=sButton('Open the full desk',async()=>{await sReviewFlush(held);held.mode=null;sDeskModeUrl(held);held.tab='draft';sDeskRender(held);sDeskWatch(held);});
   sFrame(held.view.title,sFold([again,full]),state.working?REVIEW_CHECKING:'Check spelling and grammar',()=>sRoute('blogs'));
 }
 function sDeskReview(held){
-  sReviewOn(held);const state=sReviewState(held);sReviewToolbar(held,state);held.layout=sDeskLayout();held.cards=null;held.wholeCard=null;held.wholeGo=null;
+  sReviewOn(held);const state=sReviewState(held);sReviewToolbar(held,state,true);held.layout=sDeskLayout();held.cards=null;held.wholeCard=null;held.wholeGo=null;
   const status=sNode('p','quiet desk-save-state');status.setAttribute('role','status');status.setAttribute('aria-live','polite');held.status=status;
-  if(held.stale)sDeskStale(held);else status.textContent=held.saved||'Click any paragraph to edit it yourself.';
+  if(held.stale)sDeskStale(held);else status.textContent=held.saved||'';
   held.review.head=sReviewHead(held,state);held.review.paper=sReviewPaper(held,state);
-  sPage(sNode('p','lede','Each fix is marked in your text: struck words go, highlighted words come in. Accept or reject each one. Nothing changes until you accept.'),status,held.review.head,held.review.paper);
+  held.review.lede=sNode('p','lede',sReviewLede(state));
+  sPage(held.review.lede,status,held.review.head,held.review.paper);
   sDeskImagesLoad(held);
 }
 // What needs the person first: the check under way, a problem, the count with Accept all and
@@ -1088,7 +1096,7 @@ function sReviewHead(held,state){
     const all=sButton('Accept all ('+state.ready.length+')',button=>sReviewAccept(held,state.set,state.ready.map(item=>item.id),button),'filled');all.disabled=!editable||!state.ready.length;
     const none=sButton('Reject all',button=>sReviewReject(held,state.set,state.set.items.filter(item=>item.state==='open').map(item=>item.id),button));none.disabled=!access.actions.edit;
     const flagged=state.flagged.length?sNode('p','quiet',state.flagged.length+(state.flagged.length===1?' fix changes a fact, code or the shape of a part, so Accept all leaves it for you to check.':' fixes change a fact, code or the shape of a part, so Accept all leaves them for you to check.')):null;
-    return sAdd(head,sAdd(sNode('div','review-bar'),count,sAdd(sNode('div','bar'),all,none)),flagged);
+    return sAdd(head,sAdd(sNode('div','card review-tally'),count,sAdd(sNode('div','bar'),all,none)),flagged);
   }
   return sAdd(head,sReviewDone(held,state));
 }
@@ -1117,6 +1125,11 @@ function sReviewGoogle(held){
   out.push(sNode('p','quiet','Only what you accepted, and paragraphs you edited here, are sent. The Doc does not change until its owner accepts.'),sAdd(sNode('div','bar'),plan));
   return out;
 }
+function sReviewLede(state){
+  if(state.working)return 'Copy edit is reading your draft for spelling, grammar and wordy sentences. Read or edit it meanwhile.';
+  if(state.set&&!state.pending.length&&!state.failed)return 'Every fix is reviewed. Click any paragraph to keep editing, or Check again for the latest text.';
+  return 'Each fix is marked in your text: struck words go, highlighted words come in. Accept or reject each one, or click a paragraph to edit it yourself. Nothing changes until you accept.';
+}
 function sReviewHeadShow(held){if(!held.review?.head)return;const head=sReviewHead(held,sReviewState(held));held.review.head.replaceWith(head);held.review.head=head;}
 // The reading surface: the title, the opening and each section, every paragraph with its
 // fixes marked, opaque like any document.
@@ -1143,7 +1156,7 @@ function sReviewPart(held,part,state){
 }
 function sReviewBlock(held,part,block,marks){
   const view=held.view,wrap=sNode('div','review-block'),editing=held.review.editing;
-  if(editing&&editing.part===part&&editing.start===block.start){wrap.append(sReviewEditor(held,editing));return wrap;}
+  if(editing&&editing.part===part&&editing.start===block.start){const note=sNode('p','quiet review-editing',editing.said||'Saves as you type. Click outside the box to finish; its fixes come back.');note.setAttribute('aria-live','polite');editing.note=note;wrap.append(sReviewEditor(held,editing),note);return wrap;}
   const images=deskImagesIn(view,block.text),lost=deskImagesMissing(view,block.text),words=block.text.replace(DESK_IMAGE_REF,'').trim();
   if(words||!images.length&&!lost.length){
     const shown=sNode(part==='title'?'h2':'p',part==='title'?'review-title review-text':'review-text');
@@ -1188,6 +1201,7 @@ function sDeskReviewRefresh(held,before){
   if(!sDeskCurrent(held)||!held.review?.paper)return;
   const state=sReviewState(held);sReviewToolbar(held,state);
   const head=sReviewHead(held,state);held.review.head.replaceWith(head);held.review.head=head;
+  if(held.review.lede)held.review.lede.textContent=sReviewLede(state);
   // Sections added or taken away, or an opening that appears or goes: drawn again whole,
   // unless a paragraph is being edited, when it waits for the editor to close.
   const drawn=Object.keys(held.review.parts).join(','),wanted=state.parts.filter(part=>held.review.parts[part]||part!=='opening'||deskTextOf(held.view,part).trim()).join(',');
@@ -1204,7 +1218,7 @@ function sReviewEditor(held,editing){
   const title=editing.part==='title',box=sNode(title?'input':'textarea','input review-editor');
   box.value=editing.text;box.setAttribute('aria-label',title?'Edit the title':'Edit this paragraph');
   if(title){box.type='text';box.maxLength=500;}else box.rows=Math.min(16,Math.max(3,Math.ceil(editing.text.length/80)+editing.text.split('\n').length));
-  box.addEventListener('input',()=>{editing.text=box.value;editing.dirty=true;if(held.status)held.status.textContent='Saving…';if(editing.timer&&typeof clearTimeout==='function')clearTimeout(editing.timer);editing.timer=setTimeout(()=>sReviewSave(held),DESK_SAVE_WAIT);});
+  box.addEventListener('input',()=>{editing.text=box.value;editing.dirty=true;sReviewSaid(held,editing,'Saving…');if(editing.timer&&typeof clearTimeout==='function')clearTimeout(editing.timer);editing.timer=setTimeout(()=>sReviewSave(held),DESK_SAVE_WAIT);});
   // Leaving the paragraph saves it and shows it marked again; a click on Accept or Reject
   // elsewhere goes ahead first, and saves it before it acts.
   box.addEventListener('blur',()=>{setTimeout(()=>{if(held.review.editing===editing&&!sDeskTyping(held.review.paper))sReviewClose(held);},150);});
@@ -1225,20 +1239,22 @@ async function sReviewSave(held){
   while(held.saving)await held.saving;
   const whole=deskTextOf(held.view,editing.part),typed=editing.part==='title'?editing.text:editing.text.replace(/\s+$/,'');
   let at=whole.slice(editing.start,editing.start+editing.original.length)===editing.original?editing.start:whole.indexOf(editing.original);
-  if(at<0||editing.original&&whole.indexOf(editing.original,at+1)!==-1&&at!==editing.start){if(held.status)held.status.textContent='This paragraph changed elsewhere. Your words are kept in the box; reload to see the latest.';return;}
+  if(at<0||editing.original&&whole.indexOf(editing.original,at+1)!==-1&&at!==editing.start){sReviewSaid(held,editing,'This paragraph changed elsewhere. Your words are kept in the box; reload to see the latest.');return;}
   const text=whole.slice(0,at)+typed+whole.slice(at+editing.original.length);editing.dirty=false;
   held.saving=(async()=>{try{
     const before=held.view;held.view=await api('desk-save',{id:held.id,seen:held.view.revision,part:editing.part,text,session:held.session});
     const now=deskTextOf(held.view,editing.part),lead=text.length-text.replace(/^\s+/,'').length;
     editing.start=Math.max(0,Math.min(at-lead,now.length));editing.original=now.slice(editing.start,editing.start+typed.length)===typed?typed:typed.trim();
     if(now.indexOf(editing.original)!==-1&&now.slice(editing.start,editing.start+editing.original.length)!==editing.original)editing.start=now.indexOf(editing.original);
-    held.saved='Saved.';if(held.status&&!held.stale)held.status.textContent='Saved.';
+    held.saved='Saved.';if(!held.stale)sReviewSaid(held,editing,'Saved. Click outside the box to finish.');
     sDeskRefresh(held,before);
-  }catch(error){editing.dirty=true;if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else if(held.status)held.status.textContent=error.message+' Your words are kept in the box.';}finally{held.saving=null;}})();
+  }catch(error){editing.dirty=true;if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else sReviewSaid(held,editing,error.message+' Your words are kept in the box.');}finally{held.saving=null;}})();
   await held.saving;
   if(editing.dirty&&!held.stale&&held.review.editing===editing&&editing.text!==typed)return sReviewSave(held);
 }
-async function sReviewClose(held){const editing=held.review?.editing;if(!editing)return;await sReviewSave(held);if(held.review.editing!==editing||editing.dirty)return;held.review.editing=null;if(sDeskCurrent(held)&&held.mode==='review')sDeskReviewRefresh(held,held.view);}
+// How the paragraph being edited is saving, said under it and in the page's save line.
+function sReviewSaid(held,editing,words){editing.said=words;if(editing.note)editing.note.textContent=words;if(held.status&&!held.stale)held.status.textContent=words;}
+async function sReviewClose(held){const editing=held.review?.editing;if(!editing)return;await sReviewSave(held);if(held.review.editing!==editing||editing.dirty)return;held.review.editing=null;if(held.status&&!held.stale&&editing.said)held.status.textContent=/^Saved/.test(editing.said)?'Saved.':editing.said;if(sDeskCurrent(held)&&held.mode==='review')sDeskReviewRefresh(held,held.view);}
 async function sReviewFlush(held){if(held.review?.editing)await sReviewClose(held);}
 async function sReviewCheck(held,button){
   await busy(button,'Starting…',async()=>{try{await sReviewFlush(held);await sDeskFlush(held);if(held.stale)return;const before=held.view;held.view=await api('desk-finish',{id:held.id,seen:held.view.revision,tool:'copyedit'});if(held.review)held.review.google=null;sDeskRefresh(held,before);sDeskWatch(held);}catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
@@ -1265,5 +1281,5 @@ function sDeskSheetOpened(){const held=studio.desk;if(studio.screen!=='desk'||!h
 function sDeskSheetClosed(){const held=studio.desk;if(!held?.panelUnder)return;held.panelUnder=false;if(held.panel)held.panel.hidden=false;}
 // Turning a phone or resizing the window across a layout redraws the desk in the new one.
 function sDeskLayout(){return sNarrow()?'phone':sDeskFloating()?'drawer':'wide';}
-function sDeskResized(){const held=studio.desk;if(!held||!sDeskCurrent(held)||!held.cards&&held.tab!=='outline'||held.layout===sDeskLayout())return;held.layout=sDeskLayout();held.panelUnder=!!studio.sheet&&!!held.finish&&sDeskFloating();sDeskRender(held);}  // A sheet open across the change stays on top.
+function sDeskResized(){const held=studio.desk;if(!held||!sDeskCurrent(held)||held.layout===sDeskLayout())return;if(held.mode==='review'){if(!held.review?.editing){held.layout=sDeskLayout();sDeskReview(held);}return;}if(!held.cards&&held.tab!=='outline')return;held.layout=sDeskLayout();held.panelUnder=!!studio.sheet&&!!held.finish&&sDeskFloating();sDeskRender(held);}  // A sheet open across the change stays on top.
 if(typeof window.addEventListener==='function')window.addEventListener('resize',()=>{if(typeof clearTimeout==='function')clearTimeout(window.deskResize);window.deskResize=setTimeout(sDeskResized,150);});
