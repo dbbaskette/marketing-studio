@@ -470,6 +470,15 @@ class SettingsPageJourneyTests(unittest.TestCase):
         self.assertNotIn('output', last)
         self.assertNotIn('render', last)
 
+    def test_blog_studio_s_shared_settings_after_setup_keep_every_choice(self):
+        shots = self.page([
+            {'run': self.SHOWN + " setup = false; fill(); show('settings');"},
+            {'snapshot': 'later', 'read': ['#review-part', '#delivery-part']}],
+            product='Blog Studio', standalone=True)
+        read = shots['later']['read']
+        self.assertFalse(read['#review-part']['hidden'])
+        self.assertFalse(read['#delivery-part']['hidden'])
+
     def test_add_remove_refuse_and_save_the_list(self):
         shots = self.journey([
             {'sites': [TANZU]}, {'snapshot': 'shown'},

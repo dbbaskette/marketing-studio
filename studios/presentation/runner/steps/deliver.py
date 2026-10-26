@@ -66,9 +66,11 @@ def deliver(root, run: dict, slides, space=None) -> dict:
 
 
 def shared_file(root) -> Path | None:
-    """The delivered PowerPoint file shared with the deck, when there is one."""
+    """The delivered PowerPoint file shared with the deck, while the deck is delivered as
+    one: never a file left from before changes were asked for."""
     found = Path(root) / SHARED
-    return found if found.is_file() else None
+    said = decks.delivered(root) or {}
+    return found if found.is_file() and said.get('pptx') == SHARED.as_posix() else None
 
 
 def upload(root, run: dict, slides, output=None) -> dict:
@@ -143,6 +145,7 @@ def again(root, run: dict, slides, note: str, space=None) -> dict:
             repaired=0)
         build.write_state(root, state)
     (root / decks.DELIVER).unlink(missing_ok=True)
+    (root / SHARED).unlink(missing_ok=True)   # the deck being made again is not that file
     decks.write_run(root, run)
     _rewrite(root, run, None, space)
     return run

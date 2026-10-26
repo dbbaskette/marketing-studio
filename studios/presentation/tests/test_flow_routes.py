@@ -168,6 +168,21 @@ class DocumentRouteTests(RouteCase):
         self.assertEqual(seen, self.stops('document-script'))
         self.assertEqual(self.workers.of('research-plan'), [])
 
+class _MaterialRoute:
+    """A document read as material to build from, researched first, at the case's level."""
+
+    def test_material_to_build_from(self):
+        path = self.started(route='document', research=True, research_sources='both',
+                            source={'kind': 'paste', 'text': 'Notes: capacity holds with two.'})
+        seen = self.walk(path, 'Rolling restarts')
+        record = self.delivered(path, seen)
+        self.assertEqual(record['classified'], 'material')
+        self.assertEqual(seen, self.stops('document-material'))
+
+
+DocumentRouteTests.test_material_to_build_from = _MaterialRoute.test_material_to_build_from
+
+
 class ExistingRouteTests(RouteCase):
     """An existing deck at each level. The stand-in reads any deck it did not write as the
     same three slides, the last hidden; the scripted extract worker reads them word for

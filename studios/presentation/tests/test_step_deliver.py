@@ -120,6 +120,16 @@ class PowerPointTests(Case):
                                                       output='google'))
         self.assertIsNone(deliver.shared_file(self.root), 'the file shared is the latest')
 
+    def test_asking_for_changes_takes_the_shared_file_away(self):
+        deliver.deliver(self.root, self.run_, self.slides)
+        run = decks.read_run(self.root)
+        deliver.again(self.root, run, self.slides, 'Shorter, please.')
+        self.assertIsNone(deliver.shared_file(self.root),
+                          'the file delivered before is not the deck being made now')
+        (self.root / build.DECK).unlink()
+        with self.assertRaises(WorkspaceError):
+            deliver.upload(self.root, decks.read_run(self.root), self.slides)
+
     def test_send_to_google_slides_uses_the_shared_file_without_work(self):
         deliver.deliver(self.root, self.run_, self.slides)
         (self.root / build.DECK).unlink()

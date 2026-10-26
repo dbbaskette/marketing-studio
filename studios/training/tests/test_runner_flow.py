@@ -1105,6 +1105,19 @@ class DocumentTests(FlowCase):
         with self.assertRaisesRegex(WorkspaceError, 'No document was added after the research'):
             self.engine.update_research(root)
 
+    def test_a_later_document_is_not_given_to_research_until_the_update(self):
+        root = self.settled()
+        self.send(root, 'more.txt')
+        record = self.engine._load(root)
+        plan, offered = self.engine._sources(root, record)
+        self.assertNotIn('more.txt', ' '.join(entry['file'] for entry in plan + offered))
+        self.assertTrue(plan, 'the documents added before are still given')
+        self.to_gate(root, 'research')
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.update_research(root)
+        plan, offered = self.engine._sources(root, self.engine._load(root))
+        self.assertIn('more', ' '.join(entry['file'] for entry in plan))
+
     def test_a_later_document_can_be_removed_until_the_update(self):
         root = self.settled()
         self.send(root, 'more.txt')

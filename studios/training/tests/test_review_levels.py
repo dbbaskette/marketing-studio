@@ -459,6 +459,36 @@ class ReviewLevelsTests(DeckCase):
         self.assertGreaterEqual(len(events), outlined)
         self.assertEqual({event['by'] for event in events}, {'review-policy'})
 
+    def test_a_kept_first_drafts_approval_ends_with_the_finished_materials(self):
+        root, shown = self.choose('balanced', levels=['101'])
+        shown = self.approve_review(root, shown)
+        self.engine.review_decide(root, shown['review']['expected'], 'revise',
+                                  'document@101', 'Shorten the second section.')
+        self.assertTrue(self.engine._load(root)['review_decisions']['direction'].get('carried'))
+        for _ in range(6):
+            shown = self.view(root)
+            if shown['review'] and shown['review']['phase'] == 'final':
+                break
+            self.decide(root, workspace.status(root)['gate'])
+        self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        kept = self.engine._load(root)['review_decisions']['direction']
+        self.assertNotIn('carried', kept, 'approving the finished materials settles it')
+        from runner import reviews
+        found = self.engine._survey(root, self.engine._load(root))
+        self.assertEqual(kept['signature'], reviews.signature(
+            root, found.session, self.engine._load(root), 'direction'))
+
+    def test_a_change_outside_the_review_brings_the_first_drafts_back(self):
+        root, shown = self.choose('balanced', levels=['101'])
+        shown = self.approve_review(root, shown)
+        self.engine.review_decide(root, shown['review']['expected'], 'revise',
+                                  'document@101', 'Shorten the second section.')
+        record = self.engine._load(root)
+        from runner import reviews
+        reviews.uncarry(record)
+        self.assertNotIn('direction', record['review_decisions'],
+                         'a change made elsewhere is reviewed with the first drafts again')
+
     def test_final_scenario_revision_does_not_repeat_the_unchanged_direction_review(self):
         root, shown = self.choose('balanced')
         shown = self.approve_review(root, shown)

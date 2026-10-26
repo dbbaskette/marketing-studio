@@ -124,6 +124,15 @@ def group(root, session, run, listed, done):
                   *build, boundaries['final'], *package]), frozenset(completed)
 
 
+def uncarry(record: dict) -> None:
+    """A change made outside the finished materials review, to what the first drafts hold:
+    a first drafts approval kept through a final-review change no longer stands, so they
+    are reviewed again."""
+    decisions = record.get('review_decisions') or {}
+    if (decisions.get('direction') or {}).get('carried'):
+        decisions.pop('direction', None)
+
+
 def rewritten(root, session, decks, target):
     """What is written again when `target` changes: every artifact downstream of it, and
     the deck direction of each level whose deck is. A practice scenario is built from
@@ -431,6 +440,13 @@ class Reviewing:
                 if not again:
                     record.setdefault('review_decisions', {})[phase] = {
                         'signature': expected, 'by': 'page', 'at': home.now()}
+                    # The finished materials approved: a first drafts approval kept through
+                    # a change made there now stands for the drafts as they are.
+                    kept = record['review_decisions'].get('direction') or {}
+                    if phase == 'final' and kept.get('carried'):
+                        record['review_decisions']['direction'] = {
+                            **{key: value for key, value in kept.items() if key != 'carried'},
+                            'signature': signature(root, found.session, record, 'direction')}
             else:
                 known = [item['target'] for item in view['items']]
                 for ask in asked:

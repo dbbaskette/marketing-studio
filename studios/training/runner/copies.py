@@ -199,7 +199,7 @@ def remake(root: Path, name: str, google=None) -> dict:
 
 def check(root: Path, google=None) -> dict[str, str]:
     """For each linked Google Doc, whether it was changed in Google since it was last sent:
-    'remote changed', 'both changed' (here too), else 'made'; 'unchecked' for one Google
+    'remote changed', 'both changed' (here too), else 'made'; 'unchecked: <why>' for one Google
     could not be asked about. Google is asked only here, when the person asks."""
     root = Path(root)
     google = google or gdocs.GcloudTransport()
@@ -210,8 +210,8 @@ def check(root: Path, google=None) -> dict[str, str]:
             known = entry.get('remote_sha256')
             moved = bool(known) and gdocs.digest(
                 gdocs.canonical(google.export(entry['file_id']))) != known
-        except WorkspaceError:
-            found[name] = 'unchecked'
+        except WorkspaceError as refusal:
+            found[name] = f'unchecked: {refusal}'   # with why Google could not be asked
             continue
         changed = workspace.sha256_file(root / file) != entry.get('local_sha256')
         found[name] = gdocs.STATES[changed, moved] if moved else 'made'

@@ -2676,7 +2676,8 @@ class PullCopyTests(PageCase):
         ident = gdocs.read_links(root)['docs']['document@101']['file_id']
         self.copies.drive.docs[ident] += '\nFrom a teammate.\n'
         run = self.post('copies', {'path': path, 'action': 'check'})
-        self.assertEqual(sorted(run), RUN_KEYS)
+        self.assertEqual(sorted(set(run) - {'said'}), RUN_KEYS)
+        self.assertEqual(run['said'], '1 Google Doc was changed there.')
         entry = next(one for one in run['copies'] if one['artifact'] == 'document@101')
         self.assertEqual(entry['remote'], 'remote changed')
         self.assertEqual(self.post('copies', {'path': path, 'action': 'nonsense'}, 400)['error'],
@@ -2684,6 +2685,22 @@ class PullCopyTests(PageCase):
         run = self.post('copies', {'path': path, 'pull': 'document@101'})
         entry = next(one for one in run['copies'] if one['artifact'] == 'document@101')
         self.assertNotIn('remote', entry, 'brought in, so nothing is said of it any more')
+
+    def test_a_doc_check_that_cannot_reach_google_says_so(self):
+        import gdocs
+        path = self.started(levels=['101'], copies=['google'])
+        root = Path(path)
+        self.to_gate(root, 'document@101')
+        self.decide(root, 'document@101')
+        ident = gdocs.read_links(root)['docs']['document@101']['file_id']
+
+        def refused(file_id):
+            raise WorkspaceError('Google access is not set up on this computer.')
+        with mock.patch.object(self.copies.drive, 'export', refused):
+            run = self.post('copies', {'path': path, 'action': 'check'})
+        self.assertIn('could not be checked', run['said'])
+        self.assertIn('Google access is not set up on this computer.', run['said'])
+        self.assertTrue(ident)
 
     def test_pulling_is_refused_while_a_dependent_worker_builds(self):
         refused = []

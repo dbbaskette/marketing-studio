@@ -35,7 +35,7 @@ function inThisTab(media) {
 let snapshot, setup = false, step = 0, view = 'home', profileAgent;
 const labels = ['You and your assistant', 'Your workspace', 'Brand and delivery'];  // announced
 // Blog Studio's own setup: a blog on the writing desk has no stops and no slides.
-const blogAlone = () => standalone && product === 'Blog Studio';
+const blogAlone = () => setup && standalone && product === 'Blog Studio';
 const form = $('#settings-form');
 const modelPickers = new Map(), catalogs = {};
 const customModel = '__manual model__';

@@ -5618,7 +5618,7 @@ function updateResearchSheet() {
     try {
       view.run = await send('documents', { path: view.path, action: 'update' });
       closeSheet();
-      toast('The research is updated with ' + series(names) + '.');
+      toast('The research runs again with ' + series(names) + '.');
       paintRun(false);
     } catch (failure) {
       say(problem, failure.message + ' Nothing was changed.');
@@ -5670,6 +5670,11 @@ function documentsCard(run, lead) {
   }
   if (!held.waiting) {
     if (!later.size || run.mine === false) return node;
+    // While a combined review waits, the research is changed from that review.
+    if (run.review) {
+      return add(node, make('p', 'quiet', 'Update the research once this review is '
+        + 'decided.'));
+    }
     const update = capsule('Update the research', '', openSheet('update-research',
       'update-research'), 'update-research');
     return add(node, alertLine('documents-problem'), add(make('div', 'bar'), update));
@@ -5826,8 +5831,9 @@ async function checkCopies(pressed) {
     const run = await send('copies', { path: view.path, action: 'check' });
     view.run = run;
     const changed = list(run.copies).filter((found) => found.remote).length;
-    toast(changed ? count(changed, 'Google Doc was', 'Google Docs were') + ' changed there.'
-      : 'No Google Doc was changed there.');
+    // The runner says what it found, including a Doc Google could not be asked about.
+    toast(run.said || (changed ? count(changed, 'Google Doc was', 'Google Docs were')
+      + ' changed there.' : 'No Google Doc was changed there.'));
   } catch (failure) {
     toast(failure.message + ' Nothing was changed.');
   } finally {

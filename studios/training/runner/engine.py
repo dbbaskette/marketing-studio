@@ -3286,7 +3286,7 @@ class Engine(Reviewing):
                 self._store(root, record)
                 self._commit(root, 'write the research plan from the form')
             return
-        sources = (self.documents.sources(root)
+        sources = (self._sources(root, record)
                    if it.id == 'research-plan' and record.get('documents') else None)
         naming = (self._naming(root, found.session)
                   if it.stage in pipeline.NAMED and it.kind == 'agent' else None)
@@ -3429,7 +3429,7 @@ class Engine(Reviewing):
         """One try at each question still to answer, several at a time."""
         record = self._load(root)
         if record.get('research_contract'):
-            offered = self.documents.sources(root)[1] if record.get('documents') else []
+            offered = self._sources(root, record)[1] if record.get('documents') else []
             looks = pipeline.research_of(record)
             # A run that pinned where its research may look names the allowed sites in the
             # task's scope; one saved before keeps the scope it was researched under.
@@ -3489,7 +3489,7 @@ class Engine(Reviewing):
         it = pipeline.Step(f'research:{ident}', 'agent', f'Research the question {ident}',
                            f'Researching the question {ident}', 'research')
         record = self._load(root)
-        sources = self.documents.sources(root) if record.get('documents') else None
+        sources = self._sources(root, record) if record.get('documents') else None
         work = pipeline.question_work(root, found, ident, request, last_error(record, it.id),
                                       sources)
         outcome, handed, started_at, folder = self._job(root, run, it, work)
@@ -3635,6 +3635,7 @@ class Engine(Reviewing):
             record = self._load(root)
             target = outcome.get('artifact')
             if outcome.get('request') and target:
+                review_layout.uncarry(record)   # made outside a review: reviewed again
                 self._fresh(record, target)
                 base, level = workspace.split(target)
                 for step in pipeline.DECK_STEPS if base == 'deck' else ():
@@ -3869,6 +3870,19 @@ class Engine(Reviewing):
         self._store(root, record)
         self._commit(root, said)
 
+    def _sources(self, root: Path, record: dict) -> tuple[list, list]:
+        """The person's documents as research is given them: every readable one but those
+        added after the research, which are read only once the research is updated."""
+        plan, offered = self.documents.sources(root)
+        later = {entry.get('name') for entry in (record.get('documents') or {}).get('later')
+                 or () if isinstance(entry, dict)}
+        if not later:
+            return plan, offered
+        held = {entry.get('file') for entry in self.documents.listed(root)
+                if entry.get('name') in later}
+        return ([entry for entry in plan if entry.get('file') not in held],
+                [entry for entry in offered if entry.get('file') not in held])
+
     def update_research(self, path) -> dict:
         """Read the documents added since the research, as the person asks: a research
         request that brings the evidence up to date, as Bring the evidence up to date does,
@@ -3894,6 +3908,7 @@ class Engine(Reviewing):
                 workspace.store(root, session)
             outcome['request'] = {**outcome['request'], 'added': names}
             record = self._load(root)
+            review_layout.uncarry(record)
             record['documents'] = {**record['documents'], 'later': []}
             self._store(root, record)
         self.decided(path, outcome, checked=True)
@@ -3974,6 +3989,8 @@ class Engine(Reviewing):
             record = self._load(root)
             if outcome['result'] != 'both-changed':
                 ((record.get('copies') or {}).get('remote') or {}).pop(artifact, None)
+            if outcome['result'] == 'pulled':
+                review_layout.uncarry(record)   # the Doc's edit is reviewed again
             self._make(root, record)
             self._store(root, record)
             self._commit(root, 'bring the Google Doc’s changes into '
@@ -4017,13 +4034,26 @@ class Engine(Reviewing):
             if any(self._busy_on(root, name) for name in linked):
                 raise WorkspaceError('It is being worked on. Look for changes in Google Docs '
                                      'once it stops.')
-            found = self.copies.check(root)
+        # Google is asked with nothing held, so a slow answer holds up nothing else.
+        found = self.copies.check(root)
+        with self.files:
             record = self._load(root)
-            record['copies'] = {**(record.get('copies') or {}), 'remote': found,
+            record['copies'] = {**(record.get('copies') or {}),
+                                'remote': {name: state for name, state in found.items()
+                                           if not state.startswith('unchecked')},
                                 'checked_at': home.now()}
             self._store(root, record)
             self._commit(root, 'look for changes in the Google Docs, as asked on the page')
-        return self.view(root)
+        unchecked = {workspace.label(name): state.partition(': ')[2]
+                     for name, state in found.items() if state.startswith('unchecked')}
+        changed = [name for name, state in found.items()
+                   if state in ('remote changed', 'both changed')]
+        said = (workspace.sentence(', '.join(unchecked)) + ' could not be checked: '
+                + (next(iter(unchecked.values())) or 'Google could not be asked.')
+                if unchecked else
+                f'{len(changed)} Google Doc{"s were" if len(changed) != 1 else " was"} '
+                'changed there.' if changed else 'No Google Doc was changed there.')
+        return {**self.view(root), 'said': said}
 
     def copies_again(self, path) -> dict:
         """Make the copies that are not made, again, as the person asks. One that still

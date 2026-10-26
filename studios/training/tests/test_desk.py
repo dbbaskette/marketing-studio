@@ -5290,6 +5290,25 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [('/api/documents', {'path': str(self.root),
                                                                   'action': 'update'})])
 
+    def test_a_later_document_waits_for_a_review_to_be_decided(self):
+        self.started()
+        waits = 'Waiting for you to review the first drafts.'
+        held = {**supplied(a_document('handbook.txt', 8), a_document('more.txt', 6),
+                           waiting=False),
+                'later': [{'name': 'more.txt', 'added_at': '2026-10-26T09:00:00Z'}],
+                'update_price': {'words': 'Asking for changes runs the research again.'}}
+        run = a_run('waiting', waits, steps=steps('done'), documents=held)
+        run['body']['review'] = {'phase': 'direction', 'label': 'Review the first drafts',
+                                 'expected': 'v1', 'commits': None, 'items': []}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', waits, needs=True)],
+            'GET /api/training': [self.detail('waiting', waits)], 'GET /api/run': [run]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'card'}])
+        shot = result['snapshots']['card']
+        self.assertNotIn('Update the research', shot['buttons'])
+        self.assertIn('Update the research once this review is decided.', shot['text'])
+
     def test_documents_are_added_refused_removed_and_then_that_is_all_of_them(self):
         self.started()
         waits, going = 'Waiting for your documents.', 'Drafting the research questions.'
