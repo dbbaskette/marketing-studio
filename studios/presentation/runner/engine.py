@@ -20,6 +20,7 @@ What a caller needs to know
     engine.publish(path); engine.published() # numbered revisions, as tags
     engine.leaving(path); engine.delete(path, title)
     engine.bring(folder)                     # copy a deck made elsewhere in, and run it
+    engine.saved_work(folders)               # which saved decks still need each older path
     engine.standing()                        # the status screen
     engine.serving(); engine.seen(); engine.tell()   # fetch and notify while serving
     engine.close()                           # end every worker; nothing half-made is kept
@@ -3746,6 +3747,45 @@ class Engine(Jobs, Researching):
             home.remember(root, title)
         self.wake(root)
         return {'path': str(root), 'id': root.name}
+
+    # --- what saved decks still need ---------------------------------------------------------
+
+    def saved_work(self, folders=()) -> dict:
+        """Which saved decks still need each older path, as `saved_work.report` says: every
+        deck in the workspace and each of `folders` that holds one. Only read: no lock is
+        taken, nothing is written and nothing is asked online. A record that cannot be read
+        is passed over, as the runner passes it over."""
+        from studio_core import saved_work
+        found: dict[str, list[dict]] = {}
+        seen: set[Path] = set()
+        for root in [*self.every(), *(Path(folder) for folder in folders)]:
+            if root.resolve() in seen or not (root / decks.RUN).is_file():
+                continue
+            seen.add(root.resolve())
+            try:
+                run = decks.read_run(root)
+                survey = stages.survey(run)
+                listed = [step.name for step in stages.steps(run)]
+            except (OSError, ValueError, TypeError, AttributeError, KeyError):
+                continue
+            title = (run.get('form') or {}).get('title') or root.name
+            if 'research' in listed and not run.get('research_contract') \
+                    and 'research' not in survey.done:
+                found.setdefault('research-queue', []).append(saved_work.needs(
+                    root, title, 'Its research has not run, and it was started before '
+                    'Harness Research could synthesize.'))
+            if 'deliver' in survey.done:
+                continue
+            looked = looks.GATE in survey.done or survey.waiting == looks.GATE
+            if (root / looks.LOOK_MD).is_file() and not (root / looks.SHOWN).is_file():
+                why = 'It was drawn a cover to show its brand.'
+            elif (root / build.CONTRACT).is_file() and not looked:
+                why = 'It may need it: its brand was exported before it reached the look.'
+            else:
+                continue
+            found.setdefault('cover-sample', []).append(saved_work.needs(root, title, why))
+        return saved_work.report(('research-queue', 'cover-sample', 'old-harness-slides'),
+                                 found)
 
 
 # Which step's worker spoke last before each gate, for what the gate shows it said.

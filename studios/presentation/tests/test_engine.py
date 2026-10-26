@@ -138,6 +138,90 @@ class SynthesisAtStartTests(StudioCase):
         self.assertNotIn('research_contract', decks.read_run(Path(made['path'])))
 
 
+class SavedWorkTests(StudioCase):
+    """`studio saved-work`: which saved decks still need each older path, read from decks
+    written as files, with nothing started and nothing changed."""
+
+    QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
+    DRAWN = 'It was drawn a cover to show its brand.'
+    MAY = 'It may need it: its brand was exported before it reached the look.'
+
+    def deck(self, ident, research=True, done=(), gates=None, files=(), at=None, **extra):
+        """A deck's folder as a saved run leaves it: its record and the files named."""
+        root = (at or self.space.root) / ident
+        root.mkdir(parents=True)
+        decks.write_run(root, {
+            'schema': decks.SCHEMA, 'id': ident, 'title': ident.title(), 'route': 'scratch',
+            'form': {**runner_support.FORM, 'title': ident.replace('-', ' ').title(),
+                     'research': research},
+            'created': '2026-01-01T00:00:00Z', 'driver': None, 'gates': gates or {},
+            'steps': {name: {'done': '2026-01-01T00:00:00Z'} for name in done},
+            'classified': None, 'look': None, 'revisions': [], 'halted': None, **extra})
+        for name in files:
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text('kept\n', encoding='utf-8')
+        return root
+
+    def kept(self):
+        self.git('add', '-A')
+        self.git('commit', '--quiet', '-m', 'Decks saved before')
+
+    def tree(self, *folders):
+        return {path: path.read_bytes() for folder in folders for path in
+                sorted(folder.rglob('*')) if path.is_file() and '.git' not in path.parts}
+
+    def needed(self, said, ident):
+        return {entry['path']: entry['why'] for entry in
+                next(found for found in said['paths'] if found['id'] == ident)['needed_by']}
+
+    def test_a_deck_begun_on_the_queue_needs_it_until_its_research_has_run(self):
+        waiting = self.deck('waiting-deck')
+        self.deck('researched-deck', done=('research',))
+        self.deck('contract-deck', research_contract={'schema': 2, 'version': '1.0.0',
+                                                      'digest': 'abc'})
+        self.deck('plain-deck', research=False)
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'research-queue'), {str(waiting): self.QUEUE})
+        self.assertEqual(said['paths'][0]['needed_by'][0]['title'], 'Waiting Deck')
+
+    def test_an_undelivered_deck_may_need_the_cover_sample(self):
+        drawn = self.deck('drawn-deck', research=False, files=('look.md',))
+        self.deck('shown-deck', research=False, files=('look.md', 'work/look/shown.json'))
+        exported = self.deck('exported-deck', research=False,
+                             files=('brand/brand-contract.json',))
+        self.deck('looked-deck', research=False, files=('brand/brand-contract.json',),
+                  gates={'gate:look': {'state': 'approved'}})
+        self.deck('delivered-deck', done=('research', 'deliver'),
+                  files=('look.md', 'brand/brand-contract.json'))
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'cover-sample'), {str(drawn): self.DRAWN,
+                                                             str(exported): self.MAY})
+        self.assertEqual(self.needed(said, 'research-queue'), {})
+
+    def test_the_old_slides_branches_are_always_unused(self):
+        self.deck('waiting-deck', files=('look.md',))
+        said = self.engine.saved_work()
+        self.assertEqual([entry['id'] for entry in said['paths']],
+                         ['research-queue', 'cover-sample', 'old-harness-slides'])
+        self.assertEqual(said['unused'], ['old-harness-slides'])
+
+    def test_a_folder_given_outside_the_workspace_is_looked_at_too(self):
+        outside = self.deck('outside-deck', at=self.base / 'elsewhere')
+        self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
+        said = self.engine.saved_work(folders=(outside, self.base / 'no-deck-here'))
+        self.assertEqual(self.needed(said, 'research-queue'), {str(outside): self.QUEUE})
+
+    def test_nothing_in_the_workspace_changes(self):
+        self.deck('waiting-deck', files=('look.md', 'brand/brand-contract.json'))
+        outside = self.deck('outside-deck', at=self.base / 'elsewhere')
+        self.kept()
+        before = self.tree(self.space.repo, outside)
+        said = self.engine.saved_work(folders=(outside,))
+        self.assertEqual(len(self.needed(said, 'research-queue')), 2)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertEqual(self.tree(self.space.repo, outside), before)
+
+
 class AheadTests(StudioCase):
     """Each deck's view says how many steps are left, where it next stops for the person
     under its own level, and what its agent's jobs have spent so far."""
