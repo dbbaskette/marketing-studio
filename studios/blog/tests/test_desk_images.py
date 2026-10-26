@@ -376,5 +376,130 @@ class KeptTests(unittest.TestCase):
         )
 
 
+class RecheckTests(ImageCase):
+    """From the re-check of the review fixes."""
+
+    def test_finishing_apply_cannot_carry_image_data_past_the_limits(self):
+        made = self.make('# T\n\nOpen.\n\n## S\n\nFirst text.\n')
+        part = made['sections'][0]['id']
+        seen = 1
+        with patch.object(desk_images, 'TOTAL', 1000), patch.object(desk_images, 'EACH', 600):
+            for number, limit in enumerate(('larger than 5 MB', 'more than 12 MB together')):
+                job = secrets.token_hex(16)
+                with studio.locked(self.root):
+                    text = desk.text_of(desk.read(self.root, made['id']), part)
+                    desk_finish.keep(
+                        self.root,
+                        made['id'],
+                        job,
+                        'finish-humanize',
+                        [{'part': part, 'before': text.split('\n')[0], 'after': 'p'}],
+                    )
+                size = 700 if number == 0 else 500
+                after = '![](data:image/png;base64,' + chr(65 + number) * size + ')'
+                if number:
+                    # One that fits first, then one that takes the total over.
+                    self.post(
+                        'desk-apply',
+                        {
+                            'id': made['id'],
+                            'seen': seen,
+                            'job': job,
+                            'items': [{'id': 'p1', 'after': after}],
+                        },
+                    )
+                    seen = desk.read(self.root, made['id'])['revision']
+                    job = secrets.token_hex(16)
+                    with studio.locked(self.root):
+                        text = desk.text_of(desk.read(self.root, made['id']), part)
+                        desk_finish.keep(
+                            self.root,
+                            made['id'],
+                            job,
+                            'finish-humanize',
+                            [{'part': part, 'before': text.split('\n')[0], 'after': 'p'}],
+                        )
+                    after = after.replace('B', 'C')
+                with self.assertRaisesRegex(ValueError, limit):
+                    self.post(
+                        'desk-apply',
+                        {
+                            'id': made['id'],
+                            'seen': seen,
+                            'job': job,
+                            'items': [{'id': 'p1', 'after': after}],
+                        },
+                    )
+        draft = desk.read(self.root, made['id'])
+        self.assertLessEqual(sum(entry['size'] for entry in draft['images'].values()), 1000)
+        self.assertFalse(desk_images.holds(desk.text_of(draft, part)))
+
+    def test_a_part_that_says_the_token_word_itself_can_still_be_rewritten(self):
+        made = self.make('# T\n\nOpen.\n\n## S\n\nWe print ' + desk_images.TOKEN + ' in logs.\n')
+        job = self.note(made, made['sections'][0]['id'])
+        landed = self.settle(job['id'], job['payload']['part']['text'].replace('We', 'I'))
+        self.assertTrue(landed['applied'], landed['error'])
+        self.assertEqual(
+            desk.read(self.root, made['id'])['sections'][0]['text'],
+            'I print ' + desk_images.TOKEN + ' in logs.',
+        )
+
+    def test_writing_the_draft_never_drops_image_data_kept_in_code(self):
+        made = self.make('# T\n\nOpen.\n\n## Code\n\n```\n<img src="' + CODE + '">\n```\n')
+        shown = self.post('desk-draft', {'id': made['id'], 'seen': 1})
+        landed = self.settle(shown['working']['id'], 'Open.\n\n## Code\n\nNo code now.')
+        self.assertFalse(landed['applied'])
+        self.assertIn(CODE, desk.read(self.root, made['id'])['sections'][0]['text'])
+
+    def test_a_pasted_definition_renames_only_the_references_pasted_with_it(self):
+        made = self.make(
+            '# T\n\nOpen ![][image1]\n\n## S\n\nMine ![][image1]\n\n[image1]: <' + IMAGE_ONE + '>\n'
+        )
+        part = made['sections'][0]['id']
+        saved = self.post(
+            'desk-save',
+            {
+                'id': made['id'],
+                'seen': 1,
+                'part': part,
+                'text': 'Mine ![][image1]\n\nPasted ![][image1]\n\n[image1]: <' + IMAGE_TWO + '>',
+            },
+        )
+        self.assertEqual(saved['sections'][0]['text'], 'Mine ![][image1]\n\nPasted ![][image2]')
+        self.assertEqual(stored(self, made['id']), {'image1': IMAGE_ONE, 'image2': IMAGE_TWO})
+
+    def test_what_this_process_remembers_is_bounded(self):
+        for number in range(40):
+            desk._CLEANED['blog-%d' % number] = ('x', {})
+            desk._PARSED['blog-%d' % number] = (0, 0, {})
+        self.assertLessEqual(len(desk._CLEANED), desk.REMEMBERED)
+        self.assertLessEqual(len(desk._PARSED), desk.REMEMBERED)
+        self.assertIn('blog-39', desk._CLEANED)
+
+    def test_malformed_image_entries_are_skipped_and_named_missing(self):
+        made = self.make(GOOGLE)
+        directory = self.folder(made['id'])
+        draft = studio.read_json(directory / 'desk' / 'draft.json')
+        draft['images'] = {'image1': {}, 'image2': 'not an entry'}
+        draft['sought'] = ['image1', 'image2']  # Looked for before: only named.
+        studio.write_json(directory / 'desk' / 'draft.json', draft)
+        studio.write_json(directory / 'desk' / 'images.json', {})
+        shown = self.get('desk', id=made['id'])
+        self.assertEqual(shown['missing_images'], ['image1', 'image2'])
+        saved = self.post(
+            'desk-save',
+            {
+                'id': made['id'],
+                'seen': 1,
+                'part': 'opening',
+                'text': shown['opening'] + ' ![](' + CODE + ')',
+            },
+        )
+        self.assertIn('![][image3]', saved['opening'])
+        self.assertEqual(
+            desk_images.take('![](' + CODE + ')', {'x': {}, 'y': 'bad'})[0], '![][image1]'
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

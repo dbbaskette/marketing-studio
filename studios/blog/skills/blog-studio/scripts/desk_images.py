@@ -117,6 +117,21 @@ def _entry(uri, alt='', title=None):
     return entry
 
 
+def _key_of(entry):
+    """An image entry's key, or None for an entry that is malformed (no key and no data)."""
+    if not isinstance(entry, dict):
+        return None
+    if isinstance(entry.get('key'), str):
+        return entry['key']
+    return digest(entry['uri']) if isinstance(entry.get('uri'), str) else None
+
+
+def entries(images):
+    """The image entries that are entries at all: anything else is left out, so the image it
+    stood for shows as missing rather than breaking a read."""
+    return {label: entry for label, entry in (images or {}).items() if isinstance(entry, dict)}
+
+
 def _fresh(taken):
     number = 1
     while key('image' + str(number)) in taken:
@@ -125,7 +140,7 @@ def _fresh(taken):
     return 'image' + str(number)
 
 
-def take(text, images=None, rename=False):
+def take(text, images=None, rename=False, previous=''):
     """The text with its image data moved out, and the images with it added.
 
     Each data definition outside code leaves its line (and the blank line it leaves behind);
@@ -135,15 +150,17 @@ def take(text, images=None, rename=False):
     with other data takes the text's data, as a whole draft brought in defines its images;
     with `rename`, as for one part typed, pasted or rewritten, the text's image gets a label
     of its own instead, and the text's references follow it, so no other part's image ever
-    changes. `images` is not changed; a copy comes back."""
-    images = dict(images or {})
+    changes; a reference the part's `previous` text already had stays with the image it
+    named. An entry that is not an image entry is left out (and so shows as missing).
+    `images` is not changed; a copy comes back."""
+    images = {label: entry for label, entry in (images or {}).items() if isinstance(entry, dict)}
     if not holds(text):
         return text, images
     lines = text.replace('\r\n', '\n').split('\n')
     whole = '\n'.join(lines)
     masked = _masked(whole).split('\n')
     names = {key(label): label for label in images}
-    held = {entry.get('key') or digest(entry['uri']): name for name, entry in images.items()}
+    held = {_key_of(entry): name for name, entry in images.items() if _key_of(entry)}
     shown = '\n'.join(masked)
     taken = set(names) | {key(m.group(2) or m.group(1)) for m in REFERENCE.finditer(shown)}
     taken |= {key(label) for label in LABELS.findall(shown)}
@@ -158,7 +175,7 @@ def take(text, images=None, rename=False):
             here.add(key(label))
             name = names.get(key(label), label)
             entry = images.get(name)
-            if rename and entry and (entry.get('key') or digest(entry['uri'])) != digest(uri):
+            if rename and entry and _key_of(entry) != digest(uri):
                 name = held.get(digest(uri)) or _fresh(taken)
                 renamed[key(label)] = name
                 entry = images.get(name)
@@ -175,10 +192,13 @@ def take(text, images=None, rename=False):
     text = '\n'.join(out)
     if renamed:
         shown = _masked(text)
+        had = Counter(found.group(0) for found in REFERENCE.finditer(_masked(previous or '')))
         pieces, at = [], 0
         for found in REFERENCE.finditer(shown):
             label = found.group(2) or found.group(1)
-            if key(label) in renamed:
+            if key(label) in renamed and had[found.group(0)] > 0:
+                had[found.group(0)] -= 1  # The part had it before: it keeps its image.
+            elif key(label) in renamed:
                 alt = found.group(1) if found.group(2) else ''
                 pieces += [text[at : found.start()], '![' + alt + '][' + renamed[key(label)] + ']']
                 at = found.end()
@@ -242,15 +262,21 @@ def restored(before, after, strict=True):
     if TOKEN not in after and not (strict and holds(before)):
         return after
     datas = {digest(found.group(0)): found.group(0) for found in LEFTOVER.finditer(before)}
+    # The word itself, as the text before already had it, is text, not a token.
+    literal = Counter(found.group(1) for found in TOKENS.finditer(before))
+    loose = before.count(TOKEN) - sum(literal.values())
     tokens = [found.group(1) for found in TOKENS.finditer(after)]
-    if len(tokens) != after.count(TOKEN) or any(name not in datas for name in tokens):
-        raise ValueError(CHANGED)
+    if after.count(TOKEN) - len(tokens) > loose:
+        raise ValueError(CHANGED)  # A token cut short or run into other text.
+    if Counter(name for name in tokens if name not in datas) - literal:
+        raise ValueError(CHANGED)  # A token for data the text did not have.
     if strict:
         want = Counter(digest(found.group(0)) for found in LEFTOVER.finditer(before))
-        have = Counter(tokens) + Counter(digest(f.group(0)) for f in LEFTOVER.finditer(after))
+        have = Counter(name for name in tokens if name in datas)
+        have += Counter(digest(found.group(0)) for found in LEFTOVER.finditer(after))
         if want != have:
             raise ValueError(CHANGED)
-    return TOKENS.sub(lambda found: datas[found.group(1)], after)
+    return TOKENS.sub(lambda found: datas.get(found.group(1), found.group(0)), after)
 
 
 def _texts(draft):
@@ -370,7 +396,7 @@ def missing(draft, held=None):
     """The labels the text refers to as images that are kept nowhere, each once, as first
     written: no image listed, or (with `held`, the labels whose data is kept) listed with
     no data. A label the text itself defines, such as a link's, is not missing."""
-    images = draft.get('images') or {}
+    images = entries(draft.get('images'))
     kept_keys = {key(label) for label in images if held is None or label in held}
     kept_keys |= {key(label) for label, entry in images.items() if entry.get('uri')}
     shown_texts = [_masked(text) for text in _texts(draft)]
@@ -419,14 +445,14 @@ def fitted(draft, before=None):
     since then is refused for its size or for taking the total over, and an image no part
     refers to any longer is let go first. A refusal says which limit it meets; images kept
     before the limits are left as they are."""
-    images = draft.get('images') or {}
-    known = {entry.get('key') for entry in (before or {}).values()}
+    images = entries(draft.get('images'))
+    known = {_key_of(entry) for entry in entries(before).values()}
 
     def size(entry):
         return entry.get('size') or len(entry.get('uri') or '')
 
     def new(found):
-        return [entry for entry in found.values() if entry.get('key') not in known]
+        return [entry for entry in found.values() if _key_of(entry) not in known]
 
     if any(size(entry) > EACH for entry in new(images)):
         raise ValueError(TOO_BIG)
@@ -468,6 +494,8 @@ def kept(before, after, images):
             for m in REFERENCE.finditer(text)
             if OURS.fullmatch((m.group(2) or m.group(1)).strip())
         }
+    # A label the new text defines itself, as pasted with its data, is its own and not made up.
+    known -= {key(label) for label in LABELS.findall(_masked(after))}
     want, have = _references(before, known), _references(after, known)
     if Counter(ref for *_, ref in want) == Counter(ref for *_, ref in have):
         return after

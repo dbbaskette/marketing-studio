@@ -6,6 +6,7 @@ pre-publish check read the same text as before. Images held as data are kept bes
 and DRAFT.md ends with them.
 """
 
+from collections import OrderedDict
 import json
 import re
 import secrets
@@ -606,13 +607,34 @@ def open_run(root, ident):
 
 
 IMAGES = 'images.json'  # {label: data URI} for a desk draft's images (desk_images)
+REMEMBERED = 8  # blogs whose image data this process keeps in mind, the most recent
+
+
+class _Recent(OrderedDict):
+    """A small memory of the most recently used blogs, never more than REMEMBERED."""
+
+    def __getitem__(self, name):
+        value = super().__getitem__(name)
+        self.move_to_end(name)
+        return value
+
+    def get(self, name, default=None):
+        return self[name] if name in self else default
+
+    def __setitem__(self, name, value):
+        super().__setitem__(name, value)
+        self.move_to_end(name)
+        while len(self) > REMEMBERED:
+            self.popitem(last=False)
+
+
 # desk/images.json as last parsed, by path: (mtime, size, data), so a save or a view that
 # needs only its labels never parses it again unchanged.
-_PARSED = {}
+_PARSED = _Recent()
 # A record cleaned as it was read but not written (no lock, or another computer drives the
 # blog), by path: (draft.json's digest, the clean draft with its image data), so a poll
 # does not clean it again and the page can still be served its images.
-_CLEANED = {}
+_CLEANED = _Recent()
 
 
 def _data_at(path):
@@ -673,6 +695,8 @@ def read(root, ident):
         raise ValueError('This blog is not on the desk.')
     raw = target.read_bytes()
     draft = json.loads(raw)
+    if draft.get('images'):
+        draft['images'] = desk_images.entries(draft['images'])
     sought = set(draft.get('sought') or [])
     held = _held(root, ident) if draft.get('images') else set()
     lost = [
@@ -830,6 +854,14 @@ def _write(root, ident, draft, parts=()):
     # Every write keeps the image limits: an image new since the record on disk is refused
     # for its size, or for taking the total over once images no part uses are let go.
     had = (studio.read_json(target).get('images') or {}) if target.is_file() else {}
+    # Image data any writer put into a part's text moves out first, so the limits see it.
+    images = desk_images.entries(draft.get('images'))
+    opening, images = desk_images.take(draft.get('opening') or '', images, rename=True)
+    sections = []
+    for section in draft['sections']:
+        text, images = desk_images.take(section['text'], images, rename=True)
+        sections.append({**section, 'text': text.strip()})
+    draft = {**draft, 'opening': opening.strip(), 'sections': sections, 'images': images}
     draft = desk_images.fitted(draft, before=had)
     record = studio.read_json(studio.metadata_path(directory, 'articles'))
     draft['revision'] += 1
@@ -904,7 +936,9 @@ def save(root, ident, seen, part, text, source='save', session=None):
     had = draft.get('images') or {}
     images = had
     if part != 'title':
-        text, images = desk_images.take(text, had, rename=True)
+        # A restored version replaces the part whole: its references are its own.
+        previous = '' if source == 'restore' else text_of(draft, part)
+        text, images = desk_images.take(text, had, rename=True, previous=previous)
     checked_text(part, text)
     before = text_of(draft, part)
     if before == text.strip() and images == had:
@@ -1317,7 +1351,7 @@ def restore(root, ident, seen, part, index):
 
     draft = read(root, ident)
     had = draft.get('images') or {}
-    text, images = desk_images.take(entry['text'], had, rename=True)
+    text, images = desk_images.take(entry['text'], had, rename=True)  # Its references are its own.
     checked_text(part, text)
     order = [section['id'] for section in draft['sections']]
     taken = [section for section in draft['sections'] if section['id'] in added]

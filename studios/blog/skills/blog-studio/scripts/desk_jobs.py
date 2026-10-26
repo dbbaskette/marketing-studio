@@ -905,7 +905,8 @@ def _apply_draft(root, ident, draft, job, result):
     merged = []
     for at, written in enumerate(found['sections']):
         was = planned[at]['text'] if planned[at] else ''
-        text = desk_images.restored(was, written['text'], strict=False)
+        # Image data the text kept as text must come back; a part with none may be new text.
+        text = desk_images.restored(was, written['text'], strict=desk_images.holds(was))
         text = desk_images.kept(was, text, images)
         desk.checked_text('opening', text)
         merged.append(
@@ -923,7 +924,9 @@ def _apply_draft(root, ident, draft, job, result):
             desk.keep(root, ident, section['id'], before[section['id']], 'draft')
     typed = fingerprint(draft['opening']) != job['metadata']['desk'].get('opening')
     if found['opening'] and not typed:  # An opening typed meanwhile is the person's.
-        opening = desk_images.restored(draft['opening'], found['opening'], strict=False)
+        opening = desk_images.restored(
+            draft['opening'], found['opening'], strict=desk_images.holds(draft['opening'])
+        )
         opening = desk_images.kept(draft['opening'], opening, images)
         desk.checked_text('opening', opening)
         if draft['opening'] and draft['opening'] != opening:
@@ -1461,8 +1464,11 @@ def _landed(draft, before, text):
     references `before` had kept: one left out goes back where it was, one changed or made
     up is taken out (desk_images.kept)."""
     text = desk_images.restored(before, text)
-    text, draft['images'] = desk_images.take(text, draft.get('images'), rename=True)
-    return desk_images.kept(before, text, draft['images'])
+    text = desk_images.kept(before, text, draft.get('images'))
+    text, draft['images'] = desk_images.take(
+        text, draft.get('images'), rename=True, previous=before
+    )
+    return text
 
 
 def _no_heading(text):
