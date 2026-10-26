@@ -3742,11 +3742,15 @@ function stepsCard(run) {
 // What went wrong, what was kept, and the one thing to do about it.
 function problemPart(run, lead) {
   const found = run.problem;
-  const label = { retry: 'Try again', 'more-time': 'Give it more time and try again' }[found.action]
-    || 'Resume';
+  const label = { retry: 'Try again', 'more-time': 'Give it more time and try again',
+    status: 'Open Status' }[found.action] || 'Resume';
+  // An agent that could not be used: Status says what it needs, and Try again is beside it.
   const go = found.action && !theirs(run)
-    ? capsule(label, lead ? 'filled' : '', () => steer(found.action, go), 'problem-action')
+    ? capsule(label, lead ? 'filled' : '', found.action === 'status' ? () => show('status')
+      : () => steer(found.action, go), 'problem-action')
     : null;
+  const retry = found.action === 'status' && !theirs(run)
+    ? capsule('Try again', '', () => steer('retry', retry), 'problem-retry') : null;
   const title = found.state === 'failed' ? (theirs(run) ? 'It has stopped'
     : 'It has stopped, and needs you') : found.state === 'paused' ? 'It is paused'
     : 'It is stopped';
@@ -3791,7 +3795,7 @@ function problemPart(run, lead) {
   return callout(found.state === 'failed' ? 'late' : '', make('h2', 'aside-title', title),
     add(make('p', ''), make('strong', '', 'What happened: '), found.why || ''),
     found.kept ? keptPart(found.kept) : null,
-    again, go || read ? add(make('div', 'bar'), go, read) : null, shown);
+    again, go || read ? add(make('div', 'bar'), go, retry, read) : null, shown);
 }
 
 // What Try again does at research done as one report and one independent check: it carries

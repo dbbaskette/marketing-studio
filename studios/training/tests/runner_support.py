@@ -1356,6 +1356,10 @@ class Copies:
         from runner import copies
         return copies.check(root, google or self.drive)
 
+    def remake(self, root: Path, name: str, google=None) -> dict:
+        from runner import copies
+        return copies.remake(root, name, google or self.drive)
+
     def make(self, root: Path, google=None, word=None) -> tuple[list[dict], dict]:
         import gdocs
         import workspace

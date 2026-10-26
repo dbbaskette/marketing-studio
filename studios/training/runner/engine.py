@@ -209,7 +209,7 @@ from runner import agents, companion, deck, gitstate, pipeline, settings, team, 
 from runner import brand as brand_skill
 from runner import brand_source
 from runner import copies as copies_made
-from runner.copies import BOTH, CHANGED_THERE, KEPT_OURS, PULLED, UNPLACED
+from runner.copies import BOTH, CHANGED_THERE, KEPT_OURS, MISSING_DOC, PULLED, UNPLACED
 from runner import documents as documents_kept
 from runner import index as index_written
 from runner import research as research_cli
@@ -1341,8 +1341,8 @@ class Engine(Reviewing):
         """Stop a training in a state that says what went wrong and offers one action.
         `waits` names what it waits for, when something done on the page settles it.
         `detail` is kept with the problem for what its action needs to know."""
-        label = {'retry': 'Try again', 'resume': 'Carry on', 'asset': 'Add the picture',
-                 stops.MORE_TIME: stops.MORE_TIME_LABEL}.get(action)
+        label = {'resume': 'Carry on', 'asset': 'Add the picture', 'new': 'New training',
+                 **stops.ACTION_LABELS}.get(action)
         with self.files:
             record = self._load(root)
             record['problem'] = {'state': state, 'step': step, 'what': what, 'kept': kept,
@@ -3216,7 +3216,7 @@ class Engine(Reviewing):
         elif stops.agent_stopped('', outcome, detail) is not None:
             self._problem(root, 'research' if question else step.id, 'failed',
                           stops.agent_stopped(self._title(record['agent']), outcome, detail),
-                          KEPT)
+                          KEPT, action=stops.agent_action(outcome))
         elif not question and entry['failed'] >= pipeline.ATTEMPTS:
             if outcome.reason == 'timeout':
                 return self._out_of_time(root, step.id, step.label, record, pipeline.ATTEMPTS)
@@ -3374,7 +3374,8 @@ class Engine(Reviewing):
             return self._spend_stop(root, 'The research')
         if stops.agent_stopped('', outcome, outcome.detail) is not None:
             return self._problem(root, 'research', 'failed', stops.agent_stopped(
-                self._title(record['agent']), outcome, outcome.detail), KEPT)
+                self._title(record['agent']), outcome, outcome.detail), KEPT,
+                action=stops.agent_action(outcome))
         if outcome.reason == 'timeout':
             return self._out_of_time(root, 'research', 'The research', record, 1)
         self._problem(root, 'research', 'failed', str(refusal), KEPT)
@@ -3711,7 +3712,8 @@ class Engine(Reviewing):
                     raise WorkspaceError('This training is not paused or stopped, so there '
                                          'is nothing to resume.')
             # A deck waiting for its pictures is looked at again on Try again too.
-            elif problem.get('action') not in ('retry', 'asset', stops.MORE_TIME) or (
+            elif problem.get('action') not in ('retry', 'asset', stops.STATUS,
+                                               stops.MORE_TIME) or (
                     action == stops.MORE_TIME and problem.get('action') != stops.MORE_TIME):
                 raise WorkspaceError('Nothing here failed, so there is nothing to try again.')
             elif problem.get('unreadable') and unserved:
@@ -3982,6 +3984,24 @@ class Engine(Reviewing):
         return {**self.view(root), 'said': said.format(label=workspace.label(artifact)),
                 **({'unplaced': UNPLACED.format(headings=', '.join(unplaced))}
                    if unplaced else {})}
+
+    def remake_copy(self, path, artifact: str) -> dict:
+        """Make a new Google Doc for a copy whose Doc Google cannot find, as the person
+        asks: the old link goes, and the Doc is made again from the file as it stands."""
+        root = self._held(path)
+        with self.files:
+            if self._busy_on(root, artifact):
+                raise WorkspaceError('It is being worked on. Make the new Google Doc once it '
+                                     'stops.')
+            self.copies.remake(root, artifact)
+            record = self._load(root)
+            ((record.get('copies') or {}).get('problems') or {}).pop(artifact, None)
+            ((record.get('copies') or {}).get('remote') or {}).pop(artifact, None)
+            self._store(root, record)
+            self._commit(root, 'make a new Google Doc of ' + workspace.label(artifact)
+                         + ', as asked on the page')
+        return {**self.view(root), 'said': 'A new Google Doc of '
+                + workspace.label(artifact) + ' is made.'}
 
     def check_copies(self, path) -> dict:
         """Look for changes made in the Google Docs, as the person asks: the one time
@@ -4494,6 +4514,8 @@ class Engine(Reviewing):
         name for its file, to read in the middle of a sentence."""
         remote = remote if isinstance(remote, dict) else {}
         return [{**({'conflict': True} if entry.get('conflict') else {}),
+                 # A Doc Google could not find is made again from here.
+                 **({'missing': True} if entry.get('problem') == MISSING_DOC else {}),
                  # What Google was found to hold, when the person last asked.
                  **({'remote': remote[entry['artifact']]} if entry['kind'] == 'google'
                     and remote.get(entry['artifact']) in ('remote changed', 'both changed')
@@ -4546,7 +4568,11 @@ class Engine(Reviewing):
         mine, who, state, sentence, last = self._whose(root, record, found, state, sentence)
         asked, problem = record.get('question'), record.get('problem')
         if problem is None and found.next.kind == 'stuck':
-            problem = {'what': found.next.why, 'action': None, 'label': None,
+            # Answers that are missing cannot be put right here: a new training can be
+            # started in its place, and this one deleted.
+            fresh = found.next.why == pipeline.MISSING_ANSWERS
+            problem = {'what': found.next.why, 'action': 'new' if fresh else None,
+                       'label': 'New training' if fresh else None,
                        'kept': 'Everything in the training\'s folder is as it was.'}
         dollars, tokens = spent(record)
         # The limit this run stops at: Settings' limit, raised by every Carry on.

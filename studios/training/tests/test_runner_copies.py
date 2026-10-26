@@ -355,7 +355,9 @@ class GoogleTests(Built):
         self.assertEqual(problems, {'document': copies.REWORDED[1][1]})
         for said in (copies.NOT_SET_UP, copies.NO_PANDOC, *(ours for _, ours in copies.REWORDED)):
             self.assertFalse([word for word in FORBIDDEN if word in said.lower()], said)
-            self.assertIn('try the copies again', said)
+            # A Doc Google cannot find is made anew from here, not tried again.
+            self.assertIn('Make a new Google Doc from here' if said == copies.MISSING_DOC
+                          else 'try the copies again', said)
 
     def test_a_drive_that_fails_in_a_way_nobody_expected_does_not_stop_the_run(self):
         self.built('google', 'word')
@@ -591,6 +593,28 @@ class CheckTests(Built):
         pulled = copies.pull(self.root, 'document@101', self.drive)
         self.assertEqual(pulled['result'], 'pulled')
         self.assertIn(title, pulled['unplaced'])
+
+
+class RemakeTests(Built):
+    def test_row_135_a_missing_doc_is_made_again(self):
+        self.built('google', levels=('101',))
+        self.copy()
+        old = gdocs.read_links(self.root)['docs']['document@101']['file_id']
+        del self.drive.docs[old]
+        made = copies.remake(self.root, 'document@101', self.drive)
+        entry = gdocs.read_links(self.root)['docs']['document@101']
+        self.assertNotEqual(entry['file_id'], old)
+        self.assertIn(entry['file_id'], self.drive.docs)
+        self.assertEqual(made['state'], 'made')
+        self.assertEqual({(e['artifact'], e['state']) for e in copies.wanted(self.root)
+                          if e['artifact'] == 'document@101'}, {('document@101', 'made')})
+
+    def test_a_missing_doc_says_to_make_a_new_one_here(self):
+        said = dict(copies.REWORDED)['could not find the Doc']
+        self.assertEqual(said, 'Google could not find the Doc. It may have been deleted, or '
+                         'the signed-in account cannot open it. Make a new Google Doc from '
+                         'here.')
+        self.assertNotIn('assistant', said)
 
 
 class PullTests(Built):

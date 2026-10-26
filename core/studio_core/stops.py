@@ -11,6 +11,7 @@ What a caller needs to know
     stops.account_limit(outcome)          # an agent's account refused: usage or rate limit
     stops.unusable(title, detail)         # an agent that could not be used, and where to look
     stops.agent_stopped(title, outcome, detail)   # either of those, or None
+    stops.agent_action(outcome)           # what that stop offers: 'status' or 'retry'
     stops.took(attempts)                  # {'jobs', 'seconds', 'dollars'} of a run's jobs
     stops.cost(seconds, dollars)          # "12 minutes and about $1.40"
     stops.redone(first, steps, seconds, dollars)   # what a change draws again, priced
@@ -25,6 +26,9 @@ What a caller needs to know
 FLOOR = 0.50
 MORE_TIME = 'more-time'
 MORE_TIME_LABEL = 'Give it more time and try again'
+STATUS = 'status'   # an agent that could not be used: its stop opens Status, which says why
+# What a stop's one action is called on the page.
+ACTION_LABELS = {'retry': 'Try again', MORE_TIME: MORE_TIME_LABEL, STATUS: 'Open Status'}
 SETTINGS = 'Settings, under Limits'
 # Words in an agent's account of a `limit` that mean its account refused the job, not that
 # the job reached a limit of its own.
@@ -151,6 +155,13 @@ def agent_stopped(title: str, outcome, detail: str) -> str | None:
     if getattr(outcome, 'reason', None) == 'unavailable':
         return unusable(title, detail)
     return None
+
+
+def agent_action(outcome) -> str:
+    """The action a stop offers when the agent is why a job did not finish: Open Status for
+    one that could not be used, where Check this computer says what it needs; else Try
+    again."""
+    return STATUS if getattr(outcome, 'reason', None) == 'unavailable' else 'retry'
 
 
 def unusable(title: str, detail: str) -> str:

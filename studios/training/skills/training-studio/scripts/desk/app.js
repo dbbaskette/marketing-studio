@@ -24,6 +24,17 @@ const NOTICES = {
   refused: 'This link does not match the page that is running. '
     + 'Run the desk command again in your terminal and use the link it prints, whole.',
 };
+// Under the runner, opened from Open Training Studio, the way back is the same.
+const RUNNER_NOTICES = {
+  stopped: 'This page has lost touch with Training Studio, so it cannot read or save anything. '
+    + 'Open Training Studio again and use the new link.',
+  refused: 'This link does not match the page that is running. '
+    + 'Open Training Studio again and use the new link.',
+};
+
+function noticeOf(kind) {
+  return (view.runner ? RUNNER_NOTICES : NOTICES)[kind];
+}
 // Every icon is drawn here, on a 24 by 24 grid, in one weight of line.
 const ICONS = {
   studio: ['M2 8 12 3l10 5-10 5z', 'M6 10v8c4 3 8 3 12 0v-8', 'M22 8v10'],
@@ -197,14 +208,15 @@ const RESEARCH_EMPTY = 'Choose where research may look: your documents, your sit
 const RESEARCH_NO_SITES = 'Choose at least one of your sites, or turn your sites off.';
 const SITES_NAMED = 5;   // sites a summary names before "and N more"
 // A training where the run has made everything it can, and the deck is all that is left.
-const DECK_LEFT = 'Everything but the slide deck is made: make the deck with your assistant, '
-  + 'or leave it out.';
+const DECK_LEFT = 'Everything but the slide deck is made: check this computer again once a '
+  + 'deck can be made on it, or leave the deck out.';
 const SETTLED = ['done', 'left-out', 'unavailable'];
 // Who wrote a practice scenario. A person's own file is never rewritten for them.
 const WHOSE = {
   you: 'This file is yours: you wrote it, and Training Studio does not rewrite it. If you ask '
     + 'for changes, your own wording is laid out under the headings, and you are asked for '
-    + 'anything that is missing.',
+    + 'anything that is missing. A scenario file written in a conversation training’s folder '
+    + 'is used as it is.',
   runner: 'This file is Training Studio’s draft, written from the practice plan in the '
     + 'blueprint.',
 };
@@ -842,7 +854,7 @@ async function reach(endpoint, options) {
   try {
     return await fetch('/api/' + endpoint, options);
   } catch (failure) {
-    throw new PageError('stopped', NOTICES.stopped);
+    throw new PageError('stopped', noticeOf('stopped'));
   }
 }
 
@@ -3115,8 +3127,7 @@ function paintTraining(fresh) {
     practiceCard(training), researchCard(training.status), guidanceCard(training.status),
     decisionsCard(training),
     // One driver for a training: while the page runs it, nobody is sent to an assistant.
-    theirs || (training.run && training.run.state !== 'done') ? null
-      : folderCard(training),
+    theirs || training.run ? null : folderCard(training),
     // A training the runner drives can be deleted from here too; one a conversation made
     // is never the runner's to delete.
     training.run && deletable({ mine: known.mine, driver: known.driver,
@@ -5151,8 +5162,12 @@ function problemPart(run, lead) {
   const found = run.problem;
   const theirs = run.mine === false;
   const label = found.label || (found.action === 'retry' ? 'Try again' : 'Resume');
-  // A deck waiting for a picture leads to the deck's picture form, and to its file.
-  const goes = found.action === 'asset' ? () => {
+  // An agent that could not be used: Status says what it needs. Missing answers: a new
+  // training in its place.
+  const goes = found.action === 'status' ? () => show('status')
+    : found.action === 'new' ? () => show('new')
+    // A deck waiting for a picture leads to the deck's picture form, and to its file.
+    : found.action === 'asset' ? () => {
     const at = list(run.deck && run.deck.assets).findIndex((asset) => asset.supply);
     const box = at < 0 ? null : byId('asset-' + at + '-file');
     if (box) box.focus();
@@ -5186,7 +5201,20 @@ function problemPart(run, lead) {
     add(make('p', ''), make('strong', '', 'What happened: '), found.what),
     keptPart(found.kept),
     does ? make('p', 'quiet', does) : null,
-    add(make('div', 'bar'), go, read), shown);
+    add(make('div', 'bar'), go, read, theirs ? null : alsoPart(found)), shown);
+}
+
+// Beside a stop's one action: Try again once Status has been put right, and deleting a
+// training whose answers are missing.
+function alsoPart(found) {
+  if (found.action === 'status') {
+    const again = capsule('Try again', '', () => steer('retry', again), 'problem-retry');
+    return again;
+  }
+  if (found.action === 'new') {
+    return capsule('Delete this training', 'quiet', askDelete('delete'), 'problem-delete');
+  }
+  return null;
 }
 
 function questionPart(run, title) {
@@ -5636,6 +5664,10 @@ function copyItem(found) {
         pullCopy(found, null, event.currentTarget), 'pull-copy-' + found.artifact));
     }
   }
+  if (found.kind === 'google' && found.missing && view.run?.mine !== false) {
+    add(text, capsule('Make a new Google Doc', 'quiet', (event) =>
+      remakeCopy(found, event.currentTarget), 'remake-copy-' + found.artifact));
+  }
   if (found.kind === 'word' && found.link && found.state !== 'not-made') {
     add(text, capsule('Download the Word copy', 'quiet', (event) =>
       downloadFile(view.path, {artifact: found.artifact, copy: 'word'},
@@ -5658,6 +5690,20 @@ function copyChoiceSheet() {
       + ' with the Doc’s kept text. Review it again before continuing.'
       : 'This replaces the changes in the Google Doc with this training’s version.'),
     add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
+}
+
+async function remakeCopy(found, pressed) {
+  pressed.disabled = true;
+  try {
+    view.run = await send('copies', { path: view.path, action: 'remake',
+      artifact: found.artifact });
+    toast(view.run.said);
+    paintRun(false);
+  } catch (failure) {
+    toast(failure.message + ' Nothing was changed.');
+  } finally {
+    pressed.disabled = false;
+  }
 }
 
 async function pullCopy(found, choose, pressed) {
@@ -8485,7 +8531,7 @@ async function catchUp() {
     }
   } catch (failure) {
     // Reading the list needs nothing but the key, so a refusal here is about the link.
-    notify(failure.kind === 'refused' ? NOTICES.refused : failure.message);
+    notify(failure.kind === 'refused' ? noticeOf('refused') : failure.message);
   }
 }
 
@@ -8600,7 +8646,7 @@ function begin() {
   });
   if (!view.token) {
     place({ title: 'This page needs its link' }, [], true);
-    notify(NOTICES.refused);
+    notify(noticeOf('refused'));
     return;
   }
   open(window.history.state || { screen: 'home' });

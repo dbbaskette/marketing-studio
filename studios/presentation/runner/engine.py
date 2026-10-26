@@ -2360,7 +2360,7 @@ class Engine(Jobs, Researching):
                     if halted.get('action') != 'resume':
                         raise WorkspaceError('This deck is not paused or stopped, so there is '
                                              'nothing to resume.')
-                elif halted.get('action') not in ('retry', stops.MORE_TIME) or (
+                elif halted.get('action') not in ('retry', stops.STATUS, stops.MORE_TIME) or (
                         action == stops.MORE_TIME and halted.get('action') != stops.MORE_TIME):
                     raise WorkspaceError('Nothing here failed, so there is nothing to try '
                                          'again.')

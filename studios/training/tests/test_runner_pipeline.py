@@ -20,6 +20,16 @@ SNAPSHOT = 'sources/docs-example-com-0123456789ab.txt'
 QUOTE = 'Capacity holds only when more than one instance is running.'
 
 
+class NobodyIsSentToAnAssistantTests(unittest.TestCase):
+    def test_a_deck_left_sends_nobody_to_an_assistant(self):
+        for said in (pipeline.DECK_LEFT, pipeline.DECK_AGAIN, pipeline.MISSING_ANSWERS):
+            with self.subTest(said=said):
+                self.assertNotIn('assistant', said)
+                self.assertNotIn('conversation', said)
+        self.assertIn('Put that right and check this computer again, or leave the deck out.',
+                      pipeline.DECK_LEFT)
+
+
 class DefinitionTests(StudioCase):
     def test_the_training_pipeline_is_data_from_the_form_to_the_index(self):
         stages = list(dict.fromkeys(row[0] for row in pipeline.TRAINING))

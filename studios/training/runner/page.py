@@ -789,9 +789,14 @@ class RunnerPage(desk.Page):
         action = sent.get('action')
         if action == 'check':
             return self.engine.check_copies(path)
+        if action == 'remake':
+            artifact = desk.text(sent, 'artifact')
+            desk.artifact_of(path, artifact)
+            return self.engine.remake_copy(path, artifact)
         if action is not None:
             raise desk.Refusal(HTTPStatus.BAD_REQUEST,
-                               'Ask to check the copies, or to make them again.')
+                               'Ask to check the copies, make a Doc again, or make them '
+                               'again.')
         return self.engine.copies_again(path)
 
 

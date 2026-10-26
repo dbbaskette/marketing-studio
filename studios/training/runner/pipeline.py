@@ -96,12 +96,12 @@ WEB_ONLY = {'documents': False, 'sites': [], 'web': True}
 SITES_LINE = 'Sites: '      # in intake.md, under Source scope: the sites research keeps to
 NO_DECK = 'No deck was chosen when this training was started.'
 DECK_LEFT = ('Everything but the slide deck is made. A deck cannot be made on this computer '
-             'yet: {why} Put that right and check this computer again, make the deck in a '
-             'conversation with your assistant, or leave it out.')
+             'yet: {why} Put that right and check this computer again, or leave the deck out.')
 DECK_AGAIN = ('Everything but the slide deck is settled. The deck is not approved as it '
               'stands, and one cannot be made on this computer yet: {why} Put that right '
-              'and check this computer again, finish the deck in a conversation with your '
-              'assistant, or leave it out.')
+              'and check this computer again, or leave the deck out.')
+MISSING_ANSWERS = ('The answers this training was started from are missing, so it cannot go '
+                   'on. Start a new training in its place, or delete this one.')
 NOT_LOOKED = 'Nobody has looked at what this computer has for making one.'
 NO_BRAND = ('No brand was chosen for the deck when this training was started, and a deck is '
             'always made with one.')
@@ -1275,8 +1275,7 @@ def _next(first: Step | None, session: dict, state: dict, asked: dict,
             'deck-sections': mine.todo, 'deck-repair': mine.again}.get(bare(first.id), ()))
     if first.id == 'intake':
         if state['intake'] == 'not-started':
-            return Next('stuck', first, why='The answers this training was started from are '
-                        'missing, so it cannot go on. Start a new training in its place.')
+            return Next('stuck', first, why=MISSING_ANSWERS)
         first = gate_for('intake')  # someone changed the answers: they are put to the person
     if first.id in ('documents', 'deck'):
         return Next(first.id, first)  # a person's to do; the core has no gate for either

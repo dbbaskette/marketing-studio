@@ -6,6 +6,7 @@ What a caller needs to know
     copies.wanted(root, problems=None)       # every copy the training asks for, as shown
     made, problems = copies.make(root, google=None, word=None)
     found = copies.check(root, google=None)  # each Doc, as Google has it now, when asked
+    entry = copies.remake(root, name, google=None)   # a Doc Google cannot find, made anew
 
 - An entry is {'artifact', 'label', 'kind', 'state', 'link', 'problem'}. `kind` is 'google'
   or 'word'. `state` is 'made', 'out-of-date' or 'not-made'. `link` is the Doc's address,
@@ -57,14 +58,13 @@ PANDOC_SAYS = {   # the core's reasons for no Word copy, said for a person
               f'{workspace.sentence(AGAIN)}.'),
     'said': f'pandoc could not make the Word copy ({{said}}). Put that right, then {AGAIN}.'}
 # What the core says to an assistant, which has commands to run, said here for a person.
+MISSING_DOC = ('Google could not find the Doc. It may have been deleted, or the signed-in '
+               'account cannot open it. Make a new Google Doc from here.')
 CHANGED_THERE = ('Someone has changed the Google Doc since it was last sent, so it was left '
                  f'as it is. Bring the Doc’s changes in from here, then {AGAIN}.')
 REWORDED = (
     ('changed since the last sync', CHANGED_THERE),
-    ('could not find the Doc',
-     'Google could not find the Doc. It may have been deleted, or the signed-in account '
-     f'cannot open it. Ask your assistant to unlink it from the training, then {AGAIN} to '
-     'make a new one.'),
+    ('could not find the Doc', MISSING_DOC),
 )
 
 
@@ -177,6 +177,22 @@ def pandoc(source: Path, target: Path) -> None:
     file it is given. Refuses with a sentence for a person when pandoc is not on this
     computer, does not finish or makes no copy."""
     workspace.pandoc(source, target, PANDOC_SAYS)
+
+
+def remake(root: Path, name: str, google=None) -> dict:
+    """Make a new Google Doc of an approved file whose Doc Google cannot find: the old link
+    is removed, and the Doc is made again from the file as it stands. The old Doc, if there
+    is one, is left as it is. Returns the copy as `wanted` now gives it."""
+    root = Path(root).resolve()
+    if name not in gdocs.read_links(root)['docs']:
+        raise WorkspaceError('That copy has no Google Doc to make again.')
+    gdocs.unlink(root, name)
+    google = google or gdocs.GcloudTransport()
+    problem = _google(root, name, google)
+    if problem:
+        raise WorkspaceError(problem)
+    return next(entry for entry in wanted(root) if entry['artifact'] == name
+                and entry['kind'] == 'google')
 
 
 # --- what Google has --------------------------------------------------------------------

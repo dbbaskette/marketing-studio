@@ -901,6 +901,24 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Try again re-runs ' + row['label'] + ' from the start; the tries so far '
                       'took 2 minutes and $0.30.', shot['text'])
 
+    def test_an_unusable_assistant_offers_open_status(self):
+        path = self.started()
+        shown = self.run_of(path)
+        row = next(row for row in shown['timeline'] if row['state'] != 'done')
+        row.update(state='current', failed=True)
+        said = ('Claude Code could not be used. It is not signed in. Check this computer, on '
+                'the Status screen, says what it needs.')
+        shown.update(state='failed', gate=None, sentence='It has stopped.',
+                     problem={'state': 'failed', 'why': said,
+                              'kept': 'Everything made so far.', 'action': 'status'})
+        result = self.deck_screen(path, [{'snapshot': 'failed'}, {'click': 'Open Status'},
+                                         {'snapshot': 'status'}],
+                                  **{'GET /api/run': [ok(shown)]})
+        shot = result['snapshots']['failed']
+        self.assertEqual(shot['filled'], ['Open Status'])
+        self.assertIn('Try again', shot['buttons'])
+        self.assertEqual(result['snapshots']['status']['heading'], 'Status')
+
     def test_a_step_that_ran_out_of_time_offers_more_time(self):
         path = self.started()
         shown = self.run_of(path)

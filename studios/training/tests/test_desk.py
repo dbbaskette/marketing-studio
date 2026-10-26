@@ -2477,8 +2477,8 @@ TYPES = ['.txt', '.md', '.html', '.htm', '.docx']
 NO_PDF = 'A PDF cannot be read on this computer. Save it as text or Word first.'
 KEPT_HERE = ('Your documents stay on this computer and are never shared with your team. '
              'Passages quoted from them appear in the research report, which is shared.')
-DECK_LEFT = ('Everything but the slide deck is made: make the deck with your assistant, or '
-             'leave it out.')
+DECK_LEFT = ('Everything but the slide deck is made: check this computer again once a deck '
+             'can be made on it, or leave the deck out.')
 
 
 def a_step(name: str, label: str, kind: str, status: str, **more) -> dict:
@@ -4738,6 +4738,62 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Watch the run', shots['detail']['buttons'])
         self.assertNotIn('Carry on with your assistant', shots['detail']['text'])
         self.assertNotIn('Start your assistant in this folder', shots['detail']['text'])
+
+    def test_a_finished_runner_training_sends_nobody_to_an_assistant(self):
+        self.started()
+        done = 'This training is finished.'
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('done', done)],
+            'GET /api/training': [self.detail('done', done)],
+            'GET /api/run': [a_run('done', done, steps=steps('done', 'done', 'done'))]})
+        result = self.run_page(answers, [
+            {'click': 'Trainings'}, {'click': 'Open Rolling restarts'},
+            {'click': 'Everything about this training'}, {'snapshot': 'detail'}])
+        self.assertNotIn('Carry on with your assistant', result['snapshots']['detail']['text'])
+
+    def test_an_unusable_assistant_offers_open_status(self):
+        self.started()
+        said = ('Claude Code could not be used. It is not signed in. Check this computer, on '
+                'the Status screen, says what it needs.')
+        stopped = a_run('failed', said, steps=steps('done', 'failed'),
+                        problem={'what': said, 'kept': 'Everything kept so far is still here.',
+                                 'action': 'status', 'label': 'Open Status'})
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('failed', said)],
+            'GET /api/training': [self.detail('failed', said)], 'GET /api/run': [stopped]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'stopped'}, {'click': 'Open Status'},
+                                         {'snapshot': 'status'}])
+        shots = result['snapshots']
+        self.assertEqual(shots['stopped']['filled'], ['Open Status'])
+        self.assertIn('Try again', shots['stopped']['buttons'])
+        self.assertEqual(shots['status']['current'], ['Status'])
+
+    def test_missing_answers_offer_a_new_training(self):
+        self.started()
+        said = ('The answers this training was started from are missing, so it cannot go on. '
+                'Start a new training in its place, or delete this one.')
+        stuck = a_run('failed', said, steps=steps('failed'),
+                      problem={'what': said, 'kept': "Everything in the training's folder is "
+                               'as it was.', 'action': 'new', 'label': 'New training'})
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('failed', said)],
+            'GET /api/training': [self.detail('failed', said)], 'GET /api/run': [stuck]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'stuck'}, {'click': 'New training'},
+                                         {'snapshot': 'new'}])
+        shot = result['snapshots']['stuck']
+        self.assertEqual(shot['filled'], ['New training'])
+        self.assertIn('Delete this training', shot['buttons'])
+        self.assertNotEqual(result['snapshots']['new']['heading'], 'Rolling restarts')
+
+    def test_runner_notices_name_training_studio(self):
+        page = (Path(__file__).resolve().parents[1] / 'skills' / 'training-studio' / 'scripts'
+                / 'desk' / 'app.js').read_text(encoding='utf-8')
+        self.assertIn('Open Training Studio again and use the new link.', page)
+        self.assertNotIn('make the deck with your assistant', page)
+        self.assertIn('Run the desk command again in your terminal', page,
+                      'training desk keeps its own words')
 
     def test_a_run_is_paused_resumed_and_stopped_and_a_refusal_changes_nothing(self):
         self.started()

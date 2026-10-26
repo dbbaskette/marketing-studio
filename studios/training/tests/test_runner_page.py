@@ -2680,7 +2680,7 @@ class PullCopyTests(PageCase):
         entry = next(one for one in run['copies'] if one['artifact'] == 'document@101')
         self.assertEqual(entry['remote'], 'remote changed')
         self.assertEqual(self.post('copies', {'path': path, 'action': 'nonsense'}, 400)['error'],
-                         'Ask to check the copies, or to make them again.')
+                         'Ask to check the copies, make a Doc again, or make them again.')
         run = self.post('copies', {'path': path, 'pull': 'document@101'})
         entry = next(one for one in run['copies'] if one['artifact'] == 'document@101')
         self.assertNotIn('remote', entry, 'brought in, so nothing is said of it any more')
