@@ -9,6 +9,11 @@
 // The plan is {steps, answers}: what the server's one-site check answers for each typed text.
 // A snapshot prints the rows shown, the hint, whether the empty line is hidden, and the
 // research change Save settings would send.
+// For the rest of the form: the plan may set {product, standalone}; {run: code} runs code in
+// the page's scope; {responses: {path: answer}} answers /api/<path> posts (an answer with
+// `error` is refused); {submit: true} submits the settings form; and a snapshot with
+// {read: [selector, ...]} adds each element's text and whether it is hidden, with every
+// request the page made.
 'use strict';
 
 const fs = require('fs');
@@ -51,8 +56,11 @@ form.elements = new Proxy({}, { get: (target, name) => {
   if (!named.has(name)) { const input = new El('input'); input.name = String(name); named.set(name, input); }
   return named.get(name);
 } });
+const early = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
+let responses = {};
 const document = {
-  body: { dataset: { standalone: 'false', product: 'Marketing Studio', tokenHeader: 'X-Test' }, classList: { toggle() {} } },
+  body: { dataset: { standalone: String(Boolean(early.standalone)),
+    product: early.product || 'Marketing Studio', tokenHeader: 'X-Test' }, classList: { toggle() {} } },
   querySelector: find, querySelectorAll: () => [], createElement: tag => new El(tag),
 };
 const context = {
@@ -64,7 +72,9 @@ const context = {
   fetch: async (url, options) => {
     const sent = JSON.parse(options.body || '{}');
     asked.push({ url, sent });
-    const answer = answers[sent.site] || { error: 'Not in this plan.' };
+    const route = String(url).split('/api/').pop();
+    const answer = route in responses ? responses[route]
+      : answers[sent.site] || { error: 'Not in this plan.' };
     return { ok: !answer.error, json: async () => answer };
   },
 };
@@ -85,6 +95,12 @@ for (const step of steps) {
     context.shownSites = step.sites;
     form.elements.storage.value = 'local';
     run("snapshot = {shared: {research: {sites: shownSites}}, efforts: {claude: []}}; setup = false; researchSites = [...shownSites]; renderSites();");
+  } else if (step.run) {
+    run(step.run);
+  } else if (step.responses) {
+    responses = step.responses;
+  } else if (step.submit) {
+    form.fire('submit'); for (let i = 0; i < 6; i += 1) await settle();
   } else if ('type' in step) {
     find('#research-site-input').value = step.type;
   } else if (step.click === 'add') {
@@ -104,6 +120,9 @@ for (const step of steps) {
       input: find('#research-site-input').value,
       change,
       asked: asked.length,
+      ...(step.read ? { read: Object.fromEntries(step.read.map(selector => [selector,
+        { text: find(selector).textContent, hidden: find(selector).hidden }])),
+      requests: asked.map(({ url, sent }) => ({ url: String(url), sent })) } : {}),
     };
   }
 }

@@ -33,7 +33,9 @@ function inThisTab(media) {
   return media('(pointer: coarse)') || media('(max-width: 52rem)');
 }
 let snapshot, setup = false, step = 0, view = 'home', profileAgent;
-const labels = ['You and your assistant', 'Your workspace', 'Brand and delivery'];
+const labels = ['You and your assistant', 'Your workspace', 'Brand and delivery'];  // announced
+// Blog Studio's own setup: a blog on the writing desk has no stops and no slides.
+const blogAlone = () => standalone && product === 'Blog Studio';
 const form = $('#settings-form');
 const modelPickers = new Map(), catalogs = {};
 const customModel = '__manual model__';
@@ -89,9 +91,15 @@ function show(next) {
   document.body.classList.toggle('alone', setup || standalone);
   $('#back-to-studio').hidden = !(standalone && !setup);
   $('#back-to-studio').textContent = `Back to ${product}`;
-  $('#settings-title').textContent = setup ? labels[step] : 'Shared settings';
+  // In setup the numbered list names the step, and the step's card is titled with it.
+  $('#settings-title').textContent = 'Shared settings';
+  $('#settings-title').hidden = setup;
   $('#settings-intro').textContent = setup ? 'Set up once. Your studios will start with these choices.' : 'New work in every studio starts with these choices.';
-  $('#step-label').textContent = setup ? `Step ${step + 1} of 3` : '';
+  $('#step-label').textContent = '';
+  $('#step-label').hidden = true;
+  // Blog Studio's own first run asks only what Blog Studio uses.
+  $('#review-part').hidden = blogAlone();
+  $('#delivery-part').hidden = blogAlone();
   $('#setup-progress').hidden = !setup;
   $('#setup-progress').querySelectorAll('li').forEach((node, index) => {
     if (index === step) node.setAttribute('aria-current', 'step'); else node.removeAttribute('aria-current');
@@ -396,7 +404,7 @@ function renderHome() {
   for (const studio of snapshot.studios) {
     const field = element('div', '', 'field full');
     const label = element('label', studio.name, 'field-label'); label.htmlFor = `path-${studio.id}`;
-    const input = element('input', '', 'input'); input.id = label.htmlFor; input.name = studio.id;
+    const input = element('input', '', 'input'); input.id = label.htmlFor; input.dataset.studio = studio.id;
     input.value = studio.configured_path; input.placeholder = studio.path || 'Absolute path to the studio installation';
     field.append(label, input); fields.append(field);
   }
@@ -408,7 +416,7 @@ function changesForStep() {
   if (!setup || step === 0) {
     wanted.models = {schema: 1, agent: profileAgent, mode: form.elements['models.mode'].value, profiles: {}};
     for (const name of profileNames) wanted.models.profiles[name] = {selection: value(`models.${name}.selection`), model: value(`models.${name}.model`), effort: value(`models.${name}.effort`)};
-    wanted.review = {level: value('review.level')};
+    if (!blogAlone()) wanted.review = {level: value('review.level')};
     wanted.person = {name: value('person.name')};
     wanted.assistant = {agent: value('assistant.agent'), model: value('assistant.model'), effort: value('assistant.effort')};
   }
@@ -421,8 +429,10 @@ function changesForStep() {
   }
   if (!setup || step === 2) {
     wanted.brand = Object.fromEntries(['repository', 'release', 'brand', 'variant', 'skill'].map(key => [key, value(`brand.${key}`)]));
-    wanted.output = value('output');
-    wanted.render = {previews: value('render.previews')};
+    if (!blogAlone()) {
+      wanted.output = value('output');
+      wanted.render = {previews: value('render.previews')};
+    }
   }
   // Research sites are kept in Shared settings, not in first-run setup.
   if (!setup) wanted.research = {sites: [...researchSites]};
@@ -442,10 +452,25 @@ function changesForStep() {
   const diff = changed(wanted, snapshot.shared);
   return diff;
 }
+// The installation folders, when one was changed on this form: every studio's, as the
+// form now has them. Null when none changed.
+function folderChanges() {
+  if (setup || standalone) return null;
+  const inputs = [...$('#path-fields').children].map(field => field.children[1]);
+  const shown = Object.fromEntries((snapshot.studios || []).map(studio => [studio.id, studio.configured_path || '']));
+  const now = Object.fromEntries(inputs.filter(Boolean).map(input => [input.dataset.studio, input.value.trim()]));
+  return Object.keys(now).some(id => now[id] !== (shown[id] ?? '')) ? now : null;
+}
 form.addEventListener('submit', async event => {
   event.preventDefault(); $('#save').disabled = true; $('#problem').hidden = true;
   try {
+    const folders = folderChanges();
     const changes = changesForStep(); snapshot = await api('shared', {changes, seen: snapshot.shared});
+    // One save: the folders go after the shared settings, and a refusal says what was kept.
+    if (folders) {
+      try { snapshot = await api('paths', {paths: folders}); }
+      catch (error) { fill(); renderHome(); inform(`Your shared settings were saved. The installation folders were not: ${error.message}`, true); return; }
+    }
     if (setup && step < 2) { step++; show('settings'); }
     else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; renderHome(); show('home'); showNotices(); inform('Your studios are ready.'); }
     else { if (standalone) { await api('setup', {done: true}); return openNative(); } fill(); renderHome(); inform(savedWords()); }
@@ -494,11 +519,6 @@ $('#check').addEventListener('click', async () => {
       row.append(top, element('p', item.detail, 'facts')); list.append(row);
     }
   } catch (error) { inform(error.message, true); } finally { $('#check').disabled = false; }
-});
-$('#paths-form').addEventListener('submit', async event => {
-  event.preventDefault(); const button = event.submitter; button.disabled = true;
-  try { snapshot = await api('paths', {paths: Object.fromEntries(new FormData(event.target))}); renderHome(); inform('Installation folders saved.'); }
-  catch (error) { inform(error.message, true); } finally { button.disabled = false; }
 });
 $('#copy-network').addEventListener('click', async () => {
   const input = $('#network-link');
