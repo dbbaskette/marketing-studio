@@ -310,10 +310,28 @@ function sDeskProgress(held){
     steps.append(sAdd(sNode('li','row step'),sBead(state),sAdd(sNode('div','row-text'),sNode('h3','row-title',DESK_STEPS[step]||step),now?sNode('p','row-says',now):null)));
   });
   const parts=[first];
-  if(problem){const retry=sButton('Retry',async button=>{await busy(button,'Starting…',async()=>{try{held.view=await api('desk-retry',{id:held.id});sDeskProgress(held);}catch(error){notice(error.message,true);}});},'filled');retry.disabled=!sDeskCan(held);parts.push(sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',problem),retry));}
+  if(problem)parts.push(sDeskStopped(held));
   parts.push(sCard('Progress',steps,sNode('p','quiet desk-clock',sDeskClock(start))));
   sPage(...parts);
   if(!problem)sDeskFollowStart(held);
+}
+// A stopped start: the ways on a run has. More time for a step out of time, no research for
+// a research step that stopped, Status and what the assistant said for one that failed,
+// Retry always, and Delete this start.
+function sDeskStopped(held){
+  const view=held.view,start=view.start,can=sDeskCan(held);
+  const again=extra=>async button=>{await busy(button,'Starting…',async()=>{try{held.view=await api('desk-retry',{id:held.id,...extra});sDeskProgress(held);}catch(error){notice(error.message,true);}});};
+  const more=start.reason==='time-limit'&&start.more?sButton('Try again with more time',again({seconds:start.more}),'filled'):null;
+  const retry=sButton('Retry',again({}),more?'':'filled');
+  const skip=start.step==='research'?sButton('Continue without research',()=>sDeskSkipResearch(held)):null;
+  const remove=sButton('Delete this start',()=>sDeleteSheet({id:held.id,title:view.title,expected:view.expected,team:view.team,status:start.status}));
+  for(const button of [more,retry,skip,remove])if(button)button.disabled=!can;
+  return sAdd(sNode('div','decision-notice desk-problem'),sAdd(sNode('div',''),sNode('p','',start.problem),more?sNode('p','quiet',sTimeWords({seconds:start.seconds})):null,...sCliFailure({status:'failed',reason:start.reason,said:start.said,error:start.problem})),sAdd(sNode('div','bar'),more,retry,skip,remove));
+}
+function sDeskSkipResearch(held){
+  const problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
+  const go=sButton('Continue without research',async button=>{await busy(button,'Saving…',async()=>{try{held.view=await api('desk-retry',{id:held.id,skip_research:true});sCloseSheet();sToast('Continuing without research.');sDeskProgress(held);}catch(error){problem.textContent=error.message;}});},'filled');
+  sOpenSheet('Continue without research?',sNode('p','','The research step leaves this start, and the writing goes on from your point and sources. It gets no research findings, and research cannot be added back to this start.'),problem,sAdd(sNode('div','bar'),go,sButton('Cancel',sCloseSheet)));
 }
 function sDeskFollowStart(held){
   if(held.startWatching)return;held.startWatching=true;

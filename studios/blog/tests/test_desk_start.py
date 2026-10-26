@@ -611,6 +611,88 @@ class ChainTests(ChainCase):
             self.post('desk-retry', {'id': made['id']})
 
 
+class StartRecoveryTests(ChainCase):
+    """A stopped start has the ways on a run has: more time, no research, or Status."""
+
+    def setting(self):
+        return blog_runner.settings(self.root)['defaults']['seconds']
+
+    def test_a_start_out_of_time_can_try_again_with_more_time(self):
+        import blog_worker
+
+        self.failing['outline'] = blog_worker.WorkerFailure(
+            'Codex ran out of the time a step may take.', 'time-limit'
+        )
+        made = self.begin()
+        self.run_jobs(1)
+        stopped = self.get('desk', id=made['id'])['start']
+        self.assertEqual(stopped['reason'], 'time-limit')
+        self.assertEqual(stopped['seconds'], self.setting())
+        self.assertEqual(stopped['more'], min(3600, 2 * self.setting()))
+        detail = desk_jobs.stalled_detail(self.root, made['id'], desk.read_start(self.root, made['id']))
+        self.assertEqual(detail['problem'], 'Codex ran out of the time a step may take.')
+        self.assertEqual(detail['step'], 'outline')
+        with self.assertRaisesRegex(ValueError, 'at most twice'):
+            self.post('desk-retry', {'id': made['id'], 'seconds': 2 * self.setting() + 1})
+        again = self.post('desk-retry', {'id': made['id'], 'seconds': 2 * self.setting()})
+        self.assertEqual(again['working']['kind'], 'desk-outline')
+        self.assertEqual(tool_jobs.read(self.root, again['working']['id'])['seconds'], 2 * self.setting())
+        self.assertIsNone(again['start']['reason'])
+        self.run_jobs(2)
+        self.assertIsNotNone(self.get('desk', id=made['id'])['start']['ended_at'])
+
+    def test_a_research_step_that_stopped_can_continue_without_research(self):
+        self.failing['research'] = ValueError('The assistant stopped.')
+        made = self.begin(research_from={'sites': [], 'web': True})
+        self.run_jobs(1)
+        stopped = self.get('desk', id=made['id'])['start']
+        self.assertEqual((stopped['step'], stopped['reason']), ('research', 'research'))
+        again = self.post('desk-retry', {'id': made['id'], 'skip_research': True})
+        self.assertEqual(again['working']['kind'], 'desk-outline')
+        self.assertEqual(again['start']['steps'], ['outline', 'draft'])
+        self.assertEqual(again['start']['problem'], '')
+        start = desk.read_start(self.root, made['id'])
+        self.assertIsNone(start['research_from'])
+        self.assertIsNone(start['contract'])
+        self.assertTrue(start['research_skipped']['at'])
+        self.run_jobs(2)
+        done = self.get('desk', id=made['id'])
+        self.assertIsNotNone(done['start']['ended_at'])
+        self.assertNotIn('research', [c for c in self.calls if c['kind'] == 'outline'][0]['payload'])
+        self.assertFalse((self.folder(made['id']) / 'derived' / 'blog-research.md').exists())
+
+    def test_continue_without_research_is_for_a_start_stopped_at_its_research(self):
+        self.failing['outline'] = ValueError('The assistant stopped.')
+        made = self.begin()
+        self.run_jobs(1)
+        self.assertIsNone(self.get('desk', id=made['id'])['start']['reason'])
+        with self.assertRaisesRegex(ValueError, 'stopped at its research'):
+            self.post('desk-retry', {'id': made['id'], 'skip_research': True})
+
+    def test_a_cli_failure_on_a_start_keeps_what_the_assistant_said(self):
+        import blog_worker
+
+        self.failing['outline'] = blog_worker.WorkerFailure(
+            'Codex stopped before it answered. Check it under Status.',
+            'cli',
+            ['error: synthetic line one', 'synthetic line two'],
+        )
+        made = self.begin()
+        self.run_jobs(1)
+        stopped = self.get('desk', id=made['id'])['start']
+        self.assertEqual(stopped['reason'], 'cli')
+        self.assertEqual(stopped['said'], ['error: synthetic line one', 'synthetic line two'])
+        self.assertEqual(stopped['problem'], 'Codex stopped before it answered. Check it under Status.')
+
+    def test_more_time_or_no_research_refuses_a_start_under_way(self):
+        made = self.begin(research_from={'sites': [], 'web': True})
+        for extra in ({'seconds': self.setting()}, {'skip_research': True}):
+            with self.assertRaisesRegex(
+                ValueError, 'Nothing to retry: this start is under way or done.'
+            ):
+                self.post('desk-retry', {'id': made['id'], **extra})
+
+
 class OutlineTabTests(RouteCase):
     def setUp(self):
         super().setUp()
