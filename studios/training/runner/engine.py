@@ -1341,7 +1341,7 @@ class Engine(Reviewing):
         """Stop a training in a state that says what went wrong and offers one action.
         `waits` names what it waits for, when something done on the page settles it.
         `detail` is kept with the problem for what its action needs to know."""
-        label = {'retry': 'Try again', 'resume': 'Carry on',
+        label = {'retry': 'Try again', 'resume': 'Carry on', 'asset': 'Add the picture',
                  stops.MORE_TIME: stops.MORE_TIME_LABEL}.get(action)
         with self.files:
             record = self._load(root)
@@ -2164,8 +2164,9 @@ class Engine(Reviewing):
         except WorkspaceError as refusal:
             said.append(f'The slides tool could not say what is recorded. {refusal}')
         if said:
+            # It leads with the picture: the page opens the deck's picture form.
             self._problem(root, it.id, 'waiting', ASSETS_WAIT.format(said=' '.join(said)),
-                          ASSETS_KEPT, waits='assets')
+                          ASSETS_KEPT, action='asset', waits='assets')
             return None
         return pipeline.assets_now(root, level)
 
@@ -3709,7 +3710,8 @@ class Engine(Reviewing):
                 if state not in ('paused', 'stopped') and problem.get('action') != 'resume':
                     raise WorkspaceError('This training is not paused or stopped, so there '
                                          'is nothing to resume.')
-            elif problem.get('action') not in ('retry', stops.MORE_TIME) or (
+            # A deck waiting for its pictures is looked at again on Try again too.
+            elif problem.get('action') not in ('retry', 'asset', stops.MORE_TIME) or (
                     action == stops.MORE_TIME and problem.get('action') != stops.MORE_TIME):
                 raise WorkspaceError('Nothing here failed, so there is nothing to try again.')
             elif problem.get('unreadable') and unserved:

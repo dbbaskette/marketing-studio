@@ -2857,7 +2857,8 @@ class AssetTests(DeckCase):
         root = self.begin()
         view = self.drawn(root)
         approved = self.record(root)['deck']['']['approved']
-        self.assertEqual((view['state'], view['problem']['action']), ('waiting', 'retry'))
+        self.assertEqual((view['state'], view['problem']['action'], view['problem']['label']),
+                         ('waiting', 'asset', 'Add the picture'))
         said = view['problem']['what']
         for told in ('The deck is not drawn until what its approved design uses is to hand.',
                      'Slide `what-it-does` needs the screenshot "The restart in the console" '

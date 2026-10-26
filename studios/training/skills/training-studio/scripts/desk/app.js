@@ -5004,6 +5004,10 @@ function failedStep(run, found) {
 // What the one action a problem offers does, and roughly what it costs, in the way a
 // deck's cost is said before it is drawn: from what the same work took before.
 function actionSays(run, found) {
+  if (found.waits === 'assets') {
+    return 'The deck is drawn once its pictures are here. Without one, redesign the deck or '
+      + 'leave it out.';
+  }
   if (found.action === 'resume') {
     return 'Carry on starts that step again; everything finished before it is kept.';
   }
@@ -5147,8 +5151,14 @@ function problemPart(run, lead) {
   const found = run.problem;
   const theirs = run.mine === false;
   const label = found.label || (found.action === 'retry' ? 'Try again' : 'Resume');
+  // A deck waiting for a picture leads to the deck's picture form, and to its file.
+  const goes = found.action === 'asset' ? () => {
+    const at = list(run.deck && run.deck.assets).findIndex((asset) => asset.supply);
+    const box = at < 0 ? null : byId('asset-' + at + '-file');
+    if (box) box.focus();
+  } : () => steer(found.action, go);
   const go = found.action && !theirs
-    ? capsule(label, lead ? 'filled' : '', () => steer(found.action, go), 'problem-action')
+    ? capsule(label, lead ? 'filled' : '', goes, 'problem-action')
     : capsule('See everything it made', '', () => show('training', { path: view.path }),
       'problem-open');
   const title = run.state === 'waiting' ? 'It is waiting for you'
@@ -6032,7 +6042,7 @@ function assetForm(found, index) {
     held.file = (input.files || [])[0] || null;
   }, accept: '.png,.jpg,.jpeg,.gif', hint: 'A PNG, JPEG or GIF file.' });
   picture.querySelector('input').multiple = false;
-  const send = capsule('Add the picture', '', () => supplyAsset(found, index, send),
+  const send = capsule('Save the picture', '', () => supplyAsset(found, index, send),
     id + '-send');
   return add(make('div', 'asset-supply'), picture,
     field(id + '-alt', 'What it shows', held, 'alt'),

@@ -6306,8 +6306,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         going = 'Drawing the slides, in two sections.'
         icon = an_asset('icon_instance', 'icon', 'server', 'recorded', alt='Server')
         wanted = an_asset('console_view', 'screenshot', 'The console', 'wanted', supply=True)
-        problem = {'what': waits, 'kept': 'Nothing needs approving again.', 'action': 'retry',
-                   'label': 'Try again'}
+        problem = {'what': waits, 'kept': 'Nothing needs approving again.', 'action': 'asset',
+                   'label': 'Add the picture', 'waits': 'assets'}
 
         def run(state: str, said: str, *assets: dict, stopped=None) -> dict:
             return a_run(state, said, outline=an_outline(waiting=False), problem=stopped,
@@ -6323,12 +6323,13 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'POST /api/asset': [run('working', going, icon, recorded)]})
         result = self.run_page(answers, [
             {'click': 'Open Rolling restarts'}, {'snapshot': 'waiting'},
-            {'click': 'Add the picture'}, {'snapshot': 'unchosen'},
+            {'click': 'Add the picture'}, {'snapshot': 'led'},
+            {'click': 'Save the picture'}, {'snapshot': 'unchosen'},
             {'attach': 'Supply the picture', 'files': [{'name': 'console.png',
                                                         'bytes': [137, 80, 78, 71]}]},
             {'fill': 'What it shows', 'value': 'The console mid-restart'},
             {'fill': 'Where it came from', 'value': 'Course author'},
-            {'click': 'Add the picture'}, {'snapshot': 'given'}])
+            {'click': 'Save the picture'}, {'snapshot': 'given'}])
         shots = result['snapshots']
         first = shots['waiting']
         for shown in ('It is waiting for you', waits, 'Pictures and icons',
@@ -6336,8 +6337,14 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       'Recorded', 'Screenshot: The console', 'Still needed',
                       'Supply the picture', 'What it shows', 'Where it came from'):
             self.assertIn(shown, first['text'])
-        self.assertEqual(first['buttons'].count('Add the picture'), 1,
+        self.assertEqual(first['buttons'].count('Save the picture'), 1,
                          'only a picture the person gives can be supplied here')
+        # The stop leads with the picture: its filled button takes you to the form.
+        self.assertEqual(first['filled'], ['Add the picture'])
+        self.assertIn('The deck is drawn once its pictures are here. Without one, redesign '
+                      'the deck or leave it out.', first['text'])
+        self.assertNotIn('Try again re-runs', first['text'])
+        self.assertEqual(shots['led']['focus'], 'asset-1-file')
         self.assertIn('Choose the picture first.', shots['unchosen']['text'])
         self.assertEqual(self.posts(result), [('/api/asset', {
             'path': str(self.root), 'level': None, 'asset': 'console_view',
