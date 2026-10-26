@@ -67,8 +67,6 @@ async function check(){
   await busyAnalysis();
   await refreshWithNewSelection();
   await guidedRuns();
-  await googleIntake();
-  await googleReopening();
   await manuscriptEditing();
   await reviewInteractions();
   await editorTransitions();
@@ -148,13 +146,15 @@ async function check(){
   await deskPasteAndUpload();
   await deskPublishKeeps();
   await deskGoogleDoc();
+  await deskStartReopensALinkedDoc();
+  await oldIntakeAddressesOpenTheDeskStart();
   await deskStartRecovery();
   await deskTakeOver();
   pageDefinesEveryElement();
-  const checks=['Review mode’s Accept all never sending a rewrite over a fix still waiting, flagged or hidden by the filter; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, an overlap retired once one is accepted, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Send accepted changes to Google Doc with its count, Copy and Download otherwise, Open the full desk and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['Review mode’s Accept all never sending a rewrite over a fix still waiting, flagged or hidden by the filter; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, an overlap retired once one is accepted, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Send accepted changes to Google Doc with its count, Copy and Download otherwise, Open the full desk and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, the old Polish, paste and Google Doc addresses opening its polishing screen, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start asks what you are writing, then what you have, then sources and settings','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','a desk start that stopped on another computer: who drives it, Take over or Take this blog with the desk’s version, then Retry','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','a Google Doc already a blog here reopening on the desk from the polishing start, an unreadable answer said there with the link kept','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start asks what you are writing, then what you have, then sources and settings','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','a desk start that stopped on another computer: who drives it, Take over or Take this blog with the desk’s version, then Retry','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -304,8 +304,8 @@ async function pendingEditorSaves(){
   const page=()=>descendants(g.get('studio-page'));const next=descendants(g.get('actions')).find(e=>e.className.includes('review-continue'));
   const keeping=next.listeners.click();assert.equal(page().find(e=>e.type==='checkbox').disabled,true,'selection is stable during its save');
   assert.equal(page().find(e=>e.id==='wording-0').disabled,true);
-  await g.run("sRoute('polish')");selected.resolve(review);await keeping;
-  assert.equal(g.run('studio.screen'),'polish','a completed save does not pull the person back after navigation');
+  await g.run("sRoute('guides')");selected.resolve(review);await keeping;
+  assert.equal(g.run('studio.screen'),'guides','a completed save does not pull the person back after navigation');
 }
 
 async function manualEditingJourneys(){
@@ -458,148 +458,17 @@ async function phase4Starts(){
 
 async function taskJourneys(){
   const defaults={engine:'codex',seconds:600,research:'web-allowed',stop:'package',tone:'Clear',author:''};
-  const requests=[];
-  const manuscript={id:'pasted',title:'Pasted draft',content:'Café draft.',expected:'v1',google:null,proposals:[],findings:[],checks:{},working:false};
-  const found={id:'written',title:'Supplied outline',status:'queued',next:'draft',approval:'page',expected:'r1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[]};
-  const f=fixture((url,options)=>{
-    requests.push({url,data:options?.body?JSON.parse(options.body):null});
+  const f=fixture((url)=>{
     if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{codex:true}};
-    if(url==='/api/upload')return {article:{id:'pasted'}};
-    if(url.startsWith('/api/manuscript?'))return manuscript;
-    if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
     return {items:[],total:0};
   });f.loadRunner();f.run('sHome()');
-  const nodes=()=>descendants(f.get('studio-page')),field=id=>nodes().find(e=>e.id===id);
+  const nodes=()=>descendants(f.get('studio-page'));
   for(const label of ['Write from a topic or my documents','Work from my outline or notes','Edit or polish a draft'])assert.ok(nodes().some(e=>e.textContent===label));
   // Setting up voices, styles and the library is on Home, without starting a blog.
   assert.ok(nodes().some(e=>e.textContent==='Set up before you write'),'Home offers setting up before writing');
   for(const label of ['Kinds of post','Team library'])assert.ok(nodes().some(e=>e.className==='pick-card'&&descendants(e).some(d=>d.textContent===label)||e.textContent===label),label);
   await nodes().find(e=>e.textContent==='Edit or polish a draft').listeners.click();
   assert.equal(f.run('studio.screen'),'desk-start');
-  await f.run("sRoute('polish')");
-  assert.ok(nodes().some(e=>e.textContent==='Google Doc'));assert.ok(nodes().some(e=>e.textContent==='Upload a file'));
-  await nodes().find(e=>e.textContent==='Paste text').listeners.click();
-  for(const [id,value] of [['draft-title','Pasted draft'],['draft-content','Café draft.']]){field(id).value=value;field(id).listeners.input();}
-  await nodes().find(e=>e.textContent==='Google Doc').listeners.click();
-  await nodes().find(e=>e.textContent==='Paste text').listeners.click();
-  assert.equal(field('draft-content').value,'Café draft.');
-  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  const upload=requests.find(r=>r.url==='/api/upload').data;
-  assert.equal(upload.as_blog,true);assert.equal(upload.analyze,false);assert.equal(Buffer.from(upload.content,'base64').toString(),'Café draft.');
-  assert.equal(f.run('studio.screen'),'editor');assert.equal(requests.some(r=>r.url==='/api/editor-check'),false,'opening a manuscript does not start a model');
-  await f.run("sRoute('polish')");
-  await nodes().find(e=>e.textContent==='Upload a file').listeners.click();
-  field('draft-title').value='Uploaded draft';field('draft-title').listeners.input();
-  const file=nodes().find(e=>e.type==='file');file.files=[{name:'sample.txt',size:11,arrayBuffer:async()=>new TextEncoder().encode('Plain text.').buffer}];file.listeners.change();
-  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  const uploaded=requests.filter(r=>r.url==='/api/upload').at(-1).data;
-  assert.equal(uploaded.filename,'sample.txt');assert.equal(uploaded.analyze,false);assert.equal(Buffer.from(uploaded.content,'base64').toString(),'Plain text.');
-  await f.run("sRoute('polish')");await nodes().find(e=>e.textContent==='Paste text').listeners.click();
-  field('draft-content').value='# Café notes\n\nA new draft.';field('draft-content').listeners.input();
-  assert.equal(field('draft-title').required,false);
-  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.equal(requests.filter(r=>r.url==='/api/upload').at(-1).data.title,'Café notes','a pasted heading supplies the optional working title');
-}
-
-async function googleReopening(){
-  const manuscript={id:'existing',title:'Existing manuscript',content:'Keep these local edits.',expected:'v2',google:{url:'https://docs.google.com/document/d/fixture-doc/edit'},proposals:[],findings:[],checks:{},working:false};
-  const linked={status:'already-linked',id:manuscript.id,title:manuscript.title,linked_document:manuscript.google.url};
-  const preview={status:'preview',preview:'b'.repeat(32),expected:'v1',title:'Synthetic manuscript',linked_document:manuscript.google.url,content:'Original text.',summary:{structure:{paragraphs:1}}};
-  for(const entry of ['polish','google']){
-    for(const response of [linked,{...preview,summary:undefined},{...preview,summary:{}},{status:'unrecognized'},{status:'already-linked'}]){
-      const requests=[];let result=response;
-      const f=fixture((url,options)=>{requests.push({url,options});if(url==='/api/google-preview')return result;if(url.startsWith('/api/manuscript?'))return manuscript;return {items:[]};});
-      f.loadRunner();await f.run(`sRoute('${entry}')`);
-      const nodes=()=>descendants(f.get('studio-page'));
-      const input=nodes().find(e=>e.id===(entry==='polish'?'polish-url':'google-url'));input.value='fixture-doc';input.listeners.input();
-      const submit=()=>nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-      await submit();
-      if(response===linked){
-        assert.equal(f.run('studio.screen'),'editor',entry+' reopens an already linked Doc');
-        assert.equal(f.run('studio.editorDraft.content'),manuscript.content,'saved local edits are kept');
-        assert.ok(f.run('studio.intake')==null);assert.equal(f.run('studio.google'),null);
-      }else{
-        assert.equal(f.run('studio.screen'),entry,'invalid response stays at the entered link');
-        assert.equal(nodes().find(e=>e.id===input.id).value,'fixture-doc');
-        assert.ok(nodes().some(e=>e.className==='problem'&&e.textContent.includes('Read the document again')));
-        assert.equal(nodes().find(e=>e.type==='submit').disabled,false,'retry stays available');
-        result=linked;await submit();assert.equal(f.run('studio.screen'),'editor','retry reopens the existing manuscript');
-      }
-      assert.equal(requests.some(r=>r.options?.method==='POST'&&r.url!=='/api/google-preview'),false,'reopening does not reimport, start a model, or send feedback');
-      assert.equal(nodes().some(e=>e.textContent==='This view could not be read'),false);
-    }
-  }
-  // A link can become associated with a saved blog between preview and confirmation.
-  const raced=[];const f=fixture((url)=>{raced.push(url);if(url==='/api/google-preview')return preview;if(url==='/api/google-start')return linked;if(url.startsWith('/api/manuscript?'))return manuscript;return {items:[]};});f.loadRunner();
-  await f.run("sRoute('polish')");let nodes=()=>descendants(f.get('studio-page'));
-  const input=nodes().find(e=>e.id==='polish-url');input.value='fixture-doc';input.listeners.input();
-  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.equal(f.run('studio.screen'),'editor');assert.equal(f.run('studio.editorDraft.content'),manuscript.content);
-  assert.equal(raced.filter(url=>url==='/api/google-start').length,1);
-  // Navigating away while the new entry point reads a link must not reopen it later.
-  const pending=deferred(),late=fixture(()=>pending.promise);late.loadRunner();await late.run("sRoute('polish')");
-  const reading=descendants(late.get('studio-page')).find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  late.run("studio.turn++;studio.screen='blogs'");pending.resolve(linked);await reading;
-  assert.equal(late.run('studio.screen'),'blogs');assert.equal(late.run('studio.google'),undefined);
-}
-
-async function googleIntake(){
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'review',tone:'Clear',author:''};
-  const preview={status:'preview',preview:'b'.repeat(32),expected:'capture-version',title:'Synthetic Google draft',linked_document:'https://docs.google.com/document/d/fixture-doc/edit',content:'# Synthetic manuscript\n\n<script>not executable</script>',images_omitted:true,summary:{pending_suggestions:1,projection:'blog-studio/1',structure:{paragraphs:2,headings:1}}};
-  const manuscript={id:'imported',title:preview.title,content:'Synthetic text',expected:'v1',google:{url:preview.linked_document},proposals:[],findings:[],baseline:'Synthetic text',diff:[],checks:{},working:false};
-  const requests=[];
-  const f=fixture((url,options)=>{
-    requests.push({url,options});
-    if(url.startsWith('/api/manuscript?'))return manuscript;
-    if(url==='/api/google-preview')return preview;
-    if(url==='/api/google-start')return {id:'imported',status:'started-from-google',title:preview.title,linked_document:preview.linked_document};
-    if(url==='/api/run-options')return {settings:{defaults},brand:{default:{brand:'default-brand',variant:'default-variant'}},sources:[],profiles:[],agents:{codex:true}};
-    if(url.startsWith('/api/article?'))return {title:preview.title,view:{google:{url:preview.linked_document}},record:{}};
-    return {items:[],total:0};
-  });
-  f.loadRunner();
-  const find=id=>descendants(f.get('studio-page')).find(e=>e.id===id);
-  await f.run("sRoute('polish')");
-  assert.equal(f.get('title').textContent,'Polish a document');
-  find('polish-url').value=preview.linked_document;find('polish-url').listeners.input();
-  let form=f.get('studio-page').children.find(e=>e.tagName==='form');await form.listeners.submit({preventDefault(){}});
-  assert.equal(requests.filter(r=>r.url==='/api/google-preview').length,1);
-  assert.equal(requests.some(r=>r.url==='/api/google-start'),false);
-  form=f.get('studio-page').children.find(e=>e.tagName==='form');let nodes=descendants(form);
-  assert.equal(nodes.find(e=>e.type==='submit').disabled,false);
-  assert.equal(nodes.some(e=>e.tagName==='script'),false);
-  assert.ok(nodes.some(e=>e.textContent.includes('1 pending Google suggestions')));
-  assert.ok(nodes.some(e=>e.textContent.includes('Images are omitted from this preview.')));
-  assert.equal(nodes.some(e=>e.type==='checkbox'),false,'the preview is checked by reading it, not by a checkbox');
-  await form.listeners.submit({preventDefault(){}});
-  assert.equal(f.run('studio.screen'),'editor');
-  assert.equal(f.run('studio.editorDraft.id'),'imported');
-  assert.equal(f.run('studio.editorDraft.content'),'Synthetic text');
-  assert.equal(requests.some(r=>r.url==='/api/run-create'),false,'intake does not start an assistant');
-  assert.deepEqual(JSON.parse(requests.find(r=>r.url==='/api/google-start').options.body),{preview:preview.preview,expected:preview.expected,title:preview.title,confirmed:true});
-  assert.ok(descendants(f.get('actions')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
-  // Access failures keep the entered link, show an inline error, and permit retry.
-  const denied=fixture(()=>({__http:400,error:'Google sign-in is unavailable.'}));denied.loadRunner();
-  await denied.run('sGoogleButton().listeners.click()');denied.run("studio.google.url='fixture-doc'");
-  await denied.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.equal(denied.run('studio.google.url'),'fixture-doc');
-  assert.ok(descendants(denied.get('studio-page')).some(e=>e.textContent.includes('Google sign-in is unavailable.')));
-  assert.equal(descendants(denied.get('studio-page')).find(e=>e.type==='submit').disabled,false);
-  // A late preview response cannot replace the screen the person navigated to.
-  const pending=deferred(),late=fixture(()=>pending.promise);late.loadRunner();
-  await late.run('sGoogleButton().listeners.click()');late.run("studio.google.url='fixture-doc'");
-  const reading=late.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  late.run("studio.turn++;studio.screen='blogs'");pending.resolve(preview);await reading;
-  assert.equal(late.run('studio.screen'),'blogs');
-  // A repeated link opens its existing guided run without a new import.
-  const existing={id:'imported',title:preview.title,google:{url:preview.linked_document},status:'complete',complete:true,next:null,stages:[],brief:{goal:'Synthetic review',audience:'Authors'},decisions:[],engine:'codex',seconds:600,approval:'page',directory:'/synthetic/articles/imported'};
-  const reopened=[];const again=fixture((url)=>{reopened.push(url);if(url==='/api/google-preview')return {status:'already-linked',id:existing.id};if(url==='/api/runs')return {items:[existing]};if(url.startsWith('/api/run?'))return existing;if(url.startsWith('/api/manuscript?'))return manuscript;if(url==='/api/run-options')return {sources:[]};return {items:[]};});again.loadRunner();
-  await again.run('sGoogleButton().listeners.click()');again.run("studio.google.url='fixture-doc'");
-  await again.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.equal(again.run('studio.screen'),'editor');assert.equal(again.run('studio.id'),'imported');
-  assert.equal(reopened.includes('/api/google-start'),false);
-  assert.ok(descendants(again.get('actions')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
 }
 const empty=(total=0)=>({items:[],total});
 async function requestOrdering(){
@@ -4416,6 +4285,51 @@ async function deskGoogleDoc(){
   assert.ok(t.nodes().some(n=>/step-by-step run/.test(n.textContent)));
   await t.click('Open its run');
   assert.equal(t.f.run('studio.screen'),'run');assert.equal(t.f.run('studio.id'),'older-run');
+}
+// A Google Doc that is already a blog here reopens on the desk from the polishing start, with
+// nothing made again; an answer the page cannot read is said on the start, the link kept.
+async function deskStartReopensALinkedDoc(){
+  const url='https://docs.google.com/document/d/fixture-doc/edit';
+  const linked={status:'already-linked',id:'existing',title:'Existing blog',linked_document:url};
+  const preview={status:'preview',preview:'b'.repeat(32),expected:'v1',title:'Synthetic Doc',linked_document:url,content:'Original text.',summary:{structure:{paragraphs:1}}};
+  for(const response of [linked,{status:'already-linked'},{status:'unrecognized'},{...preview,summary:undefined},{...preview,summary:{}}]){
+    let result=response;
+    const t=deskStartFixture((asked)=>{
+      if(asked==='/api/google-preview')return result;
+      if(asked==='/api/desk?id=existing')return deskView({id:'existing',title:'Existing blog'});
+      if(asked.startsWith('/api/desk?'))return {__http:400,error:'This blog is not on the desk.'};
+      return null;
+    });
+    await t.f.run("sDeskBegin({have:'draft',source:'google'})");
+    t.type('desk-google',url);
+    await t.submit();
+    if(response!==linked){
+      assert.equal(t.f.run('studio.screen'),'desk-start','an unreadable answer stays on the start');
+      assert.ok(t.nodes().some(n=>n.className==='problem'&&n.textContent.includes('The Google Doc preview is incomplete')),'the preview check says what is wrong');
+      assert.equal(t.byId('desk-google').value,url,'the link is kept');
+      assert.equal(t.nodes().some(n=>n.textContent==='This view could not be read'),false);
+      result=linked;await t.submit();
+    }
+    assert.equal(t.f.run('studio.screen'),'desk','an already linked Doc reopens on the desk');assert.equal(t.f.run('studio.id'),'existing');
+    assert.equal(t.requests.some(r=>r.url==='/api/desk-create'),false,'nothing is made again');
+    assert.equal(t.requests.some(r=>['/api/google-start','/api/upload'].includes(r.url)),false,'nothing is imported again');
+  }
+}
+// The old Polish, paste and Google Doc intake addresses open the polishing start.
+async function oldIntakeAddressesOpenTheDeskStart(){
+  for(const [screen,source] of [['polish',undefined],['draft','paste'],['google','google']]){
+    const t=deskStartFixture();let address='';
+    t.f.set('history',{replaceState:(_,__,to)=>{address=to;},pushState:(_,__,to)=>{address=to;}});
+    t.f.set('location',{hash:'',pathname:'/',get search(){return address.slice(address.indexOf('?'));}});
+    t.f.run("studio.deskStart={have:'topic',title:'Left over'}");
+    await t.f.run(`studioNavigate('${screen}')`);
+    assert.equal(t.f.run('studio.screen'),'desk-start',screen+' opens the desk start');
+    assert.equal(t.f.run('location.search'),'?screen=desk-start',screen+' says the desk start in the address');
+    assert.equal(t.f.run('studio.deskStart.have'),'draft',screen+' opens the polishing screen');
+    assert.equal(t.f.run('studio.deskStart.title'),'',screen+' is a fresh start');
+    if(source)assert.equal(t.f.run('studio.deskStart.source'),source,screen+' brings the draft its way');
+    assert.equal(t.f.get('title').textContent,'Polish a draft');
+  }
 }
 // Mark as published on the desk says the draft is kept in the team library, and the toast
 // says whether it was.

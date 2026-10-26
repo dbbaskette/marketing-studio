@@ -92,7 +92,7 @@ function sCopyButton(content){return sButton('Copy Markdown',async()=>{if(typeof
 function sFrame(title,actions=[],above='',back=null){
   $('studio-toolbar').dataset.workflow='';
   $('title').textContent=title;$('title').title=title;$('above').textContent=above;$('above').hidden=!above;$('actions').replaceChildren(...actions.filter(Boolean));$('toolbar-lead').replaceChildren();if(back){const b=sButton('Back',back);b.setAttribute('aria-label','Back');b.replaceChildren(sIcon('back'));$('toolbar-lead').append(b);}
-  $('studio-page').hidden=false;$('editorial-screen').hidden=true;for(const node of document.querySelectorAll('.sidebar button'))node.removeAttribute('aria-current');const parent=['run','gate','editor','google','draft','polish','desk','desk-start'].includes(studio.screen)?'blogs':studio.screen==='setup'||studio.screen==='voices'?'settings':studio.screen;const nav=$('go-'+parent);if(nav)nav.setAttribute('aria-current','page');const needs=studio.listing.filter(sNeeds).length;$('needs-count').textContent=String(needs);$('needs-count').hidden=!needs;document.title=(needs?'('+needs+') ':'')+title+' · Blog Studio';
+  $('studio-page').hidden=false;$('editorial-screen').hidden=true;for(const node of document.querySelectorAll('.sidebar button'))node.removeAttribute('aria-current');const parent=['run','gate','editor','desk','desk-start'].includes(studio.screen)?'blogs':studio.screen==='setup'||studio.screen==='voices'?'settings':studio.screen;const nav=$('go-'+parent);if(nav)nav.setAttribute('aria-current','page');const needs=studio.listing.filter(sNeeds).length;$('needs-count').textContent=String(needs);$('needs-count').hidden=!needs;document.title=(needs?'('+needs+') ':'')+title+' · Blog Studio';
 }
 function sPage(...nodes){$('studio-page').replaceChildren(...nodes.filter(Boolean));}
 function sToast(message){const toast=sNode('p','toast glass',message);$('toasts').append(toast);setTimeout(()=>toast.remove(),5000);}
@@ -100,9 +100,11 @@ function sRoute(screen,id=null,stage=null,replace=false){const query=new URLSear
 async function studioNavigate(screen,id=null,stage=null){
   if(studio.screen==='desk'&&(screen!=='desk'||id!==studio.id)&&typeof sDeskShare==='function')sDeskShare(studio.desk);
   if(screen==='voices'&&studio.screen!=='voices')studio.kindsFrom=studio.screen;  // Kinds of post goes Back to where it was opened.
-  // The old new-blog wizard's address opens the desk start, as New blog does.
-  if(screen==='new'){history.replaceState(null,'',location.pathname+'?screen=desk-start');studio.deskStart=null;studio.deskPreset=null;screen='desk-start';}
-  if(!['home','blogs','guides','voices','status','settings','setup','google','draft','polish','run','gate','editor','editorial','desk','desk-start'].includes(screen))screen='home';if(screen==='editorial')return sLegacy(id||'board',false);const sameWork=studio.id===id&&['editor','run','gate'].includes(screen)&&['editor','run','gate'].includes(studio.screen);sTop();sCloseSheet();studio.screen=screen;studio.id=id;studio.stage=stage;studio.turn++;studio.signature='';const turn=studio.turn;if(!sameWork){sFrame(screen==='desk'?'Writing desk':screen==='desk-start'?'New blog':screen==='gate'?'Review':screen==='run'?'Writing run':screen==='setup'?'Set up Blog Studio':screen==='voices'?sVoicesTitle():screen==='guides'?'Voice guides':screen[0].toUpperCase()+screen.slice(1));sPage(sNode('p','studio-loading','Reading saved work…'));}else{for(const node of [...$('actions').querySelectorAll('button'),...$('studio-page').querySelectorAll('button')])node.disabled=true;}$('studio-page').setAttribute('aria-busy','true');
+  // The old new-blog wizard's address opens the desk start, as New blog does; the old Polish,
+  // paste and Google Doc intake addresses open its polishing screen, the draft brought that way.
+  const OLD_STARTS={new:null,polish:{have:'draft'},draft:{have:'draft',source:'paste'},google:{have:'draft',source:'google'}};
+  if(Object.hasOwn(OLD_STARTS,screen)){history.replaceState(null,'',location.pathname+'?screen=desk-start');studio.deskStart=null;studio.deskPreset=OLD_STARTS[screen];screen='desk-start';}
+  if(!['home','blogs','guides','voices','status','settings','setup','run','gate','editor','editorial','desk','desk-start'].includes(screen))screen='home';if(screen==='editorial')return sLegacy(id||'board',false);const sameWork=studio.id===id&&['editor','run','gate'].includes(screen)&&['editor','run','gate'].includes(studio.screen);sTop();sCloseSheet();studio.screen=screen;studio.id=id;studio.stage=stage;studio.turn++;studio.signature='';const turn=studio.turn;if(!sameWork){sFrame(screen==='desk'?'Writing desk':screen==='desk-start'?'New blog':screen==='gate'?'Review':screen==='run'?'Writing run':screen==='setup'?'Set up Blog Studio':screen==='voices'?sVoicesTitle():screen==='guides'?'Voice guides':screen[0].toUpperCase()+screen.slice(1));sPage(sNode('p','studio-loading','Reading saved work…'));}else{for(const node of [...$('actions').querySelectorAll('button'),...$('studio-page').querySelectorAll('button')])node.disabled=true;}$('studio-page').setAttribute('aria-busy','true');
   try{
     if(['home','blogs','status'].includes(screen)){await sReadList(turn);if(turn!==studio.turn)return;if(screen==='home')sHome();else if(screen==='blogs')sBlogs();else {const computer=await api('computer');if(turn!==studio.turn)return;studio.computer=computer;studio.brand=computer.brand;sStatusPage();}}
     else if(['settings','setup'].includes(screen)){const [team,settings,brand,options]=await Promise.all([api('team'),api('run-settings'),api('brand'),studio.options||api('run-options')]);if(turn===studio.turn){studio.team=team;studio.settings=settings;studio.brand=brand;studio.options=options;sSettings(screen==='setup');}}
@@ -111,9 +113,6 @@ async function studioNavigate(screen,id=null,stage=null){
     else if(screen==='editor'){await sEditor(id);}
     else if(screen==='desk'){await sDesk(id);}
     else if(screen==='desk-start'){await sDeskStart();}
-    else if(screen==='google'){sGooglePage();}
-    else if(screen==='draft'){sPolishIntake('paste');}
-    else if(screen==='polish'){sPolishIntake();}
     else if(screen==='run'||screen==='gate'){const found=await api('run?id='+encodeURIComponent(id));if(turn!==studio.turn)return;studio.found=found;if(found.on_desk&&!found.stages){await sRoute('desk',found.id,null,true);return;}if(found.on_desk){if(screen!=='run')await sRoute('run',found.id,null,true);else sRun(found);return;}if(sEditingRun(found)&&!found.complete){await sRoute('editor',found.id,null,true);return;}if(screen==='run'&&stage!=='status'&&sWritingReady(found)){await sRoute('gate',found.id,found.next,true);return;}if(screen==='gate')await sReadGate(stage||found.next);else sRun(found);}
     if(turn===studio.turn&&screen==='editor')$('title').focus({preventScroll:true});
   }catch(error){if(turn===studio.turn)sPage(sCard('This view could not be read',sNode('p','problem',error.message),sButton('Try again',()=>studioNavigate(screen,id,stage))));}
@@ -122,54 +121,9 @@ async function studioNavigate(screen,id=null,stage=null){
 async function sReadList(turn=studio.turn){const results=await Promise.all([api('runs'),api('board?limit=20'),api('run-options'),api('team')]);if(turn!==studio.turn)return false;studio.listing=results[0].items;studio.deleted=results[0].deleted||[];const guided=new Set(studio.listing.map(row=>row.id));studio.ordinary=results[1].items.filter(row=>!guided.has(row.id));studio.total=results[1].total;studio.options=results[2];studio.settings=results[2].settings;studio.brand=results[2].brand;studio.team=results[3];return true;}
 function sTop(){if(typeof window.scrollTo==='function')window.scrollTo({top:0,behavior:'instant'});}
 function sNewButton(kind='filled'){const b=sButton('New blog',()=>sDeskBegin(),kind);b.disabled=!access.actions.edit;return b;}
-function sGoogleButton(){
-  const button=sButton('Open Google Doc',()=>{studio.google={url:'',preview:null,confirmed:false};return sRoute('google');});
-  button.disabled=!access.actions.edit;return button;
-}
 function sGooglePreview(found){
   if(!found||found.status!=='preview'||typeof found.preview!=='string'||!found.preview||typeof found.expected!=='string'||!found.expected||typeof found.title!=='string'||typeof found.content!=='string'||typeof found.linked_document!=='string'||!found.summary||typeof found.summary!=='object'||!found.summary.structure||typeof found.summary.structure!=='object')throw new Error('The Google Doc preview is incomplete. Read the document again before importing.');
   return found;
-}
-async function sGoogleResult(held,result){
-  if(result?.status==='preview'){
-    sGooglePreview(result);held.preview=result;held.title=result.title;studio.google=held;studio.busy=false;return sRoute('google');
-  }
-  if(!['already-linked','started-from-google'].includes(result?.status)||typeof result.id!=='string'||!result.id)throw new Error('The Google Doc could not be opened. Read the document again.');
-  if(result.receipts||result.team_sync)savedNotice(result);
-  studio.google=null;if(held.fromPolish)studio.intake=null;studio.busy=false;
-  return sRoute('editor',result.id);
-}
-function sGooglePage(){
-  const held=studio.google||(studio.google={url:'',preview:null,confirmed:false}),found=held.preview;
-  if(found)sGooglePreview(found);
-  const form=sNode('form','narrow'),problem=sNode('p','problem');problem.setAttribute('role','alert');
-  sFrame('Polish a document',[],found?'Check the Google Doc preview':'Open your manuscript',()=>sRoute(held.fromPolish?'polish':'blogs'));
-  if(!found)form.append(sCard('Your manuscript',sNode('p','','Paste the link. Check the imported text, then polish the writing and choose what to send back.'),
-    sField('google-url','Google Doc link or document ID',held,'url',{required:true,max:2000,readOnly:!!found,hint:'Preview saves a private copy on this computer. It does not change the Doc, share it, or start an assistant.'}),
-    disclosure('Google access help',sNode('p','quiet','Google Cloud CLI must be installed and signed in with Drive access. If access is unavailable, your saved blogs stay intact; you can upload a downloaded manuscript instead.'))));
-  if(found){
-    const structure=found.summary.structure||{},labels={paragraphs:'Paragraphs',headings:'Headings',list_items:'List items',links:'Links',tables:'Tables',images:'Images',footnotes:'Footnotes'};
-    form.append(sCard('Check your document',link(found.linked_document,'Open original Google Doc ↗'),sNode('p','','Compare the text below with Google before opening it for editing.'),
-      found.images_omitted?sNode('p','quiet','Images are omitted from this preview. Check them in the original Google Doc; the saved manuscript and formatting history keep them.'):null,
-      found.summary.projection==='google-export'?sNode('p','problem','Google supplied the Markdown export because this document contains structure the built-in renderer cannot represent. Compare it with the original before confirming.'):null,
-      disclosure('Import details',sField('google-title','Working title',held,'title',{required:true,max:500}),sNode('p','quiet',Object.entries(labels).map(([key,label])=>label+': '+(structure[key]||0)).join(' · ')),sNode('p','quiet',(found.summary.pending_suggestions||0)+' pending Google suggestions. Pending suggestions stay in Google and are excluded from the imported manuscript.'),sNode('p','quiet','Import keeps the original Google Doc linked. The imported copy follows this workspace’s sharing settings.'))));
-    const paper=sNode('article','paper doc');paper.setAttribute('aria-label','Google manuscript preview');paper.append(window.TrainingStudioMarkdown.render(found.content));form.append(paper);
-  }
-  const submit=sNode('button','button button-filled',found?'Open for editing':'Read Google Doc');submit.type='submit';
-  submit.disabled=studio.busy||!access.actions.edit;
-  form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),submit,
-    found?sButton('Choose another document',()=>{if(held.fromPolish)return sRoute('polish');studio.google={url:'',preview:null,confirmed:false};sGooglePage();}):null)));
-  form.addEventListener('submit',async event=>{
-    event.preventDefault();if(studio.busy||!access.actions.edit)return;
-    studio.busy=true;submit.disabled=true;problem.textContent=found?'Importing the manuscript…':'Reading the selected Google Doc…';const turn=studio.turn;
-    try{
-      const result=found?await api('google-start',{preview:found.preview,expected:found.expected,title:held.title.trim(),confirmed:true}):await api('google-preview',{url:held.url.trim()});
-      if(turn!==studio.turn||studio.google!==held)return;
-      await sGoogleResult(held,result);
-    }catch(error){if(turn===studio.turn)problem.textContent=error.message+' Your link and saved blogs are kept.';}
-    finally{studio.busy=false;submit.disabled=!access.actions.edit;}
-  });
-  sPage(sWorkflowSteps(['Choose document','Check preview','Polish'],found?1:0,null),form);
 }
 // A finished blog that can go on the desk opens at its Done card, where Open on the desk is.
 function sReview(found){if(found.flow==='desk')return ()=>sRoute('desk',found.id);if(found.complete&&found.desk_open)return ()=>sRoute('run',found.id);if(['ideas','outline'].includes(found.mode)&&found.complete)return ()=>sRoute('gate',found.id,'outline');if(sEditingRun(found)||found.complete)return ()=>sRoute('editor',found.id);return ()=>found.next&&found.status==='waiting-for-approval'?sRoute('gate',found.id,found.next):sRoute('run',found.id);}
@@ -312,7 +266,7 @@ function renderRun(found){studio.screen='run';sRun(found);}
 function renderRuns(result){studio.listing=result.items;studio.screen='blogs';sBlogs();}
 function sLegacy(name,push=true){sTop();if(!['board','inbox','library','memory'].includes(name))name='board';if(push)history.pushState(null,'',location.pathname+'?'+new URLSearchParams({screen:'editorial',id:name}));sCloseSheet();studio.screen='editorial';studio.turn++;view=name;offset=0;sFrame({board:'All blogs',inbox:'Review findings',library:'Team library',memory:'Team memory'}[name],[],'',()=>sRoute('blogs'));$('studio-page').hidden=true;$('editorial-screen').hidden=false;$('editorial-screen').dataset.view=name;legacyToolbar();$('go-blogs').setAttribute('aria-current','page');return load().catch(error=>notice(error.message,true));}
 async function sPoll(){
-  if(studio.polling||studio.busy||studio.sheet||['google','draft','polish','settings','setup','editorial','voices','guides','desk','desk-start'].includes(studio.screen))return;studio.polling=true;const turn=studio.turn;
+  if(studio.polling||studio.busy||studio.sheet||['settings','setup','editorial','voices','guides','desk','desk-start'].includes(studio.screen))return;studio.polling=true;const turn=studio.turn;
   try{if(studio.screen==='editor'){
     if(!studio.editorWatching)return;
     const found=await api('run?id='+encodeURIComponent(studio.id));if(turn!==studio.turn)return;
@@ -355,41 +309,6 @@ function sStartTasks(){
   // Every new blog starts on the writing desk's start.
   const tasks=[['Write from a topic or my documents','Add files, links or Google Docs as sources, then give the point or get three angles. The outline and draft are written for you.',()=>sDeskBegin({have:'topic'})],['Work from my outline or notes','Write the draft from your outline, or shape an outline together first.',()=>sDeskBegin({have:'outline'})],['Edit or polish a draft','Paste, upload or bring a Google Doc. Check spelling and grammar, or get feedback. No kind of post needed.',()=>sDeskBegin({have:'draft'})]];
   for(const [title,description,action] of tasks){const button=sPickCard(title,description,action);button.disabled=!access.actions.edit;list.append(button);}return sCard('What would you like to do?',list);
-}
-function sPolishIntake(initial='google'){
-  const held=studio.intake||(studio.intake={source:initial,url:'',title:'',content:'',file:null,operation:operationId()}),form=sNode('form','narrow polish-intake'),problem=sNode('p','problem');problem.setAttribute('role','alert');
-  sFrame('Polish a document',[],'Choose your document',()=>sRoute('home'));
-  form.append(sChoice('Where is your document?',[['google','Google Doc'],['paste','Paste text'],['file','Upload a file']],held,'source',()=>sPolishIntake()));
-  let file;
-  if(held.source==='google')form.append(sField('polish-url','Google Doc link or document ID',held,'url',{required:true,max:2000,hint:'You’ll check the preview before opening the document for editing.'}));
-  else{
-    if(held.source==='paste')form.append(sField('draft-content','Paste your document',held,'content',{long:true,max:200000,required:true}));
-    else{
-      file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload a document');
-      const note=sNode('p','quiet',held.file?'Selected: '+held.file.name:'Text, Markdown, Word or PDF. Up to 10 MiB.');
-      file.addEventListener('change',()=>{held.file=file.files?.[0]||null;note.textContent=held.file?'Selected: '+held.file.name:'Choose a document.';if(held.file&&!held.title.trim()){held.title=held.file.name.replace(/\.[^.]+$/,'');const field=$('draft-title');if(field)field.value=held.title;}});
-      form.append(file,note);
-    }
-    form.append(disclosure('Name this draft (optional)',sField('draft-title','Working title',held,'title',{max:500,hint:'Leave blank to use the first line or file name.'})));
-  }
-  const go=sNode('button','button button-filled',held.source==='google'?'Read Google Doc':'Open for polishing');go.type='submit';go.disabled=!access.actions.edit;form.append(problem,go);
-  form.addEventListener('submit',async event=>{
-    event.preventDefault();if(!access.actions.edit)return;const turn=studio.turn,source=held.source;
-    if(held.source==='paste'&&!held.content.trim()){problem.textContent='Paste your document first.';return;}
-    if(held.source==='file'&&!held.file){problem.textContent='Choose a document to upload.';return;}
-    await busy(go,'Opening…',async()=>{try{
-      if(held.source==='google'){
-        const preview=await api('google-preview',{url:held.url.trim()});if(turn!==studio.turn||held.source!==source)return;
-        await sGoogleResult({url:held.url,preview:null,confirmed:false,fromPolish:true},preview);return;
-      }
-      const chosen=held.source==='file'?held.file:null;if(chosen&&chosen.size>10*1024*1024)throw new Error('Choose a file up to 10 MiB.');
-      const content=chosen?await encodeImportFile(chosen):btoa(Array.from(new TextEncoder().encode(held.content),v=>String.fromCharCode(v)).join(''));
-      const title=held.title.trim()||(chosen?chosen.name.replace(/\.[^.]+$/,''):held.content.split(/\r?\n/).find(line=>line.trim())?.replace(/^\s*#{1,6}\s+|\*\*/g,'').trim().slice(0,100))||'Untitled document';
-      const result=await api('upload',{operation:held.operation,filename:chosen?chosen.name:'draft.md',title,content,purpose:'manuscript',as_blog:true,analyze:false});
-      if(turn!==studio.turn||held.source!==source)return;studio.intake=null;await sRoute('editor',result.article.id,'prepare');
-    }catch(error){if(turn===studio.turn)problem.textContent=error.message+' Your document choices are kept here.';}});
-  });
-  sPage(sNode('p','lede','Proofread, copy edit and humanize your writing. No research.'),form);
 }
 
 // Editing follows the same path as the skill: polish, choose changes, finish.
@@ -496,11 +415,11 @@ async function sEditor(ident){
   const comments=found.proposals.filter(item=>item.kind==='comment'),edits=found.proposals.filter(item=>item.kind==='edit');
   const feedback=()=>sDownload({name:'blog-feedback.md',content:'# '+found.title+' — selected feedback\n\n'+found.proposals.map((item,index)=>'## '+(index+1)+'. '+(item.kind==='comment'?'Comment':'Suggested edit')+'\n\n'+item.before.replace(/^/gm,'> ')+'\n\n'+(item.kind==='edit'?'Suggested wording: '+(item.after||'(Remove this text)')+'\n\n':'')+item.reason).join('\n\n')});
   if(verified){
-    sPage(progress,sCard('Feedback sent',sStatus('done',delivery.message),link(found.google.url,'Open Google Doc ↗'),sNode('p','quiet','The author can review your feedback in Google Docs.'),sAdd(sNode('div','bar'),sButton('Polish another document',()=>{studio.intake=null;studio.google=null;return sDeskBegin({have:'draft'});},'filled'),sButton('Back to your blogs',()=>sRoute('blogs')))));
+    sPage(progress,sCard('Feedback sent',sStatus('done',delivery.message),link(found.google.url,'Open Google Doc ↗'),sNode('p','quiet','The author can review your feedback in Google Docs.'),sAdd(sNode('div','bar'),sButton('Polish another document',()=>sDeskBegin({have:'draft'}),'filled'),sButton('Back to your blogs',()=>sRoute('blogs')))));
     return;
   }
   if(delivery?.status==='local'&&!found.google){
-    sPage(progress,sCard('Your polished draft is saved',sStatus('done',delivery.message),sButton('Download polished document',download,'filled'),sCopyButton(found.content),comments.length?sButton('Download feedback',feedback):null,sAdd(sNode('div','bar'),sButton('Polish another document',()=>{studio.intake=null;studio.google=null;return sDeskBegin({have:'draft'});}),sButton('Back to your blogs',()=>sRoute('blogs')))),manuscript);
+    sPage(progress,sCard('Your polished draft is saved',sStatus('done',delivery.message),sButton('Download polished document',download,'filled'),sCopyButton(found.content),comments.length?sButton('Download feedback',feedback):null,sAdd(sNode('div','bar'),sButton('Polish another document',()=>sDeskBegin({have:'draft'})),sButton('Back to your blogs',()=>sRoute('blogs')))),manuscript);
     return;
   }
   const summary=sNode('div','finish-selection');
