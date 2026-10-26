@@ -980,9 +980,8 @@ class Engine(Jobs, Researching):
                 step = first(record)
                 if step is None:
                     return
-                if step.kind == 'gate' and not (step.name == 'gate:look' and record.get('look_again')) and review_policy.automatic(
-                        record, 'presentation', step.name,
-                        holding=self._holding(root, step.name)):
+                if step.kind == 'gate' and not (step.name == 'gate:look' and record.get('look_again')) and self._automatic(
+                        record, step.name, holding=self._holding(root, step.name)):
                     self._policy_gate(root, step)
                     continue
                 if step.kind == 'gate' and gate_state(record, step.name) == 'waiting':
@@ -1130,12 +1129,19 @@ class Engine(Jobs, Researching):
         blockers = [line for line in audit.get('messages') or () if str(line).endswith('(error)')]
         return review_policy.held(((last or {}).get('review') or {}).get('findings'), blockers)
 
+    @staticmethod
+    def _automatic(record: dict, gate: str, holding=()) -> bool:
+        """Whether the run's level accepts `gate` without the person, with every gate this
+        deck has, so a combined stop is held where the deck has a stop."""
+        return review_policy.automatic(record, 'presentation', gate, holding=holding,
+                                       run_gates=[step.name for step in stages.steps(record)])
+
     def _policy_gate(self, root: Path, step: stages.Step) -> None:
         """Continue under the saved policy, without claiming a person's approval."""
         with self.files:
             record = self._load(root)
-            if not review_policy.automatic(record, 'presentation', step.name,
-                                           holding=self._holding(root, step.name)):
+            if not self._automatic(record, step.name,
+                                   holding=self._holding(root, step.name)):
                 raise WorkspaceError('This step needs your review.')
             evidence = getattr(self, f"_show_{step.name.partition(':')[2].replace('-', '_')}")(root, record)
             if step.name == 'gate:look':
@@ -2267,7 +2273,7 @@ class Engine(Jobs, Researching):
                 record['look_again'] = {'name': picked.get('name') or picked.get('choice'),
                                         'choice': picked.get('choice')}
         else:
-            made = looks.choose_default(root, self._skill())
+            made = looks.choose_default(root, self._skill(), review_policy.level(record))
         return made is not None
 
     def _edit_outline(self, root: Path, record: dict, edited) -> None:
@@ -2754,8 +2760,8 @@ class Engine(Jobs, Researching):
         for row in rows:
             if row['name'] == 'research-plan' and (record.get('research') or {}).get('plan_from') == 'form':
                 row['label'] = FROM_FORM
-            if row['name'].startswith('gate:') and not (row['name'] == 'gate:look' and record.get('look_again')) and review_policy.automatic(
-                    record, 'presentation', row['name'],
+            if row['name'].startswith('gate:') and not (row['name'] == 'gate:look' and record.get('look_again')) and self._automatic(
+                    record, row['name'],
                     holding=self._holding(root, row['name']) if root else ()):
                 row['label'] = 'Continue the ' + WORDS[row['name']] + ' automatically'
             tried = attempts(record, row['name'])
@@ -3172,7 +3178,8 @@ class Engine(Jobs, Researching):
         only when every one of them reported its cost."""
         rows = [row for row in stages.timeline(record) if row['state'] not in ('done', 'later')]
         gates = review_policy.ahead(record, 'presentation',
-                                    [row['name'] for row in rows if row['name'].startswith('gate:')])
+                                    [row['name'] for row in rows if row['name'].startswith('gate:')],
+                                    run_gates=[step.name for step in stages.steps(record)])
         if record.get('look_again') and any(row['name'] == 'gate:look' for row in rows):
             gates = ['gate:look', *[name for name in gates if name != 'gate:look']]
         nxt = next((row for row in rows if gates and row['name'] == gates[0]), None)

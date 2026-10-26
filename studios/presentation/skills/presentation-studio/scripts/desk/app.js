@@ -2903,8 +2903,12 @@ function stopsFor(draft) {
   }
   if (looks) gates.push(['gate:look', 'the look']);
   gates.push(['gate:build', 'the deck']);
+  // Under Balanced a deck with no outline stop, such as a Redesign, has its direction
+  // review at the look.
+  const outlined = gates.some(([name]) => name === 'gate:outline');
   const stops = level === 'step_by_step' ? gates : level === 'balanced'
-    ? gates.filter(([name]) => ['gate:outline', 'gate:build'].includes(name))
+    ? gates.filter(([name]) => ['gate:outline', 'gate:build'].includes(name)
+      || (name === 'gate:look' && !outlined))
     : gates.filter(([name]) => name === 'gate:build');
   return REVIEW_WORDS[level] + ': it stops for ' + series(stops.map(([, words]) => words));
 }

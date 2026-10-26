@@ -231,13 +231,29 @@ class LooksTests(Case):
 
     def test_automatic_draft_takes_the_brands_default_and_says_why(self):
         look.draw_looks(self.root, self.run_, self.brand, 'local')
-        picked = look.choose_default(self.root, self.brand)
+        picked = look.choose_default(self.root, self.brand, 'automatic')
         self.assertEqual(picked['choice'], brand_stand_in.DEFAULT_LOOK)
         self.assertEqual(picked['words'],
                          "Automatic draft: the brand's default look, Clear, was used.")
         from studio_core import deck_flow
         self.assertEqual(picked['words'], deck_flow.DEFAULT_WORDS.format(name='Clear'))
         self.assertEqual(look.choose_default(self.root, self.brand), picked, 'chosen once')
+
+    def test_the_default_look_outside_automatic_says_no_look_was_picked(self):
+        from studio_core import deck_flow
+        look.draw_looks(self.root, self.run_, self.brand, 'local')
+        picked = look.choose_default(self.root, self.brand, 'balanced')
+        self.assertEqual(picked['words'], deck_flow.DEFAULT_KEPT.format(name='Clear'))
+
+    def test_a_look_the_policy_chose_is_not_said_in_the_person_s_words(self):
+        look.draw_looks(self.root, self.run_, self.brand, 'local')
+        picked = look.choose_default(self.root, self.brand, 'automatic')
+        self.assertEqual(picked['by'], 'review-policy')
+        look.approve(self.root, self.run_, by='review-policy')
+        approval = ' '.join(json.loads((self.root / 'outline.json').read_text())['approval'])
+        self.assertIn(f"Look chosen: Clear ({picked['choice']}). Recorded: "
+                      f"\"{picked['words']}\"", approval)
+        self.assertNotIn('In their words', approval)
 
     def test_a_brand_without_looks_still_gives_its_default_direction(self):
         # No samples were drawn here, but the brand wrote its deck direction record.

@@ -1687,6 +1687,18 @@ class ExistingTests(StudioCase):
         self.assertEqual(gate['pictures'][0], {'kind': 'original', 'ref': 1})
         self.assertTrue(self.engine.picture(root, 'original', 2).startswith(b'\x89PNG'))
 
+    def test_balanced_redesign_says_it_stops_for_the_look(self):
+        root = self.existing_deck('balanced', 'redesign')
+        ahead = self.view(root)['ahead']
+        self.assertEqual(ahead['next_gate'], 'gate:look')
+        from studio_core import review_policy
+        record = self.engine._load(root)
+        self.assertEqual(review_policy.ahead(record, 'presentation',
+                                             ['gate:look', 'gate:build'],
+                                             run_gates=[s.name for s in
+                                                        stages.steps(record)]),
+                         ['gate:look', 'gate:build'])
+
     def test_a_google_deck_while_google_is_not_reached_starts_nothing(self):
         self.slides.run.drive = False
         before = self.log()
