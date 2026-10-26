@@ -390,6 +390,7 @@ Each row is one test in `tests/test_workspace.py` or, where it names `check`, `t
 | 133 | A document added after the research | Update the research | The research request records refresh and the added names; research and everything made from it are out of date and made again under the run's level (row 128). Covered by `test_row_133_updating_the_research_reads_the_added_documents`. |
 | 134 | Review the finished materials, Balanced | Ask for changes to a learner guide | The first drafts approval stays; the guide and what is written from it are written again and come back to this review; a deck drawn again is accepted on its outline by the policy and stops at its own gate first. Covered by `test_row_134_a_final_change_keeps_the_first_drafts_approval`. |
 | 135 | A copy whose Doc Google cannot find | Make a new Google Doc | The old link is removed and a new Doc is made from the file as it stands; the copy is made. Covered by `test_row_135_a_missing_doc_is_made_again`. |
+| 136 | A conversation training brought in, its plan not started, documents in sources/ | Bring it in | Documents are marked all added with their count; research does not wait for them again. Covered by `test_row_136_a_brought_in_training_with_documents_does_not_wait_for_them`. |
 
 Shared setup readiness adds the independently verified transitions in
 [the suite setup matrix](../../../../../docs/shared-setup.md): no/partial settings

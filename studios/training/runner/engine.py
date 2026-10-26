@@ -5170,8 +5170,16 @@ class Engine(Reviewing):
         if session.get('research_contract'):
             record['research_contract'] = session['research_contract']
             record['schema'] = 3
-        if record['documents'] and planned != 'not-started':
-            record['documents'].update(done=home.now(), count=0)
+        # Documents the conversation added are all added: research does not wait for them
+        # again, whether or not its plan was started.
+        readable = [entry for entry in self.documents.listed(root) if entry.get('readable')] \
+            if record['documents'] else []
+        if record['documents'] and (planned != 'not-started' or readable):
+            record['documents'].update(done=home.now(), count=len(readable))
+            if readable:   # as That is all of them marks them
+                (root / pipeline.ADDED).parent.mkdir(parents=True, exist_ok=True)
+                (root / pipeline.ADDED).write_text(f"{record['documents']['done']}\n",
+                                                   encoding='utf-8')
         research = workspace.research_record(root)
         if planned == 'approved' and research and research.get('run'):
             record['research'] = {'run': research['run'],

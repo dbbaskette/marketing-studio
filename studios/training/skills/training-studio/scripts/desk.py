@@ -552,6 +552,11 @@ def gate(path: str, name: str) -> dict:
         'approved': ({'at': approved.get('at'), 'by': approved.get('by', 'chat')}
                      if state[name] == 'approved' else None),
         'decisions': offers, 'first': first,
+        # Why a stage that can be left out is not offered so: Yoodli uses the brief and the
+        # practice scenarios.
+        **({'held_by': 'yoodli'} if spec['stage'] in ('brief', 'scenario') and 'skip' not in
+           offers and 'yoodli' in session['settings']['stages']
+           and state[name] not in ('skipped', 'unavailable') else {}),
     }
 
 

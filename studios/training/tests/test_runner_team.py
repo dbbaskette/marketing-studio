@@ -1029,6 +1029,39 @@ class BringTests(Team):
                          'the run carried on from the gate that was waiting')
         self.assertEqual(tree(chat), before)
 
+    def test_bring_in_leaves_the_folder_s_own_history_behind(self):
+        chat = self.chat()
+        self.git('init', '--quiet', str(chat), repo=self.base)
+        self.assertTrue((chat / '.git').is_dir())
+        self.ask(self.alex, 'adopt', {'path': str(chat)})
+        root = self.alex.space.training('started-in-a-chat')
+        self.assertTrue((root / 'intake.md').is_file())
+        self.assertFalse((root / '.git').exists(), 'its own Git history stays where it is')
+        self.assertTrue((chat / '.git').is_dir(), 'the original is left as it was')
+        other = self.chat('nested-history', 'Nested history')
+        (other / 'sub' / '.git').mkdir(parents=True)
+        self.assertIn('sub holds a repository of its own',
+                      self.ask(self.alex, 'adopt', {'path': str(other)}, 409)['error'])
+
+    def test_row_136_a_brought_in_training_with_documents_does_not_wait_for_them(self):
+        root = self.base / 'from-documents'
+        root.mkdir()
+        workspace.init(root, 'From documents')
+        workspace.write_atomic(root / 'intake.md', pipeline.intake_text(pipeline.check_form(
+            {**FORM, 'title': 'From documents', 'source_scope': 'supplied-only'})).encode())
+        workspace.save(root, 'intake', built=True)
+        workspace.approve(root, 'intake')
+        kept = self.alex.engine.documents   # the stand-in keeps its list by folder
+        kept.add(root, 'handbook.txt', b'Capacity holds only when more than one '
+                 b'instance is running.\n')
+        copy = self.alex.space.training('from-documents')
+        kept.kept[str(copy)] = kept.kept[str(root)]   # the list comes with the folder
+        home.remember(root, 'From documents', [])
+        self.ask(self.alex, 'adopt', {'path': str(root)})
+        view = self.seen(self.alex, copy)
+        self.assertNotEqual(((view.get('documents') or {}).get('waiting'), view['state']),
+                            (True, 'waiting'), view['sentence'])
+
     def test_what_cannot_be_brought_in_is_refused_in_a_sentence(self):
         chat = self.chat()
         root = self.started()

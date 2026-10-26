@@ -1474,7 +1474,7 @@ function drawSheet() {
   const shown = view.after || (view.sheet && (view.gate || view.deciding || outlined()
     || TEAM_SHEETS.includes(view.sheet)
     || ['delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
-      'update-research'].includes(view.sheet)
+      'update-research', 'stop-run'].includes(view.sheet)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
@@ -1495,6 +1495,7 @@ function drawSheet() {
   else if (view.sheet === 'brand') body = brandSheet();
   else if (view.sheet === 'copy-choice') body = copyChoiceSheet();
   else if (view.sheet === 'update-research') body = updateResearchSheet();
+  else if (view.sheet === 'stop-run') body = stopSheet();
   else if (view.sheet === 'approve-combined') body = combinedConfirm();
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
@@ -2518,6 +2519,10 @@ function gateActions(found) {
   if (offers.includes('rebuild') && lead !== 'rebuild') rest.push(item('Rebuild it', 'rebuild'));
   if (offers.includes('accept')) rest.push(item('Accept as it is', 'accept'));
   if (offers.includes('skip')) rest.push(item('Skip this stage', 'skip'));
+  if (found.held_by === 'yoodli') {
+    rest.push(make('p', 'menu-note quiet', 'The brief and the practice scenarios cannot be '
+      + 'skipped while Make scenarios for Yoodli is on: Yoodli uses both.'));
+  }
   if (rest.length) {
     const more = make('details', 'menu');
     const opener = make('summary', 'button button-round shine');
@@ -4715,8 +4720,7 @@ function startStep(draft) {
     first, looks, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
   reviewLevelCard(draft, then),
   add(card('Sources'), researchFields(draft, tell),
-    field('research-questions', 'What should the research answer? (optional)', draft,
-      'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' })),
+    questionsField(draft)),
   trainingOptions('Assistant and limits', 'training-assistant',
     ...agentFields(draft, 'new', 'For this training', told), drafted,
     make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
@@ -4767,6 +4771,29 @@ function drawNew(fresh) {
   }
 }
 
+// The research questions, checked as they are typed against what the runner takes.
+const QUESTIONS_MOST = 8;
+const QUESTION_LONGEST = 300;
+
+function questionsProblem(text) {
+  const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean);
+  if (lines.length > QUESTIONS_MOST) return 'Ask research at most 8 questions.';
+  if (lines.some((line) => line.split(/\s+/).join(' ').length > QUESTION_LONGEST)) {
+    return 'Keep each research question to 300 characters.';
+  }
+  return '';
+}
+
+function questionsField(draft) {
+  const node = field('research-questions', 'What should the research answer? (optional)',
+    draft, 'researchQuestions', { long: true, rows: 4,
+      hint: 'One question a line, at most 8, each up to 300 characters.' });
+  const box = node.querySelector('textarea');
+  if (box) box.addEventListener('input', () => refuse('research-questions',
+    questionsProblem(draft.researchQuestions)));
+  return node;
+}
+
 function nextStep() {
   const draft = view.draft;
   draft.start_problem = '';
@@ -4805,6 +4832,12 @@ async function startTraining(pressed) {
   if (nowhere) {
     say(problem, nowhere);
     focusKey(draft.research.sites ? 'research sites' : 'research web');
+    return;
+  }
+  const asked = questionsProblem(draft.researchQuestions);
+  if (asked) {
+    say(problem, asked);
+    refuse('research-questions', asked).focus();
     return;
   }
   const deck = DECKS[settleDeck(draft).deck][0];
@@ -5541,6 +5574,19 @@ function documentItem(found, waiting, later = false) {
   return add(item, remove);
 }
 
+// Stop, asked first: what is lost, and that Pause lets the step finish.
+function stopSheet() {
+  const run = view.run || {};
+  const step = list(run.steps).find((one) => one.status === 'working');
+  const go = capsule('Stop it', 'filled', () => {
+    closeSheet();
+    steer('stop', go);
+  }, 'confirm-stop');
+  return [sheetTitle('Stop ' + (step ? '“' + step.label + '”' : 'the training') + '?'),
+    make('p', '', 'Its work so far is lost. Pause lets it finish first.'),
+    add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
+}
+
 // Reading the documents added since the research: priced before it is asked for.
 function updateResearchSheet() {
   const held = (view.run && view.run.documents) || {};
@@ -5920,7 +5966,10 @@ function runActions(run, waiting, lead) {
   };
   const offered = run.problem && run.problem.action;
   if (run.state === 'working') press('Pause', '', 'pause');
-  if (['working', 'waiting', 'paused'].includes(run.state)) press('Stop', 'quiet', 'stop');
+  // Stop asks first: the step in hand loses its work.
+  if (['working', 'waiting', 'paused'].includes(run.state)) {
+    actions.push(capsule('Stop', 'quiet', openSheet('stop-run', 'stop'), 'stop'));
+  }
   if (['paused', 'stopped'].includes(run.state) && offered !== 'resume') {
     press('Resume', lead === 'resume' ? 'filled' : '', 'resume');
   }
@@ -7279,7 +7328,8 @@ function teamAsks(kind, title) {
     says: [make('p', '', 'It is copied into your workspace as a new training. Training '
       + 'Studio carries the copy on from wherever the training has got to, with each '
       + 'decision made on this page.'),
-    make('p', '', 'The original folder is left exactly as it was, with nothing deleted.'),
+    make('p', '', 'The original folder is left exactly as it was, with nothing deleted. '
+      + 'Its own Git history stays where it is.'),
     make('p', '', 'From then on the copy is the one to work on, and this page takes you '
       + 'to it.')] };
 }

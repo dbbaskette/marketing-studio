@@ -1927,6 +1927,27 @@ class PageScriptTests(ScriptedPage, PageCase):
     left a control without a name, or put a click on something that is not a control fails.
     """
 
+    def test_a_gate_says_why_it_cannot_be_skipped_while_yoodli_is_on(self):
+        self.research()
+        for name, file in (('blueprint', 'blueprint.md'), ('document', 'document.md'),
+                           ('brief', 'product-brief.md')):
+            self.make(name, file, test_cli.example(file))
+        session = workspace.load(self.root)
+        session['artifacts']['brief'].pop('approved', None)
+        workspace.store(self.root, session)
+        self.cli('checkpoint', '--approval', 'page', '--gate', 'brief', '--stage', 'brief',
+                 '--question', 'Ready?')
+        gate = self.read('gate', path=str(self.root), artifact='brief')
+        self.assertEqual(gate['body']['held_by'], 'yoodli')
+        self.assertNotIn('skip', gate['body']['decisions'])
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')], 'GET /api/gate': [gate]}
+        result = self.run_page(answers, [{'click': 'Review the brief'}, {'click': 'More'},
+                                         {'snapshot': 'menu'}])
+        self.assertIn('The brief and the practice scenarios cannot be skipped while Make '
+                      'scenarios for Yoodli is on: Yoodli uses both.',
+                      result['snapshots']['menu']['text'])
+
     def test_every_deliverable_can_be_downloaded(self):
         self.research()
         self.complete()
@@ -2978,6 +2999,26 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                 self.assertFalse([link for link in result['snapshots']['ready']['links']
                                   if link['href'].startswith('/onboarding/')],
                                  'nothing on the form leaves it')
+                self.assertEqual(self.posts(result), [])
+
+    def test_research_questions_are_checked_before_start(self):
+        for lines, said in ((['Why?'] * 9, 'Ask research at most 8 questions.'),
+                            (['x' * 301], 'Keep each research question to 300 characters.')):
+            with self.subTest(said=said):
+                result = self.run_page(self.answers(), [
+                    {'click': 'New training'},
+                    {'fill': 'A short title', 'value': 'Restart practice'},
+                    {'fill': 'What should it teach?', 'value': 'Choose a safe restart.'},
+                    {'fill': 'Who is it for?', 'value': 'New operators'},
+                    {'click': 'Continue'}, {'click': 'Learner guide'}, {'click': 'Continue'},
+                    {'fill': 'What should the research answer? (optional)',
+                     'value': '\n'.join(lines)}, {'snapshot': 'typed'},
+                    {'click': 'Start the training'}, {'snapshot': 'refused'}])
+                shots = result['snapshots']
+                self.assertIn(said, shots['typed']['text'])
+                self.assertIn(said, shots['refused']['text'])
+                self.assertIn('One question a line, at most 8, each up to 300 characters.',
+                              shots['typed']['text'])
                 self.assertEqual(self.posts(result), [])
 
     def test_where_this_training_stops_is_on_the_form(self):
@@ -4813,13 +4854,20 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Open Rolling restarts'},
             {'click': 'Pause'}, {'snapshot': 'paused'},
             {'click': 'Resume'}, {'snapshot': 'resumed'},
-            {'click': 'Stop'}, {'snapshot': 'refused'},
-            {'click': 'Stop'}, {'snapshot': 'stopped'},
+            {'click': 'Stop'}, {'snapshot': 'asked'}, {'click': 'Cancel'},
+            {'snapshot': 'kept'},
+            {'click': 'Stop'}, {'click': 'Stop it'}, {'snapshot': 'refused'},
+            {'click': 'Stop'}, {'click': 'Stop it'}, {'snapshot': 'stopped'},
         ])
         shots = result['snapshots']
         self.assertEqual(self.posts(result), [
             ('/api/run', {'path': str(self.root), 'action': action})
             for action in ('pause', 'resume', 'stop', 'stop')])
+        # Stop asks first: its work so far is lost, and nothing is sent until Stop it.
+        self.assertIn('Its work so far is lost. Pause lets it finish first.',
+                      shots['asked']['sheet'])
+        self.assertTrue(shots['asked']['sheet'].startswith('Stop '), shots['asked']['sheet'])
+        self.assertEqual(shots['kept']['sheet'], '')
         paused_shot = shots['paused']
         # The control that was pressed is gone; the focus is on the one that undoes it.
         self.assertEqual((paused_shot['filled'], paused_shot['focus']), (['Resume'], 'Resume'))
@@ -4839,8 +4887,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('It stops and asks you at', paused_shot['text'])
         self.assertIn('Carrying on.', shots['resumed']['toasts'])
         self.assertIn('Pause', shots['resumed']['buttons'])
-        self.assertEqual((shots['resumed']['focus'], shots['refused']['focus']),
-                         ('Pause', 'Stop'))
+        self.assertEqual(shots['resumed']['focus'], 'Pause')
         # What was refused is said where it happened, and nothing has changed.
         self.assertIn('It is in the middle of saving a step. Nothing was changed.',
                       shots['refused']['text'])
@@ -7787,6 +7834,7 @@ class TeamScreenTests(ScriptedPage, PageCase):
         for shown in ('Run Rolling restarts from here?',
                       'It is copied into your workspace as a new training.',
                       'The original folder is left exactly as it was, with nothing deleted.',
+                      'Its own Git history stays where it is.',
                       'From then on the copy is the one to work on, and this page takes you '
                       'to it.'):
             self.assertIn(shown, asked['sheet'])
