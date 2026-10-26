@@ -643,11 +643,19 @@ async function saveUpload(submit){
     await busy(submit,analyzing?'Uploading, then summarizing and tagging…':'Uploading…',async()=>{
       const file=$('upload-file').files[0];
       if(!file||file.size>10*1024*1024)throw new Error('Choose a file of at most 10 MiB.');
-      const payload={filename:file.name,content:await encodeImportFile(file),title:$('upload-title').value,author:$('upload-author').value,purpose:$('upload-purpose').value||'reference',as_blog:$('upload-blog').checked,...analysisChoice('upload')};
+      const payload={filename:file.name,content:await encodeImportFile(file),title:$('upload-title').value,author:$('upload-author').value,purpose:$('upload-purpose').value||'reference',...analysisChoice('upload')};
       const result=await api('upload',{...payload,operation:operationFor('upload',payload)});
       $('upload-dialog').close();await load();savedNotice(result);
+      // Then edit it on the desk: the polishing screen opens with the file as the draft.
+      if($('upload-blog').checked)await deskFromUpload(result,payload.title||file.name.replace(/\.[^.]+$/,''));
     });
   }catch(error){notice(error.message,true);}
+}
+async function deskFromUpload(result,title){
+  const source=result?.source;
+  if(!source?.id||source.status!=='ready'||!result.chars){notice('The file is kept in the library, but its text could not be read, so it cannot be edited on the desk.',true);return;}
+  let shown=null;try{shown=await api('source?'+new URLSearchParams({id:source.id,location:'local'}));}catch(_){shown=null;}
+  await sDeskBegin({have:'draft',source:'upload',uploaded:{id:source.id,name:source.name||title,text:shown?.excerpt||'',truncated:!!shown?.truncated},title});
 }
 async function saveMemory(submit){
   submit.disabled=true;

@@ -45,8 +45,8 @@ function deskTextOf(view,part){if(part==='title'||part==='opening')return view[p
 // A draft to polish or review is one screen instead (sDeskPolish), with no kind of post.
 const DESK_HAVE=[['topic','A topic'],['outline','An outline or notes'],['draft','A draft']];
 const DESK_OUTLINE_WAYS=[['outline','Write from my outline'],['shape','Shape an outline with me first']];
-const DESK_START_STEPS=['Kind of post','Sources and settings','What you have'];
-const DESK_START_LEDES=['Choose the kind of post. It sets the usual shape and length.','Add sources if you have them. They stay with this blog unless you keep them in the team library.','Say what you bring, then start. Nothing stops for you on the way.'];
+const DESK_START_STEPS=['What are you writing?','What do you have?','Sources and settings'];
+const DESK_START_LEDES=['Choose the kind of post. It sets the usual shape and length.','Say what you bring: a topic, or an outline or notes. A draft has its own screen.','Add sources if you have them, then start. Nothing stops for you on the way.'];
 // Settings' research for new blogs is where the start's ticks begin: Search my sites when it
 // ticks your sites and the shared list has any, Search the web too when it ticks the public
 // web. Your documents are always read. The person can change both for this blog.
@@ -65,7 +65,7 @@ async function sDeskStart(){
   if(held.have==='draft')return sDeskPolish(held);
   sFrame('New blog',[],'New writing',()=>sRoute('home'));
   const steps=sWorkflowSteps(DESK_START_STEPS,held.step,index=>{if(index&&held.kind===null)return notice('Choose a kind of post first, or Something else.',true);held.step=index;sTop();sDeskStart();});
-  sPage(sNode('p','lede',DESK_START_LEDES[held.step]),steps,held.step===0?sDeskKinds(held):held.step===1?sDeskSettings(held):sDeskHave(held));
+  sPage(sNode('p','lede',DESK_START_LEDES[held.step]),steps,held.step===0?sDeskKinds(held):held.step===1?sDeskHave(held):sDeskSettings(held));
 }
 function sDeskStartAgain(held){if(studio.screen==='desk-start'&&studio.deskStart===held)sDeskStart();}
 function sDeskWriting(held){return held.have!=='draft';}
@@ -78,30 +78,32 @@ function sDeskKinds(held){
   return sCard('What are you writing?',list);
 }
 
-// 2. Sources and settings, for every way of working; research and length for new writing.
+// 2. What do you have? A topic, or an outline or notes; A draft switches to its one screen.
+function sDeskHave(held){
+  const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
+  const parts=[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
+  parts.push(...(held.have==='topic'?sDeskTopic(held):[sDeskOutlineIn(held)]));
+  const go=sNode('button','button button-filled','Continue');go.type='submit';go.disabled=!access.actions.edit;
+  form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
+  form.addEventListener('submit',event=>{event.preventDefault();if(studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}held.step=2;sTop();sDeskStart();});
+  return form;
+}
+
+// 3. Sources and settings, with research and Length for the new writing brought; then Start.
 function sDeskSettings(held){
   // A refused role change is said here after the card is drawn again.
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
   const again=()=>sDeskStartAgain(held);
-  const go=sNode('button','button button-filled','Continue');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
+  const go=sNode('button','button button-filled','Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
   form.append(sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}));
   if(sDeskWriting(held))form.append(sCard('Research before the writing',sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>again()),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'),sNode('p','quiet','Ticked as in Settings, for this blog only. It runs before the outline, with no stop for you.')));
   form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(held,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
   form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
-  form.addEventListener('submit',event=>{event.preventDefault();if(studio.busy)return;if(sDeskWriting(held)&&held.searchSites&&!sChosenSites(held.from).length){problem.textContent=sResearchWord('no_sites')||'Choose at least one of your sites, or untick Search my sites.';return;}held.step=2;sTop();sDeskStart();});
-  return form;
-}
-
-// 3. What do you have? Then Start.
-function sDeskHave(held){
-  const form=sNode('form','narrow desk-start'),problem=sNode('p','problem');problem.setAttribute('role','alert');
-  const parts=[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
-  // A draft chosen here switches to the one polishing screen.
-  parts.push(...(held.have==='topic'?sDeskTopic(held):[sDeskOutlineIn(held)]));
-  const go=sNode('button','button button-filled','Start');go.type='submit';go.disabled=!access.actions.edit;
-  form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
   form.addEventListener('submit',async event=>{
-    event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
+    event.preventDefault();if(!access.actions.edit||studio.busy)return;
+    if(sDeskWriting(held)&&held.searchSites&&!sChosenSites(held.from).length){problem.textContent=sResearchWord('no_sites')||'Choose at least one of your sites, or untick Search my sites.';return;}
+    // What you have is said on its own step.
+    const said=sDeskHaveProblem(held);if(said){held.problem=said;held.step=1;sTop();sDeskStart();return;}
     await busy(go,'Starting…',async()=>{try{await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
   });
   return form;
@@ -125,7 +127,7 @@ function sDeskPolish(held){
   const facts=fold('Check facts against your sources (optional)',held.factsOpen??held.files.length>0,open=>{held.factsOpen=open;},sNode('p','quiet','Finishing’s fact check reads these. They stay with this blog unless you keep them in the team library.'),...[...sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}).children].slice(1));
   const instead=sButton('Writing something new? Start from a topic or an outline',()=>{held.have='topic';if(held.kind===null)held.step=0;else{held.style=held.kind;sStyleSamples(held);}sTop();sDeskStart();});instead.className+=' desk-instead';
   const linked=held.linkedRun;delete held.linkedRun;const run=linked?sButton('Open its run',()=>sRoute('run',linked)):null;
-  sAdd(form,...sDeskDraftIn(held),first,tone,facts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),held.source==='saved'?null:instead);
+  sAdd(form,...sDeskDraftIn(held),first,tone,facts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),['saved','upload'].includes(held.source)?null:instead);
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
     await busy(go,reading?'Reading…':'Starting…',async()=>{try{if(reading)await sDeskReadGoogle(held);else await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
@@ -197,9 +199,12 @@ function sDeskOutlineIn(held){
 // details also offers that blog's own draft, brought as it is.
 function sDeskDraftIn(held){
   const saved=held.article?sCheck('desk-saved','Use this blog’s saved draft',{on:held.source==='saved'},'on','It comes to the desk as it is, in the same blog. Its history is kept.',on=>{held.source=on?'saved':'paste';held.preview=null;sDeskStart();}):null;
-  const card=sCard('Your draft',saved,held.source==='saved'?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
+  const uploaded=held.uploaded?sCheck('desk-uploaded','Use the file you uploaded',{on:held.source==='upload'},'on','“'+held.uploaded.name+'” comes to the desk as it is. It stays in the team library too.',on=>{held.source=on?'upload':'paste';held.preview=null;sDeskStart();}):null;
+  const kept=['saved','upload'].includes(held.source);
+  const card=sCard('Your draft',saved,uploaded,kept?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
   if(held.source==='saved'){/* The blog's own draft: nothing to paste or read. */}
-  else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Each ## heading starts a section.'}));
+  else if(held.source==='upload'){if(held.uploaded.text){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','The uploaded file’s text');paper.append(window.TrainingStudioMarkdown?window.TrainingStudioMarkdown.render(held.uploaded.text):sNode('p','',held.uploaded.text));card.append(sNode('p','quiet',held.uploaded.truncated?'Its text as it was read, the first part shown:':'Its text as it was read:'),paper);}}
+  else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:200000,required:true,hint:'Up to 200,000 characters. Each ## heading starts a section.'}));
   else if(held.source==='file'){
     const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload a draft');
     const note=sNode('p','quiet field-hint',held.file?'Selected: '+held.file.name:'Text, Markdown, Word or PDF.');
@@ -232,6 +237,7 @@ async function sDeskGo(held){
   if(held.have==='draft'){
     const settings={...common,first_pass:held.first_pass};
     if(held.source==='saved')made=await api('desk-create',{...settings,article:held.article});
+    else if(held.source==='upload')made=await api('desk-create',{...settings,source:held.uploaded.id});
     else if(held.source==='paste')made=await api('desk-create',{...settings,manuscript:held.manuscript});
     else if(held.source==='file'){
       if(held.file.size>10*1024*1024)throw new Error('Choose a file up to 10 MiB.');
@@ -416,7 +422,7 @@ function sDeskProblem(held){
   const chain=held.view.chain;
   if(last.chain&&chain){if(chain.working||!chain.problems.length)return null;return sAdd(sNode('div','decision-notice desk-problem'),sAdd(sNode('div',''),sNode('p','',chain.total===1&&chain.problems[0].part==='opening'?'Your note was not applied:':'Revised '+chain.revised+' of '+chain.total+' sections for your note. These were not:'),sAdd(sNode('ul','gap-items'),...chain.problems.map(problem=>sNode('li','',(problem.part==='opening'?'The opening':'“'+problem.heading+'”')+': '+problem.error)))),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));}
   const failed=last.status==='failed'||last.status==='ready'&&last.applied===false;if(!failed||!last.error)return null;
-  const tool=DESK_TOOLS.find(([key])=>'finish-'+key===last.kind);
+  const tool=/^finish-/.test(last.kind||'')?deskTool(last.kind.slice(7)):null;
   return sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',(tool?tool[1]+' did not finish: ':last.status==='failed'?'The last change could not finish: ':'The last change was not applied: ')+last.error),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));
 }
 function sDeskWhole(held){
@@ -666,6 +672,8 @@ const DESK_TOOLS=[
   ['feedback','Feedback without a rewrite','Comments on shape, argument, audience and claims. Nothing in the text changes.'],
   ['publish','Before publishing','The pre-publish check, Repurpose, and Send to Google Doc as suggestions.'],
 ];
+// [key, label, what it does] for one Finishing tool.
+function deskTool(key){return DESK_TOOLS.find(([name])=>name===key);}
 const DESK_LEVELS=[['light','Light'],['medium','Medium'],['strong','Strong']];
 const DESK_RUN={humanize:['Find sentences','Finding sentences that read as machine-written…'],facts:['Check facts','Checking each claim against your sources…'],headline:['Suggest alternatives','Suggesting headlines and openings…'],feedback:['Get feedback','Reading the draft for feedback…'],voice:['Apply the voice','Rewriting the draft in the voice guide, section by section…']};
 const DESK_VERDICTS={supported:'Supported','not-in-sources':'Not in your sources',contradicted:'Contradicted'};
@@ -682,7 +690,7 @@ async function sDeskGuides(held){
   if(f.tool==='voice')sDeskPanelSync(held,true);
 }
 function sDeskPanel(held){
-  const f=held.finish,tool=DESK_TOOLS.find(([key])=>key===f.tool);
+  const f=held.finish,tool=deskTool(f.tool);
   const panel=sNode('aside','desk-finish'+(sNarrow()?' desk-finish-sheet':''));panel.setAttribute('aria-label','Finishing');
   const head=sNode('div','desk-finish-head glass');
   if(tool)head.append(sButton('All tools',()=>{f.tool=null;sDeskPanelShow(held);}));
@@ -718,7 +726,7 @@ function sDeskToolView(held,key){
   if(key==='proofread')return sDeskProofView(held);
   if(key==='publish')return sDeskPublishView(held);
   const view=held.view,f=held.finish,kind='finish-'+key,set=(view.finishing||{})[key],working=view.working,[label,doing]=DESK_RUN[key];
-  const parts=[sNode('p','quiet',DESK_TOOLS.find(([name])=>name===key)[2])];
+  const parts=[sNode('p','quiet',deskTool(key)[2])];
   if(key==='humanize')parts.push(sChoice('Intensity',DESK_LEVELS,f,'level'));
   if(key==='voice'){
     if(!f.guides)parts.push(sNode('p','quiet','Reading your voice guides…'));
@@ -873,7 +881,7 @@ async function sDeskProofread(held,button){
 function sDeskProofView(held){
   const f=held.finish,found=f.proof;
   const again=sButton(found?'Check again':'Check now',button=>sDeskProofread(held,button),'filled');
-  const parts=[sNode('p','quiet',DESK_TOOLS[1][2]+' Fix rewrites only the sentence a finding is in, and keeps the earlier text in History.'),sAdd(sNode('div','bar'),again)];
+  const parts=[sNode('p','quiet',deskTool('proofread')[2]+' Fix rewrites only the sentence a finding is in, and keeps the earlier text in History.'),sAdd(sNode('div','bar'),again)];
   if(f.proofProblem)parts.push(sNode('p','problem',f.proofProblem));
   if(!found)return parts;
   if(found.revision!==held.view.revision)parts.push(sNode('p','quiet','The draft changed since this check. Check again for the latest.'));

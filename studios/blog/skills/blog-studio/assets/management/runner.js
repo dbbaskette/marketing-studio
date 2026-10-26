@@ -1097,7 +1097,7 @@ async function sLibraryAdd(){
   // file with the upload's extra choices.
   const more=sAdd(sNode('ul','rows more-ways'),
     sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('h3','row-title','A whole blog, site or feed'),sNode('p','row-says','A folder, website archive, RSS or Atom feed, sitemap or JSON export, previewed before anything is saved.')),sButton('Import a blog or site',()=>{sCloseSheet();openImport();})),
-    sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('h3','row-title','One file, summarized and tagged'),sNode('p','row-says','Summarize and tag it with your analysis CLI, or start an editable blog from it.')),sButton('Upload one file',()=>{sCloseSheet();openUpload();})));
+    sAdd(sNode('li','row'),sAdd(sNode('div','row-text'),sNode('h3','row-title','One file, summarized and tagged'),sNode('p','row-says','Summarize and tag it with your analysis CLI, or edit it on the desk.')),sButton('Upload one file',()=>{sCloseSheet();openUpload();})));
   form.append(sNode('h3','sheet-part','More ways to add'),more);
   form.addEventListener('submit',async event=>{event.preventDefault();if(!held.files.length&&!held.links.trim()&&!held.google.trim()){problem.textContent='Choose files, paste links or add a Google Doc link first.';return;}if(held.who==='named'&&!held.author.trim()){problem.textContent='Name the author, or choose each post’s own author.';return;}await busy(submit,'Checking…',async()=>{try{const shown=await api('library-add-preview',sLibraryAddPayload(held));if(held.shown?.expected!==shown.expected){held.operation=operationId();held.result=null;}held.shown=shown;sLibraryAddPreview(held);}catch(error){problem.textContent=error.message;}});});
   sOpenSheet('Add to the library',form);
