@@ -1216,7 +1216,8 @@ def stalled_detail(root, ident, start):
     last lines a failed assistant printed (kept on this computer). `seconds` is the limit
     the stopped step had, and `more` the limit Try again with more time gives it, or None.
     Every value is empty while the step is under way or the start is done."""
-    found = {'problem': '', 'reason': None, 'said': None, 'step': None, 'seconds': None, 'more': None}
+    found = dict.fromkeys(('reason', 'said', 'step', 'seconds', 'more'), None)
+    found['problem'] = ''
     if not start or start.get('ended_at'):
         return found
     job = None
@@ -1232,7 +1233,8 @@ def stalled_detail(root, ident, start):
     if reason is None and start.get('step') == 'research':
         reason = 'research'
     seconds = job.get('seconds') if isinstance(job.get('seconds'), int) else None
-    longest = _longest(root)
+    # Settings are read only for a step out of time: the blog list asks this of every start.
+    longest = _longest(root) if reason == 'time-limit' and seconds else 0
     return {
         'problem': (
             transient(root, ident).get('problem')
