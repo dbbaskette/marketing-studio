@@ -891,6 +891,353 @@ class ReviewTests(ToolCase):
         self.assertIn('Changed text here.', texts)
 
 
+class MixedReviewTests(ToolCase):
+    """Check spelling and grammar with human-sounding suggestions: Copy edit, then Humanize
+    at the chosen strength, their suggestions together, each retiring the others it covers."""
+
+    def setUp(self):
+        super().setUp()
+        desk.save(self.root, self.ident, self.seen, self.second, 'Their are two parser.')
+        self.seen += 1
+
+    def check(self, **extra):
+        shown = desk.dispatch(self.root, 'review', {'id': self.ident, 'seen': self.seen, **extra})
+        return tool_jobs.read(self.root, shown['working']['id'])
+
+    def jobs(self):
+        return [(job['kind'], job['status']) for job in desk_jobs.jobs(self.root, self.ident)]
+
+    def test_humanize_is_queued_when_copy_edit_settles_and_check_again_reuses_it(self):
+        first = self.check(humanize='strong')
+        self.assertEqual(first['kind'], 'finish-copyedit')
+        self.assertEqual(self.jobs(), [('finish-copyedit', 'queued')], 'one job at a time')
+        self.assertEqual(desk_jobs.view(self.root, self.ident)['review']['humanize'], 'strong')
+        self.ready(first, {'suggestions': []})
+        kinds = self.jobs()
+        self.assertEqual(kinds, [('finish-copyedit', 'ready'), ('finish-humanize', 'queued')])
+        second = desk_jobs.jobs(self.root, self.ident)[-1]
+        self.assertEqual(second['metadata']['desk']['level'], 'strong')
+        self.assertEqual(second['payload']['level'], 'strong')
+        self.assertIn(desk_finish.LEVELS['strong'], second['guidance'])
+        # Settling Copy edit again, as an older process might, queues nothing more.
+        desk_jobs._review_next(self.root, tool_jobs.read(self.root, first['id']))
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(len(self.jobs()), 2)
+        # A check already under way is not replaced: Check again waits for it.
+        with self.assertRaisesRegex(ValueError, 'already working'):
+            self.check(humanize=None)
+        self.assertEqual(desk_jobs.review_record(self.root, self.ident)['next'], second['id'])
+        self.ready(second, {'suggestions': []})
+        # Check again, with no strength sent, reruns both at the pinned strength.
+        again = self.check()
+        self.assertEqual(again['metadata']['desk']['then'], 'strong')
+        self.ready(again, {'suggestions': []})
+        self.assertEqual(self.jobs()[-1], ('finish-humanize', 'queued'))
+        self.ready(desk_jobs.jobs(self.root, self.ident)[-1], {'suggestions': []})
+        # Turned off, Check again is Copy edit only, and stays off.
+        off = self.check(humanize=None)
+        self.assertNotIn('then', off['metadata']['desk'])
+        self.ready(off, {'suggestions': []})
+        self.assertEqual(self.jobs()[-1], ('finish-copyedit', 'ready'))
+        self.assertIsNone(desk_jobs.view(self.root, self.ident)['review']['humanize'])
+        with self.assertRaisesRegex(ValueError, 'light, medium'):
+            self.check(humanize='loud')
+
+    def test_copy_edits_suggestions_can_be_accepted_while_humanize_works(self):
+        first = self.check(humanize='light')
+        self.ready(
+            first,
+            {'suggestions': [self.fix('Their are two parser.', 'There are two parsers.')]},
+        )
+        shown = desk_jobs.view(self.root, self.ident)
+        self.assertEqual(shown['working']['kind'], 'finish-humanize')
+        job = shown['finishing']['copyedit']['job']
+        done = self.act('apply', seen=shown['revision'], job=job, items=[{'id': 'p1'}])
+        self.assertEqual(done['finished']['applied'], 1)
+        self.assertEqual(self.draft()['sections'][1]['text'], 'There are two parsers.')
+        # A Humanize suggestion for words Copy edit already changed is dropped as it lands.
+        second = desk_jobs.jobs(self.root, self.ident)[-1]
+        self.ready(
+            second,
+            {
+                'suggestions': [
+                    self.fix('Their are two parser.', 'Two parsers exist.'),
+                    self.fix('We leverage a robust parser.', 'We use a parser.', part=self.first),
+                ]
+            },
+        )
+        found = self.shown('humanize')
+        self.assertEqual([i['before'] for i in found['items']], ['We leverage a robust parser.'])
+        self.assertEqual(found['dropped'], 1)
+
+    def fix(self, before, after, part=None, why='A fix.', **extra):
+        return {'part': part or self.second, 'before': before, 'after': after, 'why': why, **extra}
+
+    def test_a_copy_edit_that_fails_still_lets_humanize_go_ahead_and_stop_ends_the_check(self):
+        first = self.check(humanize='light')
+        first.update(status='failed', error='The assistant stopped.', finished_at='x')
+        tool_jobs.write(self.root, first)
+        desk_jobs.ended(self.root, first)
+        self.assertEqual(self.jobs()[-1], ('finish-humanize', 'queued'))
+        second = desk_jobs.jobs(self.root, self.ident)[-1]
+        desk.dispatch(self.root, 'stop', {'id': self.ident, 'job': second['id']})
+        self.assertEqual(self.jobs()[-1], ('finish-humanize', 'cancelled'))
+        # Stopped during Copy edit, Humanize is never queued.
+        again = self.check()
+        desk.dispatch(self.root, 'stop', {'id': self.ident, 'job': again['id']})
+        again = tool_jobs.read(self.root, again['id'])
+        desk_jobs._review_next(self.root, again)
+        self.assertEqual(self.jobs()[-1], ('finish-copyedit', 'cancelled'))
+
+    def test_a_problem_queuing_humanize_is_kept_for_the_page(self):
+        first = self.check(humanize='light')
+        for part in (self.first, self.second, 'opening'):
+            draft = self.draft()
+            desk.save(self.root, self.ident, draft['revision'], part, '')
+        self.ready(first, {'suggestions': []})
+        self.assertEqual(self.jobs(), [('finish-copyedit', 'ready')])
+        problem = desk_jobs.view(self.root, self.ident)['review']['problem']
+        self.assertIn('Write the draft first', problem)
+
+    def test_copy_edit_names_each_kind_strictly(self):
+        draft = self.draft()
+        rows = [
+            self.fix('Their are two parser.', 'There are two parsers.', kind='spelling'),
+            self.fix(
+                'We leverage a robust parser.', 'We use a parser.', self.first, kind='Wording'
+            ),
+            self.fix('An opening paragraph.', 'An opening paragraph!', 'opening', kind=['x']),
+            self.fix('synthetic', 'Synthetic', 'title', kind='punctuation'),
+        ]
+        items, dropped, _ = desk_finish._read_copyedit(draft, {'suggestions': rows})
+        self.assertEqual(dropped, 0)
+        self.assertEqual(
+            [i['kind'] for i in items], ['spelling', 'grammar', 'grammar', 'punctuation']
+        )
+        for kind in desk_finish.COPYEDIT_KINDS:
+            self.assertIn('"' + kind + '"', desk_finish.COPYEDIT_JSON)
+        self.assertIn('alternatives', desk_finish.COPYEDIT_JSON)
+        # Humanize's suggestions name no kind: they are all human-sounding wording.
+        items, _, _ = desk_finish._read_humanize(draft, {'suggestions': rows[:2]})
+        self.assertNotIn('kind', items[0])
+
+    def test_wording_alternatives_are_read_strictly_and_flagged_each(self):
+        draft = self.draft()
+        before = 'We leverage a robust parser.'
+
+        def read(alternatives, kind='wording', part=None, old=before):
+            row = self.fix(old, 'We use a sturdy parser.', part or self.first, kind=kind)
+            row['alternatives'] = alternatives
+            items, _, _ = desk_finish._read_copyedit(draft, {'suggestions': [row]})
+            return items[0].get('alternatives')
+
+        found = read(
+            [
+                'We rely on a robust parser.',
+                'We leverage a robust parser.',  # The same as before.
+                'We use a sturdy parser.',  # The same as after.
+                '',
+                7,
+                '## A heading\n\nText.',
+            ]
+        )
+        self.assertIsNone(found, 'more than three is not read at all')
+        found = read(['We rely on a robust parser.', 'We leverage a robust parser.', '  '])
+        self.assertEqual(found, [{'after': 'We rely on a robust parser.', 'flag': ''}])
+        found = read(['We rely on 14 parsers.', 'We trust our robust parser.'])
+        self.assertIn('a number', found[0]['flag'])
+        self.assertEqual(found[1]['flag'], '')
+        self.assertEqual(found[1]['after'], 'We trust our robust parser.')
+        # Only a wording fix has alternatives, and never a malformed list.
+        self.assertIsNone(read(['We rely on a robust parser.'], kind='grammar'))
+        self.assertIsNone(read(['We rely on a robust parser.'], kind='spelling'))
+        self.assertIsNone(read('We rely on a robust parser.'))
+        self.assertIsNone(read({'after': 'We rely on a robust parser.'}))
+        self.assertIsNone(read([]))
+        # In the title, an alternative is one line.
+        title = read(['A synthetic\ntitle', 'The synthetic title'], part='title', old='A synthetic')
+        self.assertEqual([t['after'] for t in title], ['The synthetic title'])
+
+    def test_accept_applies_the_alternative_picked(self):
+        job = self.offer(
+            [
+                {
+                    'part': self.first,
+                    'before': 'We leverage a robust parser.',
+                    'after': 'We use a sturdy parser.',
+                    'kind': 'wording',
+                    'flag': '',
+                    'alternatives': [
+                        {'after': 'We rely on a robust parser.', 'flag': ''},
+                        {'after': 'Our parser is robust.', 'flag': ''},
+                    ],
+                }
+            ],
+            kind='finish-copyedit',
+        )
+        for entry, said in (
+            ({'id': 'p1', 'alternative': 2}, 'alternatives'),
+            ({'id': 'p1', 'alternative': -1}, 'alternatives'),
+            ({'id': 'p1', 'alternative': True}, 'alternatives'),
+            ({'id': 'p1', 'alternative': '1'}, 'alternatives'),
+            ({'id': 'p1', 'alternative': 1, 'after': 'Mine.'}, 'alternatives'),
+        ):
+            with self.subTest(entry=entry), self.assertRaisesRegex(ValueError, said):
+                self.act('apply', seen=self.seen, job=job, items=[entry])
+        self.act('apply', seen=self.seen, job=job, items=[{'id': 'p1', 'alternative': 1}])
+        self.assertTrue(self.draft()['sections'][0]['text'].startswith('Our parser is robust.'))
+        self.assertEqual(
+            desk_finish.read(self.root, self.ident, job)['items'][0]['state'], 'applied'
+        )
+        kept = desk.versions(self.root, self.ident, self.first)[0]
+        self.assertEqual(kept['source'], 'finishing')
+
+    def test_accepting_one_retires_the_others_that_covered_its_words_from_either_tool(self):
+        text = 'We leverage a robust parser. It reads 12 files in 3 seconds at Acme Labs.'
+        fixes = self.offer(
+            [
+                {
+                    'part': self.first,
+                    'before': 'We leverage a robust parser.',
+                    'after': 'We leverage a robust parser now.',
+                    'kind': 'wording',
+                },
+                {
+                    'part': self.second,
+                    'before': 'Their are two parser.',
+                    'after': 'There are two parsers.',
+                    'kind': 'grammar',
+                },
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer(
+            [
+                # Starts where the fix starts; its words would still be in the text after it.
+                {'part': self.first, 'before': 'We leverage', 'after': 'We rely on'},
+                {
+                    'part': self.first,
+                    'before': 'It reads 12 files',
+                    'after': 'It reads 12 files fast',
+                },
+                {'part': self.second, 'before': 'two parser', 'after': 'a pair of parsers'},
+            ],
+        )
+        self.act('apply', seen=self.seen, job=fixes, items=[{'id': 'p1'}])
+        self.assertEqual(
+            self.draft()['sections'][0]['text'], text.replace('parser.', 'parser now.', 1)
+        )
+        states = [i['state'] for i in desk_finish.read(self.root, self.ident, human)['items']]
+        self.assertEqual(states, ['retired', 'open', 'open'])
+        shown = desk_jobs.view(self.root, self.ident)['finishing']['humanize']['items']
+        self.assertTrue(shown[0]['present'], 'its words are still there, but it is retired')
+        with self.assertRaisesRegex(ValueError, 'no longer fits'):
+            self.act('apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p1'}])
+        # The other way round: a Humanize suggestion accepted retires the fix it covered.
+        self.act('apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p3'}])
+        states = [i['state'] for i in desk_finish.read(self.root, self.ident, fixes)['items']]
+        self.assertEqual(states, ['applied', 'retired'])
+        self.assertEqual(self.draft()['sections'][1]['text'], 'Their are a pair of parsers.')
+
+    def test_two_suggestions_that_start_together_never_both_apply_at_once(self):
+        job = self.offer(
+            [
+                {
+                    'part': self.first,
+                    'before': 'We leverage a robust parser.',
+                    'after': 'We leverage a robust parser today.',
+                },
+                {'part': self.first, 'before': 'We leverage', 'after': 'We use'},
+                {'part': self.second, 'before': 'Their are', 'after': 'There are'},
+            ],
+            kind='finish-copyedit',
+        )
+        shown = self.act(
+            'apply', seen=self.seen, job=job, items=[{'id': 'p1'}, {'id': 'p2'}, {'id': 'p3'}]
+        )
+        self.assertEqual(shown['finished'], {'applied': 2, 'left': ['p2']})
+        self.assertTrue(
+            self.draft()['sections'][0]['text'].startswith('We leverage a robust parser today.')
+        )
+        states = [i['state'] for i in desk_finish.read(self.root, self.ident, job)['items']]
+        self.assertEqual(states, ['applied', 'retired', 'applied'])
+
+    def test_accept_all_leaves_flagged_suggestions_from_both_tools(self):
+        first = self.check(humanize='medium')
+        self.ready(
+            first,
+            {
+                'suggestions': [
+                    self.fix('Their are two parser.', 'There are two parsers.', kind='grammar'),
+                    self.fix(
+                        'It reads 12 files in 3 seconds at Acme Labs.',
+                        'It reads 15 files in 3 seconds at Acme Labs.',
+                        self.first,
+                    ),
+                ]
+            },
+        )
+        self.ready(
+            desk_jobs.jobs(self.root, self.ident)[-1],
+            {
+                'suggestions': [
+                    self.fix('We leverage a robust parser.', 'We use a parser.', self.first),
+                    self.fix(
+                        'It reads 12 files in 3 seconds at Acme Labs.',
+                        'It reads 12 files in 3 seconds at Beta Labs.',
+                        self.first,
+                    ),
+                ]
+            },
+        )
+
+        def ready(view, tool):
+            return [
+                {'id': i['id']}
+                for i in view['finishing'][tool]['items']
+                if i['state'] == 'open' and i['present'] and not i['flag']
+            ]
+
+        # Accept all, as the page sends it: the fixes first, then what still fits of the rest.
+        view = desk_jobs.view(self.root, self.ident)
+        self.assertTrue(
+            all(view['finishing'][tool]['items'][1]['flag'] for tool in ('copyedit', 'humanize'))
+        )
+        for tool in ('copyedit', 'humanize'):
+            picked = ready(view, tool)
+            self.assertEqual(picked, [{'id': 'p1'}], tool)
+            view = self.act(
+                'apply', seen=view['revision'], job=view['finishing'][tool]['job'], items=picked
+            )
+        self.assertEqual(
+            self.draft()['sections'][0]['text'],
+            'We use a parser. It reads 12 files in 3 seconds at Acme Labs.',
+        )
+        for tool in ('copyedit', 'humanize'):
+            states = [i['state'] for i in view['finishing'][tool]['items']]
+            self.assertEqual(states, ['applied', 'open'], 'the flagged one waits: ' + tool)
+
+    def test_no_image_data_reaches_either_job(self):
+        from test_desk import GOOGLE as WITH_IMAGES
+
+        made = desk.create(self.root, {'manuscript': WITH_IMAGES})
+        shown = desk.dispatch(
+            self.root, 'review', {'id': made['id'], 'seen': 1, 'humanize': 'light'}
+        )
+        first = tool_jobs.read(self.root, shown['working']['id'])
+        first.update(status='ready', result={'content': '{"suggestions": []}'}, finished_at='x')
+        tool_jobs.write(self.root, first)
+        desk_jobs.settle(self.root, made['id'])
+        second = desk_jobs.jobs(self.root, made['id'])[-1]
+        self.assertEqual([first['kind'], second['kind']], ['finish-copyedit', 'finish-humanize'])
+        for job in (first, second):
+            with self.subTest(kind=job['kind']):
+                self.assertNotIn('data:image', json.dumps(job['payload']))
+                self.assertNotIn('data:image', job['guidance'])
+                self.assertNotIn(IMAGE_TWO, json.dumps(job))
+                self.assertIn('![][image1]', job['payload']['opening'])
+
+
 class VoiceTests(ToolCase):
     """Apply a voice: the draft rewritten in a voice guide, section by section."""
 

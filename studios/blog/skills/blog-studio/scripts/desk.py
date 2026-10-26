@@ -1551,7 +1551,7 @@ def _restore_divided(root, ident, seen, draft, entry):
 
 # The page's desk routes (POST /api/desk-<action>), under management's studio lock.
 ROUTES = {
-    'create': CREATE | {'operation', 'first_pass', 'angles', 'keep'},
+    'create': CREATE | {'operation', 'first_pass', 'humanize', 'angles', 'keep'},
     'save': {'id', 'seen', 'part', 'text', 'session'},
     'restore': {'id', 'seen', 'part', 'index'},
     'note': {'id', 'seen', 'part', 'note'},
@@ -1578,6 +1578,8 @@ ROUTES = {
     'sources': {'id', 'sources', 'library', 'keep'},
     # Finishing (desk_finish.py): a tool proposes, then the person applies or skips.
     'finish': {'id', 'seen', 'tool', 'level', 'guide'},
+    # Review mode's check: Copy edit, then Humanize when it is on (desk_jobs.review).
+    'review': {'id', 'seen', 'humanize'},
     'apply': {'id', 'seen', 'job', 'items'},
     'skip': {'id', 'job', 'items'},
     # Before publishing: a repurpose result as a new blog, and Google suggestions.
@@ -1614,12 +1616,17 @@ def _create(root, data):
         raise ValueError(
             'Choose Check spelling and grammar, feedback, reshape, tighten or leave it as it is.'
         )
+    # Check spelling and grammar may also suggest human-sounding wording, at a strength.
+    humanize = desk_jobs.humanize_level(data.pop('humanize', None))
+    if humanize and choice != 'copyedit':
+        raise ValueError('Human-sounding suggestions go with Check spelling and grammar.')
     if data.get('way', 'draft') != 'draft' and choice != 'leave':
         raise ValueError('A first pass is for a draft you bring.')
     if choice == 'reshape' and not data.get('style'):
         raise ValueError('Choose a kind of post to reshape the draft to.')
     path = studio.inside(root, '.blog-runs', 'desk-creations', operation + '.json')
-    fingerprint = studio.digest(json.dumps([data, choice, kept], sort_keys=True).encode())
+    asked = [data, choice, kept] + ([humanize] if humanize else [])
+    fingerprint = studio.digest(json.dumps(asked, sort_keys=True).encode())
     if path.exists():
         prior = studio.read_json(path)
         if prior['fingerprint'] != fingerprint:
@@ -1643,7 +1650,9 @@ def _create(root, data):
             'keep_problem': keep_problem,
         }
     try:
-        if choice in FINISH_FIRST:
+        if choice == 'copyedit':
+            desk_jobs.review(root, made['id'], 1, humanize)
+        elif choice in FINISH_FIRST:
             desk_jobs.finish(root, made['id'], 1, choice)
         else:
             desk_jobs.first_pass(root, made['id'], 1, choice)
@@ -1735,6 +1744,10 @@ def dispatch(root, action, data):
         return {**desk_jobs.view(root, ident), 'made': made}
     elif action == 'finish':
         desk_jobs.finish(root, ident, seen, data.get('tool'), data.get('level'), data.get('guide'))
+    elif action == 'review':
+        desk_jobs.review(
+            root, ident, seen, data['humanize'] if 'humanize' in data else desk_jobs.PINNED
+        )
     elif action in ('apply', 'skip'):
         import desk_finish
 
