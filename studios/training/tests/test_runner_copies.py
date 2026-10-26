@@ -540,6 +540,59 @@ if __name__ == '__main__':
     unittest.main()
 
 
+
+class CheckTests(Built):
+    """Look for changes in Google Docs: asked for by the person, never otherwise."""
+
+    def linked(self):
+        self.built('google', levels=('101',))
+        self.copy()
+        return gdocs.read_links(self.root)['docs']['document@101']['file_id']
+
+    def test_row_131_a_doc_edited_elsewhere_is_found_when_asked(self):
+        ident = self.linked()
+        self.drive.docs[ident] += '\nRemote addition.\n'
+        found = copies.check(self.root, self.drive)
+        self.assertEqual(found['document@101'], 'remote changed')
+        self.assertEqual({state for name, state in found.items() if name != 'document@101'},
+                         {'made'})
+        pulled = copies.pull(self.root, 'document@101', self.drive)
+        self.assertEqual(pulled['result'], 'pulled', 'unchanged here, so it comes in cleanly')
+        self.assertIn('Remote addition.', (self.root / '101/document.md').read_text())
+        state = workspace.statuses(self.root, workspace.load(self.root))
+        self.assertEqual(state['document@101'], 'draft', 'as row 121 says')
+
+    def test_a_doc_changed_on_both_sides_is_said_to_be(self):
+        ident = self.linked()
+        local = self.root / '101/document.md'
+        local.write_text(local.read_text() + '\nLocal addition.\n')
+        self.drive.docs[ident] += '\nRemote addition.\n'
+        self.assertEqual(copies.check(self.root, self.drive)['document@101'], 'both changed')
+
+    def test_nothing_asks_google_unasked(self):
+        self.linked()
+        before = list(self.drive.calls)
+
+        def never():
+            raise AssertionError('Google was asked')
+        with mock.patch.object(gdocs, 'GcloudTransport', never):
+            copies.wanted(self.root)
+        self.assertEqual(self.drive.calls, before)
+
+    def test_pulled_headings_without_their_note_are_named(self):
+        ident = self.linked()
+        anchors = gdocs.read_links(self.root)['docs']['document@101']['anchors']
+        title = next(anchor[0] for anchor in anchors if anchor[0])
+        doc = self.drive.docs[ident]
+        heading = next(line for line in doc.splitlines()
+                       if line.startswith('#') and line.lstrip('#').strip() == title)
+        self.drive.docs[ident] = doc.replace(heading, heading.split(' ', 1)[0]
+                                             + ' A heading renamed in the Doc', 1)
+        pulled = copies.pull(self.root, 'document@101', self.drive)
+        self.assertEqual(pulled['result'], 'pulled')
+        self.assertIn(title, pulled['unplaced'])
+
+
 class PullTests(Built):
     def linked(self):
         self.built('google', levels=('101',))

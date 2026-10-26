@@ -786,6 +786,12 @@ class RunnerPage(desk.Page):
             if choose not in (None, 'ours', 'theirs'):
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Choose the Doc’s version or this version.')
             return self.engine.pull_copy(path, artifact, choose)
+        action = sent.get('action')
+        if action == 'check':
+            return self.engine.check_copies(path)
+        if action is not None:
+            raise desk.Refusal(HTTPStatus.BAD_REQUEST,
+                               'Ask to check the copies, or to make them again.')
         return self.engine.copies_again(path)
 
 

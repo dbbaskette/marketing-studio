@@ -209,7 +209,7 @@ from runner import agents, companion, deck, gitstate, pipeline, settings, team, 
 from runner import brand as brand_skill
 from runner import brand_source
 from runner import copies as copies_made
-from runner.copies import BOTH, KEPT_OURS, PULLED
+from runner.copies import BOTH, CHANGED_THERE, KEPT_OURS, PULLED, UNPLACED
 from runner import documents as documents_kept
 from runner import index as index_written
 from runner import research as research_cli
@@ -1410,7 +1410,15 @@ class Engine(Reviewing):
             approved = (session['artifacts'].get(entry['artifact']) or {}).get('approved')
             if approved:
                 tried[entry['artifact']] = approved['sha256']
-        record['copies'] = {'problems': dict(problems or {}), 'tried': tried}
+        # What Google was last found to hold is kept until the Doc is brought in. A push
+        # refused because the Doc was changed there says so too.
+        remote = dict((record.get('copies') or {}).get('remote') or {})
+        for name, said in (problems or {}).items():
+            if said == CHANGED_THERE:
+                remote[name] = 'both changed'
+        record['copies'] = {'problems': dict(problems or {}), 'tried': tried,
+                            **({'remote': remote, 'checked_at': record['copies'].get(
+                                'checked_at')} if remote else {})}
 
     def _copy(self, root: Path, step: pipeline.Step) -> None:
         """After an approval: make the copies the training asked for. One that cannot be
@@ -3889,6 +3897,8 @@ class Engine(Reviewing):
                 raise WorkspaceError("It is being worked on. Bring the Doc's changes in once it stops.")
             outcome = self.copies.pull(root, artifact, choose=choose)
             record = self._load(root)
+            if outcome['result'] != 'both-changed':
+                ((record.get('copies') or {}).get('remote') or {}).pop(artifact, None)
             self._make(root, record)
             self._store(root, record)
             self._commit(root, 'bring the Google Doc’s changes into '
@@ -3898,7 +3908,29 @@ class Engine(Reviewing):
                 KEPT_OURS if outcome['result'] == 'kept' else
                 PULLED if outcome['result'] == 'pulled' else
                 'The Doc has no new changes to bring in.')
-        return {**self.view(root), 'said': said.format(label=workspace.label(artifact))}
+        unplaced = outcome.get('unplaced') or []
+        return {**self.view(root), 'said': said.format(label=workspace.label(artifact)),
+                **({'unplaced': UNPLACED.format(headings=', '.join(unplaced))}
+                   if unplaced else {})}
+
+    def check_copies(self, path) -> dict:
+        """Look for changes made in the Google Docs, as the person asks: the one time
+        Google is asked about them. Refused while a worker writes any of their files."""
+        root = self._held(path)
+        with self.files:
+            record = self._load(root)
+            linked = [entry['artifact'] for entry in self._wanted(root, record)
+                      if entry['kind'] == 'google' and entry['link']]
+            if any(self._busy_on(root, name) for name in linked):
+                raise WorkspaceError('It is being worked on. Look for changes in Google Docs '
+                                     'once it stops.')
+            found = self.copies.check(root)
+            record = self._load(root)
+            record['copies'] = {**(record.get('copies') or {}), 'remote': found,
+                                'checked_at': home.now()}
+            self._store(root, record)
+            self._commit(root, 'look for changes in the Google Docs, as asked on the page')
+        return self.view(root)
 
     def copies_again(self, path) -> dict:
         """Make the copies that are not made, again, as the person asks. One that still
@@ -4379,12 +4411,17 @@ class Engine(Reviewing):
                 'types': types, 'limits': dict(self.documents.LIMITS), 'note': ' '.join(note)}
 
     @staticmethod
-    def _copies(found: pipeline.Survey) -> list[dict]:
+    def _copies(found: pipeline.Survey, remote=None) -> list[dict]:
         """The copies the page shows: each one of a file that is approved, and each that
         is behind a file that has changed since. One not made of a file not approved yet
         is left out, since there is nothing to make it from. A copy's label is the core's
         name for its file, to read in the middle of a sentence."""
+        remote = remote if isinstance(remote, dict) else {}
         return [{**({'conflict': True} if entry.get('conflict') else {}),
+                 # What Google was found to hold, when the person last asked.
+                 **({'remote': remote[entry['artifact']]} if entry['kind'] == 'google'
+                    and remote.get(entry['artifact']) in ('remote changed', 'both changed')
+                    else {}),
                  **{key: entry.get(key) for key in ('artifact', 'kind', 'state', 'link',
                                                     'problem')},
                  'label': workspace.label(entry['artifact'])} for entry in found.copies
@@ -4473,7 +4510,7 @@ class Engine(Reviewing):
                         if problem else None),
             'documents': self._supplied(root, record, found),
             'research_from': self._research_view(record),
-            'copies': self._copies(found),
+            'copies': self._copies(found, (record.get('copies') or {}).get('remote')),
             'outline': outline,
             'look': pipeline.look_view(root, found, level) if drawing else None,
             'deck': (pipeline.deck_view(root, found, level, self._live(run, drawing),

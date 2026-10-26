@@ -5557,6 +5557,11 @@ function copyItem(found) {
   if (found.state === 'out-of-date') {
     add(text, make('p', '', 'Its file has changed since this copy was made.'));
   }
+  // What Google was found to hold, when the person last looked.
+  if (found.remote === 'remote changed') add(text, make('p', '', 'Changed in Google Docs.'));
+  if (found.remote === 'both changed') {
+    add(text, make('p', '', 'Changed in Google Docs, and here too.'));
+  }
   const why = found.problem || (found.state === 'not-made' ? 'No reason was given.' : '');
   if (found.state !== 'made' && why) add(text, make('p', '', why));
   add(text, copyLink(found, kind, what));
@@ -5570,7 +5575,7 @@ function copyItem(found) {
         }, 'choose-copy-' + choose + '-' + found.artifact));
       }
     }
-    if (found.conflict || /^Someone has changed the Google Doc/.test(found.problem || '')) {
+    if (found.conflict || ['remote changed', 'both changed'].includes(found.remote)) {
       add(text, capsule("Bring the Doc's changes in", 'quiet', (event) =>
         pullCopy(found, null, event.currentTarget), 'pull-copy-' + found.artifact));
     }
@@ -5605,7 +5610,7 @@ async function pullCopy(found, choose, pressed) {
     const run = await send('copies', {path: view.path, pull: found.artifact,
       ...(choose ? {choose} : {})});
     view.run = run;
-    toast(run.said);
+    toast(run.unplaced ? run.said + ' ' + run.unplaced : run.said);
     paintRun(false);
     return true;
   } catch (failure) {
@@ -5643,11 +5648,38 @@ async function tryCopies() {
   if (!focusKey('copies-again')) byId('title').focus({ preventScroll: true });
 }
 
+// Asked for by the person: the one time Google is asked whether a Doc was changed there.
+async function checkCopies(pressed) {
+  if (view.checking) return;
+  view.checking = true;
+  pressed.disabled = true;
+  try {
+    const run = await send('copies', { path: view.path, action: 'check' });
+    view.run = run;
+    const changed = list(run.copies).filter((found) => found.remote).length;
+    toast(changed ? count(changed, 'Google Doc was', 'Google Docs were') + ' changed there.'
+      : 'No Google Doc was changed there.');
+  } catch (failure) {
+    toast(failure.message + ' Nothing was changed.');
+  } finally {
+    view.checking = false;
+    pressed.disabled = false;
+  }
+  paintRun(false);
+  focusKey('check-copies');
+}
+
 function copiesCard(run) {
   const node = card('Copies');
   const items = make('ul', 'rows');
   for (const found of list(run.copies)) items.append(copyItem(found));
   add(node, items);
+  const docs = list(run.copies).some((found) => found.kind === 'google' && found.link);
+  if (docs && run.mine !== false) {
+    const look = capsule('Look for changes in Google Docs', 'quiet',
+      (event) => checkCopies(event.currentTarget), 'check-copies');
+    add(node, add(make('div', 'bar'), look));
+  }
   if (!list(run.copies).some((found) => found.state !== 'made')) return node;
   // Making them again is a change, which only the computer that runs the training makes.
   if (run.mine === false) {

@@ -2658,8 +2658,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_google_doc_conflicts_have_explicit_confirmed_choices(self):
         self.started()
         problem = 'Someone has changed the Google Doc since it was last sent.'
-        copy = a_copy('document', 'the learner guide', 'google', 'out-of-date',
-                      'https://docs.example.com/d/one/edit', problem)
+        copy = {**a_copy('document', 'the learner guide', 'google', 'out-of-date',
+                         'https://docs.example.com/d/one/edit', problem),
+                'remote': 'both changed'}
         first = a_run('waiting', 'Waiting for your review.', copies=[copy])
         both = a_run('waiting', 'Waiting for your review.', copies=[{**copy, 'conflict': True}])
         both['body']['said'] = 'Both versions kept.'
@@ -2673,6 +2674,34 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('replaces the local learner guide', result['snapshots']['theirs']['sheet'])
         self.assertIn('replaces the changes in the Google Doc', result['snapshots']['ours']['sheet'])
         self.assertEqual(self.posts(result), [('/api/copies', {'path': str(self.root), 'pull': 'document'})])
+
+    def test_a_doc_changed_in_google_offers_to_bring_it_in(self):
+        self.started()
+        copy = a_copy('document', 'the learner guide', 'google', 'made',
+                      'https://docs.example.com/d/one/edit', None)
+        before = a_run('waiting', 'Waiting for your review.', copies=[copy])
+        changed = a_run('waiting', 'Waiting for your review.',
+                        copies=[{**copy, 'remote': 'remote changed'}])
+        pulled = a_run('waiting', 'Waiting for your review.', copies=[copy])
+        unplaced = ("These headings were brought in but not placed in the guide's sections, "
+                    'because their hidden note was removed in the Doc: Why it matters. Put '
+                    'them back under a heading, or ask for changes.')
+        pulled['body'].update(said="The Doc's changes are in.", unplaced=unplaced)
+        answers = self.answers(**{'GET /api/trainings': [self.listed('waiting')],
+            'GET /api/training': [self.detail('waiting', '')], 'GET /api/run': [before],
+            'POST /api/copies': [changed, pulled]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+            {'snapshot': 'before'}, {'click': 'Look for changes in Google Docs'},
+            {'snapshot': 'changed'}, {'click': "Bring the Doc's changes in"},
+            {'snapshot': 'pulled'}])
+        shots = result['snapshots']
+        self.assertNotIn("Bring the Doc's changes in", shots['before']['buttons'])
+        self.assertIn('Changed in Google Docs', shots['changed']['text'])
+        self.assertIn("Bring the Doc's changes in", shots['changed']['buttons'])
+        self.assertIn(unplaced, ' '.join(shots['pulled']['toasts']) + shots['pulled']['text'])
+        self.assertEqual([body for _, body in self.posts(result)], [
+            {'path': str(self.root), 'action': 'check'},
+            {'path': str(self.root), 'pull': 'document'}])
 
     def test_a_changed_google_conflict_can_be_refreshed_and_confirmed_again(self):
         self.started()

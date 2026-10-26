@@ -2650,6 +2650,28 @@ class PullCopyTests(PageCase):
         self.assertIn("The Doc's changes are in.", run['said'])
         self.assertEqual(workspace.status(root)['gate'], 'document@101')
 
+    def test_the_page_looks_for_doc_changes_when_asked(self):
+        import gdocs
+        path = self.started(levels=['101'], copies=['google'])
+        root = Path(path)
+        self.to_gate(root, 'document@101')
+        self.decide(root, 'document@101')
+        before = list(self.copies.drive.calls)
+        shown = self.get('run', path=path)
+        self.assertEqual(self.copies.drive.calls, before, 'reading the page asks Google nothing')
+        self.assertNotIn('remote', shown['copies'][0])
+        ident = gdocs.read_links(root)['docs']['document@101']['file_id']
+        self.copies.drive.docs[ident] += '\nFrom a teammate.\n'
+        run = self.post('copies', {'path': path, 'action': 'check'})
+        self.assertEqual(sorted(run), RUN_KEYS)
+        entry = next(one for one in run['copies'] if one['artifact'] == 'document@101')
+        self.assertEqual(entry['remote'], 'remote changed')
+        self.assertEqual(self.post('copies', {'path': path, 'action': 'nonsense'}, 400)['error'],
+                         'Ask to check the copies, or to make them again.')
+        run = self.post('copies', {'path': path, 'pull': 'document@101'})
+        entry = next(one for one in run['copies'] if one['artifact'] == 'document@101')
+        self.assertNotIn('remote', entry, 'brought in, so nothing is said of it any more')
+
     def test_pulling_is_refused_while_a_dependent_worker_builds(self):
         refused = []
         path = self.started(levels=['101'], copies=['google'])

@@ -5,6 +5,7 @@ What a caller needs to know
 ---------------------------
     copies.wanted(root, problems=None)       # every copy the training asks for, as shown
     made, problems = copies.make(root, google=None, word=None)
+    found = copies.check(root, google=None)  # each Doc, as Google has it now, when asked
 
 - An entry is {'artifact', 'label', 'kind', 'state', 'link', 'problem'}. `kind` is 'google'
   or 'word'. `state` is 'made', 'out-of-date' or 'not-made'. `link` is the Doc's address,
@@ -56,10 +57,10 @@ PANDOC_SAYS = {   # the core's reasons for no Word copy, said for a person
               f'{workspace.sentence(AGAIN)}.'),
     'said': f'pandoc could not make the Word copy ({{said}}). Put that right, then {AGAIN}.'}
 # What the core says to an assistant, which has commands to run, said here for a person.
+CHANGED_THERE = ('Someone has changed the Google Doc since it was last sent, so it was left '
+                 f'as it is. Bring the Doc’s changes in from here, then {AGAIN}.')
 REWORDED = (
-    ('changed since the last sync',
-     'Someone has changed the Google Doc since it was last sent, so it was left as it is. '
-     f'Bring the Doc’s changes in from here, then {AGAIN}.'),
+    ('changed since the last sync', CHANGED_THERE),
     ('could not find the Doc',
      'Google could not find the Doc. It may have been deleted, or the signed-in account '
      f'cannot open it. Ask your assistant to unlink it from the training, then {AGAIN} to '
@@ -178,11 +179,37 @@ def pandoc(source: Path, target: Path) -> None:
     workspace.pandoc(source, target, PANDOC_SAYS)
 
 
+# --- what Google has --------------------------------------------------------------------
+
+def check(root: Path, google=None) -> dict[str, str]:
+    """For each linked Google Doc, whether it was changed in Google since it was last sent:
+    'remote changed', 'both changed' (here too), else 'made'; 'unchecked' for one Google
+    could not be asked about. Google is asked only here, when the person asks."""
+    root = Path(root)
+    google = google or gdocs.GcloudTransport()
+    session, found = workspace.load(root), {}
+    for name, entry in sorted(gdocs.read_links(root)['docs'].items()):
+        try:
+            file = workspace.artifact(root, session, name)['file']
+            known = entry.get('remote_sha256')
+            moved = bool(known) and gdocs.digest(
+                gdocs.canonical(google.export(entry['file_id']))) != known
+        except WorkspaceError:
+            found[name] = 'unchecked'
+            continue
+        changed = workspace.sha256_file(root / file) != entry.get('local_sha256')
+        found[name] = gdocs.STATES[changed, moved] if moved else 'made'
+    return found
+
+
 PULLED = ("The Doc's changes are in. Review {label} again; what is built from it is made "
           "again after you approve.")
 BOTH = ("{label} was changed here and in its Google Doc. The Doc's text is kept beside it; "
         "nothing was replaced. Choose which to keep.")
 KEPT_OURS = "This version is sent to the Google Doc, replacing what was changed there."
+UNPLACED = ("These headings were brought in but not placed in the guide's sections, because "
+            "their hidden note was removed in the Doc: {headings}. Put them back under a "
+            "heading, or ask for changes.")
 
 
 def pull(root: Path, name: str, google=None, choose=None) -> dict:
@@ -213,7 +240,7 @@ def pull(root: Path, name: str, google=None, choose=None) -> dict:
             links = gdocs.read_links(root)
             links['docs'][name].pop('conflict', None)
             gdocs.write_links(root, links)
-        return {'result': result, 'beside': None}
+        return {'result': result, 'beside': None, 'unplaced': []}
     try:
         outcome = gdocs.pull(root, name, google)
     except WorkspaceError as refusal:
@@ -230,5 +257,7 @@ def pull(root: Path, name: str, google=None, choose=None) -> dict:
                 'local': workspace.sha256_file(path), 'remote': gdocs.digest(remote),
                 'beside': workspace.sha256_file(remote_file)}
             gdocs.write_links(root, links)
-        return {'result': 'both-changed', 'beside': beside}
-    return {'result': 'pulled' if outcome['result'] == 'pulled' else 'nothing', 'beside': None}
+        return {'result': 'both-changed', 'beside': beside, 'unplaced': []}
+    # Headings whose hidden note was taken out in the Doc come in, but out of their sections.
+    return {'result': 'pulled' if outcome['result'] == 'pulled' else 'nothing', 'beside': None,
+            'unplaced': [item['heading'] for item in outcome.get('unplaced') or ()]}
