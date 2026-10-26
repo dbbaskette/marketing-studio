@@ -12,6 +12,7 @@ import re
 import shutil
 
 import desk
+import desk_images
 import studio
 
 # The finishing job kinds and the tool each one is in the panel.
@@ -514,7 +515,7 @@ def proofread(root, ident):
     draft = desk.read(root, ident)
     places = _offsets(draft)
     findings = []
-    for hit in lint(_mask_indented(desk.join(draft)), proof_rules())['findings']:
+    for hit in lint(_mask_indented(desk.join(draft, images=False)), proof_rules())['findings']:
         if 'start' not in hit:
             continue
         for part, offset, text in places:
@@ -766,8 +767,8 @@ QUOTE_LINE = re.compile(r'^\s{0,3}>')
 
 def _shape(text, paragraphs=True):
     """The code and quotations a part holds, exactly (fenced blocks with their opening
-    line, indented code, inline code spans, blockquote lines), and the count of its
-    blocks: paragraphs, list items, fenced blocks and tables."""
+    line, indented code, inline code spans, blockquote lines), its image references in
+    order, and the count of its blocks: paragraphs, list items, fenced blocks and tables."""
     fences, inline, outside = [], [], []
     block, inside = None, False
     for line in text.splitlines():
@@ -815,12 +816,14 @@ def _shape(text, paragraphs=True):
         if paragraphs
         else 0
     )
-    return fences, indented, inline, quotes, (count, items, len(fences), tables)
+    images = [match.group(0) for match in desk_images.REFERENCE.finditer(prose)]
+    return fences, indented, inline, quotes, images, (count, items, len(fences), tables)
 
 
 def changes_structure(before, after, paragraphs=True):
-    """STRUCTURE when a rewrite changes code (fenced blocks or inline code spans, exactly)
-    or the part's block structure; '' otherwise."""
+    """STRUCTURE when a rewrite changes code (fenced blocks or inline code spans, exactly),
+    drops, adds or alters an image reference, or changes the part's block structure; ''
+    otherwise."""
     return STRUCTURE if _shape(before, paragraphs) != _shape(after, paragraphs) else ''
 
 
@@ -1069,6 +1072,7 @@ ESCAPED = re.compile(r'\\([\\`*_{}\[\]()#+\-.!<>|~])')
 VISIBLE = (
     (re.compile(r'^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d{1,3}[.)]\s+)'), ''),  # line markers
     (re.compile(r'!\[[^\]]*\]\([^)]*\)'), ''),  # images
+    (re.compile(r'!\[[^\]\n]*\]\[[^\]\n]*\]'), ''),  # images by reference, as Google exports
     (re.compile(r'\[\^[^\]]+\]'), ''),  # footnote markers
     (re.compile(r'\[([^\]]*)\]\([^)]*\)'), r'\1'),  # links show their text, not their target
     (re.compile(r'<(https?://[^>\s]+)>'), r'\1'),
@@ -1080,8 +1084,8 @@ def _visible(line):
     """A Markdown line as the Doc's body paragraph shows it, or None for a line that is not
     one (a table row, a fence, a footnote's own text)."""
     bare = line.strip()
-    if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[\^[^\]]+\]:', bare):
-        return None
+    if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[[^\]]+\]:', bare):
+        return None  # Also a footnote's or a link's definition, such as an image's data.
     # An escaped mark is the character itself, as Google's Markdown export writes it.
     line = ESCAPED.sub(lambda found: '\x00' + str(ord(found.group(1))) + '\x00', line)
     for pattern, replacement in VISIBLE:
@@ -1092,7 +1096,10 @@ def _visible(line):
 def _hidden_spans(line):
     """Where a line holds what the Doc shows no text for: link targets and whole images."""
     return [m.span(1) for m in re.finditer(r'\]\(([^)]*)\)', line)] + [
-        m.span() for m in re.finditer(r'!\[[^\]]*\]\([^)]*\)|<https?://[^>\s]+>', line)
+        m.span()
+        for m in re.finditer(
+            r'!\[[^\]]*\]\([^)]*\)|!\[[^\]\n]*\]\[[^\]\n]*\]|<https?://[^>\s]+>', line
+        )
     ]
 
 

@@ -5,7 +5,9 @@ for. The worker settles a result as soon as it is ready (tool_jobs.once calls `e
 lands only while that text is unchanged, with the text it replaces kept as a version first,
 and in a team workspace it is then recorded as a decision (`share`). A result an older
 process finished is settled by the next desk request. Like desk.py, every function except
-`share` expects the caller to hold the studio lock.
+`share` expects the caller to hold the studio lock. A job never carries image data: a part's
+text holds only its image references (desk_images), every payload is scrubbed of any data a
+source brings, and a result keeps the references the text had.
 """
 
 import json
@@ -17,6 +19,7 @@ from pathlib import Path
 
 import blog_runner
 import desk
+import desk_images
 import studio
 import tool_jobs
 
@@ -275,6 +278,8 @@ def _context(root, draft, length=False):
             '\nThe documents in examples show the kind of post wanted; take their shape, '
             'not their facts.'
         )
+    if draft.get('images'):
+        guidance += '\n' + desk_images.GUIDANCE
     return extra, guidance
 
 
@@ -296,7 +301,7 @@ def _create(root, ident, kind, payload, guidance, meta):
         root,
         secrets.token_hex(16),
         kind,
-        payload,
+        desk_images.scrubbed(payload),  # A source's image data never reaches a job.
         guidance,
         basis=None,
         metadata={'article': ident, 'desk': meta},
@@ -634,7 +639,7 @@ def angles(root, data):
         root,
         secrets.token_hex(16),
         'desk-angles',
-        payload,
+        desk_images.scrubbed(payload),
         guidance,
         basis=None,
         metadata={'article': None, 'desk': {'operation': data['operation']}},
@@ -882,6 +887,7 @@ def _apply_draft(root, ident, draft, job, result):
     found = desk.split(text)
     if not found['sections']:
         raise ValueError('The draft came back without its ## sections. Write it again.')
+    images = {**(draft.get('images') or {}), **found['images']}
     outline, taken = draft['sections'], {s['id'] for s in draft['sections']}
     # Each written section goes with the outline section of the same heading, then with the
     # one in its place, so its id, brief and History follow the right text.
@@ -898,13 +904,14 @@ def _apply_draft(root, ident, draft, job, result):
             used.add(outline[at]['id'])
     merged = []
     for at, written in enumerate(found['sections']):
-        desk.checked_text('opening', written['text'])
+        text = desk_images.kept(planned[at]['text'] if planned[at] else '', written['text'], images)
+        desk.checked_text('opening', text)
         merged.append(
             {
                 'id': planned[at]['id'] if planned[at] else desk._id(taken),
                 'heading': written['heading'][:200],
                 'brief': planned[at].get('brief', '') if planned[at] else '',
-                'text': written['text'],
+                'text': text,
             }
         )
     merged += [s for s in outline if s['id'] not in used]  # Left out: they stay as they were.
@@ -914,11 +921,13 @@ def _apply_draft(root, ident, draft, job, result):
             desk.keep(root, ident, section['id'], before[section['id']], 'draft')
     typed = fingerprint(draft['opening']) != job['metadata']['desk'].get('opening')
     if found['opening'] and not typed:  # An opening typed meanwhile is the person's.
-        desk.checked_text('opening', found['opening'])
-        if draft['opening'] and draft['opening'] != found['opening']:
+        opening = desk_images.kept(draft['opening'], found['opening'], images)
+        desk.checked_text('opening', opening)
+        if draft['opening'] and draft['opening'] != opening:
             desk.keep(root, ident, 'opening', draft['opening'], 'draft')
-        draft['opening'] = found['opening']
+        draft['opening'] = opening
     draft['sections'] = merged
+    draft['images'] = images
     _merge_gaps(draft, result)
     return desk._write(root, ident, draft, [s['id'] for s in merged] + ['opening', 'outline'])
 
@@ -1442,6 +1451,14 @@ def _opening_text(text):
     return rest.strip() if desk.TITLE.fullmatch(first.strip()) else text
 
 
+def _landed(draft, before, text):
+    """A returned text with any image data moved to the draft's images, and the image
+    references `before` had kept: one left out goes back where it was, one changed or made
+    up is taken out (desk_images.kept)."""
+    text, draft['images'] = desk_images.take(text, draft.get('images'))
+    return desk_images.kept(before, text, draft['images'])
+
+
 def _no_heading(text):
     """A result that would add a section is refused readably; the person adds sections."""
     if desk.has_heading(text):
@@ -1498,7 +1515,7 @@ def _apply(root, ident, draft, job):
         if part == 'opening' and kind == 'desk-revise-all':
             if fingerprint(draft['opening']) != meta.get('basis'):
                 raise ValueError(STALE)
-            text = _opening_text(content)
+            text = _landed(draft, draft['opening'], _opening_text(content))
             _no_heading(text)
             desk.checked_text(part, text)
             desk.keep(root, ident, part, draft['opening'], 'revise-all')
@@ -1511,7 +1528,7 @@ def _apply(root, ident, draft, job):
             raise ValueError(STALE) from None
         if fingerprint(section['text']) != meta.get('basis'):
             raise ValueError(STALE)
-        text = _clean(content, section['heading'])
+        text = _landed(draft, section['text'], _clean(content, section['heading']))
         _no_heading(text)
         desk.checked_text(part, text)
         desk.keep(
@@ -1548,6 +1565,8 @@ def _apply(root, ident, draft, job):
         if part == 'title':
             replacement = ' '.join(replacement.split())
         updated = whole[:at] + lead + replacement + trail + whole[at + len(passage) :]
+        if part != 'title':
+            updated = _landed(draft, whole, updated)
         _no_heading(replacement)
         desk.checked_text(part, updated)
         desk.keep(root, ident, part, whole, 'selection')
@@ -1573,6 +1592,9 @@ def _apply(root, ident, draft, job):
             section = sections[item['id']]
             before, text = section['text'], _clean(item['text'], section['heading'])
         if not text or text == before:
+            continue
+        text = _landed(draft, before, text)
+        if text == before:
             continue
         if item['id'] == 'opening' and meta.get('action') == 'reshape' and not sections:
             # Reshaping a draft with no headings may divide it into sections.
@@ -1735,6 +1757,12 @@ def _row(job):
     }
 
 
+def images_view(root, ident):
+    """The data of a desk blog's images, which the page reads once and keeps; the desk view
+    lists them by key only, so a poll never carries them."""
+    return {'id': ident, 'images': desk_images.served(desk.read(root, ident))}
+
+
 def view(root, ident):
     """The desk as the page reads it: the draft, its Markdown, its jobs and version counts."""
     import desk_finish
@@ -1775,8 +1803,10 @@ def view(root, ident):
             'problems': tally.get('problems', []),
         }
     return {
-        **draft,
-        'markdown': desk.join(draft),
+        # The images are listed without their data, read once from `images_view`.
+        **{key: value for key, value in draft.items() if key != 'images'},
+        'images': desk_images.shown(draft),
+        'markdown': desk.join(draft, images=False),
         'jobs': rows,
         'chain': chain,
         'working': next((row for row in reversed(rows) if row['busy']), None),

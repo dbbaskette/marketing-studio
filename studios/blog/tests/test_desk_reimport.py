@@ -216,5 +216,30 @@ class GoogleTests(ReimportCase):
         self.assertIn('The text.', (self.folder(ident) / 'DRAFT.md').read_text())
 
 
+class ImageReimportTests(ReimportCase):
+    def test_a_chat_save_or_googles_text_with_images_keeps_them_beside_the_text(self):
+        from test_desk import DEFINITIONS, GOOGLE, IMAGE_ONE, OPENING
+
+        ident = self.desk_blog(GOOGLE)
+        edited = GOOGLE.replace('The end.', 'The end, from chat.')
+        self.run_command(
+            'article', 'save', '--id', ident, '--kind', 'draft', '--file', self.file(edited)
+        )
+        shown = self.view(ident)
+        self.assertEqual(shown['opening'], OPENING.replace('The end.', 'The end, from chat.'))
+        self.assertNotIn('data:image', json.dumps(shown))
+        self.assertEqual((self.folder(ident) / 'DRAFT.md').read_text(), edited)
+        # Text that names the images without their definitions keeps the images it had.
+        bare = '# Images synthetic\n\n' + OPENING.replace('The end.', 'Bare.') + '\n'
+        with studio.locked(self.root):
+            draft = desk.reimport(self.root, ident, bare, 'google')
+        self.assertEqual(draft['images']['image1']['uri'], IMAGE_ONE)
+        self.assertTrue(
+            (self.folder(ident) / 'DRAFT.md').read_text().endswith('Bare.\n\n' + DEFINITIONS + '\n')
+        )
+        kept = desk.versions(self.root, ident, 'opening')
+        self.assertNotIn('data:image', json.dumps(kept))
+
+
 if __name__ == '__main__':
     unittest.main()

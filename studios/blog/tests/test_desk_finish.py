@@ -11,7 +11,7 @@ import desk_finish
 import desk_jobs
 import studio
 import tool_jobs
-from test_desk import DRAFT, DeskCase
+from test_desk import DRAFT, GOOGLE, IMAGE_TWO, DeskCase
 
 
 class FinishCase(DeskCase):
@@ -1391,6 +1391,83 @@ class DeskGoogleTests(unittest.TestCase):
         self.assertEqual(
             [(p['before'], p['after']) for p in again['proposals']], [('slow', 'very late')]
         )
+
+
+class ImageFinishingTests(DeskCase):
+    """Finishing, the Google suggestion plan and the pre-publish check with images present."""
+
+    def test_a_dropped_or_altered_image_reference_changes_the_structure(self):
+        before = 'A paragraph.\n\n![][image1]\n\nAnother.'
+        self.assertEqual(desk_finish.changes_structure(before, before), '')
+        self.assertEqual(
+            desk_finish.changes_structure(before, 'A paragraph.\n\nAnother.'),
+            desk_finish.STRUCTURE,
+        )
+        self.assertEqual(
+            desk_finish.changes_structure(before, before.replace('![]', '![A chart]')),
+            desk_finish.STRUCTURE,
+        )
+        # Without counting paragraphs, as an alternative opening is compared, it still counts.
+        self.assertEqual(
+            desk_finish.changes_structure(before, 'A paragraph. Another.', paragraphs=False),
+            desk_finish.STRUCTURE,
+        )
+
+    def test_a_suggestion_that_drops_an_image_is_flagged_and_left_out_of_apply_all(self):
+        made = desk.create(self.root, {'manuscript': GOOGLE})
+        draft = desk.read(self.root, made['id'])
+        items, dropped, _ = desk_finish._read_humanize(
+            draft,
+            {
+                'suggestions': [
+                    {
+                        'part': 'opening',
+                        'before': 'An opening paragraph.\n\n![][image1]',
+                        'after': 'A first paragraph.',
+                        'why': 'Stock wording.',
+                    },
+                    {
+                        'part': 'opening',
+                        'before': 'The end.',
+                        'after': 'That is all.',
+                        'why': 'Flat.',
+                    },
+                ]
+            },
+        )
+        self.assertEqual(dropped, 0)
+        self.assertIn(desk_finish.STRUCTURE, items[0]['flag'])
+        self.assertEqual(items[1]['flag'], '')
+
+    def test_the_google_plan_reads_draft_md_with_its_images_as_the_doc_shows_them(self):
+        baseline = GOOGLE.replace('The end.', 'See ![][image1] here.\n\nThe end.')
+        body = baseline.replace('More text after', 'More words after').replace('here.', 'there.')
+        found, left, paragraphs = desk_finish.google_changes(baseline, body)
+        self.assertEqual(
+            sorted((f['before'], f['after']) for f in found), [('here', 'there'), ('text', 'words')]
+        )
+        self.assertEqual(left, 0)
+        self.assertNotIn('data:image', json.dumps([found, paragraphs]))
+        # An image moved or removed is made in the Doc by hand, never sent as words.
+        _, left = desk_finish.google_changes(baseline, baseline.replace('![][image2]\n\n', ''))[:2]
+        self.assertEqual(left, 1)
+
+    def test_the_prepublish_check_reads_images_sensibly(self):
+        import prepublish
+
+        # Synthetic data that happens to hold a placeholder word between base64 marks.
+        odd = 'data:image/png;base64,iVBORw0KGgo/TODO+AAAA/TK+AAAA'
+        manuscript = (
+            '# Images synthetic\n\nText.\n\n![][image1]\n\n![A chart][image2]\n\n![][missing]\n\n'
+            '[image1]: <' + odd + '>\n\n[image2]: <' + IMAGE_TWO + '>\n'
+        )
+        made = desk.create(self.root, {'manuscript': manuscript})
+        body = (self.folder(made['id']) / 'DRAFT.md').read_text()
+        self.assertIn('[image1]: <' + odd + '>', body)
+        codes = [f['code'] for f in prepublish.report(self.root, made['id'])['findings']]
+        self.assertNotIn('unfinished-note', codes)
+        self.assertEqual(codes.count('image-alt'), 2)  # image1 and the missing one
+        self.assertEqual(codes.count('image-source'), 1)  # a reference with no image
 
 
 if __name__ == '__main__':

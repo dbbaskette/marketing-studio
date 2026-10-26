@@ -1,6 +1,7 @@
 """Desk jobs: what each kind sends, one job per blog, and how a result lands."""
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
+import functools
 import json
 import unittest
 
@@ -8,7 +9,7 @@ import blog_runner
 import desk
 import desk_jobs
 import tool_jobs
-from test_desk import DRAFT, DeskCase
+from test_desk import DRAFT, GOOGLE, IMAGE_TWO, SECTIONED, DeskCase
 
 
 class DeskJobCase(DeskCase):
@@ -707,6 +708,134 @@ class SharedGuidanceTests(unittest.TestCase):
         self.assertNotIn('voice wins', text)
         self.assertNotIn('selected voice', text)
         self.assertIn('the voice wins', blog_runner.style_rule('How-to'))
+
+
+class ImageJobTests(DeskCase):
+    """Jobs see the short image references only, and a result keeps every one of them."""
+
+    def setUp(self):
+        super().setUp()
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        source = self.source(
+            'A synthetic source.\n\n![][image1]\n\n[image1]: <' + IMAGE_TWO + '>\n'
+        )
+        self.made = desk.create(
+            self.root,
+            {'title': 'Sectioned', 'manuscript': SECTIONED, 'style': 'how-to', 'sources': [source]},
+        )
+        self.ident = self.made['id']
+        self.one, self.two = (s['id'] for s in self.made['sections'])
+
+    def let_go(self, job):
+        """Take a queued job out of the way, so the next kind can be queued."""
+        saved = tool_jobs.read(self.root, job['id'])
+        saved.update(status='cancelled')
+        tool_jobs.write(self.root, saved)
+        return saved
+
+    def test_no_queued_desk_or_finishing_job_carries_image_data(self):
+        import article_tools
+
+        guide = article_tools.save_profile(
+            self.root,
+            {'name': 'Plain', 'guide': 'Plain words.', 'status': 'confirmed', 'confirmed': True},
+        )['profile']
+        draft = desk.read(self.root, self.ident)
+        queued = [
+            lambda: desk_jobs.section(self.root, self.ident, 1, self.one, 'Tighten it.'),
+            lambda: desk_jobs.section(self.root, self.ident, 1, self.two, ''),
+            lambda: desk_jobs.selection(
+                self.root, self.ident, 1, self.one, '![A diagram][image1]', 'fix'
+            ),
+            lambda: desk_jobs.revise_all(self.root, self.ident, 1, 'Shorter.'),
+            lambda: desk_jobs.first_pass(self.root, self.ident, 1, 'tighten'),
+            lambda: desk_jobs.first_pass(self.root, self.ident, 1, 'reshape'),
+            lambda: desk_jobs.draft_job(self.root, self.ident, 1),
+            lambda: desk_jobs.outline_job(self.root, self.ident),
+        ] + [
+            functools.partial(desk_jobs.finish, self.root, self.ident, 1, tool, **extra)
+            for tool, extra in (
+                ('humanize', {'level': 'light'}),
+                ('facts', {}),
+                ('headline', {}),
+                ('feedback', {}),
+                ('voice', {'guide': guide}),
+            )
+        ]
+        kinds = []
+        for queue in queued:
+            saved = self.let_go(queue())
+            kinds.append(saved['kind'])
+            self.assertNotIn('data:image', json.dumps(saved['payload']), saved['kind'])
+            self.assertNotIn('data:image', saved['guidance'], saved['kind'])
+            # The guidance says to keep every reference where it is and to add none.
+            self.assertIn('![…][imageN]', saved['guidance'], saved['kind'])
+        self.assertEqual(len(set(kinds)), 11)
+        self.assertEqual(desk.read(self.root, self.ident)['images'], draft['images'])
+
+    def ready(self, job, content):
+        saved = tool_jobs.read(self.root, job['id'])
+        saved.update(status='ready', result={'content': content, 'notes': ''}, finished_at='x')
+        tool_jobs.write(self.root, saved)
+        desk_jobs.settle(self.root, self.ident)
+        return tool_jobs.read(self.root, job['id']), desk.read(self.root, self.ident)
+
+    def test_a_rewrite_that_drops_a_reference_has_it_put_back_where_it_was(self):
+        job = desk_jobs.section(self.root, self.ident, 1, self.two, 'Shorter.')
+        saved, draft = self.ready(job, 'Text two, shorter.')
+        self.assertTrue(saved['applied'])
+        self.assertEqual(draft['sections'][1]['text'], 'Text two, shorter.\n\n![][image2]')
+        self.assertIn('[image2]: <' + IMAGE_TWO + '>', desk.join(draft))
+
+    def test_an_altered_or_invented_reference_is_undone(self):
+        job = desk_jobs.section(self.root, self.ident, 1, self.one, 'More.')
+        _, draft = self.ready(job, '![Changed][image1]\n\nText one, more.\n\n![][image9]')
+        self.assertEqual(draft['sections'][0]['text'], '![A diagram][image1]\n\nText one, more.')
+
+    def test_a_selection_that_drops_its_reference_keeps_it(self):
+        job = desk_jobs.selection(
+            self.root, self.ident, 1, self.one, '![A diagram][image1]\n\nText one.', 'shorten'
+        )
+        _, draft = self.ready(job, 'Text one, short.')
+        self.assertEqual(draft['sections'][0]['text'], '![A diagram][image1]\n\nText one, short.')
+
+    def test_a_first_pass_keeps_the_references_of_every_part(self):
+        job = desk_jobs.first_pass(self.root, self.ident, 1, 'tighten')
+        _, draft = self.ready(
+            job,
+            json.dumps(
+                [
+                    {'id': self.one, 'text': '![A diagram][image1]\n\nOne.'},
+                    {'id': self.two, 'text': 'Two.'},
+                ]
+            ),
+        )
+        self.assertEqual(
+            [s['text'] for s in draft['sections']],
+            ['![A diagram][image1]\n\nOne.', 'Two.\n\n![][image2]'],
+        )
+
+    def test_reshaping_a_draft_with_no_headings_keeps_its_images_in_the_new_sections(self):
+        made = desk.create(self.root, {'manuscript': GOOGLE, 'style': 'how-to'})
+        self.ident = made['id']
+        job = desk_jobs.first_pass(self.root, self.ident, 1, 'reshape')
+        shaped = 'A lead.\n\n## First\n\n![][image1]\n\nMore.\n\n## Second\n\n![][image2]\n\nEnd.'
+        saved, draft = self.ready(job, json.dumps([{'id': 'opening', 'text': shaped}]))
+        self.assertEqual(saved['error'], '')
+        self.assertEqual(
+            [s['text'] for s in draft['sections']], ['![][image1]\n\nMore.', '![][image2]\n\nEnd.']
+        )
+        self.assertEqual(desk.join(draft).count('data:image'), 2)
+
+    def test_a_whole_draft_revision_of_an_opening_keeps_its_images(self):
+        made = desk.create(self.root, {'manuscript': GOOGLE})
+        self.ident = made['id']
+        job = desk_jobs.revise_all(self.root, self.ident, 1, 'Shorter.')
+        _, draft = self.ready(job, '**A bold lead line**\n\nShorter.\n\n![][image2]\n\nEnd.')
+        self.assertEqual(
+            draft['opening'],
+            '**A bold lead line**\n\nShorter.\n\n![][image1]\n\n![][image2]\n\nEnd.',
+        )
 
 
 if __name__ == '__main__':

@@ -493,3 +493,43 @@ class DeskStartTeamTests(TeamCase):
         )
         self.assertTrue(other['id'])
         self.assertEqual(gitstate.changed(self.found), [])
+
+
+class DeskTeamImageTests(TeamCase):
+    def folder(self, ident):
+        import studio
+
+        return studio.inside(self.root, 'articles', ident)
+
+    def test_an_older_record_is_cleaned_on_viewing_as_its_own_recorded_change(self):
+        from test_desk import OPENING, owner_shaped
+
+        ident = self.made['id']
+        body = owner_shaped(self, self.made)
+        gitstate.commit(self.found, 'A record kept before images moved out', [ident])
+        self.assertEqual(gitstate.changed(self.found), [])
+        commits = self.local_commits()
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        self.assertEqual(shown['opening'], OPENING)
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertEqual(self.local_commits(), commits + 1)
+        self.assertIn('images', support.git(self.found.repo, 'log', '-1', '--format=%s'))
+        self.assertEqual((self.folder(ident) / 'DRAFT.md').read_text(), body)
+        # A desk page open before the cleaning saves as it would have.
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': ident,
+                'seen': 2,
+                'part': 'opening',
+                'text': OPENING + ' More.',
+                'session': 'e' * 16,
+            },
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertIn('More.', (self.folder(ident) / 'DRAFT.md').read_text())
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -2447,11 +2447,13 @@ def view(root, name, query):
 
                 return prepublish.report(root, arg('id'), whole(arg('title_limit', 80)))
             return advanced_tools.overview(root, arg('id'), whole(arg('offset', 0)))
-    if name in ('desk', 'desk-versions', 'desk-angles', 'desk-proofread'):
+    if name in ('desk', 'desk-versions', 'desk-angles', 'desk-proofread', 'desk-images'):
         import desk
         import desk_jobs
 
         with studio.locked(root):
+            if name == 'desk-images':
+                return desk_jobs.images_view(root, arg('id'))  # Read once by the page.
             if name == 'desk-angles':
                 return desk_jobs.angles_view(root, arg('operation'))
             if name == 'desk-proofread':
@@ -2650,7 +2652,7 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
             self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
             self.send_header(
                 'Content-Security-Policy',
-                "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+                "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
             )
             if allow:
                 self.send_header('Allow', allow)

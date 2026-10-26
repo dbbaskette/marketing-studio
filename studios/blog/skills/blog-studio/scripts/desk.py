@@ -1,7 +1,8 @@
 """The writing desk: a blog's draft as title, opening and sections, kept with versions.
 
 DRAFT.md is rewritten on every save so Copy, Download, Google Docs, the team library and the
-pre-publish check read the same text as before.
+pre-publish check read the same text as before. Images held as data are kept beside the text
+(desk_images): a part holds only their short references, and DRAFT.md ends with them.
 """
 
 import json
@@ -10,12 +11,13 @@ import secrets
 import textwrap
 from types import SimpleNamespace
 
+import desk_images
 import studio
 
 DESK = 'desk'
 KEEP = 20  # versions kept per part
 PARTS = ('title', 'opening')  # plus each section id
-LIMIT = 200_000  # characters in one part
+LIMIT = 200_000  # characters in one part, not counting image data (desk_images)
 ON_DESK = 'This blog is on the desk. Edit it there.'
 LENGTHS = ('style', 'short', 'deep')  # as blog_runner.LENGTHS: usual, short, in depth
 CREATE = frozenset(
@@ -68,9 +70,11 @@ def split(markdown, title=''):
 
     The first line is the title when it is a `# ` heading. Each `## ` heading starts a
     section; text before the first one is the opening. A heading inside a fenced code block
-    is text, and deeper headings stay inside their section.
+    is text, and deeper headings stay inside their section. Images held as data leave the
+    text first, for `images`; their references stay where they sit.
     """
-    lines = markdown.replace('\r\n', '\n').strip('\n').split('\n')
+    markdown, images = desk_images.take(markdown.replace('\r\n', '\n'))
+    lines = markdown.strip('\n').split('\n')
     found = TITLE.fullmatch(lines[0]) if lines else None
     if found:
         title, lines = found.group(1), lines[1:]
@@ -100,6 +104,7 @@ def split(markdown, title=''):
             }
             for section in sections
         ],
+        'images': images,
     }
 
 
@@ -188,8 +193,9 @@ def _title_line(text):
     return found.group(1).strip()[:500] if found else ''
 
 
-def join(draft):
-    """The Markdown the parts make, as DRAFT.md keeps it."""
+def join(draft, images=True):
+    """The Markdown the parts make, as DRAFT.md keeps it: then the definitions of the images
+    the text refers to, at the end. Without `images`, the text alone, as the page shows it."""
     parts = []
     if draft.get('title'):
         parts.append('# ' + draft['title'])
@@ -199,7 +205,8 @@ def join(draft):
         parts.append(
             '## ' + section['heading'] + ('\n\n' + section['text'] if section['text'] else '')
         )
-    return '\n\n'.join(parts) + '\n'
+    held = desk_images.definitions(draft) if images else []
+    return '\n\n'.join(parts + held) + '\n'
 
 
 # The desk record. Every function below expects the caller to hold the studio lock, as the
@@ -323,10 +330,12 @@ def create(root, data):
             raise ValueError('Paste or upload a draft to start on the desk.')
     if not manuscript.strip():
         raise ValueError('Paste or upload a draft to start on the desk.')
-    if len(manuscript) > LIMIT:
-        # As runs take, and as much as one part may hold or one job may return.
-        raise ValueError('Use a draft up to 200,000 characters.')
     draft = split(manuscript, title=title.strip())
+    if len(join(draft, images=False)) > LIMIT:
+        # As runs take, and as much as one part may hold or one job may return. Image data
+        # is not counted: it is kept beside the text, within its own limits.
+        raise ValueError('Use a draft up to 200,000 characters.')
+    draft = desk_images.fitted(draft)
     if not draft['title']:
         raise ValueError('Give the blog a title.')
     draft['title'] = draft['title'][:500]
@@ -449,7 +458,7 @@ def _start(root, data, way, title, tone, length, style):
             notes = data.get('outline') or ''
         if not isinstance(notes, str) or not notes.strip():
             raise ValueError('Paste or upload your outline or notes.')
-        if len(notes) > LIMIT:
+        if len(desk_images.take(notes)[0]) > LIMIT:
             raise ValueError('Use an outline up to 200,000 characters.')
     parsed = outline_from(notes) if way == 'outline' else None
     title = (title or _title_line(notes))[:500]
@@ -574,7 +583,7 @@ def open_run(root, ident):
     # DRAFT.md is the person's latest text, so it opens too.
     if not (found['complete'] or found['finished']) or not (directory / 'DRAFT.md').is_file():
         raise ValueError('Finish this blog, then open it on the desk.')
-    draft = split((directory / 'DRAFT.md').read_text(), title=record['title'])
+    draft = desk_images.fitted(split((directory / 'DRAFT.md').read_text(), title=record['title']))
     now = studio.now()
     draft = {
         'schema': 1,
@@ -598,7 +607,41 @@ def read(root, ident):
     _, target = _paths(root, ident)
     if not target.is_file() or target.is_symlink():
         raise ValueError('This blog is not on the desk.')
-    return studio.read_json(target)
+    draft = studio.read_json(target)
+    if desk_images.inside(draft):
+        draft = _images_out(root, ident, draft)
+    return draft
+
+
+def _images_out(root, ident, draft):
+    """A record kept before images moved out of the text, cleaned as it is first read.
+
+    Under the studio lock, on the computer that drives the blog, the clean record is written
+    once with no new revision and no part marked changed, so no open form is refused for it
+    alone; DRAFT.md already ends with the same definitions. In a team workspace the change is
+    recorded on its own. Otherwise the clean draft is only what this read returns."""
+    draft = desk_images.moved_out(draft)
+    if not studio.lock_held():
+        return draft
+    from team_workspace import guard, keep_desk, space
+
+    try:
+        guard(root, ident)
+    except ValueError:
+        return draft  # Another computer drives it: cleaned there.
+    directory, target = _paths(root, ident)
+    studio.write_json(target, draft)
+    record = studio.read_json(studio.metadata_path(directory, 'articles'))
+    current, body = studio.inside(directory, 'DRAFT.md'), join(draft).encode()
+    recorded = record.get('artifact_hashes', {}).get('draft')
+    if current.is_file() and current.read_bytes() != body:
+        if studio.digest(current.read_bytes()) == recorded:  # Never text changed elsewhere.
+            studio.atomic(current, body)
+            record['artifact_hashes']['draft'] = studio.digest(body)
+            studio.persist(directory, 'articles', record)
+    if space(root):
+        keep_desk(root, ident, 'Move the images of ' + ident + ' out of its desk text')
+    return draft
 
 
 def _part(draft, part):
@@ -693,13 +736,20 @@ def checked_text(part, text):
 
 
 def save(root, ident, seen, part, text, source='save', session=None):
-    """Save one part the form last saw at revision `seen`; an outdated form is refused."""
-    checked_text(part, text)
+    """Save one part the form last saw at revision `seen`; an outdated form is refused. An
+    image pasted as data, or a version kept with image data, leaves the text for `images`."""
+    if not isinstance(text, str):
+        raise ValueError('Keep one part under 200,000 characters.')
     draft = read(root, ident)
+    images = draft.get('images') or {}
+    if part != 'title':
+        text, images = desk_images.take(text, images)
+    checked_text(part, text)
     before = text_of(draft, part)
-    if before == text.strip():
+    if before == text.strip() and images == (draft.get('images') or {}):
         return draft  # The same text again, as from a retried save: nothing to refuse.
     checked(draft, seen, [part])
+    draft = desk_images.fitted({**draft, 'images': images})
     keep(root, ident, part, before, source, session)
     _set(draft, part, text)
     return _write(root, ident, draft, [part])
@@ -794,8 +844,6 @@ def reimport(root, ident, markdown, source, record=None):
         raise ValueError('Choose a listed kind of change.')
     if not isinstance(markdown, str) or not markdown.strip():
         raise ValueError('Cannot save an empty draft.')
-    if len(markdown) > LIMIT:
-        raise ValueError('Use a draft up to 200,000 characters.')
     import desk_jobs
 
     if any(
@@ -807,9 +855,13 @@ def reimport(root, ident, markdown, source, record=None):
         )
     draft = read(root, ident)
     found = split(markdown, title=draft['title'])
+    if len(join(found, images=False)) > LIMIT:
+        raise ValueError('Use a draft up to 200,000 characters.')
     if len(found['sections']) > SECTIONS:
         raise ValueError('Keep the draft to 60 sections.')
-    changed = []
+    # The images it defines join the ones kept; text that only names them keeps them.
+    images = {**(draft.get('images') or {}), **found['images']}
+    changed = ['images'] if images != (draft.get('images') or {}) else []
     title = ' '.join(found['title'].split()) or draft['title']
     if title != draft['title']:
         checked_text('title', title)
@@ -867,6 +919,7 @@ def reimport(root, ident, markdown, source, record=None):
         [{**section, 'index': current.index(section), 'at': now} for section in gone],
     )
     draft['sections'] = merged
+    draft = desk_images.fitted({**draft, 'images': images})
     draft = _write(root, ident, draft, sorted(set(changed)))
     if record is not None:
         directory, _ = _paths(root, ident)
@@ -915,11 +968,12 @@ def unremove(root, ident, seen, index):
     taken = {section['id'] for section in draft['sections']}
     kept = str(item.get('id') or '')
     part = kept if PART.fullmatch(kept) and kept not in taken else _id(taken)
+    text, draft['images'] = desk_images.take(str(item.get('text') or ''), draft.get('images'))
     section = {
         'id': part,
         'heading': ' '.join(str(item.get('heading') or 'Section').split())[:200],
         'brief': str(item.get('brief') or '')[:BRIEF],
-        'text': str(item.get('text') or ''),
+        'text': text.strip(),
     }
     at = item.get('index') if type(item.get('index')) is int else len(draft['sections'])
     draft['sections'].insert(max(0, min(at, len(draft['sections']))), section)
@@ -1054,7 +1108,18 @@ def keep(root, ident, part, text, source, session=None, extra=None):
 
 
 def versions(root, ident, part):
-    """The kept versions of one part, newest first."""
+    """The kept versions of one part, newest first, each as the page shows it: a version kept
+    before images moved out of the text shows their references, not their data."""
+    return [
+        {**entry, 'text': desk_images.take(entry['text'])[0].strip()}
+        if desk_images.holds(entry['text'])
+        else entry
+        for entry in _kept(root, ident, part)
+    ]
+
+
+def _kept(root, ident, part):
+    """The kept versions of one part, newest first, as they were kept."""
     return list(reversed(_entries(_versions_path(root, ident, part))))
 
 
@@ -1076,7 +1141,7 @@ def restore(root, ident, seen, part, index):
     """Bring back a kept version; the text it replaces is kept as a version too. A version
     from before a first pass divided the draft undoes the division as a whole: the sections
     that pass added go to the Outline tab's removed list, to bring back if wanted."""
-    found = versions(root, ident, part)
+    found = _kept(root, ident, part)
     if type(index) is not int or not 0 <= index < len(found):
         raise ValueError('Choose a saved version.')
     entry = found[index]
@@ -1085,8 +1150,9 @@ def restore(root, ident, seen, part, index):
         return save(root, ident, seen, part, entry['text'], source='restore')
     import desk_jobs
 
-    checked_text(part, entry['text'])
     draft = read(root, ident)
+    text, images = desk_images.take(entry['text'], draft.get('images'))
+    checked_text(part, text)
     order = [section['id'] for section in draft['sections']]
     taken = [section for section in draft['sections'] if section['id'] in added]
     checked(draft, seen, [part, 'outline'] + [section['id'] for section in taken])
@@ -1102,7 +1168,8 @@ def restore(root, ident, seen, part, index):
         [{**section, 'index': order.index(section['id']), 'at': now} for section in taken],
     )
     draft['sections'] = [section for section in draft['sections'] if section['id'] not in added]
-    _set(draft, part, entry['text'])
+    draft = desk_images.fitted({**draft, 'images': images})
+    _set(draft, part, text)
     return _write(root, ident, draft, [part, 'outline'] + [section['id'] for section in taken])
 
 
