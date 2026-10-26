@@ -270,7 +270,7 @@ input.desk-text{min-height:44px}
 .review-choice{display:flex;align-items:flex-start;gap:.5rem;min-height:32px;overflow-wrap:anywhere}
 .review-choice>input{margin-top:.25rem;flex:none}
 .review-filter{margin:0}
-.review-quick>summary{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;min-height:44px;cursor:pointer}
+.review-quick>summary{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;min-height:44px}
 .review-quick>summary>.card-title{margin:0}
 .review-quick-list{margin-top:.6rem}
 .review-quick-list .desk-quote{flex-basis:100%;margin:0}
