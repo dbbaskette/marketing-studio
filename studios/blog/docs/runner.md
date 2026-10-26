@@ -71,18 +71,20 @@ desk. A topic or an outline takes three steps; a draft takes one screen (below):
 
 - **Your draft**, pasted, uploaded or from a Google Doc (every tab is read, and the Doc is
   not changed). The title is optional.
-- **What should happen first**: **Proofread and tighten** (the default, with no kind of
-  post; it fixes spelling, grammar and wordy sentences throughout, kept in History to
-  review afterwards), **Just give feedback** (Finishing's **Feedback without a rewrite** starts as the
-  desk opens: comments beside each part, and nothing in the text changes), **Reshape to
-  fit a kind of post** (only this one shows **Kind of post**, and needs one) or **Leave
-  it as it is**. The opening is worked on with the sections, and a draft with no `##`
-  headings is worked on as one part. Only Reshape may add headings, to divide such a draft
-  into the kind of post's sections; restoring the opening's **Before the first pass** in
-  History undoes that division as a whole, and the sections it added can be brought back on
-  the Outline tab. A **Note for the whole draft** revises a draft with no headings as one
-  part too. To approve each fix before it lands instead, choose **Leave it as it is**, then
-  use **Copy edit** in Finishing; the screen says so under the choices.
+- **What should happen first**: **Check spelling and grammar** (the default, with no kind
+  of post: "See each fix marked in your text, then accept or reject it. Nothing changes
+  until you accept." Finishing's **Copy edit** starts as the blog is made, and the blog
+  opens in [Review mode](#review-mode)), **Just give feedback** (Finishing's **Feedback
+  without a rewrite** starts as the desk opens: comments beside each part, and nothing in
+  the text changes), **Reshape to fit a kind of post** (only this one shows **Kind of
+  post**, and needs one) or **Leave it as it is**. The opening is worked on with the
+  sections, and a draft with no headings is worked on as one part. Only Reshape may add
+  headings, to divide such a draft into the kind of post's sections; restoring the
+  opening's **Before the first pass** in History undoes that division as a whole, and the
+  sections it added can be brought back on the Outline tab. A **Note for the whole draft**
+  revises a draft with no headings as one part too. The silent **Proofread and tighten**
+  first pass is no longer offered here; chat and older callers can still ask for it
+  (`first_pass: "tighten"`).
 - **Tone (optional)**, folded, starting from Settings.
 - **Check facts against your sources (optional)**, folded: the same files, Google Docs,
   links and library posts as above, for Finishing's fact check. There is no research and
@@ -97,11 +99,61 @@ An interview's **Review outline and start a draft** and a saved blog's **Open wr
 run** (when it has no step-by-step run) open this start too, with the outline or the saved
 draft already in place.
 
+## Review mode
+
+**Check spelling and grammar** lands here: a view of the desk for reading the draft and
+deciding on each fix, with the full desk one click away.
+
+- **While it checks**, one calm line, "Checking spelling and grammar…", with **Stop**. The
+  draft is readable and editable meanwhile.
+- **The draft reads as a document**, section by section on an opaque page: bold headings
+  shown plainly, lists as bullets, links as their words, and each image as a thumbnail
+  where it sits.
+- **Each fix is marked in place**: the old words struck through, the new words
+  highlighted, numbered, with its reason and **Accept** and **Reject** under the paragraph
+  (stacked on a phone). **Accept** applies the fix and keeps the earlier text in History;
+  **Reject** sets it aside. A wording change beyond grammar is its own fix, with its reason.
+- **Accept all** and **Reject all** sit at the top with the count left to review. A fix that
+  changes a fact, code or the shape of a part is flagged, and **Accept all** leaves it for
+  you to check.
+- **Click any paragraph to edit it yourself.** It opens in place, saves after a short pause
+  or when you click away, and the other fixes stay as they are; a fix whose words are no
+  longer in the text drops out and is counted as no longer fitting.
+- **Check again** runs Copy edit on the current text.
+- **When nothing is left to review**, a blog started from a Google Doc offers **Send
+  accepted changes to Google Doc**: the plan says how many wording changes go, as
+  suggestions for the Doc's owner, and nothing is sent until **Send**. It sends every
+  difference from the Google Doc as it was read: the fixes you accepted and any edits you
+  made, here or on the full desk. Rejected fixes are never sent. Other blogs offer
+  **Copy** and **Download**.
+- **Open the full desk** shows the notes, the Outline tab and the whole Finishing panel;
+  **Review fixes** there comes back. The address keeps Review mode (`stage=review`), so a
+  reload stays in it.
+
 ## The writing desk
 
 The desk is one page: the title, the opening, then a card for each section.
 
-- **Edit in place.** Type in any card; it saves as you go.
+Sections start at the draft's headings, at whatever level it uses: a Google Doc's export
+writes `### **Bold heading**`, and those headings start its sections, keeping their level
+and bold marks so `DRAFT.md` and the Google Doc read the same. The shallowest level from
+`##` to `######` used below the `#` title is the section level; deeper headings stay
+inside their section, and a bold line on its own is not a heading. A part cannot hold a
+heading at the section level or above (any heading, in a draft with no sections), which
+would start a section. A heading may be indented up to three spaces or followed by a tab;
+it keeps its marks as written. A draft of more than 60 sections is refused readably.
+
+A blog brought to the desk before this, whose whole text sat in the opening, is divided
+into its sections the first time it is opened on the computer that drives it (and no job
+is under way), with no word changed and the opening's History kept. A page left open on
+its opening or outline is asked to reload; one on another part still saves. In a team
+workspace the division is shared with your next decision. Restoring an opening version
+from before the division, such as the whole draft before a first pass, brings its
+sections back with it; the sections there now can be brought back on the Outline tab. A
+record that cannot be divided yet keeps its headings as text in the opening, as before.
+
+- **Edit in place.** Type in any card; it saves as you go. A job landing or a poll never
+  takes the focus or the caret from a field you are typing in.
 - **Section notes.** Under each section, "How should this change?" and **Rewrite**. Only
   what the note asks for changes; the rest is kept word for word, at the same length and
   shape. With no note, **Write again** writes the section fresh from its brief, the
@@ -145,12 +197,12 @@ that is out of date is refused rather than written over newer text.
 **Finishing** opens a side panel (a full-screen sheet on a phone). Every tool suggests;
 nothing changes until you apply.
 
-- **Copy edit**: grammar, spelling, punctuation, consistency, clarity and concision in the
-  title and the text, each fix shown before and after with a short note on why, for you
-  to approve. Claims, qualifiers and the argument are not changed; the author's voice,
-  facts, quotes, links and image references are kept, and a fix that
-  would change a fact, code or the part's shape is flagged. It is **Proofread and tighten**
-  with each change approved first.
+- **Copy edit** opens [Review mode](#review-mode), where its fixes are marked in the text
+  to accept or reject: grammar, spelling, punctuation, consistency, clarity and concision
+  in the title and the text, each with a short note on why. Claims, qualifiers and the
+  argument are not changed; the author's voice, facts, quotes, links and image references
+  are kept, and a fix that would change a fact, code or the part's shape is flagged.
+  **Check spelling and grammar** on the polishing screen runs it too.
 - **Humanize** at light, medium or strong: sentences that read as machine-written, each
   with a rewrite. Numbers, names, quotes and links are kept, and a rewrite that would
   change one is flagged.
@@ -168,8 +220,8 @@ nothing changes until you apply.
   blog on the desk) and **Send to Google Doc** as suggestions, for a blog started from a
   Doc.
 
-Each suggestion shows before and after side by side. **Apply**, **Edit** or **Skip** it,
-or **Apply all** for Copy edit, Humanize and Apply a voice (flagged ones wait to be checked
+In the panel, each suggestion shows before and after side by side. **Apply**, **Edit** or **Skip** it,
+or **Apply all** for Humanize and Apply a voice (flagged ones wait to be checked
 one by one). Each Apply keeps the
 earlier text in History. Suggestions wait on this computer until you decide; only what
 you apply is shared with a team.

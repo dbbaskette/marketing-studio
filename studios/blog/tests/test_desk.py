@@ -3,6 +3,7 @@
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
 import os
+import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -429,6 +430,52 @@ class RouteTests(RouteCase):
         self.assertEqual(again['id'], made['id'])
         self.assertEqual([row['kind'] for row in again['jobs']], ['finish-feedback'])
 
+    def test_check_spelling_and_grammar_first_queues_copy_edit_and_rewrites_nothing(self):
+        import tool_jobs
+
+        made = self.start(style='', first_pass='copyedit')
+        self.assertIsNone(made['first_pass_problem'])
+        self.assertEqual(made['revision'], 1)
+        self.assertEqual(made['markdown'], DRAFT)
+        self.assertEqual(made['working']['kind'], 'finish-copyedit')
+        self.assertEqual(made['working']['part'], 'finishing')
+        job = tool_jobs.read(self.root, made['working']['id'])
+        self.assertIn('Copy edit this draft and its title', job['guidance'])
+        self.assertEqual(job['metadata']['desk']['action'], 'copyedit')
+        # A retried request is the same blog, with no second job; nothing waits on a part.
+        again = self.start(style='', first_pass='copyedit')
+        self.assertEqual(again['id'], made['id'])
+        self.assertEqual([row['kind'] for row in again['jobs']], ['finish-copyedit'])
+        saved = self.post(
+            'desk-save',
+            {'id': made['id'], 'seen': 1, 'part': 'title', 'text': 'Typed while it checks'},
+        )
+        self.assertEqual(saved['revision'], 2)
+
+    def test_check_spelling_and_grammar_needs_written_text_and_a_draft_you_bring(self):
+        made = self.post(
+            'desk-create',
+            {
+                'operation': 'e' * 32,
+                'title': 'Only a title',
+                'manuscript': '# Only a title\n',
+                'first_pass': 'copyedit',
+            },
+        )
+        self.assertIsNone(made['working'])
+        self.assertRegex(made['first_pass_problem'], 'Write the draft first')
+        with self.assertRaisesRegex(ValueError, 'for a draft you bring'):
+            self.post(
+                'desk-create',
+                {
+                    'operation': 'f' * 32,
+                    'way': 'topic',
+                    'title': 'Synthetic',
+                    'point': 'A point.',
+                    'first_pass': 'copyedit',
+                },
+            )
+
     def test_feedback_first_is_for_a_draft_you_bring(self):
         with self.assertRaisesRegex(ValueError, 'for a draft you bring'):
             self.post(
@@ -441,7 +488,7 @@ class RouteTests(RouteCase):
                     'first_pass': 'feedback',
                 },
             )
-        with self.assertRaisesRegex(ValueError, 'Choose tighten'):
+        with self.assertRaisesRegex(ValueError, 'Choose Check spelling and grammar'):
             self.start(first_pass='polish')
 
     def test_a_draft_without_headings_is_proofread_as_it_is(self):
@@ -1136,6 +1183,292 @@ class ImageRecoveryTests(RouteCase):
             shown = self.get('desk', id=made['id'])
         self.assertEqual(len(shown['images']), 2)
         self.assertEqual(len(self.get('desk-images', id=made['id'])['images']), 2)
+
+
+# Shaped like a Google Doc's Markdown export: a # title, a bold subtitle line, ### headings in
+# bold, a bold line that is not a heading, list items with hard breaks, a deeper heading, and
+# an image reference with its data at the end. Synthetic text only.
+EXPORTED_OPENING = (
+    '**A synthetic subtitle in bold**\n\n'
+    'An opening paragraph with a [link](https://example.com/one).'
+)
+EXPORTED = (
+    '# A synthetic agentic post\n\n'
+    + EXPORTED_OPENING
+    + '\n\n### **Building synthetic workflows**\n\n'
+    'A workflow paragraph.\n\n![][image1]\n\nText after the image.\n\n'
+    '### **The need for synthetic orchestration**\n\n'
+    'An orchestration paragraph.\n\n'
+    '**A bold line that is not a heading:**\n\n'
+    '* **One:** the first item.  \n* **Two:** the second item.\n\n'
+    '#### A deeper heading stays inside\n\nMore text.\n\n'
+    '### **Closing thoughts**\n\nThe end.\n\n'
+    '[image1]: <' + IMAGE_ONE + '>\n'
+)
+EXPORTED_HEADINGS = [
+    '**Building synthetic workflows**',
+    '**The need for synthetic orchestration**',
+    '**Closing thoughts**',
+]
+
+
+class HeadingLevelTests(unittest.TestCase):
+    """Sections start at the shallowest heading level from ## to ###### used below the title."""
+
+    def test_a_google_export_splits_at_its_bold_level_three_headings(self):
+        found = desk.split(EXPORTED)
+        self.assertEqual(found['title'], 'A synthetic agentic post')
+        self.assertEqual(found['opening'], EXPORTED_OPENING)
+        self.assertEqual([s['heading'] for s in found['sections']], EXPORTED_HEADINGS)
+        self.assertEqual({s['level'] for s in found['sections']}, {3})
+        self.assertEqual(desk.level(found), 3)
+        self.assertEqual(
+            found['sections'][0]['text'],
+            'A workflow paragraph.\n\n![][image1]\n\nText after the image.',
+        )
+        middle = found['sections'][1]['text']
+        self.assertIn('**A bold line that is not a heading:**', middle)
+        self.assertIn('* **One:** the first item.  \n* **Two:**', middle)
+        self.assertIn('#### A deeper heading stays inside\n\nMore text.', middle)
+        self.assertEqual(desk.join(found), EXPORTED)
+
+    def test_every_level_from_two_to_six_starts_sections_and_round_trips(self):
+        for level in range(2, 7):
+            mark = '#' * level
+            text = '# T\n\nOpen.\n\n' + mark + ' One\n\nA.\n\n' + mark + ' Two\n\nB.\n'
+            found = desk.split(text)
+            self.assertEqual([s['heading'] for s in found['sections']], ['One', 'Two'], level)
+            self.assertEqual(desk.level(found), level)
+            self.assertEqual(desk.join(found), text)
+
+    def test_a_mix_of_levels_splits_at_the_shallowest_and_keeps_the_deeper_inside(self):
+        text = '# T\n\n### Lead in\n\nA.\n\n## One\n\nB.\n\n### Detail\n\nC.\n\n## Two\n\nD.\n'
+        found = desk.split(text)
+        self.assertEqual([s['heading'] for s in found['sections']], ['One', 'Two'])
+        self.assertEqual(found['opening'], '### Lead in\n\nA.')
+        self.assertEqual(found['sections'][0]['text'], 'B.\n\n### Detail\n\nC.')
+        self.assertEqual(desk.level(found), 2)
+        self.assertEqual(desk.join(found), text)
+
+    def test_level_one_stays_the_title_and_a_bold_line_is_not_a_heading(self):
+        text = '# T\n\n**A bold line**\n\nText.\n\n# Another level one\n\nMore.\n'
+        found = desk.split(text)
+        self.assertEqual((found['title'], found['sections']), ('T', []))
+        self.assertIn('**A bold line**', found['opening'])
+        self.assertIn('# Another level one', found['opening'])
+        self.assertEqual(desk.join(found), text)
+
+    def test_a_heading_in_code_is_text_at_any_level(self):
+        text = '# T\n\n### One\n\n```\n### not a heading\n```\n\n### Two\n\nB.\n'
+        found = desk.split(text)
+        self.assertEqual([s['heading'] for s in found['sections']], ['One', 'Two'])
+        self.assertEqual(desk.join(found), text)
+
+    def test_an_indented_heading_and_a_tab_after_the_marks_are_headings(self):
+        text = '# T\n\nOpen.\n\n   ### A\n\na\n\n###\tB\n\nb\n\n    ### Code, not a heading\n'
+        found = desk.split(text)
+        self.assertEqual([s['heading'] for s in found['sections']], ['A', 'B'])
+        self.assertIn('    ### Code, not a heading', found['sections'][1]['text'])
+        self.assertEqual(desk.join(found), text)
+        self.assertTrue(desk.has_heading('  ### A', 3))
+        self.assertTrue(desk.has_heading('###\tA', 3))
+
+    def test_a_part_may_hold_only_headings_deeper_than_the_section_level(self):
+        self.assertTrue(desk.has_heading('A.\n\n### B', 3))
+        self.assertTrue(desk.has_heading('## B', 3))
+        self.assertFalse(desk.has_heading('#### B', 3))
+        self.assertFalse(desk.has_heading('### B', 2))
+        self.assertTrue(desk.has_heading('###### B', 6))
+
+
+class HeadingLevelRecordTests(DeskCase):
+    def test_a_google_export_comes_to_the_desk_in_sections_and_writes_back_its_marks(self):
+        made = desk.create(self.root, {'manuscript': EXPORTED})
+        directory = self.folder(made['id'])
+        self.assertEqual([s['heading'] for s in made['sections']], EXPORTED_HEADINGS)
+        self.assertEqual((directory / 'DRAFT.md').read_text(), EXPORTED)
+        desk.save(self.root, made['id'], 1, made['sections'][2]['id'], 'Edited.')
+        body = (directory / 'DRAFT.md').read_text()
+        self.assertTrue(
+            body.endswith('### **Closing thoughts**\n\nEdited.\n\n[image1]: <' + IMAGE_ONE + '>\n')
+        )
+        self.assertEqual(body.replace('Edited.', 'The end.'), EXPORTED)
+
+    def test_a_heading_at_the_section_level_or_above_cannot_be_typed_into_a_part(self):
+        made = desk.create(self.root, {'manuscript': EXPORTED})
+        part = made['sections'][0]['id']
+        words = 'A ### heading would start a new section. Use #### for a heading inside this part.'
+        for text in ('X.\n\n### Sneaky\n\nMore.', 'X.\n\n## Sneaky'):
+            with self.assertRaisesRegex(ValueError, re.escape(words)):
+                desk.save(self.root, made['id'], 1, part, text)
+        with self.assertRaisesRegex(ValueError, re.escape(words)):
+            desk.save(self.root, made['id'], 1, 'opening', '### Sneaky')
+        saved = desk.save(self.root, made['id'], 1, part, 'X.\n\n#### Detail\n\nMore.')
+        self.assertEqual(len(desk.split(desk.join(saved))['sections']), 3)
+
+    def test_a_draft_of_more_than_sixty_sections_is_refused_readably(self):
+        text = '# Many\n\n' + '\n\n'.join('### H%d\n\nText.' % n for n in range(61))
+        with self.assertRaisesRegex(ValueError, 'Keep the draft to 60 sections.'):
+            desk.create(self.root, {'manuscript': text})
+        made = desk.create(self.root, {'manuscript': text.rsplit('\n\n### H60', 1)[0]})
+        self.assertEqual(len(made['sections']), 60)
+
+    def test_a_draft_with_no_sections_keeps_headings_out_of_its_opening(self):
+        made = desk.create(self.root, {'title': 'Flat', 'manuscript': 'Just prose.'})
+        with self.assertRaisesRegex(ValueError, 'would start a new section'):
+            desk.save(self.root, made['id'], 1, 'opening', 'Prose.\n\n#### A heading')
+
+    def test_a_section_added_on_the_outline_takes_the_drafts_level(self):
+        made = desk.create(self.root, {'manuscript': EXPORTED})
+        rows = [{'id': s['id'], 'heading': s['heading'], 'brief': ''} for s in made['sections']]
+        desk.outline_save(self.root, made['id'], 1, rows + [{'heading': 'Added', 'brief': ''}])
+        body = (self.folder(made['id']) / 'DRAFT.md').read_text()
+        self.assertIn('\n\n### Added\n', body)
+        self.assertEqual(len(desk.split(body)['sections']), 4)
+
+
+def opening_only(case, made):
+    """Rewrite a desk record as the desk kept a Google export before it read deeper headings:
+    the whole body in the opening and no sections, at revision 2, with a version of the
+    opening kept. DRAFT.md is the same text either way."""
+    directory = case.folder(made['id'])
+    draft = studio.read_json(directory / 'desk' / 'draft.json')
+    body = desk.join(draft, images=False)
+    draft.update(
+        revision=2,
+        opening=body.split('\n\n', 1)[1].rstrip('\n'),
+        sections=[],
+        changed={'opening': 2},
+    )
+    studio.write_json(directory / 'desk' / 'draft.json', draft)
+    (directory / 'desk' / 'versions').mkdir(parents=True, exist_ok=True)
+    (directory / 'desk' / 'versions' / 'opening.jsonl').write_text(
+        json.dumps({'at': studio.now(), 'source': 'first-pass', 'text': 'Older text.'}) + '\n'
+    )
+    return draft
+
+
+class HeadingMigrationTests(DeskCase):
+    """A record whose opening holds headings, kept before the desk read them below ##, is read
+    into sections once, by the computer that drives it, one revision on, with the opening and
+    the outline marked changed: a page left open on them is refused as outdated, and a form
+    on any other part still saves."""
+
+    def setUp(self):
+        super().setUp()
+        self.made = desk.create(self.root, {'manuscript': EXPORTED})
+        self.ident = self.made['id']
+        self.directory = self.folder(self.ident)
+        opening_only(self, self.made)
+
+    def test_an_opening_only_record_is_read_into_sections_once(self):
+        target = self.directory / 'desk' / 'draft.json'
+        markdown = (self.directory / 'DRAFT.md').read_bytes()
+        kept = (self.directory / 'desk' / 'versions' / 'opening.jsonl').read_bytes()
+        draft = desk.read(self.root, self.ident)
+        self.assertEqual(draft['opening'], EXPORTED_OPENING)
+        self.assertEqual([s['heading'] for s in draft['sections']], EXPORTED_HEADINGS)
+        self.assertEqual({s['level'] for s in draft['sections']}, {3})
+        # One revision on, with the opening and the outline marked changed.
+        self.assertEqual((draft['revision'], draft['changed']), (3, {'opening': 3, 'outline': 3}))
+        self.assertEqual((self.directory / 'DRAFT.md').read_bytes(), markdown)
+        self.assertEqual(
+            (self.directory / 'desk' / 'versions' / 'opening.jsonl').read_bytes(), kept
+        )
+        self.assertEqual(len(studio.read_json(target)['sections']), 3)
+        written = target.read_bytes()
+        again = desk.read(self.root, self.ident)
+        self.assertEqual(target.read_bytes(), written)
+        self.assertEqual([s['id'] for s in again['sections']], [s['id'] for s in draft['sections']])
+
+    def test_a_form_on_another_part_still_saves_and_one_on_the_opening_is_refused(self):
+        saved = desk.save(self.root, self.ident, 2, 'title', 'Renamed')
+        self.assertEqual((saved['revision'], len(saved['sections'])), (4, 3))
+        self.assertIn('### **Closing thoughts**', (self.directory / 'DRAFT.md').read_text())
+        # An opening form from before, its headings taken out, would duplicate the sections.
+        with self.assertRaisesRegex(ValueError, 'changed since you opened it'):
+            desk.save(self.root, self.ident, 2, 'opening', EXPORTED_OPENING + ' Typed.')
+        with self.assertRaisesRegex(ValueError, 'changed since you opened it'):
+            desk.save(
+                self.root, self.ident, 2, 'opening', desk.join(desk.split(EXPORTED), images=False)
+            )
+        with self.assertRaisesRegex(ValueError, 'changed since you opened it'):
+            desk.outline_save(self.root, self.ident, 2, [])
+        self.assertEqual(len(desk.read(self.root, self.ident)['sections']), 3)
+
+    def test_an_opening_kept_before_the_division_restores_as_its_sections(self):
+        before = 'Before the tighten.\n\n### **Old one**\n\nOld text.\n\n### **Old two**\n\nMore.'
+        target = self.directory / 'desk' / 'versions' / 'opening.jsonl'
+        target.write_text(
+            target.read_text()
+            + json.dumps({'at': studio.now(), 'source': 'first-pass', 'text': before})
+            + '\n'
+        )
+        draft = desk.read(self.root, self.ident)
+        shown = desk.versions(self.root, self.ident, 'opening')
+        self.assertEqual(shown[0]['text'], before)
+        restored = desk.restore(self.root, self.ident, draft['revision'], 'opening', 0)
+        self.assertEqual(restored['opening'], 'Before the tighten.')
+        self.assertEqual(
+            [(s['heading'], s['text'], s.get('level')) for s in restored['sections']],
+            [('**Old one**', 'Old text.', 3), ('**Old two**', 'More.', 3)],
+        )
+        # The sections it replaces can be brought back from the Outline tab.
+        self.assertEqual(
+            [r['heading'] for r in desk.removed(self.root, self.ident)], EXPORTED_HEADINGS
+        )
+        self.assertEqual(
+            desk.versions(self.root, self.ident, 'opening')[0]['text'], EXPORTED_OPENING
+        )
+        body = (self.directory / 'DRAFT.md').read_text()
+        self.assertIn('Before the tighten.\n\n### **Old one**\n\nOld text.', body)
+        self.assertEqual(len(desk.split(body)['sections']), 2)
+
+    def test_without_the_lock_nothing_is_written_and_the_record_is_as_it_was(self):
+        target = self.directory / 'desk' / 'draft.json'
+        before = target.read_bytes()
+        held = studio._HELD.set(False)
+        try:
+            draft = desk.read(self.root, self.ident)
+        finally:
+            studio._HELD.reset(held)
+        self.assertEqual(draft['sections'], [])
+        self.assertEqual(target.read_bytes(), before)
+
+    def test_an_undivided_record_keeps_the_old_rule_for_its_opening(self):
+        # Waiting for a job, or with more headings than a draft has sections, the record stays
+        # one opening, and its headings are text there as they were.
+        self.assertEqual(desk.limit({'sections': [], 'opening': 'A.\n\n### B'}), 2)
+        self.assertEqual(desk.limit({'sections': [], 'opening': 'A.'}), 6)
+        with patch.object(desk, '_sectioned', lambda root, ident, draft: draft):
+            saved = desk.save(
+                self.root, self.ident, 2, 'opening', EXPORTED_OPENING + '\n\n### Kept as text'
+            )
+        self.assertEqual(saved['sections'], [])
+        with self.assertRaisesRegex(ValueError, 'A ## heading would start a new section'):
+            with patch.object(desk, '_sectioned', lambda root, ident, draft: draft):
+                desk.save(self.root, self.ident, 3, 'opening', 'A.\n\n## Sneaky')
+
+    def test_more_headings_than_sections_leave_the_record_as_it_is(self):
+        draft = studio.read_json(self.directory / 'desk' / 'draft.json')
+        draft['opening'] = 'Intro.\n\n' + '\n\n'.join(
+            '### H%d\n\nText %d.' % (n, n) for n in range(61)
+        )
+        studio.write_json(self.directory / 'desk' / 'draft.json', draft)
+        shown = desk.read(self.root, self.ident)
+        self.assertEqual((shown['sections'], shown['revision']), ([], 2))
+        saved = desk.save(self.root, self.ident, 2, 'opening', draft['opening'] + ' Typed.')
+        self.assertTrue(saved['opening'].endswith('Typed.'))
+
+    def test_a_job_under_way_on_the_blog_waits_for_it(self):
+        import desk_jobs
+
+        self.addCleanup(lambda: __import__('blog_runner').ENGINES.pop(str(self.root), None))
+        with patch.object(desk, '_sectioned', lambda root, ident, draft: draft):
+            queued = desk_jobs.revise_all(self.root, self.ident, 2, 'Tighten it.')
+        self.assertEqual(desk.read(self.root, self.ident)['sections'], [])
+        desk_jobs.stop(self.root, self.ident, queued['id'])
+        self.assertEqual(len(desk.read(self.root, self.ident)['sections']), 3)
 
 
 if __name__ == '__main__':

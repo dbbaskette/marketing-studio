@@ -926,12 +926,13 @@ def _apply_draft(root, ident, draft, job, result):
         # Image data the text kept as text must come back; a part with none may be new text.
         text = desk_images.restored(was, written['text'], strict=desk_images.holds(was))
         text = desk_images.kept(was, text, images)
-        desk.checked_text('opening', text)
+        desk.checked_text('opening', text, desk.limit(found))
         merged.append(
             {
                 'id': planned[at]['id'] if planned[at] else desk._id(taken),
                 'heading': written['heading'][:200],
                 'brief': planned[at].get('brief', '') if planned[at] else '',
+                **({'level': written['level']} if written.get('level') else {}),
                 'text': text,
             }
         )
@@ -946,7 +947,7 @@ def _apply_draft(root, ident, draft, job, result):
             draft['opening'], found['opening'], strict=desk_images.holds(draft['opening'])
         )
         opening = desk_images.kept(draft['opening'], opening, images)
-        desk.checked_text('opening', opening)
+        desk.checked_text('opening', opening, desk.limit(found))
         if draft['opening'] and draft['opening'] != opening:
             desk.keep(root, ident, 'opening', draft['opening'], 'draft')
         draft['opening'] = opening
@@ -1426,7 +1427,9 @@ def first_pass(root, ident, seen, choice):
     )
     # Only Reshape, and only on a draft with no sections, may add ## headings.
     divide = choice == 'reshape' and not draft['sections']
-    guidance = rule + '\n\n' + WHOLE + ' ' + OPENING + ' ' + (DIVIDE if divide else NO_HEADINGS)
+    guidance = (
+        rule + '\n\n' + WHOLE + ' ' + OPENING + ' ' + (DIVIDE if divide else _no_headings(draft))
+    )
     guidance += '\n\n' + shared + '\n' + RETURN
     payload = {**_whole_payload(draft, extra), 'sections': parts}
     payload.pop('opening')  # Sent once, as the first part.
@@ -1488,12 +1491,22 @@ def _landed(draft, before, text):
     return desk_images.kept(before, text, draft['images'], own)
 
 
-def _no_heading(text):
-    """A result that would add a section is refused readably; the person adds sections."""
-    if desk.has_heading(text):
+def _no_heading(text, deepest=2):
+    """A result that would add a section is refused readably; the person adds sections.
+    `deepest` is the draft's `desk.limit`."""
+    mark = desk.heading_in(text, deepest)
+    if mark:
         raise ValueError(
-            'The rewrite added a ## section heading, so it was not applied. Run it again.'
+            'The rewrite added a ' + mark + ' section heading, so it was not applied. Run it again.'
         )
+
+
+def _no_headings(draft):
+    """The rule that keeps a whole-draft job from adding a section, at the draft's level."""
+    if desk.level(draft) == 2:
+        return NO_HEADINGS
+    mark = '#' * desk.level(draft)
+    return 'Add no ' + mark + ' or ## heading anywhere: the sections stay as they are.'
 
 
 def _section_texts(content):
@@ -1545,8 +1558,8 @@ def _apply(root, ident, draft, job):
             if fingerprint(draft['opening']) != meta.get('basis'):
                 raise ValueError(STALE)
             text = _landed(draft, draft['opening'], _opening_text(content))
-            _no_heading(text)
-            desk.checked_text(part, text)
+            _no_heading(text, desk.limit(draft))
+            desk.checked_text(part, text, desk.limit(draft))
             desk.keep(root, ident, part, draft['opening'], 'revise-all')
             draft['opening'] = text
             _merge_gaps(draft, result)
@@ -1558,8 +1571,8 @@ def _apply(root, ident, draft, job):
         if fingerprint(section['text']) != meta.get('basis'):
             raise ValueError(STALE)
         text = _landed(draft, section['text'], _clean(content, section['heading']))
-        _no_heading(text)
-        desk.checked_text(part, text)
+        _no_heading(text, desk.limit(draft))
+        desk.checked_text(part, text, desk.limit(draft))
         desk.keep(
             root,
             ident,
@@ -1596,8 +1609,8 @@ def _apply(root, ident, draft, job):
         updated = whole[:at] + lead + replacement + trail + whole[at + len(passage) :]
         if part != 'title':
             updated = _landed(draft, whole, updated)
-        _no_heading(replacement)
-        desk.checked_text(part, updated)
+        _no_heading(replacement, desk.limit(draft))
+        desk.checked_text(part, updated, desk.limit(draft))
         desk.keep(root, ident, part, whole, 'selection')
         desk._set(draft, part, updated)
         _merge_gaps(draft, result)
@@ -1629,8 +1642,8 @@ def _apply(root, ident, draft, job):
             # Reshaping a draft with no headings may divide it into sections.
             text, added = _divided(text)
         else:
-            _no_heading(text)
-        desk.checked_text(item['id'], text)
+            _no_heading(text, desk.limit(draft))
+        desk.checked_text(item['id'], text, desk.limit({'sections': added or draft['sections']}))
         changes[item['id']] = text
     for part, text in changes.items():
         if part == 'opening':
@@ -1656,7 +1669,7 @@ def _divided(text):
     for section in found['sections']:
         if len(section['heading']) > 300:
             raise ValueError('The reshaped draft had a heading too long to use. Run it again.')
-        desk.checked_text(section['id'], section['text'])
+        desk.checked_text(section['id'], section['text'], desk.limit(found))
     return found['opening'], found['sections']
 
 
