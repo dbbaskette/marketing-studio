@@ -1332,6 +1332,11 @@ class MixedReviewTests(ToolCase):
             self.act(
                 'apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p2'}], all='yes'
             )
+        # Accept all with only a retired item in it changes nothing, and says so.
+        revision = self.draft()['revision']
+        done = self.act('apply', seen=revision, job=human, items=[{'id': 'p1'}], all=True)
+        self.assertEqual(done['finished'], {'applied': 0, 'left': ['p1']})
+        self.assertEqual(self.draft()['revision'], revision)
 
     def test_a_copy_edit_that_never_ran_still_lets_humanize_go_ahead_once(self):
         from unittest.mock import patch

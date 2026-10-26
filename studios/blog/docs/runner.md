@@ -137,7 +137,9 @@ deciding on each fix, with the full desk one click away.
   part is flagged, and **Accept all** leaves it for you to check. Accept all applies the
   fixes first, then the human-sounding suggestions that still fit. It never applies one
   over a fix still waiting for you (flagged, or hidden by **Show**): that one is left for
-  you too, so a flagged fix is never retired without your say.
+  you too, so a flagged fix is never retired without your say. With **Show: Fixes**, the
+  fixes go ahead over any hidden rewrite of the same words, which then no longer fits
+  (the message says how many); a flagged rewrite still waits for you.
 - **With human-sounding wording on, Quick check's findings** (dashes, words that often
   read as machine-written, repetition) are a short folded list at the top, labelled
   **Sounds human (quick check)** and read from the latest text with no assistant. **Fix**

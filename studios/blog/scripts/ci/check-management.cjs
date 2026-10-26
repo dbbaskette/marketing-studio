@@ -3807,6 +3807,7 @@ async function deskReviewHumanizeFixes(){
     humanize:finishSet('humanize',[
       {part:'bbbbbbbb',before:sentence,after:'In 3 seconds it reads 12 files.',note:'Rhythm.'},
       {part:'aaaaaaaa',before:'Timing and context is everything.',after:'Timing matters, and so does context.',note:'A cliché.'},
+      {part:'opening',before:'Each agent focus',after:'Every agent keeps',note:'Plainer.'},
     ]),
   });
   let view=null,shift=0,proofs=0;
@@ -3817,8 +3818,15 @@ async function deskReviewHumanizeFixes(){
     if(url.startsWith('/api/desk-proofread?')){proofs++;return {id:'review-blog',revision:view.revision,more:0,limitations:'',findings:[
       {part:'opening',rule:'banished:focus',label:'“focus” often reads as machine-written.',fix:'Say it plainly.',target:'focus',sentence:'Each agent focus on one goal.',start:41+shift,at:52+shift},
       {part:'bbbbbbbb',rule:'repeated-word',label:'“seconds” three times.',fix:'Vary it.',target:'seconds',sentence,start:0,at:23},
+      {part:'bbbbbbbb',rule:'banished:e',label:'An “e”.',fix:'Drop it.',target:'e',sentence,start:0,at:4},
+      {part:'bbbbbbbb',rule:'banished:e',label:'An “e”.',fix:'Drop it.',target:'e',sentence,start:0,at:15},
     ]};}
-    if(url==='/api/desk-apply'){const tool=Object.keys(view.finishing).find(k=>view.finishing[k].job===data.job);view={...view,revision:view.revision+1,finishing:{...view.finishing,[tool]:{...view.finishing[tool],items:view.finishing[tool].items.map(i=>data.items.some(e=>e.id===i.id)?{...i,state:'applied'}:i)}},finished:{applied:data.items.length,left:[]}};return view;}
+    if(url==='/api/desk-apply'){
+      const tool=Object.keys(view.finishing).find(k=>view.finishing[k].job===data.job),text=part=>part==='opening'?view.opening:view.sections.find(x=>x.id===part).text;
+      const spans=view.finishing[tool].items.filter(i=>data.items.some(e=>e.id===i.id)).map(i=>[i.part,text(i.part).indexOf(i.before),text(i.part).indexOf(i.before)+i.before.length]);
+      const finishing=Object.fromEntries(Object.entries(view.finishing).map(([key,set])=>[key,{...set,items:set.items.map(i=>{if(key===tool&&data.items.some(e=>e.id===i.id))return {...i,state:'applied'};const at=text(i.part).indexOf(i.before);return i.state==='open'&&spans.some(([part,a,b])=>part===i.part&&at<b&&a<at+i.before.length)?{...i,state:'retired'}:i;})}]));
+      view={...view,revision:view.revision+1,finishing,finished:{applied:data.items.length,left:[]}};return view;
+    }
     if(url==='/api/desk-save'){shift+=5;view={...view,revision:view.revision+1,...(data.part==='opening'?{opening:data.text}:{sections:view.sections.map(s=>s.id===data.part?{...s,text:data.text}:s)})};return view;}
     return null;
   });
@@ -3836,16 +3844,25 @@ async function deskReviewHumanizeFixes(){
   const keys=JSON.parse(f.run('JSON.stringify(sReviewState(studio.desk).pending.map(item=>item.key))'));
   assert.ok(keys.includes('copyedit:'+view.finishing.copyedit.job+':p3'),'a key names its set');
   // 1. Accept all: the fixes, then the rewrites that cover no fix still waiting.
-  assert.ok(descendants(head()).some(n=>n.textContent==='Accept all (4)'));
-  await press(head(),'Accept all (4)');
+  assert.ok(descendants(head()).some(n=>n.textContent==='Accept all (5)'));
+  await press(head(),'Accept all (5)');
   assert.deepEqual(all('/api/desk-apply').map(d=>[d.job,d.items,d.all]),[[view.finishing.copyedit.job,[{id:'p1'},{id:'p2'}],true],[view.finishing.humanize.job,[{id:'p2'}],true]],'the rewrite over the flagged fix is left out');
   assert.equal(view.finishing.copyedit.items[2].state,'open','the flagged fix waits');assert.ok(row('humanize','p1'),'and so does the rewrite over it');
   // 2. With Sounds human shown, the fixes are hidden but still keep the rewrites off them.
   fresh();await open();
   focusOn(show('Sounds human'));await show('Sounds human').listeners.click();
   assert.equal(show('Sounds human').focused,true,'the filter keeps focus');
-  const before=all('/api/desk-apply').length;await press(head(),'Accept all (2)');
+  const before=all('/api/desk-apply').length;await press(head(),'Accept all (3)');
   assert.deepEqual(all('/api/desk-apply').slice(before).map(d=>d.items),[[{id:'p2'}]],'a hidden fix still keeps the rewrite off it');
+  await show('All').listeners.click();
+  // With Fixes shown, the fixes chosen apply even over a hidden rewrite, which retires as
+  // usual and is said; the flagged fix still waits.
+  fresh();await open();await show('Fixes').listeners.click();
+  const fixesFrom=all('/api/desk-apply').length;await press(head(),'Accept all (2)');
+  assert.deepEqual(all('/api/desk-apply').slice(fixesFrom).map(d=>[d.job,d.items]),[[view.finishing.copyedit.job,[{id:'p1'},{id:'p2'}]]],'the fixes chosen are applied');
+  assert.equal(view.finishing.humanize.items[2].state,'retired','the rewrite they covered retires');assert.equal(view.finishing.copyedit.items[2].state,'open','the flagged fix waits');
+  const toast=f.get('toasts').children.at(-1).textContent;
+  assert.equal(toast,'Accepted 2. The earlier text is in History. 1 other suggestion covering the same words no longer fits.');
   await show('All').listeners.click();
   // 3. A choice while another paragraph of the part is open: the paragraph saves and closes
   // instead of being stuck, and the pick shows.
@@ -3870,6 +3887,10 @@ async function deskReviewHumanizeFixes(){
   assert.equal(descendants(finding('opening')).find(n=>n.textContent==='Fix').focused,true,'Fix keeps focus across a redraw');
   const dismiss=descendants(finding('opening')).find(n=>n.textContent==='Dismiss');focusOn(dismiss);await dismiss.listeners.click();
   assert.equal(finding('opening'),undefined);assert.equal(descendants(finding('bbbbbbbb')).find(n=>n.textContent==='Dismiss').focused,true,'focus moves to the next finding');
+  const es=descendants(quick()).filter(n=>n.dataset?.finding&&n.dataset.finding.includes('\u0001banished:e\u0001'));
+  assert.equal(es.length,2);assert.notEqual(es[0].dataset.finding,es[1].dataset.finding,'two findings of one word in one sentence each have their own key');
+  await descendants(es[0]).find(n=>n.textContent==='Dismiss').listeners.click();
+  assert.equal(descendants(quick()).filter(n=>n.dataset?.finding&&n.dataset.finding.includes('\u0001banished:e\u0001')).length,1,'dismissing one leaves the other');
   const seen=proofs;
   await descendants(nodes().find(n=>n.className==='review-part'&&n.dataset.part==='opening')).find(n=>n.className==='review-text'&&descendants(n).map(c=>c.textContent).join(' ').includes('Agentic')).listeners.click();
   const box=nodes().find(n=>n.tagName==='textarea');focusOn(box);box.value=box.value.replace('Agentic','Agentic, synthetic');box.listeners.input();await tick();
@@ -3877,7 +3898,16 @@ async function deskReviewHumanizeFixes(){
   await tick();await tick();
   assert.equal(proofs,seen+1,'it is read again after a pause');
   assert.equal(finding('opening'),undefined,'a dismissed finding stays dismissed when the text before it moved');
-  quick().open=true;quick().listeners.toggle();
+  quick().open=true;quick().listeners.toggle();await tick();
+  // The last finding dismissed: focus goes to the head's first control.
+  for(const row of descendants(quick()).filter(n=>n.dataset?.finding).map(n=>n.dataset.finding)){const left=descendants(quick()).find(n=>n.dataset?.finding===row);const button=descendants(left).find(n=>n.textContent==='Dismiss');focusOn(button);await button.listeners.click();}
+  assert.equal(quick(),undefined);assert.equal(descendants(head()).find(n=>/^Accept all/.test(n.textContent)).focused,true,'focus goes to the first control left');
+  // Stop gone once the job ends: focus goes to the first control, here the checkbox.
+  f.set('next',{...view,finishing:{},working:{id:'h9',kind:'finish-humanize',status:'queued',busy:true,part:'finishing'}});await f.run('studio.desk.view=next;studio.desk.review.ask=null;sDeskReview(studio.desk)');
+  const stop=descendants(head()).find(n=>n.textContent==='Stop');focusOn(stop);
+  f.set('next',{...view,finishing:{},working:null});await f.run('studio.desk.view=next;sDeskReviewRefresh(studio.desk,studio.desk.view)');
+  assert.equal(nodes().find(n=>n.id==='review-humanize').focused,true,'focus does not fall off the page');
+  assert.equal(nodes().find(n=>n.className==='review-count'),undefined);
   // 5. The checkbox in Review mode's first check keeps focus across a redraw.
   f.set('next',{...view,finishing:{}});await f.run('studio.desk.view=next;studio.desk.review.ask=null;sDeskReview(studio.desk)');
   const ask=nodes().find(n=>n.id==='review-humanize');focusOn(ask);await f.run('sReviewHeadShow(studio.desk)');

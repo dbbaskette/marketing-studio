@@ -237,7 +237,7 @@ def apply(root, ident, seen, job, chosen, every=False):
         if 'after' not in item and 'after' not in entry:
             raise ValueError('Write the wording to use, then apply it.')
         if item['state'] == 'retired':
-            if len(chosen) == 1:
+            if len(chosen) == 1 and not every:
                 raise ValueError(RETIRED)
             gone.append(item['id'])  # Another change took its words; the rest still apply.
             continue

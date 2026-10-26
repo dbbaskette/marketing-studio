@@ -1182,7 +1182,7 @@ function sReviewHead(held,state){
   });
   if(!state.any&&!state.working&&!state.failed.length)return sAdd(head,sReviewStart(held));
   if(state.pending.length){
-    const count=sNode('p','review-count',state.pending.length+' '+noun[state.pending.length===1?0:1]+' to review');count.setAttribute('role','status');
+    const count=sNode('p','review-count',state.pending.length+' '+noun[state.pending.length===1?0:1]+' to review');count.setAttribute('role','status');count.tabIndex=-1;sReviewMark(count,'count');
     const all=sButton('Accept all ('+state.ready.length+')',button=>sReviewAcceptAll(held,state.ready.map(item=>item.key),button),'filled');all.disabled=!editable||!state.ready.length;sReviewMark(all,'accept-all');
     const open=state.sets.filter(([tool])=>state.fits(tool)).flatMap(([,set])=>set.items.filter(item=>item.state==='open').map(item=>({job:set.job,id:item.id})));
     const none=sButton('Reject all',button=>sReviewRejectAll(held,open,button));none.disabled=!access.actions.edit||!open.length;sReviewMark(none,'reject-all');
@@ -1254,8 +1254,13 @@ function sReviewHeadShow(held){if(!held.review?.head)return;sReviewHeadReplace(h
 function sReviewHeadReplace(held,state,key){
   const r=held.review,focused=sDeskFocused(),was=r.focusNext||(focused&&typeof r.head.contains==='function'&&r.head.contains(focused)?focused.dataset?.focus:null);r.focusNext=null;
   const head=sReviewHead(held,state);r.head.replaceWith(head);r.head=head;r.headKey=key||sReviewHeadKey(held,state);
-  if(!was)return;const again=sReviewFind(head,was)||(/^(fix|dismiss):/.test(was)?sReviewFind(head,'quick'):null);if(again&&typeof again.focus==='function')again.focus();
+  if(!was)return;
+  // A control that is gone (Stop once the job ended, Accept all once nothing is left, the
+  // last finding dismissed) hands focus to the head's first control, or to the count.
+  const again=sReviewFind(head,was)||(/^(fix|dismiss):/.test(was)?sReviewFind(head,'quick'):null)||sReviewFirst(head)||sReviewFind(head,'count');
+  if(again&&typeof again.focus==='function')again.focus();
 }
+function sReviewFirst(node){for(const child of node?.children||[]){if(child.hidden)continue;if(['button','input','select','textarea','summary'].includes(String(child.tagName).toLowerCase())&&!child.disabled)return child;const found=sReviewFirst(child);if(found)return found;}return null;}
 function sReviewFind(node,key){if(!node)return null;if(node.dataset?.focus===key)return node;for(const child of node.children||[]){const found=sReviewFind(child,key);if(found)return found;}return null;}
 function sReviewMark(node,key){if(node)node.dataset.focus=key;return node;}
 // The reading surface: the title, the opening and each section, every paragraph with its
@@ -1442,14 +1447,16 @@ function reviewOverlap(a,b){return a.part===b.part&&a.at<b.at+b.before.length&&b
 async function sReviewAcceptAll(held,keys,button){
   await busy(button,'Accepting…',async()=>{
     const before=held.view;let applied=0,left=0;
+    const retired=view=>REVIEW_TOOLS.reduce((sum,tool)=>sum+((view.finishing||{})[tool]?.items||[]).filter(item=>item.state==='retired').length,0),had=retired(before);
     try{
       await sReviewFlush(held);if(held.stale)return;
       for(const tool of REVIEW_TOOLS){
         // Read afresh after the fixes landed: a rewrite that covers any fix still waiting
-        // (flagged, or hidden by Show) is left for the person, never sent over it; and a fix
-        // is never sent over a rewrite that Accept all leaves.
+        // (flagged, or hidden by Show) is left for the person, never sent over it. A fix the
+        // person chose goes ahead over a rewrite, which retires as usual, unless that
+        // rewrite is flagged: flagged ones from either tool wait for the person.
         const state=sReviewState(held),chosen=state.ready.filter(item=>item.tool===tool&&keys.includes(item.key));
-        const waiting=state.pending.filter(item=>item.tool!==tool&&(tool==='humanize'||!keys.includes(item.key)));
+        const waiting=state.pending.filter(item=>item.tool!==tool&&(tool==='humanize'||item.flag));
         const items=chosen.filter(item=>!waiting.some(other=>reviewOverlap(item,other)));left+=chosen.length-items.length;
         if(!items.length)continue;
         held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:items[0].job,items:items.map(sReviewPick),all:true});
@@ -1457,7 +1464,8 @@ async function sReviewAcceptAll(held,keys,button){
         for(const item of items)delete held.review.picks[item.key];
       }
       if(held.review)held.review.google=null;
-      if(applied)sToast((applied===1?'Accepted.':'Accepted '+applied+'.')+' The earlier text is in History.'+(left?' '+left+(left===1?' is':' are')+' left for you to decide.':''));
+      const covered=retired(held.view)-had;
+      if(applied)sToast((applied===1?'Accepted.':'Accepted '+applied+'.')+' The earlier text is in History.'+(covered>0?' '+covered+(covered===1?' other suggestion covering the same words no longer fits.':' other suggestions covering the same words no longer fit.'):'')+(left?' '+left+(left===1?' is':' are')+' left for you to decide.':''));
       else if(left)sToast('Nothing was accepted: '+(left===1?'1 is':left+' are')+' left for you to decide.');
     }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}
     if(held.view!==before)sDeskRefresh(held,before);
@@ -1503,7 +1511,8 @@ function sReviewFindings(held,state){
   const dismissed=held.review.dismissed||{};
   // Keyed by what was found and the sentence around it, never by where: an edit earlier in
   // the part moves a finding without bringing a dismissed one back.
-  const findings=proof.findings.map(found=>({...found,key:[found.part,found.rule,found.target,found.sentence].join('\u0001')})).filter(found=>!dismissed[found.key]);
+  // Where it sits within its sentence tells apart two findings of one word in one sentence.
+  const findings=proof.findings.map(found=>({...found,key:[found.part,found.rule,found.target,found.sentence,found.at-found.start].join('\u0001')})).filter(found=>!dismissed[found.key]);
   return {revision:proof.revision,findings,more:proof.more||0};
 }
 function sReviewQuick(held,state){
