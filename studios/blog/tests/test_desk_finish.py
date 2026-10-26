@@ -162,7 +162,7 @@ class ProposalStoreTests(FinishCase):
             self.act('apply', seen=1, job=job, items=[{'id': 'p9'}])
         with self.assertRaisesRegex(ValueError, 'from this set'):
             self.act('apply', seen=1, job=job, items=[{'id': 'p1'}, {'id': 'p1'}])
-        with self.assertRaisesRegex(ValueError, 'fields the desk does not take'):
+        with self.assertRaisesRegex(ValueError, 'fields the page does not take'):
             self.act('apply', seen=1, job=job, items=[{'id': 'p1'}], extra=True)
 
     def test_the_view_shows_the_newest_set_for_each_tool(self):

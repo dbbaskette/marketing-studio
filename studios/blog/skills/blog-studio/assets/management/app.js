@@ -123,7 +123,7 @@ async function loadCapabilities() {
     access=result;
   } catch(error) {
     if(generation!==accessGeneration)return;
-    access={status:'unavailable',message:'Access could not be checked. Reopen the current desk link or check access again. Saved results remain available.',actions:{edit:false,memory:false,refresh:false}};
+    access={status:'unavailable',message:'Access could not be checked. Reopen this page’s link or check access again. Saved results remain available.',actions:{edit:false,memory:false,refresh:false}};
   }
   applyCapabilities();
 }
@@ -158,10 +158,10 @@ async function api(route, data, signal) {
     response=await fetch('/api/'+route,{method:data?'POST':'GET',headers,body:data?JSON.stringify(data):undefined,signal});
   } catch(error) {
     if(error.name==='AbortError')throw error;
-    throw new Error('The desk helper is not answering. Ask Blog Studio in chat to open the editorial desk again.');
+    throw new Error('Blog Studio’s page is not answering. Ask Blog Studio in chat to open it again.');
   }
   try {result=await response.json();}
-  catch(error) {throw new Error('The desk helper sent a reply this page could not read. Reload the desk.');}
+  catch(error) {throw new Error('Blog Studio’s page sent a reply it could not read. Reload the page.');}
   if(!response.ok){const error=new Error(result.error||'The operation could not be completed.');error.status=response.status;error.code=result.code;throw error;}
   return result;
 }
@@ -358,30 +358,31 @@ function editorialForm(item, result) {
 function articleContent(item, result, selectedFinding) {
   const content=$('detail-content'),state=result.view;content.replaceChildren();
   const status=element('section',undefined,'article-summary');
-  status.append(badge(state.stage),element('p','Requested stop: '+state.stop_point));
+  // A blog on the writing desk has no requested stop and no chat step: it opens on the desk.
+  status.append(badge(state.stage),element('p',state.on_desk?'On the desk':'Requested stop: '+state.stop_point));
   if(state.blocker)status.append(element('p',state.blocker,'context-note'));
-  if(state.stop_reached)status.append(element('p','Your requested '+state.stop_point+' is saved. Continue only when you choose the next step.'));
+  if(state.stop_reached&&!state.on_desk)status.append(element('p','Your requested '+state.stop_point+' is saved. Continue only when you choose the next step.'));
   const counts={};for(const review of state.reviews)counts[review.status]=(counts[review.status]||0)+1;
   status.append(element('p','Reviews: '+(Object.entries(counts).map(([name,count])=>count+' '+name).join(', ')||'none saved')+'.'));
   content.append(status);
-  if(result.location==='local'&&access.actions.edit&&!state.conflict&&!state.shared_newer)content.append(button('Open writing run',()=>openBlogRun(item.id)));
+  if(result.location==='local'&&access.actions.edit&&!state.conflict&&!state.shared_newer)content.append(state.on_desk?button('Open on the desk',()=>{$('detail-dialog').close();return sRoute('desk',item.id);}):button('Open writing run',()=>openBlogRun(item.id)));
   if(selectedFinding) {
     const finding=selectedFinding.finding,section=element('section',undefined,'selected-finding');
     section.append(element('h3',finding.kind+' · '+finding.status));
     for(const [key,value]of Object.entries(finding.finding||{})){section.append(element('h4',key),element('p',value));}
     section.append(element('p',finding.action));content.append(section,continuation(selectedFinding.command,'Inspect this finding in chat'));
     if(selectedFinding.evidence.length){const evidence=element('div');for(const citation of selectedFinding.evidence)evidence.append(element('h4',citation.name||'Pinned passage'),element('blockquote',citation.quote));content.append(disclosure('Cited passages',evidence));}
-  } else content.append(continuation(state.next_action.command,state.next_action.label));
+  } else if(!state.on_desk)content.append(continuation(state.next_action.command,state.next_action.label));
   if(state.google)content.append(link(state.google.url,'Open Google Doc'));
   content.append(element('p',state.google_observation,'help'));
   const preview=state.preview;
-  if(preview.text){content.append(element('h3','Saved '+preview.kind+' preview'),element('pre',preview.text,'manuscript-preview'));if(preview.truncated)content.append(element('p','Preview only. Continue in chat for the full manuscript.','help'));}
-  else content.append(element('p','No manuscript is saved yet. Continue in chat to plan the requested writing step.'));
+  if(preview.text){content.append(element('h3','Saved '+preview.kind+' preview'),element('pre',preview.text,'manuscript-preview'));if(preview.truncated)content.append(element('p',state.on_desk?'Preview only. Open it on the desk for the whole draft.':'Preview only. Continue in chat for the full manuscript.','help'));}
+  else content.append(element('p',state.on_desk?'No draft is saved yet. Open it on the desk to write it.':'No manuscript is saved yet. Continue in chat to plan the requested writing step.'));
   const reviews=element('ul',undefined,'detail-list');
   for(const review of state.reviews){const row=element('li',review.check+' · '+review.status);if(review.detail)row.append(element('p',review.detail));if(review.checked_at)row.append(element('p','Last check: '+review.checked_at));reviews.append(row);}
   if(!state.reviews.length)reviews.append(element('li','No saved reviews. This is not a review verdict.'));
   content.append(disclosure('Reviews and freshness',reviews));
-  if(result.location==='local'&&access.actions.edit&&!state.conflict&&!state.shared_newer)content.append(disclosure('Editorial details',editorialForm(item,result),element('p','Ready and published are explicit decisions. This desk does not publish your blog.','help')));
+  if(result.location==='local'&&access.actions.edit&&!state.conflict&&!state.shared_newer)content.append(disclosure('Editorial details',editorialForm(item,result),element('p','Ready and published are explicit decisions. This page does not publish your blog.','help')));
   else {
     const metadata=result.record.editorial||{};
     content.append(disclosure('Editorial details',element('p','Owner: '+(metadata.owner||'Unassigned')),element('p','Due: '+(metadata.due||'Not set')),element('p','Recorded stage: '+(metadata.stage||state.stage)),element('p',!access.actions.edit?access.message:'Compare shared revisions or resume in chat before changing editorial decisions.','help')));
@@ -391,7 +392,7 @@ function articleContent(item, result, selectedFinding) {
   for(const source of result.sources)evidence.append(element('p',(source.source_id||source.item||'Source')+' · '+source.revision));
   for(const [name,asset]of Object.entries(result.assets))evidence.append(element('p',name+' · '+asset.status));
   for(const name of result.history)evidence.append(element('p',name));
-  if(!result.history.length)evidence.append(element('p','Inspect earlier revisions in chat.'));
+  if(!result.history.length)evidence.append(element('p',state.on_desk?'Earlier versions of each part are in History on the desk.':'Inspect earlier revisions in chat.'));
   content.append(disclosure('Evidence and history',evidence));
   if(result.location==='hub'&&access.actions.edit&&!state.conflict&&!state.shared_newer){
     const resume=button('Resume in this workspace',()=>busy(resume,'Resuming…',async()=>{

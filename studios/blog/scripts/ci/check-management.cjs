@@ -133,6 +133,7 @@ async function check(){
   await deskOutlineTab();
   await deskAddSource();
   await deskFinishing();
+  await oneNameEach();
   await deskStartOrder();
   await deskPasteAndUpload();
   await deskPublishKeeps();
@@ -143,7 +144,7 @@ async function check(){
   const checks=['Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Proofread with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, proofread and tighten by default with no style and the opening included, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and styles sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and styles in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start asks what you are writing, then what you have, then sources and settings','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start asks what you are writing, then what you have, then sources and settings','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -627,7 +628,7 @@ async function requestOrdering(){
   assert.equal(h.get('results').children[0],previous);assert.equal(h.run('offset'),0);
   assert.equal(h.get('next').disabled,false);assert.equal(h.get('loading').hidden,true);
   h.run("view='memory'");const missing=h.run('load()');h.requests[2].reject(new Error('socket hang up'));
-  await assert.rejects(missing,/desk helper is not answering/);assert.equal(h.get('results').children[0],previous);
+  await assert.rejects(missing,/Blog Studio’s page is not answering/);assert.equal(h.get('results').children[0],previous);
   assert.equal(h.get('next').disabled,true);
 }
 async function curationConflict(){
@@ -980,9 +981,11 @@ async function sharedSettings(){
   const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});return {defaults,shared_before:before,workspace:'/synthetic',features:{voice:true},voice:null,voices};}if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};if(url==='/api/team')return {};return empty();});
   f.loadRunner();f.set('defaults',defaults);f.set('before',before);f.set('voices',voices);f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',features:{voice:true},voice:{profile_id:'mine',revision:3},voices};studio.screen='settings';sSettings()");
   assert.equal(descendants(f.get('studio-page')).filter(e=>e.type==='checkbox'&&!e.id.startsWith('settings-research-')&&e.id!=='settings-voice-tools').length,0,'shared saves have no second consent toggle');
-  // The research default: three ticks, an older 'none' read as none of them.
+  // The research default: your documents are always read, said in a sentence; two ticks, an
+  // older 'none' read as neither. The stored documents value is kept as it was.
   const tick=key=>descendants(f.get('studio-page')).find(e=>e.id==='settings-research-'+key);
-  assert.deepEqual(['documents','sites','web'].map(key=>tick(key).checked),[false,false,false]);
+  assert.equal(tick('documents'),undefined);
+  assert.deepEqual(['sites','web'].map(key=>tick(key).checked),[false,false]);
   assert.ok(descendants(f.get('studio-page')).some(e=>e.textContent==='Research for new blogs from:'));
   tick('sites').checked=true;tick('sites').listeners.change();
   // The default voice: None or a confirmed voice; saved as its exact pin, or null for none.
@@ -1189,7 +1192,7 @@ async function createVoiceSources(){
   const sheet=()=>descendants(f.get('sheet')),text=()=>sheet().map(e=>e.textContent),find=label=>sheet().find(e=>e.textContent===label),byId=id=>sheet().find(e=>e.id===id);
   const ticked=()=>sheet().filter(e=>e.type==='checkbox'&&e.checked&&e.value).map(e=>e.value);
   await f.run("sRoute('voices')");
-  assert.equal(f.get('title').textContent,'Voices and styles');
+  assert.equal(f.get('title').textContent,'Voices and kinds of post');
   await f.get('actions').children.find(e=>e.textContent==='Create a voice').listeners.click();
   byId('learn-voice-name').value='Avery Quinn';byId('learn-voice-name').listeners.input();
   // Posts already in the library, narrowed to this author once the sheet is drawn again.
@@ -1446,7 +1449,7 @@ async function contextualTools(){
   await f.run("sMoreTools('fixture')");
   const sheet=()=>descendants(f.get('sheet'));
   assert.ok(sheet().some(node=>node.textContent==='Compare Google and local text'));
-  assert.ok(sheet().some(node=>node.textContent==='Saved manuscript revisions'));
+  assert.ok(sheet().some(node=>node.textContent==='History'));
   assert.ok(sheet().some(node=>node.textContent==='Resume repurpose · ready'));
   assert.equal(calls.some(([url,body])=>body),false);
   await f.run("sVoiceTools('fixture')");assert.ok(sheet().some(node=>node.textContent==='Create a voice'));
@@ -1481,6 +1484,7 @@ async function whereThisRunStops(){
   const choices=descendants(where).filter(e=>e.className==='seg-option');assert.deepEqual(choices.map(e=>e.textContent),['Balanced','Automatic draft','Step by step']);
   await choices[1].listeners.click();
   assert.deepEqual(requests.filter(r=>r.url==='/api/review-level').pop().data,{level:'automatic',seen:'balanced'});
+  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='New decks, trainings and blogs run step by step in chat now start at Automatic draft.'),'the toast names what it changes');
   assert.equal(f.run('studio.settings.review_level'),'automatic');
   refuse=true;
   const again=nodes().find(e=>e.tagName==='section'&&e.children[0]?.textContent==='Where new work stops');
@@ -1506,9 +1510,9 @@ async function oneVocabulary(){
   assert.ok(labels.includes('Record in team repository'),labels.join('|'));assert.equal(labels.includes('Publish revision'),false);
   // The research choice in Settings: your documents, your sites and the public web.
   const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
-  const ticks=['your documents','your sites (3)','the public web'],shared=['https://a.example','https://b.example/docs','https://c.example'];f.set('shared',shared);
+  const ticks=['your sites (3)','the public web'],shared=['https://a.example','https://b.example/docs','https://c.example'];f.set('shared',shared);
   f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced',research_sites:shared};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
-  assert.ok(text().includes('Research for new blogs from:'));for(const label of ticks)assert.ok(text().includes(label),label+': '+text().join('|'));
+  assert.ok(text().includes('Research for new blogs from:'));assert.ok(text().includes('Your documents are always read. Choose what else research may use.'));assert.ok(!text().includes('your documents'),'documents are a sentence, not a tick');for(const label of ticks)assert.ok(text().includes(label),label+': '+text().join('|'));
   // One example label on the files card.
   f.run("studio.options={settings:{defaults},sources:[],profiles:[],styles:[]};studio.screen='desk-start';sPage(sFilesCard({files:[],role:'material'},sNode('p'),()=>{},()=>{}))");
   assert.ok(text().some(t=>t==='Example of the kind of post'),'one example label: '+text().join('|'));
@@ -1956,8 +1960,8 @@ async function voiceLinksJourney(){
   await find('Import 2 posts').listeners.click();
   assert.equal(requests.find(r=>r.url==='/api/voice-links-import').data.purpose,'style-sample');
   assert.equal(sheet().some(e=>/^Keep /.test(e.textContent)),false,'no byline keep for examples');
-  await find('Learn a style from these').listeners.click();
-  assert.equal(f.get('sheet').children[0].children[0].textContent,'Create a style');
+  await find('Learn a kind of post from these').listeners.click();
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'New kind of post');
   assert.equal(byId('learn-style-name').value,'Product announcements');
   assert.deepEqual(sheet().filter(e=>e.type==='checkbox'&&e.checked).map(e=>e.value),['s1','s2'],'the imported examples are ticked');
 }
@@ -2081,7 +2085,7 @@ async function libraryScreen(){
   const sheet=()=>descendants(f.get('sheet')),byId=id=>sheet().find(e=>e.id===id);
   await f.run("sLibrarySelection('style-learn',[...librarySelection.values()])");
   assert.deepEqual(requests.filter(r=>r.url==='/api/library-selection').at(-1).data,{action:'style-learn',ids:['a','b']});
-  assert.equal(f.get('sheet').children[0].children[0].textContent,'Create a style');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'New kind of post');
   assert.deepEqual(sheet().filter(e=>e.type==='checkbox'&&e.checked).map(e=>e.value),['a','b'],'the items are ticked as examples');
   assert.equal(requests.some(r=>r.url==='/api/tool-action'),false,'choosing marks nothing');
   assert.equal(sheet().some(e=>e.attributes?.['aria-label']==='Use A post as an example'),false,'a ticked item is not offered again below');
@@ -2206,7 +2210,7 @@ async function deskLength(){
   assert.ok(t.nodes().some(n=>n.textContent==='Tone')&&t.byId('desk-tone'),'and keeps the tone');
 }
 
-// Voices and styles: one sheet lists both, a style can be read and learned, links open the
+// Voices and kinds of post: one sheet lists both, a style can be read and learned, links open the
 // voice-links flow for either purpose, and a LinkedIn export goes up as one entry whose
 // articles become the voice samples.
 async function voicesAndStyles(){
@@ -2223,23 +2227,23 @@ async function voicesAndStyles(){
   });f.loadRunner();voicesOn(f);
   const sheet=()=>descendants(f.get('sheet')),text=()=>sheet().map(e=>e.textContent),find=label=>sheet().find(e=>e.textContent===label);
   await f.run('sVoiceTools()');
-  assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and styles');
-  for(const label of ['Voices','Styles','Synthetic Author','Create a voice','Write a voice guide','Create voices for every author','Create a style','Write a style guide','Product announcement'])assert.ok(text().includes(label),label+' in '+text().join('|'));
-  for(const gone of ['Learn a voice from samples','Import a LinkedIn export','Add links to posts','Upload an authored sample','Learn a style from examples','Add links to examples','Upload an example'])assert.ok(!text().includes(gone),gone+' is now a source inside Create a voice or Create a style');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and kinds of post');
+  for(const label of ['Voices','Kinds of post','Synthetic Author','Create a voice','Write a voice guide','Create voices for every author','New kind of post','Write the guide by hand','Product announcement'])assert.ok(text().includes(label),label+' in '+text().join('|'));
+  for(const gone of ['Learn a voice from samples','Import a LinkedIn export','Add links to posts','Upload an authored sample','Learn a style from examples','Add links to examples','Upload an example'])assert.ok(!text().includes(gone),gone+' is now a source inside Create a voice or New kind of post');
   // Create a voice: one sheet, in order: the name, the writing from any source, the samples.
   await find('Create a voice').listeners.click();
   assert.equal(f.get('sheet').children[0].children[0].textContent,'Create a voice');
   for(const label of ['1. Whose voice is this?','2. Add their writing','3. Choose up to 20 samples','Add links to posts','Import a LinkedIn export','Upload their posts','Posts already in the library','Build a provisional voice'])assert.ok(text().includes(label),label+' in '+text().join('|'));
-  // Links open the merged voice-links flow, for voices and, from Create a style, for style samples.
+  // Links open the merged voice-links flow, for voices and, from New kind of post, for style samples.
   f.run('sVoiceLinks=(found,profile,article,purpose)=>{window.linksOpened=purpose||"voice-sample";}');
   await find('Add links to posts').listeners.click();assert.equal(f.run('window.linksOpened'),'voice-sample');
-  await f.run('sVoiceTools()');await find('Create a style').listeners.click();
-  for(const label of ['1. What kind of writing is this?','2. Add examples','3. Choose up to 20 examples','Upload examples','Build a provisional style'])assert.ok(text().includes(label),label+' in '+text().join('|'));
+  await f.run('sVoiceTools()');await find('New kind of post').listeners.click();
+  for(const label of ['1. What kind of writing is this?','2. Add examples','3. Choose up to 20 examples','Upload examples','Build a provisional kind of post'])assert.ok(text().includes(label),label+' in '+text().join('|'));
   await find('Add links to examples').listeners.click();assert.equal(f.run('window.linksOpened'),'style-sample');
   await f.run("sStyleDetail('product-announcement')");
-  assert.ok(text().includes('Edit this style guide'));assert.ok(text().includes('Retire this kind of post'));assert.ok(text().some(t=>/^Starter style/.test(t)));
+  assert.ok(text().includes('Edit this guide'));assert.ok(text().includes('Retire this kind of post'));assert.ok(text().some(t=>/^Starter kind of post/.test(t)));
   // Learning a style needs the permission box, then sends the chosen examples.
-  await f.run('sVoiceTools()');await find('Create a style').listeners.click();
+  await f.run('sVoiceTools()');await find('New kind of post').listeners.click();
   assert.ok(find('Use as an example'),'a reference can become an example of this kind');
   assert.equal(find('Use as an example').attributes['aria-label'],'Use Team memo as an example');
   await find('Use as an example').listeners.click();
@@ -2253,11 +2257,11 @@ async function voicesAndStyles(){
   await sheet().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   const learn=posts.find(p=>p.url==='/api/tool-action').data;
   assert.equal(learn.kind,'style-learn');assert.equal(learn.name,'Launch note');assert.ok(learn.samples.includes('example'));assert.equal(learn.confirmed,true);
-  assert.equal(f.get('sheet').children[0].children[0].textContent,'Learn a style');
+  assert.equal(f.get('sheet').children[0].children[0].textContent,'Learn this kind of post');
   f.set('styleJob',{id:'b'.repeat(32),kind:'style-learn',status:'ready',metadata:{name:'Launch note',samples:['example']},result:{content:'# Launch note',notes:''},attempts:0});
   await f.run('sToolJob(styleJob)');
   assert.ok(text().some(t=>/describes a kind of writing, not a person/.test(t)),text().join('|'));
-  assert.ok(find('Save provisional style guide'));assert.ok(find('Confirm this style guide'));assert.equal(sheet().some(e=>e.textContent==='Save outline for review'),false);
+  assert.ok(find('Save provisional guide'));assert.ok(find('Confirm this guide'));assert.equal(sheet().some(e=>e.textContent==='Save outline for review'),false);
   // The LinkedIn export goes up as one entry, says what it shares, and sends the author when given.
   await f.run('sVoiceTools()');await find('Create a voice').listeners.click();await find('Import a LinkedIn export').listeners.click();
   assert.ok(text().includes('The About text and the articles are saved as sources in your reference library. With a Team Hub selected, they are shared with your team like any other source.'));
@@ -2373,7 +2377,7 @@ async function runVoiceChange(){
   assert.equal(f.run('studio.screen'),'editor','a change made in the editor returns to the editor');
 }
 
-// Tools are not hidden: the library sheet opens Tools and Voices and styles directly, and Settings links to them.
+// Tools are not hidden: the library sheet opens Tools and Voices and kinds of post directly, and Settings links to them.
 // The older voice tools wait behind one switch in Settings → Advanced, off by default: no
 // Write as, Default voice, Change the voice, voice learning, Create voices for every author,
 // voice-sample uploads or library marks. Kinds of post have their own screen. On, they return.
@@ -2404,7 +2408,7 @@ async function voiceSwitch(){
   const box=page().find(e=>e.id==='settings-voice-tools');assert.ok(box,'the switch is in Settings');assert.equal(box.checked,false);
   let node=box,inside=null;while(node){if(node.tagName==='details'&&!inside)inside=node;node=node.parent;}
   assert.ok(inside&&descendants(inside).some(e=>e.textContent==='Advanced'),'the switch sits under Advanced');assert.notEqual(inside.open,true,'Advanced is closed');
-  assert.ok(text().includes('Kinds of post')&&text().includes('Open kinds of post'),'Settings links to kinds of post');assert.equal(text().includes('Open voices and styles'),false);
+  assert.ok(text().includes('Kinds of post')&&text().includes('Open kinds of post'),'Settings links to kinds of post');assert.equal(text().includes('Open voices and kinds of post'),false);
   await page().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   let sent=requests.filter(r=>r.url==='/api/run-settings'&&r.data).at(-1).data;
   assert.deepEqual([sent.features,sent.features_before],[{voice:false},{voice:false}]);assert.equal('voice' in sent||'voice_before' in sent,false,'no default voice is posted while off');
@@ -2418,12 +2422,12 @@ async function voiceSwitch(){
   await f.run("sRoute('run','synthetic','status')");
   assert.ok(text().some(t=>/^Voice: Synthetic Author/.test(t)),'the run still says its voice');assert.equal(text().includes('Change the voice'),false,'no Change the voice while off');
   // Tools and the kinds of post screen.
-  f.run('sTools()');assert.ok(sheet().includes('Kinds of post'));assert.equal(sheet().includes('Voices and styles'),false);
-  await f.run('sMoreTools()');assert.ok(sheet().includes('Kinds of post'));assert.equal(sheet().includes('Voices and styles'),false);
+  f.run('sTools()');assert.ok(sheet().includes('Kinds of post'));assert.equal(sheet().includes('Voices and kinds of post'),false);
+  await f.run('sMoreTools()');assert.ok(sheet().includes('Kinds of post'));assert.equal(sheet().includes('Voices and kinds of post'),false);
   f.run('sCloseSheet()');await f.run("sRoute('settings')");await f.run("sRoute('voices')");
   assert.equal(f.get('title').textContent,'Kinds of post');
-  assert.deepEqual(f.get('actions').children.map(e=>e.textContent),['Create a style']);
-  assert.ok(text().includes('Product announcement')&&text().includes('Write a style guide'));
+  assert.deepEqual(f.get('actions').children.map(e=>e.textContent),['New kind of post']);
+  assert.ok(text().includes('Product announcement')&&text().includes('Write the guide by hand'));
   for(const gone of ['Voices','Create a voice','Write a voice guide','Create voices for every author','Every author in the team library'])assert.equal(text().includes(gone),false,gone+' is hidden while off');
   const back=f.get('toolbar-lead').children[0];assert.ok(back,'Kinds of post goes Back');await back.listeners.click();assert.equal(f.run('studio.screen'),'settings');
   assert.equal(f.get('go-settings').attributes['aria-current'],'page');
@@ -2495,7 +2499,7 @@ async function voiceGuides(){
   await find('Retire').listeners.click();
   assert.deepEqual(requests.filter(r=>r.url==='/api/tool-action').at(-1).data,{action:'profile-retire',profile:'avery',expected:'p2',confirmed:true});
   // With the older tools on, the screen links to them; the guides stay the same.
-  f.run("studio.settings.features={voice:true}");await f.run("sRoute('guides')");assert.ok(text().includes('Learning voices')&&text().includes('Open voices and styles'));
+  f.run("studio.settings.features={voice:true}");await f.run("sRoute('guides')");assert.ok(text().includes('Learning voices')&&text().includes('Open voices and kinds of post'));
 }
 
 async function toolsAreNamed(){
@@ -2503,16 +2507,16 @@ async function toolsAreNamed(){
   const sheet=()=>descendants(f.get('sheet')),find=label=>sheet().find(e=>e.textContent===label);
   f.run('sTools()');assert.ok(find('Tools'));assert.equal(sheet().some(e=>e.textContent==='More tools'),false);
   await find('Tools').listeners.click();assert.equal(f.get('sheet').children[0].children[0].textContent,'Tools');
-  assert.ok(find('Voices and styles'),'the tools sheet opens voices and styles');
-  f.run('sTools()');await find('Voices and styles').listeners.click();assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and styles');
+  assert.ok(find('Voices and kinds of post'),'the tools sheet opens voices and kinds of post');
+  f.run('sTools()');await find('Voices and kinds of post').listeners.click();assert.equal(f.get('sheet').children[0].children[0].textContent,'Voices and kinds of post');
   f.run("sCloseSheet();studio.settings={defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},workspace:'/synthetic'};studio.brand={};studio.team={};sSettings()");
-  const link=descendants(f.get('studio-page')).find(e=>e.tagName==='button'&&e.textContent==='Open voices and styles');assert.ok(link,'Settings links to voices and styles');
+  const link=descendants(f.get('studio-page')).find(e=>e.tagName==='button'&&e.textContent==='Open voices and kinds of post');assert.ok(link,'Settings links to voices and kinds of post');
   await link.listeners.click();
-  // Voices and styles is a screen: Create a voice leads its toolbar, Create a style beside it.
-  assert.equal(f.run('studio.screen'),'voices');assert.equal(f.get('title').textContent,'Voices and styles');
-  assert.deepEqual(f.get('actions').children.map(e=>[e.textContent,e.className]),[['Create a voice','button button-filled'],['Create a style','button button-quiet']]);
+  // Voices and kinds of post is a screen: Create a voice leads its toolbar, New kind of post beside it.
+  assert.equal(f.run('studio.screen'),'voices');assert.equal(f.get('title').textContent,'Voices and kinds of post');
+  assert.deepEqual(f.get('actions').children.map(e=>[e.textContent,e.className]),[['Create a voice','button button-filled'],['New kind of post','button button-quiet']]);
   const page=descendants(f.get('studio-page')).map(e=>e.textContent);
-  for(const label of ['Voices','Every author in the team library','Create voices for every author','Styles','Write a voice guide','Write a style guide'])assert.ok(page.includes(label),label+' on the screen');
+  for(const label of ['Voices','Every author in the team library','Create voices for every author','Kinds of post','Write a voice guide','Write the guide by hand'])assert.ok(page.includes(label),label+' on the screen');
   assert.equal(page.includes('Create a voice'),false,'the toolbar holds the primary action, not the cards');
 }
 
@@ -3858,4 +3862,42 @@ async function deskStartOrder(){
   assert.equal(t.f.get('title').textContent,'Polish a draft');
   assert.ok(!t.byId('desk-web'));assert.ok(!t.byId('desk-length'));
 }
-
+// One name for each thing, and sentences that say what this page does (piece 1's names).
+async function oneNameEach(){
+  const read=name=>fs.readFileSync('skills/blog-studio/assets/management/'+name,'utf8');
+  const app=read('app.js'),runner=read('runner.js'),desk=read('desk.js'),html=read('index.html');
+  // Page messages name the page, never "the desk" for the whole of it.
+  for(const said of ['Reopen this page’s link','Blog Studio’s page is not answering. Ask Blog Studio in chat to open it again.','This page does not publish your blog.'])assert.ok(app.includes(said),said);
+  for(const old of ['desk helper','current desk link','This desk does not publish'])assert.ok(!app.includes(old),old);
+  // The first pass, Tools on older runs, kinds of post and voice guides: one name each.
+  assert.ok(desk.includes("['tighten','Proofread and tighten']"));assert.ok(!desk.includes('Tighten and correct'));
+  for(const name of ['History','Headline and opening','Feedback without a rewrite','Check facts against sources','New kind of post','Write the guide by hand','Edit this guide','Export this guide','Learn this kind of post','Learn a kind of post from these','All voices and kinds of post','Retire this voice guide','Pause by closing; resume it from Blogs, with Resume interview.'])assert.ok(runner.includes("'"+name+"'")||runner.includes(name),name);
+  for(const old of ['Saved manuscript revisions','Improve a title or opening','Review argument and structure',"'Check facts'",'Create a style','Write a style guide','Edit this style guide','Export style guide','Style name','Profile name','Retire this profile','Voices and styles','voices and styles',"'Learn a style'",'Learn a style from these','resume from this article’s tools',"'Every run'",'New work in every studio'])assert.ok(!runner.includes(old),old);
+  assert.ok(html.includes('<option value="style-sample">Style sample: to learn a new kind of post from</option>'));
+  assert.ok(!html.includes('Example of a kind of writing (style sample)'));
+  // Settings: the default voice says where it is used, and documents are a sentence.
+  const f=fixture(()=>({}));f.loadRunner();voicesOn(f);
+  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
+  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced',research_sites:['https://a.example'],voices:[{id:'v1',name:'Avery'}]};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
+  assert.ok(text().some(t=>/^Used for Interview me and for blogs written step by step in chat\. A blog on the writing desk is written with its tone\./.test(t)),text().join('|'));
+  assert.ok(text().includes('Your documents are always read. Choose what else research may use.'));
+  assert.equal(nodes().find(e=>e.id==='settings-research-documents'),undefined,'no tick for what is always read');
+  assert.ok(nodes().find(e=>e.id==='settings-research-sites').checked);
+  // Home: a stopped desk start opens; it is not reviewed.
+  f.set('stopped',[{id:'stopped',title:'A stopped start',flow:'desk',status:'failed',complete:false,stages:[]}]);
+  f.run("studio.listing=stopped;studio.ordinary=[];studio.screen='home';sHome()");
+  const actions=descendants(f.get('actions')).map(e=>e.textContent);
+  assert.ok(actions.includes('Open A stopped start'),actions.join('|'));assert.ok(!actions.includes('Review A stopped start'));
+  // The Sources panel says research was read, with how many sources it drew on.
+  f.set('researched',deskView({research:{sources:3}}));f.run("studio.screen='desk';studio.desk={id:'desk-blog',view:researched,session:'s',pending:{}};sDeskRender(studio.desk)");
+  assert.ok(text().includes('Research was read for this draft: 3 sources.'),text().join('|'));
+  assert.ok(!text().some(t=>/No sources were given/.test(t)));
+  // A desk blog's details say it is on the desk, with no requested stop and no chat.
+  f.set('result',{location:'local',expected:'e1',record:{editorial:{}},sources:[],assets:{},history:[],view:{stage:'draft',stop_point:'review',stop_reached:false,on_desk:true,blocker:'',reviews:[],preview:{kind:'draft',text:'# A desk blog',truncated:false},next_action:{label:'Review draft in chat',command:'Use Blog Studio.'},google:null,google_observation:''}});
+  f.run("articleContent({id:'desk-blog'},result,null)");
+  const shown=descendants(f.get('detail-content')).map(e=>e.textContent);
+  assert.ok(shown.includes('On the desk'),shown.join('|'));assert.ok(shown.includes('Open on the desk'));
+  assert.ok(!shown.some(t=>/Requested stop|Continue in chat|in chat/.test(t)),shown.join('|'));
+  assert.ok(!shown.includes('Open writing run'));
+}

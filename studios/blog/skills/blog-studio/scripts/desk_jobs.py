@@ -1871,6 +1871,8 @@ def view(root, ident):
         'start': _start_view(root, ident, rows),
         # Finishing: the newest suggestions from each tool, waiting on this computer.
         'finishing': desk_finish.summary(root, ident, draft),
+        # Whether research was read for this draft, and how many sources it drew on.
+        'research': _research_read(directory),
         # Whether the blog's Google Doc can take the desk's wording as suggestions.
         'google_suggestions': sendable,
         # The blog record's version, for Mark as published, Delete and changing its driver.
@@ -1879,6 +1881,30 @@ def view(root, ident):
         # While another computer drives it, or nobody does, the desk is read only.
         **_team(root, ident),
     }
+
+
+LINK = re.compile(r'https?://[^\s)<>\]"\']+')
+
+
+def _research_read(directory):
+    """{'sources': n} when research was read for this draft: the reviewed bundle's sources,
+    or the distinct links in a plain research report. None when no research ran."""
+    from studio_core import research_contract
+
+    if (directory / 'research' / 'output.json').is_file():
+        try:
+            facts, _ = research_contract.read_bundle(directory / 'research')
+            return {'sources': len(facts.get('sources') or [])}
+        except (ValueError, OSError, KeyError, TypeError):
+            return {'sources': None}
+    report = directory / 'derived' / 'blog-research.md'
+    if report.is_file():
+        try:
+            links = {link.rstrip('.,;:') for link in LINK.findall(report.read_text())}
+        except (ValueError, OSError):
+            return {'sources': None}
+        return {'sources': len(links) or None}
+    return None
 
 
 def expected(root, ident):

@@ -630,6 +630,43 @@ class ListingTests(RouteCase):
         row = blog_runner.catalog(self.root)['items'][0]
         self.assertEqual((row['complete'], row['status']), (True, 'complete'))
 
+    def test_the_sources_panel_knows_research_was_read(self):
+        made = self.start()
+        self.assertIsNone(self.get('desk', id=made['id'])['research'])
+        report = self.folder(made['id']) / 'derived' / 'blog-research.md'
+        report.parent.mkdir(exist_ok=True)
+        report.write_text(
+            '# Findings\n\nSee https://a.example/one and [two](https://b.example/two).\n\n'
+            'Again https://a.example/one.\n'
+        )
+        self.assertEqual(self.get('desk', id=made['id'])['research'], {'sources': 2})
+
+    def test_the_details_of_a_desk_blog_say_it_is_on_the_desk(self):
+        made = self.start()
+        self.assertTrue(self.get('article', id=made['id'])['view']['on_desk'])
+
+    def test_page_messages_name_the_page_not_the_desk(self):
+        import management
+
+        self.assertEqual(
+            management.failure(RuntimeError('internal'))[1]['error'],
+            'The page hit an unexpected problem. Reload the page; saved work is kept, and you '
+            'can continue in chat.',
+        )
+        self.assertTrue(
+            management.failure(management.Busy())[1]['error'].startswith(
+                'Another change on this page is still running.'
+            )
+        )
+        self.assertIn('Reload the page', management.failure(KeyError('x'))[1]['error'])
+        for code in (405, 501):
+            self.assertEqual(
+                management.PROTOCOL_ERRORS[code],
+                'Blog Studio’s page answers GET and POST requests only.',
+            )
+        with self.assertRaisesRegex(ValueError, '^This request has fields the page does not take.$'):
+            self.post('desk-save', {'id': 'x', 'unknown': 1})
+
     def test_a_restored_desk_blog_opens_on_the_desk(self):
         made = self.start()
         self.post(

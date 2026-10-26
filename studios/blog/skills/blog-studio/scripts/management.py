@@ -1134,7 +1134,9 @@ def manuscript_preview(paths):
     return {'kind': None, 'text': '', 'truncated': False}
 
 
-def article_view(ident, record, location, preview, reviews, conflict=False, shared_newer=False):
+def article_view(
+    ident, record, location, preview, reviews, conflict=False, shared_newer=False, on_desk=False
+):
     stage = editorial.row(record, ident, location, conflict=conflict)
     stop = record.get('stop_point', 'draft')
     question = record.get('pending_question')
@@ -1223,6 +1225,8 @@ def article_view(ident, record, location, preview, reviews, conflict=False, shar
         'stage': stage['stage'],
         'stop_point': stop,
         'stop_reached': reached,
+        # On the writing desk: no requested stop or chat step, and Open on the desk.
+        'on_desk': on_desk,
         'blocker': blocker,
         'decision_stale': stage['decision_stale'],
         'conflict': conflict,
@@ -1292,7 +1296,13 @@ def detail(root, ident, location='local', revision=None):
             'history': [],
             'sources': shared.get('dependencies', [])[:20],
             'view': article_view(
-                ident, record, location, preview, reviews, conflict=len(heads) > 1
+                ident,
+                record,
+                location,
+                preview,
+                reviews,
+                conflict=len(heads) > 1,
+                on_desk=record.get('flow') == 'desk',
             ),
         }
     directory, record = studio.item(root, 'articles', ident)
@@ -1331,6 +1341,7 @@ def detail(root, ident, location='local', revision=None):
             studio.freshness(root, directory, record),
             conflict=len(heads) > 1,
             shared_newer=bool(binding and binding.get('revision') not in heads),
+            on_desk=(directory / 'desk' / 'draft.json').is_file(),
         ),
     }
 
@@ -2365,11 +2376,11 @@ class Busy(Exception):
 
 
 PROTOCOL_ERRORS = {
-    405: 'The editorial desk answers GET and POST requests only.',
+    405: 'Blog Studio’s page answers GET and POST requests only.',
     408: 'The request took too long to arrive.',
     414: 'The request address is too long.',
     431: 'The request headers are too large.',
-    501: 'The editorial desk answers GET and POST requests only.',
+    501: 'Blog Studio’s page answers GET and POST requests only.',
 }
 
 
@@ -2399,7 +2410,7 @@ def failure(exc, writing=False):
         return (409 if writing else 400), {'error': str(exc)[:500], 'code': 'source-conflict'}
     if isinstance(exc, Busy):
         return 503, {
-            'error': 'Another desk operation is still running. This request changed nothing; try again when it finishes.',
+            'error': 'Another change on this page is still running. This request changed nothing; try again when it finishes.',
             'code': 'busy',
         }
     if isinstance(exc, json.JSONDecodeError):
@@ -2410,7 +2421,7 @@ def failure(exc, writing=False):
         return 400, {'error': 'This text is not UTF-8. Save the file as UTF-8 text, then retry.'}
     if isinstance(exc, (KeyError, TypeError)):
         return 400, {
-            'error': 'This request was missing expected information. Reload the desk and try again, or continue in chat.'
+            'error': 'This request was missing expected information. Reload the page and try again, or continue in chat.'
         }
     if isinstance(exc, (ValueError, HubError, GoogleError)):
         return 400, {'error': str(exc)[:500]}
@@ -2418,7 +2429,7 @@ def failure(exc, writing=False):
         after = 'Inspect retained work before retrying.' if writing else 'Saved work is preserved.'
         return 503, {'error': 'Workspace access failed. ' + after}
     return 500, {
-        'error': 'The desk helper hit an unexpected problem. Reload the desk; saved work is kept, and you can continue in chat.',
+        'error': 'The page hit an unexpected problem. Reload the page; saved work is kept, and you can continue in chat.',
         'code': 'unexpected',
     }
 
@@ -2762,7 +2773,7 @@ def server(root, port=0, bind=True, shared_setup=False, keep_workspace=True):
             if api and not secrets.compare_digest(
                 self.headers.get('X-Blog-Studio-Token', ''), token
             ):
-                raise ValueError('Open the current editorial desk link to reconnect.')
+                raise ValueError('Reopen this page’s link to reconnect.')
 
         def opening_page(self):
             """A person following the desk link from another page: a top-level visit to the page shell.
