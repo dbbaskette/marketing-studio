@@ -2486,6 +2486,12 @@ def view(root, name, query):
                 return blog_runner.settings(root)
             if name == 'run-file':
                 return blog_runner.document(root, arg('id'), arg('stage'))
+            import desk
+
+            directory, _ = studio.item(root, 'articles', arg('id'))
+            if desk.on_desk(directory) and not studio.inside(directory, blog_runner.STATE).is_file():
+                # A blog on the writing desk has no run: its address opens the desk.
+                return {'id': arg('id'), 'on_desk': True}
             return blog_runner.engine(root).describe(arg('id'))
     limit, offset = whole(arg('limit', 20)), whole(arg('offset', 0))
     if name == 'board':

@@ -377,10 +377,15 @@ def deleted(root):
 
 
 def _shown(root, engine, ident):
+    """The restored blog as the page opens it next: a blog on the writing desk opens there."""
+    import desk
+
+    directory, record = studio.item(root, 'articles', ident)
+    on_desk = desk.on_desk(directory)
     try:
-        return engine.describe(ident)
+        return {**engine.describe(ident), 'on_desk': on_desk}
     except ValueError:
-        return {'title': studio.item(root, 'articles', ident)[1]['title']}
+        return {'title': record['title'], 'on_desk': on_desk}
 
 
 def _record_commit(found, record, ident):

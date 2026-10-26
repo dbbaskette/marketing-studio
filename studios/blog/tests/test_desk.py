@@ -630,6 +630,19 @@ class ListingTests(RouteCase):
         row = blog_runner.catalog(self.root)['items'][0]
         self.assertEqual((row['complete'], row['status']), (True, 'complete'))
 
+    def test_a_restored_desk_blog_opens_on_the_desk(self):
+        made = self.start()
+        self.post(
+            'blog-delete', {'id': made['id'], 'expected': made['expected'], 'title': made['title']}
+        )
+        self.assertFalse(self.folder(made['id']).exists())
+        restored = self.post('blog-restore', {'id': made['id']})
+        self.assertEqual(restored['id'], made['id'])
+        self.assertTrue(restored['on_desk'])
+        self.assertEqual(restored['title'], made['title'])
+        self.assertEqual(self.get('desk', id=made['id'])['markdown'], DRAFT)
+        self.assertEqual(self.get('run', id=made['id']), {'id': made['id'], 'on_desk': True})
+
     def test_the_blog_list_reads_only_desk_jobs(self):
         import blog_runner
         import tool_jobs

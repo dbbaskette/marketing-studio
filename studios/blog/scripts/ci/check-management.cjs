@@ -1775,8 +1775,9 @@ async function finishAndDelete(){
     if(url.startsWith('/api/article'))return {expected:'detail-1',title:'Synthetic blog'};
     if(url==='/api/schedule')return {id:'synthetic',status:'saved'};
     if(url==='/api/blog-delete')return {deleted:true,title:'Synthetic blog',notice:null};
-    if(url==='/api/blog-restore')return {id:'synthetic',restored:true};
-    if(url.startsWith('/api/run?'))return {...complete,publication:'https://example.com/post'};
+    if(url==='/api/blog-restore')return requests.at(-1).data.id==='desked'?{id:'desked',title:'Desk blog',restored:true,on_desk:true}:{id:'synthetic',restored:true};
+    if(url.startsWith('/api/desk?'))return deskView({id:'desked',title:'Desk blog'});
+    if(url.startsWith('/api/run?'))return url.includes('id=desked')?{id:'desked',on_desk:true}:{...complete,publication:'https://example.com/post'};
     if(url==='/api/runs')return {items:[],total:0,deleted};
     if(url.startsWith('/api/tools'))return {id:'synthetic',title:'Synthetic blog',has_manuscript:true,working:false,google:null,history:[],next_offset:null,jobs:[]};
     if(url.startsWith('/api/run-'))return complete;
@@ -1850,6 +1851,19 @@ async function finishAndDelete(){
   assert.ok(text().some(t=>t==='Recently deleted (1)'),text().join('|'));
   await descendants(f.get('studio-page')).find(e=>e.textContent==='Restore').listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/blog-restore').data,{id:'synthetic'});
+  assert.ok(descendants(f.get('toasts')).some(n=>n.textContent==='Restored Synthetic blog. It stays stopped until you resume it.'));
+  // A desk blog restored opens on the desk, with nothing to resume.
+  deleted.splice(0,deleted.length,{id:'desked',title:'Desk blog',deleted_at:new Date().toISOString(),until:new Date(Date.now()+30*86400000).toISOString()});
+  f.get('toasts').replaceChildren();
+  await f.run('sReadList()');f.run("studio.screen='blogs';sBlogs()");
+  await descendants(f.get('studio-page')).find(e=>e.textContent==='Restore').listeners.click();
+  assert.deepEqual(requests.filter(r=>r.url==='/api/blog-restore').at(-1).data,{id:'desked'});
+  assert.equal(f.run('studio.screen'),'desk');assert.equal(f.get('title').textContent,'Desk blog');
+  assert.ok(descendants(f.get('toasts')).some(n=>n.textContent==='Restored Desk blog.'));
+  assert.ok(!descendants(f.get('toasts')).some(n=>/stays stopped/.test(n.textContent)));
+  // The run address of a desk blog opens the desk too.
+  await f.run("sRoute('blogs')");await f.run("sRoute('run','desked')");
+  assert.equal(f.run('studio.screen'),'desk');assert.equal(f.get('title').textContent,'Desk blog');
   // The ideas gate: the headings become picks, with an optional note.
   const ideasRun={...atPackage,mode:'ideas',next:'outline',expected:'version-i',stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'draft'}]};
   const ideas={...shown,stage:'outline',label:'Outline',expected:'version-i',content:'# Ideas\n\n## The first angle\n\nWhy it matters.\n\n## The second angle\n\nAnother view.\n\n## A third angle\n\nMore.',bundle:[]};
@@ -3080,7 +3094,7 @@ async function deskOtherWaysIn(){
   const outline='# Synthetic interview\n\n## One\n\nBrief one.\n\n## Two\n';
   const t=deskStartFixture((url)=>{
     if(url.startsWith('/api/interview?'))return {id:'interviewed',title:'Synthetic interview',answers:[],notes:'',question:'Anything else?',expected:'i1',outline:true,outline_content:outline};
-    if(url.startsWith('/api/run?'))return {__http:400,error:'This blog has no guided run. Choose Run this blog on the page.'};
+    if(url.startsWith('/api/run?'))return {__http:400,error:'This blog has no step-by-step run. Open it from Blogs.'};
     if(url==='/api/desk?id=desk-blog')return deskView();
     if(url.startsWith('/api/desk?'))return {__http:400,error:'This blog is not on the desk.'};
     if(url.startsWith('/api/article?')&&url.includes('id=saved'))return {title:'A saved blog',view:{preview:{kind:'draft',text:'Saved text.',truncated:false}}};
