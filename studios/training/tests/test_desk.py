@@ -1948,6 +1948,25 @@ class PageScriptTests(ScriptedPage, PageCase):
         self.assertEqual(sent['headers'], {desk.TOKEN_HEADER: 'the-test-key'})
         self.assertIn('artifact=deck', sent['address'])
 
+    def test_a_download_takes_the_name_the_runner_gives(self):
+        self.research()
+        self.complete()
+        session = workspace.load(self.root)
+        session['artifacts']['deck'].pop('approved', None)
+        workspace.store(self.root, session)
+        self.cli('checkpoint', '--approval', 'page', '--gate', 'deck', '--stage', 'deck',
+                 '--question', 'Ready?')
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')],
+                   'GET /api/gate': [self.read('gate', path=str(self.root), artifact='deck')],
+                   'GET /api/download': [{'status': 200, 'picture': 'UEs=', 'headers': {
+                       'Content-Disposition': 'attachment; filename="rolling-restarts-deck.pptx"'},
+                       'type': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'}]}
+        result = self.run_page(answers, [{'click': 'Review the slide deck'},
+                                         {'click': 'Download deck.pptx'}, {'snapshot': 'saved'}])
+        self.assertIn('Downloaded rolling-restarts-deck.pptx.',
+                      result['snapshots']['saved']['toasts'])
+
     def test_the_research_stop_leads_with_the_brief_and_the_check(self):
         from synthesis_fixture import research_stop
         from studio_core import research_view
@@ -3330,6 +3349,27 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         asked = [request for request in result['requests'] if request['method'] == 'GET'
                  and request['address'].startswith('/api/file')]
         self.assertTrue(asked and 'artifact=reviews%2Fresearch.md' in asked[-1]['address'], asked)
+
+    def test_a_final_review_download_has_its_extension(self):
+        self.started()
+        waiting = a_run('waiting', 'Review the finished materials.')
+        waiting['body']['review'] = {
+            'phase': 'final', 'label': 'Review the finished materials', 'expected': 'v1',
+            'commits': None,
+            'items': [{'target': 'document@101', 'label': 'the level 101 learner guide',
+                       'file': '101/document.md', 'text': '# Guide', 'rewrites': []}]}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', 'Review the finished materials.')],
+            'GET /api/training': [self.detail('waiting', 'Review the finished materials.')],
+            'GET /api/run': [waiting],
+            'GET /api/download': [{'status': 200, 'picture': 'IyBHdWlkZQo=',
+                                   'type': 'text/markdown'}]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'},
+            {'click': 'Download the level 101 learner guide'}, {'snapshot': 'saved'}])
+        toasts = result['snapshots']['saved']['toasts']
+        self.assertIn('Downloaded document.md.', toasts)
+        self.assertNotIn('Downloaded the level 101 learner guide.', toasts)
 
     def test_a_final_change_says_what_comes_back(self):
         self.started()

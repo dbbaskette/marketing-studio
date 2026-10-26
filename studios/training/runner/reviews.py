@@ -300,6 +300,7 @@ class Reviewing:
             document = desk.document(root, found.session, name)
             plan = desk.document(root, found.session, 'research-plan') if name == 'research' else {}
             items.append({'target': name, 'label': workspace.label(name),
+                          'file': spec['file'],
                           'text': file.read_text(encoding='utf-8') if file.suffix == '.md' else '',
                           **({'document': document} if name == 'research-plan' else {}),
                           **({'research': self._outside(record, research_view.account(

@@ -892,13 +892,23 @@ async function picture(params) {
   return held;
 }
 
-async function downloadFile(path, params, name, pressed) {
+// The file's name as the runner sends it, in Content-Disposition's filename="…", else
+// the name the caller passed, which always has its extension.
+function sentName(response, fallback) {
+  const said = response.headers && typeof response.headers.get === 'function'
+    ? String(response.headers.get('Content-Disposition') || '') : '';
+  const found = /filename="([^"\\/]+)"/.exec(said);
+  return found ? found[1] : fallback;
+}
+
+async function downloadFile(path, params, fallback, pressed) {
   if (pressed.disabled) return;
   pressed.disabled = true;
   try {
     const response = await reach('download?' + new URLSearchParams({path, ...params}),
       {headers: {[TOKEN_HEADER]: view.token}, cache: 'no-store'});
     if (!response.ok) throw refusal(response, await saidBy(response));
+    const name = sentName(response, fallback);
     const held = URL.createObjectURL(await response.blob());
     const link = make('a', 'offscreen', 'Download');
     link.href = held;
@@ -6375,7 +6385,8 @@ function combinedReview(run) {
     if (item.target.startsWith('yoodli:')) add(part, yoodliCopies({artifact: item.target, text: item.text}));
     if (review.phase === 'final' && /^(document|brief|deck)(@|$)|^(scenario|yoodli):/.test(item.target)) {
       add(part, capsule('Download ' + lower(item.label), 'quiet', (event) =>
-        downloadFile(view.path, {artifact: item.target}, item.label, event.currentTarget),
+        downloadFile(view.path, {artifact: item.target},
+          String(item.file || '').split('/').pop() || item.target, event.currentTarget),
         'download-' + item.target));
     }
     if (item.notes) add(part, window.TrainingStudioMarkdown.render(item.notes));
