@@ -2567,7 +2567,10 @@ def view(root, name, query):
             import desk
 
             directory, _ = studio.item(root, 'articles', arg('id'))
-            if desk.on_desk(directory) and not studio.inside(directory, blog_runner.STATE).is_file():
+            if (
+                desk.on_desk(directory)
+                and not studio.inside(directory, blog_runner.STATE).is_file()
+            ):
                 # A blog on the writing desk has no run: its address opens the desk.
                 return {'id': arg('id'), 'on_desk': True}
             return blog_runner.engine(root).describe(arg('id'))

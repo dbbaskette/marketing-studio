@@ -511,7 +511,13 @@ class DeskDriverTests(TeamCase):
         return management.dispatch(
             root,
             'desk-save',
-            {'id': self.made['id'], 'seen': seen, 'part': 'title', 'text': text, 'session': 'e' * 16},
+            {
+                'id': self.made['id'],
+                'seen': seen,
+                'part': 'title',
+                'text': text,
+                'session': 'e' * 16,
+            },
         )
 
     def decide(self, root, action, expected):

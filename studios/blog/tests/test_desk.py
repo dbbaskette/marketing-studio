@@ -665,7 +665,9 @@ class ListingTests(RouteCase):
                 management.PROTOCOL_ERRORS[code],
                 'Blog Studio’s page answers GET and POST requests only.',
             )
-        with self.assertRaisesRegex(ValueError, '^This request has fields the page does not take.$'):
+        with self.assertRaisesRegex(
+            ValueError, '^This request has fields the page does not take.$'
+        ):
             self.post('desk-save', {'id': 'x', 'unknown': 1})
 
     def test_a_restored_desk_blog_opens_on_the_desk(self):

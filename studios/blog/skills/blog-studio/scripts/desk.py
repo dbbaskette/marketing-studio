@@ -1508,9 +1508,7 @@ def dispatch(root, action, data):
         return desk_jobs.view(root, ident)
     if action == 'retry':
         desk_jobs.settle(root, ident)
-        desk_jobs.retry(
-            root, ident, data.get('seconds'), data.get('skip_research', False)
-        )
+        desk_jobs.retry(root, ident, data.get('seconds'), data.get('skip_research', False))
         return desk_jobs.view(root, ident)
     # A result an older process finished lands before anything else changes the draft. Not on
     # requests that record no decision for the team, which would leave what landed unshared.

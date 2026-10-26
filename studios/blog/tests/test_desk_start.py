@@ -629,14 +629,18 @@ class StartRecoveryTests(ChainCase):
         self.assertEqual(stopped['reason'], 'time-limit')
         self.assertEqual(stopped['seconds'], self.setting())
         self.assertEqual(stopped['more'], min(3600, 2 * self.setting()))
-        detail = desk_jobs.stalled_detail(self.root, made['id'], desk.read_start(self.root, made['id']))
+        detail = desk_jobs.stalled_detail(
+            self.root, made['id'], desk.read_start(self.root, made['id'])
+        )
         self.assertEqual(detail['problem'], 'Codex ran out of the time a step may take.')
         self.assertEqual(detail['step'], 'outline')
         with self.assertRaisesRegex(ValueError, 'at most twice'):
             self.post('desk-retry', {'id': made['id'], 'seconds': 2 * self.setting() + 1})
         again = self.post('desk-retry', {'id': made['id'], 'seconds': 2 * self.setting()})
         self.assertEqual(again['working']['kind'], 'desk-outline')
-        self.assertEqual(tool_jobs.read(self.root, again['working']['id'])['seconds'], 2 * self.setting())
+        self.assertEqual(
+            tool_jobs.read(self.root, again['working']['id'])['seconds'], 2 * self.setting()
+        )
         self.assertIsNone(again['start']['reason'])
         self.run_jobs(2)
         self.assertIsNotNone(self.get('desk', id=made['id'])['start']['ended_at'])
@@ -658,7 +662,9 @@ class StartRecoveryTests(ChainCase):
         self.run_jobs(2)
         done = self.get('desk', id=made['id'])
         self.assertIsNotNone(done['start']['ended_at'])
-        self.assertNotIn('research', [c for c in self.calls if c['kind'] == 'outline'][0]['payload'])
+        self.assertNotIn(
+            'research', [c for c in self.calls if c['kind'] == 'outline'][0]['payload']
+        )
         self.assertFalse((self.folder(made['id']) / 'derived' / 'blog-research.md').exists())
 
     def test_continue_without_research_is_for_a_start_stopped_at_its_research(self):
@@ -682,7 +688,9 @@ class StartRecoveryTests(ChainCase):
         stopped = self.get('desk', id=made['id'])['start']
         self.assertEqual(stopped['reason'], 'cli')
         self.assertEqual(stopped['said'], ['error: synthetic line one', 'synthetic line two'])
-        self.assertEqual(stopped['problem'], 'Codex stopped before it answered. Check it under Status.')
+        self.assertEqual(
+            stopped['problem'], 'Codex stopped before it answered. Check it under Status.'
+        )
 
     def test_more_time_or_no_research_refuses_a_start_under_way(self):
         made = self.begin(research_from={'sites': [], 'web': True})
