@@ -549,7 +549,9 @@ and the file's text in place. The upload no longer sends `as_blog`.
 
 **9. The start asks what you have first.** `DESK_START_STEPS` becomes 1 What are you
 writing? 2 What do you have? 3 Sources and settings. Step 3 shows research and Length
-for the `have` chosen.
+for the `have` chosen. This order is for a topic or an outline: a draft to polish or
+review is already one screen with no kind of post (only Reshape asks for one), and A draft
+switches to it.
 
 **10. Copy and names.** See the names table. The server and old-page messages say "Blog
 Studio's page" or "this page" where they say "desk". The first pass is **Tighten and

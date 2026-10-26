@@ -1027,7 +1027,7 @@ def _entries(target):
     return entries
 
 
-def keep(root, ident, part, text, source, session=None):
+def keep(root, ident, part, text, source, session=None, extra=None):
     """Keep a part's text before it changes, newest last, at most KEEP per part.
 
     Saves from one editing session (the page's session token) keep only the text before
@@ -1048,6 +1048,7 @@ def keep(root, ident, part, text, source, session=None):
     entry = {'at': studio.now(), 'source': source, 'text': text, 'words': len(text.split())}
     if source == 'save' and session:
         entry['session'] = session
+    entry.update(extra or {})
     lines = [json.dumps(item, ensure_ascii=False) for item in (entries + [entry])[-KEEP:]]
     studio.atomic(target, ('\n'.join(lines) + '\n').encode())
 
@@ -1072,11 +1073,37 @@ def counts(root, ident):
 
 
 def restore(root, ident, seen, part, index):
-    """Bring back a kept version; the text it replaces is kept as a version too."""
+    """Bring back a kept version; the text it replaces is kept as a version too. A version
+    from before a first pass divided the draft undoes the division as a whole: the sections
+    that pass added go to the Outline tab's removed list, to bring back if wanted."""
     found = versions(root, ident, part)
     if type(index) is not int or not 0 <= index < len(found):
         raise ValueError('Choose a saved version.')
-    return save(root, ident, seen, part, found[index]['text'], source='restore')
+    entry = found[index]
+    added = entry.get('divided') if part == 'opening' else None
+    if not added:
+        return save(root, ident, seen, part, entry['text'], source='restore')
+    import desk_jobs
+
+    checked_text(part, entry['text'])
+    draft = read(root, ident)
+    order = [section['id'] for section in draft['sections']]
+    taken = [section for section in draft['sections'] if section['id'] in added]
+    checked(draft, seen, [part, 'outline'] + [section['id'] for section in taken])
+    if any(
+        job['kind'] in WHOLE_DRAFT and desk_jobs.busy(job) for job in desk_jobs.jobs(root, ident)
+    ):
+        raise ValueError('The draft is being written. Wait for it, or stop it, then restore.')
+    keep(root, ident, part, draft['opening'], 'restore')
+    now = studio.now()
+    _keep_removed(
+        root,
+        ident,
+        [{**section, 'index': order.index(section['id']), 'at': now} for section in taken],
+    )
+    draft['sections'] = [section for section in draft['sections'] if section['id'] not in added]
+    _set(draft, part, entry['text'])
+    return _write(root, ident, draft, [part, 'outline'] + [section['id'] for section in taken])
 
 
 # The page's desk routes (POST /api/desk-<action>), under management's studio lock.
@@ -1132,9 +1159,10 @@ def _create(root, data):
     if picked is not None:
         desk_jobs._angles_path(root, picked)  # A bad ID is refused before anything is made.
     kept = _kept_ids(data.pop('keep', []), data.get('sources') or [])
+    # Feedback first is Finishing's feedback, queued once the blog is made: comments only.
     choice = data.pop('first_pass', 'leave')
-    if choice not in desk_jobs.FIRST_PASSES:
-        raise ValueError('Choose tighten, reshape or leave it as it is.')
+    if choice not in (*desk_jobs.FIRST_PASSES, 'feedback'):
+        raise ValueError('Choose tighten, feedback, reshape or leave it as it is.')
     if data.get('way', 'draft') != 'draft' and choice != 'leave':
         raise ValueError('A first pass is for a draft you bring.')
     if choice == 'reshape' and not data.get('style'):
@@ -1164,7 +1192,10 @@ def _create(root, data):
             'keep_problem': keep_problem,
         }
     try:
-        desk_jobs.first_pass(root, made['id'], 1, choice)
+        if choice == 'feedback':
+            desk_jobs.finish(root, made['id'], 1, 'feedback')
+        else:
+            desk_jobs.first_pass(root, made['id'], 1, choice)
     except ValueError as error:
         problem = str(error)  # The blog is on the desk either way; the page says why.
     return {

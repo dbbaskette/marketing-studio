@@ -178,10 +178,47 @@ class WholeDraftTests(DeskJobCase):
         self.assertIn(blog_runner.LENGTHS['short'], saved['guidance'])
         self.assertNotIn('verbatim', saved['guidance'])
 
-    def test_a_draft_without_sections_has_no_first_pass(self):
-        made = desk.create(self.root, {'title': 'Flat', 'manuscript': 'Just prose.'})
-        with self.assertRaisesRegex(ValueError, 'section by section'):
+    def test_tighten_proofreads_the_opening_with_the_sections(self):
+        saved = self.saved(desk_jobs.first_pass(self.root, self.ident, 1, 'tighten'))
+        sent = saved['payload']['sections']
+        self.assertEqual(sent[0], {'id': 'opening', 'heading': '', 'text': 'An opening paragraph.'})
+        self.assertEqual([s['heading'] for s in sent[1:]], ['First part', 'Second part'])
+        self.assertNotIn('opening', saved['payload'])  # Sent once, as the first part.
+        self.assertIn('"opening"', saved['guidance'])
+
+    def test_a_draft_without_headings_is_tightened_as_one_part(self):
+        made = desk.create(self.root, {'title': 'Flat', 'manuscript': 'Just prose. Teh end.'})
+        saved = self.saved(desk_jobs.first_pass(self.root, made['id'], 1, 'tighten'))
+        self.assertEqual(
+            saved['payload']['sections'],
+            [{'id': 'opening', 'heading': '', 'text': 'Just prose. Teh end.'}],
+        )
+        self.assertIn('Add no ## heading', saved['guidance'])
+
+    def test_reshape_may_divide_a_draft_without_headings(self):
+        made = desk.create(
+            self.root, {'title': 'Flat', 'manuscript': 'Just prose.', 'style': 'how-to'}
+        )
+        saved = self.saved(desk_jobs.first_pass(self.root, made['id'], 1, 'reshape'))
+        self.assertIn('may divide it into sections with ## headings', saved['guidance'])
+        # A draft with sections keeps them: reshaping adds none.
+        styled = desk.create(self.root, {'title': 'Styled', 'manuscript': DRAFT, 'style': 'how-to'})
+        saved = self.saved(desk_jobs.first_pass(self.root, styled['id'], 1, 'reshape'))
+        self.assertNotIn('may divide it into sections', saved['guidance'])
+
+    def test_a_draft_with_no_text_has_no_first_pass(self):
+        made = desk.create(self.root, {'title': 'Empty', 'manuscript': '## Only\n'})
+        with self.assertRaisesRegex(ValueError, 'no text to work on yet'):
             desk_jobs.first_pass(self.root, made['id'], 1, 'tighten')
+
+    def test_a_whole_draft_note_revises_a_draft_without_headings(self):
+        made = desk.create(self.root, {'title': 'Flat', 'manuscript': 'Just prose.'})
+        saved = self.saved(desk_jobs.revise_all(self.root, made['id'], 1, 'Warmer.'))
+        self.assertEqual(
+            saved['payload']['part'], {'id': 'opening', 'heading': '', 'text': 'Just prose.'}
+        )
+        self.assertEqual(saved['metadata']['desk']['order'], ['opening'])
+        self.assertEqual(saved['metadata']['desk']['part'], 'opening')
 
 
 class SettleTests(DeskJobCase):
@@ -341,6 +378,153 @@ class SettleTests(DeskJobCase):
         self.ready(job, json.dumps([{'id': self.part, 'text': 'Tight.'}]))
         desk_jobs.settle(self.root, self.ident)
         self.assertEqual(self.versions()[0]['source'], 'first-pass')
+
+    def flat(self, **extra):
+        made = desk.create(
+            self.root, {'title': 'Flat', 'manuscript': 'Just prose. Teh end.', **extra}
+        )
+        return made['id']
+
+    def test_tighten_lands_in_a_draft_without_headings_and_adds_none(self):
+        ident = self.flat()
+        job = desk_jobs.first_pass(self.root, ident, 1, 'tighten')
+        self.ready(job, json.dumps([{'id': 'opening', 'text': 'Just prose. The end.'}]))
+        desk_jobs.settle(self.root, ident)
+        draft = desk.read(self.root, ident)
+        self.assertEqual((draft['opening'], draft['sections']), ('Just prose. The end.', []))
+        kept = desk.versions(self.root, ident, 'opening')
+        self.assertEqual(
+            [(v['source'], v['text']) for v in kept], [('first-pass', 'Just prose. Teh end.')]
+        )
+
+    def test_tighten_that_invents_a_heading_is_refused(self):
+        ident = self.flat()
+        job = desk_jobs.first_pass(self.root, ident, 1, 'tighten')
+        self.ready(
+            job, json.dumps([{'id': 'opening', 'text': 'Just prose.\n\n## Invented\n\nEnd.'}])
+        )
+        desk_jobs.settle(self.root, ident)
+        self.assertEqual(desk.read(self.root, ident)['opening'], 'Just prose. Teh end.')
+        self.assertRegex(self.saved(job)['error'], 'added a ## section heading')
+
+    def test_reshape_divides_a_draft_without_headings_into_sections(self):
+        ident = self.flat(style='how-to')
+        job = desk_jobs.first_pass(self.root, ident, 1, 'reshape')
+        shaped = 'What you will do.\n\n## Before you start\n\nProse.\n\n## Steps\n\nThe end.'
+        self.ready(job, json.dumps([{'id': 'opening', 'text': shaped}]))
+        desk_jobs.settle(self.root, ident)
+        draft = desk.read(self.root, ident)
+        self.assertEqual(self.saved(job)['error'], '')
+        self.assertEqual(draft['opening'], 'What you will do.')
+        self.assertEqual([s['heading'] for s in draft['sections']], ['Before you start', 'Steps'])
+        self.assertEqual([s['text'] for s in draft['sections']], ['Prose.', 'The end.'])
+        self.assertEqual(draft['title'], 'Flat')
+        self.assertEqual(
+            desk.versions(self.root, ident, 'opening')[0]['text'], 'Just prose. Teh end.'
+        )
+
+    def divide(self):
+        ident = self.flat(style='how-to')
+        job = desk_jobs.first_pass(self.root, ident, 1, 'reshape')
+        shaped = 'What you will do.\n\n## Before you start\n\nProse.\n\n## Steps\n\nThe end.'
+        self.ready(job, json.dumps([{'id': 'opening', 'text': shaped}]))
+        desk_jobs.settle(self.root, ident)
+        return ident, desk.read(self.root, ident)
+
+    def test_restoring_before_a_divide_undoes_the_division_as_a_whole(self):
+        ident, draft = self.divide()
+        added = [s['id'] for s in draft['sections']]
+        kept = desk.versions(self.root, ident, 'opening')[0]
+        self.assertEqual((kept['source'], kept['divided']), ('first-pass', added))
+        restored = desk.restore(self.root, ident, draft['revision'], 'opening', 0)
+        self.assertEqual((restored['opening'], restored['sections']), ('Just prose. Teh end.', []))
+        self.assertEqual(desk.join(restored).count('Just prose.'), 1, 'the content is there once')
+        # The sections it took out can be brought back from the Outline tab, with their text.
+        gone = desk.removed(self.root, ident)
+        self.assertEqual(sorted(s['heading'] for s in gone), ['Before you start', 'Steps'])
+        self.assertEqual(sorted(s['text'] for s in gone), ['Prose.', 'The end.'])
+        # The divided text is kept as a version of the opening too.
+        self.assertEqual(desk.versions(self.root, ident, 'opening')[0]['source'], 'restore')
+
+    def test_a_restore_before_a_divide_leaves_sections_added_since(self):
+        ident, draft = self.divide()
+        made = desk.outline_save(
+            self.root,
+            ident,
+            draft['revision'],
+            [{'id': s['id'], 'heading': s['heading']} for s in draft['sections']]
+            + [{'heading': 'My own section'}],
+        )
+        restored = desk.restore(self.root, ident, made['revision'], 'opening', 0)
+        self.assertEqual([s['heading'] for s in restored['sections']], ['My own section'])
+
+    def test_an_opening_that_was_not_sent_is_refused(self):
+        made = desk.create(self.root, {'title': 'Sections', 'manuscript': '## A\n\nText.'})
+        job = desk_jobs.first_pass(self.root, made['id'], 1, 'tighten')
+        self.assertEqual(
+            [p['id'] for p in self.saved(job)['payload']['sections']], [made['sections'][0]['id']]
+        )
+        self.ready(job, json.dumps([{'id': 'opening', 'text': 'An invented opening.'}]))
+        desk_jobs.settle(self.root, made['id'])
+        self.assertEqual(desk.read(self.root, made['id'])['opening'], '')
+        self.assertRegex(self.saved(job)['error'], 'sections this draft does not have')
+
+    def test_a_repeated_title_line_is_left_out_of_the_opening(self):
+        ident = self.flat()
+        job = desk_jobs.first_pass(self.root, ident, 1, 'tighten')
+        self.ready(job, json.dumps([{'id': 'opening', 'text': '# Flat\n\nJust prose. The end.'}]))
+        desk_jobs.settle(self.root, ident)
+        draft = desk.read(self.root, ident)
+        self.assertEqual((draft['title'], draft['opening']), ('Flat', 'Just prose. The end.'))
+        job = desk_jobs.revise_all(self.root, ident, draft['revision'], 'Warmer.')
+        self.ready(job, '# Another title\n\nWarmer prose.')
+        desk_jobs.settle(self.root, ident)
+        self.assertEqual(desk.read(self.root, ident)['opening'], 'Warmer prose.')
+
+    def test_a_whole_draft_note_that_fails_on_the_opening_names_it(self):
+        ident = self.flat()
+        job = desk_jobs.revise_all(self.root, ident, 1, 'Warmer.')
+        self.ready(job, 'Warmer.\n\n## Invented\n\nMore.')
+        desk_jobs.settle(self.root, ident)
+        chain = desk_jobs.view(self.root, ident)['chain']
+        self.assertEqual(
+            [(p['part'], p['heading']) for p in chain['problems']], [('opening', 'the opening')]
+        )
+
+    def test_reshape_adds_no_section_to_a_draft_that_has_sections(self):
+        made = desk.create(self.root, {'title': 'Styled', 'manuscript': DRAFT, 'style': 'how-to'})
+        job = desk_jobs.first_pass(self.root, made['id'], 1, 'reshape')
+        self.ready(job, json.dumps([{'id': 'opening', 'text': 'Intro.\n\n## Extra\n\nMore.'}]))
+        desk_jobs.settle(self.root, made['id'])
+        self.assertEqual(desk.read(self.root, made['id'])['opening'], 'An opening paragraph.')
+        self.assertRegex(self.saved(job)['error'], 'added a ## section heading')
+
+    def test_a_first_pass_lands_in_the_opening_and_the_sections(self):
+        job = desk_jobs.first_pass(self.root, self.ident, 1, 'tighten')
+        self.ready(
+            job,
+            json.dumps(
+                [
+                    {'id': 'opening', 'text': 'A tighter opening.'},
+                    {'id': self.part, 'text': 'Tight.'},
+                ]
+            ),
+        )
+        desk_jobs.settle(self.root, self.ident)
+        draft = desk.read(self.root, self.ident)
+        self.assertEqual(
+            (draft['opening'], draft['sections'][0]['text']), ('A tighter opening.', 'Tight.')
+        )
+
+    def test_a_whole_draft_note_lands_in_the_opening_of_a_draft_without_headings(self):
+        ident = self.flat()
+        job = desk_jobs.revise_all(self.root, ident, 1, 'Warmer.')
+        self.ready(job, 'Warmer prose.')
+        desk_jobs.settle(self.root, ident)
+        self.assertEqual(self.saved(job)['error'], '')
+        self.assertEqual(desk.read(self.root, ident)['opening'], 'Warmer prose.')
+        self.assertEqual(desk.versions(self.root, ident, 'opening')[0]['source'], 'revise-all')
+        self.assertIsNone(desk_jobs.view(self.root, ident)['working'])
 
     def test_a_first_pass_result_with_an_unknown_id_changes_nothing(self):
         job = desk_jobs.first_pass(self.root, self.ident, 1, 'tighten')

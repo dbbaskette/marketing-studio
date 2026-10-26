@@ -45,7 +45,7 @@ read-only checks and next steps. You can run the same report with
 
 Choose **New blog**, or one of Home's tasks (**Write from a topic or my documents**, **Work from my
 outline or notes**, **Edit or polish a draft**). A new blog is always made on the writing
-desk, in three steps:
+desk. A topic or an outline takes three steps; a draft takes one screen (below):
 
 1. **What are you writing?** A card for each kind of post, with its usual shape and
    length, and **Something else**.
@@ -65,9 +65,26 @@ desk, in three steps:
      wording, or type your own point.
    - **An outline or notes**, pasted or uploaded: **Write from my outline** writes the
      draft next; **Shape an outline with me first** opens the outline on the desk.
-   - **A draft**, pasted, uploaded or from a Google Doc (every tab is read, and the Doc is
-     not changed), with an optional first pass: **Tighten and proofread**, **Reshape to
-     fit this kind of post** or **Leave it as it is**.
+   - **A draft** switches to the polishing screen.
+
+**Edit or polish a draft** is one screen with no step tabs and no kind of post to choose:
+
+- **Your draft**, pasted, uploaded or from a Google Doc (every tab is read, and the Doc is
+  not changed). The title is optional.
+- **What should happen first**: **Proofread and tighten** (the default, with no kind of
+  post), **Just give feedback** (Finishing's **Feedback without a rewrite** starts as the
+  desk opens: comments beside each part, and nothing in the text changes), **Reshape to
+  fit a kind of post** (only this one shows **Kind of post**, and needs one) or **Leave
+  it as it is**. The opening is worked on with the sections, and a draft with no `##`
+  headings is worked on as one part. Only Reshape may add headings, to divide such a draft
+  into the kind of post's sections; restoring the opening's **Before the first pass** in
+  History undoes that division as a whole, and the sections it added can be brought back on
+  the Outline tab. A **Note for the whole draft** revises a draft with no headings as one
+  part too.
+- **Tone (optional)**, folded, starting from Settings.
+- **Check facts against your sources (optional)**, folded: the same files, Google Docs,
+  links and library posts as above, for Finishing's fact check. There is no research and
+  no Length for a draft.
 
 After **Start** nothing stops for you. The page says "Nothing needed from you", names the
 step under way (researching, outlining, drafting) with one clock, and offers **Stop**, and
@@ -149,7 +166,7 @@ stay in Google.
 
 A blog edited in the manuscript editor (**Edit manuscript**) keeps its own Google tools:
 selected suggestions or comments are previewed and sent only when you confirm. Its
-**Polish another document** opens the desk start with **A draft**. The CLI remains available for Google
+**Polish another document** opens the polishing screen. The CLI remains available for Google
 reconciliation and advanced operations.
 
 ## Your brand skill

@@ -406,7 +406,44 @@ class RouteTests(RouteCase):
         self.assertIsNone(stopped['working'])
         self.assertEqual(stopped['jobs'][0]['status'], 'cancelled')
 
-    def test_a_first_pass_that_cannot_run_still_opens_the_desk(self):
+    def test_proofreading_needs_no_kind_of_post(self):
+        made = self.start(style='', first_pass='tighten')
+        self.assertIsNone(made['first_pass_problem'])
+        self.assertIsNone(made.get('style'))
+        self.assertEqual(made['working']['kind'], 'desk-first-pass')
+        self.assertEqual(made['working']['action'], 'tighten')
+
+    def test_feedback_first_queues_finishings_feedback_and_rewrites_nothing(self):
+        import tool_jobs
+
+        made = self.start(style='', first_pass='feedback')
+        self.assertIsNone(made['first_pass_problem'])
+        self.assertEqual(made['revision'], 1)
+        self.assertEqual(made['markdown'], DRAFT)
+        self.assertEqual(made['working']['kind'], 'finish-feedback')
+        job = tool_jobs.read(self.root, made['working']['id'])
+        self.assertIn('Do not rewrite the draft.', job['guidance'])
+        # The same request again is the same blog, with no second job.
+        again = self.start(style='', first_pass='feedback')
+        self.assertEqual(again['id'], made['id'])
+        self.assertEqual([row['kind'] for row in again['jobs']], ['finish-feedback'])
+
+    def test_feedback_first_is_for_a_draft_you_bring(self):
+        with self.assertRaisesRegex(ValueError, 'for a draft you bring'):
+            self.post(
+                'desk-create',
+                {
+                    'operation': 'd' * 32,
+                    'way': 'topic',
+                    'title': 'Synthetic',
+                    'point': 'A point.',
+                    'first_pass': 'feedback',
+                },
+            )
+        with self.assertRaisesRegex(ValueError, 'Choose tighten'):
+            self.start(first_pass='polish')
+
+    def test_a_draft_without_headings_is_proofread_as_it_is(self):
         made = self.post(
             'desk-create',
             {
@@ -416,8 +453,22 @@ class RouteTests(RouteCase):
                 'first_pass': 'tighten',
             },
         )
-        self.assertRegex(made['first_pass_problem'], 'section by section')
-        self.assertEqual(made['opening'], 'Just prose.')
+        self.assertIsNone(made['first_pass_problem'])
+        self.assertEqual(made['working']['kind'], 'desk-first-pass')
+        self.assertEqual((made['opening'], made['sections']), ('Just prose.', []))
+
+    def test_a_first_pass_that_cannot_run_still_opens_the_desk(self):
+        made = self.post(
+            'desk-create',
+            {
+                'operation': 'e' * 32,
+                'title': 'Empty',
+                'manuscript': '## Only\n',
+                'first_pass': 'tighten',
+            },
+        )
+        self.assertRegex(made['first_pass_problem'], 'no text to work on yet')
+        self.assertIsNone(made['working'])
 
     def finish(self, job_id, content):
         import tool_jobs

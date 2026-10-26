@@ -669,6 +669,18 @@ summary {
   transform: translateX(200%);
 }
 
+.segmented[data-count="4"] {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.segmented[data-count="4"] > .seg-thumb {
+  width: calc((100% - 6px) / 4);
+}
+
+.segmented[data-at="3"] > .seg-thumb {
+  transform: translateX(300%);
+}
+
 .seg-option {
   position: relative;
   z-index: 1;
@@ -2620,6 +2632,27 @@ a.button {
   .workflow-step {
     padding: 0.5rem 0.3rem;
     font-size: 0.82rem;
+  }
+
+  /* Four answers sit two by two on a phone. No thumb can slide there, so the chosen one is
+     filled instead. */
+  .segmented[data-count="4"] {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .segmented[data-count="4"] > .seg-thumb {
+    display: none;
+  }
+
+  .segmented[data-count="4"] > .seg-option[aria-pressed="true"] {
+    background: var(--selection);
+    box-shadow: var(--edge), 0 1px 3px rgb(0 0 0 / 0.1);
+  }
+}
+
+@media (max-width: 37.5rem) and (forced-colors: active) {
+  .segmented[data-count="4"] > .seg-option[aria-pressed="true"] {
+    outline: 2px solid Highlight;
   }
 }
 
