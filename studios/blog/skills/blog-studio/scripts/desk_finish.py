@@ -157,7 +157,8 @@ def present(draft, item):
     if 'comment' in item:
         return True
     if item.get('whole'):
-        return text == item.get('before')
+        # A whole part is kept as the job saw it: image data kept as text is a token.
+        return desk_images.scrub(text) == item.get('before')
     before = item.get('before') or ''
     return bool(before) and text.count(before) == 1
 
@@ -237,9 +238,10 @@ def apply(root, ident, seen, job, chosen):
             if not after.strip():
                 raise ValueError(EMPTY)
             text = texts[part] if part in texts else desk.text_of(draft, part)
-            fits = text == item['before'] if item.get('whole') else text.count(item['before']) == 1
-            if not item['before'] and not item.get('whole'):
-                fits = False
+            if item.get('whole'):
+                fits = desk_images.scrub(text) == item['before']
+            else:
+                fits = bool(item['before']) and text.count(item['before']) == 1
             if not fits:
                 raise ValueError(GONE)
             if item.get('whole'):
@@ -247,6 +249,11 @@ def apply(root, ident, seen, job, chosen):
             else:
                 at = text.index(item['before'])
                 updated = text[:at] + after + text[at + len(item['before']) :]
+            if part != 'title':
+                # Image data kept as text comes back exactly, and no image reference the
+                # part had is lost: one the change left out goes back where it was.
+                updated = desk_images.restored(text, updated)
+                updated = desk_images.kept(text, updated, draft.get('images'))
             desk.checked_text(part, updated)
             if part == 'title' and not updated.strip():
                 raise ValueError('Keep the title to one line, up to 500 characters.')
@@ -951,14 +958,15 @@ def _read_headline(draft, found):
             ):
                 dropped += 1
                 continue
+            shown = desk_images.scrub(draft[part])
             items.append(
                 {
                     'part': part,
-                    'before': draft[part],
+                    'before': shown,
                     'after': text,
                     'note': _text(row.get('why'), 500),
                     # An alternative opening may reshape its paragraphs; code and lists stay.
-                    'flag': changes_structure(draft[part], text, paragraphs=False),
+                    'flag': changes_structure(shown, text, paragraphs=False),
                     'whole': True,
                     'group': part,
                 }
@@ -1002,12 +1010,17 @@ def _read_voice(draft, found):
             dropped += 1
             continue
         seen.add(part)
-        before, after = desk.text_of(draft, part), row['text'].strip()
+        before, after = desk_images.scrub(desk.text_of(draft, part)), row['text'].strip()
         if not before.strip():
             dropped += 1
             continue
         if after == before.strip():
             kept += 1
+            continue
+        try:
+            desk_images.restored(desk.text_of(draft, part), after)
+        except ValueError:
+            dropped += 1  # It lost or changed image data the part keeps as text.
             continue
         if not after or desk.has_heading(after):
             dropped += 1
@@ -1453,6 +1466,24 @@ def repurpose(root, ident, job_id, title, content):
             data['style'] = source['style']['style_id']
         except (ValueError, KeyError, TypeError):
             pass  # A retired kind of post: the copy is a blog of no particular kind.
+    # The images the copy names come with it, so the new blog does not open without them.
+    images = source.get('images') or {}
+    if images and desk_images.REFERENCE.search(content):
+        held = desk._data(root, ident)
+        named = desk_images.written(
+            {'title': '', 'opening': content, 'sections': [], 'images': images}
+        )
+        lines = desk_images.definitions(
+            {
+                'title': '',
+                'opening': content,
+                'sections': [],
+                'images': {n: images[n] for n in named},
+            },
+            held,
+        )
+        if lines:
+            data['manuscript'] = content.rstrip() + '\n\n' + '\n\n'.join(lines) + '\n'
     made = desk.create(root, data)
     job['applied'] = {'desk': {'id': made['id'], 'title': made['title']}, 'posted': False}
     job['saved_content'] = content

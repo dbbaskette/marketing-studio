@@ -471,7 +471,7 @@ def request(root, data):
         import desk_images
 
         payload = {
-            'source': desk_images.scrub(current['content']),  # Its images' data stays here.
+            'source': desk_images.without(current['content']),  # Its images' data stays here.
             'voice': voice,
             'format': FORMATS[chosen],
             'target_words': length,

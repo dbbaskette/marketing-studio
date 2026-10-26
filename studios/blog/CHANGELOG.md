@@ -14,7 +14,8 @@ changes for authors first, then what changes for maintainers.
   reference has it put back where it was. Blogs already on the desk are cleaned the first
   time they are opened, and an image an earlier rewrite dropped is found again in History,
   the original draft or the Google Doc, with no word changed; one found nowhere shows
-  **Image missing**. For maintainers: `desk/draft.json` lists `images` ({label: {alt, key,
+  **Image missing**. Image data kept as text, such as in a code example, reaches a rewrite
+  as a token it must give back unchanged. For maintainers: `desk/draft.json` lists `images` ({label: {alt, key,
   size}}) and their data is in `desk/images.json` ({label: data URI}), read only to write
   `DRAFT.md` or by `GET /api/desk-images`, never on a view poll; `desk_images.py` moves
   them in and out; the view's `missing_images` names labels kept nowhere; part limits count

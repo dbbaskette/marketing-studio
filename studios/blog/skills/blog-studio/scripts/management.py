@@ -2468,8 +2468,10 @@ def view(root, name, query):
                     'part': arg('part'),
                     'versions': desk.versions(root, ident, arg('part')),
                 }
-            # Reading never writes: the worker settles results, and so does the next desk
-            # request for one an older process left.
+            # Reading settles no job: the worker settles results, and so does the next desk
+            # request for one an older process left. The one write a read may make is the
+            # one-time cleaning of a record kept before images moved out of its text, or
+            # whose images were lost (desk._images_out), by the computer that drives it.
             return desk_jobs.view(root, arg('id'))
     if name == 'manuscript':
         import manuscript_editor

@@ -524,7 +524,7 @@ def _start(root, data, way, title, tone, length, style):
         'ended_at': None,
         'open': 'outline' if way == 'shape' else 'draft',
         'minutes': estimate(steps, length),
-        'notes': notes,
+        'notes': desk_images.without(notes),  # A start's notes keep no image data.
         'research_from': found,
         # Research keeps the Harness Research version it starts with, as a run does.
         'contract': research_contract.snapshot() if found else None,
@@ -606,18 +606,32 @@ def open_run(root, ident):
 
 
 IMAGES = 'images.json'  # {label: data URI} for a desk draft's images (desk_images)
+# desk/images.json as last parsed, by path: (mtime, size, data), so a save or a view that
+# needs only its labels never parses it again unchanged.
+_PARSED = {}
+# A record cleaned as it was read but not written (no lock, or another computer drives the
+# blog), by path: (draft.json's digest, the clean draft with its image data), so a poll
+# does not clean it again and the page can still be served its images.
+_CLEANED = {}
 
 
 def _data_at(path):
+    """desk/images.json by label: each value that is image data that can be written back
+    as is. Anything else is left out, and the image shows as missing."""
     if not path.is_file() or path.is_symlink():
         return {}
+    stat = path.stat()
+    known = _PARSED.get(str(path))
+    if known and known[:2] == (stat.st_mtime_ns, stat.st_size):
+        return dict(known[2])
     try:
         found = studio.read_json(path)
     except (ValueError, OSError):
-        return {}
-    if not isinstance(found, dict):
-        return {}
-    return {label: uri for label, uri in found.items() if isinstance(uri, str)}
+        found = {}
+    found = found if isinstance(found, dict) else {}
+    data = {label: uri for label, uri in found.items() if desk_images.usable(uri)}
+    _PARSED[str(path)] = (stat.st_mtime_ns, stat.st_size, data)
+    return dict(data)
 
 
 def _data(root, ident):
@@ -625,6 +639,13 @@ def _data(root, ident):
     the page its images once, never for a view."""
     directory, _ = _paths(root, ident)
     return _data_at(studio.inside(directory, DESK, IMAGES))
+
+
+def _held(root, ident):
+    """The labels desk/images.json holds data for, to see which images are missing. Parsed
+    only when the file changed since it was last read or written here."""
+    directory, _ = _paths(root, ident)
+    return set(_data_at(studio.inside(directory, DESK, IMAGES)))
 
 
 def _keep_images(directory, draft, before=None):
@@ -636,49 +657,77 @@ def _keep_images(directory, draft, before=None):
     data = desk_images.data_of(draft, before)
     if data != before and (data or path.exists()):
         studio.write_json(path, data)
+        stat = path.stat()
+        _PARSED[str(path)] = (stat.st_mtime_ns, stat.st_size, dict(data))
     studio.write_json(studio.inside(directory, DESK, 'draft.json'), desk_images.stored(draft))
+    _CLEANED.pop(str(studio.inside(directory, DESK, 'draft.json')), None)
     return data
 
 
 def read(root, ident):
     """The desk draft, with its images listed but not their data. A record kept before
-    images moved out of the text, or whose text names an image kept nowhere, is cleaned as
-    it is read (`_images_out`); a clean one is only read."""
+    images moved out of the text, or whose text names an image whose data is kept nowhere,
+    is cleaned as it is read (`_images_out`); a clean one is only read."""
     _, target = _paths(root, ident)
     if not target.is_file() or target.is_symlink():
         raise ValueError('This blog is not on the desk.')
-    draft = studio.read_json(target)
+    raw = target.read_bytes()
+    draft = json.loads(raw)
     sought = set(draft.get('sought') or [])
-    lost = [label for label in desk_images.missing(draft) if desk_images.key(label) not in sought]
+    held = _held(root, ident) if draft.get('images') else set()
+    lost = [
+        label for label in desk_images.missing(draft, held) if desk_images.key(label) not in sought
+    ]
     if desk_images.inside(draft) or desk_images.unstored(draft) or lost:
-        draft = _images_out(root, ident, draft, lost)
+        cleaned = _CLEANED.get(str(target))
+        if cleaned and cleaned[0] == studio.digest(raw) and not _writable(root, ident):
+            return desk_images.stored(cleaned[1])  # Cleaned here before, and not written.
+        draft = _images_out(root, ident, draft, lost, studio.digest(raw))
     return draft
 
 
-def _images_out(root, ident, draft, lost=()):
+def _writable(root, ident):
+    """Whether this read may write the blog: under the lock, on the computer that drives it."""
+    if not studio.lock_held():
+        return False
+    from team_workspace import guard
+
+    try:
+        guard(root, ident)
+    except ValueError:
+        return False
+    return True
+
+
+def _images_out(root, ident, draft, lost=(), raw=None):
     """A record kept before images moved out of the text, cleaned as it is first read: the
-    image data in its text moves to desk/images.json, and an image its text names that is
-    kept nowhere is looked for where it was last written (`_recovered`). No word changes.
+    image data in its text moves to desk/images.json, and an image its text names whose data
+    is kept nowhere is looked for where it was last written (`_recovered`). No word changes.
 
     Under the studio lock, on the computer that drives the blog, the clean record is written
     once with no new revision and no part marked changed, so no open form is refused for it
     alone, and DRAFT.md ends with the images again; a label looked for and not found is
     noted in `sought`, so it is looked for once. In a team workspace the change is recorded
-    on its own. Otherwise the clean draft is only what this read returns."""
+    on its own. Otherwise the clean draft is kept in this process only, for the next read and
+    for serving the page its images. Image limits let go of images no part refers to, but
+    never of data kept before them."""
     draft = desk_images.moved_out(draft)
     if lost:
         draft = _recovered(root, ident, draft, lost)
-        sought = {desk_images.key(label) for label in desk_images.missing(draft)}
+        sought = {
+            desk_images.key(label)
+            for label in desk_images.missing(draft, _held(root, ident) if lost else None)
+        }
         draft['sought'] = sorted(set(draft.get('sought') or []) | sought)
     draft = desk_images.with_alts(draft)
-    if not studio.lock_held():
+    draft = desk_images.fitted(draft, before=draft.get('images'))
+    _, target = _paths(root, ident)
+    if not _writable(root, ident):
+        # No lock, or another computer drives the blog and cleans it there.
+        _CLEANED[str(target)] = (raw, draft)
         return desk_images.stored(draft)
-    from team_workspace import guard, keep_desk, space
+    from team_workspace import keep_desk, space
 
-    try:
-        guard(root, ident)
-    except ValueError:
-        return desk_images.stored(draft)  # Another computer drives it: cleaned there.
     directory, _ = _paths(root, ident)
     data = _keep_images(directory, draft)
     record = studio.read_json(studio.metadata_path(directory, 'articles'))
@@ -694,24 +743,34 @@ def _images_out(root, ident, draft, lost=()):
     return desk_images.stored(draft)
 
 
+def cleaned_data(root, ident):
+    """Image data this process holds for a record it cleaned but could not write."""
+    _, target = _paths(root, ident)
+    found = _CLEANED.get(str(target))
+    if not found or not target.is_file() or found[0] != studio.digest(target.read_bytes()):
+        return {}
+    return {
+        label: entry['uri']
+        for label, entry in found[1].get('images', {}).items()
+        if entry.get('uri')
+    }
+
+
 def _recovered(root, ident, draft, labels):
     """The draft with the data of each image its text names but keeps nowhere, found where it
-    was last written: the versions of the part that names it, newest first, then the other
-    parts' versions, then ORIGINAL.md, then the Google Doc the blog started from."""
+    was last written: the newest kept version of any part that defines it, then ORIGINAL.md,
+    then the Google Doc the blog started from. Each version is read once."""
     directory, _ = _paths(root, ident)
     images = dict(draft.get('images') or {})
     folder = studio.inside(directory, DESK, 'versions')
-    kept = sorted(
-        path.stem
-        for path in (folder.glob('*.jsonl') if folder.is_dir() and not folder.is_symlink() else [])
-        if path.stem in PARTS or PART.fullmatch(path.stem)
-    )
-
-    def versions_of(part):
-        try:
-            return [entry['text'] for entry in _kept(root, ident, part)]
-        except ValueError:
-            return []
+    entries = []
+    for path in folder.glob('*.jsonl') if folder.is_dir() and not folder.is_symlink() else []:
+        if path.stem in PARTS or PART.fullmatch(path.stem):
+            try:
+                entries += _kept(root, ident, path.stem)
+            except ValueError:
+                continue
+    entries.sort(key=lambda entry: str(entry.get('at') or ''), reverse=True)
 
     def elsewhere():
         original = studio.inside(directory, 'ORIGINAL.md')
@@ -729,15 +788,14 @@ def _recovered(root, ident, draft, labels):
         except (ValueError, OSError, KeyError, TypeError):
             return
 
+    texts = (text for text in (*(entry['text'] for entry in entries), *elsewhere()))
+    found = desk_images.found_in(texts, labels)
+    names = {desk_images.key(label): label for label in images}
     for label in labels:
-        part = desk_images.part_of(draft, label)
-        order = ([part] if part in kept else []) + [name for name in kept if name != part]
-        texts = (text for name in order for text in versions_of(name))
-        for text in (*texts, *elsewhere()):
-            entry = desk_images.defined_in(text, label)
-            if entry:
-                images[label] = {**entry, 'alt': ''}
-                break
+        entry = found.get(desk_images.key(label))
+        if entry:
+            name = names.get(desk_images.key(label), label)
+            images[name] = {**entry, 'alt': (images.get(name) or {}).get('alt', '')}
     return {**draft, 'images': images}
 
 
@@ -768,7 +826,11 @@ def _write(root, ident, draft, parts=()):
     """Keep the draft, DRAFT.md and the blog's record in step, one revision on. Each part
     in `parts` records the revision it last changed at, for the stale check."""
     _require_lock()
-    directory, _ = _paths(root, ident)
+    directory, target = _paths(root, ident)
+    # Every write keeps the image limits: an image new since the record on disk is refused
+    # for its size, or for taking the total over once images no part uses are let go.
+    had = (studio.read_json(target).get('images') or {}) if target.is_file() else {}
+    draft = desk_images.fitted(draft, before=had)
     record = studio.read_json(studio.metadata_path(directory, 'articles'))
     draft['revision'] += 1
     draft['updated_at'] = studio.now()
@@ -839,17 +901,20 @@ def save(root, ident, seen, part, text, source='save', session=None):
     if not isinstance(text, str):
         raise ValueError('Keep one part under 200,000 characters.')
     draft = read(root, ident)
-    images = draft.get('images') or {}
+    had = draft.get('images') or {}
+    images = had
     if part != 'title':
-        text, images = desk_images.take(text, images)
+        text, images = desk_images.take(text, had, rename=True)
     checked_text(part, text)
     before = text_of(draft, part)
-    if before == text.strip() and images == (draft.get('images') or {}):
+    if before == text.strip() and images == had:
         return draft  # The same text again, as from a retried save: nothing to refuse.
     checked(draft, seen, [part])
-    draft = desk_images.fitted({**draft, 'images': images})
-    keep(root, ident, part, before, source, session)
+    # The text first, so an image it adds counts as used when the limits are checked.
+    draft = {**draft, 'images': images}
     _set(draft, part, text)
+    draft = desk_images.fitted(draft, before=had)
+    keep(root, ident, part, before, source, session)
     return _write(root, ident, draft, [part])
 
 
@@ -1017,7 +1082,7 @@ def reimport(root, ident, markdown, source, record=None):
         [{**section, 'index': current.index(section), 'at': now} for section in gone],
     )
     draft['sections'] = merged
-    draft = desk_images.fitted({**draft, 'images': images})
+    draft = desk_images.fitted({**draft, 'images': images}, before=draft.get('images'))
     draft = _write(root, ident, draft, sorted(set(changed)))
     if record is not None:
         directory, _ = _paths(root, ident)
@@ -1066,7 +1131,8 @@ def unremove(root, ident, seen, index):
     taken = {section['id'] for section in draft['sections']}
     kept = str(item.get('id') or '')
     part = kept if PART.fullmatch(kept) and kept not in taken else _id(taken)
-    text, draft['images'] = desk_images.take(str(item.get('text') or ''), draft.get('images'))
+    had = draft.get('images') or {}
+    text, draft['images'] = desk_images.take(str(item.get('text') or ''), had, rename=True)
     section = {
         'id': part,
         'heading': ' '.join(str(item.get('heading') or 'Section').split())[:200],
@@ -1075,6 +1141,7 @@ def unremove(root, ident, seen, index):
     }
     at = item.get('index') if type(item.get('index')) is int else len(draft['sections'])
     draft['sections'].insert(max(0, min(at, len(draft['sections']))), section)
+    draft = desk_images.fitted(draft, before=had)
     studio.write_json(_removed_path(root, ident), found[:index] + found[index + 1 :])
     return _write(root, ident, draft, [part, 'outline'])
 
@@ -1249,7 +1316,8 @@ def restore(root, ident, seen, part, index):
     import desk_jobs
 
     draft = read(root, ident)
-    text, images = desk_images.take(entry['text'], draft.get('images'))
+    had = draft.get('images') or {}
+    text, images = desk_images.take(entry['text'], had, rename=True)
     checked_text(part, text)
     order = [section['id'] for section in draft['sections']]
     taken = [section for section in draft['sections'] if section['id'] in added]
@@ -1258,16 +1326,21 @@ def restore(root, ident, seen, part, index):
         job['kind'] in WHOLE_DRAFT and desk_jobs.busy(job) for job in desk_jobs.jobs(root, ident)
     ):
         raise ValueError('The draft is being written. Wait for it, or stop it, then restore.')
-    keep(root, ident, part, draft['opening'], 'restore')
+    opening = draft['opening']
+    draft = {
+        **draft,
+        'images': images,
+        'sections': [section for section in draft['sections'] if section['id'] not in added],
+    }
+    _set(draft, part, text)
+    draft = desk_images.fitted(draft, before=had)
+    keep(root, ident, part, opening, 'restore')
     now = studio.now()
     _keep_removed(
         root,
         ident,
         [{**section, 'index': order.index(section['id']), 'at': now} for section in taken],
     )
-    draft['sections'] = [section for section in draft['sections'] if section['id'] not in added]
-    draft = desk_images.fitted({**draft, 'images': images})
-    _set(draft, part, text)
     return _write(root, ident, draft, [part, 'outline'] + [section['id'] for section in taken])
 
 

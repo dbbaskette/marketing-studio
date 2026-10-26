@@ -904,7 +904,9 @@ def _apply_draft(root, ident, draft, job, result):
             used.add(outline[at]['id'])
     merged = []
     for at, written in enumerate(found['sections']):
-        text = desk_images.kept(planned[at]['text'] if planned[at] else '', written['text'], images)
+        was = planned[at]['text'] if planned[at] else ''
+        text = desk_images.restored(was, written['text'], strict=False)
+        text = desk_images.kept(was, text, images)
         desk.checked_text('opening', text)
         merged.append(
             {
@@ -921,7 +923,8 @@ def _apply_draft(root, ident, draft, job, result):
             desk.keep(root, ident, section['id'], before[section['id']], 'draft')
     typed = fingerprint(draft['opening']) != job['metadata']['desk'].get('opening')
     if found['opening'] and not typed:  # An opening typed meanwhile is the person's.
-        opening = desk_images.kept(draft['opening'], found['opening'], images)
+        opening = desk_images.restored(draft['opening'], found['opening'], strict=False)
+        opening = desk_images.kept(draft['opening'], opening, images)
         desk.checked_text('opening', opening)
         if draft['opening'] and draft['opening'] != opening:
             desk.keep(root, ident, 'opening', draft['opening'], 'draft')
@@ -1452,10 +1455,13 @@ def _opening_text(text):
 
 
 def _landed(draft, before, text):
-    """A returned text with any image data moved to the draft's images, and the image
+    """A returned text as it lands: each token for image data kept as text (in code, say)
+    put back as that data, and refused when one was lost or changed (desk_images.restored);
+    any image data in it moved to the draft's images under labels of its own; and the image
     references `before` had kept: one left out goes back where it was, one changed or made
     up is taken out (desk_images.kept)."""
-    text, draft['images'] = desk_images.take(text, draft.get('images'))
+    text = desk_images.restored(before, text)
+    text, draft['images'] = desk_images.take(text, draft.get('images'), rename=True)
     return desk_images.kept(before, text, draft['images'])
 
 
@@ -1761,7 +1767,9 @@ def images_view(root, ident):
     """The data of a desk blog's images, which the page reads once and keeps; the desk view
     lists them by key only, so a poll never carries them."""
     desk.read(root, ident)
-    return {'id': ident, 'images': desk_images.served(desk._data(root, ident))}
+    # A record cleaned here but not written (another computer drives it) is served as cleaned.
+    data = {**desk.cleaned_data(root, ident), **desk._data(root, ident)}
+    return {'id': ident, 'images': desk_images.served(data)}
 
 
 def view(root, ident):
@@ -1808,7 +1816,12 @@ def view(root, ident):
         **{key: value for key, value in draft.items() if key != 'images'},
         'images': desk_images.shown(draft),
         # Images the text names that are kept nowhere: the page says each is missing.
-        'missing_images': desk_images.missing(draft),
+        'missing_images': desk_images.missing(
+            draft,
+            set(desk._held(root, ident)) | set(desk.cleaned_data(root, ident))
+            if draft.get('images')
+            else None,
+        ),
         'markdown': desk.join(draft, images=False),
         'jobs': rows,
         'chain': chain,

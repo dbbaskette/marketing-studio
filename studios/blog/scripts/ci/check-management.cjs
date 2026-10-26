@@ -3638,6 +3638,13 @@ async function deskImages(){
   f.run("navigator={clipboard:{writeText:async value=>{window.copied=value;}}}");
   await all().find(n=>n.tagName==='button'&&n.textContent==='Copy').listeners.click();
   assert.equal(f.run('window.copied'),f.run('window.downloaded.content'));
+  // An image whose data cannot be read is left out of Copy and Download, which say so.
+  f.set('lost',{label:'image5',alt:'',title:'',key:'k5',size:9});f.run('studio.desk.view={...studio.desk.view,images:[...studio.desk.view.images,lost]}');
+  await all().find(n=>n.tagName==='button'&&n.textContent==='Download').listeners.click();
+  assert.equal(f.run('window.downloaded.content'),view.markdown.replace(/\n$/,'')+'\n\n[image1]: <'+uri+'>\n\n[image2]: <'+pasted+'>\n');
+  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Downloaded without image9, image5: their images could not be read.'),descendants(f.get('toasts')).map(e=>e.textContent).join('|'));
+  await all().find(n=>n.tagName==='button'&&n.textContent==='Copy').listeners.click();
+  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='Markdown copied without image9, image5: their images could not be read.'));
   // Only the paste itself carried image data; every autosave after it carries references.
   assert.ok(requests.filter(r=>/data:image/.test(r.body)).every(r=>r.url==='/api/desk-save'&&r.body.includes(pasted)));
   assert.ok(requests.filter(r=>r.url!=='/api/desk-save').every(r=>!/data:image/.test(r.body)));

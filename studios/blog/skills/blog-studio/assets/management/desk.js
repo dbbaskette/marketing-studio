@@ -84,13 +84,15 @@ async function sDeskImagesLoad(held){
   }catch(_){/* The thumbnails wait; Copy and Download ask again. */}finally{held.imagesLoading=null;}})();
   return held.imagesLoading;
 }
-// The Markdown as DRAFT.md keeps it: the text, then each image it refers to.
+// The Markdown as DRAFT.md keeps it: the text, then each image it refers to. An image whose
+// data cannot be read is left out and named, never stopping Copy or Download.
 async function sDeskMarkdown(held){
-  const view=held.view,images=view.images||[];if(!images.length)return view.markdown;
+  const view=held.view,images=view.images||[],missing=[...(view.missing_images||[])];if(!images.length)return {markdown:view.markdown,missing};
   await sDeskImagesLoad(held);
-  const lines=images.map(image=>{const data=deskImageData()[image.key];if(!data)throw new Error('The images could not be read. Reload the desk, then try again.');return '['+image.label+']: <'+data+'>'+(image.title?' '+image.title:'');});
-  return view.markdown.replace(/\n$/,'')+'\n\n'+lines.join('\n\n')+'\n';
+  const lines=[];for(const image of images){const data=deskImageData()[image.key];if(data)lines.push('['+image.label+']: <'+data+'>'+(image.title?' '+image.title:''));else missing.push(image.label);}
+  return {markdown:lines.length?view.markdown.replace(/\n$/,'')+'\n\n'+lines.join('\n\n')+'\n':view.markdown,missing};
 }
+function deskWithout(done,missing){return missing.length?done+' without '+missing.join(', ')+(missing.length===1?': its image could not be read.':': their images could not be read.'):done+'.';}
 
 // A new blog: 1. the kind of post, 2. sources and settings, 3. what the person brings (a
 // topic, an outline or notes, or a draft), then Start. Nothing stops for the person after it.
@@ -387,8 +389,8 @@ function sDeskStatusWords(held){const job=held.view.working;if(!job)return '';if
 function sDeskTabs(held){return sChoice('Work on',[['draft','Draft'],['outline','Outline']],held,'tab',async()=>{await sDeskOutlineFlush(held);held.outline=null;sDeskRender(held);});}
 function sDeskToolbar(held){
   const view=held.view,editable=access.actions.edit;
-  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');await navigator.clipboard.writeText(await sDeskMarkdown(held));sToast('Markdown copied.');});
-  const download=sButton('Download',async()=>sDownload({content:await sDeskMarkdown(held),name:'DRAFT.md'}));
+  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));});
+  const download=sButton('Download',async()=>{const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
   const google=view.google?.url?link(view.google.url,'Google Doc ↗'):null;if(google)google.className='button';
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
   const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held));finishing.setAttribute('aria-pressed',String(!!held.finish));

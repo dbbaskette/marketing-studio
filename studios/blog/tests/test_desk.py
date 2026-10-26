@@ -931,8 +931,10 @@ class ImageRecordTests(DeskCase):
         shown = desk.versions(self.root, made['id'], 'opening')
         self.assertEqual(shown[0]['text'], 'Older opening.\n\n![][image1]')
         restored = desk.restore(self.root, made['id'], 1, 'opening', 0)
-        self.assertEqual(restored['opening'], 'Older opening.\n\n![][image1]')
-        self.assertEqual(stored(self, made['id'])['image1'], IMAGE_TWO)
+        # Its image1 is the data the draft keeps as image2: the reference follows the data,
+        # and the image1 other text refers to is left as it is.
+        self.assertEqual(restored['opening'], 'Older opening.\n\n![][image2]')
+        self.assertEqual(stored(self, made['id']), {'image1': IMAGE_ONE, 'image2': IMAGE_TWO})
 
 
 def owner_shaped(case, made):
@@ -1129,7 +1131,8 @@ class ImageRecoveryTests(RouteCase):
             'desk-create',
             {'operation': 'c' * 32, 'title': 'Images synthetic', 'manuscript': GOOGLE},
         )
-        with patch('desk._data', side_effect=AssertionError('read the image data')):
+        # The file was written here, so a poll needs no parse of it to know its labels.
+        with patch('desk_images.usable', side_effect=AssertionError('parsed the image data')):
             shown = self.get('desk', id=made['id'])
         self.assertEqual(len(shown['images']), 2)
         self.assertEqual(len(self.get('desk-images', id=made['id'])['images']), 2)

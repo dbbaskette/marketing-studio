@@ -7,9 +7,14 @@ references, so nobody types among walls of base64 and no job sends image data to
 assistant. The draft record's `images` lists each image, {label: {'alt', 'key', 'size'[,
 'title']}}; its data is kept apart in `desk/images.json`, {label: data URI}, read only to
 write DRAFT.md or to serve the page once. An entry just taken from text also carries its
-`uri` until it is stored (`stored`, `data_of`). `desk.join` writes them back at the end, so DRAFT.md, Copy and Download keep every
-image exactly. An inline `![alt](data:image/...)` becomes a reference to a new `imageN` the
-same way. Ordinary http(s) images, and anything inside fenced code, stay as they are.
+`uri` until it is stored (`stored`, `data_of`). `desk.join` writes the definitions back at
+the end, so DRAFT.md, Copy and Download keep every image exactly. An inline
+`![alt](data:image/...)` becomes a reference to a new `imageN` the same way.
+
+Ordinary http(s) images stay as they are, and so does image data the text holds as text:
+in fenced, indented or inline code, raw HTML or a quoted definition. A job sees each such
+piece of data as a named token (`scrub`), and a result must give every token back unchanged
+for it to land (`restored`).
 """
 
 from collections import Counter
@@ -17,6 +22,8 @@ import hashlib
 import re
 
 FENCE = re.compile(r' {0,3}(`{3,}|~{3,})')
+LIST_LINE = re.compile(r'[ \t]*(?:[-*+]|\d{1,3}[.)])[ \t]')
+CODE_SPAN = re.compile(r'(?<!`)(`+)(?!`)((?:[^\n]|\n(?![ \t]*\n))+?)(?<!`)\1(?!`)')
 _DATA = r'(?i:data:image/)'
 # A reference-style definition of an image held as data, on a line of its own.
 DEFINITION = re.compile(
@@ -30,16 +37,23 @@ INLINE = re.compile(
 # A full or collapsed image reference: ![alt][label] or ![label][].
 REFERENCE = re.compile(r'!\[([^\[\]\n]*)\]\[([^\[\]\n]*)\]')
 LABELS = re.compile(r'^ {0,3}\[([^\[\]\n]{1,200})\]:', re.M)
-LEFTOVER = re.compile(_DATA + r'[^\s<>()"\']*')
+LEFTOVER = re.compile(_DATA + r'[^\s<>()"\'`]*')
+TOKEN = 'image-data-kept:'  # A job sees image data kept as text as this and its digest.
+TOKENS = re.compile(re.escape(TOKEN) + r'([0-9a-f]{16})(?![0-9A-Za-z+/=])')
 OURS = re.compile(r'image\d+', re.I)  # The labels Google's export and the desk give images.
 EACH = 5 * 1024 * 1024  # characters of image data in one image
 TOTAL = 12 * 1024 * 1024  # and in all of a draft's images, under the page's request limit
 TOO_BIG = 'An image in this draft is larger than 5 MB. Use a smaller image.'
 TOO_MANY = 'The images in this draft come to more than 12 MB together. Use fewer or smaller images.'
+CHANGED = (
+    'The rewrite lost or changed image data kept in the text (such as in code), so it was '
+    'not applied. Run it again.'
+)
 GUIDANCE = (
     'Images in the text are short references such as ![][image1] or ![alt][image2]; the images '
     'themselves are not sent. Keep every ![…][imageN] reference exactly as it is written and '
-    'where it belongs in the text, and add no new one.'
+    'where it belongs in the text, and add no new one. Image data the text holds as text, '
+    'such as in code, is sent as ' + TOKEN + ' and a code: keep each one exactly as it is.'
 )
 
 
@@ -48,12 +62,21 @@ def key(label):
     return ' '.join(str(label).split()).casefold()
 
 
+def digest(uri):
+    return hashlib.sha256(uri.encode()).hexdigest()[:16]
+
+
 def holds(text):
     return isinstance(text, str) and 'data:image/' in text.lower()
 
 
+def _blank(text):
+    return re.sub(r'[^\n]', ' ', text)
+
+
 def _masked(text):
-    """The text with lines in fenced code blanked to spaces, so matches keep their places."""
+    """The text with code blanked to spaces (fenced and indented blocks, and inline code
+    spans), so matches outside code keep their places."""
     out, fence = [], None
     for line in text.split('\n'):
         marker = FENCE.match(line)
@@ -65,7 +88,26 @@ def _masked(text):
             out.append(' ' * len(line))
         else:
             out.append(line if fence is None else ' ' * len(line))
-    return '\n'.join(out)
+    # Indented code: four spaces or a tab after a blank line, outside a list.
+    lines, code, listed, blank = [], False, False, True
+    for line in out:
+        indented = line.startswith(('    ', '\t'))
+        if not line.strip():
+            lines.append(line)
+            blank = True
+            continue
+        if indented and (code or (blank and not listed)):
+            code, blank = True, False
+            lines.append(' ' * len(line))
+            continue
+        code = False
+        if LIST_LINE.match(line):
+            listed = True
+        elif not indented:
+            listed = False
+        lines.append(line)
+        blank = False
+    return CODE_SPAN.sub(lambda found: _blank(found.group(0)), '\n'.join(lines))
 
 
 def _entry(uri, alt='', title=None):
@@ -75,28 +117,54 @@ def _entry(uri, alt='', title=None):
     return entry
 
 
-def take(text, images=None):
+def _fresh(taken):
+    number = 1
+    while key('image' + str(number)) in taken:
+        number += 1
+    taken.add(key('image' + str(number)))
+    return 'image' + str(number)
+
+
+def take(text, images=None, rename=False):
     """The text with its image data moved out, and the images with it added.
 
     Each data definition outside code leaves its line (and the blank line it leaves behind);
-    each inline data image becomes a reference to the label already holding the same data,
-    or to a new `imageN` no other label in the text or the images uses. A label defined
-    again takes the data defined last. `images` is not changed; a copy comes back."""
+    of two definitions of one label in the text the first counts, as in Markdown. Each inline
+    data image becomes a reference to the label already holding the same data, or to a new
+    `imageN` no other label in the text or the images uses. A label the images already hold
+    with other data takes the text's data, as a whole draft brought in defines its images;
+    with `rename`, as for one part typed, pasted or rewritten, the text's image gets a label
+    of its own instead, and the text's references follow it, so no other part's image ever
+    changes. `images` is not changed; a copy comes back."""
     images = dict(images or {})
     if not holds(text):
         return text, images
     lines = text.replace('\r\n', '\n').split('\n')
-    masked = _masked('\n'.join(lines)).split('\n')
+    whole = '\n'.join(lines)
+    masked = _masked(whole).split('\n')
     names = {key(label): label for label in images}
-    out, removed = [], False
-    for line, shown in zip(lines, masked, strict=True):
-        found = DEFINITION.fullmatch(shown) if shown.strip() else None
+    held = {entry.get('key') or digest(entry['uri']): name for name, entry in images.items()}
+    shown = '\n'.join(masked)
+    taken = set(names) | {key(m.group(2) or m.group(1)) for m in REFERENCE.finditer(shown)}
+    taken |= {key(label) for label in LABELS.findall(shown)}
+    out, removed, here, renamed = [], False, set(), {}
+    for line, seen in zip(lines, masked, strict=True):
+        found = DEFINITION.fullmatch(seen) if seen.strip() else None
         if found:
-            label = found.group(1).strip()
-            name = names.setdefault(key(label), label)
-            alt = (images.get(name) or {}).get('alt', '')
-            images[name] = _entry(found.group(2) or found.group(3), alt, found.group(4))
+            label, uri = found.group(1).strip(), found.group(2) or found.group(3)
             removed = True
+            if key(label) in here:
+                continue  # A second definition of one label: the first counts.
+            here.add(key(label))
+            name = names.get(key(label), label)
+            entry = images.get(name)
+            if rename and entry and (entry.get('key') or digest(entry['uri'])) != digest(uri):
+                name = held.get(digest(uri)) or _fresh(taken)
+                renamed[key(label)] = name
+                entry = images.get(name)
+            images[name] = _entry(uri, (entry or {}).get('alt', ''), found.group(4))
+            names[key(name)] = name
+            held[digest(uri)] = name
             continue
         if removed and not line.strip() and (not out or not out[-1].strip()):
             continue  # The blank line a removed definition leaves.
@@ -105,20 +173,23 @@ def take(text, images=None):
     while removed and out and not out[-1].strip():
         out.pop()
     text = '\n'.join(out)
+    if renamed:
+        shown = _masked(text)
+        pieces, at = [], 0
+        for found in REFERENCE.finditer(shown):
+            label = found.group(2) or found.group(1)
+            if key(label) in renamed:
+                alt = found.group(1) if found.group(2) else ''
+                pieces += [text[at : found.start()], '![' + alt + '][' + renamed[key(label)] + ']']
+                at = found.end()
+        text = ''.join(pieces) + text[at:]
     shown = _masked(text)
-    taken = set(names) | {key(m.group(2) or m.group(1)) for m in REFERENCE.finditer(shown)}
-    taken |= {key(label) for label in LABELS.findall(shown)}
-    held = {entry.get('key') or digest(entry['uri']): name for name, entry in images.items()}
 
     def inline(found):
         alt, uri, title = found.group(1), found.group(2) or found.group(3), found.group(4)
         name = held.get(digest(uri))
         if name is None:
-            number = 1
-            while key('image' + str(number)) in taken:
-                number += 1
-            name = 'image' + str(number)
-            taken.add(key(name))
+            name = _fresh(taken)
             images[name] = _entry(uri, alt, title)
             held[digest(uri)] = name
             names[key(name)] = name
@@ -138,10 +209,11 @@ def take(text, images=None):
 
 
 def scrub(text):
-    """Text for an assistant with any image data left out: a source or copy read as it is."""
+    """Text for an assistant with no image data in it: data that can leave the text does,
+    and each piece the text keeps as text (in code, say) is a token naming it (`restored`)."""
     if not holds(text):
         return text
-    return LEFTOVER.sub('(image)', take(text)[0])
+    return LEFTOVER.sub(lambda found: TOKEN + digest(found.group(0)), take(text)[0])
 
 
 def scrubbed(value):
@@ -155,6 +227,32 @@ def scrubbed(value):
     return value
 
 
+def without(text):
+    """Text kept with no image data at all, such as a start's notes."""
+    if not holds(text):
+        return text
+    return LEFTOVER.sub('(image)', take(text)[0])
+
+
+def restored(before, after, strict=True):
+    """A returned text with each token put back as the data `before` held. Refused
+    (CHANGED) when a token is not one `before` had or was altered, and, `strict`, when the
+    data in it is not the data `before` had, piece for piece."""
+    after = after.replace('\r\n', '\n')
+    if TOKEN not in after and not (strict and holds(before)):
+        return after
+    datas = {digest(found.group(0)): found.group(0) for found in LEFTOVER.finditer(before)}
+    tokens = [found.group(1) for found in TOKENS.finditer(after)]
+    if len(tokens) != after.count(TOKEN) or any(name not in datas for name in tokens):
+        raise ValueError(CHANGED)
+    if strict:
+        want = Counter(digest(found.group(0)) for found in LEFTOVER.finditer(before))
+        have = Counter(tokens) + Counter(digest(f.group(0)) for f in LEFTOVER.finditer(after))
+        if want != have:
+            raise ValueError(CHANGED)
+    return TOKENS.sub(lambda found: datas[found.group(1)], after)
+
+
 def _texts(draft):
     yield draft.get('title') or ''
     yield draft.get('opening') or ''
@@ -164,7 +262,7 @@ def _texts(draft):
 
 def inside(draft):
     """Whether a desk record still holds image data in its text that can move out, as one
-    kept before images moved out does. Data inside code is text and stays."""
+    kept before images moved out does. Data kept as text, such as in code, stays."""
     parts = [draft.get('opening') or ''] + [
         s.get('text') or '' for s in draft.get('sections') or []
     ]
@@ -208,10 +306,6 @@ def definitions(draft, data=None):
     return lines
 
 
-def digest(uri):
-    return hashlib.sha256(uri.encode()).hexdigest()[:16]
-
-
 def stored(draft):
     """The draft as desk/draft.json keeps it: each image's label, alt text, title, key and
     size, and no data."""
@@ -234,6 +328,15 @@ def data_of(draft, data):
         for label, entry in images.items()
         if entry.get('uri') or label in data
     }
+
+
+def usable(uri):
+    """Whether a value from desk/images.json is image data that can be written back as is."""
+    return (
+        isinstance(uri, str)
+        and uri[:11].lower() == 'data:image/'
+        and not any(mark in uri for mark in '<>\n\r')
+    )
 
 
 def shown(draft):
@@ -263,40 +366,40 @@ def unstored(draft):
     return any('uri' in entry for entry in (draft.get('images') or {}).values())
 
 
-def missing(draft):
-    """The labels the text refers to as images with none kept and no definition in the text
-    (such as a link's), each once, as first written."""
-    images = {key(label) for label in draft.get('images') or {}}
-    defined, found = set(), []
-    for text in _texts(draft):
-        shown_text = _masked(text)
-        defined |= {key(label) for label in LABELS.findall(shown_text)}
-    for text in _texts(draft):
-        for match in REFERENCE.finditer(_masked(text)):
+def missing(draft, held=None):
+    """The labels the text refers to as images that are kept nowhere, each once, as first
+    written: no image listed, or (with `held`, the labels whose data is kept) listed with
+    no data. A label the text itself defines, such as a link's, is not missing."""
+    images = draft.get('images') or {}
+    kept_keys = {key(label) for label in images if held is None or label in held}
+    kept_keys |= {key(label) for label, entry in images.items() if entry.get('uri')}
+    shown_texts = [_masked(text) for text in _texts(draft)]
+    defined = {key(label) for text in shown_texts for label in LABELS.findall(text)}
+    found, seen = [], set()
+    for text in shown_texts:
+        for match in REFERENCE.finditer(text):
             label = (match.group(2) or match.group(1)).strip()
-            if key(label) not in images | defined and key(label) not in map(key, found):
-                found.append(label)
+            name = key(label)
+            if name in seen or name in kept_keys or name in defined:
+                continue
+            seen.add(name)
+            found.append(label)
     return found
 
 
-def part_of(draft, label):
-    """The part whose text first refers to a label: 'title', 'opening' or a section id."""
-    parts = [('title', draft.get('title') or ''), ('opening', draft.get('opening') or '')]
-    parts += [(s['id'], s.get('text') or '') for s in draft.get('sections') or []]
-    for part, text in parts:
-        if any(key(m.group(2) or m.group(1)) == key(label) for m in REFERENCE.finditer(text)):
-            return part
-    return None
-
-
-def defined_in(text, label):
-    """The image data a text defines for a label, as an entry, or None."""
-    if not holds(text):
-        return None
-    for name, entry in take(text)[1].items():
-        if key(name) == key(label):
-            return entry
-    return None
+def found_in(texts, labels):
+    """{key: entry} for each label a text defines image data for, the first text to define
+    it counting, read once over the texts and stopping when every label is found."""
+    wanted, found = {key(label) for label in labels}, {}
+    for text in texts:
+        if not holds(text):
+            continue
+        for name, entry in take(text)[1].items():
+            if key(name) in wanted and key(name) not in found:
+                found[key(name)] = entry
+        if len(found) == len(wanted):
+            break
+    return found
 
 
 def with_alts(draft):
@@ -311,21 +414,27 @@ def with_alts(draft):
     return {**draft, 'images': images}
 
 
-def fitted(draft):
-    """The draft within the image limits: an image no part refers to any longer is let go
-    first when they come to more than the total; a refusal says which limit it meets."""
+def fitted(draft, before=None):
+    """The draft within the image limits. `before` is the images it had: only an image new
+    since then is refused for its size or for taking the total over, and an image no part
+    refers to any longer is let go first. A refusal says which limit it meets; images kept
+    before the limits are left as they are."""
     images = draft.get('images') or {}
+    known = {entry.get('key') for entry in (before or {}).values()}
 
     def size(entry):
         return entry.get('size') or len(entry.get('uri') or '')
 
-    if any(size(entry) > EACH for entry in images.values()):
+    def new(found):
+        return [entry for entry in found.values() if entry.get('key') not in known]
+
+    if any(size(entry) > EACH for entry in new(images)):
         raise ValueError(TOO_BIG)
     if sum(size(entry) for entry in images.values()) <= TOTAL:
         return draft
     used = _referenced(draft)
     images = {label: entry for label, entry in images.items() if key(label) in used}
-    if sum(size(entry) for entry in images.values()) > TOTAL:
+    if sum(size(entry) for entry in images.values()) > TOTAL and new(images):
         raise ValueError(TOO_MANY)
     return {**draft, 'images': images}
 
@@ -344,9 +453,11 @@ def _references(text, known):
 
 def kept(before, after, images):
     """A job's text with the image references the text before it had: a reference it left
-    out goes back as its own paragraph where it was (the same paragraph number), and one it
-    changed or made up is taken out. The images themselves never reach a job, so a result
-    can lose a reference but never an image."""
+    out goes back where it was (into its list item, when it was in one, or as its own
+    paragraph at the same paragraph number), and one it changed or made up is taken out.
+    The images themselves never reach a job, so a result can lose a reference but never an
+    image."""
+    before, after = before.replace('\r\n', '\n'), after.replace('\r\n', '\n')
     known = {key(label) for label in images or {}}
     if not known:
         return after
@@ -370,16 +481,28 @@ def kept(before, after, images):
     for start, end in reversed(cut):
         after = after[:start] + after[end:]
     after = BREAK.sub('\n\n', after).strip() if cut else after
-    missing = []
+    missing_refs = []
     for start, _, ref in want:
         if left[ref] > 0:
             left[ref] -= 1
-            missing.append((len(BREAK.findall(before[:start])), ref))
-    if not missing:
+            breaks_before = list(BREAK.finditer(before[:start]))
+            paragraph = len(breaks_before)
+            line = before[breaks_before[-1].end() if breaks_before else 0 : start].count('\n')
+            whole = before[before.rfind('\n', 0, start) + 1 : start]
+            missing_refs.append((paragraph, line if LIST_LINE.match(whole) else None, ref))
+    if not missing_refs:
         return after
     pieces = re.split('(' + BREAK.pattern + ')', after) if after.strip() else []
     paragraphs, breaks = pieces[0::2], pieces[1::2]
-    for offset, (at, ref) in enumerate(missing):
+    loose = []
+    for at, line, ref in missing_refs:
+        rows = paragraphs[at].split('\n') if line is not None and at < len(paragraphs) else []
+        if line is not None and line < len(rows) and LIST_LINE.match(rows[line]):
+            rows[line] = rows[line].rstrip() + ' ' + ref
+            paragraphs[at] = '\n'.join(rows)
+        else:
+            loose.append((at, ref))
+    for offset, (at, ref) in enumerate(loose):
         at = min(at + offset, len(paragraphs))
         paragraphs.insert(at, ref)
         breaks.insert(min(at, len(breaks)), '\n\n')

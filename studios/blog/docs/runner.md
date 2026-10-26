@@ -130,7 +130,10 @@ The desk is one page: the title, the opening, then a card for each section.
   images up to 12 MB together; the 200,000-character limit counts the text only. An image
   the text names but that was lost (as an earlier rewrite could drop it) is found again in
   the part's History, the other parts' History, the original draft or the Google Doc it
-  came from, without changing a word; one found nowhere shows **Image missing**.
+  came from, without changing a word; one found nowhere shows **Image missing**. Image data
+  you keep as text, such as in a code example, stays as it is: a rewrite sees a short token
+  for it and must give each one back unchanged, or it is not applied. **Copy** and
+  **Download** leave out, and name, any image whose data cannot be read.
 
 One job works on a blog at a time; the desk shows it and offers Stop. An edit from a form
 that is out of date is refused rather than written over newer text.
