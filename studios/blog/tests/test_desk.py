@@ -443,7 +443,7 @@ class RouteTests(RouteCase):
         with self.assertRaisesRegex(ValueError, 'Choose tighten'):
             self.start(first_pass='polish')
 
-    def test_a_first_pass_that_cannot_run_still_opens_the_desk(self):
+    def test_a_draft_without_headings_is_proofread_as_it_is(self):
         made = self.post(
             'desk-create',
             {
@@ -453,8 +453,22 @@ class RouteTests(RouteCase):
                 'first_pass': 'tighten',
             },
         )
-        self.assertRegex(made['first_pass_problem'], 'section by section')
-        self.assertEqual(made['opening'], 'Just prose.')
+        self.assertIsNone(made['first_pass_problem'])
+        self.assertEqual(made['working']['kind'], 'desk-first-pass')
+        self.assertEqual((made['opening'], made['sections']), ('Just prose.', []))
+
+    def test_a_first_pass_that_cannot_run_still_opens_the_desk(self):
+        made = self.post(
+            'desk-create',
+            {
+                'operation': 'e' * 32,
+                'title': 'Empty',
+                'manuscript': '## Only\n',
+                'first_pass': 'tighten',
+            },
+        )
+        self.assertRegex(made['first_pass_problem'], 'no text to work on yet')
+        self.assertIsNone(made['working'])
 
     def finish(self, job_id, content):
         import tool_jobs

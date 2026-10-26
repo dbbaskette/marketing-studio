@@ -75,8 +75,10 @@ desk. A topic or an outline takes three steps; a draft takes one screen (below):
   post), **Just give feedback** (Finishing's **Feedback without a rewrite** starts as the
   desk opens: comments beside each part, and nothing in the text changes), **Reshape to
   fit a kind of post** (only this one shows **Kind of post**, and needs one) or **Leave
-  it as it is**. Proofread and tighten works section by section, so the draft needs `##`
-  headings.
+  it as it is**. The opening is worked on with the sections, and a draft with no `##`
+  headings is worked on as one part. Only Reshape may add headings, to divide such a draft
+  into the kind of post's sections. A **Note for the whole draft** revises a draft with no
+  headings as one part too.
 - **Tone (optional)**, folded, starting from Settings.
 - **Check facts against your sources (optional)**, folded: the same files, Google Docs,
   links and library posts as above, for Finishing's fact check. There is no research and

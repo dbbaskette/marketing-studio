@@ -12,6 +12,10 @@ changes for authors first, then what changes for maintainers.
   to fit a kind of post** (the only choice that asks for a kind) or **Leave it as it is**,
   with optional tone and sources for the fact check. For maintainers: `desk-create` takes
   `first_pass: "feedback"`, which queues the `finish-feedback` job once the blog is made.
+- **Proofread a draft with no headings.** The first pass, and a note for the whole draft,
+  now work on plain prose with no `##` headings as one part, and the first pass covers the
+  opening too. Proofreading adds no headings; only **Reshape** may divide such a draft into
+  sections. A first pass is refused only for a draft with no text.
 - **The writing desk.** New blogs are made on one editing desk, with no stops along the
   way.
   - **Three ways in.** **New blog** asks what you are writing (a kind of post), takes

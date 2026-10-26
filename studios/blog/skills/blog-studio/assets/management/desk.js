@@ -109,7 +109,7 @@ function sDeskHave(held){
 // Polishing or reviewing a draft: the draft, what happens first, then Start. A kind of post
 // is asked for only to reshape the draft; sources are optional, for the fact check.
 const DESK_POLISH_FIRST=[['tighten','Proofread and tighten'],['feedback','Just give feedback'],['reshape','Reshape to fit a kind of post'],['leave','Leave it as it is']];
-const DESK_POLISH_SAYS={tighten:'Spelling, grammar and wordy sentences are fixed section by section. Your text is kept as a version first.',feedback:'Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.',reshape:'The sections and length are reshaped to the kind of post. Your text is kept as a version first.',leave:'The draft opens on the desk as it is, for your own edits and notes.'};
+const DESK_POLISH_SAYS={tighten:'Spelling, grammar and wordy sentences are fixed throughout, with no headings added. Your text is kept as a version first.',feedback:'Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.',reshape:'The sections and length are reshaped to the kind of post; a draft with no headings may be divided into sections. Your text is kept as a version first.',leave:'The draft opens on the desk as it is, for your own edits and notes.'};
 function sDeskPolish(held){
   if(!DESK_POLISH_FIRST.some(([value])=>value===held.first_pass))held.first_pass=held.source==='saved'?'leave':'tighten';
   // The kind of post goes with the draft only to reshape it, with a learned kind's samples.
@@ -329,7 +329,7 @@ function sDeskFollowStart(held){
 }
 function sDeskCurrent(held){return studio.screen==='desk'&&studio.desk===held;}
 // Whether the job under way changes this part: its own section, or every section.
-function sDeskWorkingIn(view,part){const job=view?.working;if(!job)return false;return job.part===part||job.part==='sections'&&part!=='title'&&part!=='opening';}
+function sDeskWorkingIn(view,part){const job=view?.working;if(!job)return false;return job.part===part||job.part==='sections'&&part!=='title';}
 function sDeskWorking(held,part){return sDeskWorkingIn(held.view,part);}
 function sDeskStatusWords(held){const job=held.view.working;if(!job)return '';if(job.kind==='desk-revise-all'&&job.total)return 'Revising section '+(job.index+1)+' of '+job.total+'…';return (DESK_DOING[job.kind]||'Working')+(job.kind==='desk-section'||job.kind==='desk-selection'?' '+deskPartName(held.view,job.part):'')+'…';}
 function sDeskTabs(held){return sChoice('Work on',[['draft','Draft'],['outline','Outline']],held,'tab',async()=>{await sDeskOutlineFlush(held);held.outline=null;sDeskRender(held);});}
