@@ -823,7 +823,7 @@ def source_keep(root, data, blog=None):
             )
         if record.get('revision') != 1 or not uploaded_here(root, record['id']):
             raise ValueError(
-                'Only a new file added on this computer’s start form can move out of the library.'
+                'Only a new file added on this computer can move out of the library.'
             )
     target = (
         studio.inside(root, 'sources', record['id'])
@@ -912,7 +912,7 @@ def upload(root, data, prepared=None):
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     # An unchecked "Summarize and tag" keeps this file's text away from the analysis CLI.
     # An example of the kind of post, or approved messaging, is a kept reference with its
-    # mark, as on the files screen.
+    # mark, as the desk start keeps one.
     source = save_upload(
         root,
         staging,
@@ -1987,8 +1987,6 @@ def _dispatch(root, route, data):
             return retry_receipt(root, adapter, data)
         if route == 'upload':
             return upload(root, data, prepared)
-        if route == 'source-keep':
-            return source_keep(root, data)
         if route == 'source-role':
             return source_role(root, data)
         if route == 'schedule':
@@ -2154,8 +2152,6 @@ def old_voice_tool(route, data):
             # A voice guide by hand has no voice samples; learned ones keep theirs unsent.
             or (action == 'profile-save' and bool(data.get('samples')))
         )
-    if route == 'run-create':
-        return bool(data.get('profile'))
     if route == 'upload':
         files = data.get('files') if isinstance(data.get('files'), list) else []
         # Voice samples, an author's background (their About text) and LinkedIn exports.
@@ -2307,7 +2303,7 @@ def dispatch(root, route, data):
                 root,
                 data.get('id')
                 if route.startswith(('run-', 'editor-', 'desk-'))
-                and route not in ('run-create', 'desk-create')
+                and route != 'desk-create'
                 or route in ('schedule', 'tool-action', 'blog-delete', 'google-open')
                 else None,
             )

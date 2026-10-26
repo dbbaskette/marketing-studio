@@ -465,19 +465,6 @@ class BlogRunnerTests(RunnerCase):
         self.assertEqual(payload['sources'], [])
         self.assertIn('review', payload['documents'])
 
-    def test_page_creation_retry_is_idempotent(self):
-        data = {
-            'operation': 'a' * 32,
-            'title': 'Page blog',
-            'audience': 'Authors',
-            'goal': 'Explain a fictional process',
-            'research': 'none',
-        }
-        one = runner.dispatch(self.root, 'create', data)
-        two = runner.dispatch(self.root, 'create', data)
-        self.assertEqual(one['id'], two['id'])
-        self.assertEqual(len(list((self.root / 'articles').iterdir())), 1)
-
     def test_balanced_combines_research_and_outline_then_final_package(self):
         import studios_config
 
@@ -692,7 +679,7 @@ class BlogRunnerTests(RunnerCase):
     def test_read_only_hub_cannot_start_page_work(self):
         with patch.object(management, 'authorize_write', side_effect=ValueError('Read-only')):
             with self.assertRaisesRegex(ValueError, 'Read-only'):
-                management.dispatch(self.root, 'run-create', {})
+                management.dispatch(self.root, 'desk-create', {})
 
     def test_context_does_not_silently_truncate_sources(self):
         # An oversized source is excerpted to the budget, and the run says so by name.
@@ -706,6 +693,54 @@ class BlogRunnerTests(RunnerCase):
         self.assertTrue(kept['excerpted'])
         self.assertEqual(kept['total_chars'], 19 * 20_000)
         self.assertLess(kept['kept_chars'], kept['total_chars'])
+
+    def post_to_the_page(self, route, data):
+        """POST one authenticated request to a disposable page server: (status, reply)."""
+        from urllib.parse import urlsplit
+
+        server, url = management.server(self.root)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            connection = http.client.HTTPConnection('127.0.0.1', server.server_port, timeout=5)
+            connection.request(
+                'POST',
+                '/api/' + route,
+                json.dumps(data),
+                {'X-Blog-Studio-Token': urlsplit(url).fragment, 'Content-Type': 'application/json'},
+            )
+            response = connection.getresponse()
+            reply = response.status, json.loads(response.read())
+            connection.close()
+            return reply
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_the_page_has_no_run_create_route(self):
+        unknown = self.post_to_the_page('no-such-route', {'operation': 'c' * 32})
+        self.assertEqual(unknown, (400, {'error': 'Unknown management action.'}))
+        data = {
+            'operation': 'c' * 32,
+            'title': 'HTTP fixture',
+            'audience': 'Authors',
+            'goal': 'Explain synthetic writing',
+            'research': 'none',
+        }
+        self.assertEqual(self.post_to_the_page('run-create', data), unknown)
+        self.assertFalse((self.root / 'articles').exists() and any((self.root / 'articles').iterdir()))
+        self.assertFalse((self.root / '.blog-runs' / 'creations').exists())
+
+    def test_the_page_has_no_source_keep_route(self):
+        unknown = self.post_to_the_page('no-such-route', {'id': 'x'})
+        self.assertEqual(self.post_to_the_page('source-keep', {'id': 'x', 'keep': True}), unknown)
+
+    def test_writing_defaults_have_no_stop(self):
+        self.assertNotIn('stop', runner.DEFAULTS)
+        # A stop saved by an older version is read past, and dropped at the next save.
+        saved = dict(runner.DEFAULTS, stop='draft')
+        (self.root / '.blog-run-settings.json').write_text(json.dumps({'defaults': saved}))
+        self.assertNotIn('stop', runner.settings(self.root)['defaults'])
 
     def test_authenticated_http_pipeline_completes_all_gates(self):
         from urllib.parse import urlsplit
@@ -740,17 +775,18 @@ class BlogRunnerTests(RunnerCase):
             return status, value
 
         self.assertNotEqual(api('runs', authenticated=False)[0], 200)
-        status, found = api(
-            'run-create',
+        # The run starts as chat starts it, with the CLI's create; the page then drives it.
+        found = runner.create(
+            self.root,
             {
-                'operation': 'c' * 32,
                 'title': 'HTTP fixture',
                 'audience': 'Authors',
                 'goal': 'Explain synthetic writing',
                 'research': 'none',
             },
+            approval='page',
         )
-        self.assertEqual(status, 200, found)
+        found = engine.control(found['id'], 'resume')
         for stage in ('outline', 'draft', 'review', 'package'):
             self.assertEqual(found['next'], stage)
             self.assertEqual(found['status'], 'queued')
@@ -1311,69 +1347,14 @@ class SharedPatternTests(RunnerCase):
         with self.assertRaisesRegex(ValueError, 'or the handoff'):
             self.create(page=True, title='Stopped nowhere', stop='angles')
 
-    def blogs(self):
-        folder = self.root / 'articles'
-        return sorted(path.name for path in folder.iterdir()) if folder.is_dir() else []
-
-    def test_a_blog_keeps_the_level_its_form_chose(self):
-        import studios_config
-        from studio_core import review_policy
-
-        studios_config.update({'review': {'level': 'balanced'}})
-        found = self.create(page=True, review_level='step_by_step', review_seen='balanced')
-        _, _, run = runner.load(self.root, found['id'])
-        self.assertEqual(review_policy.level(run), 'step_by_step')
-        self.assertEqual(found['review_level'], 'step_by_step')
-        self.assertEqual(studios_config.read()[0]['review'], {'level': 'balanced'})
-        with self.assertRaisesRegex(
-            ValueError, 'Choose Balanced, Automatic draft, or Step by step'
-        ):
-            self.create(page=True, review_level='fast', review_seen='balanced')
-
-    def test_the_default_is_written_only_with_the_chip_and_refused_when_stale(self):
-        import studios_config
-        from studio_core import review_policy
-
-        studios_config.update({'review': {'level': 'balanced'}})
-        self.create(
-            page=True, review_level='step_by_step', review_seen='balanced', review_default=True
-        )
-        self.assertEqual(studios_config.read()[0]['review'], {'level': 'step_by_step'})
-        studios_config.update({'review': {'level': 'automatic'}})
-        made = self.blogs()
-        with self.assertRaises(ValueError) as caught:
-            self.create(
-                page=True,
-                title='Another synthetic guide',
-                review_level='balanced',
-                review_seen='step_by_step',
-                review_default=True,
-            )
-        self.assertEqual(str(caught.exception), review_policy.STALE)
-        self.assertEqual(self.blogs(), made, 'a refused start makes no blog')
-        self.assertEqual(studios_config.read()[0]['review'], {'level': 'automatic'})
-
-    def test_an_unreadable_shared_file_still_starts_a_blog_at_its_level(self):
+    def test_an_unreadable_shared_file_still_starts_a_blog_step_by_step(self):
         import studios_config
         from studio_core import review_policy
 
         studios_config.path().write_text('{', encoding='utf-8')
-        found = self.create(page=True, review_level='balanced', review_seen='step_by_step')
-        _, _, run = runner.load(self.root, found['id'])
-        self.assertEqual(review_policy.level(run), 'balanced')
         found = self.create(page=True, title='No level chosen')
         _, _, run = runner.load(self.root, found['id'])
         self.assertEqual(review_policy.level(run), 'step_by_step', 'never more autonomy')
-        made = self.blogs()
-        with self.assertRaises(ValueError):
-            self.create(
-                page=True,
-                title='With the chip',
-                review_level='automatic',
-                review_seen='step_by_step',
-                review_default=True,
-            )
-        self.assertEqual(self.blogs(), made)
         self.assertEqual(studios_config.path().read_text(), '{')
 
     def test_review_level_route_saves_and_refuses(self):
@@ -2210,7 +2191,7 @@ class VoiceChoiceTests(RunnerCase):
                 self.assertIsNone(runner.options(self.root)['default_voice'], why)
         with patch('hub_workspace.active', side_effect=HubError('This Team Hub is not joined.')):
             shown = runner.options(self.root)
-        self.assertIsNone(shown['default_voice'], 'the wizard opens without its Team Hub')
+        self.assertIsNone(shown['default_voice'], 'the run options answer without its Team Hub')
         self.assertIn('profiles', shown)
 
     def test_a_manuscript_keeps_its_own_voice_unless_the_person_picks_one(self):
@@ -3404,11 +3385,16 @@ class ClaimsMapTests(RunnerCase):
                 )
 
     def test_balanced_continues_past_the_claims_map(self):
-        found, source = self.mapped(review_level='balanced')
+        import studios_config
+
+        # A new blog stops where new work stops, the shared level when it starts.
+        studios_config.update({'review': {'level': 'balanced'}})
+        found, source = self.mapped()
         found = self.submit(found, self.line(source))
         self.assertEqual(found['next'], 'outline')
         self.assertEqual(found['stages'][0]['accepted_by'], 'review-policy')
-        strict, source = self.mapped(review_level='step_by_step')
+        studios_config.update({'review': {'level': 'step_by_step'}})
+        strict, source = self.mapped()
         self.assertEqual(self.submit(strict, self.line(source))['next'], 'claims-map')
 
     def test_later_stages_receive_the_claims_map(self):

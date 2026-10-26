@@ -443,7 +443,7 @@ async function phase4GoogleHandoff(){
 }
 
 async function phase4Starts(){
-  const f=fixture(url=>url==='/api/run-options'?{settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}}:{items:[]});
+  const f=fixture(url=>url==='/api/run-options'?{settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',tone:'',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}}:{items:[]});
   f.loadRunner();f.run('sHome()');
   const nodes=()=>descendants(f.get('studio-page'));
   for(const title of ['Write from a topic or my documents','Work from my outline or notes','Edit or polish a draft'])assert.ok(nodes().some(n=>n.textContent===title));
@@ -457,7 +457,7 @@ async function phase4Starts(){
 }
 
 async function taskJourneys(){
-  const defaults={engine:'codex',seconds:600,research:'web-allowed',stop:'package',tone:'Clear',author:''};
+  const defaults={engine:'codex',seconds:600,research:'web-allowed',tone:'Clear',author:''};
   const f=fixture((url)=>{
     if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{codex:true}};
     return {items:[],total:0};
@@ -814,7 +814,7 @@ async function refreshWithNewSelection(){
 }
 
 async function staleSharedForms(){
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:'Before'},oldBefore={engine:'codex',author:'Before'},freshBefore={engine:'claude',author:'Other studio'};
+  const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:'Before'},oldBefore={engine:'codex',author:'Before'},freshBefore={engine:'claude',author:'Other studio'};
   let saved=false,reads=0;const requests=[];
   const f=fixture((url,options)=>{
     if(options?.method==='POST'){const data=JSON.parse(options.body);requests.push({url,data});if(!saved)return {__http:400,error:'Shared settings changed in another studio. Reload before saving.'};return {defaults:{...defaults,...data},shared_before:freshBefore,workspace:'/synthetic'};}
@@ -855,7 +855,7 @@ async function staleSharedForms(){
 }
 
 async function sharedSettings(){
-  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:'Before'},before={engine:'codex',author:'Before'};
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:'Before'},before={engine:'codex',author:'Before'};
   const voices=[{id:'mine',name:'Synthetic Author',revision:3},{id:'guest',name:'Guest Writer',revision:1}];
   const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});return {defaults,shared_before:before,workspace:'/synthetic',features:{voice:true},voice:null,voices};}if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};if(url==='/api/team')return {};return empty();});
   f.loadRunner();f.set('defaults',defaults);f.set('before',before);f.set('voices',voices);f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',features:{voice:true},voice:{profile_id:'mine',revision:3},voices};studio.screen='settings';sSettings()");
@@ -895,7 +895,7 @@ async function sharedSettings(){
 async function interviewVoice(){
   const requests=[],mine={scope:'personal',profile:'mine',name:'Synthetic Author',revision:2,status:'confirmed'};
   const f=fixture((url,o)=>{const data=o?.body?JSON.parse(o.body):null;requests.push({url,data});
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''}},sources:[],agents:{codex:true},default_voice:mine,profiles:[{id:'mine',name:'Synthetic Author',status:'confirmed'},{id:'guest',name:'Guest Writer',status:'provisional'}],styles:[]};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''}},sources:[],agents:{codex:true},default_voice:mine,profiles:[{id:'mine',name:'Synthetic Author',status:'confirmed'},{id:'guest',name:'Guest Writer',status:'provisional'}],styles:[]};
     if(url==='/api/tool-action'&&data.action==='interview-start')return {id:'interviewed',title:data.title,answers:[],notes:'',question:'What is the main point?',expected:'i1',outline:false,outline_content:''};
     if(url.startsWith('/api/interview?'))return {id:'interviewed',title:'Synthetic interview',answers:[],notes:'',question:'What is the main point?',expected:'i1',outline:false,outline_content:''};
     return {items:[],total:0};});
@@ -917,7 +917,7 @@ async function interviewVoice(){
 }
 
 async function brandInputs(){
-  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};
   let found={repository:'/synthetic/brand-repo',release:'',runtime:'/synthetic/brand-two',name:'Synthetic Brand',version:'1.0.0',skills:[{runtime:'/synthetic/brand-one',name:'Brand one',version:'1.0.0'},{runtime:'/synthetic/brand-two',name:'Brand two',version:'1.0.0'}],brands:[{brand:'fictional',name:'Fictional identity',variants:['light','dark']}],checked:{tag:'v1.2.0',version:'1.2.0',commit:'a'.repeat(40)},job:{}};
   const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});if(url==='/api/brand-configure'){found={...found,...requests.at(-1).data};return found;}if(url==='/api/brand-install')return {...found,job:{status:'working',message:'Installing…'}};}
     if(url==='/api/brand')return found;if(url==='/api/run-settings')return {defaults,workspace:'/synthetic',configured:true};if(url==='/api/run-options')return {settings:{defaults},brand:found,sources:[],profiles:[],agents:{codex:true}};if(url==='/api/team')return {};if(url==='/api/computer')return {checks:[],brand:found};return empty();});
@@ -1352,8 +1352,8 @@ async function contextualTools(){
 // own card. A blog on the desk has no stops.
 async function whereThisRunStops(){
   const requests=[];let refuse=false;const found={id:'synthetic',title:'Synthetic blog',status:'queued',expected:'version-1',stages:[],decisions:[],brief:{goal:'Explain',audience:'Authors'},seconds:600,engine:'codex',mode:'write'};
-  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/review-level'){if(refuse)return {__http:400,error:'Another studio changed where new work stops. Reload the page and try again.'};return {defaults,workspace:'/synthetic',shared_before:{},review_level:data.level};}if(url==='/api/run-create')return found;return url.startsWith('/api/run?')?found:{};});f.loadRunner();
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/review-level'){if(refuse)return {__http:400,error:'Another studio changed where new work stops. Reload the page and try again.'};return {defaults,workspace:'/synthetic',shared_before:{},review_level:data.level};}return url.startsWith('/api/run?')?found:{};});f.loadRunner();
+  const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};f.set('defaults',defaults);
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
   // Settings: Where new work stops, saved at once; a refusal shows in its own problem line.
   f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced'};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
@@ -1388,7 +1388,7 @@ async function oneVocabulary(){
   const labels=f.get('actions').children.map(e=>e.textContent);
   assert.ok(labels.includes('Record in team repository'),labels.join('|'));assert.equal(labels.includes('Publish revision'),false);
   // The research choice in Settings: your documents, your sites and the public web.
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};f.set('defaults',defaults);
   const ticks=['your sites (3)','the public web'],shared=['https://a.example','https://b.example/docs','https://c.example'];f.set('shared',shared);
   f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced',research_sites:shared};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
   assert.ok(text().includes('Research for new blogs from:'));assert.ok(text().includes('Your documents are always read. Choose what else research may use.'));assert.ok(!text().includes('your documents'),'documents are a sentence, not a tick');for(const label of ticks)assert.ok(text().includes(label),label+': '+text().join('|'));
@@ -1403,7 +1403,7 @@ async function honestBlogCopy(){
   const requests=[];let changed=null;
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/run-changes')return changed;return {};});f.loadRunner();voicesOn(f);
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),all=()=>text().join('\n');
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};f.set('defaults',defaults);
   // Each gate's lede says what its decision does.
   const stages=[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'draft'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'pending'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'pending'}];
   const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'draft',approval:'page',expected:'v1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',decisions:[],brief:{goal:'Explain',audience:'Authors'},notes:{},stages};
@@ -1434,9 +1434,9 @@ async function honestBlogCopy(){
 // without stopping, and a phone keeps one decision in the toolbar.
 async function sharedPattern(){
   const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',ahead:{steps_left:2,next_gate:'draft',next_stop:'Draft',jobs:2,seconds:180,dollars:null,spent:'3 minutes; the assistant reported no cost'},decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),note_stage:'review',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'REVIEW.md',status:'pending'}]};
-  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url==='/api/upload')return f.run('studio.api_upload');if(url==='/api/run-create')return found;return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();voicesOn(f);
+  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url==='/api/upload')return f.run('studio.api_upload');return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();voicesOn(f);
   const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent);
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};f.set('defaults',defaults);
   // The desk start's sources take every file at once and list each one with its text and role.
   {f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],styles:[],agents:{codex:true}};studio.screen='desk-start';held={files:[],role:'material'};draw=()=>sPage(sFilesCard(held,sNode('p'),draw,()=>{}));draw()");
    const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id);
@@ -1517,7 +1517,7 @@ async function sharedPattern(){
 // angles gate offers picks or none of these.
 async function filesJourney(){
   const requests=[];let refuseRole=false;
-  const defaults={engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'Clear',author:''};
+  const defaults={engine:'codex',seconds:600,research:'supplied-only',tone:'Clear',author:''};
   let uploaded={files:[{filename:'notes.md',source:{id:'s1',name:'notes'},state:'ready',chars:1200,note:''},{filename:'scan.pdf',source:{id:'s2',name:'scan'},state:'pending',chars:0,note:'This computer has no PDF reader (pdftotext), so this PDF needs text.'}],receipts:[],state:'saved',next_step:'1 of 2 files have text.'};
   const found={id:'files',title:'From my files',status:'queued',next:'angles',approval:'page',expected:'a1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'from-files',review_level:'balanced',decisions:[],brief:{goal:'A team post',audience:'To be chosen with the angle.'},stages:[{stage:'angles',label:'Angles',path:'derived/blog-angles.md',status:'pending'}],excerpted:[]};
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
@@ -1525,7 +1525,7 @@ async function filesJourney(){
     if(url==='/api/source-role'&&refuseRole)return {__http:400,error:'A started blog read this file as facts; its role stays.'};
     if(url==='/api/upload')return (JSON.parse(options.body).files||[]).some(e=>e.google)?{files:[{filename:'Messaging Doc',source:{id:'s9',name:'Messaging Doc'},state:'ready',chars:4200,note:'All 3 tabs were read: “Overview”, “Messaging”, “FAQ”. Link one tab to read only that tab.',link:'https://docs.google.com/document/d/abc/edit'}]}:uploaded;
     if(url==='/api/source-role')return {id:JSON.parse(options.body).id,role:JSON.parse(options.body).role};
-    if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
+    if(url.startsWith('/api/run?'))return found;
     if(url.startsWith('/api/run-'))return found;
     return {items:[],total:0};});
   f.loadRunner();
@@ -1945,7 +1945,7 @@ async function libraryScreen(){
     if(url==='/api/tool-action')return {id:'j'.repeat(32),kind:data.kind,status:'queued',metadata:{},attempts:0};
     if(url.startsWith('/api/styles'))return {styles:[],samples:[],candidates:[{id:'a',name:'A post',author:'Avery'},{id:'z',name:'Other',author:''}],pending:[]};
     if(url.startsWith('/api/voices'))return {profiles:[],samples:[{id:'a',name:'A post',author:'Avery'},{id:'b',name:'B notes',author:'Avery'}],candidates:[],pending:[]};
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'Clear',author:''},review_level:'balanced'},sources:[],profiles:[],default_voice:null,agents:{codex:true},styles:[]};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',tone:'Clear',author:''},review_level:'balanced'},sources:[],profiles:[],default_voice:null,agents:{codex:true},styles:[]};
     return {items:[],total:0};});
   f.loadRunner();voicesOn(f);
   f.run("view='library'");await f.run('load()');
@@ -2016,7 +2016,7 @@ async function libraryScreen(){
 // eight, newest first) as examples and a starter none; the picker's filters reach the request;
 // a picked item keeps its library role for this blog only and goes as `library`, not a source.
 async function libraryPicker(){
-  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};
   const sampleIds=Array.from({length:9},(_,n)=>'s'+(n+1));
   const options={settings:{defaults,review_level:'balanced'},sources:sampleIds.map(id=>({id,name:'Sample '+id,status:id==='s9'?'pending':'ready'})).concat([{id:'lib1',name:'Launch notes',status:'ready'}]),profiles:[],default_voice:null,agents:{codex:true},styles:[{id:'product-announcement',name:'Product announcement',kind:'seed',revision:1,status:'confirmed',sample_ids:[]},{id:'field-notes',name:'Field notes',kind:'learned',revision:2,status:'confirmed',sample_ids:sampleIds}]};
   const f=fixture((url,o)=>{const data=o?.body?JSON.parse(o.body):null;requests.push({url,data});
@@ -2261,7 +2261,7 @@ async function runVoiceChange(){
 // Write as, Default voice, Change the voice, voice learning, Create voices for every author,
 // voice-sample uploads or library marks. Kinds of post have their own screen. On, they return.
 async function voiceSwitch(){
-  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};
   const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'draft',approval:'page',expected:'run-1',enabled:false,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},voice_name:'Synthetic Author',voice_mode:'profile',voice_profile:'voice',voice_revision:1,style_name:'Product announcement',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
   let settings={defaults,shared_before:{engine:'codex',author:''},workspace:'/synthetic',voice:{profile_id:'voice',revision:1},voices:[{id:'voice',name:'Synthetic Author',revision:1}],features:{voice:false}};
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
@@ -2587,7 +2587,7 @@ async function failureRecovery(){
 
 async function phase3ResearchDefaults(){
   const sites=['https://blogs.vmware.com/tanzu','https://docs.example.com'];
-  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:false,web:false},stop:'package',tone:'Clear',author:''};
+  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:false,web:false},tone:'Clear',author:''};
   // Blog Studio's own default: your sites stay off until ticked, even with a shared list.
   const usual=fixture(url=>url==='/api/run-options'?{settings:{defaults,review_level:'balanced',research_sites:sites},sources:[],profiles:[],agents:{codex:true}}:{items:[],total:0});
   usual.loadRunner();usual.set('defaults',defaults);usual.set('sites',sites);
@@ -2599,12 +2599,12 @@ async function phase3ResearchDefaults(){
 // A step-by-step run's research names the sites that kept pages out, on the run and its gate.
 async function researchFromJourney(){
   const sites=['https://blogs.vmware.com/tanzu','https://docs.example.com'],words={empty:'Choose where research may look: your documents, your sites or the public web.',no_documents:'No documents were given, so choose your sites or the public web for research, or add documents.',no_sites:'Choose at least one of your sites, or turn your sites off.'};
-  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},stop:'package',tone:'Clear',author:''},requests=[];
+  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},tone:'Clear',author:''},requests=[];
   const found={id:'written',title:'A synthetic blog',status:'queued',next:'research-plan',approval:'page',expected:'r1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[]};
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
     if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced',research_sites:sites,research_words:words},sources:[{id:'s1',name:'Specification',status:'ready',purposes:['reference']}],profiles:[],agents:{codex:true},styles:[]};
     if(url==='/api/research-site'){if(data.site.startsWith('http://'))return {__http:400,error:'"http://intranet.example": research sites use https only.'};return {site:'https://extra.example.org/guide',shown:'extra.example.org/guide'};}
-    if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
+    if(url.startsWith('/api/run?'))return found;
     return {items:[],total:0};});
   f.loadRunner();
   const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id),text=()=>nodes().map(e=>e.textContent),said=()=>nodes().filter(e=>e.className.split(' ').includes('research-scope')).map(e=>e.textContent);
@@ -2672,7 +2672,7 @@ async function deskJourneys(){
   const requests=[],timers=[];let view=deskView(),refuse=false;
   const f=fixture((url,options)=>{
     const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''}},sources:[],profiles:[],styles:[{id:'how-to',name:'How-to and tutorial',status:'confirmed',kind:'seed'}],agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''}},sources:[],profiles:[],styles:[{id:'how-to',name:'How-to and tutorial',status:'confirmed',kind:'seed'}],agents:{codex:true}};
     if(url==='/api/desk-create')return {...view,first_pass_problem:null};
     if(url.startsWith('/api/desk?'))return view;
     if(url==='/api/desk-save'){if(refuse)return {__http:409,error:'This draft changed since you opened it. Reload to see the latest.'};view={...view,revision:view.revision+1,versions:{[data.part]:1},sections:view.sections.map(s=>s.id===data.part?{...s,text:data.text}:s)};return view;}
@@ -2840,7 +2840,7 @@ async function deskOpenFromLists(){
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
     if(url==='/api/runs')return {items:[row],deleted:[]};
     if(url.startsWith('/api/board'))return {items:[],total:0};
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}};
     if(url==='/api/team')return {};
     if(url.startsWith('/api/run?'))return run;
     if(url.startsWith('/api/manuscript?'))return {id:'done',title:'Done blog',content:'# Done blog\n\nText.\n',expected:'m1',google:null,proposals:[],findings:[],checks:{},working:false,operation,sources:[],baseline:''};
@@ -2882,7 +2882,7 @@ function deskStartFixture(answer=()=>null){
   const f=fixture((url,options)=>{
     const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
     const given=answer(url,data);if(given!==null&&given!==undefined)return given;
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''},research_sites:['https://docs.example.com']},sources:[],profiles:[],styles:[{id:'how-to',name:'How-to and tutorial',summary:'Prerequisites, numbered steps with checkpoints, a finished state, troubleshooting.',status:'confirmed',kind:'seed'},{id:'old',name:'Retired kind',status:'retired',kind:'learned'}],agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},research_sites:['https://docs.example.com']},sources:[],profiles:[],styles:[{id:'how-to',name:'How-to and tutorial',summary:'Prerequisites, numbered steps with checkpoints, a finished state, troubleshooting.',status:'confirmed',kind:'seed'},{id:'old',name:'Retired kind',status:'retired',kind:'learned'}],agents:{codex:true}};
     if(url==='/api/desk-share')return {id:data.id,shared:true};
     return {items:[],total:0};
   });
@@ -2900,7 +2900,6 @@ async function deskTopicStart(){
   const angles=[{headline:'Retries that keep work',point:'A retry resumes from the last checkpoint.',audience:'Operators'},{headline:'Why jobs stop',point:'Most stops are timeouts.',audience:'Developers'},{headline:'A checkpoint primer',point:'Checkpoints are cheap.',audience:'Newcomers'}];
   const t=deskStartFixture((url,data)=>{
     if(url==='/api/upload')return {files:[{filename:'notes.md',source:{id:'s1'},state:'ready',chars:120,note:''}]};
-    if(url==='/api/source-keep')return {id:data.id,kept:data.keep};
     if(url==='/api/desk-angles')return {operation:data.operation,job:'a1',status:'queued',busy:true,angles:[],error:''};
     if(url.startsWith('/api/desk-angles?')){polls++;return {operation:new URLSearchParams(url.split('?')[1]).get('operation'),job:'a1',status:'ready',busy:false,angles,error:''};}
     if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};
@@ -3135,7 +3134,7 @@ async function deskPolishStart(){
 async function deskResearchSites(){
   const words={no_sites:'Choose at least one of your sites, or turn your sites off.'};
   const t=deskStartFixture((url,data)=>{
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''},research_sites:['https://blogs.vmware.com/tanzu','https://docs.example.com'],research_words:words},sources:[],profiles:[],styles:[],agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},research_sites:['https://blogs.vmware.com/tanzu','https://docs.example.com'],research_words:words},sources:[],profiles:[],styles:[],agents:{codex:true}};
     if(url==='/api/research-site'){if(data.site.startsWith('http://'))return {__http:400,error:'"http://intranet.example": research sites use https only.'};return {site:'https://extra.example.org/guide',shown:'extra.example.org/guide'};}
     if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};
     if(url.startsWith('/api/desk?'))return startView();
@@ -3174,7 +3173,7 @@ async function deskResearchSites(){
 async function deskResearchDefault(){
   let research={documents:true,sites:true,web:true},sites=['https://docs.example.com'];
   const t=deskStartFixture((url)=>{
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research,stop:'package',tone:'Clear',author:''},research_sites:sites},sources:[],profiles:[],styles:[],agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research,tone:'Clear',author:''},research_sites:sites},sources:[],profiles:[],styles:[],agents:{codex:true}};
     if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};
     if(url.startsWith('/api/desk?'))return startView();
     return null;});
@@ -4142,7 +4141,6 @@ async function deskAddSource(){
   const t=deskStartFixture((url,data)=>{
     if(url.startsWith('/api/desk?'))return view;
     if(url==='/api/upload')return {files:[{filename:'A synthetic page',source:{id:'link1'},state:'ready',chars:900,note:'',link:data.files[0].link}]};
-    if(url==='/api/source-keep')return {id:data.id,kept:data.keep};
     if(url==='/api/desk-sources'){view={...view,revision:2,source_names:[{id:'s1',name:'Notes',purposes:['reference']}]};return view;}
     return null;
   });
@@ -4445,7 +4443,7 @@ async function oneNameEach(){
   // Settings: the default voice says where it is used, and documents are a sentence.
   const f=fixture(()=>({}));f.loadRunner();voicesOn(f);
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
-  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},tone:'Clear',author:''};f.set('defaults',defaults);
   f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced',research_sites:['https://a.example'],voices:[{id:'v1',name:'Avery'}]};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
   assert.ok(text().some(t=>/^Used for Interview me and for blogs written step by step in chat\. A blog on the writing desk is written with its tone\./.test(t)),text().join('|'));
   assert.ok(text().includes('Your documents are always read. Choose what else research may use.'));

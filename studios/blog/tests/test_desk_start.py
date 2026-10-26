@@ -1112,7 +1112,9 @@ class SourcesStayWithTheBlogTests(RouteCase):
 
     def test_a_ticked_link_reaches_the_library_only_when_kept_on_start(self):
         row = self.add_link()
-        kept = self.post('source-keep', {'id': row['source']['id'], 'keep': True})
+        import management
+
+        kept = management.source_keep(self.root, {'id': row['source']['id'], 'keep': True})
         self.assertTrue(kept['kept'])
         self.assertIn(row['source']['id'], self.library())
         _, record = studio.item(self.root, 'sources', row['source']['id'])
