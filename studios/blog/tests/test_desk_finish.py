@@ -1276,6 +1276,17 @@ class MixedReviewTests(ToolCase):
         self.assertIn('at Acme Labs.', self.draft()['sections'][0]['text'])
         self.assertTrue(self.draft()['sections'][0]['text'].startswith('We use a parser.'))
 
+    def test_accept_all_with_only_a_rewrite_over_a_flagged_fix_changes_nothing(self):
+        view = self.flagged_fix_and_rewrite()
+        job = view['finishing']['humanize']['job']
+        done = self.act('apply', seen=view['revision'], job=job, items=[{'id': 'p1'}], all=True)
+        self.assertEqual(done['finished'], {'applied': 0, 'left': ['p1']})
+        self.assertEqual(done['revision'], view['revision'])
+        states = {
+            t: [i['state'] for i in done['finishing'][t]['items']] for t in ('copyedit', 'humanize')
+        }
+        self.assertEqual(states, {'copyedit': ['open', 'open'], 'humanize': ['open', 'open']})
+
     def test_an_explicit_accept_still_retires_what_it_covers(self):
         view = self.flagged_fix_and_rewrite()
         job = view['finishing']['humanize']['job']

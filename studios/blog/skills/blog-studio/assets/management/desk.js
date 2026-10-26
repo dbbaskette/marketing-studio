@@ -1458,6 +1458,7 @@ async function sReviewAcceptAll(held,keys,button){
       }
       if(held.review)held.review.google=null;
       if(applied)sToast((applied===1?'Accepted.':'Accepted '+applied+'.')+' The earlier text is in History.'+(left?' '+left+(left===1?' is':' are')+' left for you to decide.':''));
+      else if(left)sToast('Nothing was accepted: '+(left===1?'1 is':left+' are')+' left for you to decide.');
     }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}
     if(held.view!==before)sDeskRefresh(held,before);
   });

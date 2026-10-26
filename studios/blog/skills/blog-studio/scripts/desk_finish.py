@@ -260,7 +260,7 @@ def apply(root, ident, seen, job, chosen, every=False):
     working = _busy_parts(root, ident)
     if any(part in working or ('sections' in working and part not in desk.PARTS) for part in parts):
         raise ValueError('A desk job is working on this part. Wait for it, or stop it, then apply.')
-    single = len(chosen) == 1
+    single = len(chosen) == 1 and not every  # Accept all never refuses: it leaves out.
     texts, applied, left = {}, [], gone
     # Where each applied suggestion sat in its part as it was, so two that cover the same
     # words never both land, and the others it covered are retired once it does.
@@ -316,6 +316,8 @@ def apply(root, ident, seen, job, chosen, every=False):
         if span is not None:
             spans[part].append(span)
     if not applied:
+        if every:
+            return {'applied': 0, 'left': left}  # Each left for the person; nothing changed.
         raise ValueError(NONE_LEFT)
     changed = []
     for part, text in texts.items():
