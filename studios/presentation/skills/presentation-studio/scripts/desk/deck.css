@@ -22,15 +22,6 @@
   justify-self: start;
 }
 
-/* Rehearsing with Yoodli is shown dimmed, as coming later. */
-.timeline .bead-stage[data-state="later"] {
-  opacity: 0.6;
-}
-
-.bead-later {
-  font-size: 0.72rem;
-}
-
 /* A deck's contact sheet, small, in a list and on its own screen. */
 .row-text > .thumb,
 .card > .thumb {

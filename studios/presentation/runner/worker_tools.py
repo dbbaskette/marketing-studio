@@ -494,11 +494,6 @@ def held(outcomes: list[dict]) -> list[str]:
             for problem in outcome['problems']]
 
 
-def as_kept(text: str) -> str:
-    """A draft as it is kept: ending in one line end."""
-    return text.rstrip('\n') + '\n'
-
-
 def as_json(value, what: str) -> tuple[object, str]:
     """Something a worker sent as JSON, and as the text it is kept as. An agent may send
     the text or the object itself."""

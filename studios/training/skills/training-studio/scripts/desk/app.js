@@ -2171,7 +2171,7 @@ function documentBody(shown, found) {
     add(node, make('p', 'quiet', shown.file.split('/').pop() + ', ' + size(shown.size)
       + '. The deck itself is where this points:'));
   }
-  add(node, window.TrainingStudioMarkdown.render(shown.text, { files: Boolean(found.files) }));
+  add(node, window.StudioMarkdown.render(shown.text, { files: Boolean(found.files) }));
   if (shown.truncated) {
     add(node, make('p', 'quiet', 'This is the start of a long file of ' + size(shown.size)
       + '. Open the file for the rest.'));
@@ -2207,7 +2207,7 @@ function comparison(changed) {
 // runner rendered is its slides first, and which of them address each objective.
 function researchReading(found) {
   const node = make('article', 'paper doc');
-  add(node, window.TrainingStudioMarkdown.render(found.brief),
+  add(node, window.StudioMarkdown.render(found.brief),
     make('h2', 'doc-title', 'What the independent check said'), make('p', '', found.check.said),
     found.check.note ? make('p', '', found.check.note) : null,
     ...list(found.check.unread).map((one) => make('p', '', (one.title || one.source) + ': ' + one.access_error)),
@@ -2225,7 +2225,7 @@ function researchReading(found) {
     ...(list(question.findings).length ? show(question.findings) : [make('p', 'quiet', 'The research did not answer this.')]));
   if (list(found.unplanned).length) add(node, make('h2', 'doc-title', 'Also found'), ...show(found.unplanned));
   for (const [label, text] of [['Read the full report', found.report], ['The evidence and the check’s notes', found.evidence]]) {
-    add(node, add(make('details', 'card-part'), make('summary', '', label), window.TrainingStudioMarkdown.render(text)));
+    add(node, add(make('details', 'card-part'), make('summary', '', label), window.StudioMarkdown.render(text)));
   }
   return node;
 }
@@ -2416,7 +2416,7 @@ function lookNote(found) {
     // would push both off the first screen, so it waits to be opened.
     notes.open = !found.beside;
     add(notes, make('summary', '', 'The latest review note'),
-      window.TrainingStudioMarkdown.render(note));
+      window.StudioMarkdown.render(note));
     add(node, notes);
   }
   if (!items.childNodes.length && !note) {
@@ -5242,7 +5242,7 @@ function problemPart(run, lead) {
       try {
         const file = await ask('file', { path: view.path, artifact: found.objections });
         shown.replaceChildren(make('h3', 'row-title', 'The research check'),
-          window.TrainingStudioMarkdown.render(file.text || ''));
+          window.StudioMarkdown.render(file.text || ''));
 
       } catch (failure) {
         shown.replaceChildren(make('p', 'problem', failure.message));
@@ -6476,7 +6476,7 @@ function combinedReview(run) {
       : Boolean(item.sample || item.sample_note || item.looks || item.deck_view || first);
     if (item.research) add(part, researchReading(item.research));
     else if (item.document) add(part, documentBody(item.document, {label: item.label}));
-    else if (item.text) add(part, window.TrainingStudioMarkdown.render(item.text));
+    else if (item.text) add(part, window.StudioMarkdown.render(item.text));
     if (item.sample) add(part, pictureAt({path: view.path, ...item.sample},
       'Sample slide for ' + item.label, review.expected));
     // The draft and the look are approved together: the draft as the slides tool draws it,
@@ -6522,7 +6522,7 @@ function combinedReview(run) {
           String(item.file || '').split('/').pop() || item.target, event.currentTarget),
         'download-' + item.target));
     }
-    if (item.notes) add(part, window.TrainingStudioMarkdown.render(item.notes));
+    if (item.notes) add(part, window.StudioMarkdown.render(item.notes));
     if (!theirs) {
       // Marked for changes, the item takes a note; the request goes with the others.
       const request = make('textarea'); request.maxLength = 4000;

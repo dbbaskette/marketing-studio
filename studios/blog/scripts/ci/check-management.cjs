@@ -1296,7 +1296,7 @@ async function guidedRuns(){
   assert.ok(descendants(content).some(e=>e.textContent==='Run codex login'));
   assert.ok(f.get('actions').children.some(e=>e.textContent==='Check this computer'));
   // Safe Markdown turns no document-supplied HTML or javascript link into active content.
-  f.run("sPage(window.TrainingStudioMarkdown.render('<script>bad()</script> [bad](javascript:bad()) [good](https://example.com)'))");
+  f.run("sPage(window.StudioMarkdown.render('<script>bad()</script> [bad](javascript:bad()) [good](https://example.com)'))");
   assert.equal(descendants(content).some(e=>e.tagName==='script'),false);
   assert.equal(descendants(content).filter(e=>e.tagName==='a').length,1);
   f.run('sChanges(found, "outline")');const note=descendants(f.get('sheet')).find(e=>e.tagName==='textarea');note.value='Keep my request';

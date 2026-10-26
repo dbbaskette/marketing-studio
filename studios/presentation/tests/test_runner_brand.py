@@ -805,7 +805,5 @@ class BrandEntryTests(unittest.TestCase):
             self.brand.look_choose(self.root / 'looks', 'example-bold', '  ')
         chosen = self.brand.look_choose(self.root / 'looks', 'example-bold', 'The bold one.')
         self.assertEqual((chosen['status'], chosen['choice']), ('chosen', 'example-bold'))
-        self.assertEqual(self.brand.look_status(self.root / 'looks')['choice']['words'],
-                         'The bold one.')
         with self.assertRaises(brand.Refused):
             self.brand.look_choose(self.root / 'looks', 'example-clear', 'Changed my mind.')

@@ -420,10 +420,6 @@ class Brand:
                                                  str(write)] if outline and write else []),
                             *(['--unrendered'] if unrendered else []))
 
-    def look_status(self, samples: Path) -> dict:
-        """Where a set of look samples stands: awaiting a choice, or chosen."""
-        return self._answer('look', 'status', '--samples', str(samples))
-
     def ready(self) -> dict:
         """What the skill's own readiness check finds on this computer. It asks Google
         nothing."""
