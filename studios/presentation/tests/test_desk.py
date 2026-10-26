@@ -652,6 +652,46 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual((form['review_level'], form['review_seen'], form['review_default']),
                          ('step_by_step', 'balanced', False))
 
+    def test_the_form_names_the_stops_the_runner_makes(self):
+        import route_stops
+        titles = {'brand-only': 'Brand only', 'polish': 'Polish',
+                  'redesign': 'Redesign, keep content', 'rework': 'Full rework',
+                  'selected': 'Selected changes'}
+        for case, form in route_stops.FORM.items():
+            if form['route'] == 'scratch':
+                steps = [{'click': 'Start from scratch'},
+                         {'fill': 'A short title', 'value': 'Rolling restarts'}]
+                if form['research']:
+                    steps.append({'click': 'Research first'})
+                steps.append({'click': 'Continue'})
+            elif form['route'] == 'document':
+                steps = [{'click': 'Start from a document'}, {'click': 'Paste the text'},
+                         {'fill': 'The text', 'value': 'Synthetic notes.'},
+                         {'click': 'Continue'},
+                         {'fill': 'A short title', 'value': 'Synthetic deck'},
+                         {'click': 'Continue'}]
+            else:
+                steps = [{'click': 'Redesign an existing deck'}, {'click': 'Continue'},
+                         {'attach': 'The deck, as a .pptx',
+                          'files': [{'name': 'old.pptx', 'bytes': DECK.decode('latin-1')}]},
+                         {'click': titles[form['level']]}]
+                if form['level'] == 'selected':
+                    steps.append({'fill': 'Which slides, and what to fix',
+                                  'value': 'Slide 2: shorten it.'})
+                steps += [{'click': 'Continue'}, {'fill': 'A short title', 'value': 'Old deck'},
+                          {'click': 'Continue'}]
+            for level in route_stops.LEVELS:
+                steps += [{'click': route_stops.LEVEL_WORDS[level]}, {'snapshot': level}]
+            answers = self.answers(**{
+                'GET /api/setup': [self.setup_with(review_level='balanced')],
+                'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]})
+            result = self.run_page(answers, [{'click': 'New deck'}, *steps])
+            with self.subTest(case=case):
+                self.assertEqual(result['errors'], [])
+                for level in route_stops.LEVELS:
+                    self.assertIn(route_stops.line(case, level),
+                                  result['snapshots'][level]['text'], (case, level))
+
     def test_settings_saves_where_new_work_stops_at_once(self):
         from studio_core import review_policy
         answers = self.answers(**{

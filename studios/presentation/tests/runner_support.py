@@ -841,8 +841,10 @@ class StudioCase(unittest.TestCase):
 
     def setUp(self):
         from unittest import mock
+        # New work starts at the case's own review level: Step by step unless it says.
         self.review_capture = mock.patch('studio_core.review_policy.capture',
-                                         return_value={'schema': 1, 'level': 'step_by_step'})
+                                         side_effect=lambda: {'schema': 1, 'level': getattr(
+                                             self, 'review_level', 'step_by_step')})
         self.review_capture.start()
         self.addCleanup(self.review_capture.stop)
         from dataclasses import replace

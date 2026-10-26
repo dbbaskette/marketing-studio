@@ -4,8 +4,10 @@ script), and an existing deck at each level. Each is started, decided gate by ga
 delivered over the page's own addresses, with the engine behind it running over the
 stand-ins and scripted workers of runner_support.
 
-For each deck: the gates it stopped at are the gates `stages.steps` gives its record, in
-order; it is delivered as Google Slides through the stand-in Drive, with a link; its contact
+Each route is walked at every review level (route_stops.LEVELS): the gates it stopped at
+are route_stops.STOPS for its case and level, the gates `stages.steps` gives its record
+that the review policy did not continue, and every other gate carries the policy's
+receipt. It is delivered as Google Slides through the stand-in Drive, with a link; its contact
 sheet is committed; nothing under sources/ or work/ is tracked; and every decision is a
 commit of its own. Nothing starts an agent, renders or leaves this computer.
 """
@@ -14,6 +16,7 @@ import re
 import unittest
 from pathlib import Path
 
+import route_stops
 from test_runner_page import PageCase
 
 from runner import decks, stages
@@ -52,6 +55,33 @@ def read_in(inventory: dict) -> dict:
 
 
 class RouteCase(PageCase):
+    review_level = 'step_by_step'
+
+    def existing(self, level: str, **more) -> str:
+        """An existing deck at `level`. The stand-in reads any deck it did not write as the
+        same three slides, the last hidden; the scripted extract worker reads them word for
+        word."""
+        def extract(tools, job):
+            # Under Balanced and Automatic draft the deck is read before the page has its
+            # path back, so the inventory is read when the worker runs.
+            if tools.job['artifacts']['outline'].get('rules'):
+                kept = next(Path(self.space.repo).rglob(outlines.INVENTORY))
+                said = read_in(json.loads(kept.read_text(encoding='utf-8')))
+                self.workers.outline_said = said
+                self.workers._ok(tools.submit_outline(json.dumps(said)))
+            else:
+                self.workers.outline(tools, job)
+        self.workers.queued['outline'] = [extract] * 4
+        path = self.started(route='existing', level=level, title='Old deck',
+                            source={'kind': 'upload', 'name': 'old.pptx'},
+                            uploads={'old.pptx': DECK}, **more)
+        inventory = outlines.inventory_of(path)
+        self.assertEqual([slide['number'] for slide in inventory['slides']], [1, 2, 3])
+        return path
+
+    def stops(self, case: str) -> list[str]:
+        return route_stops.STOPS[case][self.review_level]
+
     def walk(self, path: str, title: str, decide=None) -> list[str]:
         """Decide every gate the deck puts to the person until it is finished: approve,
         unless `decide` gives what to send at a gate. Each decision is checked to be one
@@ -66,7 +96,9 @@ class RouteCase(PageCase):
                 return seen
             seen.append(gate['name'])
             head = self.git('rev-parse', 'HEAD')
-            self.decided(path, gate['name'], **decide.get(gate['name'], {}))
+            # A review that shows a version is decided on the version shown.
+            shown = {'expected': gate['expected']} if gate.get('expected') else {}
+            self.decided(path, gate['name'], **{**shown, **decide.get(gate['name'], {})})
             made = self.git('log', '--format=%s', f'{head}..HEAD').splitlines()
             self.assertEqual(len([line for line in made if said.match(line)]), 1,
                              (gate['name'], made))
@@ -79,7 +111,12 @@ class RouteCase(PageCase):
         picture instead."""
         root = Path(path)
         record = self.record(root)
-        self.assertEqual(seen, gates_of(record))
+        by = {name: ((record.get('gates') or {}).get(name) or {}).get('by')
+              for name in gates_of(record)}
+        self.assertEqual(seen, [name for name in gates_of(record)
+                                if by[name] != 'review-policy'], by)
+        self.assertEqual({name for name in by if name not in seen},
+                         {name for name in by if by[name] == 'review-policy'}, by)
         delivered = json.loads((root / decks.DELIVER).read_text())
         self.assertEqual(delivered['output'], 'google')
         self.assertTrue(delivered['url'].startswith('https://'), delivered)
@@ -108,14 +145,13 @@ class ScratchRouteTests(RouteCase):
         path = self.started()
         seen = self.walk(path, 'Rolling restarts')
         self.delivered(path, seen)
-        self.assertEqual(seen, ['gate:outline', 'gate:look', 'gate:build'])
+        self.assertEqual(seen, self.stops('scratch'))
 
     def test_from_scratch_with_research(self):
         path = self.started(research=True)
         seen = self.walk(path, 'Rolling restarts')
         self.delivered(path, seen)
-        self.assertEqual(seen, ['gate:research-plan', 'gate:research', 'gate:outline',
-                                'gate:look', 'gate:build'])
+        self.assertEqual(seen, self.stops('scratch-research'))
         self.assertTrue((Path(path) / 'research' / 'report.md').is_file())
 
 
@@ -129,8 +165,52 @@ class DocumentRouteTests(RouteCase):
         seen = self.walk(path, 'Rolling restarts')
         record = self.delivered(path, seen)
         self.assertEqual(record['classified'], 'spec')
-        self.assertEqual(seen, ['gate:classify', 'gate:outline', 'gate:look', 'gate:build'])
+        self.assertEqual(seen, self.stops('document-script'))
         self.assertEqual(self.workers.of('research-plan'), [])
+
+class ExistingRouteTests(RouteCase):
+    """An existing deck at each level. The stand-in reads any deck it did not write as the
+    same three slides, the last hidden; the scripted extract worker reads them word for
+    word."""
+
+    def through(self, level: str, **more) -> dict:
+        path = self.existing(level, **more)
+        seen = self.walk(path, 'Old deck')
+        record = self.delivered(path, seen, sheet=level != 'selected')
+        self.assertEqual(seen, self.stops(level))
+        original = Path(path) / 'sources' / 'original.pptx'
+        self.assertEqual(original.read_bytes(), DECK)
+        return record
+
+    def test_brand_only(self):
+        self.through('brand-only')
+
+    def test_polish(self):
+        self.through('polish')
+
+    def test_redesign(self):
+        self.through('redesign')
+
+    def test_rework(self):
+        self.through('rework')
+
+    def test_selected(self):
+        def patch(tools, job):
+            spec = tools.job['artifacts']['patch']
+            key, digest = next((key, digest) for key, digest in spec['objects'].items()
+                               if key.startswith('2:') and key != '2:2')
+            plan = {'sourceSha256': spec['sha256'], 'operations': [
+                {'slide': 2, 'object': key.partition(':')[2], 'expectedHash': digest,
+                 'runs': [{'index': 1, 'text': 'in minutes.'}]}]}
+            self.workers._ok(tools.submit_artifact('patch', json.dumps(plan)))
+
+        self.workers.then('patch', patch)
+        self.through('selected', selected='Shorten the words on slide 2')
+        self.assertEqual(len(self.workers.of('patch')), 1)
+
+
+class StepByStepCorrectionTests(RouteCase):
+    """Corrections that decide at gate:classify and gate:build: run once, at Step by step."""
 
     def test_raw_material_the_studio_took_for_a_script_is_corrected(self):
         self.workers.classified = {'kind': 'spec', 'reason': 'Reads as a slide script.',
@@ -144,65 +224,6 @@ class DocumentRouteTests(RouteCase):
         self.assertEqual(record['classified'], 'material')
         self.assertEqual(seen, ['gate:classify', 'gate:research-plan', 'gate:research',
                                 'gate:outline', 'gate:look', 'gate:build'])
-
-
-class ExistingRouteTests(RouteCase):
-    """An existing deck at each level. The stand-in reads any deck it did not write as the
-    same three slides, the last hidden; the scripted extract worker reads them word for
-    word."""
-
-    def existing(self, level: str, **more) -> str:
-        path = self.started(route='existing', level=level, title='Old deck',
-                            source={'kind': 'upload', 'name': 'old.pptx'},
-                            uploads={'old.pptx': DECK}, **more)
-        inventory = outlines.inventory_of(path)
-        self.assertEqual([slide['number'] for slide in inventory['slides']], [1, 2, 3])
-        said = read_in(inventory)
-        self.workers.outline_said = said
-
-        def extract(tools, job):
-            if tools.job['artifacts']['outline'].get('rules'):
-                self.workers._ok(tools.submit_outline(json.dumps(said)))
-            else:
-                self.workers.outline(tools, job)
-        self.workers.queued['outline'] = [extract] * 4
-        return path
-
-    def through(self, level: str, expected: list[str], **more) -> dict:
-        path = self.existing(level, **more)
-        seen = self.walk(path, 'Old deck')
-        record = self.delivered(path, seen, sheet=level != 'selected')
-        self.assertEqual(seen, expected)
-        original = Path(path) / 'sources' / 'original.pptx'
-        self.assertEqual(original.read_bytes(), DECK)
-        return record
-
-    def test_brand_only(self):
-        self.through('brand-only', ['gate:classify', 'gate:build'])
-
-    def test_polish(self):
-        self.through('polish', ['gate:classify', 'gate:build'])
-
-    def test_redesign(self):
-        self.through('redesign', ['gate:classify', 'gate:look', 'gate:build'])
-
-    def test_rework(self):
-        self.through('rework', ['gate:classify', 'gate:outline', 'gate:look', 'gate:build'])
-
-    def test_selected(self):
-        def patch(tools, job):
-            spec = tools.job['artifacts']['patch']
-            key, digest = next((key, digest) for key, digest in spec['objects'].items()
-                               if key.startswith('2:') and key != '2:2')
-            plan = {'sourceSha256': spec['sha256'], 'operations': [
-                {'slide': 2, 'object': key.partition(':')[2], 'expectedHash': digest,
-                 'runs': [{'index': 1, 'text': 'in minutes.'}]}]}
-            self.workers._ok(tools.submit_artifact('patch', json.dumps(plan)))
-
-        self.workers.then('patch', patch)
-        self.through('selected', ['gate:classify', 'gate:build'],
-                     selected='Shorten the words on slide 2')
-        self.assertEqual(len(self.workers.of('patch')), 1)
 
     def test_selected_with_a_slide_asked_for_at_the_deck(self):
         def patch(number):
@@ -230,6 +251,31 @@ class ExistingRouteTests(RouteCase):
         self.assertEqual([spec['named'] for spec in patches], [[2], [2, 1]])
         self.assertEqual(self.walk(path, 'Old deck'), ['gate:build'])
         self.delivered(path, ['gate:classify', 'gate:build'], sheet=False)
+
+
+class BalancedScratchRouteTests(ScratchRouteTests):
+    review_level = 'balanced'
+
+
+class AutomaticScratchRouteTests(ScratchRouteTests):
+    review_level = 'automatic'
+
+
+class BalancedDocumentRouteTests(DocumentRouteTests):
+    review_level = 'balanced'
+
+
+class AutomaticDocumentRouteTests(DocumentRouteTests):
+    review_level = 'automatic'
+
+
+class BalancedExistingRouteTests(ExistingRouteTests):
+    review_level = 'balanced'
+
+
+class AutomaticExistingRouteTests(ExistingRouteTests):
+    review_level = 'automatic'
+
 
 if __name__ == '__main__':
     unittest.main()
