@@ -264,7 +264,7 @@ DECK = {'deck-handoff': '_handoff', 'deck-brand': '_export', 'gate:deck-outline'
         'deck-look': '_looks',
         'deck-start': '_split', 'deck-sections': '_sections', 'deck-repair': '_sections',
         'deck-whole': '_whole', 'deck-review': '_review', 'deck-save': '_keep'}
-SUPPLYING = ('add', 'remove', 'done')
+SUPPLYING = ('add', 'remove', 'done', 'update')
 DECIDING = ('approve', 'revise')    # what a person may decide about what a deck says
 STATES = {'working': 'working', 'waiting': 'waiting for you', 'paused': 'paused',
           'stopped': 'stopped', 'failed': 'stopped on a problem',
@@ -297,8 +297,16 @@ AWAY = ("This training's decisions are made in the conversation now, so the runn
 NO_PDF = 'This computer cannot read a PDF: save it as text or as a Word file first.'
 NOT_HERE = ('The documents this training was researched from are on another computer. '
             'Research cannot be run again here until they are added again.')
-SETTLED = ('The research for this training was planned from the documents already added, so '
-           'they cannot be changed now.')
+SETTLED = ('The research has read the documents already added, so they cannot be removed '
+           'now. You can add another and update the research.')
+ALL_ADDED = 'Your documents are all added already. Add another, then update the research.'
+NO_DOCUMENTS = ("This training's research does not read documents, so it takes none. Start a "
+                'new training that reads your documents to use this one.')
+UPDATE_UNPRICED = ('Updating the research runs it again, then makes again what is written '
+                   'from it. This computer has no record of what that costs.')
+WORKING = 'Wait for the step in hand to finish, or pause the training, then add it.'
+NO_LATER = ('No document was added after the research, so there is nothing to update it '
+            'with.')
 REVIEW_DECIDES = ('This is part of the {name} that is waiting for you, so it is decided there, '
                   'with everything the review covers. Nothing was changed.')
 REVIEW_NAMES = {'direction': 'first drafts review', 'final': 'final review'}
@@ -3786,20 +3794,23 @@ class Engine(Reviewing):
 
     def supply(self, path, action: str, name: str | None = None,
                data: bytes | None = None) -> dict:
-        """Add one of the person's documents, remove one, or take their word that they are
-        all added. `data` is the document as it was sent. Nothing is researched until they
-        are all added, and after that they cannot be changed."""
+        """Add one of the person's documents, remove one, take their word that they are
+        all added, or update the research with those added since. `data` is the document as
+        it was sent. Nothing is researched until they are all added. After that a document
+        can still be added: it is kept, not read, until the person updates the research."""
         root = self._held(path)
         if action not in SUPPLYING:
             raise WorkspaceError('A document can be: ' + ', '.join(SUPPLYING) + '.')
+        if action == 'update':
+            return self.update_research(path)
         with self.files:
             record = self._load(root)
             given = record.get('documents')
             if not given:
-                raise WorkspaceError('This training is researched from the public web, so '
-                                     'it takes no documents.')
+                raise WorkspaceError(NO_DOCUMENTS)
             if self._survey(root, record).next.kind != 'documents':
-                raise WorkspaceError(SETTLED)
+                self._later(root, record, action, name, data)
+                return self.view(root)
             if action == 'add':
                 self.documents.add(root, name or '', data or b'')
             elif action == 'remove':
@@ -3823,6 +3834,60 @@ class Engine(Reviewing):
                              .rstrip('.'))
         if action == 'done':
             self.wake(root)
+        return self.view(root)
+
+    def _later(self, root: Path, record: dict, action: str, name, data) -> None:
+        """A document added, or taken back, once the research was planned: kept and listed
+        as not read yet, and read only when the person updates the research. Call it holding
+        `files`."""
+        given = record['documents']
+        later = [entry for entry in given.get('later') or () if isinstance(entry, dict)]
+        if action == 'done':
+            raise WorkspaceError(ALL_ADDED)
+        if action == 'remove':
+            if (name or '') not in [entry.get('name') for entry in later]:
+                raise WorkspaceError(SETTLED)
+            self.documents.remove(root, name or '')
+            given['later'] = [entry for entry in later if entry.get('name') != name]
+            said = f'{name} is taken back: it was added after the research'
+        else:
+            run = self._run(root)
+            if run.workers or run.busy:
+                raise WorkspaceError(WORKING)
+            self.documents.add(root, name or '', data or b'')
+            given['later'] = [*later, {'name': name, 'added_at': home.now()}]
+            said = f'{name} is added after the research, not read yet'
+        self._store(root, record)
+        self._commit(root, said)
+
+    def update_research(self, path) -> dict:
+        """Read the documents added since the research, as the person asks: a research
+        request that brings the evidence up to date, as Bring the evidence up to date does,
+        naming them. Its price is said on the page before it is asked for."""
+        root = self._held(path)
+        with self.files:
+            record = self._load(root)
+            given = record.get('documents') or {}
+            names = [entry.get('name') for entry in given.get('later') or ()
+                     if isinstance(entry, dict)]
+            if not names:
+                raise WorkspaceError(NO_LATER)
+            run = self._run(root)
+            if run.workers or run.busy:
+                raise WorkspaceError(WORKING)
+            note = 'Read the documents added since: ' + ', '.join(names) + '.'
+            outcome = workspace.decide(root, 'research', 'revise', note, by='page',
+                                       refresh=True)
+            with workspace.locked(root):
+                session = workspace.load(root)
+                session['requests'][-1]['added'] = names
+                workspace.store(root, session)
+            outcome['request'] = {**outcome['request'], 'added': names}
+            record = self._load(root)
+            record['documents'] = {**record['documents'], 'later': []}
+            self._store(root, record)
+        self.decided(path, outcome)
+        self.carry_on(path)
         return self.view(root)
 
     def supply_asset(self, path, level: str | None, asset: str, data: bytes, alt: str,
@@ -4405,10 +4470,16 @@ class Engine(Reviewing):
             note.append(NO_PDF)
         if given.get('count') and not any(entry.get('readable') for entry in added):
             note.append(NOT_HERE)
+        later = [{'name': entry.get('name'), 'added_at': entry.get('added_at')}
+                 for entry in given.get('later') or () if isinstance(entry, dict)]
+        price = self.research_price(root) if later else None
         return {'waiting': waiting,
                 'added': [{key: entry.get(key) for key in ('name', 'bytes', 'readable',
                                                            'problem')} for entry in added],
-                'types': types, 'limits': dict(self.documents.LIMITS), 'note': ' '.join(note)}
+                'types': types, 'limits': dict(self.documents.LIMITS), 'note': ' '.join(note),
+                # Added after the research was planned: kept, and not read until updated.
+                **({} if waiting else {'later': later}),
+                **({'update_price': price or {'words': UPDATE_UNPRICED}} if later else {})}
 
     @staticmethod
     def _copies(found: pipeline.Survey, remote=None) -> list[dict]:

@@ -5093,6 +5093,33 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         (address, sent), = [post for post in self.posts(result) if post[0] == '/api/trainings']
         self.assertEqual(sent['research_from'], chosen)
 
+    def test_a_document_added_after_the_research_offers_a_priced_update(self):
+        self.started()
+        waits = 'Waiting for your review of the research plan.'
+        price = ('Asking for changes runs the research again: up to 3 rounds of writing and '
+                 'checking. No time or money was recorded for its last try.')
+        held = {**supplied(a_document('handbook.txt', 8), a_document('more.txt', 6),
+                           waiting=False),
+                'later': [{'name': 'more.txt', 'added_at': '2026-10-26T09:00:00Z'}],
+                'update_price': {'words': price}}
+        run = a_run('waiting', waits, steps=steps('done'), documents=held)
+        after = a_run('working', 'Researching.', steps=steps('done'),
+                      documents={**held, 'later': [], 'update_price': None})
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', waits, needs=True)],
+            'GET /api/training': [self.detail('waiting', waits)],
+            'GET /api/run': [run, run, after], 'POST /api/documents': [after]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'card'},
+            {'click': 'Update the research'}, {'snapshot': 'asked'}, {'click': 'Cancel'},
+            {'click': 'Update the research'}, {'click': 'Update it'}])
+        shots = result['snapshots']
+        self.assertIn('Added after the research: not read yet.', shots['card']['text'])
+        self.assertIn(price, shots['asked']['sheet'])
+        self.assertIn('Cancel', shots['asked']['buttons'])
+        self.assertEqual(self.posts(result), [('/api/documents', {'path': str(self.root),
+                                                                  'action': 'update'})])
+
     def test_documents_are_added_refused_removed_and_then_that_is_all_of_them(self):
         self.started()
         waits, going = 'Waiting for your documents.', 'Drafting the research questions.'

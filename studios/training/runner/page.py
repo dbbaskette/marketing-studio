@@ -763,7 +763,7 @@ class RunnerPage(desk.Page):
         if action not in engines.SUPPLYING:
             raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'A document can be: '
                                + ', '.join(engines.SUPPLYING) + '.')
-        name, data = desk.text(sent, 'name', action != 'done'), None
+        name, data = desk.text(sent, 'name', action not in ('done', 'update')), None
         if action == 'add':
             content = sent.get('content')
             if not isinstance(content, str) or not content:

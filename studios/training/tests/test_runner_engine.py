@@ -118,6 +118,20 @@ class NoCostYetTests(StudioCase):
         self.assertNotIn('$', ahead['spent'])
 
 
+class LaterDocumentTests(StudioCase):
+    def test_the_research_update_is_priced_before_it_is_sent(self):
+        root = self.start(source_scope='supplied-only')
+        self.engine.supply(root, 'add', 'handbook.txt', b'Capacity holds with two.\n')
+        self.engine.supply(root, 'done')
+        record = self.engine._load(root)
+        record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        self.engine._store(root, record)
+        self.assertNotIn('update_price', self.engine.view(root)['documents'])
+        shown = self.engine.supply(root, 'add', 'more.txt', b'More.\n')['documents']
+        self.assertTrue(shown['update_price']['words'].startswith(
+            'Asking for changes runs the research again'), shown['update_price'])
+
+
 class AheadTests(StudioCase):
     """Each training's view says how many steps are left, where it next stops for the person
     under its own level, and what its agent's jobs have spent so far."""

@@ -2021,7 +2021,8 @@ class LaterTests(PageCase):
         web = self.started(title='Health checks')
         add = {'path': path, 'action': 'add', 'name': 'handbook.txt', 'content': self.sent()}
         for sent, expect, said in (
-                ({**add, 'action': 'replace'}, 400, 'A document can be: add, remove, done.'),
+                ({**add, 'action': 'replace'}, 400,
+                 'A document can be: add, remove, done, update.'),
                 ({'path': path}, 400, 'Give action as text.'),
                 ({'action': 'done'}, 400, 'Give path as text.'),
                 ({**add, 'name': None}, 400, 'Give name as text.'),
@@ -2034,8 +2035,7 @@ class LaterTests(PageCase):
                  'that can be read here. Save it as text or as a Word file.'),
                 ({'path': path, 'action': 'remove', 'name': 'missing.txt'}, 409,
                  'missing.txt is not one of the documents added.'),
-                ({**add, 'path': web}, 409, 'This training is researched from the public '
-                 'web, so it takes no documents.'),
+                ({**add, 'path': web}, 409, self.engines.NO_DOCUMENTS),
                 ({**add, 'path': str(self.base / 'elsewhere')}, 403,
                  'That folder is not a training this computer knows.')):
             with self.subTest(sent=sent):
@@ -2084,6 +2084,19 @@ class LaterTests(PageCase):
         run = self.post('documents', {'path': path, 'action': 'add', 'name': 'handbook.txt',
                                       'content': self.sent(large)})
         self.assertEqual(run['documents']['added'][0]['bytes'], len(large))
+
+    def test_the_page_updates_the_research_with_a_later_document(self):
+        path = self.started(source_scope='supplied-only')
+        root = Path(path)
+        self.engine.supply(root, 'add', 'handbook.txt', b'Capacity holds only when more than '
+                           b'one instance is running.\n')
+        self.engine.supply(root, 'done')
+        self.to_gate(root, 'research')
+        self.engine.supply(root, 'add', 'more.txt', b'More.\n')
+        with mock.patch.object(self.engine, 'carry_on'):   # the request, before it runs
+            run = self.post('documents', {'path': path, 'action': 'update'})
+        self.assertEqual(run['documents']['later'], [])
+        self.assertEqual(workspace.load(root)['requests'][-1]['added'], ['more.txt'])
 
     def test_the_copies_are_made_again_on_the_page(self):
         self.copies.refuse['google'] = 'Google access is not set up on this computer.'

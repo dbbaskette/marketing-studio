@@ -1451,7 +1451,8 @@ function drawSheet() {
   const holder = byId('sheet');
   const shown = view.after || (view.sheet && (view.gate || view.deciding || outlined()
     || TEAM_SHEETS.includes(view.sheet)
-    || ['delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice'].includes(view.sheet)
+    || ['delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
+      'update-research'].includes(view.sheet)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
@@ -1471,6 +1472,7 @@ function drawSheet() {
   else if (view.sheet === 'redesign') body = redesignSheet();
   else if (view.sheet === 'brand') body = brandSheet();
   else if (view.sheet === 'copy-choice') body = copyChoiceSheet();
+  else if (view.sheet === 'update-research') body = updateResearchSheet();
   else if (view.sheet === 'approve-combined') body = combinedConfirm();
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
@@ -5470,9 +5472,11 @@ async function settleDocuments(action, name, pressed) {
   refresh();
 }
 
-function documentItem(found, waiting) {
+function documentItem(found, waiting, later = false) {
   const text = add(make('div', 'row-text'), make('p', 'step-name', found.name),
     make('p', 'quiet', size(Number(found.bytes) || 0)));
+  // Added once the research was planned: kept, and read when the research is updated.
+  if (later) add(text, make('p', '', 'Added after the research: not read yet.'));
   if (!found.readable) {
     add(text, make('p', 'problem', 'It could not be read' + (found.problem ? ': '
       + found.problem : '.')), make('p', 'quiet', 'It is kept, and is not used for the '
@@ -5482,11 +5486,35 @@ function documentItem(found, waiting) {
   item.dataset.state = found.readable ? 'read' : 'unread';
   add(item, bead(found.readable ? 'done' : 'late'), text,
     make('span', 'step-words', found.readable ? 'Can be read' : 'Cannot be read'));
-  if (!waiting) return item;
+  if (!waiting && !later) return item;
   const remove = capsule('Remove', 'quiet',
     () => settleDocuments('remove', found.name, remove), 'remove ' + found.name);
   remove.setAttribute('aria-label', 'Remove ' + found.name);
   return add(item, remove);
+}
+
+// Reading the documents added since the research: priced before it is asked for.
+function updateResearchSheet() {
+  const held = (view.run && view.run.documents) || {};
+  const names = list(held.later).map((entry) => entry.name);
+  const problem = problemLine();
+  const go = capsule('Update it', 'filled', async () => {
+    go.disabled = true;
+    try {
+      view.run = await send('documents', { path: view.path, action: 'update' });
+      closeSheet();
+      toast('The research is updated with ' + series(names) + '.');
+      paintRun(false);
+    } catch (failure) {
+      say(problem, failure.message + ' Nothing was changed.');
+      go.disabled = false;
+    }
+  }, 'confirm-update-research');
+  return [sheetTitle('Update the research?'),
+    make('p', '', 'The research reads ' + series(names) + ' with the documents it read '
+      + 'before.'),
+    held.update_price ? make('p', 'quiet', held.update_price.words) : null,
+    problem, add(make('div', 'bar'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
 }
 
 function documentsCard(run, lead) {
@@ -5514,15 +5542,23 @@ function documentsCard(run, lead) {
       : 'None were added.'));
   }
   if (held.note) add(node, make('p', 'quiet', held.note));
+  const later = new Set(list(held.later).map((entry) => entry.name));
   if (added.length) {
     const items = make('ul', 'rows');
-    for (const found of added) items.append(documentItem(found, held.waiting));
+    for (const found of added) {
+      items.append(documentItem(found, held.waiting, later.has(found.name)));
+    }
     add(node, make('h3', 'row-title', count(added.length, 'document', 'documents')
       + ' added'), items);
   } else if (held.waiting) {
     add(node, make('p', 'quiet', 'Nothing is added yet.'));
   }
-  if (!held.waiting) return node;
+  if (!held.waiting) {
+    if (!later.size || run.mine === false) return node;
+    const update = capsule('Update the research', '', openSheet('update-research',
+      'update-research'), 'update-research');
+    return add(node, alertLine('documents-problem'), add(make('div', 'bar'), update));
+  }
   const problem = alertLine('documents-problem');
   say(problem, view.undone);
   const done = capsule('That is all of them', lead ? 'filled' : '',

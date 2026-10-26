@@ -19,6 +19,7 @@ import assess
 import desk
 import home
 import workspace
+from runner import engine as engine_module
 from runner import page, pipeline
 from workspace import WorkspaceError
 
@@ -1027,10 +1028,9 @@ class DocumentTests(FlowCase):
         root = self.start()
         self.assertIsNone(self.view(root)['documents'])
         self.assertIsNone(self.record(root)['documents'])
-        with self.assertRaisesRegex(WorkspaceError, 'researched from the public web, so it '
-                                    'takes no documents'):
+        with self.assertRaisesRegex(WorkspaceError, engine_module.NO_DOCUMENTS):
             self.send(root, 'handbook.txt')
-        with self.assertRaisesRegex(WorkspaceError, 'A document can be: add, remove, done'):
+        with self.assertRaisesRegex(WorkspaceError, 'A document can be: add, remove, done, update'):
             self.engine.supply(root, 'replace', 'handbook.txt')
         with self.assertRaisesRegex(WorkspaceError, 'No run is driving this training'):
             self.engine.supply(self.base / 'elsewhere', 'done')
@@ -1063,9 +1063,71 @@ class DocumentTests(FlowCase):
         self.assertEqual(self.steps(root)['documents']['status'], 'done')
         self.assertEqual(self.log()[-3],
                          'Rolling restarts: the documents are all added: 1 to research from')
-        for action, name in (('add', 'more.txt'), ('remove', 'handbook.txt'), ('done', None)):
-            with self.assertRaisesRegex(WorkspaceError, 'cannot be changed now'):
-                self.engine.supply(root, action, name, b'More words.\n')
+        with self.assertRaisesRegex(WorkspaceError, 'cannot be removed now'):
+            self.engine.supply(root, 'remove', 'handbook.txt')
+        with self.assertRaisesRegex(WorkspaceError, 'all added already'):
+            self.engine.supply(root, 'done')
+
+    def settled(self) -> Path:
+        """A training researched from documents, with one added and the research planned."""
+        root = self.start(source_scope='supplied-only')
+        self.send(root, 'handbook.txt')
+        self.engine.supply(root, 'done')
+        return root
+
+    def test_row_132_a_document_added_after_the_plan_is_kept_and_not_read(self):
+        root = self.settled()
+        before = (len(self.workers.jobs), workspace.statuses(root, workspace.load(root)),
+                  self.view(root)['state'])
+        after = self.send(root, 'more.txt')
+        self.assertEqual([entry['name'] for entry in after['documents']['later']], ['more.txt'])
+        self.assertIn('more.txt', [entry['name'] for entry in after['documents']['added']])
+        self.assertEqual((len(self.workers.jobs),
+                          workspace.statuses(root, workspace.load(root)), after['state']),
+                         before, 'nothing is researched, approved or made ready by it')
+        self.assertEqual([entry['name'] for entry in self.record(root)['documents']['later']],
+                         ['more.txt'])
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_row_133_updating_the_research_reads_the_added_documents(self):
+        root = self.settled()
+        self.to_gate(root, 'research')
+        self.send(root, 'more.txt')
+        with mock.patch.object(self.engine, 'carry_on'):   # the request, before it runs
+            after = self.engine.update_research(root)
+        request = workspace.load(root)['requests'][-1]
+        self.assertEqual((request['artifact'], request['refresh'], request['added']),
+                         ('research', True, ['more.txt']))
+        self.assertIn('more.txt', request['note'])
+        self.assertEqual(after['documents']['later'], [])
+        self.assertIn('more.txt', [entry['name'] for entry in self.engine.documents.listed(root)
+                                   if entry.get('readable')],
+                      'the research is given the added document')
+        with self.assertRaisesRegex(WorkspaceError, 'No document was added after the research'):
+            self.engine.update_research(root)
+
+    def test_a_later_document_can_be_removed_until_the_update(self):
+        root = self.settled()
+        self.send(root, 'more.txt')
+        after = self.engine.supply(root, 'remove', 'more.txt')
+        self.assertEqual(after['documents']['later'], [])
+        self.assertNotIn('more.txt', [entry['name'] for entry in after['documents']['added']])
+
+    def test_no_document_is_added_while_the_training_works(self):
+        root = self.settled()
+        run = self.engine._run(root)
+        run.workers['research-plan'] = {'label': 'Drafting', 'started_at': 0}
+        try:
+            with self.assertRaisesRegex(WorkspaceError, engine_module.WORKING):
+                self.send(root, 'more.txt')
+        finally:
+            run.workers.pop('research-plan', None)
+
+    def test_a_web_only_training_still_takes_no_documents(self):
+        root = self.start()
+        with self.assertRaises(WorkspaceError) as refused:
+            self.send(root, 'more.txt')
+        self.assertEqual(str(refused.exception), engine_module.NO_DOCUMENTS)
 
     def test_the_questions_are_drafted_for_what_the_documents_can_answer(self):
         root = self.start(source_scope='supplied-only')
