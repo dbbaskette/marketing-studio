@@ -118,9 +118,9 @@ deciding on each fix, with the full desk one click away.
   highlighted, numbered, with its reason and **Accept** and **Reject** under the paragraph
   (stacked on a phone). **Accept** applies the fix and keeps the earlier text in History;
   **Reject** sets it aside. A wording change beyond grammar is its own fix, with its reason.
-- **Every suggestion is labelled**: **Spelling**, **Grammar**, **Punctuation** or
-  **Wording** for Copy edit's fixes (a name or term written two ways reads as Spelling),
-  and **Sounds human** for Humanize's rewrites. Both tools' suggestions read together in
+- **Every suggestion is labelled**: **Spelling**, **Grammar**, **Punctuation**,
+  **Consistency** (one name, term or style written two ways) or **Wording** for Copy edit's
+  fixes, and **Sounds human** for Humanize's rewrites. Both tools' suggestions read together in
   order, part by part and then by where they sit, numbered across both. **Show: All ·
   Fixes · Sounds human** narrows the list when both are there.
 - **A wording fix may offer alternatives**: up to three other ways to say it, listed as
@@ -135,17 +135,21 @@ deciding on each fix, with the full desk one click away.
 - **Accept all** and **Reject all** sit at the top with the count left to review, for both
   tools, and act on what is shown. A suggestion that changes a fact, code or the shape of a
   part is flagged, and **Accept all** leaves it for you to check. Accept all applies the
-  fixes first, then the human-sounding suggestions that still fit.
+  fixes first, then the human-sounding suggestions that still fit. It never applies one
+  over a fix still waiting for you (flagged, or hidden by **Show**): that one is left for
+  you too, so a flagged fix is never retired without your say.
 - **With human-sounding wording on, Quick check's findings** (dashes, words that often
   read as machine-written, repetition) are a short folded list at the top, labelled
   **Sounds human (quick check)** and read from the latest text with no assistant. **Fix**
   rewrites only the sentence a finding is in, keeping a version; **Dismiss** hides it in
-  this view.
+  this view, even when an edit earlier in the part moves it. The list is read again a
+  moment after the text changes, or when you open it.
 - **Click any paragraph to edit it yourself.** It opens in place, saves after a short pause
   or when you click away, and the other fixes stay as they are; a fix whose words are no
   longer in the text drops out and is counted as no longer fitting.
 - **Check again** runs Copy edit on the current text, and Humanize after it at the same
-  strength when it is on. Before a blog's first check, Review mode's own **Check spelling
+  strength when it is on. Humanize still runs when Copy edit fails, could not start, or was
+  interrupted by Blog Studio closing. Before a blog's first check, Review mode's own **Check spelling
   and grammar** offers the same choice; the choice is kept on this computer for **Check
   again**.
 - **When nothing is left to review**, a blog started from a Google Doc offers **Send

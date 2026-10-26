@@ -98,8 +98,8 @@ Once the page is open, use its controls to drive the work:
    **Check spelling and grammar** opens the blog in **Review mode**: the draft reads as a
    document, section by section, with each fix marked in place (struck words out,
    highlighted words in) and its reason, **Accept** and **Reject**. Each is labelled
-   **Spelling**, **Grammar**, **Punctuation**, **Wording** or, from Humanize, **Sounds
-   human**; a wording fix may offer alternatives to pick from before **Accept**, and
+   **Spelling**, **Grammar**, **Punctuation**, **Consistency**, **Wording** or, from
+   Humanize, **Sounds human**; a wording fix may offer alternatives to pick from before **Accept**, and
    accepting one suggestion retires any other that covered the same words. **Accept all**
    leaves a suggestion that changes a fact, code or shape for you to check. With
    human-sounding wording on, Quick check's findings are listed at the top with **Fix** and
