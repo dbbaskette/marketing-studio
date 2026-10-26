@@ -1173,7 +1173,7 @@ function sReviewHead(held,state){
     const line=sNode('p','desk-working-note',sReviewDoing(state));line.setAttribute('role','status');
     const stop=sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{try{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:state.working.id});sDeskRefresh(held,before);}catch(error){notice(error.message,true);}});});stop.disabled=!access.actions.edit;
     head.append(sAdd(sNode('div','card review-checking'),line,sAdd(sNode('div','bar'),stop)));
-  }
+  }else if(held.view.working){const line=sNode('p','desk-working-note',sDeskStatusWords(held));line.setAttribute('role','status');head.append(line);}  // A Quick check Fix, say.
   state.failed.forEach(([tool,error],index)=>{
     const said=sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',(tool==='humanize'?'The check for machine-like wording did not finish: ':'The check did not finish: ')+error));
     if(!state.working&&index===state.failed.length-1){const again=sButton('Check again',button=>sReviewCheck(held,button),'filled');again.disabled=!access.actions.edit;said.append(again);}

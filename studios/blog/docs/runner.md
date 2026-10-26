@@ -74,7 +74,9 @@ desk. A topic or an outline takes three steps; a draft takes one screen (below):
 - **What should happen first**: **Check spelling and grammar** (the default, with no kind
   of post: "See each fix marked in your text, then accept or reject it. Nothing changes
   until you accept." Finishing's **Copy edit** starts as the blog is made, and the blog
-  opens in [Review mode](#review-mode)), **Just give feedback** (Finishing's **Feedback
+  opens in [Review mode](#review-mode). Under it, **Also suggest more human-sounding
+  wording** adds Finishing's **Humanize** to the same check, at **Light** (the default),
+  **Medium** or **Strong**, shown once it is ticked), **Just give feedback** (Finishing's **Feedback
   without a rewrite** starts as the desk opens: comments beside each part, and nothing in
   the text changes), **Reshape to fit a kind of post** (only this one shows **Kind of
   post**, and needs one) or **Leave it as it is**. The opening is worked on with the
@@ -105,7 +107,10 @@ draft already in place.
 deciding on each fix, with the full desk one click away.
 
 - **While it checks**, one calm line, "Checking spelling and grammar…", with **Stop**. The
-  draft is readable and editable meanwhile.
+  draft is readable and editable meanwhile. With human-sounding wording on, Humanize runs
+  next, at the strength chosen, once Copy edit is done (desk jobs run one at a time per
+  blog): the line becomes "Looking for machine-like wording…", **Stop** ends the whole
+  check, and Copy edit's fixes are already marked to accept or reject meanwhile.
 - **The draft reads as a document**, section by section on an opaque page: bold headings
   shown plainly, lists as bullets, links as their words, and each image as a thumbnail
   where it sits.
@@ -113,13 +118,36 @@ deciding on each fix, with the full desk one click away.
   highlighted, numbered, with its reason and **Accept** and **Reject** under the paragraph
   (stacked on a phone). **Accept** applies the fix and keeps the earlier text in History;
   **Reject** sets it aside. A wording change beyond grammar is its own fix, with its reason.
-- **Accept all** and **Reject all** sit at the top with the count left to review. A fix that
-  changes a fact, code or the shape of a part is flagged, and **Accept all** leaves it for
-  you to check.
+- **Every suggestion is labelled**: **Spelling**, **Grammar**, **Punctuation** or
+  **Wording** for Copy edit's fixes (a name or term written two ways reads as Spelling),
+  and **Sounds human** for Humanize's rewrites. Both tools' suggestions read together in
+  order, part by part and then by where they sit, numbered across both. **Show: All ·
+  Fixes · Sounds human** narrows the list when both are there.
+- **A wording fix may offer alternatives**: up to three other ways to say it, listed as
+  choices under it with the suggested wording first. Pick one and the paragraph shows it;
+  **Accept** applies the one picked. Each alternative is checked like any suggestion, and
+  one that changes a fact, code or shape is marked **Check this**. Click the paragraph to
+  write your own instead.
+- **Suggestions that cover the same words** are listed under their part rather than marked
+  over each other. Accepting one retires the others that covered any of its words, from
+  either tool: they say they no longer fit, and two that start at the same place never both
+  apply.
+- **Accept all** and **Reject all** sit at the top with the count left to review, for both
+  tools, and act on what is shown. A suggestion that changes a fact, code or the shape of a
+  part is flagged, and **Accept all** leaves it for you to check. Accept all applies the
+  fixes first, then the human-sounding suggestions that still fit.
+- **With human-sounding wording on, Quick check's findings** (dashes, words that often
+  read as machine-written, repetition) are a short folded list at the top, labelled
+  **Sounds human (quick check)** and read from the latest text with no assistant. **Fix**
+  rewrites only the sentence a finding is in, keeping a version; **Dismiss** hides it in
+  this view.
 - **Click any paragraph to edit it yourself.** It opens in place, saves after a short pause
   or when you click away, and the other fixes stay as they are; a fix whose words are no
   longer in the text drops out and is counted as no longer fitting.
-- **Check again** runs Copy edit on the current text.
+- **Check again** runs Copy edit on the current text, and Humanize after it at the same
+  strength when it is on. Before a blog's first check, Review mode's own **Check spelling
+  and grammar** offers the same choice; the choice is kept on this computer for **Check
+  again**.
 - **When nothing is left to review**, a blog started from a Google Doc offers **Send
   accepted changes to Google Doc**: the plan says how many wording changes go, as
   suggestions for the Doc's owner, and nothing is sent until **Send**. It sends every
@@ -202,7 +230,8 @@ nothing changes until you apply.
   in the title and the text, each with a short note on why. Claims, qualifiers and the
   argument are not changed; the author's voice, facts, quotes, links and image references
   are kept, and a fix that would change a fact, code or the part's shape is flagged.
-  **Check spelling and grammar** on the polishing screen runs it too.
+  **Check spelling and grammar** on the polishing screen runs it too, with Humanize after it
+  when **Also suggest more human-sounding wording** is ticked.
 - **Humanize** at light, medium or strong: sentences that read as machine-written, each
   with a rewrite. Numbers, names, quotes and links are kept, and a rewrite that would
   change one is flagged.
