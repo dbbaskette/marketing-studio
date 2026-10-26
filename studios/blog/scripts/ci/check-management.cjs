@@ -3196,6 +3196,7 @@ async function deskPolishStart(){
   await t.click('Reshape to fit a kind of post');t.type('desk-kind','how-to');
   await t.click('Leave it as it is');
   assert.equal(t.byId('desk-kind'),undefined);
+  assert.ok(!t.nodes().some(n=>n.textContent===hint),'no hint once Leave it as it is is chosen');
   const picker=t.byId('files-input');picker.files=[{name:'facts.md',size:20,arrayBuffer:async()=>new TextEncoder().encode('Synthetic facts.').buffer}];await picker.listeners.change();
   assert.equal(fold('Check facts against your sources (optional)').open,true,'the fold stays open with a source in it');
   await t.submit();
@@ -3490,15 +3491,17 @@ async function deskFinishing(){
     {part:'aaaaaaaa',before:'Their are two parser.',after:'There are two parsers.',note:'Subject and verb agree.'},
     {part:'bbbbbbbb',before:'Second text.',after:'The second text.'},
     {part:'cccccccc',before:'Third text, 3 times.',after:'Third text, three times.',flag:'Check the facts: this changes a number.'},
+    {part:'title',before:'synthetic',after:'Synthetic',note:'Capital letter.'},
   ])}};
   f.set('next',view);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
-  assert.ok(descendants(panel()).some(n=>n.textContent==='3 suggestions · 3 to review.'));
+  assert.ok(descendants(panel()).some(n=>n.textContent==='4 suggestions · 4 to review.'));
+  assert.ok(descendants(item('p4')).some(n=>n.textContent==='In the title'),'the title can be fixed too');
   assert.deepEqual(descendants(item('p1')).filter(n=>n.tagName==='h4').map(n=>n.textContent),['Before','After']);
   assert.ok(descendants(item('p1')).some(n=>n.tagName==='del'&&n.textContent==='Their'));
   assert.ok(descendants(item('p1')).some(n=>n.tagName==='ins'&&n.textContent==='There'));
   assert.ok(descendants(item('p1')).some(n=>n.textContent==='Subject and verb agree.'),'each fix says why');
   assert.ok(descendants(item('p3')).some(n=>n.textContent==='Check the facts: this changes a number.'),'a changed fact is flagged');
-  assert.ok(inPanel('Apply all (2)'),'Apply all leaves the flagged fix');
+  assert.ok(inPanel('Apply all (3)'),'Apply all leaves the flagged fix');
   await inItem('p1','Apply').listeners.click();
   assert.deepEqual(last('/api/desk-apply'),{id:'desk-blog',seen:seenCopy,job:view.finishing.copyedit.job,items:[{id:'p1'}]});
   await inItem('p2','Edit').listeners.click();

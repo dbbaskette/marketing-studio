@@ -145,9 +145,10 @@ that is out of date is refused rather than written over newer text.
 **Finishing** opens a side panel (a full-screen sheet on a phone). Every tool suggests;
 nothing changes until you apply.
 
-- **Copy edit**: grammar, spelling, punctuation, consistency, clarity and concision, each
-  fix a sentence shown before and after with a short note on why, for you to approve.
-  The author's voice, facts, quotes, links and image references are kept, and a fix that
+- **Copy edit**: grammar, spelling, punctuation, consistency, clarity and concision in the
+  title and the text, each fix shown before and after with a short note on why, for you
+  to approve. Claims, qualifiers and the argument are not changed; the author's voice,
+  facts, quotes, links and image references are kept, and a fix that
   would change a fact, code or the part's shape is flagged. It is **Proofread and tighten**
   with each change approved first.
 - **Humanize** at light, medium or strong: sentences that read as machine-written, each
