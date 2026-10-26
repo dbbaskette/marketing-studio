@@ -493,3 +493,141 @@ class DeskStartTeamTests(TeamCase):
         )
         self.assertTrue(other['id'])
         self.assertEqual(gitstate.changed(self.found), [])
+
+
+class DeskDriverTests(TeamCase):
+    """A teammate on another computer takes over, or is handed, a blog on the desk."""
+
+    def other(self):
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'two')
+        root = teams.join(str(self.remote))
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(root), None))
+        return root
+
+    def desk(self, root):
+        return management.view(root, 'desk', {'id': [self.made['id']]})
+
+    def save(self, root, seen, text):
+        return management.dispatch(
+            root,
+            'desk-save',
+            {'id': self.made['id'], 'seen': seen, 'part': 'title', 'text': text, 'session': 'e' * 16},
+        )
+
+    def decide(self, root, action, expected):
+        return management.dispatch(
+            root,
+            'team-' + action,
+            {'id': self.made['id'], 'expected': expected, 'confirmed': True},
+        )
+
+    def test_a_teammate_takes_over_a_desk_blog(self):
+        ours = self.desk(self.root)
+        self.assertTrue(ours['team'])
+        self.assertTrue(ours['driver']['here'])
+        self.assertIsNone(ours['elsewhere'])
+        other = self.other()
+        shown = self.desk(other)
+        self.assertTrue(shown['team'])
+        self.assertFalse(shown['driver']['here'])
+        self.assertIn('Take it over to change it.', shown['elsewhere'])
+        with self.assertRaisesRegex(ValueError, 'another computer'):
+            self.save(other, shown['revision'], 'Not yet')
+        self.decide(other, 'takeover', shown['expected'])
+        shown = self.desk(other)
+        self.assertTrue(shown['driver']['here'])
+        self.assertIsNone(shown['elsewhere'])
+        self.save(other, shown['revision'], 'Taken over')
+        self.assertEqual(self.desk(other)['title'], 'Taken over')
+
+    def test_take_over_refuses_a_desk_view_that_changed(self):
+        other = self.other()
+        outdated = self.desk(other)['expected']
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'data')
+        self.save(self.root, self.desk(self.root)['revision'], 'Changed by the driver')
+        management.dispatch(self.root, 'desk-share', {'id': self.made['id']})
+        os.environ['BLOG_STUDIO_DATA'] = str(self.base / 'two')
+        with self.assertRaisesRegex(
+            ValueError, 'This blog changed. Reload before changing its driver or publishing it.'
+        ):
+            self.decide(other, 'takeover', outdated)
+        self.assertFalse(self.desk(other)['driver']['here'])
+
+    def test_hand_over_from_the_desk(self):
+        shown = self.desk(self.root)
+        self.decide(self.root, 'handover', shown['expected'])
+        shown = self.desk(self.root)
+        self.assertIsNone(shown['driver'])
+        self.assertEqual(
+            shown['elsewhere'],
+            'Nobody is running this blog. Take it to carry on with it from this computer.',
+        )
+        with self.assertRaisesRegex(ValueError, 'Nobody is running this blog'):
+            self.save(self.root, shown['revision'], 'Handed over')
+        other = self.other()
+        self.decide(other, 'take', self.desk(other)['expected'])
+        shown = self.desk(other)
+        self.assertTrue(shown['driver']['here'])
+        self.save(other, shown['revision'], 'Taken')
+
+
+class DeskTeamImageTests(TeamCase):
+    def folder(self, ident):
+        import studio
+
+        return studio.inside(self.root, 'articles', ident)
+
+    def test_an_older_record_is_cleaned_on_viewing_as_its_own_recorded_change(self):
+        from test_desk import OPENING, owner_shaped
+
+        ident = self.made['id']
+        body = owner_shaped(self, self.made)
+        gitstate.commit(self.found, 'A record kept before images moved out', [ident])
+        self.assertEqual(gitstate.changed(self.found), [])
+        commits = self.local_commits()
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        self.assertEqual(shown['opening'], OPENING)
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertEqual(self.local_commits(), commits + 1)
+        self.assertIn('images', support.git(self.found.repo, 'log', '-1', '--format=%s'))
+        self.assertEqual((self.folder(ident) / 'DRAFT.md').read_text(), body)
+        # A desk page open before the cleaning saves as it would have.
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': ident,
+                'seen': 2,
+                'part': 'opening',
+                'text': OPENING + ' More.',
+                'session': 'e' * 16,
+            },
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertIn('More.', (self.folder(ident) / 'DRAFT.md').read_text())
+
+    def test_an_image_pasted_on_the_desk_is_committed_with_the_draft(self):
+        from test_desk import IMAGE_ONE
+
+        ident = self.made['id']
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': ident,
+                'seen': 1,
+                'part': self.part,
+                'text': 'First.\n\n![](' + IMAGE_ONE + ')',
+                'session': 'f' * 16,
+            },
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+        files = support.git(self.found.repo, 'show', '--name-only', '--format=', 'HEAD').split()
+        self.assertIn('blogs/' + ident + '/desk/images.json', files)
+        self.assertIn('blogs/' + ident + '/desk/draft.json', files)
+        self.assertNotIn('data:image', (self.folder(ident) / 'desk' / 'draft.json').read_text())
+        self.assertIn(IMAGE_ONE, (self.folder(ident) / 'DRAFT.md').read_text())
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -561,7 +561,7 @@ def load(root, ident):
     directory, record = studio.item(root, 'articles', ident)
     path = studio.inside(directory, STATE)
     if not path.is_file():
-        raise ValueError('This blog has no guided run. Choose Run this blog on the page.')
+        raise ValueError('This blog has no step-by-step run. Open it from Blogs.')
     run = studio.read_json(path)
     if run.get('schema') not in (1, 2, 3) or run.get('approval') not in ('page', 'conversation'):
         raise ValueError('This run needs a newer Blog Studio runtime.')

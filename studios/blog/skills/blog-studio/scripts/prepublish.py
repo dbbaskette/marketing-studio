@@ -25,12 +25,25 @@ def report(root, ident, title_limit=80):
             'title-length',
             f'The working title exceeds the chosen {title_limit}-character limit.',
         )
+    # Labels a reference may name: link and image definitions, as a Google Doc's Markdown
+    # export defines each image with its data at the end.
+    defined = {
+        ' '.join(found[1].split()).casefold()
+        for found in re.finditer(r'(?m)^ {0,3}\[([^\]\n]+)\]:[ \t]*\S', body)
+    }
     for number, line in enumerate(body.splitlines(), 1):
         if re.match(r'^\s*(```|~~~)', line):
             fenced = not fenced
             continue
         if fenced:
             continue
+        if re.match(r'^ {0,3}\[[^\]\n]+\]:[ \t]*\S', line):
+            continue  # A definition: its target, such as an image's data, is not prose.
+        for image in re.finditer(r'!\[([^\]\n]*)\]\[([^\]\n]*)\]', line):
+            if not image[1].strip():
+                finding(number, 'image-alt', 'An image has no descriptive alt text.')
+            if ' '.join((image[2] or image[1]).split()).casefold() not in defined:
+                finding(number, 'image-source', 'An image source is missing or unfinished.')
         heading = re.match(r'^(#{1,6})\s+(.+)', line)
         if heading:
             depth, text = len(heading[1]), heading[2].strip()

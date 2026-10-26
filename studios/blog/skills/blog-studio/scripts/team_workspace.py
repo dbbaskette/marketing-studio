@@ -269,10 +269,11 @@ def saved(root, ident=None, message='Keep Blog Studio decision'):
     )
 
 
-def keep_desk(root, ident):
+def keep_desk(root, ident, message='Keep a desk change'):
     """Commit what a desk result left under a blog this computer drives, when sharing it
     after the worker settled it did not get that far (desk_jobs.share). The next desk
-    request calls this before refreshing, so a failed share never jams the desk."""
+    request calls this before refreshing, so a failed share never jams the desk. A desk
+    record cleaned as it is read (desk._images_out) is committed this way too."""
     found = space(root)
     if not found or not isinstance(ident, str):
         return False
@@ -284,7 +285,7 @@ def keep_desk(root, ident):
             guard(root, ident)
         except ValueError:
             return False  # Another computer drives it: nothing here is ours to record.
-        return gitstate.commit(found, 'Keep a desk change', [ident])
+        return gitstate.commit(found, message, [ident])
 
 
 def keep_desk_leftovers(root, found=None):
@@ -401,8 +402,17 @@ def action(root, ident, action, expected=None):
             gitstate.commit(found, 'Keep local work before changing a driver')
         if expected is not None:
             import blog_runner
+            import desk
+            import desk_jobs
 
-            if blog_runner.survey(root, ident)['expected'] != expected:
+            # A blog on the desk has no run: its version is the desk view's.
+            directory, _ = studio.item(root, 'articles', ident)
+            current = (
+                desk_jobs.expected(root, ident)
+                if desk.on_desk(directory)
+                else blog_runner.survey(root, ident)['expected']
+            )
+            if current != expected:
                 raise ValueError(
                     'This blog changed. Reload before changing its driver or publishing it.'
                 )

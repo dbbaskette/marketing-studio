@@ -5,6 +5,43 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Copy edit in Finishing, with each fix approved first.** **Finishing → Copy edit**
+  finds grammar, spelling, punctuation, consistency, clarity and concision fixes in the
+  title and the text and shows each one before and after with a note on why, to
+  **Apply**, **Edit** or **Skip**, or **Apply all**; a fix that changes a fact, code or the
+  part's shape is flagged and left out of Apply all. Claims, qualifiers, the argument,
+  voice, quotes, links and image references are kept. Finishing's mechanical
+  **Proofread** is now **Quick check**, so it is not mistaken for the grammar pass. The
+  panel's tools are now in this order: **Copy edit**, **Humanize**, **Quick check**,
+  **Check facts against sources**, **Headline and opening**, **Feedback without a
+  rewrite**, **Apply a voice** and **Before publishing**. The polishing screen says how to
+  approve each fix first: **Leave it as it is**, then Copy edit. A suggestion whose only
+  change is to an image reference says there is nothing to apply instead of reporting it
+  applied, text that occurs twice, overlapping, is no longer taken as one place, and a
+  word after an image reference is no longer flagged as a changed name. For maintainers:
+  the `finish-copyedit` job (`desk-finish` with `tool: "copyedit"`) sends the draft and
+  its tone only (no sources, examples or kind of post), with
+  `desk_jobs.desk_check('copyedit')` and `('proofread')` (the manuscript editor's checks
+  without pinned author rules, which the first pass's tighten now reads too) and only the
+  clarity and voice lenses of `references/modules/copy-editing.md`; its result is read
+  like `finish-humanize`, with `title` also accepted. Quick check keeps the `proofread`
+  key and `GET /api/desk-proofread`.
+- **Images stay out of the desk's text.** A draft with images, such as a Google Doc's,
+  now shows each one in its part as the short reference `![][image1]` with a thumbnail
+  under it, instead of a wall of base64. The images are kept beside the draft and written
+  back at the end of `DRAFT.md`, so Copy, Download, the Google Doc send, the team library
+  and the pre-publish check keep them exactly, and no rewrite, note, selection edit, first
+  pass, Finishing tool or voice sends them to the assistant. A rewrite that drops a
+  reference has it put back where it was. Blogs already on the desk are cleaned the first
+  time they are opened, and an image an earlier rewrite dropped is found again in History,
+  the original draft or the Google Doc, with no word changed; one found nowhere shows
+  **Image missing**. Image data kept as text, such as in a code example, reaches a rewrite
+  as a token it must give back unchanged. For maintainers: `desk/draft.json` lists `images` ({label: {alt, key,
+  size}}) and their data is in `desk/images.json` ({label: data URI}), read only to write
+  `DRAFT.md` or by `GET /api/desk-images`, never on a view poll; `desk_images.py` moves
+  them in and out; the view's `missing_images` names labels kept nowhere; part limits count
+  text only, with images capped at 5 MB each and 12 MB in all; the page's `img-src` allows
+  `data:`.
 - **Polish a draft without choosing a kind of post.** **Edit or polish a draft**, **Polish
   another document**, a saved blog's draft and **A draft** on the start open one screen
   with no step tabs: your draft, then **Proofread and tighten** (the default), **Just give

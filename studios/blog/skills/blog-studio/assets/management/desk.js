@@ -4,7 +4,7 @@
 'use strict';
 const DESK_SELECTION=[['rephrase','Rephrase'],['shorten','Shorten'],['expand','Expand'],['fix','Fix']];
 const DESK_SOURCES={save:'Before your edit',rewrite:'Before a rewrite','revise-all':'Before a whole-draft revision',selection:'Before a selection edit','first-pass':'Before the first pass',finishing:'Before a finishing change',restore:'Before a restore',draft:'Before the draft was written',chat:'Before an edit in chat',google:'Before Google’s accepted text'};
-const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback','finish-voice':'Rewriting the draft in a voice guide'};
+const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-copyedit':'Copy editing the draft','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback','finish-voice':'Rewriting the draft in a voice guide'};
 // A start's steps, as the progress screen names them.
 const DESK_STEPS={research:'Researching',outline:'Outlining',draft:'Drafting'};
 const DESK_SAVE_WAIT=1000,DESK_POLL=3000,DESK_DIFF_LIMIT=4000;
@@ -40,13 +40,67 @@ function deskAge(at){const then=Date.parse(at||'');if(!then)return '';const minu
 function deskPartName(view,part){if(part==='title')return 'the title';if(part==='opening')return 'the opening';if(part==='sections')return 'every section';const found=(view.sections||[]).find(section=>section.id===part);return found?'“'+found.heading+'”':'a section';}
 function deskTextOf(view,part){if(part==='title'||part==='opening')return view[part]||'';return (view.sections||[]).find(section=>section.id===part)?.text||'';}
 
+// Images: a part's text holds only its short reference, ![][image1], as typed. The desk view
+// lists the images by key without their data; the page reads the data once (desk-images),
+// keeps it here, shows a thumbnail under each part that refers to one, and writes the images
+// back at the end for Copy and Download. No form field or autosave ever holds the data.
+const DESK_IMAGE_REF=/!\[([^\[\]\n]*)\]\[([^\[\]\n]*)\]/g;
+function deskImageLabel(label){return String(label||'').split(/\s+/).filter(Boolean).join(' ').toLowerCase();}
+function deskImageData(){return studio.deskImages||(studio.deskImages={});}
+function deskImagesIn(view,text){
+  const listed=view.images||[],out=[],seen=new Set();
+  for(const found of String(text||'').matchAll(DESK_IMAGE_REF)){
+    const label=deskImageLabel(found[2]||found[1]),image=listed.find(item=>deskImageLabel(item.label)===label);
+    if(image&&!seen.has(image.key)){seen.add(image.key);out.push({...image,alt:found[2]?found[1]:''});}
+  }
+  return out;
+}
+// The images a part's text names that are kept nowhere, each once.
+function deskImagesMissing(view,text){
+  const lost=(view.missing_images||[]).map(deskImageLabel),out=[];
+  for(const found of String(text||'').matchAll(DESK_IMAGE_REF)){const label=found[2]||found[1];if(lost.includes(deskImageLabel(label))&&!out.some(name=>deskImageLabel(name)===deskImageLabel(label)))out.push(label);}
+  return out;
+}
+function sDeskThumbs(held,part){
+  const text=deskTextOf(held.view,part),found=deskImagesIn(held.view,text),lost=deskImagesMissing(held.view,text);if(!found.length&&!lost.length)return null;
+  const row=sNode('div','desk-images');row.setAttribute('aria-label','Images in this part');
+  for(const image of found){
+    const img=sNode('img','desk-thumb');img.alt=image.alt||'Image '+image.label;img.dataset.key=image.key;
+    const data=deskImageData()[image.key];if(data)img.src=data;
+    row.append(sAdd(sNode('figure','desk-image'),img,sNode('figcaption','quiet',image.label)));
+  }
+  // Named in the text, kept nowhere: said in its place, so the reference can be fixed or cut.
+  for(const label of lost)row.append(sAdd(sNode('figure','desk-image desk-image-missing'),sNode('span','desk-thumb-missing','Image missing'),sNode('figcaption','quiet',label)));
+  return row;
+}
+// Read the images not kept yet, once, then fill the thumbnails waiting for them.
+async function sDeskImagesLoad(held){
+  if(!(held.view.images||[]).some(image=>!deskImageData()[image.key]))return;
+  if(held.imagesLoading)return held.imagesLoading;
+  held.imagesLoading=(async()=>{try{
+    const found=await api('desk-images?'+new URLSearchParams({id:held.id}));
+    for(const image of found.images||[])deskImageData()[image.key]=image.uri;
+    for(const img of $('studio-page').querySelectorAll('.desk-thumb')){const data=deskImageData()[img.dataset.key];if(data&&!img.src)img.src=data;}
+  }catch(_){/* The thumbnails wait; Copy and Download ask again. */}finally{held.imagesLoading=null;}})();
+  return held.imagesLoading;
+}
+// The Markdown as DRAFT.md keeps it: the text, then each image it refers to. An image whose
+// data cannot be read is left out and named, never stopping Copy or Download.
+async function sDeskMarkdown(held){
+  const view=held.view,images=view.images||[],missing=[...(view.missing_images||[])];if(!images.length)return {markdown:view.markdown,missing};
+  await sDeskImagesLoad(held);
+  const lines=[];for(const image of images){const data=deskImageData()[image.key];if(data)lines.push('['+image.label+']: <'+data+'>'+(image.title?' '+image.title:''));else missing.push(image.label);}
+  return {markdown:lines.length?view.markdown.replace(/\n$/,'')+'\n\n'+lines.join('\n\n')+'\n':view.markdown,missing};
+}
+function deskWithout(done,missing){return missing.length?done+' without '+missing.join(', ')+(missing.length===1?': its image could not be read.':': their images could not be read.'):done+'.';}
+
 // A new blog: 1. the kind of post, 2. sources and settings, 3. what the person brings (a
 // topic, an outline or notes, or a draft), then Start. Nothing stops for the person after it.
 // A draft to polish or review is one screen instead (sDeskPolish), with no kind of post.
 const DESK_HAVE=[['topic','A topic'],['outline','An outline or notes'],['draft','A draft']];
 const DESK_OUTLINE_WAYS=[['outline','Write from my outline'],['shape','Shape an outline with me first']];
-const DESK_START_STEPS=['Kind of post','Sources and settings','What you have'];
-const DESK_START_LEDES=['Choose the kind of post. It sets the usual shape and length.','Add sources if you have them. They stay with this blog unless you keep them in the team library.','Say what you bring, then start. Nothing stops for you on the way.'];
+const DESK_START_STEPS=['What are you writing?','What do you have?','Sources and settings'];
+const DESK_START_LEDES=['Choose the kind of post. It sets the usual shape and length.','Say what you bring: a topic, or an outline or notes. A draft has its own screen.','Add sources if you have them, then start. Nothing stops for you on the way.'];
 // Settings' research for new blogs is where the start's ticks begin: Search my sites when it
 // ticks your sites and the shared list has any, Search the web too when it ticks the public
 // web. Your documents are always read. The person can change both for this blog.
@@ -65,7 +119,7 @@ async function sDeskStart(){
   if(held.have==='draft')return sDeskPolish(held);
   sFrame('New blog',[],'New writing',()=>sRoute('home'));
   const steps=sWorkflowSteps(DESK_START_STEPS,held.step,index=>{if(index&&held.kind===null)return notice('Choose a kind of post first, or Something else.',true);held.step=index;sTop();sDeskStart();});
-  sPage(sNode('p','lede',DESK_START_LEDES[held.step]),steps,held.step===0?sDeskKinds(held):held.step===1?sDeskSettings(held):sDeskHave(held));
+  sPage(sNode('p','lede',DESK_START_LEDES[held.step]),steps,held.step===0?sDeskKinds(held):held.step===1?sDeskHave(held):sDeskSettings(held));
 }
 function sDeskStartAgain(held){if(studio.screen==='desk-start'&&studio.deskStart===held)sDeskStart();}
 function sDeskWriting(held){return held.have!=='draft';}
@@ -78,30 +132,32 @@ function sDeskKinds(held){
   return sCard('What are you writing?',list);
 }
 
-// 2. Sources and settings, for every way of working; research and length for new writing.
+// 2. What do you have? A topic, or an outline or notes; A draft switches to its one screen.
+function sDeskHave(held){
+  const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
+  const parts=[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
+  parts.push(...(held.have==='topic'?sDeskTopic(held):[sDeskOutlineIn(held)]));
+  const go=sNode('button','button button-filled','Continue');go.type='submit';go.disabled=!access.actions.edit;
+  form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
+  form.addEventListener('submit',event=>{event.preventDefault();if(studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}held.step=2;sTop();sDeskStart();});
+  return form;
+}
+
+// 3. Sources and settings, with research and Length for the new writing brought; then Start.
 function sDeskSettings(held){
   // A refused role change is said here after the card is drawn again.
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
   const again=()=>sDeskStartAgain(held);
-  const go=sNode('button','button button-filled','Continue');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
+  const go=sNode('button','button button-filled','Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
   form.append(sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}));
   if(sDeskWriting(held))form.append(sCard('Research before the writing',sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>again()),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'),sNode('p','quiet','Ticked as in Settings, for this blog only. It runs before the outline, with no stop for you.')));
   form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(held,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
   form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
-  form.addEventListener('submit',event=>{event.preventDefault();if(studio.busy)return;if(sDeskWriting(held)&&held.searchSites&&!sChosenSites(held.from).length){problem.textContent=sResearchWord('no_sites')||'Choose at least one of your sites, or untick Search my sites.';return;}held.step=2;sTop();sDeskStart();});
-  return form;
-}
-
-// 3. What do you have? Then Start.
-function sDeskHave(held){
-  const form=sNode('form','narrow desk-start'),problem=sNode('p','problem');problem.setAttribute('role','alert');
-  const parts=[sCard('What do you have?',sChoice('What you bring',DESK_HAVE,held,'have',()=>sDeskStart()))];
-  // A draft chosen here switches to the one polishing screen.
-  parts.push(...(held.have==='topic'?sDeskTopic(held):[sDeskOutlineIn(held)]));
-  const go=sNode('button','button button-filled','Start');go.type='submit';go.disabled=!access.actions.edit;
-  form.append(...parts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
   form.addEventListener('submit',async event=>{
-    event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
+    event.preventDefault();if(!access.actions.edit||studio.busy)return;
+    if(sDeskWriting(held)&&held.searchSites&&!sChosenSites(held.from).length){problem.textContent=sResearchWord('no_sites')||'Choose at least one of your sites, or untick Search my sites.';return;}
+    // What you have is said on its own step.
+    const said=sDeskHaveProblem(held);if(said){held.problem=said;held.step=1;sTop();sDeskStart();return;}
     await busy(go,'Starting…',async()=>{try{await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
   });
   return form;
@@ -109,6 +165,7 @@ function sDeskHave(held){
 // Polishing or reviewing a draft: the draft, what happens first, then Start. A kind of post
 // is asked for only to reshape the draft; sources are optional, for the fact check.
 const DESK_POLISH_FIRST=[['tighten','Proofread and tighten'],['feedback','Just give feedback'],['reshape','Reshape to fit a kind of post'],['leave','Leave it as it is']];
+const DESK_POLISH_APPROVE='To approve each fix first, choose Leave it as it is, then use Copy edit in Finishing.';
 const DESK_POLISH_SAYS={tighten:'Spelling, grammar and wordy sentences are fixed throughout, with no headings added. Your text is kept as a version first.',feedback:'Comments on shape, argument, audience and claims appear beside each part. Nothing in the text changes.',reshape:'The sections and length are reshaped to the kind of post; a draft with no headings may be divided into sections. Your text is kept as a version first.',leave:'The draft opens on the desk as it is, for your own edits and notes.'};
 function sDeskPolish(held){
   if(!DESK_POLISH_FIRST.some(([value])=>value===held.first_pass))held.first_pass=held.source==='saved'?'leave':'tighten';
@@ -118,13 +175,14 @@ function sDeskPolish(held){
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
   const again=()=>sDeskStartAgain(held),reading=held.source==='google'&&!held.preview;
   const go=sNode('button','button button-filled',reading?'Read Google Doc':'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
-  const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]));
+  const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]),held.first_pass==='leave'?null:sNode('p','quiet field-hint',DESK_POLISH_APPROVE));
   if(held.first_pass==='reshape'){const kinds=(studio.options?.styles||[]).filter(kind=>kind.status!=='retired');first.append(sField('desk-kind','Kind of post',held,'kind',{options:[['','Choose a kind of post'],...kinds.map(kind=>[kind.id,kind.name])],changed:()=>again()}),sNode('p','quiet field-hint',kinds.length?'Its usual shape and length.':'No kinds of post yet. Set them up from Home, under Kinds of post.'));}
   const fold=(label,open,remember,...content)=>{const box=sAdd(sNode('details','card desk-fold'),sAdd(sNode('summary',''),sNode('span','card-title',label)),...content);box.open=open;box.addEventListener('toggle',()=>remember(box.open));return box;};
   const tone=fold('Tone (optional)',!!held.toneOpen,open=>{held.toneOpen=open;},sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational. It guides any rewriting.'}));
   const facts=fold('Check facts against your sources (optional)',held.factsOpen??held.files.length>0,open=>{held.factsOpen=open;},sNode('p','quiet','Finishing’s fact check reads these. They stay with this blog unless you keep them in the team library.'),...[...sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}).children].slice(1));
   const instead=sButton('Writing something new? Start from a topic or an outline',()=>{held.have='topic';if(held.kind===null)held.step=0;else{held.style=held.kind;sStyleSamples(held);}sTop();sDeskStart();});instead.className+=' desk-instead';
-  sAdd(form,...sDeskDraftIn(held),first,tone,facts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)),held.source==='saved'?null:instead);
+  const linked=held.linkedRun;delete held.linkedRun;const run=linked?sButton('Open its run',()=>sRoute('run',linked)):null;
+  sAdd(form,...sDeskDraftIn(held),first,tone,facts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),['saved','upload'].includes(held.source)?null:instead);
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
     await busy(go,reading?'Reading…':'Starting…',async()=>{try{if(reading)await sDeskReadGoogle(held);else await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
@@ -196,9 +254,12 @@ function sDeskOutlineIn(held){
 // details also offers that blog's own draft, brought as it is.
 function sDeskDraftIn(held){
   const saved=held.article?sCheck('desk-saved','Use this blog’s saved draft',{on:held.source==='saved'},'on','It comes to the desk as it is, in the same blog. Its history is kept.',on=>{held.source=on?'saved':'paste';held.preview=null;sDeskStart();}):null;
-  const card=sCard('Your draft',saved,held.source==='saved'?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
+  const uploaded=held.uploaded?sCheck('desk-uploaded','Use the file you uploaded',{on:held.source==='upload'},'on','“'+held.uploaded.name+'” comes to the desk as it is. It stays in the team library too.',on=>{held.source=on?'upload':'paste';held.preview=null;sDeskStart();}):null;
+  const kept=['saved','upload'].includes(held.source);
+  const card=sCard('Your draft',saved,uploaded,kept?null:sChoice('Where is your draft?',[['paste','Paste text'],['file','Upload a file'],['google','Google Doc']],held,'source',()=>{held.preview=null;sDeskStart();}));
   if(held.source==='saved'){/* The blog's own draft: nothing to paste or read. */}
-  else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Each ## heading starts a section.'}));
+  else if(held.source==='upload'){if(held.uploaded.text){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','The uploaded file’s text');paper.append(window.TrainingStudioMarkdown?window.TrainingStudioMarkdown.render(held.uploaded.text):sNode('p','',held.uploaded.text));card.append(sNode('p','quiet',held.uploaded.truncated?'Its text as it was read, the first part shown:':'Its text as it was read:'),paper);}}
+  else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:200000,required:true,hint:'Up to 200,000 characters. Each ## heading starts a section.'}));
   else if(held.source==='file'){
     const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload a draft');
     const note=sNode('p','quiet field-hint',held.file?'Selected: '+held.file.name:'Text, Markdown, Word or PDF.');
@@ -216,7 +277,8 @@ async function sDeskReadGoogle(held){
   if(found?.status==='already-linked'&&found.id){
     // The Doc is already a blog here: open it on the desk, or bring it there.
     let made=null;try{made=await api('desk?id='+encodeURIComponent(found.id));}catch(_){made=null;}
-    if(!made)made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});
+    // A Doc an older step-by-step run links stays with that run: the start offers it.
+    if(!made){try{made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}catch(error){if(!/step-by-step run/.test(error.message))throw error;if(turn!==studio.turn)return;held.problem=error.message;held.linkedRun=found.id;return sDeskStart();}}
     if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};return sRoute('desk',made.id);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;sDeskStart();
@@ -230,6 +292,7 @@ async function sDeskGo(held){
   if(held.have==='draft'){
     const settings={...common,first_pass:held.first_pass};
     if(held.source==='saved')made=await api('desk-create',{...settings,article:held.article});
+    else if(held.source==='upload')made=await api('desk-create',{...settings,source:held.uploaded.id});
     else if(held.source==='paste')made=await api('desk-create',{...settings,manuscript:held.manuscript});
     else if(held.source==='file'){
       if(held.file.size>10*1024*1024)throw new Error('Choose a file up to 10 MiB.');
@@ -265,12 +328,12 @@ function sDeskSourcesSheet(held){
   const adding=held.adding||(held.adding={files:[],role:'material',keep:false,style:held.view.style?.style_id||''});
   const problem=sNode('p','sheet-error',adding.problem||'');problem.setAttribute('role','alert');delete adding.problem;
   let done;
-  const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!access.actions.edit;},{keepWhen:'Ticked ones go to the team library when you add them.'});
+  const files=sFilesCard(adding,problem,()=>sDeskSourcesSheet(held),locked=>{if(done)done.disabled=locked||!sDeskCan(held);},{keepWhen:'Ticked ones go to the team library when you add them.'});
   done=sButton('Add to this draft',async button=>{
     const ready=adding.files.filter(file=>file.state==='ready');if(!ready.length){problem.textContent='Add a file, a link, a Google Doc or a library post with text first.';return;}
     await busy(button,'Adding…',async()=>{try{await sDeskFlush(held);const before=held.view;held.view=await api('desk-sources',{id:held.id,sources:sDeskUploads(ready),library:sDeskLibraryPicks(ready),...sDeskKept(ready)});held.adding=null;sCloseSheet();sToast(ready.length===1?'Added. Later rewrites read it.':'Added. Later rewrites read them.');sDeskRefresh(held,before);}catch(error){problem.textContent=error.message;}});
   },'filled');
-  done.disabled=!access.actions.edit;
+  done.disabled=!sDeskCan(held);
   sOpenSheet('Add a source',sNode('p','quiet','Later rewrites read it; nothing already written changes.'),files,problem,sAdd(sNode('div','bar'),done,sButton('Cancel',sCloseSheet)));
 }
 
@@ -299,7 +362,7 @@ function sDeskEstimate(start,what){if(start.over)return 'Nothing needed from you
 function sDeskProgress(held){
   const view=held.view,start=view.start,problem=start.problem,what=start.open==='outline'?'The outline':'The draft';
   const stop=start.busy?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{try{held.view=await api('desk-stop',{id:held.id,job:start.job});sDeskProgress(held);}catch(error){notice(error.message,true);}});}):null;
-  if(stop)stop.disabled=!access.actions.edit;
+  if(stop)stop.disabled=!sDeskCan(held);
   sFrame(view.title,[stop],problem?'Stopped':'Writing on its own',()=>sRoute('blogs'));
   const first=sNode('p','lede',problem?'This start stopped before '+what.toLowerCase()+' was ready. Retry the step when you are ready.':sDeskEstimate(start,what));
   first.setAttribute('role','status');
@@ -310,10 +373,28 @@ function sDeskProgress(held){
     steps.append(sAdd(sNode('li','row step'),sBead(state),sAdd(sNode('div','row-text'),sNode('h3','row-title',DESK_STEPS[step]||step),now?sNode('p','row-says',now):null)));
   });
   const parts=[first];
-  if(problem){const retry=sButton('Retry',async button=>{await busy(button,'Starting…',async()=>{try{held.view=await api('desk-retry',{id:held.id});sDeskProgress(held);}catch(error){notice(error.message,true);}});},'filled');retry.disabled=!access.actions.edit;parts.push(sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',problem),retry));}
+  if(problem)parts.push(sDeskStopped(held));
   parts.push(sCard('Progress',steps,sNode('p','quiet desk-clock',sDeskClock(start))));
   sPage(...parts);
   if(!problem)sDeskFollowStart(held);
+}
+// A stopped start: the ways on a run has. More time for a step out of time, no research for
+// a research step that stopped, Status and what the assistant said for one that failed,
+// Retry always, and Delete this start.
+function sDeskStopped(held){
+  const view=held.view,start=view.start,can=sDeskCan(held);
+  const again=extra=>async button=>{await busy(button,'Starting…',async()=>{try{held.view=await api('desk-retry',{id:held.id,...extra});sDeskProgress(held);}catch(error){notice(error.message,true);}});};
+  const more=start.reason==='time-limit'&&start.more?sButton('Try again with more time',again({seconds:start.more}),'filled'):null;
+  const retry=sButton('Retry',again({}),more?'':'filled');
+  const skip=start.step==='research'?sButton('Continue without research',()=>sDeskSkipResearch(held)):null;
+  const remove=sButton('Delete this start',()=>sDeleteSheet({id:held.id,title:view.title,expected:view.expected,team:view.team,status:start.status}));
+  for(const button of [more,retry,skip,remove])if(button)button.disabled=!can;
+  return sAdd(sNode('div','decision-notice desk-problem'),sAdd(sNode('div',''),sNode('p','',start.problem),more?sNode('p','quiet',sTimeWords({seconds:start.seconds})):null,...sCliFailure({status:'failed',reason:start.reason,said:start.said,error:start.problem})),sAdd(sNode('div','bar'),more,retry,skip,remove));
+}
+function sDeskSkipResearch(held){
+  const problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
+  const go=sButton('Continue without research',async button=>{await busy(button,'Saving…',async()=>{try{held.view=await api('desk-retry',{id:held.id,skip_research:true});sCloseSheet();sToast('Continuing without research.');sDeskProgress(held);}catch(error){problem.textContent=error.message;}});},'filled');
+  sOpenSheet('Continue without research?',sNode('p','','The research step leaves this start, and the writing goes on from your point and sources. It gets no research findings, and research cannot be added back to this start.'),problem,sAdd(sNode('div','bar'),go,sButton('Cancel',sCloseSheet)));
 }
 function sDeskFollowStart(held){
   if(held.startWatching)return;held.startWatching=true;
@@ -333,15 +414,22 @@ function sDeskWorkingIn(view,part){const job=view?.working;if(!job)return false;
 function sDeskWorking(held,part){return sDeskWorkingIn(held.view,part);}
 function sDeskStatusWords(held){const job=held.view.working;if(!job)return '';if(job.kind==='desk-revise-all'&&job.part==='opening')return 'Revising the opening…';if(job.kind==='desk-revise-all'&&job.total)return 'Revising section '+(job.index+1)+' of '+job.total+'…';return (DESK_DOING[job.kind]||'Working')+(job.kind==='desk-section'||job.kind==='desk-selection'?' '+deskPartName(held.view,job.part):'')+'…';}
 function sDeskTabs(held){return sChoice('Work on',[['draft','Draft'],['outline','Outline']],held,'tab',async()=>{await sDeskOutlineFlush(held);held.outline=null;sDeskRender(held);});}
+// In a team workspace a blog has one driver. While another computer drives it, or nobody
+// does, the desk is read only and the toolbar offers Take over or Take this blog.
+function sDeskCan(held){return sCanEdit(held?.view||{});}
+function sDeskDriverWords(view){if(!view.team||view.driver?.here)return '';return view.driver?view.driver.name+' · driving on another computer':'Nobody is running this blog';}
 function sDeskToolbar(held){
-  const view=held.view,editable=access.actions.edit;
-  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');await navigator.clipboard.writeText(held.view.markdown);sToast('Markdown copied.');});
-  const download=sButton('Download',()=>sDownload({content:held.view.markdown,name:'DRAFT.md'}));
-  const google=view.google?.url?link(view.google.url,'Google Doc ↗'):null;if(google)google.className='button';
+  const view=held.view,editable=sDeskCan(held);
+  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));});
+  const download=sButton('Download',async()=>{const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
+  const google=view.google?.url?link(view.google.url,'Google Doc ↗'):sButton('Make a Google Doc',()=>sDeskMakeDoc(held));if(view.google?.url)google.className='button';else google.disabled=!editable;
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
   const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held));finishing.setAttribute('aria-pressed',String(!!held.finish));
   const stop=held.view.working?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:held.view.working.id});sDeskRefresh(held,before);});}):null;
-  sFrame(view.title,sFold([stop,copy,download,google,publish,finishing]),held.view.working?sDeskStatusWords(held):'On the desk',()=>sRoute('blogs'));
+  const action=view.driver?.here?'handover':view.driver?'takeover':'take';
+  const team=view.team?sButton({handover:'Hand over',takeover:'Take over',take:'Take this blog'}[action],()=>sTeamDecision(view,action,'desk'),action==='handover'?'':'filled'):null;
+  if(team)team.disabled=!access.actions.edit;
+  sFrame(view.title,sFold([team,stop,copy,download,google,publish,finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||'On the desk',()=>sRoute('blogs'));
 }
 function sDeskRender(held){
   const view=held.view;sDeskToolbar(held);held.layout=sDeskLayout();
@@ -362,7 +450,8 @@ function sDeskRender(held){
   const finishing=!!held.finish,sheet=finishing&&sNarrow();
   held.panel=finishing?sDeskPanel(held):null;held.panelKey=finishing?sDeskPanelKey(held):null;
   const lede=held.tab==='outline'?'Rename, reorder, add and remove sections and say what each must do. Write the draft from the outline, or one section at a time.':'Edit any part in place, give a section a note to rewrite it, or select text for a quick change. Every change keeps the earlier text in History.';
-  sPage(sNode('p','lede',lede),status,sDeskTabs(held),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
+  sPage(sNode('p','lede',lede),view.elsewhere?sNode('p','decision-notice desk-driver',view.elsewhere):null,status,sDeskTabs(held),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
+  sDeskImagesLoad(held);
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the
 // person is typing in keeps its focus and caret.
@@ -382,6 +471,7 @@ function sDeskRefresh(held,before){
   }
   const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;
   sDeskPanelSync(held);
+  sDeskImagesLoad(held);
 }
 // What the last job left: a result not applied, or a job that failed.
 function sDeskProblem(held){
@@ -389,7 +479,7 @@ function sDeskProblem(held){
   const chain=held.view.chain;
   if(last.chain&&chain){if(chain.working||!chain.problems.length)return null;return sAdd(sNode('div','decision-notice desk-problem'),sAdd(sNode('div',''),sNode('p','',chain.total===1&&chain.problems[0].part==='opening'?'Your note was not applied:':'Revised '+chain.revised+' of '+chain.total+' sections for your note. These were not:'),sAdd(sNode('ul','gap-items'),...chain.problems.map(problem=>sNode('li','',(problem.part==='opening'?'The opening':'“'+problem.heading+'”')+': '+problem.error)))),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));}
   const failed=last.status==='failed'||last.status==='ready'&&last.applied===false;if(!failed||!last.error)return null;
-  const tool=DESK_TOOLS.find(([key])=>'finish-'+key===last.kind);
+  const tool=/^finish-/.test(last.kind||'')?deskTool(last.kind.slice(7)):null;
   return sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',(tool?tool[1]+' did not finish: ':last.status==='failed'?'The last change could not finish: ':'The last change was not applied: ')+last.error),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));
 }
 function sDeskWhole(held){
@@ -397,7 +487,7 @@ function sDeskWhole(held){
   const box=sNode('textarea','input');box.id='desk-whole-note';box.rows=2;box.maxLength=4000;box.setAttribute('aria-label','Note for the whole draft');box.value=held.wholeNote||'';box.placeholder='For example: tighten throughout, or make it more casual.';
   box.addEventListener('input',()=>{held.wholeNote=box.value;});
   const go=sButton('Revise the draft',async button=>{const text=(held.wholeNote||'').trim();if(!text){notice('Write the note for the whole draft.',true);return;}await sDeskJob(held,button,'desk-revise',{note:text},()=>{held.wholeNote='';});},'filled');
-  go.disabled=!access.actions.edit||!!held.view.working;
+  go.disabled=!sDeskCan(held)||!!held.view.working;
   return sAdd(card,box,sNode('p','quiet field-hint','Each section is revised for the note with the whole draft in view. Your text is kept as a version first.'),sAdd(sNode('div','bar'),go));
 }
 function sDeskPart(held,part){
@@ -409,18 +499,19 @@ function sDeskPart(held,part){
   const text=held.pending[part]?.text??deskTextOf(view,part);
   const input=sNode(part==='title'?'input':'textarea','input desk-text');input.value=text;input.setAttribute('aria-label',part==='title'?'Title':part==='opening'?'Opening':'Text of '+section.heading);
   if(part==='title'){input.type='text';input.maxLength=500;}else{input.rows=Math.min(24,Math.max(3,Math.ceil(text.length/90)+text.split('\n').length));}
-  input.readOnly=working||!access.actions.edit;
+  input.readOnly=working||!sDeskCan(held);
   input.addEventListener('input',()=>sDeskTyped(held,part,input.value));
   if(part!=='title'){for(const kind of ['select','mouseup','keyup'])input.addEventListener(kind,()=>sDeskSelected(held,part,input));}
   else input.addEventListener('select',()=>sDeskSelected(held,part,input));
   card.append(input);
+  const thumbs=part==='title'?null:sDeskThumbs(held,part);if(thumbs)card.append(thumbs);
   const comments=sDeskComments(held,part);if(comments)card.append(comments);
   if(working){const note=sNode('p','desk-working-note','Working on this section');note.setAttribute('role','status');card.append(note);if(view.working.note)card.append(sNode('p','quiet','Your note: '+view.working.note));}
   if(section){
     const typed=(held.notes||{})[part]||'',row=sNode('div','desk-note');
     const box=sNode('textarea','input desk-note-text');box.rows=typed.includes('\n')?4:1;box.maxLength=4000;box.value=typed;box.placeholder='How should this change?';box.setAttribute('aria-label','How should '+section.heading+' change?');
     const go=sButton(typed.trim()?'Rewrite':'Write again',async button=>{const note=((held.notes||{})[part]||'').trim();await sDeskJob(held,button,'desk-note',{part,note},()=>{if(held.notes)delete held.notes[part];});});
-    go.disabled=!access.actions.edit||!!view.working;
+    go.disabled=!sDeskCan(held)||!!view.working;
     box.addEventListener('input',()=>{held.notes=held.notes||{};held.notes[part]=box.value;go.textContent=box.value.trim()?'Rewrite':'Write again';});
     card.append(sAdd(row,box,go));
   }
@@ -430,8 +521,9 @@ function sDeskAside(held){
   const view=held.view,aside=sNode('aside','desk-aside');aside.setAttribute('aria-label','Sources and gaps');
   const sources=sCard('Sources');
   if((view.source_names||[]).length){const list=sNode('ul','rows');for(const source of view.source_names)list.append(sAdd(sNode('li','row'),sNode('span','row-title',source.name)));sources.append(list);}
-  else sources.append(sNode('p','quiet','No sources were given for this draft. Rewrites keep to what the draft already says.'));
-  const add=sButton('Add a source',()=>sDeskSourcesSheet(held));add.disabled=!access.actions.edit;sources.append(sAdd(sNode('div','bar'),add));
+  else if(!view.research)sources.append(sNode('p','quiet','No sources were given for this draft. Rewrites keep to what the draft already says.'));
+  if(view.research)sources.append(sNode('p','quiet','Research was read for this draft'+(view.research.sources?': '+view.research.sources+(view.research.sources===1?' source.':' sources.'):'.')));
+  const add=sButton('Add a source',()=>sDeskSourcesSheet(held));add.disabled=!sDeskCan(held);sources.append(sAdd(sNode('div','bar'),add));
   if(view.style_name)sources.append(sNode('p','quiet','Kind of post: '+view.style_name));
   if(view.tone)sources.append(sNode('p','quiet','Tone: '+view.tone));
   aside.append(sources);
@@ -462,6 +554,8 @@ async function sDeskSave(held,part){
     const before=held.view;held.view=view;held.saved='Saved.';
     if(held.status&&!held.stale)held.status.textContent='Saved.';
     sDeskCounts(held);
+    // An image pasted as data is kept beside the text: its card shows the reference instead.
+    if(/data:image\//i.test(text)&&!held.pending[part]&&held.cards?.[part]&&sDeskCurrent(held)){const card=sDeskPart(held,part);held.cards[part].replaceWith(card);held.cards[part]=card;await sDeskImagesLoad(held);}
     if(!!before.working!==!!view.working&&sDeskCurrent(held))sDeskRefresh(held,before);
   }catch(error){
     if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}
@@ -509,7 +603,7 @@ function sDeskSelected(held,part,input){
   if(typeof start!=='number'||typeof end!=='number')start=end=0;
   while(start<end&&/\s/.test(value[start]))start++;while(end>start&&/\s/.test(value[end-1]))end--;
   const text=value.slice(start,end),lead=value.length-value.replace(/^\s+/,'').length;
-  if(!text||held.view.working||!access.actions.edit){if(held.bar&&!held.asking)held.bar.hidden=true;return;}
+  if(!text||held.view.working||!sDeskCan(held)){if(held.bar&&!held.asking)held.bar.hidden=true;return;}
   held.selection={part,text,start:start-lead};held.asking=false;sDeskBarContent(held);held.bar.hidden=false;
 }
 function sDeskSelectionBar(held){const bar=sNode('div','desk-selection glass');bar.setAttribute('role','toolbar');bar.setAttribute('aria-label','Change the selected text');bar.hidden=true;held.bar=bar;sDeskBarContent(held);return bar;}
@@ -534,18 +628,26 @@ async function sDeskHistory(held,part){
   found.versions.forEach((version,index)=>{
     const row=sAdd(sNode('div','desk-version'),sAdd(sNode('div','row-text'),sNode('h3','row-title',DESK_SOURCES[version.source]||'Earlier text'),sNode('p','quiet',[deskAge(version.at),version.words+(version.words===1?' word':' words')].filter(Boolean).join(' · ')),deskVersionNote(version)?sNode('p','quiet',deskVersionNote(version)):null));
     const restore=sButton('Restore',async button=>{await busy(button,'Restoring…',async()=>{try{held.view=await api('desk-restore',{id:held.id,seen:held.view.revision,part,index});delete held.pending[part];sCloseSheet();sToast('Restored. The text it replaced is in History.');sDeskRender(held);}catch(error){if(/changed since/.test(error.message)){sCloseSheet();held.stale=true;sDeskStale(held);}else notice(error.message,true);}});});
-    restore.disabled=!access.actions.edit||!!held.view.working;
+    restore.disabled=!sDeskCan(held)||!!held.view.working;
     row.append(sAdd(sNode('div','bar'),sButton('Compare',()=>{compare.replaceChildren(sNode('h3','sheet-part','This version compared with now'),sNode('p','quiet','Struck words are in this version only; marked words were added since.'),deskCompare(version.text,current));}),restore));
     list.append(row);
   });
   sOpenSheet('History of '+deskPartName(held.view,part),found.versions.length?list:sNode('p','','Nothing kept yet.'),compare);
 }
 
+// Make a Google Doc: a private Doc of the draft, made once and linked to this blog. The desk
+// then sends its later wording to it as suggestions, from Before publishing.
+function sDeskMakeDoc(held){
+  const problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
+  const make=sButton('Make the Doc',async button=>{await busy(button,'Making…',async()=>{try{await sDeskFlush(held);await api('desk-google-open',{id:held.id,expected:held.view.expected,confirmed:true});sCloseSheet();sToast('Google Doc made. Later desk changes are sent to it as suggestions.');await sDesk(held.id);}catch(error){problem.textContent=error.message;}});},'filled');
+  make.disabled=!sDeskCan(held);
+  sOpenSheet('Make a Google Doc?',sNode('p','','A private Google Doc of this draft is made in your Drive. Later desk changes are sent to it as suggestions.'),problem,sAdd(sNode('div','bar'),make,sButton('Cancel',sCloseSheet)));
+}
 // Mark as published: where it went, said by the person. Nothing is posted.
 function sDeskPublish(held){
   const draft={url:held.view.publication||''},problem=sNode('p','sheet-error');problem.setAttribute('role','alert');
-  const save=sButton('Mark as published',async button=>{const url=draft.url.trim();if(!/^https:\/\/\S+$/.test(url)){problem.textContent='Add the public https address where it was published.';return;}await busy(button,'Saving…',async()=>{try{await sDeskFlush(held);await api('schedule',{id:held.id,expected:held.view.expected,stage:'published',confirm_stage:true,publication_url:url});sCloseSheet();sToast('Recorded as published. Nothing was posted anywhere.');await sDesk(held.id);}catch(error){problem.textContent=error.message;}});},'filled');
-  sOpenSheet('Mark as published',sNode('p','','Record where this blog was published. The current text is the published one.'),sField('desk-publication','Public address',draft,'url',{max:2000,required:true}),problem,sAdd(sNode('div','bar'),save,sButton('Cancel',sCloseSheet)));
+  const save=sButton('Mark as published',async button=>{const url=draft.url.trim();if(!/^https:\/\/\S+$/.test(url)){problem.textContent='Add the public https address where it was published.';return;}await busy(button,'Saving…',async()=>{try{await sDeskFlush(held);const result=await api('schedule',{id:held.id,expected:held.view.expected,stage:'published',confirm_stage:true,publication_url:url}),kept=result?.library;sCloseSheet();sToast('Recorded as published. Nothing was posted anywhere.'+(kept?.reason?' Not kept in the team library: '+kept.reason:kept?.id?' Its draft is kept in the team library.':''));await sDesk(held.id);}catch(error){problem.textContent=error.message;}});},'filled');
+  sOpenSheet('Mark as published',sNode('p','','Record where this blog was published. The current text is the published one. Its draft is kept in the team library as a reference and an example of its kind of post. Marking it again updates that item.'),sField('desk-publication','Public address',draft,'url',{max:2000,required:true}),problem,sAdd(sNode('div','bar'),save,sButton('Cancel',sCloseSheet)));
 }
 
 // A finished step-by-step blog once it is on the desk: its run is read as it ended, with
@@ -562,7 +664,7 @@ function sRunOnDesk(found){
 // the stale check; reordering keeps each section's id, so its text and History go with it.
 function sDeskOutlineRows(held){return held.outline||(held.outline=(held.view.sections||[]).map(section=>({id:section.id,heading:section.heading,brief:section.brief||''})));}
 function sDeskOutline(held){
-  const view=held.view,rows=sDeskOutlineRows(held),editable=access.actions.edit,whole=!!view.working;
+  const view=held.view,rows=sDeskOutlineRows(held),editable=sDeskCan(held),whole=!!view.working;
   const write=sButton('Write the draft',button=>sDeskWriteDraft(held,button),'filled');write.disabled=!editable||whole||!rows.length;
   const add=sButton('Add a section',()=>sDeskOutlineChange(held,rows=>rows.push({heading:'New section',brief:''})));add.disabled=!editable;
   const head=sCard('Outline',sNode('p','','Each brief says what its section must do. The draft is written from the outline, section by section, with your sources.'),sAdd(sNode('div','bar'),write,add));
@@ -573,7 +675,7 @@ function sDeskOutline(held){
   return [head,...cards];
 }
 function sDeskOutlineCard(held,row,index,count){
-  const view=held.view,section=(view.sections||[]).find(found=>found.id===row.id),working=!!row.id&&sDeskWorking(held,row.id),editable=access.actions.edit&&!working;
+  const view=held.view,section=(view.sections||[]).find(found=>found.id===row.id),working=!!row.id&&sDeskWorking(held,row.id),editable=sDeskCan(held)&&!working;
   const card=sNode('section','card desk-part desk-outline-part'+(working?' desk-working':''));if(row.id)card.dataset.part=row.id;
   const words=section?.text?section.text.split(/\s+/).filter(Boolean).length:0;
   card.append(sAdd(sNode('div','desk-part-head'),sNode('h2','card-title','Section '+(index+1)),sNode('span','quiet',words?words+(words===1?' word written':' words written'):'Not written yet')));
@@ -581,11 +683,11 @@ function sDeskOutlineCard(held,row,index,count){
   for(const box of [heading,brief])box.querySelector(box===heading?'input':'textarea').readOnly=!editable;
   card.append(heading,brief);
   if(working){const note=sNode('p','desk-working-note','Working on this section');note.setAttribute('role','status');card.append(note);}
-  const name=row.heading||'this section',move=(by,label)=>{const button=sButton(label,()=>sDeskOutlineChange(held,rows=>{const [moved]=rows.splice(index,1);rows.splice(index+by,0,moved);}));button.setAttribute('aria-label',label+' · '+name);button.disabled=!access.actions.edit||index+by<0||index+by>=count;return button;};
+  const name=row.heading||'this section',move=(by,label)=>{const button=sButton(label,()=>sDeskOutlineChange(held,rows=>{const [moved]=rows.splice(index,1);rows.splice(index+by,0,moved);}));button.setAttribute('aria-label',label+' · '+name);button.disabled=!sDeskCan(held)||index+by<0||index+by>=count;return button;};
   const remove=sButton('Remove',()=>{const gone=rows=>rows.splice(index,1);if(!words)return sDeskOutlineChange(held,gone);const confirm=sButton('Remove the section',async button=>{await busy(button,'Removing…',async()=>{sCloseSheet();await sDeskOutlineChange(held,gone);});},'danger');sOpenSheet('Remove “'+name+'”?',sNode('p','','Its '+words+(words===1?' word goes':' words go')+' with it. Bring it back from Removed sections under the outline.'),sAdd(sNode('div','bar'),confirm,sButton('Cancel',sCloseSheet)));});
-  remove.setAttribute('aria-label','Remove '+name);remove.disabled=!access.actions.edit||working;
+  remove.setAttribute('aria-label','Remove '+name);remove.disabled=!sDeskCan(held)||working;
   const write=sButton(words?'Write it again':'Write this section',async button=>{await sDeskJob(held,button,'desk-note',{part:row.id,note:''});});
-  write.disabled=!access.actions.edit||!!view.working||!row.id;
+  write.disabled=!sDeskCan(held)||!!view.working||!row.id;
   card.append(sAdd(sNode('div','bar'),move(-1,'Move up'),move(1,'Move down'),remove,write));
   return card;
 }
@@ -622,17 +724,21 @@ async function sDeskWriteDraft(held,button){
 // Finishing: an optional side panel of tools that propose. Each proposal is previewed before
 // and after, side by side, then applied, edited or skipped; nothing changes until Apply, and
 // each Apply keeps the earlier text in History. On a phone the panel is a full-screen sheet.
+// Quick check keeps the key proofread, as its route desk-proofread does.
 const DESK_TOOLS=[
+  ['copyedit','Copy edit','Grammar, spelling, punctuation, consistency and wordy sentences, each fix shown before and after for you to approve. Voice, facts, quotes and links are kept.'],
   ['humanize','Humanize','Sentences that read as machine-written, each with a rewrite. Numbers, names, quotes and links are kept.'],
-  ['voice','Apply a voice','The draft rewritten in one of your voice guides, section by section. Its facts, quotes, links and shape are kept.'],
-  ['proofread','Proofread','Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'],
+  ['proofread','Quick check','Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'],
   ['facts','Check facts against sources','Each claim marked supported, not in your sources, or contradicted, with the passage.'],
   ['headline','Headline and opening','Alternatives for the title and the opening, to use or adjust.'],
   ['feedback','Feedback without a rewrite','Comments on shape, argument, audience and claims. Nothing in the text changes.'],
+  ['voice','Apply a voice','The draft rewritten in one of your voice guides, section by section. Its facts, quotes, links and shape are kept.'],
   ['publish','Before publishing','The pre-publish check, Repurpose, and Send to Google Doc as suggestions.'],
 ];
+// [key, label, what it does] for one Finishing tool.
+function deskTool(key){return DESK_TOOLS.find(([name])=>name===key);}
 const DESK_LEVELS=[['light','Light'],['medium','Medium'],['strong','Strong']];
-const DESK_RUN={humanize:['Find sentences','Finding sentences that read as machine-written…'],facts:['Check facts','Checking each claim against your sources…'],headline:['Suggest alternatives','Suggesting headlines and openings…'],feedback:['Get feedback','Reading the draft for feedback…'],voice:['Apply the voice','Rewriting the draft in the voice guide, section by section…']};
+const DESK_RUN={copyedit:['Find fixes','Finding grammar, spelling and wording fixes…'],humanize:['Find sentences','Finding sentences that read as machine-written…'],facts:['Check facts','Checking each claim against your sources…'],headline:['Suggest alternatives','Suggesting headlines and openings…'],feedback:['Get feedback','Reading the draft for feedback…'],voice:['Apply the voice','Rewriting the draft in the voice guide, section by section…']};
 const DESK_VERDICTS={supported:'Supported','not-in-sources':'Not in your sources',contradicted:'Contradicted'};
 const DESK_ASPECTS={shape:'Shape',argument:'Argument',audience:'Audience',claims:'Claims'};
 const DESK_FORMATS=[['linkedin','LinkedIn feed copy'],['newsletter','Newsletter introduction'],['email','Announcement email'],['summary','Short summary'],['thread','Short thread']];
@@ -647,7 +753,7 @@ async function sDeskGuides(held){
   if(f.tool==='voice')sDeskPanelSync(held,true);
 }
 function sDeskPanel(held){
-  const f=held.finish,tool=DESK_TOOLS.find(([key])=>key===f.tool);
+  const f=held.finish,tool=deskTool(f.tool);
   const panel=sNode('aside','desk-finish'+(sNarrow()?' desk-finish-sheet':''));panel.setAttribute('aria-label','Finishing');
   const head=sNode('div','desk-finish-head glass');
   if(tool)head.append(sButton('All tools',()=>{f.tool=null;sDeskPanelShow(held);}));
@@ -683,7 +789,7 @@ function sDeskToolView(held,key){
   if(key==='proofread')return sDeskProofView(held);
   if(key==='publish')return sDeskPublishView(held);
   const view=held.view,f=held.finish,kind='finish-'+key,set=(view.finishing||{})[key],working=view.working,[label,doing]=DESK_RUN[key];
-  const parts=[sNode('p','quiet',DESK_TOOLS.find(([name])=>name===key)[2])];
+  const parts=[sNode('p','quiet',deskTool(key)[2])];
   if(key==='humanize')parts.push(sChoice('Intensity',DESK_LEVELS,f,'level'));
   if(key==='voice'){
     if(!f.guides)parts.push(sNode('p','quiet','Reading your voice guides…'));
@@ -691,8 +797,8 @@ function sDeskToolView(held,key){
     else{const says=sNode('p','quiet desk-guide-says',(f.guides.find(guide=>guide.id===f.guide)||{}).says||'');parts.push(sField('desk-voice-guide','Voice guide',f,'guide',{options:f.guides.map(guide=>[guide.id,guide.name]),changed:value=>{says.textContent=(f.guides.find(guide=>guide.id===value)||{}).says||'';}}),says);}
     if(f.guidesProblem)parts.push(sNode('p','problem',f.guidesProblem));
   }
-  if(key==='facts'&&!(view.source_names||[]).length){const add=sButton('Add a source',()=>sDeskSourcesSheet(held));add.disabled=!access.actions.edit;parts.push(sAdd(sNode('div','decision-notice desk-problem'),sNode('p','','Facts are checked against your sources, and this draft has none yet.'),add));}
-  const run=sButton(set?label+' again':label,button=>sDeskJob(held,button,'desk-finish',{tool:key,...(key==='humanize'?{level:f.level}:{}),...(key==='voice'?{guide:f.guide}:{})}),'filled');run.disabled=!access.actions.edit||!!working||key==='voice'&&!f.guide;
+  if(key==='facts'&&!(view.source_names||[]).length){const add=sButton('Add a source',()=>sDeskSourcesSheet(held));add.disabled=!sDeskCan(held);parts.push(sAdd(sNode('div','decision-notice desk-problem'),sNode('p','','Facts are checked against your sources, and this draft has none yet.'),add));}
+  const run=sButton(set?label+' again':label,button=>sDeskJob(held,button,'desk-finish',{tool:key,...(key==='humanize'?{level:f.level}:{}),...(key==='voice'?{guide:f.guide}:{})}),'filled');run.disabled=!sDeskCan(held)||!!working||key==='voice'&&!f.guide;
   parts.push(sAdd(sNode('div','bar'),run));
   if(working&&working.kind===kind){const note=sNode('p','desk-working-note',doing);note.setAttribute('role','status');parts.push(note);}
   else if(working)parts.push(sNode('p','quiet','Another change is under way. This can run when it ends.'));
@@ -717,12 +823,12 @@ function sDeskProposals(held,key,set){
   if(voice&&set.kept)said.push(set.kept+(set.kept===1?' part already reads':' parts already read')+' in this voice');
   if(set.dropped)said.push(set.dropped+' left out because '+(set.dropped===1?'it did not':'they did not')+' match the text');
   out.push(sNode('p','quiet',said.join(' · ')+'.'));
-  if(!items.length){out.push(sNode('p','',key==='facts'?'No claims to check.':voice?'Nothing to change: the draft already reads in this voice.':'Nothing to change at this level.'));return out;}
+  if(!items.length){out.push(sNode('p','',key==='facts'?'No claims to check.':key==='copyedit'?'Nothing to fix.':voice?'Nothing to change: the draft already reads in this voice.':'Nothing to change at this level.'));return out;}
   // Apply all: every open proposal that still fits; flagged ones wait to be checked one by one.
   const ready=open.filter(item=>item.present&&!item.flag&&'after' in item);
-  if((key==='humanize'||voice)&&ready.length>1){
+  if((key==='copyedit'||key==='humanize'||voice)&&ready.length>1){
     const flagged=open.filter(item=>item.flag).length;
-    const all=sButton('Apply all ('+ready.length+')',button=>sDeskApply(held,set,ready.map(item=>({id:item.id})),button));all.disabled=!access.actions.edit||!!held.view.working;
+    const all=sButton('Apply all ('+ready.length+')',button=>sDeskApply(held,set,ready.map(item=>({id:item.id})),button));all.disabled=!sDeskCan(held)||!!held.view.working;
     out.push(sAdd(sNode('div','bar'),all),flagged?sNode('p','quiet',voice?flagged+(flagged===1?' part that changes a fact, code or the part’s shape is':' parts that change a fact, code or a part’s shape are')+' left for you to check one by one.':flagged+(flagged===1?' flagged suggestion is':' flagged suggestions are')+' left for you to check one by one.'):null);
   }
   if(key==='headline'){
@@ -762,10 +868,10 @@ function sDeskProposal(held,set,item,key){
   if(item.verdict&&item.verdict!=='supported'&&!item.passage)card.append(sNode('p','quiet','No passage in your sources says this.'));
   if(item.passage)card.append(sNode('p','quiet','From '+(item.source||'your sources')+': “'+item.passage+'”'));
   if(item.state!=='open'){card.append(sNode('p','quiet',item.state==='applied'?'Applied. The earlier text is in History.':item.verdict?'Kept as it is.':'Skipped.'));return card;}
-  const skip=sButton(item.verdict?'Keep it':'Skip',button=>sDeskSkip(held,set,[item.id],button));skip.disabled=!access.actions.edit;
+  const skip=sButton(item.verdict?'Keep it':'Skip',button=>sDeskSkip(held,set,[item.id],button));skip.disabled=!sDeskCan(held);
   if(!item.present){card.append(sNode('p','quiet','The text changed since this was suggested, so it no longer fits.'),sAdd(sNode('div','bar'),skip));return card;}
   if(item.verdict==='supported')return card;
-  const editable=access.actions.edit&&!held.view.working;
+  const editable=sDeskCan(held)&&!held.view.working;
   if(editing!==undefined){
     const box=sNode('textarea','input desk-edit');box.id='desk-edit-'+item.id;box.rows=Math.min(12,Math.max(3,Math.ceil(editing.length/60)));box.value=editing;box.setAttribute('aria-label','Your wording');
     box.addEventListener('input',()=>{f.editing[item.id]=box.value;const next=deskSides(item.before,box.value);if(sides)sides.replaceWith(next);sides=next;});
@@ -775,7 +881,7 @@ function sDeskProposal(held,set,item,key){
   }
   const edit=sButton(hasAfter?'Edit':'Fix the wording',()=>{f.editing[item.id]=hasAfter?item.after:item.before;sDeskPanelShow(held);});edit.disabled=!editable;
   const apply=hasAfter?sButton(key==='headline'?'Use this':'Apply',button=>sDeskApply(held,set,[{id:item.id}],button),'filled'):null;if(apply)apply.disabled=!editable;
-  const source=item.verdict?sButton('Add a source',()=>sDeskSourcesSheet(held)):null;if(source)source.disabled=!access.actions.edit;
+  const source=item.verdict?sButton('Add a source',()=>sDeskSourcesSheet(held)):null;if(source)source.disabled=!sDeskCan(held);
   card.append(sAdd(sNode('div','bar'),apply,edit,source,skip));
   return card;
 }
@@ -808,8 +914,8 @@ function sDeskComment(held,set,item,inPanel){
   card.append(sNode('p','',item.comment));
   if(item.state!=='open'){card.append(sNode('p','quiet','Dismissed.'));return card;}
   const section=(held.view.sections||[]).some(found=>found.id===item.part),noted=(held.finish?.noted||{})[item.id];
-  const make=sButton(noted?'In the note':section?'Make it a note':'Make it the whole-draft note',()=>sDeskToNote(held,item));make.disabled=!access.actions.edit;
-  const dismiss=sButton('Dismiss',button=>sDeskSkip(held,set,[item.id],button));dismiss.disabled=!access.actions.edit;
+  const make=sButton(noted?'In the note':section?'Make it a note':'Make it the whole-draft note',()=>sDeskToNote(held,item));make.disabled=!sDeskCan(held);
+  const dismiss=sButton('Dismiss',button=>sDeskSkip(held,set,[item.id],button));dismiss.disabled=!sDeskCan(held);
   card.append(sAdd(sNode('div','bar'),make,dismiss));
   return card;
 }
@@ -830,7 +936,7 @@ function sDeskToNote(held,item){
   if(target){target.focus();if(typeof target.scrollIntoView==='function')target.scrollIntoView({block:'center'});}
   sToast(section?'Now the note for “'+section.heading+'”. Choose Rewrite when you are ready.':'Now the note for the whole draft. Choose Revise the draft when you are ready.');
 }
-// Proofread: in place, at once; Fix rewrites only the sentence a finding is in.
+// Quick check (proofread): in place, at once; Fix rewrites only the sentence a finding is in.
 async function sDeskProofread(held,button){
   const go=async()=>{try{await sDeskFlush(held);const found=await api('desk-proofread?'+new URLSearchParams({id:held.id}));if(!held.finish)return;held.finish.proof=found;held.finish.proofProblem='';}catch(error){if(held.finish)held.finish.proofProblem=error.message;}sDeskPanelShow(held);};
   if(button)await busy(button,'Checking…',go);else await go();
@@ -838,7 +944,7 @@ async function sDeskProofread(held,button){
 function sDeskProofView(held){
   const f=held.finish,found=f.proof;
   const again=sButton(found?'Check again':'Check now',button=>sDeskProofread(held,button),'filled');
-  const parts=[sNode('p','quiet',DESK_TOOLS[1][2]+' Fix rewrites only the sentence a finding is in, and keeps the earlier text in History.'),sAdd(sNode('div','bar'),again)];
+  const parts=[sNode('p','quiet',deskTool('proofread')[2]+' Fix rewrites only the sentence a finding is in, and keeps the earlier text in History.'),sAdd(sNode('div','bar'),again)];
   if(f.proofProblem)parts.push(sNode('p','problem',f.proofProblem));
   if(!found)return parts;
   if(found.revision!==held.view.revision)parts.push(sNode('p','quiet','The draft changed since this check. Check again for the latest.'));
@@ -854,7 +960,7 @@ function sDeskFinding(held,finding){
   if(at>=0&&finding.sentence.slice(at,at+finding.target.length)===finding.target)said.append(document.createTextNode(finding.sentence.slice(0,at)),sNode('mark','',finding.target),document.createTextNode(finding.sentence.slice(at+finding.target.length)));
   else said.textContent=finding.sentence;
   const still=deskTextOf(held.view,finding.part).slice(finding.start,finding.start+finding.sentence.length)===finding.sentence;
-  const fix=sButton('Fix',button=>sDeskJob(held,button,'desk-selection',{part:finding.part,text:finding.sentence,start:finding.start,action:'fix',instruction:finding.fix}));fix.disabled=!access.actions.edit||!!held.view.working||!still;
+  const fix=sButton('Fix',button=>sDeskJob(held,button,'desk-selection',{part:finding.part,text:finding.sentence,start:finding.start,action:'fix',instruction:finding.fix}));fix.disabled=!sDeskCan(held)||!!held.view.working||!still;
   return sAdd(card,said,sAdd(sNode('div','bar'),fix),still?null:sNode('p','quiet','This sentence changed since the check.'));
 }
 // Before publishing: the pre-publish check, Repurpose into new blogs, and Google suggestions,
@@ -879,12 +985,12 @@ function sDeskRepurposeCard(held,p){
   if(job&&job.status==='ready'){
     if(p.content===null)p.content=job.result?.content||'';
     if(!p.title)p.title=held.view.title+' ('+((DESK_FORMATS.find(([key])=>key===job.metadata?.format)||[])[1]||'copy')+')';
-    const make=sButton('Make it a new blog',async button=>{await busy(button,'Making…',async()=>{try{const shown=await api('desk-repurpose',{id:held.id,job:job.id,title:p.title.trim(),content:p.content});p.made=shown.made;p.copyProblem='';held.view=shown;sToast('Made a new blog on the desk. Nothing was posted.');}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');make.disabled=!access.actions.edit;
+    const make=sButton('Make it a new blog',async button=>{await busy(button,'Making…',async()=>{try{const shown=await api('desk-repurpose',{id:held.id,job:job.id,title:p.title.trim(),content:p.content});p.made=shown.made;p.copyProblem='';held.view=shown;sToast('Made a new blog on the desk. Nothing was posted.');}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');make.disabled=!sDeskCan(held);
     sAdd(card,sField('desk-copy','The prepared copy',p,'content',{long:true,max:200000}),sField('desk-copy-title','Title for the new blog',p,'title',{max:500}),job.result?.notes?sNode('p','quiet',job.result.notes):null,sAdd(sNode('div','bar'),make,sButton('Discard',()=>{Object.assign(p,{job:null,content:null,title:''});sDeskPanelShow(held);})));
     return card;
   }
   if(job&&job.error)card.append(sNode('p','problem',job.error));
-  const prepare=sButton('Prepare copy',async button=>{await busy(button,'Starting…',async()=>{try{await sDeskFlush(held);p.job=await api('tool-action',{action:'job-create',kind:'repurpose',id:held.id,operation:operationId(),format:p.copy.format,words:Number(p.copy.words),audience:p.copy.audience,url:p.copy.url});p.content=null;p.title='';p.copyProblem='';}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');prepare.disabled=!access.actions.edit;
+  const prepare=sButton('Prepare copy',async button=>{await busy(button,'Starting…',async()=>{try{await sDeskFlush(held);p.job=await api('tool-action',{action:'job-create',kind:'repurpose',id:held.id,operation:operationId(),format:p.copy.format,words:Number(p.copy.words),audience:p.copy.audience,url:p.copy.url});p.content=null;p.title='';p.copyProblem='';}catch(error){p.copyProblem=error.message;}sDeskPanelShow(held);});},'filled');prepare.disabled=!sDeskCan(held);
   card.append(sField('desk-copy-format','Copy format',p.copy,'format',{options:DESK_FORMATS}),sField('desk-copy-words','Target words',p.copy,'words',{type:'number',min:30,maximum:1500}),sField('desk-copy-reader','Reader (optional)',p.copy,'audience',{max:2000}),sField('desk-copy-url','Article URL (optional)',p.copy,'url',{max:2000}),sAdd(sNode('div','bar'),prepare));
   return card;
 }
@@ -899,15 +1005,16 @@ function sDeskRepurposeFollow(held,p){
 }
 function sDeskGoogleCard(held,p){
   const view=held.view,card=sCard('Send to Google Doc as suggestions');
-  if(!view.google_suggestions){card.append(sNode('p','','This blog has no Google Doc to send to. A blog started from a Google Doc can send its desk changes back to that Doc as suggestions for its owner to accept.'));return card;}
+  if(!view.google_suggestions&&!view.google?.url){const make=sButton('Make a Google Doc',()=>sDeskMakeDoc(held));make.disabled=!sDeskCan(held);card.append(sNode('p','','This blog has no Google Doc yet. Make a private one of this draft, and later desk changes are sent to it as suggestions for you to accept.'),sAdd(sNode('div','bar'),make));return card;}
+  if(!view.google_suggestions){card.append(sNode('p','','This blog’s Google Doc cannot take suggestions yet: it has no confirmed copy of the draft to compare with.'));return card;}
   card.append(sNode('p','quiet','Your desk wording goes to the Google Doc as suggestions its owner accepts or rejects. Paragraphs added or removed stay here.'));
   if(view.google?.url){const doc=link(view.google.url,'Open the Google Doc ↗');card.append(sAdd(sNode('p',''),doc));}
   if(p.googleProblem)card.append(sNode('p','problem',p.googleProblem));
-  const check=sButton(p.plan?'Check again':'Check what would be sent',async button=>{await busy(button,'Checking…',async()=>{try{await sDeskFlush(held);p.plan=await api('desk-google-plan',{id:held.id,mode:p.google.mode});p.sent=null;p.googleProblem='';}catch(error){p.plan=null;p.googleProblem=error.message;}sDeskPanelShow(held);});},p.plan?'quiet':'filled');check.disabled=!access.actions.edit;
+  const check=sButton(p.plan?'Check again':'Check what would be sent',async button=>{await busy(button,'Checking…',async()=>{try{await sDeskFlush(held);p.plan=await api('desk-google-plan',{id:held.id,mode:p.google.mode});p.sent=null;p.googleProblem='';}catch(error){p.plan=null;p.googleProblem=error.message;}sDeskPanelShow(held);});},p.plan?'quiet':'filled');check.disabled=!sDeskCan(held);
   if(p.sent){card.append(sStatus(['verified-pending','verified-comments'].includes(p.sent.status)?'done':'late',p.sent.message));}
   if(p.plan&&!p.sent){
     const changes=sNode('ul','look');for(const item of p.plan.proposals||[])changes.append(sNode('li','','“'+item.before+'” → “'+item.after+'”'));
-    const send=sButton('Send to Google Doc',async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery before trying anything else.'};p.googleProblem='';}catch(error){p.googleProblem=error.message;if(/changed/.test(error.message))p.plan=null;}sDeskPanelShow(held);});},'filled');send.disabled=!access.actions.edit;
+    const send=sButton('Send to Google Doc',async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery before trying anything else.'};p.googleProblem='';}catch(error){p.googleProblem=error.message;if(/changed/.test(error.message))p.plan=null;}sDeskPanelShow(held);});},'filled');send.disabled=!sDeskCan(held);
     card.append(sNode('p','',p.plan.count+(p.plan.count===1?' wording change':' wording changes')+' checked against the Google Doc.'+(p.plan.left?' '+p.plan.left+(p.plan.left===1?' changed paragraph cannot be a suggestion and stays':' changed paragraphs cannot be suggestions and stay')+' on the desk.':'')),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,check));
     return card;
   }
