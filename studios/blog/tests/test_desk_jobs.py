@@ -423,6 +423,74 @@ class SettleTests(DeskJobCase):
             desk.versions(self.root, ident, 'opening')[0]['text'], 'Just prose. Teh end.'
         )
 
+    def divide(self):
+        ident = self.flat(style='how-to')
+        job = desk_jobs.first_pass(self.root, ident, 1, 'reshape')
+        shaped = 'What you will do.\n\n## Before you start\n\nProse.\n\n## Steps\n\nThe end.'
+        self.ready(job, json.dumps([{'id': 'opening', 'text': shaped}]))
+        desk_jobs.settle(self.root, ident)
+        return ident, desk.read(self.root, ident)
+
+    def test_restoring_before_a_divide_undoes_the_division_as_a_whole(self):
+        ident, draft = self.divide()
+        added = [s['id'] for s in draft['sections']]
+        kept = desk.versions(self.root, ident, 'opening')[0]
+        self.assertEqual((kept['source'], kept['divided']), ('first-pass', added))
+        restored = desk.restore(self.root, ident, draft['revision'], 'opening', 0)
+        self.assertEqual((restored['opening'], restored['sections']), ('Just prose. Teh end.', []))
+        self.assertEqual(desk.join(restored).count('Just prose.'), 1, 'the content is there once')
+        # The sections it took out can be brought back from the Outline tab, with their text.
+        gone = desk.removed(self.root, ident)
+        self.assertEqual(sorted(s['heading'] for s in gone), ['Before you start', 'Steps'])
+        self.assertEqual(sorted(s['text'] for s in gone), ['Prose.', 'The end.'])
+        # The divided text is kept as a version of the opening too.
+        self.assertEqual(desk.versions(self.root, ident, 'opening')[0]['source'], 'restore')
+
+    def test_a_restore_before_a_divide_leaves_sections_added_since(self):
+        ident, draft = self.divide()
+        made = desk.outline_save(
+            self.root,
+            ident,
+            draft['revision'],
+            [{'id': s['id'], 'heading': s['heading']} for s in draft['sections']]
+            + [{'heading': 'My own section'}],
+        )
+        restored = desk.restore(self.root, ident, made['revision'], 'opening', 0)
+        self.assertEqual([s['heading'] for s in restored['sections']], ['My own section'])
+
+    def test_an_opening_that_was_not_sent_is_refused(self):
+        made = desk.create(self.root, {'title': 'Sections', 'manuscript': '## A\n\nText.'})
+        job = desk_jobs.first_pass(self.root, made['id'], 1, 'tighten')
+        self.assertEqual(
+            [p['id'] for p in self.saved(job)['payload']['sections']], [made['sections'][0]['id']]
+        )
+        self.ready(job, json.dumps([{'id': 'opening', 'text': 'An invented opening.'}]))
+        desk_jobs.settle(self.root, made['id'])
+        self.assertEqual(desk.read(self.root, made['id'])['opening'], '')
+        self.assertRegex(self.saved(job)['error'], 'sections this draft does not have')
+
+    def test_a_repeated_title_line_is_left_out_of_the_opening(self):
+        ident = self.flat()
+        job = desk_jobs.first_pass(self.root, ident, 1, 'tighten')
+        self.ready(job, json.dumps([{'id': 'opening', 'text': '# Flat\n\nJust prose. The end.'}]))
+        desk_jobs.settle(self.root, ident)
+        draft = desk.read(self.root, ident)
+        self.assertEqual((draft['title'], draft['opening']), ('Flat', 'Just prose. The end.'))
+        job = desk_jobs.revise_all(self.root, ident, draft['revision'], 'Warmer.')
+        self.ready(job, '# Another title\n\nWarmer prose.')
+        desk_jobs.settle(self.root, ident)
+        self.assertEqual(desk.read(self.root, ident)['opening'], 'Warmer prose.')
+
+    def test_a_whole_draft_note_that_fails_on_the_opening_names_it(self):
+        ident = self.flat()
+        job = desk_jobs.revise_all(self.root, ident, 1, 'Warmer.')
+        self.ready(job, 'Warmer.\n\n## Invented\n\nMore.')
+        desk_jobs.settle(self.root, ident)
+        chain = desk_jobs.view(self.root, ident)['chain']
+        self.assertEqual(
+            [(p['part'], p['heading']) for p in chain['problems']], [('opening', 'the opening')]
+        )
+
     def test_reshape_adds_no_section_to_a_draft_that_has_sections(self):
         made = desk.create(self.root, {'title': 'Styled', 'manuscript': DRAFT, 'style': 'how-to'})
         job = desk_jobs.first_pass(self.root, made['id'], 1, 'reshape')

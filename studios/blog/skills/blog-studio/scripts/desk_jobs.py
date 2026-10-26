@@ -186,10 +186,10 @@ def _chain_note(root, job, applied=False, problem=None, ended=False):
     if applied:
         record['revised'] += 1
     if problem:
-        heading = ''
+        heading = 'the opening' if meta['part'] == 'opening' else ''
         try:
             found = desk._part(desk.read(root, job['metadata']['article']), meta['part'])
-            heading = found['heading'] if found else ''
+            heading = found['heading'] if found else heading
         except (ValueError, OSError):
             pass
         record['problems'] = (
@@ -1435,6 +1435,13 @@ def _clean(text, heading=None):
     return text
 
 
+def _opening_text(text):
+    """A returned opening without a leading # title line: the title is its own part."""
+    text = _clean(text)
+    first, _, rest = text.partition('\n')
+    return rest.strip() if desk.TITLE.fullmatch(first.strip()) else text
+
+
 def _no_heading(text):
     """A result that would add a section is refused readably; the person adds sections."""
     if desk.has_heading(text):
@@ -1491,7 +1498,7 @@ def _apply(root, ident, draft, job):
         if part == 'opening' and kind == 'desk-revise-all':
             if fingerprint(draft['opening']) != meta.get('basis'):
                 raise ValueError(STALE)
-            text = _clean(content)
+            text = _opening_text(content)
             _no_heading(text)
             desk.checked_text(part, text)
             desk.keep(root, ident, part, draft['opening'], 'revise-all')
@@ -1554,13 +1561,17 @@ def _apply(root, ident, draft, job):
     found = _section_texts(content)
     sections = {section['id']: section for section in draft['sections']}
     ids = [item['id'] for item in found]
-    if len(set(ids)) != len(ids) or any(n not in sections and n != 'opening' for n in ids):
+    # The opening counts only when it was sent: an empty one was not.
+    known = set(sections) | ({'opening'} if draft['opening'].strip() else set())
+    if len(set(ids)) != len(ids) or any(name not in known for name in ids):
         raise ValueError('The result named sections this draft does not have. Run it again.')
     changes, added = {}, []
     for item in found:
-        before = draft['opening'] if item['id'] == 'opening' else sections[item['id']]['text']
-        heading = None if item['id'] == 'opening' else sections[item['id']]['heading']
-        text = _clean(item['text'], heading)
+        if item['id'] == 'opening':
+            before, text = draft['opening'], _opening_text(item['text'])
+        else:
+            section = sections[item['id']]
+            before, text = section['text'], _clean(item['text'], section['heading'])
         if not text or text == before:
             continue
         if item['id'] == 'opening' and meta.get('action') == 'reshape' and not sections:
@@ -1572,7 +1583,10 @@ def _apply(root, ident, draft, job):
         changes[item['id']] = text
     for part, text in changes.items():
         if part == 'opening':
-            desk.keep(root, ident, part, draft['opening'], 'first-pass')
+            # A division is undone as a whole: restoring this version takes out the sections
+            # it added (desk.restore).
+            divided = {'divided': [s['id'] for s in added]} if added else None
+            desk.keep(root, ident, part, draft['opening'], 'first-pass', extra=divided)
             draft['opening'] = text
         else:
             desk.keep(root, ident, part, sections[part]['text'], 'first-pass')

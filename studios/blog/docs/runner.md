@@ -77,8 +77,10 @@ desk. A topic or an outline takes three steps; a draft takes one screen (below):
   fit a kind of post** (only this one shows **Kind of post**, and needs one) or **Leave
   it as it is**. The opening is worked on with the sections, and a draft with no `##`
   headings is worked on as one part. Only Reshape may add headings, to divide such a draft
-  into the kind of post's sections. A **Note for the whole draft** revises a draft with no
-  headings as one part too.
+  into the kind of post's sections; restoring the opening's **Before the first pass** in
+  History undoes that division as a whole, and the sections it added can be brought back on
+  the Outline tab. A **Note for the whole draft** revises a draft with no headings as one
+  part too.
 - **Tone (optional)**, folded, starting from Settings.
 - **Check facts against your sources (optional)**, folded: the same files, Google Docs,
   links and library posts as above, for Finishing's fact check. There is no research and

@@ -15,7 +15,8 @@ changes for authors first, then what changes for maintainers.
 - **Proofread a draft with no headings.** The first pass, and a note for the whole draft,
   now work on plain prose with no `##` headings as one part, and the first pass covers the
   opening too. Proofreading adds no headings; only **Reshape** may divide such a draft into
-  sections. A first pass is refused only for a draft with no text.
+  sections, and restoring the opening from before it undoes the division as a whole. A
+  first pass is refused only for a draft with no text.
 - **The writing desk.** New blogs are made on one editing desk, with no stops along the
   way.
   - **Three ways in.** **New blog** asks what you are writing (a kind of post), takes

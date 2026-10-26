@@ -3150,7 +3150,16 @@ async function deskPolishStart(){
   assert.deepEqual(pressed(),['Proofread and tighten'],'proofreading is the default');
   assert.ok(t.nodes().some(n=>n.textContent==='Spelling, grammar and wordy sentences are fixed throughout, with no headings added. Your text is kept as a version first.'));
   // The first pass works on the opening too, so its card waits with the sections.
-  assert.equal(t.f.run("sDeskWorkingIn({working:{part:'sections'}},'opening')"),true);assert.equal(t.f.run("sDeskWorkingIn({working:{part:'sections'}},'title')"),false);
+  assert.equal(t.f.run("sDeskWorkingIn({working:{kind:'desk-first-pass',part:'sections'}},'opening')"),true);assert.equal(t.f.run("sDeskWorkingIn({working:{kind:'desk-first-pass',part:'sections'}},'title')"),false);
+  for(const kind of ['desk-outline','desk-draft'])assert.equal(t.f.run("sDeskWorkingIn({working:{kind:'"+kind+"',part:'sections'}},'opening')"),false,kind+' leaves the opening to type in');
+  // A note for a draft with no headings revises the opening, and says so.
+  assert.equal(t.f.run("sDeskStatusWords({view:{working:{kind:'desk-revise-all',part:'opening',total:1,index:0}}})"),'Revising the opening…');
+  assert.equal(t.f.run("sDeskStatusWords({view:{working:{kind:'desk-revise-all',part:'aaaaaaaa',total:3,index:1}}})"),'Revising section 2 of 3…');
+  const said=t.f.run("sDeskProblem({view:{jobs:[{id:'j',chain:'c'}],chain:{working:false,revised:0,total:1,problems:[{part:'opening',heading:'the opening',error:'Bad.'}]}}})");
+  assert.deepEqual(descendants(said).filter(n=>['p','li'].includes(n.tagName)).map(n=>n.textContent),['Your note was not applied:','The opening: Bad.']);
+  // History says what restoring a version from before a division does.
+  assert.equal(t.f.run("deskVersionNote({divided:['a','b']})"),'Restoring this also takes out the 2 sections the first pass added. They can be brought back on the Outline tab.');
+  assert.equal(t.f.run("deskVersionNote({})"),'');
   // Tone and the fact check's sources are folded and optional; Keep stays unticked.
   assert.equal(!!fold('Tone (optional)').open,false);assert.equal(t.byId('desk-tone').value,'Clear');
   assert.equal(!!fold('Check facts against your sources (optional)').open,false);
@@ -3198,6 +3207,11 @@ async function deskPolishStart(){
   await t.f.run("sDeskBegin({have:'draft'})");
   await t.click('Writing something new? Start from a topic or an outline');
   assert.ok(t.nodes().some(n=>n.className==='workflow-steps'));assert.equal(t.f.run('studio.deskStart.have'),'topic');
+  // A kind picked to reshape, then let go, is the kind for the new writing.
+  await t.f.run("sDeskBegin({have:'draft'})");await t.click('Reshape to fit a kind of post');t.type('desk-kind','how-to');await t.click('Leave it as it is');
+  assert.equal(t.f.run('studio.deskStart.style'),'');
+  await t.click('Writing something new? Start from a topic or an outline');
+  assert.equal(t.f.run('studio.deskStart.style'),'how-to');
 }
 // Search my sites on the desk start: the shared list prefilled with a tick per site, a site
 // added for this blog checked by the server and sent with it only, and none ticked refused.
