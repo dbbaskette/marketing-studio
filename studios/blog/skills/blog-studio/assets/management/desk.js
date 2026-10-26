@@ -417,7 +417,7 @@ function sDeskRender(held){
     held.wholeCard=sDeskWhole(held);
     for(const part of ['title','opening',...view.sections.map(section=>section.id)])held.cards[part]=sDeskPart(held,part);
     column.append(held.problemSlot,held.wholeCard,...Object.values(held.cards));
-    if(!view.sections.length)column.append(sCard('No sections yet',sNode('p','','This draft has no headings, so it is one opening. Add sections on the Outline tab.')));
+    held.noSections=view.sections.length?null:sDeskNoSections();if(held.noSections)column.append(held.noSections);
   }
   held.bar=sDeskSelectionBar(held);held.aside=sDeskAside(held);
   // Finishing sits beside the draft in place of the sources; on a phone it is a full-screen sheet.
@@ -437,7 +437,8 @@ function sDeskRefresh(held,before){
   if(held.mode==='review')return sDeskReviewRefresh(held,before);
   const view=held.view,order=found=>(found?.sections||[]).map(section=>section.id).join(',');
   if(held.tab==='outline'||held.shownTab!==held.tab){if((held.outlineTimer||held.tab==='outline'&&sDeskTyping(held.column))&&sDeskCurrent(held)){if(!held.outlineTimer)held.outlineStale=true;sDeskToolbar(held);const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;sDeskPanelSync(held);return;}held.outline=null;return sDeskRender(held);}
-  if(!held.cards||!before||order(before)!==order(view)||!sDeskCurrent(held))return sDeskRender(held);
+  if(!held.cards||!before||!sDeskCurrent(held))return sDeskRender(held);
+  if(order(before)!==order(view))return sDeskReorder(held,before);
   sDeskToolbar(held);
   held.problemSlot.replaceChildren(...[sDeskProblem(held)].filter(Boolean));
   sDeskWholeState(held);
@@ -445,21 +446,51 @@ function sDeskRefresh(held,before){
     const was=sDeskWorkingIn(before,part),now=sDeskWorking(held,part),old=held.cards[part];
     const changed=was!==now||deskTextOf(before,part)!==deskTextOf(view,part)||(before.versions||{})[part]!==(view.versions||{})[part]||sDeskCommentKey(before,part)!==sDeskCommentKey(view,part);
     if(changed&&!sDeskTyping(old)){const card=sDeskPart(held,part);old.replaceWith(card);held.cards[part]=card;}
-    else{if(changed)old.deskStale=true;sDeskPartState(held,part,old);}
+    else{if(changed)old.deskStale=true;sDeskPartState(held,part,old,was&&!now);}
   }
   const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;
   sDeskPanelSync(held);
   sDeskImagesLoad(held);
 }
 // A card brought up to date in place: whether its part is being worked on, its text when it
-// is not the field typed in, and whether its notes can start a job now.
-function sDeskPartState(held,part,card){
+// is not the field typed in, and whether its notes can start a job now. When a job on this
+// part has just ended (`landed`), its text is set even in a focused field: the field was
+// read-only while the job worked, so nothing typed is lost, and the next keystroke must
+// build on the job's text, never save the text from before it.
+function sDeskPartState(held,part,card,landed=false){
   const view=held.view,working=sDeskWorking(held,part),focused=sDeskFocused(),input=card.deskInput;
   card.className='card desk-part'+(working?' desk-working':'');
-  if(input){input.readOnly=working||!access.actions.edit;if(input!==focused&&!held.pending[part]){const text=deskTextOf(view,part);if(input.value!==text)input.value=text;}}
+  if(input){input.readOnly=working||!access.actions.edit;if(landed)delete held.pending[part];if(landed||input!==focused&&!held.pending[part]){const text=deskTextOf(view,part);if(input.value!==text)input.value=text;}}
   if(card.deskGo)card.deskGo.disabled=!access.actions.edit||!!view.working;
   if(!working&&card.deskWorkingNotes){for(const note of card.deskWorkingNotes)note.remove();card.deskWorkingNotes=null;}
 }
+// Sections added, removed or moved by a job while the person types: the card they are typing
+// in stays where it is, brought up to date in place, and the other cards are drawn in the new
+// order around it. With nothing being typed, the desk is drawn again whole.
+function sDeskReorder(held,before){
+  const view=held.view,parts=['title','opening',...(view.sections||[]).map(section=>section.id)];
+  const keep=Object.values(held.cards).find(card=>sDeskTyping(card))||null;
+  if(keep?!parts.includes(keep.dataset.part):!sDeskTyping(held.wholeCard))return sDeskRender(held);
+  sDeskToolbar(held);
+  held.problemSlot.replaceChildren(...[sDeskProblem(held)].filter(Boolean));
+  sDeskWholeState(held);
+  const cards={};
+  for(const part of parts){
+    if(keep&&keep.dataset.part===part){const was=sDeskWorkingIn(before,part),now=sDeskWorking(held,part);if(was!==now||deskTextOf(before,part)!==deskTextOf(view,part))keep.deskStale=true;sDeskPartState(held,part,keep,was&&!now);cards[part]=keep;}
+    else cards[part]=sDeskPart(held,part);
+  }
+  for(const old of Object.values(held.cards))if(old!==keep)old.remove();
+  if(held.noSections){held.noSections.remove();held.noSections=null;}
+  const order=parts.map(part=>cards[part]);
+  if(keep){const at=parts.indexOf(keep.dataset.part);keep.before(...order.slice(0,at));keep.after(...order.slice(at+1));}
+  else held.column.append(...order);
+  held.cards=cards;
+  if(!view.sections.length){held.noSections=sDeskNoSections();held.column.append(held.noSections);}
+  const aside=sDeskAside(held);held.aside.replaceWith(aside);held.aside=aside;
+  sDeskPanelSync(held);
+  sDeskImagesLoad(held);
+}
+function sDeskNoSections(){return sCard('No sections yet',sNode('p','','This draft has no headings, so it is one opening. Add sections on the Outline tab.'));}
 // Drawn again once focus leaves a card brought up to date in place.
 function sDeskPartLeft(held,part,card){
   setTimeout(()=>{if(!card.deskStale||held.cards?.[part]!==card||sDeskTyping(card)||!sDeskCurrent(held)||held.mode==='review')return;const fresh=sDeskPart(held,part);card.replaceWith(fresh);held.cards[part]=fresh;sDeskImagesLoad(held);},0);
@@ -711,7 +742,7 @@ async function sDeskWriteDraft(held,button){
 // each Apply keeps the earlier text in History. On a phone the panel is a full-screen sheet.
 // Quick check keeps the key proofread, as its route desk-proofread does.
 const DESK_TOOLS=[
-  ['copyedit','Copy edit','Grammar, spelling, punctuation, consistency and wordy sentences, each fix shown before and after for you to approve. Voice, facts, quotes and links are kept.'],
+  ['copyedit','Copy edit','Grammar, spelling, punctuation, consistency and wordy sentences, each fix marked in your text to accept or reject. Voice, facts, quotes and links are kept.'],
   ['humanize','Humanize','Sentences that read as machine-written, each with a rewrite. Numbers, names, quotes and links are kept.'],
   ['proofread','Quick check','Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'],
   ['facts','Check facts against sources','Each claim marked supported, not in your sources, or contradicted, with the passage.'],
@@ -725,9 +756,11 @@ const DESK_RUN={copyedit:['Find fixes','Finding grammar, spelling and wording fi
 const DESK_VERDICTS={supported:'Supported','not-in-sources':'Not in your sources',contradicted:'Contradicted'};
 const DESK_ASPECTS={shape:'Shape',argument:'Argument',audience:'Audience',claims:'Claims'};
 const DESK_FORMATS=[['linkedin','LinkedIn feed copy'],['newsletter','Newsletter introduction'],['email','Announcement email'],['summary','Short summary'],['thread','Short thread']];
-function sDeskFinishOpen(held,tool=null){held.finish=held.finish||{tool:null,level:'light',editing:{},noted:{}};held.finish.tool=tool;sDeskRender(held);if(tool==='proofread')return sDeskProofread(held);if(tool==='voice')return sDeskGuides(held);}
+function sDeskFinishOpen(held,tool=null){if(tool==='copyedit')return sDeskCopyEdit(held);held.finish=held.finish||{tool:null,level:'light',editing:{},noted:{}};held.finish.tool=tool;sDeskRender(held);if(tool==='proofread')return sDeskProofread(held);if(tool==='voice')return sDeskGuides(held);}
 function sDeskFinishClose(held){held.finish=null;sDeskRender(held);}
-function sDeskFinishTool(held,tool){held.finish.tool=tool;sDeskPanelShow(held);if(tool==='proofread'&&!held.finish.proof)return sDeskProofread(held);if(tool==='voice')return sDeskGuides(held);}
+// Copy edit is reviewed in the text itself: it opens Review mode, where the check starts.
+async function sDeskCopyEdit(held){await sDeskFlush(held);await sDeskOutlineFlush(held);held.finish=null;held.mode='review';sDeskRender(held);sDeskWatch(held);}
+function sDeskFinishTool(held,tool){if(tool==='copyedit')return sDeskCopyEdit(held);held.finish.tool=tool;sDeskPanelShow(held);if(tool==='proofread'&&!held.finish.proof)return sDeskProofread(held);if(tool==='voice')return sDeskGuides(held);}
 // The voice guides Apply a voice can use, read when the tool opens.
 async function sDeskGuides(held){
   const f=held.finish;try{const found=await api('voice-guides');if(held.finish!==f)return;f.guides=found.guides.filter(guide=>guide.status!=='retired');f.guidesProblem='';}catch(error){if(held.finish!==f)return;f.guides=f.guides||[];f.guidesProblem=error.message;}
@@ -1122,7 +1155,7 @@ function sReviewGoogle(held){
     return out;
   }
   const plan=sButton('Send accepted changes to Google Doc',async button=>{await busy(button,'Checking…',async()=>{try{await sReviewFlush(held);g.plan=await api('desk-google-plan',{id:held.id,mode:'auto'});g.problem='';}catch(error){g.plan=null;g.problem=error.message;}sReviewHeadShow(held);});},'filled');plan.disabled=!access.actions.edit;
-  out.push(sNode('p','quiet','Only what you accepted, and paragraphs you edited here, are sent. The Doc does not change until its owner accepts.'),sAdd(sNode('div','bar'),plan));
+  out.push(sNode('p','quiet','Sends every difference from the Google Doc as it was read: the fixes you accepted and any edits you made. Rejected fixes are never sent.'),sAdd(sNode('div','bar'),plan));
   return out;
 }
 function sReviewLede(state){
