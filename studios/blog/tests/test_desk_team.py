@@ -553,5 +553,39 @@ class DeskTeamImageTests(TeamCase):
         self.assertIn(IMAGE_ONE, (self.folder(ident) / 'DRAFT.md').read_text())
 
 
+
+class DeskTeamHeadingTests(TeamCase):
+    def test_an_opening_only_record_is_divided_on_viewing_as_its_own_recorded_change(self):
+        import studio
+        from test_desk import EXPORTED, EXPORTED_HEADINGS, opening_only
+
+        made = management.dispatch(
+            self.root, 'desk-create', {'operation': 'b' * 32, 'manuscript': EXPORTED}
+        )
+        ident = made['id']
+        self.folder = lambda name: studio.inside(self.root, 'articles', name)
+        opening_only(self, made)
+        gitstate.commit(self.found, 'A record kept before deeper headings were read', [ident])
+        self.assertEqual(gitstate.changed(self.found), [])
+        commits = self.local_commits()
+        markdown = (self.folder(ident) / 'DRAFT.md').read_bytes()
+        shown = management.view(self.root, 'desk', {'id': [ident]})
+        self.assertEqual([s['heading'] for s in shown['sections']], EXPORTED_HEADINGS)
+        self.assertEqual(shown['revision'], 2)
+        self.assertEqual(gitstate.changed(self.found), [])
+        self.assertEqual(self.local_commits(), commits + 1)
+        self.assertIn('headings', support.git(self.found.repo, 'log', '-1', '--format=%s'))
+        self.assertEqual((self.folder(ident) / 'DRAFT.md').read_bytes(), markdown)
+        # Viewing again records nothing more, and a form open before saves as it would have.
+        management.view(self.root, 'desk', {'id': [ident]})
+        self.assertEqual(self.local_commits(), commits + 1)
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {'id': ident, 'seen': 2, 'part': 'title', 'text': 'Renamed', 'session': 'c' * 16},
+        )
+        self.assertEqual(gitstate.changed(self.found), [])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -273,7 +273,7 @@ def apply(root, ident, seen, job, chosen):
             # A change that only an image reference made, put back as it was, is no change.
             if updated.strip() == text.strip():
                 raise ValueError(SAME)
-            desk.checked_text(part, updated)
+            desk.checked_text(part, updated, desk.limit(draft))
             if part == 'title' and not updated.strip():
                 raise ValueError('Keep the title to one line, up to 500 characters.')
         except ValueError:
@@ -956,7 +956,7 @@ def _read_humanize(draft, found, title=False):
             or not isinstance(after, str)
             or not after.strip()
             or after.strip() == before
-            or desk.has_heading(after)
+            or desk.has_heading(after, desk.limit(draft))
             or (part == 'title' and '\n' in after.strip())
             or (part, before) in seen
         ):
@@ -994,7 +994,12 @@ def _read_facts(draft, found):
             'note': _text(row.get('why'), 500),
         }
         after = _text(row.get('after'), desk.LIMIT)
-        if verdict != 'supported' and after and after != before and not desk.has_heading(after):
+        if (
+            verdict != 'supported'
+            and after
+            and after != before
+            and not desk.has_heading(after, desk.limit(draft))
+        ):
             item['after'] = after
             item['flag'] = changes_structure(before, after)
         items.append(item)
@@ -1021,7 +1026,7 @@ def _read_headline(draft, found):
                 not text
                 or len(text) > limit
                 or (part == 'title' and '\n' in text)
-                or (part == 'opening' and desk.has_heading(text))
+                or (part == 'opening' and desk.has_heading(text, desk.limit(draft)))
                 or text == draft[part]
             ):
                 dropped += 1
@@ -1090,7 +1095,7 @@ def _read_voice(draft, found):
         except ValueError:
             dropped += 1  # It lost or changed image data the part keeps as text.
             continue
-        if not after or desk.has_heading(after):
+        if not after or desk.has_heading(after, desk.limit(draft)):
             dropped += 1
             continue
         items.append(

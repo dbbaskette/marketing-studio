@@ -48,7 +48,8 @@ CREATE = frozenset(
 WAYS = ('draft', 'topic', 'outline', 'shape')
 FENCE = re.compile(r' {0,3}(`{3,}|~{3,})')
 TITLE = re.compile(r'# (?!#)(.*\S)\s*')
-HEADING = re.compile(r'## (?!#)(.*\S)\s*')
+# A heading that may start a section: ## to ######, then one space, then its words.
+SECTION = re.compile(r'(#{2,6}) (?!#)(.*\S)\s*')
 ANY_HEADING = re.compile(r'(#{1,6})\s+(.*?\S)\s*#*\s*')
 ITEM = re.compile(r'(?:[-*+]|\d{1,3}[.)])\s+(\S.*)')
 SECTIONS = 60  # sections in one outline
@@ -68,21 +69,9 @@ def _tidy(lines):
     return re.sub(r'^(?:[ \t]*\n)+', '', '\n'.join(lines)).rstrip()
 
 
-def split(markdown, title=''):
-    """Title, opening and sections of a Markdown draft.
-
-    The first line is the title when it is a `# ` heading. Each `## ` heading starts a
-    section; text before the first one is the opening. A heading inside a fenced code block
-    is text, and deeper headings stay inside their section. Images held as data leave the
-    text first, for `images`; their references stay where they sit.
-    """
-    lines = markdown.replace('\r\n', '\n').strip('\n').split('\n')
-    found = TITLE.fullmatch(lines[0]) if lines else None
-    if found:
-        title, lines = found.group(1), lines[1:]  # As it is: image data is refused there.
-    body, images = desk_images.take('\n'.join(lines))
-    lines = body.strip('\n').split('\n')
-    opening, sections, current, fence, taken = [], [], None, None, set()
+def _free(lines):
+    """Each line with whether it is outside fenced code; a fence line itself is not."""
+    fence = None
     for line in lines:
         marker = FENCE.match(line)
         if marker:
@@ -90,43 +79,84 @@ def split(markdown, title=''):
                 fence = marker.group(1)
             elif marker.group(1).startswith(fence[0] * len(fence)):
                 fence = None
-        heading = None if fence is not None or marker else HEADING.fullmatch(line)
-        if heading:
-            current = {'id': _id(taken), 'heading': heading.group(1), 'brief': '', 'lines': []}
+            yield line, False
+            continue
+        yield line, fence is None
+
+
+def _divide(lines):
+    """The opening and the sections of a draft's body, as lines.
+
+    The section level is the shallowest heading level from ## to ###### used outside fenced
+    code: each heading at that level starts a section, and deeper ones stay inside it. A
+    Google Doc's export often uses ### headings, in bold; a draft that mixes ## and ### is
+    divided at ##. The heading keeps its words as written, bold marks included, and a
+    section split at a level other than ## records it (`level`), so `join` writes it back."""
+    found = [SECTION.fullmatch(line) if free else None for line, free in _free(lines)]
+    levels = [len(match.group(1)) for match in found if match]
+    depth = min(levels) if levels else None
+    opening, sections, current, taken = [], [], None, set()
+    for match, line in zip(found, lines, strict=True):
+        if match and len(match.group(1)) == depth:
+            current = {'id': _id(taken), 'heading': match.group(2).strip(), 'brief': ''}
+            if depth != 2:
+                current['level'] = depth
+            current['lines'] = []
             sections.append(current)
         else:
             (current['lines'] if current else opening).append(line)
-    return {
-        'title': title.strip(),
-        'opening': _tidy(opening),
-        'sections': [
-            {
-                'id': section['id'],
-                'heading': section['heading'].strip(),
-                'brief': '',
-                'text': _tidy(section['lines']),
-            }
-            for section in sections
-        ],
-        'images': images,
-    }
+    for section in sections:
+        section['text'] = _tidy(section.pop('lines'))
+    return _tidy(opening), sections
 
 
-def has_heading(text):
-    """Whether a part's text holds a `## ` heading outside code, which would start a new
-    section the next time DRAFT.md is read."""
-    fence = None
-    for line in text.replace('\r\n', '\n').split('\n'):
-        marker = FENCE.match(line)
-        if marker:
-            if fence is None:
-                fence = marker.group(1)
-            elif marker.group(1).startswith(fence[0] * len(fence)):
-                fence = None
-            continue
-        if fence is None and HEADING.fullmatch(line):
-            return True
-    return False
+def split(markdown, title=''):
+    """Title, opening and sections of a Markdown draft.
+
+    The first line is the title when it is a `# ` heading; a `# ` line further down is text.
+    Sections start at the shallowest heading level from ## to ###### used below the title
+    (`_divide`); text before the first one is the opening. A bold line is not a heading,
+    and a heading inside a fenced code block is text. Images held as data leave the text
+    first, for `images`; their references stay where they sit.
+    """
+    lines = markdown.replace('\r\n', '\n').strip('\n').split('\n')
+    found = TITLE.fullmatch(lines[0]) if lines else None
+    if found:
+        title, lines = found.group(1), lines[1:]  # As it is: image data is refused there.
+    body, images = desk_images.take('\n'.join(lines))
+    opening, sections = _divide(body.strip('\n').split('\n'))
+    return {'title': title.strip(), 'opening': opening, 'sections': sections, 'images': images}
+
+
+def level(draft):
+    """The heading level a draft's sections start at: ## unless it was split deeper."""
+    for section in draft.get('sections') or []:
+        if section.get('level') in range(3, 7):
+            return section['level']
+    return 2
+
+
+def limit(draft):
+    """The deepest heading a part may not hold: one at the section level or above would
+    start a section the next time DRAFT.md is read, and in a draft with no sections, any
+    heading from ## to ###### would."""
+    return level(draft) if draft.get('sections') else 6
+
+
+def heading_in(text, level=2):
+    """The marks of the first heading from ## down to `level` a part's text holds outside
+    code, such as '###', or ''. Such a heading would start a new section the next time
+    DRAFT.md is read."""
+    for line, free in _free(text.replace('\r\n', '\n').split('\n')):
+        match = SECTION.fullmatch(line) if free else None
+        if match and len(match.group(1)) <= level:
+            return match.group(1)
+    return ''
+
+
+def has_heading(text, level=2):
+    """Whether a part's text holds a heading from ## down to `level` outside code."""
+    return bool(heading_in(text, level))
 
 
 def outline_from(text):
@@ -158,8 +188,8 @@ def outline_from(text):
         elif ITEM.fullmatch(line) and not line[:1].isspace():
             items.append((at, ITEM.fullmatch(line).group(1)))
     if headings:
-        level = min(depth for _, depth, _ in headings)
-        cuts = [(at, words) for at, depth, words in headings if depth == level]
+        top = min(depth for _, depth, _ in headings)
+        cuts = [(at, words) for at, depth, words in headings if depth == top]
     else:
         cuts = items
     if not 2 <= len(cuts) <= SECTIONS:
@@ -206,9 +236,10 @@ def join(draft, images=True, data=None):
         parts.append('# ' + draft['title'])
     if draft.get('opening'):
         parts.append(draft['opening'])
+    mark = '#' * level(draft) + ' '
     for section in draft['sections']:
         parts.append(
-            '## ' + section['heading'] + ('\n\n' + section['text'] if section['text'] else '')
+            mark + section['heading'] + ('\n\n' + section['text'] if section['text'] else '')
         )
     held = desk_images.definitions(draft, data) if images else []
     return '\n\n'.join(parts + held) + '\n'
@@ -711,6 +742,47 @@ def read(root, ident):
         if cleaned and cleaned[0] == studio.digest(raw) and not _writable(root, ident):
             return desk_images.stored(cleaned[1])  # Cleaned here before, and not written.
         draft = _images_out(root, ident, draft, lost, studio.digest(raw))
+    if not draft['sections'] and has_heading(draft.get('opening') or '', 6):
+        draft = _sectioned(root, ident, draft)
+    return draft
+
+
+def _sectioned(root, ident, draft):
+    """A record kept before the desk read headings below ##, divided as it is first read:
+    a Google Doc's export with ### headings came to the desk as one opening. The opening's
+    headings now start sections, as `split` reads them; no word changes.
+
+    Only under the studio lock, on the computer that drives the blog, and while no desk job
+    of the blog is under way (its result was asked for against the opening). The record is
+    written once with no new revision and no part marked changed, so no open form is
+    refused for it alone; the opening keeps its versions, and DRAFT.md reads the same. In a
+    team workspace the change is recorded on its own. Otherwise the record is read as it is,
+    and divided where it is driven."""
+    import desk_jobs
+
+    if not _writable(root, ident):
+        return draft
+    if any(desk_jobs.busy(job) for job in desk_jobs.jobs(root, ident)):
+        return draft
+    opening, sections = _divide(draft['opening'].split('\n'))
+    if not sections or len(sections) > SECTIONS:
+        return draft
+    draft = {**draft, 'opening': opening, 'sections': sections}
+    directory, target = _paths(root, ident)
+    studio.write_json(target, desk_images.stored(draft))
+    _CLEANED.pop(str(target), None)
+    record = studio.read_json(studio.metadata_path(directory, 'articles'))
+    current, body = studio.inside(directory, 'DRAFT.md'), join(draft, data=_data(root, ident))
+    recorded = record.get('artifact_hashes', {}).get('draft')
+    if current.is_file() and current.read_bytes() != body.encode():
+        if studio.digest(current.read_bytes()) == recorded:  # Never text changed elsewhere.
+            studio.atomic(current, body.encode())
+            record['artifact_hashes']['draft'] = studio.digest(body.encode())
+            studio.persist(directory, 'articles', record)
+    from team_workspace import keep_desk, space
+
+    if space(root):
+        keep_desk(root, ident, 'Read the sections of ' + ident + ' from its headings')
     return draft
 
 
@@ -850,6 +922,12 @@ def _set(draft, part, text):
         section['text'] = text.strip()
 
 
+def _leveled(section, depth):
+    """A section as it is kept at a draft's heading level: ## sections record none."""
+    kept = {key: value for key, value in section.items() if key not in ('level', 'text')}
+    return {**kept, **({'level': depth} if depth != 2 else {}), 'text': section['text']}
+
+
 def _write(root, ident, draft, parts=()):
     """Keep the draft, DRAFT.md and the blog's record in step, one revision on. Each part
     in `parts` records the revision it last changed at, for the stale check."""
@@ -865,6 +943,9 @@ def _write(root, ident, draft, parts=()):
     for section in draft['sections']:
         text, images = desk_images.take(section['text'], images, rename=True)
         sections.append({**section, 'text': text.strip()})
+    # Every section is written at the draft's level: a section added since keeps it too.
+    depth = level({'sections': sections})
+    sections = [_leveled(section, depth) for section in sections]
     draft = {**draft, 'opening': opening.strip(), 'sections': sections, 'images': images}
     draft = desk_images.fitted(draft, before=had)
     record = studio.read_json(studio.metadata_path(directory, 'articles'))
@@ -919,17 +1000,28 @@ def checked(draft, seen, parts=None):
         raise ValueError('This draft changed since you opened it. Reload to see the latest.')
 
 
-def checked_text(part, text):
+def heading_problem(deepest):
+    """What to say when a part holds a heading that would start a section."""
+    if deepest >= 6:
+        return 'A heading would start a new section. Add sections on the Outline tab.'
+    mark = '#' * deepest
+    return (
+        'A ' + mark + ' heading would start a new section. Use ' + mark + '# for a heading '
+        'inside this part.'
+    )
+
+
+def checked_text(part, text, deepest=2):
+    """Refuse text a part cannot hold. `deepest` is the draft's `limit`: a heading at that
+    level or above would start a section."""
     if not isinstance(text, str) or len(text) > LIMIT:
         raise ValueError('Keep one part under 200,000 characters.')
     if part == 'title' and desk_images.holds(text):
         raise ValueError(TITLE_IMAGE)
     if part == 'title' and (not text.strip() or '\n' in text.strip() or len(text.strip()) > 500):
         raise ValueError('Keep the title to one line, up to 500 characters.')
-    if part != 'title' and has_heading(text):
-        raise ValueError(
-            'A ## heading would start a new section. Use ### for a heading inside this part.'
-        )
+    if part != 'title' and has_heading(text, deepest):
+        raise ValueError(heading_problem(deepest))
     return text
 
 
@@ -945,7 +1037,7 @@ def save(root, ident, seen, part, text, source='save', session=None):
         # A restored version replaces the part whole: its references are its own.
         previous = '' if source == 'restore' else text_of(draft, part)
         text, images = desk_images.take(text, had, rename=True, previous=previous)
-    checked_text(part, text)
+    checked_text(part, text, limit(draft))
     before = text_of(draft, part)
     if before == text.strip() and images == had:
         return draft  # The same text again, as from a retried save: nothing to refuse.
@@ -1072,7 +1164,7 @@ def reimport(root, ident, markdown, source, record=None):
         draft['title'] = title
         changed.append('title')
     if found['opening'] != draft['opening']:
-        checked_text('opening', found['opening'])
+        checked_text('opening', found['opening'], limit(found))
         if draft['opening']:
             keep(root, ident, 'opening', draft['opening'], source)
         draft['opening'] = found['opening']
@@ -1093,19 +1185,24 @@ def reimport(root, ident, markdown, source, record=None):
     for at, written in enumerate(found['sections']):
         section = planned[at]
         heading = ' '.join(written['heading'].split())[:200]
-        checked_text('opening', written['text'])
+        checked_text('opening', written['text'], limit(found))
+        # Each section takes the level the new text is split at.
+        depth = {'level': written['level']} if written.get('level') else {}
         if section is None:
             part = _id(taken)
             changed.append(part)
-            merged.append({'id': part, 'heading': heading, 'brief': '', 'text': written['text']})
+            merged.append(
+                {'id': part, 'heading': heading, 'brief': '', **depth, 'text': written['text']}
+            )
             continue
+        section = {key: value for key, value in section.items() if key != 'level'}
         if section['text'] != written['text']:
             if section['text']:
                 keep(root, ident, section['id'], section['text'], source)
             changed.append(section['id'])
-        elif section['heading'] != heading:
+        elif section['heading'] != heading or planned[at].get('level') != written.get('level'):
             changed.append(section['id'])
-        merged.append({**section, 'heading': heading, 'text': written['text']})
+        merged.append({**section, 'heading': heading, **depth, 'text': written['text']})
     gone = [section for section in current if section['id'] not in used]
     if gone or [s['id'] for s in merged if s['id'] in taken] != [
         s['id'] for s in current if s['id'] in used
@@ -1358,7 +1455,8 @@ def restore(root, ident, seen, part, index):
     draft = read(root, ident)
     had = draft.get('images') or {}
     text, images = desk_images.take(entry['text'], had, rename=True)  # Its references are its own.
-    checked_text(part, text)
+    remaining = [section for section in draft['sections'] if section['id'] not in added]
+    checked_text(part, text, limit({**draft, 'sections': remaining}))
     order = [section['id'] for section in draft['sections']]
     taken = [section for section in draft['sections'] if section['id'] in added]
     checked(draft, seen, [part, 'outline'] + [section['id'] for section in taken])
