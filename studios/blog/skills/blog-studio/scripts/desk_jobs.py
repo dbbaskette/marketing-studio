@@ -60,6 +60,17 @@ REVISE_ONE = (
     "sections for context; return only this section's text, without its heading."
 )
 FIRST_PASS_LIMIT = 180_000  # The whole draft as JSON must come back in one result.
+OPENING = (
+    'The opening, the text before the first section, is the item in sections with id '
+    '"opening" and no heading; return it like the others.'
+)
+NO_HEADINGS = 'Add no ## heading anywhere: the sections stay as they are.'
+DIVIDE = (
+    'This draft has no sections yet: all of it is in the opening. You may divide it into '
+    'sections with ## headings, as the kind of post’s shape asks, inside the opening’s text; '
+    'keep its order and every fact.'
+)
+NO_TEXT = 'This draft has no text to work on yet. Write or paste some first.'
 TIGHTEN = (
     'Tighten and proofread the draft, section by section. Fix spelling, grammar, '
     'punctuation and consistency, and cut needless words; change nothing else.'
@@ -175,10 +186,10 @@ def _chain_note(root, job, applied=False, problem=None, ended=False):
     if applied:
         record['revised'] += 1
     if problem:
-        heading = ''
+        heading = 'the opening' if meta['part'] == 'opening' else ''
         try:
             found = desk._part(desk.read(root, job['metadata']['article']), meta['part'])
-            heading = found['heading'] if found else ''
+            heading = found['heading'] if found else heading
         except (ValueError, OSError):
             pass
         record['problems'] = (
@@ -209,6 +220,24 @@ def fingerprint(value):
 
 def _sections_basis(draft):
     return fingerprint([[section['id'], section['text']] for section in draft['sections']])
+
+
+def _pass_basis(draft):
+    """What a first pass was asked about: the opening and every section."""
+    return fingerprint(
+        [['opening', draft['opening']]] + [[s['id'], s['text']] for s in draft['sections']]
+    )
+
+
+def _opening_part(draft):
+    """The opening as a part a whole-draft job works on, with no heading. A draft with no
+    ## headings is all opening, so it is the one part such a job has."""
+    return {'id': 'opening', 'heading': '', 'text': draft['opening']}
+
+
+def _piece(draft, part):
+    """The section a whole-draft job works on, or the opening as one."""
+    return _opening_part(draft) if part == 'opening' else desk._part(draft, part)
 
 
 def _context(root, draft, length=False):
@@ -453,9 +482,11 @@ def revise_all(root, ident, seen, note):
         raise ValueError('Write the note for the whole draft.')
     draft = desk.read(root, ident)
     order = [s['id'] for s in draft['sections'] if s['text']]
+    if not order and draft['opening'].strip():
+        order = ['opening']  # A draft with no ## headings is revised as its one part.
     if not order:
         raise ValueError('This draft has no written sections to revise.')
-    first = desk._part(draft, order[0])
+    first = _piece(draft, order[0])
     _, payload, guidance, meta = _revise_one(
         root, ident, draft, first, note, secrets.token_hex(8), order
     )
@@ -482,7 +513,7 @@ def _queue_next(root, job):
         return False  # Something else is under way; the note ends here.
     for part in meta['order'][meta['index'] + 1 :]:
         try:
-            section = desk._part(draft, part)
+            section = _piece(draft, part)
         except ValueError:
             continue  # A section removed meanwhile is skipped.
         if section['text']:
@@ -1335,14 +1366,19 @@ def first_pass(root, ident, seen, choice):
     if choice == 'leave':
         return None
     draft = desk.read(root, ident)
-    if not any(s['text'] for s in draft['sections']):
-        raise ValueError(
-            'A first pass works section by section. Give the draft ## headings, or edit it '
-            'as it is.'
-        )
+    # The opening and each written section are the parts; a draft with no ## headings is
+    # all opening, and is worked on as that one part.
+    parts = [_opening_part(draft)] if draft['opening'].strip() else []
+    parts += [
+        {'id': s['id'], 'heading': s['heading'], 'text': s['text']}
+        for s in draft['sections']
+        if s['text']
+    ]
+    if not parts:
+        raise ValueError(NO_TEXT)
     if choice == 'reshape' and not draft.get('style'):
         raise ValueError('Choose a kind of post to reshape the draft to.')
-    written = [{'id': s['id'], 'text': s['text']} for s in draft['sections'] if s['text']]
+    written = [{'id': s['id'], 'text': s['text']} for s in parts]
     if len(json.dumps(written, ensure_ascii=False)) > FIRST_PASS_LIMIT:
         raise ValueError(
             'This draft is too long for one first pass. Edit it section by section: a note '
@@ -1356,17 +1392,22 @@ def first_pass(root, ident, seen, choice):
         if choice == 'tighten'
         else RESHAPE
     )
-    guidance = rule + '\n\n' + WHOLE + '\n\n'
-    guidance += shared + '\n' + RETURN
+    # Only Reshape, and only on a draft with no sections, may add ## headings.
+    divide = choice == 'reshape' and not draft['sections']
+    guidance = rule + '\n\n' + WHOLE + ' ' + OPENING + ' ' + (DIVIDE if divide else NO_HEADINGS)
+    guidance += '\n\n' + shared + '\n' + RETURN
+    payload = {**_whole_payload(draft, extra), 'sections': parts}
+    payload.pop('opening')  # Sent once, as the first part.
     return _queue(
         root,
         ident,
         draft,
         seen,
         'desk-first-pass',
-        _whole_payload(draft, extra),
+        payload,
         guidance,
-        {'part': 'sections', 'action': choice, 'basis': _sections_basis(draft)},
+        {'part': 'sections', 'action': choice, 'basis': _pass_basis(draft)},
+        ['opening'] + [section['id'] for section in draft['sections']],
     )
 
 
@@ -1392,6 +1433,13 @@ def _clean(text, heading=None):
         if re.fullmatch(r'#{1,6}\s+' + re.escape(heading) + r'\s*', first.strip()):
             text = rest.strip()
     return text
+
+
+def _opening_text(text):
+    """A returned opening without a leading # title line: the title is its own part."""
+    text = _clean(text)
+    first, _, rest = text.partition('\n')
+    return rest.strip() if desk.TITLE.fullmatch(first.strip()) else text
 
 
 def _no_heading(text):
@@ -1447,6 +1495,16 @@ def _apply(root, ident, draft, job):
         return _apply_draft(root, ident, draft, job, result)
     if kind in ('desk-section', 'desk-revise-all'):
         part = meta['part']
+        if part == 'opening' and kind == 'desk-revise-all':
+            if fingerprint(draft['opening']) != meta.get('basis'):
+                raise ValueError(STALE)
+            text = _opening_text(content)
+            _no_heading(text)
+            desk.checked_text(part, text)
+            desk.keep(root, ident, part, draft['opening'], 'revise-all')
+            draft['opening'] = text
+            _merge_gaps(draft, result)
+            return desk._write(root, ident, draft, [part])
         try:
             section = desk._part(draft, part)
         except ValueError:
@@ -1496,28 +1554,59 @@ def _apply(root, ident, draft, job):
         desk._set(draft, part, updated)
         _merge_gaps(draft, result)
         return desk._write(root, ident, draft, [part])
-    # The first pass: every section as it was asked about, and every returned id known.
-    if _sections_basis(draft) != meta.get('basis'):
+    # The first pass: the opening and every section as they were asked about, and every
+    # returned id known.
+    if _pass_basis(draft) != meta.get('basis'):
         raise ValueError(STALE)
     found = _section_texts(content)
     sections = {section['id']: section for section in draft['sections']}
     ids = [item['id'] for item in found]
-    if len(set(ids)) != len(ids) or any(name not in sections for name in ids):
+    # The opening counts only when it was sent: an empty one was not.
+    known = set(sections) | ({'opening'} if draft['opening'].strip() else set())
+    if len(set(ids)) != len(ids) or any(name not in known for name in ids):
         raise ValueError('The result named sections this draft does not have. Run it again.')
-    changes = {}
+    changes, added = {}, []
     for item in found:
-        section = sections[item['id']]
-        text = _clean(item['text'], section['heading'])
-        if not text or text == section['text']:
+        if item['id'] == 'opening':
+            before, text = draft['opening'], _opening_text(item['text'])
+        else:
+            section = sections[item['id']]
+            before, text = section['text'], _clean(item['text'], section['heading'])
+        if not text or text == before:
             continue
-        _no_heading(text)
+        if item['id'] == 'opening' and meta.get('action') == 'reshape' and not sections:
+            # Reshaping a draft with no headings may divide it into sections.
+            text, added = _divided(text)
+        else:
+            _no_heading(text)
         desk.checked_text(item['id'], text)
         changes[item['id']] = text
     for part, text in changes.items():
-        desk.keep(root, ident, part, sections[part]['text'], 'first-pass')
-        sections[part]['text'] = text
+        if part == 'opening':
+            # A division is undone as a whole: restoring this version takes out the sections
+            # it added (desk.restore).
+            divided = {'divided': [s['id'] for s in added]} if added else None
+            desk.keep(root, ident, part, draft['opening'], 'first-pass', extra=divided)
+            draft['opening'] = text
+        else:
+            desk.keep(root, ident, part, sections[part]['text'], 'first-pass')
+            sections[part]['text'] = text
+    draft['sections'] = draft['sections'] + added
     _merge_gaps(draft, result)
-    return desk._write(root, ident, draft, list(changes))
+    return desk._write(root, ident, draft, list(changes) + [s['id'] for s in added])
+
+
+def _divided(text):
+    """A reshaped draft's text as its opening and the sections its ## headings start. A
+    leading # title line is left out: the title is its own part."""
+    found = desk.split(text)
+    if len(found['sections']) > desk.SECTIONS:
+        raise ValueError('The reshaped draft had too many sections, so it was not applied.')
+    for section in found['sections']:
+        if len(section['heading']) > 300:
+            raise ValueError('The reshaped draft had a heading too long to use. Run it again.')
+        desk.checked_text(section['id'], section['text'])
+    return found['opening'], found['sections']
 
 
 def _settle(root, job):

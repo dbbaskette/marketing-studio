@@ -1024,6 +1024,14 @@ a reference and an example of its kind of post. Marking it again updates that it
   longer sends `as_blog`. `runner.js:1100` reads "…or edit it on the desk."
 - Start order: 1 What are you writing? 2 What do you have? 3 Sources and settings. Step 3
   shows research and Length for the `have` chosen.
+- **Note: the draft path is already one screen.** Polishing or reviewing a draft
+  (`have: 'draft'`) is `sDeskPolish`: no step tabs and no kind of post unless the person
+  picks **Reshape to fit a kind of post**; first passes **Proofread and tighten** (default),
+  **Just give feedback** (`first_pass: 'feedback'`), Reshape and Leave; tone and sources
+  folded. Choosing A draft on the steps switches to it. Keep that when reordering: the new
+  order is for the topic and outline paths only, and the upload's "edit it on the desk"
+  lands on that screen with the file's text. The first pass's name is now "Proofread and
+  tighten", not "Tighten and correct" (item 10 of the spec).
 
 - [ ] **Step 1: Write the failing tests** in `check-management.cjs`:
   - `deskFinishing` (`:3278`): the Proofread view holds "Dashes, words that often read as

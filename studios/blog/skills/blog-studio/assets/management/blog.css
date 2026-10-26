@@ -223,3 +223,9 @@ input.desk-text{min-height:44px}
 .desk-edit{width:100%;max-width:none;box-sizing:border-box;resize:vertical}
 .desk-comments{display:grid;gap:.6rem;margin-top:.6rem;padding-top:.6rem;border-top:1px solid var(--hair)}
 .desk-comment{display:grid;gap:.4rem;min-width:0}
+/* Polishing a draft: folds for tone and the fact check's sources, each a card of its own. */
+.desk-fold{padding-block:.2rem}
+.desk-fold[open]{padding-bottom:1.15rem}
+.desk-fold>summary{display:list-item;min-height:44px;padding-block:.75rem}
+.desk-fold>summary>.card-title{display:inline}
+.desk-instead{max-width:100%;white-space:normal;text-align:left}

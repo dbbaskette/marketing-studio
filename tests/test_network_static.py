@@ -8,7 +8,12 @@ import re
 import unittest
 
 from marketing_studio import network
-from test_ui_consistency import APP_PAGES, ROOT
+# Importable both ways: as tests.test_network_static from the repository root, and as a
+# top-level module when unittest discovers the tests folder.
+try:
+    from .test_ui_consistency import APP_PAGES, ROOT
+except ImportError:
+    from test_ui_consistency import APP_PAGES, ROOT
 
 LOADED = re.compile(r'<(?:script|link)\b[^>]*\b(?:src|href)="(?!https?:|//|data:)/?([^"#?]+)"')
 

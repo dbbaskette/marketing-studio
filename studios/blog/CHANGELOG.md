@@ -5,6 +5,18 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Polish a draft without choosing a kind of post.** **Edit or polish a draft**, **Polish
+  another document**, a saved blog's draft and **A draft** on the start open one screen
+  with no step tabs: your draft, then **Proofread and tighten** (the default), **Just give
+  feedback** (Finishing's feedback as the desk opens, with nothing rewritten), **Reshape
+  to fit a kind of post** (the only choice that asks for a kind) or **Leave it as it is**,
+  with optional tone and sources for the fact check. For maintainers: `desk-create` takes
+  `first_pass: "feedback"`, which queues the `finish-feedback` job once the blog is made.
+- **Proofread a draft with no headings.** The first pass, and a note for the whole draft,
+  now work on plain prose with no `##` headings as one part, and the first pass covers the
+  opening too. Proofreading adds no headings; only **Reshape** may divide such a draft into
+  sections, and restoring the opening from before it undoes the division as a whole. A
+  first pass is refused only for a draft with no text.
 - **The writing desk.** New blogs are made on one editing desk, with no stops along the
   way.
   - **Three ways in.** **New blog** asks what you are writing (a kind of post), takes
