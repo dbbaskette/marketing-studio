@@ -111,7 +111,8 @@ Once the page is open, use its controls to drive the work:
    renames, reorders, adds and removes sections and writes the draft or one section from
    it. **Add a source** takes more sources at any time.
 5. **Finish before publishing.** **Finishing** opens a panel of tools that suggest changes:
-   **Copy edit** (grammar and wording fixes, each approved first), **Humanize** (light,
+   **Copy edit** (opens Review mode: grammar and wording fixes marked in your text to
+   accept or reject), **Humanize** (light,
    medium or strong), **Quick check** (dashes, machine-sounding words and repetition, with
    no assistant), **Check facts against sources**, **Headline and opening**, **Feedback
    without a rewrite**, **Apply a voice** and

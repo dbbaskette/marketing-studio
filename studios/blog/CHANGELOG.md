@@ -14,19 +14,27 @@ changes for authors first, then what changes for maintainers.
   fixes stay, and one whose words are gone drops out. **Check again** reruns the check.
   When nothing is left, a blog from a Google Doc sends only the accepted changes as
   suggestions (the plan says how many first); others offer Copy and Download. **Open the
-  full desk** has notes, the outline and Finishing. The silent **Proofread and tighten**
-  is gone from the polishing screen. **Headings at any level start sections**: a Google
+  full desk** has notes, the outline and Finishing, where **Copy edit** now opens Review
+  mode too. The Google send says it sends every difference from the Doc as it was read:
+  accepted fixes and your own edits, never rejected ones. The silent **Proofread and
+  tighten** is gone from the polishing screen. **Headings at any level start sections**: a Google
   Doc's `### **Bold**` headings no longer leave the whole draft as one opening, and blogs
   already on the desk that way are divided into their sections when next opened, with no
-  word changed. Typing in the **Note for the whole draft**, or any desk field, no longer
-  loses focus while a job works. For maintainers: `desk-create` takes `first_pass:
+  word changed; a page left open on the opening is asked to reload, and restoring the
+  opening from before the division (such as before a silent first pass) brings its
+  sections back. Indented headings and a tab after the marks count, and a draft of more
+  than 60 sections is refused readably. Typing in the **Note for the whole draft**, or any
+  desk field, no longer loses focus while a job works or adds a section, and a field
+  focused while its own section was rewritten now shows the rewrite, so a keystroke can no
+  longer save the old text over it. For maintainers: `desk-create` takes `first_pass:
   "copyedit"`, which queues `finish-copyedit` as `"feedback"` queues `finish-feedback`
   (`tighten` stays for chat and older callers); `desk.split` divides at the shallowest
   heading level from `##` to `######` below the title, keeps a section's `level` when it is
   not 2 and its heading as written, and `join` writes it back; parts are checked against
-  `desk.limit(draft)`; `desk.read` divides an opening-only record once, under the lock on
-  the driving computer, with no revision bump, committed with `keep_desk` in a team
-  workspace. Review mode is the desk page with `stage=review`.
+  `desk.limit(draft)` (2 for a record still undivided); `desk.read` divides an
+  opening-only record once, under the lock on the driving computer, one revision on with
+  `opening` and `outline` marked changed, committed with `keep_desk` in a team workspace and
+  pushed with the next decision. Review mode is the desk page with `stage=review`.
 - **Copy edit in Finishing, with each fix approved first.** **Finishing → Copy edit**
   finds grammar, spelling, punctuation, consistency, clarity and concision fixes in the
   title and the text and shows each one before and after with a note on why, to

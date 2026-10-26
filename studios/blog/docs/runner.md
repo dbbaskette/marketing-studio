@@ -122,8 +122,10 @@ deciding on each fix, with the full desk one click away.
 - **Check again** runs Copy edit on the current text.
 - **When nothing is left to review**, a blog started from a Google Doc offers **Send
   accepted changes to Google Doc**: the plan says how many wording changes go, as
-  suggestions for the Doc's owner, and nothing is sent until **Send**. Rejected fixes are
-  never sent; paragraphs you edited here are. Other blogs offer **Copy** and **Download**.
+  suggestions for the Doc's owner, and nothing is sent until **Send**. It sends every
+  difference from the Google Doc as it was read: the fixes you accepted and any edits you
+  made, here or on the full desk. Rejected fixes are never sent. Other blogs offer
+  **Copy** and **Download**.
 - **Open the full desk** shows the notes, the Outline tab and the whole Finishing panel;
   **Review fixes** there comes back. The address keeps Review mode (`stage=review`), so a
   reload stays in it.
@@ -138,9 +140,17 @@ and bold marks so `DRAFT.md` and the Google Doc read the same. The shallowest le
 `##` to `######` used below the `#` title is the section level; deeper headings stay
 inside their section, and a bold line on its own is not a heading. A part cannot hold a
 heading at the section level or above (any heading, in a draft with no sections), which
-would start a section. A blog brought to the desk before this, whose whole text sat in the
-opening, is divided into its sections the first time it is opened on the computer that
-drives it, with no word changed and the opening's History kept.
+would start a section. A heading may be indented up to three spaces or followed by a tab;
+it keeps its marks as written. A draft of more than 60 sections is refused readably.
+
+A blog brought to the desk before this, whose whole text sat in the opening, is divided
+into its sections the first time it is opened on the computer that drives it (and no job
+is under way), with no word changed and the opening's History kept. A page left open on
+its opening or outline is asked to reload; one on another part still saves. In a team
+workspace the division is shared with your next decision. Restoring an opening version
+from before the division, such as the whole draft before a first pass, brings its
+sections back with it; the sections there now can be brought back on the Outline tab. A
+record that cannot be divided yet keeps its headings as text in the opening, as before.
 
 - **Edit in place.** Type in any card; it saves as you go. A job landing or a poll never
   takes the focus or the caret from a field you are typing in.
@@ -187,12 +197,12 @@ that is out of date is refused rather than written over newer text.
 **Finishing** opens a side panel (a full-screen sheet on a phone). Every tool suggests;
 nothing changes until you apply.
 
-- **Copy edit**: grammar, spelling, punctuation, consistency, clarity and concision in the
-  title and the text, each fix shown before and after with a short note on why, for you
-  to approve. Claims, qualifiers and the argument are not changed; the author's voice,
-  facts, quotes, links and image references are kept, and a fix that
-  would change a fact, code or the part's shape is flagged. **Check spelling and grammar**
-  on the polishing screen runs it and opens [Review mode](#review-mode).
+- **Copy edit** opens [Review mode](#review-mode), where its fixes are marked in the text
+  to accept or reject: grammar, spelling, punctuation, consistency, clarity and concision
+  in the title and the text, each with a short note on why. Claims, qualifiers and the
+  argument are not changed; the author's voice, facts, quotes, links and image references
+  are kept, and a fix that would change a fact, code or the part's shape is flagged.
+  **Check spelling and grammar** on the polishing screen runs it too.
 - **Humanize** at light, medium or strong: sentences that read as machine-written, each
   with a rewrite. Numbers, names, quotes and links are kept, and a rewrite that would
   change one is flagged.
@@ -210,8 +220,8 @@ nothing changes until you apply.
   blog on the desk) and **Send to Google Doc** as suggestions, for a blog started from a
   Doc.
 
-Each suggestion shows before and after side by side. **Apply**, **Edit** or **Skip** it,
-or **Apply all** for Copy edit, Humanize and Apply a voice (flagged ones wait to be checked
+In the panel, each suggestion shows before and after side by side. **Apply**, **Edit** or **Skip** it,
+or **Apply all** for Humanize and Apply a voice (flagged ones wait to be checked
 one by one). Each Apply keeps the
 earlier text in History. Suggestions wait on this computer until you decide; only what
 you apply is shared with a team.
