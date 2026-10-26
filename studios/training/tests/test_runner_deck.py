@@ -1462,8 +1462,9 @@ class FlowTests(DeckCase):
         view = self.to_outline(root)
         self.assertEqual((view['state'], view['sentence']), (
             'waiting', 'What the slide deck says is waiting for your review. A deck of 6 '
-            'slides has cost about $2.40 and 7.5 minutes of agent time to draw before, and as '
-            'much again each time its slides were drawn again after a review.'))
+            'slides is estimated at about $2.40 and 7.5 minutes of assistant time (a fixed '
+            "estimate per slide, not this computer's history), and as much again each time "
+            'its slides are drawn again after a review.'))
         self.assertEqual(self.kinds()[-3:], ['document', 'brief', 'outline'],
                          'the deck has its place after the brief and before the scenarios')
         self.assertIn('## Required elements', (root / 'deck-handoff.md').read_text())
