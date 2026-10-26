@@ -29,7 +29,7 @@ What a caller needs to know
   reasoning level; None for each is the agent's own choice. A level is one of the words an
   agent takes (EFFORTS): which of them a model takes is what the agent lists. Claude Code
   lists nothing, so its models and their levels are kept in `claude-code-models.json`
-  beside this file, and a level its model does not take is refused (`takes`).
+  in the shared core, and a level its model does not take is refused (`takes`).
 - `step_seconds` is how long one worker may run. `deck_dollars` is what one deck
   may spend, where the agent reports spending, before it stops and asks. `parallel` is how
   many decks work at once.
@@ -67,6 +67,7 @@ from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
+import studio_core
 import home
 import hub
 import studios_config
@@ -83,7 +84,7 @@ MODEL = 100                 # characters in a model's name
 LEVELS = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra')
 EFFORTS = {'claude': ('low', 'medium', 'high', 'xhigh', 'max'), 'codex': LEVELS}
 # Claude Code has no list of its models, so the runner keeps one, with its source and date.
-CLAUDE_MODELS = Path(__file__).resolve().with_name('claude-code-models.json')
+CLAUDE_MODELS = Path(studio_core.__file__).resolve().with_name('claude-code-models.json')
 PREVIEWS = ('drive', 'local')   # how a deck's previews are rendered
 OUTPUTS = ('google', 'pptx')    # what a new deck is made as
 WORD = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$')   # a brand's or a variant's name

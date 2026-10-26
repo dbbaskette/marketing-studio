@@ -16,8 +16,6 @@ def shared_link(path):
             return True
         if path.name in ('index.html', 'app.js', 'home.css') and path.parent == parent / 'marketing_studio/web' and target == parent / 'core/studio_core/setup_web' / path.name:
             return True
-        if path.name == 'claude-code-models.json' and path.parent.resolve() == parent / 'core/studio_core' and target == parent / 'studios/presentation/runner/claude-code-models.json':
-            return True
         if path.name == 'studio_core' and target == parent / 'core/studio_core':
             return True
         if path.name in ('style.css', 'markdown.js') and target == parent / 'ui-kit' / path.name:

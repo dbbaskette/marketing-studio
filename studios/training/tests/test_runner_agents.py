@@ -835,7 +835,10 @@ class ModelListTests(JobCase):
             'source': 'Anthropic model reference, cached 2026-10-06'})
 
     def test_the_list_of_claude_models_is_kept_as_data_with_its_source(self):
-        kept = json.loads((helpers.REPO / 'runner' / 'claude-code-models.json').read_text())
+        import studio_core
+        listed = Path(studio_core.__file__).resolve().with_name('claude-code-models.json')
+        self.assertEqual(settings.CLAUDE_MODELS, listed)
+        kept = json.loads(listed.read_text())
         self.assertEqual((kept['source'], kept['date']),
                          ('Anthropic model reference, cached 2026-10-06', '2026-10-06'))
         self.assertEqual(settings.claude_models()['models'], CLAUDE_LISTED)
@@ -843,7 +846,7 @@ class ModelListTests(JobCase):
         self.assertNotIn('mythos', json.dumps(kept).lower())
         # The runner's guide says how to bring the list up to date.
         guide = (helpers.REPO / 'docs' / 'runner.md').read_text()
-        for said in ('`runner/claude-code-models.json`', '`{"id", "label", "family", "levels"}`',
+        for said in ('`core/studio_core/claude-code-models.json`', '`{"id", "label", "family", "levels"}`',
                      '`{"id", "family", "alias"}`', 'Set `source` and `date`',
                      '"Opus 5.5 (claude-opus-5-5)"', 'Haiku 4.5, is offered none and given none'):
             self.assertIn(said, guide)

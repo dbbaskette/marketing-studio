@@ -108,6 +108,7 @@ import workspace
 from workspace import WorkspaceError
 
 from studio_core import research_sites, review_policy
+from studio_core.workspace_setup import same_address
 from runner import brand_source, decks, gitstate, settings
 
 WHEN = {'decision': 'each-decision', 'asked': 'when-asked'}
@@ -292,13 +293,6 @@ def suggested(values: dict) -> dict | None:
 
 def _same(one, other) -> bool:
     return type(one) is type(other) and one == other
-
-
-def same_address(one: str | None, other: str | None) -> bool:
-    """Whether two addresses name one repository, as a person would write it either way."""
-    def plain(address: str) -> str:
-        return address.strip().rstrip('/').removesuffix('.git')
-    return bool(one and other) and plain(one) == plain(other)
 
 
 def moved(space, values: dict) -> dict | None:

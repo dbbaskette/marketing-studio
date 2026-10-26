@@ -70,11 +70,6 @@
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
-      "path": "runner/claude-code-models.json",
-      "from": "runner/claude-code-models.json",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
-    },
-    {
       "path": "runner/gitstate.py",
       "from": "runner/gitstate.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
