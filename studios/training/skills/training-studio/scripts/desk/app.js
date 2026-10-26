@@ -7697,6 +7697,17 @@ function versionsBar(found, dismiss) {
 }
 
 // Home: said only when something is newer or missing, or an upgrade is in hand.
+// A studio Marketing Studio installed is updated by it, and by nothing here.
+const SUITE_SAYS = 'Marketing Studio installs and updates this studio. To update it, unpack a '
+  + 'newer Marketing Studio release and run marketing-studio update --from <the unpacked '
+  + 'folder> --yes.';
+
+function suiteLine() {
+  const [before, rest] = SUITE_SAYS.split('marketing-studio update');
+  return add(make('p', ''), before,
+    make('code', '', 'marketing-studio update' + rest.replace(/\.$/, '')), '.');
+}
+
 function updatesCard() {
   const upkeep = upkeepOf();
   if (!upkeep) return null;
@@ -7705,7 +7716,10 @@ function updatesCard() {
   const node = card('Updates');
   if (found && versionsNotice()) {
     const wanted = wantedRows(found);
-    if (wanted.length && !['restart', 'restarting'].includes(upgradeOf(found).state)) {
+    if (found.suite === 'marketing-studio') {
+      add(node, suiteLine());
+      for (const row of wanted) add(node, add(make('p', ''), state('review', row.says)));
+    } else if (wanted.length && !['restart', 'restarting'].includes(upgradeOf(found).state)) {
       add(node, make('p', '', 'Newer versions are ready for this computer:'),
         bullets(wanted.map(versionStep)));
       for (const row of wanted) add(node, add(make('p', ''), state('review', row.says)));
@@ -7750,7 +7764,8 @@ function versionsCard() {
       make('span', '', said)));
     }
   }
-  add(node, facts, ...upgradeParts(found), ...brandParts(found), ...versionsBar(found, false));
+  add(node, facts, found.suite === 'marketing-studio' ? suiteLine() : null,
+    ...upgradeParts(found), ...brandParts(found), ...versionsBar(found, false));
   const releases = (upkeepOf() || {}).releases || {};
   const known = (list(found.rows)[0] || {}).known_at;
   add(node, releasesLine(upkeepOf()));

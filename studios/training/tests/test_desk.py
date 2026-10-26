@@ -8472,6 +8472,25 @@ class UpkeepScreenTests(ScriptedPage, PageCase):
             ('/api/brand', {'repository': address, 'release': 'v0.13.1',
                             'shared_seen': later['shared']})])
 
+    def test_a_suite_install_says_marketing_studio_updates_it(self):
+        said = ('Marketing Studio installs and updates this studio. To update it, unpack a newer '
+         'Marketing Studio release and run marketing-studio update --from <the '
+         'unpacked folder> --yes.')
+        own = row('training-studio', '0.18.0', '0.18.0', 'current',
+                  'Updates are delivered by the Marketing Studio installer.')
+        found = kept(versions=versions(own=own, suite='marketing-studio'),
+                     update={'offered': False, 'state': None, 'since': None, 'says': None})
+        answers = self.answers(**{'GET /api/setup': [ok({**SET_UP, 'upkeep': found})] * 4})
+        result = self.run_page(answers, [{'snapshot': 'home'}, {'click': 'Status'},
+                                         {'snapshot': 'status'}])
+        for screen in ('home', 'status'):
+            shot = result['snapshots'][screen]
+            with self.subTest(screen=screen):
+                self.assertIn(said, shot['text'])
+                self.assertNotIn('Newer versions are ready for this computer:', shot['text'])
+                for button in ('Update', 'Update the skills', 'Upgrade', 'Upgrade everything'):
+                    self.assertNotIn(button, shot['buttons'])
+
     def test_versions_can_be_dismissed_until_a_newer_one_is_out(self):
         found = kept(versions=versions(CURRENT))
         gone = kept(versions={**versions(CURRENT), 'dismissed': True})

@@ -2089,6 +2089,25 @@ class ScreenTests(ScriptedPage, PageCase):
             self.brand = installed
         return keep.report()
 
+    def test_a_suite_install_says_marketing_studio_updates_it(self):
+        said = ('Marketing Studio installs and updates this studio. To update it, unpack a newer '
+         'Marketing Studio release and run marketing-studio update --from <the '
+         'unpacked folder> --yes.')
+        self.started()
+        found = self.brand_upkeep()
+        found = {**found, 'update': {**found['update'], 'offered': False},
+                 'versions': {**found['versions'], 'suite': 'marketing-studio'}}
+        answers = self.answers(**{'GET /api/setup': [ok({**self.get('setup'), 'upkeep': found})]})
+        result = self.run_page(answers, [{'snapshot': 'home'}, {'click': 'Status'},
+                                         {'snapshot': 'status'}])
+        for screen in ('home', 'status'):
+            shot = result['snapshots'][screen]
+            with self.subTest(screen=screen):
+                self.assertIn(said, shot['text'])
+                self.assertNotIn('Newer versions are ready for this computer:', shot['text'])
+                for button in ('Update', 'Update the skills', 'Upgrade', 'Upgrade everything'):
+                    self.assertNotIn(button, shot['buttons'])
+
     def test_home_offers_the_brand_skill_and_asks_before_it_is_installed(self):
         self.started()
         found = self.brand_upkeep()
