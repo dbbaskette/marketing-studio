@@ -1801,6 +1801,30 @@ def view(root, ident):
         'finishing': desk_finish.summary(root, ident, draft),
         # Whether the blog's Google Doc can take the desk's wording as suggestions.
         'google_suggestions': sendable,
-        # The blog record's version, for Mark as published and Delete.
-        'expected': studio.digest((directory / 'session.json').read_bytes()),
+        # The blog record's version, for Mark as published, Delete and changing its driver.
+        'expected': expected(root, ident),
+        # In a team workspace, who drives the blog, as a run says it (blog_runner.describe).
+        # While another computer drives it, or nobody does, the desk is read only.
+        **_team(root, ident),
+    }
+
+
+def expected(root, ident):
+    """The version of a desk blog's record the page last read: a change of driver, Mark as
+    published and Delete each refuse a view whose blog has changed since."""
+    directory, _ = studio.item(root, 'articles', ident)
+    return studio.digest((directory / 'session.json').read_bytes())
+
+
+def _team(root, ident):
+    from studio_sync import team as drivers
+    from team_workspace import driver, record, space
+
+    found = space(root)
+    if not found or not found.address:
+        return {'team': False, 'driver': None, 'elsewhere': None}
+    return {
+        'team': True,
+        'driver': driver(root, ident),
+        'elsewhere': drivers.elsewhere(found, record(root, ident)),
     }
