@@ -223,6 +223,7 @@ rerunning research. The full reviewed bundle stays intact.
 ## What the runner guarantees
 
 - **Only you approve.** A deck moves past a stop only by your decision on the page. Neither the runner nor an assistant can approve for you: a step its review level carries on past is recorded as the level's, never as your approval.
+  On the desk, the steps before your deck run as your start chose. Delivering is always yours.
 - **An assistant cannot touch your files.** Each one works in an empty folder outside your decks, with no shell and no file tools, only the runner's own tools. The runner checks what it hands back before anything is kept.
 - **Slides are made by harness-slides,** with your brand's exported contract. The studio never edits a slide file itself.
 - **Your original is never changed.** An existing deck is read, and you always get a new copy.
