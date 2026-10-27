@@ -56,5 +56,5 @@ class Studio:
 
 
 NAMES = ('PNG',)
-METHODS = {'RunnerPage': ('__init__', 'agents'),
-           'Studio': ('__init__', 'serve', 'leave', 'start', 'stop')}
+METHODS = {'RunnerPage': ('__init__', 'agents'), 'Studio': ('__init__', 'serve', 'leave', 'start',
+           'stop')}

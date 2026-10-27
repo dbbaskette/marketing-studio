@@ -786,5 +786,13 @@ class Upkeep:
                if last is not None else 'None has been fetched on this computer yet.'))}
 
 
-NAMES = ('SAVED', 'DAY', 'LOOK_SECONDS', 'UPDATE_SECONDS', 'TAG', 'UPDATING', 'NO_RESTART', 'BRAND', 'BRAND_SECONDS', 'BRAND_INSTALLING', '_floor', '_now', '_age', '_version', 'newest', 'fetch_tree', 'install_root', '_who', '_load')
-METHODS = {'Upkeep': ('__init__', 'folder', 'checkout', 'version', 'start', 'again', '_first', '_background', 'close', 'module', 'check', '_blank', '_brands', '_tools', '_current', '_commands', '_main_version', 'saved_path', '_saved', 'due', '_brand_entry', 'remember_brand', 'look', '_bring', '_said', '_the_brand', '_brand_installed', '_moved', 'dismiss', 'releases', '_target', '_link', '_main', '_newest', '_refuse_busy', 'suite_managed', 'upgrade', '_run_installer', '_opener', 'restart', 'command', 'versions', '_own_row', 'guidance')}
+NAMES = ('SAVED', 'DAY', 'LOOK_SECONDS', 'UPDATE_SECONDS', 'TAG', 'UPDATING', 'NO_RESTART',
+         'BRAND', 'BRAND_SECONDS', 'BRAND_INSTALLING', '_floor', '_now', '_age', '_version',
+         'newest', 'fetch_tree', 'install_root', '_who', '_load')
+METHODS = {'Upkeep': ('__init__', 'folder', 'checkout', 'version', 'start', 'again', '_first',
+           '_background', 'close', 'module', 'check', '_blank', '_brands', '_tools', '_current',
+           '_commands', '_main_version', 'saved_path', '_saved', 'due', '_brand_entry',
+           'remember_brand', 'look', '_bring', '_said', '_the_brand', '_brand_installed', '_moved',
+           'dismiss', 'releases', '_target', '_link', '_main', '_newest', '_refuse_busy',
+           'suite_managed', 'upgrade', '_run_installer', '_opener', 'restart', 'command',
+           'versions', '_own_row', 'guidance')}

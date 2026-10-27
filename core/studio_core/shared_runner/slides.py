@@ -491,5 +491,14 @@ class Slides:
         return self._json('drive', 'import', '--file', str(deck), '--name', name)
 
 
-NAMES = ('VARIABLE', 'MINIMUM', 'RENDERERS', 'SCRIPT', 'TIMEOUT', 'LEAD', 'PROGRAMS', 'COUNTED', 'NOISE', 'PREVIEWING', 'GUIDES', 'REFERENCES', 'GALLERY', 'READ_MOST', 'RELATIONS', 'POOL', '_POOLS', '_POOLS_HELD', 'pool_size', '_pooled', 'locations', 'find_runtime', 'run_command', '_numbers', '_blocked', '_bound', 'example', 'read_guidance', 'ready')
-METHODS = {'TooOld': ('__init__',), 'Refused': ('__init__', 'codes', 'left'), 'Slides': ('__init__', '_call', '_json', 'version', 'outline_contract', 'outline_check', 'outline_start', 'compose_contract', 'layouts', 'merge', 'preview', 'critique', 'render', 'designs', 'sections', 'has', 'capabilities', 'assets', 'design_status', 'design_check', 'design_respond', 'asset_icon', 'images_status', 'generate_image', 'reviews', 'review_slide', 'review_mark', 'review_assess', 'reading', 'drive_check', 'drive_import')}
+NAMES = ('VARIABLE', 'MINIMUM', 'RENDERERS', 'SCRIPT', 'TIMEOUT', 'LEAD', 'PROGRAMS', 'COUNTED',
+         'NOISE', 'PREVIEWING', 'GUIDES', 'REFERENCES', 'GALLERY', 'READ_MOST', 'RELATIONS',
+         'POOL', '_POOLS', '_POOLS_HELD', 'pool_size', '_pooled', 'locations', 'find_runtime',
+         'run_command', '_numbers', '_blocked', '_bound', 'example', 'read_guidance', 'ready')
+METHODS = {'TooOld': ('__init__',), 'Refused': ('__init__', 'codes', 'left'), 'Slides':
+           ('__init__', '_call', '_json', 'version', 'outline_contract', 'outline_check',
+           'outline_start', 'compose_contract', 'layouts', 'merge', 'preview', 'critique',
+           'render', 'designs', 'sections', 'has', 'capabilities', 'assets', 'design_status',
+           'design_check', 'design_respond', 'asset_icon', 'images_status', 'generate_image',
+           'reviews', 'review_slide', 'review_mark', 'review_assess', 'reading', 'drive_check',
+           'drive_import')}

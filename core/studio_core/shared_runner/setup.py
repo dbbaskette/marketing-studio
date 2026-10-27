@@ -256,5 +256,8 @@ def seen(sent: dict) -> dict | None:
     return found
 
 
-NAMES = ('WHEN', 'SHARE', 'PLACE', 'BRANCH', 'review_choice', 'save_review_level', 'save_brand', '_same', 'moved', 'notice_path', 'notice', 'notice_read', '_words', '_text', 'place', 'whole', 'names', '_check', '_identity', '_unwritable', '_first_branch', '_local', 'check', 'read', 'seen')
+NAMES = ('WHEN', 'SHARE', 'PLACE', 'BRANCH', 'review_choice', 'save_review_level', 'save_brand',
+         '_same', 'moved', 'notice_path', 'notice', 'notice_read', '_words', '_text', 'place',
+         'whole', 'names', '_check', '_identity', '_unwritable', '_first_branch', '_local',
+         'check', 'read', 'seen')
 METHODS = {}

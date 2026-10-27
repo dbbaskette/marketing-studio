@@ -254,5 +254,9 @@ def forget_own() -> None:
                                  if name not in SHARED})
 
 
-NAMES = ('SCHEMA', 'AGENTS', 'SECONDS', 'DOLLARS', 'PARALLEL', 'MODEL', 'LEVELS', 'EFFORTS', 'CLAUDE_MODELS', 'PREVIEWS', 'RELEASE', 'path', 'check_agent', 'check_model', 'check_effort', 'takes', 'read_models', 'check_previews', 'check_place', 'check_notify', 'check_look', 'check_repository', 'check_release', 'number', 'passes', '_kept', 'load', 'seen', '_same', 'STALE', 'forget_own')
+NAMES = ('SCHEMA', 'AGENTS', 'SECONDS', 'DOLLARS', 'PARALLEL', 'MODEL', 'LEVELS', 'EFFORTS',
+         'CLAUDE_MODELS', 'PREVIEWS', 'RELEASE', 'path', 'check_agent', 'check_model',
+         'check_effort', 'takes', 'read_models', 'check_previews', 'check_place', 'check_notify',
+         'check_look', 'check_repository', 'check_release', 'number', 'passes', '_kept', 'load',
+         'seen', '_same', 'STALE', 'forget_own')
 METHODS = {}

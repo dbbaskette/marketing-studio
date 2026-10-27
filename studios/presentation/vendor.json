@@ -102,7 +102,7 @@
     {
       "path": "runner/worker_tools.py",
       "from": "runner/worker_tools.py",
-      "note": "training validators, design, assets and coverage removed; register() and outline rules added",
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/worker_tools.py`; the rest is this studio's. The port: training validators, design, assets and coverage removed; register() and outline rules added",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
