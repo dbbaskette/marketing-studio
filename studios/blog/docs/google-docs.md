@@ -21,6 +21,17 @@ or counts them as its own. An image Google does not send is kept as a visible pl
 Anything else the reader cannot take, such as an equation, is named in a plain message;
 replace it in the Doc and read it again.
 
+Their suggestions are shown, not touched. Each is recorded on this computer when the Doc is
+read (what it inserts or removes, and where), and Review mode and the full desk mark it as
+**Suggested in the Doc**: inserted words underlined and removed words struck through, in
+their own colour. There is no Accept or Reject for them, they are never numbered or
+counted with Blog Studio's fixes, and Review mode says how many are pending. Decide them in
+Google Docs; the next check against the Doc drops any that were decided there. One whose
+words you have since changed on the desk is no longer marked. Copy edit and Humanize are
+told what the Doc already suggests, so they do not repeat it; a fix of theirs over the same
+words says that accepting it makes the Doc's suggestion moot, and Accept all leaves it for
+you. Editing those words by hand is fine too.
+
 | Ask Blog Studio | What happens |
 | --- | --- |
 | “Start from this Google Doc: [link].” | Saves the original, draft and formatted snapshot; links that same Doc for future edits and suggestions. |

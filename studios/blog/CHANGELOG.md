@@ -20,6 +20,16 @@ changes for authors first, then what changes for maintainers.
   without a token, a comment may now sit on plain words of a paragraph with objects or
   someone else's suggestion, and `tests/google_model.py` has `objects_doc()` and
   `teammate()`.
+- **Other people's pending Doc suggestions are shown on the desk.** When a Doc is read, its
+  pending suggestions are recorded beside the blog (on this computer) and marked in Review
+  mode and on the full desk as **Suggested in the Doc**, with no Accept or Reject and never
+  counted with our fixes; Review mode says how many are pending. Copy edit and Humanize are
+  told what the Doc suggests, a fix over the same words is flagged as making it moot and
+  left out of Accept all, and the Google send plan says how many changes are over a Doc
+  suggestion's words (they go as comments). For maintainers: `google_pending.record`,
+  `keep`, `read` and `on_desk`; the desk view's `doc_suggestions` `{count, marks}`; review
+  payloads carry `doc_suggestions` with `DOC_PENDING` guidance; the plan returns
+  `doc_overlap`.
 - **Review suggestions stay independent.** Accepting a fix no longer throws away a
   Humanize rewrite of the same sentence, nor the other way round, and never leaves one that
   would undo it. Each suggestion is read by the words it actually changes. One whose own
