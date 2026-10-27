@@ -965,6 +965,14 @@ def start(root, args):
         if stage.exists():
             shutil.rmtree(stage)
     studio.write_json(studio.inside(root, '.active-article.json'), {'id': value})
+    # The Doc's pending suggestions as the read saw them go with the blog, on this computer.
+    native = json.loads(files['native.json'])
+    from google_roundtrip import suggestions as pending_in
+
+    if pending_in(native):
+        import google_pending
+
+        google_pending.keep(root, value, obs['document_id'], native, obs['tab_ids'])
     discard(
         root, args.snapshot
     )  # Only removes a capture that sits in this workspace's staging folder.

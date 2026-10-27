@@ -16,34 +16,17 @@ marks.
 import google_roundtrip as rt
 import studio
 
-CONTEXT = 30  # characters of the text on each side that place a suggestion on the desk
-
 
 def _path(root, ident):
     return studio.inside(root, '.blog-runs', 'google-pending', studio.identifier(ident) + '.json')
 
 
-def _ours(inline):
-    """Character spans (start, end) of the comments that carry a Blog Studio marker: the
-    suggestions sent with them sit inside or beside these words."""
-    import google_suggestions as suggestions
-
-    anchors = {anchor.get('anchorId'): anchor for anchor in suggestions.native_anchors(inline)}
-    spans = []
-    for thread in inline.get('comments', []):
-        if '[Blog Studio ' not in thread.get('headPost', {}).get('content', ''):
-            continue
-        for found in (anchors.get(thread.get('anchorId')) or {}).get('ranges', []):
-            if isinstance(found.get('startIndex'), int) and isinstance(found.get('endIndex'), int):
-                spans.append((found['startIndex'], found['endIndex']))
-    return spans
-
-
-def record(inline, tabs=None):
+def record(inline, tabs=None, own=()):
     """Every pending suggestion in a Doc's inline view that is not Blog Studio's own, in
     document order: {id, ids, kind, paragraph, text, start, end, inserted, removed}. `text`
     is the paragraph as the Doc had it, images left out; `start`/`end` are the span in it
-    (equal for an insertion point)."""
+    (equal for an insertion point); `copy` counts the Doc's earlier paragraphs with the same
+    text. Blog Studio's own suggestions (`own`, the ids its sends made) are left out."""
     # One character stream of the body, each with its index, its suggestions and whether it
     # is an object (an image or chip, which the desk's text does not show).
     chars = []
@@ -61,15 +44,25 @@ def record(inline, tabs=None):
                         {},
                     )
                     marks = value if isinstance(value, dict) else {}
-                    chars.append(
-                        {
-                            'ch': '',
-                            'at': at,
-                            'ins': list(marks.get('suggestedInsertionIds') or []),
-                            'del': list(marks.get('suggestedDeletionIds') or []),
-                            'style': [],
-                        }
+                    # A smart chip reads as its text on the desk; an image as nothing.
+                    props = marks.get('richLinkProperties') or marks.get('personProperties') or {}
+                    shown = str(
+                        props.get('title')
+                        or props.get('name')
+                        or props.get('uri')
+                        or props.get('email')
+                        or ''
                     )
+                    for c in shown or ['']:
+                        chars.append(
+                            {
+                                'ch': c,
+                                'at': at,
+                                'ins': list(marks.get('suggestedInsertionIds') or []),
+                                'del': list(marks.get('suggestedDeletionIds') or []),
+                                'style': [],
+                            }
+                        )
                     continue
                 styled = [
                     name
@@ -88,30 +81,28 @@ def record(inline, tabs=None):
                         }
                     )
                     position = position + rt.utf16(c) if isinstance(position, int) else position
-    ours = _ours(inline)
-
-    def mine(item):
-        at = item['at']
-        return isinstance(at, int) and any(a <= at <= b for a, b in ours)
+    own = set(own or ())
 
     # Paragraphs as the Doc had them: a break ends one unless it is a suggested insertion.
-    found, paragraph, text = {}, 0, []
+    found, paragraph, text, seen = {}, 0, [], []
     order = []
     for item in chars:
         if item['ins']:
             for name in item['ins']:
                 entry = found.setdefault(name, _entry(name, paragraph, len(text)))
                 entry['inserted'] += item['ch']
-                entry['own'] = entry['own'] or mine(item)
                 if name not in order:
                     order.append(name)
             continue  # Not in the text the Doc had.
         if item['ch'] == '\n':
             for name in item['del'] + item['style']:
                 found.setdefault(name, _entry(name, paragraph, len(text)))
+            done = ''.join(text)
             for entry in found.values():
                 if entry['paragraph'] == paragraph and entry['text'] is None:
-                    entry['text'] = ''.join(text)
+                    entry['text'] = done
+                    entry['copy'] = seen.count(done)
+            seen.append(done)
             paragraph, text = paragraph + 1, []
             continue
         for name in item['del'] + item['style']:
@@ -119,14 +110,14 @@ def record(inline, tabs=None):
             entry['kind'] = 'style' if name in item['style'] and not item['del'] else 'deletion'
             entry['removed'] += item['ch']
             entry['end'] = len(text) + len(item['ch'])
-            entry['own'] = entry['own'] or mine(item)
             if name not in order:
                 order.append(name)
         text.append(item['ch'])
     for entry in found.values():
         if entry['text'] is None:
             entry['text'] = ''.join(text)
-    entries = [found[name] for name in order if not found[name]['own']]
+            entry['copy'] = seen.count(entry['text'])
+    entries = [found[name] for name in order if name not in own]
     # An insertion where a deletion ends, or begins, is one replacement.
     merged = []
     for entry in entries:
@@ -157,7 +148,7 @@ def record(inline, tabs=None):
             )
             continue
         merged.append(entry)
-    return [{k: v for k, v in entry.items() if k != 'own'} for entry in merged]
+    return merged
 
 
 def _entry(name, paragraph, at):
@@ -171,18 +162,18 @@ def _entry(name, paragraph, at):
         'end': at,
         'inserted': '',
         'removed': '',
-        'own': False,
+        'copy': 0,
     }
 
 
-def keep(root, ident, document_id, inline, tabs=None):
+def keep(root, ident, document_id, inline, tabs=None, own=()):
     """Record the Doc's pending suggestions for this blog, replacing what was there."""
     value = {
         'schema': 1,
         'document_id': document_id,
         'revision_id': inline.get('revisionId'),
         'read_at': studio.now(),
-        'suggestions': record(inline, tabs),
+        'suggestions': record(inline, tabs, own),
     }
     target = _path(root, ident)
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -207,19 +198,61 @@ def forget(root, ident):
         target.unlink()
 
 
+def _paragraphs(text):
+    """[(shown words, where each sits in the part's Markdown)] for each paragraph of a part:
+    its words as the Doc shows them, a line break inside it as the Doc's own break."""
+    import desk_finish
+
+    lines = text.split('\n')
+    starts, at = [], 0
+    for line in lines:
+        starts.append(at)
+        at += len(line) + 1
+    found, number = [], 0
+    while number < len(lines):
+        group = [number]
+        while (
+            lines[group[-1]].endswith('  ')
+            and group[-1] + 1 < len(lines)
+            and lines[group[-1] + 1].strip()
+            and not desk_finish.LINE_MARK.match(lines[group[-1] + 1])
+            and not lines[group[-1]].strip().startswith('|')
+        ):
+            group.append(group[-1] + 1)
+        number = group[-1] + 1
+        if not lines[group[0]].strip() or desk_finish.DEFINITION.match(lines[group[0]]):
+            continue
+        shown, places = [], []
+        for count, index in enumerate(group):
+            styled = desk_finish._styled(lines[index])
+            if styled is None:
+                shown = None
+                break
+            if count:
+                shown.append('\x0b')
+                places.append(starts[index] - 1)
+            shown += [c for c, _ in styled['chars']]
+            places += [starts[index] + place for place in styled['at']]
+        if shown:
+            found.append((''.join(shown), places))
+    return found
+
+
 def on_desk(root, ident, draft):
     """The recorded suggestions placed on the desk's parts: [{part, at, length, kind,
-    inserted, removed, id}], each where its words and the words around them read exactly so,
-    once, in the desk's text; one whose words changed there is left out."""
+    inserted, removed, id}], each in its own paragraph (the one whose words are those of the
+    paragraph it sits in, in the Doc) at its place there, mapped back to the Markdown. One
+    whose paragraph's words changed on the desk is left out."""
     import desk
 
     parts = ['opening'] + [section['id'] for section in draft.get('sections', [])]
-    texts = {}
+    paragraphs = []  # (part, shown words, places, its Markdown)
     for part in parts:
         try:
-            texts[part] = desk.text_of(draft, part)
+            text = desk.text_of(draft, part)
         except ValueError:
             continue
+        paragraphs += [(part, shown, places, text) for shown, places in _paragraphs(text)]
     placed = []
     for entry in read(root, ident):
         if not isinstance(entry, dict) or not isinstance(entry.get('text'), str):
@@ -227,39 +260,33 @@ def on_desk(root, ident, draft):
         base, start, end = entry['text'], entry.get('start', 0), entry.get('end', 0)
         if not (isinstance(start, int) and isinstance(end, int) and 0 <= start <= end <= len(base)):
             continue
-        spot = None
-        for width in (CONTEXT, 12):
-            left, right = base[max(0, start - width) : start], base[end : end + width]
-            needle = left + base[start:end] + right
-            if not needle.strip():
-                break
-            hits = [
-                (part, at + len(left)) for part, text in texts.items() for at in _all(text, needle)
-            ]
-            if len(hits) == 1:
-                spot = hits[0]
-                break
-            if hits:
-                break  # The same words twice: no telling which one.
-        if spot is None:
+        words = base.strip()
+        lead = len(base) - len(base.lstrip())
+        same = [row for row in paragraphs if row[1] == words]
+        copy = entry.get('copy') if isinstance(entry.get('copy'), int) else 0
+        if not words or copy >= len(same):
+            continue  # Its paragraph's words changed on the desk: not marked.
+        part, shown, places, text = same[copy]
+        first, last = start - lead, end - lead
+        if first < 0 or last > len(shown):
             continue
+
+        def after(k, text=text, shown=shown, places=places):
+            # Just after the k-th shown character in the Markdown: an escaped mark is two.
+            escaped = text[places[k]] == '\\' and shown[k] != '\\'
+            return places[k] + (2 if escaped else 1)
+
+        at = places[first] if first < len(places) else after(len(places) - 1)
+        length = after(last - 1) - at if last > first else 0
         placed.append(
             {
                 'id': entry.get('id'),
                 'kind': entry.get('kind'),
-                'part': spot[0],
-                'at': spot[1],
-                'length': end - start,
+                'part': part,
+                'at': at,
+                'length': length,
                 'inserted': entry.get('inserted') or '',
                 'removed': entry.get('removed') or '',
             }
         )
     return placed
-
-
-def _all(text, needle):
-    found, at = [], text.find(needle)
-    while at != -1:
-        found.append(at)
-        at = text.find(needle, at + 1)
-    return found

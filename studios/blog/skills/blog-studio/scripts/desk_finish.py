@@ -1480,7 +1480,7 @@ INLINE = re.compile(
     r'|(?P<tag></?(?:u|sup|sub)>)'
     r'|(?P<marks>[*`]+)'  # emphasis and code marks
 )
-LITERAL = re.compile('(\x00[0-9]+\x00)')
+ESCAPE_HOLD = '\x00\x01'  # an escaped mark's place, two characters as `\\*` is
 DEFINITION = re.compile(r'\s*\[([^\]^][^\]]*)\]:')
 TOKEN = re.compile(r"\w+(?:['’-]\w+)*|[^\S\n]+|.", re.S)
 NOTE_LIMIT = 1000  # characters in one suggestion's or comment's reason
@@ -1491,19 +1491,33 @@ PLAIN = (False, False, False, False, None, None)
 BREAK = ('\n', PLAIN)
 
 
-def _inline(text, state, link, chars, images):
-    """The characters a run of inline Markdown shows, each with its style."""
+def _inline(text, state, link, chars, images, base=0, escapes=None, at_=None):
+    """The characters a run of inline Markdown shows, each with its style, and in `at_` where
+    each sits in the line (`base` is where `text` starts there)."""
+    escapes = escapes if escapes is not None else {}
+    at_ = at_ if at_ is not None else []
     at = 0
     for found in INLINE.finditer(text):
-        _literal(text[at : found.start()], state, link, chars)
+        _literal(text[at : found.start()], state, link, chars, base + at, escapes, at_)
         at = found.end()
         if found['image']:
             images.append(found['image'])
         elif found['url'] is not None:
             target = found['url'].strip().split()[0] if found['url'].strip() else ''
-            _inline(found['text'], state, target.strip('<>'), chars, images)
+            _inline(
+                found['text'],
+                state,
+                target.strip('<>'),
+                chars,
+                images,
+                base + found.start('text'),
+                escapes,
+                at_,
+            )
         elif found['auto']:
-            _literal(found['auto'], state, found['auto'], chars)
+            _literal(
+                found['auto'], state, found['auto'], chars, base + found.start('auto'), escapes, at_
+            )
         elif found['tag']:
             name = found['tag'].strip('</>')
             if name == 'u':
@@ -1519,10 +1533,10 @@ def _inline(text, state, link, chars, images):
                     state['italic'] = not state['italic']
                 if len(run) // 2 % 2:
                     state['bold'] = not state['bold']
-    _literal(text[at:], state, link, chars)
+    _literal(text[at:], state, link, chars, base + at, escapes, at_)
 
 
-def _literal(text, state, link, chars):
+def _literal(text, state, link, chars, base=0, escapes=None, at_=None):
     style = (
         state['bold'],
         state['italic'],
@@ -1531,24 +1545,34 @@ def _literal(text, state, link, chars):
         state['script'],
         link or None,
     )
-    for piece in LITERAL.split(text):
-        if LITERAL.fullmatch(piece):
-            chars.append((chr(int(piece[1:-1])), style))  # An escaped mark is the character.
-        else:
-            chars.extend((character, style) for character in piece)
+    escapes = escapes or {}
+    at = 0
+    while at < len(text):
+        if text.startswith(ESCAPE_HOLD, at) and base + at in escapes:
+            chars.append((escapes[base + at], style))  # An escaped mark is the character.
+            if at_ is not None:
+                at_.append(base + at)
+            at += len(ESCAPE_HOLD)
+            continue
+        chars.append((text[at], style))
+        if at_ is not None:
+            at_.append(base + at)
+        at += 1
 
 
 def _styled(line):
     """A Markdown line as the Doc's body paragraph shows it: its kind of paragraph, each
-    character with its style (without the spaces around them), and its images. None for a
-    line that is not a paragraph (a table row, a fence, a footnote's or a link's definition,
-    such as an image's data)."""
+    character with its style (without the spaces around them), where each sits in the line
+    (`at`), and its images. None for a line that is not a paragraph (a table row, a fence, a
+    footnote's or a link's definition, such as an image's data)."""
     bare = line.strip()
     if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[[^\]]+\]:', bare):
         return None
-    # An escaped mark is the character itself, as Google's Markdown export writes it.
-    line = ESCAPED.sub(lambda found: '\x00' + str(ord(found.group(1))) + '\x00', line)
-    block, mark = 'text', LINE_MARK.match(line)
+    # An escaped mark is the character itself, as Google's Markdown export writes it: held in
+    # place by a mark of the same length, so every character keeps its place in the line.
+    escapes = {found.start(): found.group(1) for found in ESCAPED.finditer(line)}
+    line = ESCAPED.sub(ESCAPE_HOLD, line)
+    block, mark, base = 'text', LINE_MARK.match(line), 0
     if mark:
         if mark['heading']:
             block = 'heading ' + str(len(mark['heading']))
@@ -1558,15 +1582,17 @@ def _styled(line):
             block = 'quote'
         else:
             block = 'number'
-        line = line[mark.end() :]
-    chars, images = [], []
+        base = mark.end()
+    chars, images, at = [], [], []
     state = {'bold': False, 'italic': False, 'code': False, 'underline': False, 'script': None}
-    _inline(line, state, None, chars, images)
+    _inline(line[base:], state, None, chars, images, base, escapes, at)
     while chars and chars[0][0].isspace():
         chars.pop(0)
+        at.pop(0)
     while chars and chars[-1][0].isspace():
         chars.pop()
-    return {'block': block, 'chars': chars, 'images': images}
+        at.pop()
+    return {'block': block, 'chars': chars, 'images': images, 'at': at}
 
 
 def _visible(line):
@@ -1980,7 +2006,7 @@ def _paragraph_change(old_line, new_lines):
             new.append(BREAK)
         new += found['chars']
     images = [image for _, found in texts for image in found['images']]
-    if images:
+    if images and images != old['images']:
         notes.append(
             (
                 ('images', tuple(images)),
@@ -2084,8 +2110,9 @@ def _place(texts, k, shown, start, quoted):
 
 
 def _anchorable(styled):
-    """Whether the Doc's paragraph can take a suggestion or comment: text, and no image."""
-    return bool(styled and not styled['images'] and styled['chars'])
+    """Whether the Doc's paragraph can take a suggestion or comment: it has words (an image
+    beside them is stepped around by the Doc's own indexes)."""
+    return bool(styled and styled['chars'])
 
 
 def _without_title(before, after, title):
@@ -2439,6 +2466,7 @@ def _sent(root, ident):
         'plans': dict(found.get('plans') or {}),
         'sent': list(found.get('sent') or []),
         'name': found.get('name') if isinstance(found.get('name'), str) else None,
+        'own': [name for name in found.get('own') or [] if isinstance(name, str)],
     }
 
 
@@ -2515,7 +2543,12 @@ def google_plan(root, ident, mode):
     import google_pending
 
     google_pending.keep(
-        root, ident, base['document']['document_id'], inline, base['document']['tab_ids']
+        root,
+        ident,
+        base['document']['document_id'],
+        inline,
+        base['document']['tab_ids'],
+        own=set(record['own']),
     )
     record['name'] = ' '.join((inline.get('title') or '').split()) or None
     proposals, left, paragraphs = google_changes(baseline, body, inline.get('title'))
@@ -2566,8 +2599,15 @@ def google_plan(root, ident, mode):
     if gone:
         waiting, proposals = len(gone) + len(proposals), []
     if proposals:
+        waiting_edits = {
+            row['id']
+            for row in record['sent']
+            if row.get('kind', 'edit') == 'edit'
+            and not row.get('settled')
+            and row.get('base', base['transfer']) == base['transfer']
+        }
         proposals, also, unplaced, covers, later, theirs = _not_pending(
-            inline, base['document'], proposals, paragraphs
+            inline, base['document'], proposals, paragraphs, waiting_edits
         )
         waiting += also
         left += unplaced
@@ -2728,29 +2768,65 @@ def _still_waits(inline, ident):
     return False
 
 
+class _Text(tuple):
+    """(key, paragraph, text, settled), with `positions`: the Doc's index of each character."""
+
+    positions = ()
+
+
+def _base_of(paragraph, start):
+    """A Doc paragraph's words as the desk has them (its text as the Doc had it, without
+    suggested insertions; a smart chip as its text, an image as nothing) and the Doc's index
+    of each character."""
+    import google_roundtrip as rt
+
+    text, positions, at = [], [], start
+    for element in paragraph.get('elements', []):
+        run = element.get('textRun')
+        if run is not None:
+            for c in run.get('content', ''):
+                if not run.get('suggestedInsertionIds'):
+                    text.append(c)
+                    positions.append(at)
+                at += rt.utf16(c)
+            continue
+        shown = ''
+        if 'richLink' in element:
+            props = element['richLink'].get('richLinkProperties') or {}
+            shown = str(props.get('title') or props.get('uri') or '')
+        elif 'person' in element:
+            props = element['person'].get('personProperties') or {}
+            shown = str(props.get('name') or props.get('email') or '')
+        inner = next((v for k, v in element.items() if k not in ('startIndex', 'endIndex')), {})
+        if not (isinstance(inner, dict) and inner.get('suggestedInsertionIds')):
+            text.extend(shown)
+            positions.extend([at] * len(shown))
+        at += 1
+    if text and text[-1] == '\n':
+        text.pop()
+        positions.pop()
+    return ''.join(text), positions
+
+
 def _paragraph_texts(inline, tabs):
-    """[(key, paragraph, text, settled)] for each Doc body paragraph of text, in order: its
-    text as the Doc had it (without suggested insertions, suggested deletions as they stand),
-    and whether nothing waits in it, nor in a paragraph a suggested break split it from."""
+    """[(key, paragraph, text, settled)] for each Doc body paragraph, in order: its words as
+    the Doc had them (without suggested insertions, suggested deletions as they stand), and
+    whether nothing waits in it, nor in a paragraph a suggested break split it from. Each
+    entry's `positions` gives the Doc's index of each character, around images and chips."""
     import google_roundtrip as rt
 
     found, split = [], False
     for key, paragraph in rt.paragraphs(inline).items():
-        runs = [element.get('textRun') for element in paragraph.get('elements', [])]
-        last = runs[-1] if runs and runs[-1] else {}
+        elements = paragraph.get('elements', [])
+        last = (elements[-1].get('textRun') or {}) if elements else {}
         was_split = split
         split = bool(last.get('suggestedInsertionIds')) and last.get('content', '').endswith('\n')
-        if key[0] not in tabs or not runs or not all(runs):
+        if key[0] not in tabs or not elements:
             continue
-        text = ''.join(run['content'] for run in runs if not run.get('suggestedInsertionIds'))
-        found.append(
-            (
-                key,
-                paragraph,
-                text[:-1] if text.endswith('\n') else text,
-                not rt.suggestions(paragraph) and not was_split,
-            )
-        )
+        text, positions = _base_of(paragraph, key[1])
+        entry = _Text((key, paragraph, text, not rt.suggestions(paragraph) and not was_split))
+        entry.positions = positions
+        found.append(entry)
     return found
 
 
@@ -2763,10 +2839,11 @@ def _where(texts, proposal, found):
     needle = context or before
     inner = needle.find(before) if context else 0
     hits = []
-    for key, paragraph, text, settled in texts:
+    for entry in texts:
+        key, paragraph, text, settled = entry
         at = text.find(needle)
         while at != -1:
-            hits.append((key, paragraph, text, at + inner, settled))
+            hits.append((key, paragraph, entry, at + inner, settled))
             at = text.find(needle, at + 1)
     if (proposal.get('occurrence') or context) and len(hits) != found.get('matches'):
         return None
@@ -2777,11 +2854,12 @@ def _where(texts, proposal, found):
         hits = [hits[occurrence - 1]]
     if len(hits) != 1:
         return None
-    key, paragraph, text, at, settled = hits[0]
-    import google_roundtrip as rt
-
+    key, paragraph, entry, at, settled = hits[0]
+    positions = entry.positions or ()
+    if at >= len(positions):
+        return None
     located = {k: v for k, v in proposal.items() if k not in ('context', 'occurrence')}
-    located['tab_id'], located['start_index'] = key[0], key[1] + rt.utf16(text[:at])
+    located['tab_id'], located['start_index'] = key[0], positions[at]
     return located, key, paragraph, settled
 
 
@@ -2827,6 +2905,23 @@ def _elsewhere(inline, tabs, texts, group, found, used):
     )
     markers = [] if single else [' '.join('[Blog Studio ' + p['id'] + ']' for p in group)]
     about = found.get('about')
+    # First the paragraph's own plain words, then the closest paragraph that is clean.
+    own = ' '.join((found.get('text') or '').split())
+    if own and not found.get('float'):
+        spots = [spot for spot in _spots(inline, tabs) if spot[2] == own]
+        if len(spots) == 1 and spots[0][0] not in used and spots[0][3]:
+            key, _, _, (start, words) = spots[0]
+            comment = {
+                'id': ident,
+                'kind': 'comment',
+                'before': words,
+                'reason': _note(' '.join(said), markers),
+                'tab_id': key[0],
+                'start_index': start,
+            }
+            if _fits(inline, tabs, comment):
+                used.add(key)
+                return comment
     for text in found.get('near') or []:
         wanted = ' '.join(text.split())
         exact = [
@@ -2919,7 +3014,31 @@ def _spots(inline, tabs):
     return found
 
 
-def _not_pending(inline, document, proposals, expected):
+def _touches_theirs(where):
+    """Whether a located change's words overlap someone else's pending suggestion, or sit right
+    beside one of their insertions."""
+    import google_roundtrip as rt
+
+    located, key, paragraph, _ = where
+    at = key[1]
+
+    marks = []
+    for element in paragraph.get('elements', []):
+        run = element.get('textRun')
+        if run is None:
+            marks.append((at, at + 1, False))
+            at += 1
+            continue
+        size = rt.utf16(run.get('content', ''))
+        touched = bool(run.get('suggestedInsertionIds') or run.get('suggestedDeletionIds'))
+        marks.append((at, at + size, touched))
+        at += size
+    start = located['start_index']
+    end = start + rt.utf16(located['before'])
+    return any(touched and a <= end and start <= b for a, b, touched in marks)
+
+
+def _not_pending(inline, document, proposals, expected, ours=None):
     """The proposals that can go now, read from the Doc: how many wait for a pending
     suggestion in their paragraph, and how many could not be placed anywhere. A change that
     could land somewhere other than the paragraph it is meant for (the Doc shows its quote a
@@ -2935,7 +3054,7 @@ def _not_pending(inline, document, proposals, expected):
     texts = _paragraph_texts(inline, tabs)
     # Only this blog's own suggestions hold their paragraphs: a change in a paragraph that
     # holds only someone else's goes as a comment instead, theirs untouched.
-    mine = _ours(inline, texts)
+    mine = _ours(inline, texts, ours or ())
     held = {
         ' '.join(text.split()) for key, _, text, settled in texts if not settled and key in mine
     }
@@ -2954,11 +3073,12 @@ def _not_pending(inline, document, proposals, expected):
             found = expected.get(proposal['id']) or {}
             meant = ' '.join((found.get('text') or '').split())
             where = _where(texts, proposal, found)
-            if where is not None and not where[3]:
-                if where[1] not in mine:
-                    theirs += 1  # Words someone else's suggestion also changes: a comment.
-                states.append(('wait' if where[1] in mine else 'move', proposal))
-            elif (
+            if where is not None and not where[3] and where[1] in mine:
+                states.append(('wait', proposal))
+                continue
+            if where is not None and not where[3] and _touches_theirs(where):
+                theirs += 1  # Words or a place someone else's suggestion also changes.
+            if (
                 where is None
                 or (meant and ' '.join(_text_of(texts, where[1]).split()) != meant)
                 or not _fits(inline, tabs, where[0])
@@ -2998,18 +3118,20 @@ def _not_pending(inline, document, proposals, expected):
     return free, waiting, unplaced, covers, later, theirs
 
 
-def _ours(inline, texts):
-    """The Doc paragraphs holding one of this blog's own suggestions still waiting: where an
-    open comment carrying a Blog Studio marker sits, and any paragraph a suggested break
-    splits from it."""
+def _ours(inline, texts, edits):
+    """The Doc paragraphs holding one of this blog's own suggestions still waiting: where the
+    open comment that came with one of its edits (`edits`, their ids) sits, and any paragraph a
+    suggested break splits from it. A note or other comment of ours holds nothing."""
     import google_roundtrip as rt
     import google_suggestions as suggestions
     from google_drive import GoogleError
 
     anchors = {anchor.get('anchorId'): anchor for anchor in suggestions.native_anchors(inline)}
     keys = set()
+    markers = ['[Blog Studio ' + ident + ']' for ident in edits]
     for thread in inline.get('comments', []):
-        if '[Blog Studio ' not in thread.get('headPost', {}).get('content', ''):
+        content = thread.get('headPost', {}).get('content', '')
+        if not any(marker in content for marker in markers):
             continue
         if thread.get('status', 'OPEN') != 'OPEN':
             continue
@@ -3041,10 +3163,26 @@ def google_send(root, ident, data):
 
     import manuscript_editor
 
+    import google_roundtrip as rt
+
     expected = _google_expected(root, ident)
     client = drive.Client(drive.account_for(root))
+    _, _, base = _google_base(root, ident)
+    document = base['document']['document_id']
+    try:
+        earlier = rt.suggestion_ids(rt.inline_read(client, document))
+    except Exception:  # noqa: BLE001 (a read that fails leaves the send to say so)
+        earlier = None
     result = manuscript_editor.google_send(client, root, ident, data, expected)
     record = _sent(root, ident)
+    if earlier is not None and result.get('status') in ('verified-pending', 'verified-comments'):
+        # The suggestions this send made are Blog Studio's own, never the Doc's to show.
+        try:
+            made = rt.suggestion_ids(rt.inline_read(client, document)) - earlier
+        except Exception:  # noqa: BLE001
+            made = set()
+        record['own'] = sorted(set(record.get('own') or []) | made)[-2000:]
+        studio.write_json(_sent_path(root, ident), record)
     rows = record['plans'].pop(data.get('plan'), None)
     if rows:
         known = {row.get('id') for row in record['sent']}

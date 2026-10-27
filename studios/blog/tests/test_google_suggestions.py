@@ -504,16 +504,25 @@ class SuggestionsTests(unittest.TestCase):
         self.assertEqual(result['status'], 'verified-pending')
         self.assertTrue(result['accepted_text_unchanged'])
         self.assertIn('teammate-1', json.dumps(self.client.native_read('fixture-doc', inline=True)))
-        # Only the paragraph that already carries a pending suggestion is refused.
+        # In the paragraph with their suggestion, words beside it may change; their own
+        # suggested words never are.
+        gs.plan(
+            self.client,
+            self.root,
+            self.aid,
+            'draft',
+            [self.findings()[1]],
+            self.root / 'beside.json',
+        )
+        blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
+        theirs = dict(
+            self.findings()[1],
+            before='very slow',
+            after='slow',
+            start_index=blocks[2]['startIndex'] + rt.utf16('😀 This isn’t '),
+        )
         with self.assertRaisesRegex(gd.GoogleError, 'pending suggestion'):
-            gs.plan(
-                self.client,
-                self.root,
-                self.aid,
-                'draft',
-                [self.findings()[1]],
-                self.root / 'blocked.json',
-            )
+            gs.plan(self.client, self.root, self.aid, 'draft', [theirs], self.root / 'blocked.json')
         # If the edited paragraph does not read back as proposed, verification fails closed.
         blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
         blocks[1]['paragraph']['elements'] = [

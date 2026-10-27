@@ -577,16 +577,16 @@ class CommentTests(unittest.TestCase):
         result = gs.apply(self.client, self.root, saved)
         self.assertEqual(result['status'], 'verified-comments')
         self.assertTrue(result['accepted_text_unchanged'])
-        # Only the paragraph that carries the colleague's suggestion is off limits.
+        # Only the colleague's own suggested words are off limits.
+        blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
+        theirs = dict(
+            self.findings()[1],
+            before='very slow',
+            after='slow',
+            start_index=blocks[2]['startIndex'] + rt.utf16('😀 This isn’t '),
+        )
         with self.assertRaisesRegex(gd.GoogleError, 'pending suggestion'):
-            gs.plan(
-                self.client,
-                self.root,
-                self.aid,
-                'draft',
-                [self.findings()[1]],
-                self.root / 'blocked.json',
-            )
+            gs.plan(self.client, self.root, self.aid, 'draft', [theirs], self.root / 'blocked.json')
         self.assertEqual(
             review.apply_edits(self.client, self.root, saved, [1])['status'], 'applied'
         )

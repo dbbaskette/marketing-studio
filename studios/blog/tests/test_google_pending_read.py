@@ -318,14 +318,21 @@ class PendingSendTests(PendingDocCase):
         )
         result = self.act('google-send', plan=plan['plan'], confirmed=True)
         self.assertEqual(result['status'], 'verified-pending')
+        edits = [(p['before'], p['after']) for p in plan['proposals'] if p['kind'] == 'edit']
+        # Beside an image, a chip or someone else's suggestion, ours goes as a suggestion by
+        # the Doc's own indexes; over their words, as a comment on the paragraph's own words.
+        for edit in (('the', 'this'), ('with', 'beside'), ('Line one', 'First line')):
+            self.assertIn(edit, edits)
         comments = [p for p in plan['proposals'] if p['kind'] == 'comment']
-        said = ' '.join(p['reason'] for p in comments)
-        for words in ('See this chart', 'beside Ada Lovelace', 'short and clear'):
-            self.assertIn(words, said, 'where Google cannot take ours exactly, a comment')
+        self.assertEqual(len(comments), 1)
+        self.assertIn('short and clear', comments[0]['reason'])
+        self.assertEqual(comments[0]['before'], 'We keep the plan', 'on its own paragraph')
         objects = [line.count('￼') for line in self.accepted()]
         self.client.decide(accept_ids=self.ours())
         lines = self.accepted()
         self.assertIn('An opening paragraph about ports.', lines)
+        self.assertIn('See this chart \ufffc for the trend.', lines)
+        self.assertIn('Read the \ufffc beside \ufffc first.', lines)
         # A paragraph with a line break is one paragraph: the change lands in it exactly.
         self.assertIn('First line\x0bline two of one paragraph.', lines)
         self.assertEqual([line.count('￼') for line in lines], objects, 'images untouched')
@@ -349,7 +356,8 @@ class PendingSendTests(PendingDocCase):
         plan = self.act('google-plan', mode='auto')
         self.assertEqual(plan['waiting'], 0)
         self.assertEqual(len(plan['proposals']), 1)
-        self.assertEqual(plan['proposals'][0]['kind'], 'comment', 'their paragraph: a comment')
+        self.assertEqual(plan['proposals'][0]['kind'], 'edit', 'beside their insertion: ours')
+        self.assertEqual(plan['doc_overlap'], 0, 'its words are not theirs')
 
 
 if __name__ == '__main__':

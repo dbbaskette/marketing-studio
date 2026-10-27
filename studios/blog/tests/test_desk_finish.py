@@ -3453,12 +3453,11 @@ class ImageFinishingTests(DeskCase):
         baseline = GOOGLE.replace('The end.', 'See ![][image1] here.\n\nThe end.')
         body = baseline.replace('More text after', 'More words after').replace('here.', 'there.')
         found, left, paragraphs = desk_finish.google_changes(baseline, body)
-        # A paragraph with an image cannot take a suggestion: its change is a comment beside it.
+        # A paragraph with an image takes its change as a suggestion, by the Doc's own indexes.
         self.assertEqual(
             [(f['kind'], f['before'], f.get('after')) for f in found],
-            [('edit', 'text', 'words'), ('comment', 'The end.', None)],
+            [('edit', 'text', 'words'), ('edit', 'here', 'there')],
         )
-        self.assertIn('“See here.”, reads “See there.”', found[1]['reason'])
         self.assertEqual(left, 0)
         self.assertNotIn('data:image', json.dumps([found, paragraphs]))
         # An image removed or replaced is made in the Doc by hand, never sent as words.

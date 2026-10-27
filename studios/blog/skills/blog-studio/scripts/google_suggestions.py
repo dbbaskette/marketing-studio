@@ -840,25 +840,10 @@ def validate(document_value, findings, selected_tabs):
                 }
             )
             continue
-        if any(
-            set(e) - {'startIndex', 'endIndex', 'textRun'} or 'textRun' not in e
-            for e in paragraph['elements']
-        ):
-            raise GoogleError('Paragraph contains unsupported objects; no proposal submitted.')
-        rt.require_settled(paragraph)
-        text = rt.paragraph_text(paragraph)
-        offset = start
-        for element in paragraph['elements']:
-            run = element['textRun']
-            if (
-                set(run) - {'content', 'textStyle'}
-                or element.get('startIndex') != offset
-                or element.get('endIndex') != offset + rt.utf16(run['content'])
-            ):
-                raise GoogleError(
-                    'Unsupported native run or inconsistent indexes; no proposal submitted.'
-                )
-            offset = element['endIndex']
+        # An edit goes by the Doc's own indexes, where an image or chip is one character and
+        # someone else's pending suggestion keeps its place: it changes only plain words no
+        # suggestion touches, and never goes inside their suggested insertion.
+        text, quiet = _quiet_text(paragraph, start)
         a = position(text, f['start_index'] - start)
         b = a + len(f['before'])
         if text[a:b] != f['before'] or b >= len(text):
@@ -869,6 +854,11 @@ def validate(document_value, findings, selected_tabs):
                 )
             raise GoogleError(
                 'Google wording changed since review. Pull/reconcile and refresh this finding first.'
+            )
+        if not all(quiet[a:b]):
+            raise GoogleError(
+                'Those words are beside an image or chip, or under someone else’s pending '
+                'suggestion, so they are not changed here; no proposal submitted.'
             )
         end = f['start_index'] + rt.utf16(f['before'])
         for left, right in occupied.setdefault(tab, []):
@@ -881,9 +871,9 @@ def validate(document_value, findings, selected_tabs):
             da, db = a + keep_start, b - keep_end
             inserted = f['after'][keep_start : len(f['after']) - keep_end]
             styles = [
-                e['textRun'].get('textStyle', {})
+                e['textRun'].get('textStyle', {}) if 'textRun' in e else {}
                 for e in paragraph['elements']
-                for _ in e['textRun']['content']
+                for _ in (e['textRun']['content'] if 'textRun' in e else '\ufffc')
             ]
             # Inserted text takes the style of the words it replaces, or of the word it follows.
             style = styles[da] if da < db else styles[max(a, da - 1)]
@@ -1073,12 +1063,23 @@ def build(document_value, findings, selected_tabs, accepted=None):
     merged = []
     for key, edits in changes.items():
         paragraph = paragraphs[key]
-        original = rt.paragraph_text(paragraph)[:-1]
-        chars = [
-            (c, e['textRun'].get('textStyle', {}))
-            for e in paragraph['elements']
-            for c in e['textRun']['content']
-        ]
+        # Each character with its style, the object it is (an image or chip is one), and
+        # whether someone else's suggestion inserted it.
+        theirs_ids = sorted(rt.suggestion_ids(paragraph))
+        cells = []
+        for e in paragraph['elements']:
+            run = e.get('textRun')
+            if run is None:
+                value = {k: v for k, v in e.items() if k not in ('startIndex', 'endIndex')}
+                inner = next(iter(value.values()), {}) if value else {}
+                cells.append(
+                    ('\ufffc', {}, value, bool((inner or {}).get('suggestedInsertionIds')))
+                )
+            else:
+                theirs = bool(run.get('suggestedInsertionIds'))
+                cells += [(c, run.get('textStyle', {}), None, theirs) for c in run['content']]
+        original = ''.join(c for c, _, _, theirs in cells if not theirs)[:-1]
+        chars = [(c, style) for c, style, _, _ in cells]
         removed = False
         for item in sorted(edits, key=lambda edit: edit['a'], reverse=True):
             da, db = item['deleted']
@@ -1087,9 +1088,11 @@ def build(document_value, findings, selected_tabs, accepted=None):
                 # way the paragraph is gone. Otherwise an empty paragraph is left.
                 removed = item['joined']
                 chars = [] if removed is True else chars[-1:]
+                cells = [] if removed is True else cells[-1:]
                 structural = True
                 continue
             chars[da:db] = [(c, look) for piece, look in item['runs'] for c in piece]
+            cells[da:db] = [(c, look, None, False) for piece, look in item['runs'] for c in piece]
             structural = structural or '\n' in item['inserted']
         if len(chars) == 1 and not any(item['finding'].get('remove') for item in edits):
             raise GoogleError(
@@ -1098,16 +1101,19 @@ def build(document_value, findings, selected_tabs, accepted=None):
             )
         # The accepted view: each line break ends a paragraph that keeps this one's style.
         pieces, current = [], []
-        for c, style in chars:
-            current.append((c, style))
-            if c == '\n':
+        for cell in cells:
+            current.append(cell)
+            if cell[0] == '\n':
                 pieces.append(current)
                 current = []
         blocks = []
         for piece in pieces:
             copied = copy.deepcopy(paragraph)
             copied['elements'] = [
-                {'textRun': {'content': c, 'textStyle': style}} for c, style in piece
+                copy.deepcopy(element)
+                if element is not None
+                else {'textRun': {'content': c, 'textStyle': style}}
+                for c, style, element, _ in piece
             ]
             blocks.append({'paragraph': copied})
         body = _body(expected, key[0])
@@ -1119,8 +1125,11 @@ def build(document_value, findings, selected_tabs, accepted=None):
             'tab_id': key[0],
             'start_index': key[1],
             'before': original,
-            'after': ''.join(c for c, _ in chars)[:-1],
+            # As the Doc's owner would see ours accepted and theirs still to decide.
+            'after': ''.join(c for c, _, _, theirs in cells if not theirs)[:-1],
         }
+        if theirs_ids:
+            target['foreign'] = theirs_ids
         if removed:
             target['removed'] = removed
         targets.append(target)
@@ -1177,9 +1186,27 @@ def inserted_before(findings, tab_id, index, strict=False):
     )
 
 
+def _cells_of(element):
+    """(text, inserted ids, deleted ids) of one element: an image or chip is one character."""
+    run = element.get('textRun')
+    if run is not None:
+        return (
+            run.get('content', ''),
+            set(run.get('suggestedInsertionIds') or []),
+            set(run.get('suggestedDeletionIds') or []),
+        )
+    value = next((v for k, v in element.items() if k not in ('startIndex', 'endIndex')), {})
+    value = value if isinstance(value, dict) else {}
+    return (
+        '\ufffc',
+        set(value.get('suggestedInsertionIds') or []),
+        set(value.get('suggestedDeletionIds') or []),
+    )
+
+
 def _runs_from(inline, tab_id, start):
-    """The runs of the paragraph at `start` and of any paragraph a suggested line break split
-    from it: up to the break the paragraph had before."""
+    """The elements of the paragraph at `start` and of any paragraph a suggested line break
+    split from it, as (text, inserted ids, deleted ids): up to the break it had before."""
     runs, going = [], False
     for block in _body(inline, tab_id):
         if 'paragraph' not in block:
@@ -1190,12 +1217,12 @@ def _runs_from(inline, tab_id, start):
             going = True
         if not going:
             continue
-        found = [element.get('textRun') for element in block['paragraph'].get('elements', [])]
-        if not found or not all(found):
+        found = [_cells_of(element) for element in block['paragraph'].get('elements', [])]
+        if not found:
             return None
         runs += found
-        last = found[-1]
-        if last['content'].endswith('\n') and not last.get('suggestedInsertionIds'):
+        text, inserted, _ = found[-1]
+        if text.endswith('\n') and not inserted:
             return runs
     return runs if going else None
 
@@ -1203,12 +1230,14 @@ def _runs_from(inline, tab_id, start):
 def targets_show(inline, saved, submitted):
     """Check the edited paragraphs directly in the inline view.
 
-    submitted=True: each paragraph reads as its original text with our insertions
-    left out, and as the proposed text with our deletions left out; a paragraph a
+    submitted=True: each paragraph reads as its original text with every suggested insertion
+    left out, and as the proposed text with our deletions and others' insertions left out
+    (someone else's pending suggestions in it, named in the target, are theirs); a paragraph a
     suggested break splits is read on to the break it had before.
     submitted=False: each paragraph is untouched, proving nothing was sent.
     """
     for target in saved.get('targets', []):
+        foreign = set(target.get('foreign') or [])
         shift = (
             inserted_before(saved['findings'], target['tab_id'], target['start_index'], strict=True)
             if submitted
@@ -1223,16 +1252,20 @@ def targets_show(inline, saved, submitted):
         if start != target['start_index'] + shift:
             return False
         if not submitted:
-            runs = [element.get('textRun') for element in paragraph.get('elements', [])]
-            original = ''.join(run['content'] for run in runs if run) if all(runs) else None
-            if rt.suggestions(paragraph) or original != target['before'] + '\n':
+            found = [_cells_of(element) for element in paragraph.get('elements', [])]
+            original = ''.join(text for text, inserted, _ in found if not inserted)
+            if rt.suggestion_ids(paragraph) - foreign or original != target['before'] + '\n':
                 return False
             continue
         runs = _runs_from(inline, target['tab_id'], start)
         if runs is None:
             return False
-        original = ''.join(run['content'] for run in runs if not run.get('suggestedInsertionIds'))
-        proposed = ''.join(run['content'] for run in runs if not run.get('suggestedDeletionIds'))
+        original = ''.join(text for text, inserted, _ in runs if not inserted)
+        proposed = ''.join(
+            text
+            for text, inserted, deleted in runs
+            if not (inserted and inserted <= foreign) and not (deleted - foreign)
+        )
         if original != target['before'] + '\n' or proposed != target['after'] + (
             '' if target.get('removed') is True else '\n'
         ):
