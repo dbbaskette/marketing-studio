@@ -169,5 +169,183 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         self.assertIn('Checked for you', shot['text'])
 
 
+    # --- Trainings and Published ---------------------------------------------------
+
+    def four(self) -> dict:
+        """Four trainings the page runs: one needs you, one in progress, two finished, every
+        one paused or done, so each may be deleted from here."""
+        self.started()
+        self.at_the_questions_gate()
+        going = self.another('going')
+        first, second = self.another('capacity'), self.another('failover')
+        found = self.read('trainings')
+        for item in found['body']['trainings']:
+            item['run'] = {'state': 'paused', 'sentence': 'Paused.'}
+            if item['path'] == str(going):
+                item.update(state='in-progress', sentence='Drafting the guide.')
+            elif item['path'] in (str(first), str(second)):
+                item.update(state='finished', sentence='Finished.', ready=True,
+                            run={'state': 'done', 'sentence': 'Finished.'})
+        self.paths = {item['title']: item['path'] for item in found['body']['trainings']}
+        return found
+
+    def trainings(self, steps: list, found: dict | None = None, **more) -> dict:
+        answers = self.answers(**{'GET /api/trainings': [found or self.four()], **more})
+        return self.run_page(answers, [{'click': 'Trainings'}, *steps])
+
+    def test_trainings_filter_by_where_it_stands(self):
+        result = self.trainings([
+            {'snapshot': 'all'},
+            {'fill': 'Where it stands', 'value': 'finished'}, {'snapshot': 'finished'},
+            {'fill': 'Search', 'value': 'capacity'}, {'snapshot': 'typed'},
+            {'click': 'Search'}, {'snapshot': 'searched'}])
+        shots = result['snapshots']
+        self.assertEqual(shots['all']['ledes'], ['4 trainings on this computer, the one that '
+                                                 'changed last first.'])
+        self.assertEqual(shots['all']['toolbar'][0]['name'], 'New training')
+        self.assertIn('4 of 4 trainings match.', shots['all']['text'])
+        self.assertIn('2 of 4 trainings match.', shots['finished']['text'])
+        self.assertNotIn('Going', shots['finished']['text'])
+        # Typing searches nothing until Search is pressed.
+        self.assertIn('2 of 4 trainings match.', shots['typed']['text'])
+        self.assertIn('1 of 4 trainings match.', shots['searched']['text'])
+        self.assertIn('Capacity', shots['searched']['text'])
+        self.assertNotIn('Failover', shots['searched']['text'])
+
+    def test_a_phone_shows_search_and_a_filters_button(self):
+        answers = self.answers(**{'GET /api/trainings': [self.four()]})
+        result = self.run_page(answers, [
+            {'click': 'Trainings'}, {'snapshot': 'phone'}, {'click': 'Filters'},
+            {'fill': 'Where it stands', 'value': 'finished'}, {'snapshot': 'chosen'}],
+            narrow=True)
+        phone = result['snapshots']['phone']
+        self.assertNotIn('Where it stands', phone['fields'])
+        self.assertIn('Filters', phone['buttons'])
+        self.assertIn('Search', phone['fields'])
+        self.assertIn('Filters (1)', result['snapshots']['chosen']['buttons'])
+
+    def test_ticks_survive_filter_changes_and_the_bar_says_so(self):
+        result = self.trainings([
+            {'fill': 'Where it stands', 'value': 'finished'},
+            {'tick': 'Select Capacity'}, {'tick': 'Select Failover'},
+            {'snapshot': 'ticked'},
+            {'fill': 'Where it stands', 'value': 'needs-you'}, {'snapshot': 'hidden'},
+            {'click': 'Clear'}, {'snapshot': 'cleared'}])
+        shots = result['snapshots']
+        self.assertIn('2 selected', shots['ticked']['bar'])
+        self.assertIn('Delete 2 trainings', shots['ticked']['buttons'])
+        self.assertIn('2 selected', shots['hidden']['bar'])
+        self.assertIn('2 of them are not in this view.', shots['hidden']['bar'])
+        self.assertEqual(shots['cleared']['bar'], '')
+        self.assertEqual(shots['cleared']['ticked'], [])
+        self.assertEqual(self.posts(result), [])
+
+    def test_select_all_on_this_page_ticks_what_is_shown(self):
+        result = self.trainings([
+            {'fill': 'Where it stands', 'value': 'finished'},
+            {'tick': 'Select all on this page'}, {'snapshot': 'all'}])
+        shot = result['snapshots']['all']
+        self.assertIn('2 selected', shot['bar'])
+        self.assertEqual(sorted(shot['ticked']), ['Select Capacity',
+                                                  'Select Failover',
+                                                  'Select all on this page'])
+
+    def test_deleting_several_trainings_asks_first_and_carries_on_past_a_refusal(self):
+        found = self.four()
+        paths = self.paths
+        asked = {f"GET /api/delete?{urlencode({'path': path})}": [test_desk.leaving(
+            path, 'paused', may=title != 'Going', title=title,
+            why=None if title != 'Going' else 'Someone else runs it.')]
+            for title, path in paths.items()}
+        result = self.trainings([
+            {'fill': 'Where it stands', 'value': ''},
+            {'tick': 'Select Going'}, {'tick': 'Select Capacity'},
+            {'tick': 'Select Failover'},
+            {'click': 'Delete 3 trainings'}, {'snapshot': 'asked'},
+            {'click': 'Delete 2 trainings'}, {'snapshot': 'done'}], found=found,
+            **asked, **{'POST /api/delete': [ok({'notice': None})]})
+        shots = result['snapshots']
+        sheet = shots['asked']['sheet']
+        self.assertIn('Delete 3 trainings?', sheet)
+        self.assertIn('Going: Someone else runs it. It stays.', sheet)
+        self.assertIn('Capacity: its folder and what only this computer kept for it.',
+                      sheet)
+        self.assertEqual(shots['asked']['posts'], 0)
+        gets = [request['address'] for request in result['requests']
+                if request['address'].startswith('/api/delete')
+                and request['method'] == 'GET']
+        self.assertEqual(len(gets), 3)
+        self.assertEqual(shots['asked']['filled'], [])
+        self.assertEqual(sorted(body['title'] for _, body in self.posts(result)),
+                         ['Capacity', 'Failover'])
+        self.assertEqual({address for address, _ in self.posts(result)}, {'/api/delete'})
+        self.assertIn('Deleted 2 of 2 trainings.', shots['done']['toasts'])
+
+    def test_a_failed_delete_is_named_and_the_others_go(self):
+        found = self.four()
+        paths = self.paths
+        asked = {f"GET /api/delete?{urlencode({'path': path})}": [test_desk.leaving(
+            path, 'paused', title=title)] for title, path in paths.items()}
+        result = self.trainings([
+            {'fill': 'Where it stands', 'value': 'finished'},
+            {'tick': 'Select all on this page'},
+            {'click': 'Delete 2 trainings'}, {'click': 'Delete 2 trainings'},
+            {'snapshot': 'done'}], found=found, **asked, **{'POST /api/delete': [
+                {'status': 409, 'body': {'error': 'It is working now.'}}, ok({'notice': None})]})
+        posted = [body['title'] for _, body in self.posts(result)]
+        self.assertEqual(len(posted), 2)
+        toast = result['snapshots']['done']['toasts']
+        self.assertIn('Deleted 1 of 2 trainings. ' + posted[0] + ': It is working now.', toast)
+
+    def test_a_conversation_mode_list_has_filters_too(self):
+        self.started()
+        plain = {'GET /api/trainings': [self.read('trainings')],
+                 'GET /api/computer': [self.read('computer')]}
+        result = self.run_page(plain, [{'click': 'Trainings'}, {'snapshot': 'list'}])
+        shot = result['snapshots']['list']
+        self.assertIn('Where it stands', shot['fields'])
+        self.assertNotIn('New training', shot['buttons'])
+        self.assertEqual(shot['bar'], '')
+
+    def test_published_is_a_table_with_one_open_per_row(self):
+        self.started()
+        other = str(self.another('blue-green'))
+        entries = [
+            {'path': str(self.root), 'id': 'rolling-restarts', 'title': 'Rolling restarts',
+             'revision': 3, 'at': '2026-10-20T09:00:00Z', 'by': 'Dana', 'ready': False,
+             'current': True},
+            {'path': other, 'id': 'blue-green', 'title': 'Blue-green deploys',
+             'revision': 1, 'at': '2026-10-16T09:00:00Z', 'by': 'Pat', 'ready': True,
+             'current': True}]
+        answers = self.answers(**{'GET /api/published': [ok({'published': entries})]})
+        result = self.run_page(answers, [
+            {'click': 'Trainings'}, {'click': 'Published'}, {'snapshot': 'list'},
+            {'fill': 'Ready to use', 'value': 'not-ready'}, {'snapshot': 'not ready'},
+            {'click': 'More filters'}, {'snapshot': 'more'}])
+        shots = result['snapshots']
+        shot = shots['list']
+        self.assertEqual(shot['ledes'], ['2 trainings are published in this workspace, each '
+                                         'shown at its latest revision.'])
+        opens = [name for name in shot['buttons'] if name.startswith('Open the index')]
+        self.assertEqual(opens, ['Open the index of Rolling restarts',
+                                 'Open the index of Blue-green deploys'])
+        for column in ('Training', 'Revision', 'Published', 'Ready to use'):
+            self.assertIn(column, shot['text'])
+        self.assertIn('A revision is never moved once it is published.', shot['text'])
+        self.assertNotIn('Published by', shot['fields'])
+        left = shots['not ready']
+        self.assertIn('Rolling restarts', left['text'])
+        self.assertNotIn('Blue-green deploys', left['text'])
+        self.assertIn('Published by', shots['more']['fields'])
+        self.assertEqual(shot['bar'], '')
+
+    def test_moved_controls_on_the_lists_are_reachable(self):
+        result = self.trainings([{'snapshot': 'list'}])
+        shot = result['snapshots']['list']
+        self.assertIn('Search', shot['fields'])
+        self.assertIn('Delete Going', shot['buttons'])
+        self.assertIn('Published', shot['buttons'])
+
+
 if __name__ == '__main__':
     unittest.main()

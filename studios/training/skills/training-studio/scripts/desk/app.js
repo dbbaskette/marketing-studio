@@ -433,6 +433,10 @@ const view = {
   unmoved: {}, unrestored: {}, notes: {},
   // What each item of a combined review is marked as on this page, until it is sent.
   marks: {},
+  // What each list is filtered by, whether a phone's filters are open, and what is ticked on
+  // a list, by list. Ticks stay through filter changes. The trainings a sheet deletes
+  // together, and what the runner said deleting each would do.
+  filters: {}, filtersOpen: false, ticked: {}, doomedMany: null, leavingMany: null,
   // The refresh in hand, and whether another was asked for while it was. What the list said
   // of each run whose asks were read, and of the open training when it was last read: each
   // is read again only once that has changed.
@@ -1365,6 +1369,8 @@ function closeSheet() {
   view.deciding = null;
   view.doomed = null;
   view.leaving = null;
+  view.doomedMany = null;
+  view.leavingMany = null;
   view.redesigning = null;
   drawSheet();
   if (view.gate) paintGate(false);
@@ -1499,7 +1505,7 @@ function drawSheet() {
   const holder = byId('sheet');
   const shown = view.after || (view.sheet && (view.gate || view.deciding || outlined()
     || TEAM_SHEETS.includes(view.sheet)
-    || ['delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
+    || ['delete', 'bulk-delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
       'update-research', 'stop-run'].includes(view.sheet)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
@@ -1515,6 +1521,7 @@ function drawSheet() {
   let body;
   if (view.after) body = afterSheet();
   else if (view.sheet === 'delete') body = deleteSheet();
+  else if (view.sheet === 'bulk-delete') body = bulkDeleteSheet();
   else if (view.sheet === 'companions') body = updateSheet();
   else if (view.sheet === 'upgrade') body = upgradeSheet();
   else if (view.sheet === 'redesign') body = redesignSheet();
@@ -1825,14 +1832,73 @@ function drawHome(fresh) {
 
 // --- trainings ---------------------------------------------------------------------
 
+// Where a training stands, as the Trainings list filters it.
+const STANDS = [['', 'Any'], ['needs-you', 'Needs you'], ['in-progress', 'In progress'],
+  ['finished', 'Finished'], ['teammates', 'Run by your teammates'],
+  ['unreadable', 'Cannot be read']];
+
+// A list's filters, as they were last set on this page.
+function filtersOf(name, empty) {
+  if (!view.filters[name]) view.filters[name] = { ...empty };
+  return view.filters[name];
+}
+
+// What is ticked on a list. Ticks stay through filter changes.
+function tickedOf(name) {
+  if (!view.ticked[name]) view.ticked[name] = new Set();
+  return view.ticked[name];
+}
+
+function standsAt(training, wanted) {
+  if (wanted === 'unreadable') return Boolean(training.error);
+  if (training.error) return false;
+  if (wanted === 'teammates') return elsewhere(training);
+  return training.state === wanted && !elsewhere(training);
+}
+
+function matching(training) {
+  const held = filtersOf('trainings', { text: '', stands: '' });
+  if (held.stands && !standsAt(training, held.stands)) return false;
+  const text = String(held.text || '').toLowerCase();
+  if (!text) return true;
+  return [training.title, training.error || saysOf(training), training.sentence,
+    training.driver ? nameOf(training.driver) : '']
+    .some((words) => String(words || '').toLowerCase().includes(text));
+}
+
+// Whether the runner drives a training and this computer may delete it. Only one that
+// may is offered for deletion, one at a time or ticked with others.
+function mayDelete(training) {
+  return Boolean(!training.error && training.run && deletable({ mine: training.mine,
+    driver: training.driver, finished: training.run.state === 'done' }));
+}
+
+// Ticking one more, or one fewer, draws the list again; the bar follows.
+function flipTick(name, paths, on) {
+  const ticked = tickedOf(name);
+  for (const path of paths) {
+    if (on) ticked.add(path);
+    else ticked.delete(path);
+  }
+  draw(false);
+}
+
 function trainingCard(training) {
   const node = make('li', 'card shine' + (working(training) ? ' working' : ''));
-  add(node, make('h2', 'row-title', training.title || 'Untitled'));
+  const title = training.title || 'Untitled';
+  add(node, make('h2', 'card-title', title));
   const go = capsule('Open', '', openTraining(training), 'open ' + training.path);
-  go.setAttribute('aria-label', 'Open ' + (training.title || 'Untitled'));
+  go.setAttribute('aria-label', 'Open ' + title);
   if (training.error) {
     return add(node, state('off', 'Cannot be read'), make('p', 'row-says', training.error),
       add(make('div', 'bar'), add(make('span', 'quiet'), when(training.touched_at)), go));
+  }
+  if (view.runner && mayDelete(training)) {
+    const pick = window.StudioLists.tick({ id: 'tick-' + training.path, label: 'Select',
+      on: tickedOf('trainings').has(training.path),
+      flip: (on) => flipTick('trainings', [training.path], on) });
+    pick.querySelector('input').setAttribute('aria-label', 'Select ' + title);
+    node.append(pick);
   }
   const [shape, words] = standingOf(training);
   if (levelsText(training.levels)) add(node, make('p', 'quiet', levelsText(training.levels)));
@@ -1842,6 +1908,22 @@ function trainingCard(training) {
       go, deleteButton(training)));
 }
 
+function trainingFilters() {
+  const held = filtersOf('trainings', { text: '', stands: '' });
+  // Teammates' trainings and ones that cannot be read are offered only where there are any.
+  const offered = STANDS.filter(([value]) => (value !== 'teammates' || teamSpace()
+    || teammates().length) && (value !== 'unreadable'
+    || view.listing.some((training) => training.error)) || value === held.stands);
+  return window.StudioLists.filterRow({ key: 'trainings',
+    search: { id: 'text', label: 'Search', value: held.text,
+      hint: 'By its title, what it says or who runs it' },
+    choices: [{ id: 'stands', label: 'Where it stands', options: offered, value: held.stands }],
+    open: view.filtersOpen,
+    changed: (name, value) => { held[name] = value; draw(false); },
+    searched: (text) => { held.text = text; draw(false); },
+    toggled: (open) => { view.filtersOpen = open; } });
+}
+
 function drawTrainings(fresh) {
   const parts = [];
   if (!view.listing.length) {
@@ -1849,16 +1931,40 @@ function drawTrainings(fresh) {
   } else {
     const said = count(view.listing.length, 'training', 'trainings')
       + ' on this computer, the one that changed last first.';
-    // Each card is built again only when its own training has changed.
-    parts.push(['intro', [said], () => make('p', 'intro lede', said)],
-      ['grid', [], () => make('ul', 'grid'), (node) => fit(node, view.listing.map((training) => [
-        'card ' + training.path, [training, working(training), unclaimed(training)],
-        () => trainingCard(training)]))]);
+    const held = filtersOf('trainings', { text: '', stands: '' });
+    const ticked = tickedOf('trainings');
+    // A tick is kept only for a training that is still here and may still be deleted.
+    const deletableNow = new Set(view.listing.filter(mayDelete).map((training) => training.path));
+    for (const path of [...ticked]) if (!deletableNow.has(path)) ticked.delete(path);
+    const shown = view.listing.filter(matching);
+    const tickable = view.runner ? shown.filter(mayDelete).map((training) => training.path) : [];
+    const picked = [...ticked];
+    parts.push(['head', [said], () => pageHead(said)],
+      ['filters', [held, view.filtersOpen], trainingFilters],
+      ['selection', [picked, tickable], () => window.StudioLists.selectionBar({
+        ticked, shown: tickable, noun: ['training', 'trainings'], key: 'trainings-selection',
+        actions: [{ label: 'Delete ' + count(ticked.size, 'training', 'trainings'),
+          kind: 'danger', run: askBulkDelete, key: 'bulk-delete' }],
+        selectShown: () => flipTick('trainings', tickable, true),
+        clear: () => flipTick('trainings', [...ticked], false) })],
+      ['heading', [shown.length, view.listing.length, tickable, picked], () => add(
+        make('div', 'panel-heading'),
+        make('p', 'quiet', shown.length + ' of ' + count(view.listing.length, 'training',
+          'trainings') + (view.listing.length === 1 ? ' matches.' : ' match.')),
+        tickable.length ? window.StudioLists.selectPage({ id: 'trainings-page',
+          shown: tickable, ticked,
+          flip: (on) => flipTick('trainings', tickable, on) }) : null)],
+      shown.length ? null : ['none', [], () => make('p', 'quiet',
+        'No training matches. Change or clear the filters.')],
+      // Each card is built again only when its own training has changed.
+      ['grid', [], () => make('ul', 'grid'), (node) => fit(node, shown.map((training) => [
+        'card ' + training.path, [training, working(training), unclaimed(training),
+          ticked.has(training.path)], () => trainingCard(training)]))]);
   }
   // With the runner, what the workspace has published is one step from here.
-  placeParts({ title: 'Trainings', actions: [view.runner ? capsule('Published', 'quiet',
-    () => show('published'), 'published') : null, view.runner && view.listing.length
-    ? newButton('filled') : null],
+  placeParts({ title: 'Trainings', actions: [view.runner && view.listing.length
+    ? newButton('filled') : null, view.runner ? capsule('Published', 'quiet',
+    () => show('published'), 'published') : null],
   mark: ['Trainings', Boolean(view.runner), view.listing.length > 0] }, parts, fresh);
 }
 
@@ -7491,8 +7597,7 @@ function deleteCard() {
 // the runner drives it and this computer may delete it. It is plain and quiet, never the
 // filled one. One a conversation made is never the runner's to delete, so it offers none.
 function deleteButton(training) {
-  if (training.error || !training.run || !deletable({ mine: training.mine,
-    driver: training.driver, finished: training.run.state === 'done' })) return null;
+  if (!mayDelete(training)) return null;
   const node = capsule('Delete', 'quiet', askDelete('delete ' + training.path, training),
     'delete ' + training.path);
   node.setAttribute('aria-label', 'Delete ' + (training.title || 'Untitled'));
@@ -7527,6 +7632,86 @@ function askDelete(opener, training) {
     drawSheet();
     byId('sheet').focus();
   };
+}
+
+// Open the sheet for every ticked training. What deleting each would do is asked of the
+// runner one at a time, with the same question one training's sheet asks.
+async function askBulkDelete() {
+  const turn = view.turn;
+  const ticked = tickedOf('trainings');
+  const doomed = view.listing.filter((training) => ticked.has(training.path))
+    .map((training) => ({ path: training.path, title: training.title || 'Untitled' }));
+  view.doomedMany = doomed;
+  view.leavingMany = null;
+  openSheet('bulk-delete', 'bulk-delete')();
+  const found = [];
+  for (const one of doomed) {
+    let said;
+    try {
+      said = await ask('delete', { path: one.path });
+    } catch (failure) {
+      said = { may: false, why: failure.message };
+    }
+    if (turn !== view.turn || view.sheet !== 'bulk-delete' || view.doomedMany !== doomed) return;
+    found.push({ ...one, may: Boolean(said.may), why: said.why || '' });
+  }
+  view.leavingMany = found;
+  drawSheet();
+  byId('sheet').focus();
+}
+
+function bulkDeleteSheet() {
+  const doomed = view.doomedMany || [];
+  const head = sheetTitle('Delete ' + count(doomed.length, 'training', 'trainings') + '?');
+  const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
+  const found = view.leavingMany;
+  if (!found) {
+    return [head, make('p', 'quiet', 'Reading what would go.'), add(make('div', 'bar'), cancel)];
+  }
+  const going = found.filter((one) => one.may);
+  const items = make('ul', 'reasons');
+  for (const one of found) {
+    items.append(make('li', '', one.title + ': ' + (one.may
+      ? 'its folder and what only this computer kept for it.'
+      : (one.why || 'It cannot be deleted from here.') + ' It stays.')));
+  }
+  const problem = problemLine();
+  const confirm = going.length ? capsule('Delete ' + count(going.length, 'training',
+    'trainings'), 'danger', () => settleBulkDelete(going, confirm), 'send') : null;
+  return [head, items, make('p', 'quiet', DELETE_UNDO), problem,
+    add(make('div', 'bar'), confirm, cancel)];
+}
+
+// Delete each in turn, with the same request one training's sheet sends. A refusal does not
+// stop the rest; each that stayed is named, in the runner's own words.
+async function settleBulkDelete(going, pressed) {
+  if (view.busy) return;
+  const turn = view.turn;
+  view.busy = true;
+  pressed.disabled = true;
+  const stayed = [];
+  let deleted = 0;
+  for (const one of going) {
+    try {
+      await send('delete', { path: one.path, title: one.title });
+      deleted += 1;
+      view.listing = list(view.listing).filter((training) => training.path !== one.path);
+      tickedOf('trainings').delete(one.path);
+    } catch (failure) {
+      stayed.push(one.title + ': ' + failure.message);
+    }
+  }
+  view.busy = false;
+  if (turn !== view.turn) return;
+  view.sheet = '';
+  view.doomedMany = null;
+  view.leavingMany = null;
+  toast(['Deleted ' + deleted + ' of ' + count(going.length, 'training', 'trainings') + '.',
+    ...stayed].join(' '));
+  drawSheet();
+  draw(false);
+  if (!focusKey('bulk-delete')) byId('title').focus({ preventScroll: true });
+  refresh();
 }
 
 // One file left in Google Drive, as a link that opens in a new tab.
@@ -8400,10 +8585,18 @@ async function saveBrand(pressed) {
 // --- with a team: what is published ------------------------------------------------------
 // Each training the workspace has published, at its latest revision, with its index to read.
 
+function publishedMatch(found) {
+  const held = filtersOf('published', { text: '', ready: '', by: '' });
+  if (held.ready === 'ready' && !found.ready) return false;
+  if (held.ready === 'not-ready' && found.ready) return false;
+  if (held.by && found.by !== held.by) return false;
+  const text = String(held.text || '').toLowerCase();
+  return !text || [found.title, found.by].some((words) => String(words || '').toLowerCase()
+    .includes(text));
+}
+
 function publishedRow(found) {
   const title = found.title || 'Untitled';
-  const facts = add(make('p', ''), 'Revision ' + found.revision + ', published ',
-    when(found.at), found.by ? ' by ' + found.by : '', '.');
   const go = capsule('Open the index', 'quiet',
     () => show('index', { path: found.path, artifact: INDEX }), 'index ' + found.path);
   go.setAttribute('aria-label', 'Open the index of ' + title);
@@ -8413,10 +8606,30 @@ function publishedRow(found) {
     + 'since revision ' + found.revision + ' was published, so the index here is the '
     + 'training as it stands now, not as it was published. Publish it again to make that '
     + 'the next revision.') : null;
-  return add(make('li', 'row'), add(make('div', 'row-text'),
-    make('h3', 'row-title', title), facts,
-    found.ready ? state('done', 'Ready to use when it was published')
-      : state('late', 'Not ready to use when it was published'), moved), go);
+  const name = make('th');
+  name.scope = 'row';
+  add(name, make('span', 'row-title', title), moved);
+  return add(make('tr'), name, cell('Revision', String(found.revision)),
+    cell('Published', when(found.at), found.by ? ' by ' + found.by : ''),
+    cell('Ready to use', found.ready ? state('done', 'Ready to use when it was published')
+      : state('late', 'Not ready to use when it was published')),
+    cell('', go));
+}
+
+function publishedFilters(found) {
+  const held = filtersOf('published', { text: '', ready: '', by: '' });
+  const names = [...new Set(found.map((entry) => entry.by).filter(Boolean))].sort();
+  return window.StudioLists.filterRow({ key: 'published',
+    search: { id: 'text', label: 'Search', value: held.text, hint: 'By its title or who '
+      + 'published it' },
+    choices: [{ id: 'ready', label: 'Ready to use', value: held.ready,
+      options: [['', 'Any'], ['ready', 'Ready to use'], ['not-ready', 'Not ready to use']] }],
+    more: [{ id: 'by', label: 'Published by', value: held.by,
+      options: [['', 'Anyone'], ...names.map((who) => [who, who])] }],
+    open: view.filtersOpen,
+    changed: (key, value) => { held[key] = value; paintPublished(false); },
+    searched: (text) => { held.text = text; paintPublished(false); },
+    toggled: (open) => { view.filtersOpen = open; } });
 }
 
 function paintPublished(fresh) {
@@ -8430,13 +8643,25 @@ function paintPublished(fresh) {
         () => show('trainings'), 'home')))], fresh);
     return;
   }
-  const items = make('ul', 'rows');
-  for (const entry of found) items.append(publishedRow(entry));
+  const shown = found.filter(publishedMatch);
+  const table = make('table', 'table');
+  const head = make('tr');
+  for (const title of ['Training', 'Revision', 'Published', 'Ready to use', '']) {
+    const top = make('th', '', title);
+    top.scope = 'col';
+    if (!title) add(top, make('span', 'offscreen', 'Open'));
+    head.append(top);
+  }
+  const body = make('tbody');
+  for (const entry of shown) body.append(publishedRow(entry));
+  add(table, add(make('thead'), head), body);
   place({ title: 'Published', back: true },
-    [make('p', 'intro lede', count(found.length, 'training is', 'trainings are')
-      + ' published in this workspace, each shown at its latest revision. A revision is '
-      + 'never moved once it is published.'),
-    add(card('Published trainings'), items)], fresh);
+    [pageHead(count(found.length, 'training is', 'trainings are')
+      + ' published in this workspace, each shown at its latest revision.'),
+    publishedFilters(found),
+    add(card('Published trainings'), shown.length ? table : make('p', 'quiet',
+      'No published training matches. Change or clear the filters.'),
+    make('p', 'quiet', 'A revision is never moved once it is published.'))], fresh);
 }
 
 async function drawPublished(fresh) {

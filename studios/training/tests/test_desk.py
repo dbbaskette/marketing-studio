@@ -6118,9 +6118,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         # Two that call themselves the same are told apart by where each is.
         twin = {**labs, 'name': kit['name']}
         shown = run([kit, twin])['snapshots']['set-up']
+        # A closed list shows its chosen option; the list offers both.
         for told in ('Example Brand Kit (/skills/example-brand)',
                      'Example Brand Kit (/skills/example-labs)'):
-            self.assertIn(told, shown['text'])
+            self.assertIn(told, shown['lists']['Use this brand skill'])
         # One, or none that the runner lists: nothing to choose, and nothing is sent.
         for skills in ([kit], []):
             result = run(skills)
@@ -7782,15 +7783,15 @@ class TeamScreenTests(ScriptedPage, PageCase):
                          ('Published', ['Trainings'], []))
         text = listing['text'].replace('\n', '')
         for shown in ('2 trainings are published in this workspace, each shown at its latest '
-                      'revision. A revision is never moved once it is published.',
-                      'Rolling restartsRevision 3, published just now by Dana.'
-                      'Not ready to use when it was published',
-                      'Blue-green deploysRevision 1, published 4 days ago by Pat.'
-                      'Ready to use when it was published'
+                      'revision.', 'A revision is never moved once it is published.',
+                      'TrainingRevisionPublishedReady to use',
+                      'Rolling restarts3just now by DanaNot ready to use when it was published',
+                      'Blue-green deploys'
                       # Its index is the training as it is here now, which is said.
                       'It has changed on this computer since revision 1 was published, so '
                       'the index here is the training as it stands now, not as it was '
-                      'published. Publish it again to make that the next revision.'):
+                      'published. Publish it again to make that the next revision.'
+                      '14 days ago by PatReady to use when it was published'):
             self.assertIn(shown, text)
         self.assertEqual(text.count('It has changed on this computer since'), 1)
         for offered in ('Open the index of Rolling restarts',

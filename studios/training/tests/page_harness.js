@@ -435,9 +435,15 @@ function layout() {
   };
 }
 
+// A closed list shows the one option chosen in it, not every option it holds.
 function words(node) {
   if (node.nodeType === 3) return node.data;
   if (node.hidden || styledAway(node)) return '';
+  if (node.tagName === 'SELECT') {
+    const options = node.querySelectorAll('option');
+    const chosen = options.find((option) => option.value === node.value) || options[0];
+    return chosen ? chosen.textContent : '';
+  }
   const inline = ['SPAN', 'CODE', 'STRONG', 'EM', 'A', 'BUTTON', 'P', 'LI', 'H1', 'H2', 'H3',
     'TIME', 'TH', 'TD', 'LABEL', 'SUMMARY'];
   return node.childNodes.map(words).join(inline.includes(node.tagName) ? '' : '\n');
