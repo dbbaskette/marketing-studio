@@ -8,6 +8,9 @@ remaking it began with.
 """
 from __future__ import annotations
 
+import runner  # noqa: F401  puts the core on the import path
+from studio_core import review_policy
+
 FLOW = 'desk'
 SCHEMA = 4
 # A training on a Harness Research that cannot synthesize is refused before anything is made,
@@ -15,6 +18,9 @@ SCHEMA = 4
 NEEDS_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
                    'here cannot do it. Update Harness Research, then start again.')
 ON_DESK = 'This training is on the desk. Change it there.'
+# What a desk receipt says was done at a gate: never the person's approval of a material.
+DECISION = 'continued-on-the-desk'
+LOOK = "You chose the brand's default look at the start: {name}."
 NOT_ON_DESK = ('This training is not on the desk. Use its own screen, or open it on the desk '
                'once it is finished.')
 
@@ -22,3 +28,12 @@ NOT_ON_DESK = ('This training is not on the desk. Use its own screen, or open it
 def on_desk(record: dict | None) -> bool:
     """Whether a run record, or a form, is a training worked on at the desk."""
     return (record or {}).get('flow') == FLOW
+
+
+def receipt(record: dict, gate: str, evidence, at: str, note: str | None = None) -> None:
+    """Record that the desk continued `gate`, bound to what it continued. A desk run has no
+    review level, so the receipt names none; `note` says, in words kept as they are, how."""
+    record.setdefault('review_events', []).append({
+        'gate': gate, 'by': 'desk', 'level': None,
+        'evidence': review_policy.fingerprint(evidence), 'at': at, 'decision': DECISION,
+        **({'note': str(note)} if note else {})})

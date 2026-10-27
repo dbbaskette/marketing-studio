@@ -187,7 +187,10 @@ What a caller needs to know
   folder it came from is only read. The run then carries on from what the files say.
 - A form with `flow: 'desk'` starts the training on the desk: a run of schema 4 with
   `flow: 'desk'` in the run and the session, and no review level. None is saved with it and
-  the shared one is never written from its form, so its start promises no stops.
+  the shared one is never written from its form, so its start promises no stops. The engine
+  carries a desk run past every gate, deck outline and look (`_desk_gate`), each with a desk
+  receipt in `review_events`, and never groups it for review. That is not the person's
+  approval of a material, which they give on the desk. A problem still stops it.
 """
 from __future__ import annotations
 
@@ -394,6 +397,9 @@ KEPT_BACK = ('{name} took this training on {when}, before your deletion of it wa
              'it was not deleted. It is as they shared it.')
 WAITS = ('It is gone from this computer. Your team sees it gone the next time the workspace '
          'is shared.')
+# How what a deck says was kept, when the person did not approve it, as the slides tool is told.
+CONTINUED = {'review-policy': 'Continued under the saved review level',
+             'desk': 'Continued on the desk'}
 DRIVE = {'preview': 'Preview presentation', 'slides': 'Google Slides deck',
          'doc': 'Google Doc'}
 
@@ -1264,6 +1270,12 @@ class Engine(Reviewing):
                     return  # someone else drives it, or nobody does
                 found = self._survey(root, record)
                 step = found.next
+                # A desk run never stops for review: each stop is continued on the desk.
+                if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
+                                                               'look') \
+                        and drafts.on_desk(record):
+                    self._desk_gate(root, found)
+                    continue
                 if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
                                                                'look') \
                         and review_policy.automatic(record, 'training', step.step.id,
@@ -1320,6 +1332,29 @@ class Engine(Reviewing):
             if held:    # given back before the run counts as ended
                 self._slots.give_back()
             run.queued = run.busy = False
+
+    def _desk_gate(self, root: Path, found: pipeline.Survey) -> None:
+        """Continue a desk run past the stop it has come to, with the desk's receipt: a look
+        in the brand's default, what a deck says as it was written, and any other gate
+        accepted on the desk. Nothing here is the person's approval of a material."""
+        step = found.next
+        if step.kind == 'look':
+            return self._look_default(root, step.step, by='desk')
+        if pipeline.bare(step.step.id) == 'gate:deck-outline':
+            if step.kind == 'gate':
+                self._ask(root, self._run(root), found, step)
+            return self._desk_outline(root, self._survey(root, self._load(root)))
+        with self.files:
+            session = workspace.load(root)
+            spec = workspace.artifact(root, session, step.step.artifact)
+            digest = workspace.sha256_file(review_layout.contained(root, spec['file']))
+            self.deck_decided(root, step.step.artifact, 'approve', 'Continued on the desk.',
+                              digest)
+            outcome = workspace.accept_desk(root, step.step.artifact)
+            record = self._load(root)   # deck_decided may have stored a receipt in the run
+            drafts.receipt(record, step.step.id, outcome['approved'], home.now())
+            self._store(root, record)
+            self._commit(root, f'continue {workspace.label(step.step.artifact)} on the desk')
 
     def _do(self, root: Path, run: _Run, found: pipeline.Survey,
             step: pipeline.Next) -> None:
@@ -1981,10 +2016,14 @@ class Engine(Reviewing):
                 'name': brand_default.get('id') or "the brand's default", 'shown': 'unrendered',
                 **{key: brand_default.get(key) for key in ('direction', 'house', 'layouts')}}
 
-    def _look_default(self, root: Path, step: pipeline.Step) -> None:
+    def _look_default(self, root: Path, step: pipeline.Step, by: str = 'review-policy') -> None:
         """A look gate the saved level does not stop at: the look the person picked in the
-        combined direction review, in their words; else the brand's default, saying why."""
+        combined direction review, in their words; else the brand's default, saying why.
+        `by` the desk, the brand's default is the look chosen at the start, and the receipt
+        is the desk's."""
         level = self._level(step)
+        desk = by == 'desk'
+        receipt = drafts.receipt if desk else review_policy.receipt
         with self.files:
             record = self._load(root)
             picked = (self._decided(record, level).get('look') or {}).get('picked')
@@ -2000,10 +2039,9 @@ class Engine(Reviewing):
             if shown.get('failed'):
                 words = deck_flow.UNRENDERED_WORDS.format(why=shown['failed'],
                                                           name="the brand's default")
-                self._choose_look(root, level, pipeline.DEFAULT_LOOK, words, 'review-policy')
+                self._choose_look(root, level, pipeline.DEFAULT_LOOK, words, by)
                 record = self._load(root)
-                review_policy.receipt(record, step.id, {'look': pipeline.DEFAULT_LOOK},
-                                      home.now(), note=words)
+                receipt(record, step.id, {'look': pipeline.DEFAULT_LOOK}, home.now(), note=words)
                 self._store(root, record)
                 return self._commit(root, "use the brand's default look for "
                                           f'{workspace.label(step.artifact)}: its looks could '
@@ -2019,14 +2057,15 @@ class Engine(Reviewing):
                            looks[0] if looks else None)
             choice = default['id'] if default else pipeline.DEFAULT_LOOK
             name = default['name'] if default else "the brand's default"
-            if not self._choose_look(root, level, choice, deck_flow.DEFAULT_WORDS.format(
-                    name=name), 'review-policy'):
+            words = (drafts.LOOK if desk else deck_flow.DEFAULT_WORDS).format(name=name)
+            if not self._choose_look(root, level, choice, words, by):
                 return self._commit(root, 'draw the looks again: what the deck says changed')
             record = self._load(root)
-            review_policy.receipt(record, step.id, {'look': choice}, home.now())
+            receipt(record, step.id, {'look': choice}, home.now(), note=words if desk else None)
             self._store(root, record)
-            self._commit(root, f"use the brand's default look for "
-                               f'{workspace.label(step.artifact)}, under the saved review level')
+            it = workspace.label(step.artifact)
+            self._commit(root, f'continue the look of {it} on the desk' if desk else
+                         f"use the brand's default look for {it}, under the saved review level")
 
     def look(self, path, level: str | None, choice: str, words: str | None = None) -> dict:
         """Record the look a person chose for a deck from the brand's samples, with their
@@ -2362,7 +2401,7 @@ class Engine(Reviewing):
             recorded = pipeline.recorded(root, level)
         # A tool that places a recorded icon by its asset ID has its composers place it so.
         by_asset = recorded is not None and self._has('compose-icon-assets')
-        words = [f"{'Continued under the saved review level' if approved.get('by') == 'review-policy' else 'Approved on the page'}, {approved['at']}."]
+        words = [f"{CONTINUED.get(approved.get('by'), 'Approved on the page')}, {approved['at']}."]
         words += [approved['note']] if approved.get('note') else []
         try:
             listed = home.read_json(work / mine.built['brand']['told'] / 'layouts.json', {})

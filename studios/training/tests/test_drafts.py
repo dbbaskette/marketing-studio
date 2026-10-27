@@ -1,8 +1,8 @@
 """The training desk in the runner: a desk start, which saves no review level, and a desk
 run, which the engine carries past every gate with a desk receipt. Scripted workers, the
 stand-in for harness-research and a studios config of the test's own; nothing real is
-started. Tests named row_138 and row_140 cover those rows of the state-transition matrix in
-docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
+started. Tests named row_138 to row_140 and row_161 cover those rows of the
+state-transition matrix in docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
 import json
 from pathlib import Path
 from unittest import mock
@@ -10,7 +10,7 @@ from unittest import mock
 import helpers  # noqa: F401
 import home
 import workspace
-from runner_support import FORM
+from runner_support import FORM, fails
 from studio_core import research_contract, review_policy
 from test_runner_deck import DeckCase
 from workspace import WorkspaceError
@@ -20,6 +20,7 @@ from runner import engine as engines
 
 CONTRACT = {'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}
 NO_CONTRACT = 'This run is missing its saved research contract. Restore its run record.'
+CONTINUED = 'continued-on-the-desk'
 
 
 class DeskStartTests(DeckCase):
@@ -139,3 +140,116 @@ class DeskStartTests(DeckCase):
         self.assertEqual(self.state(balanced), 'waiting')
         self.assertEqual(self.record(balanced)['schema'], 2)
         self.assertNotIn('flow', self.record(balanced))
+        # Automatic draft still stops at a drawn deck and at the finished materials.
+        self.brand.offers_looks = True
+        with mock.patch.object(review_policy, 'capture',
+                               return_value={'schema': 1, 'level': 'automatic'}):
+            automatic = self.begin(title='Automatic restarts', levels=['101'])
+        self.assertEqual(workspace.status(automatic)['gate'], 'deck@101', self.view(automatic))
+        self.assertEqual(self.state(automatic), 'waiting')
+        self.decide(automatic, 'deck@101')
+        shown = self.view(automatic)
+        self.assertEqual((shown['state'], shown['review']['phase']), ('waiting', 'final'))
+        self.assertIn('review:final', [step['id'] for step in shown['steps']])
+        events = self.record(automatic)['review_events']
+        self.assertTrue(events)
+        self.assertEqual({event['by'] for event in events}, {'review-policy'})
+
+
+class DeskRunTests(DeckCase):
+    """A desk run never stops for review: the engine continues each gate, outline and look
+    with a desk receipt. What goes wrong is still a problem, with its action."""
+
+    def gates(self, root: Path) -> list[str]:
+        return [step.id for step in self.engine._survey(root, self.engine._load(root)).steps
+                if step.kind == 'gate']
+
+    def continued(self, root: Path) -> dict:
+        return {event['gate']: event for event in self.record(root).get('review_events') or ()}
+
+    def test_row_139_a_desk_training_reaches_its_end_with_no_stop(self):
+        with mock.patch.object(pipeline, 'holding',
+                               side_effect=AssertionError('a desk run is never held')):
+            root = self.start(flow='desk', materials=['document', 'brief'])
+            self.assertEqual(self.to_end(root), [], 'nothing was put to the person')
+        session = workspace.load(root)
+        for name in ('research-plan', 'research', 'blueprint', 'document', 'brief'):
+            with self.subTest(name=name):
+                self.assertTrue((root / workspace.artifact(root, session, name)['file'])
+                                .is_file())
+                self.assertEqual(session['artifacts'][name]['approved']['by'], 'desk')
+        record = self.record(root)
+        self.assertIsNone(record['problem'])
+        self.assertIsNone(workspace.status(root)['gate'])
+        self.assertEqual(self.state(root), 'done')
+        gates = self.gates(root)
+        self.assertEqual(gates, ['gate:research-plan', 'gate:research', 'gate:blueprint',
+                                 'gate:document', 'gate:brief'])
+        continued = self.continued(root)
+        for gate in gates:
+            with self.subTest(gate=gate):
+                event = continued[gate]
+                self.assertEqual((event['by'], event['decision'], event['level']),
+                                 ('desk', CONTINUED, None))
+                self.assertTrue(event['evidence'] and event['at'])
+        self.assertFalse([step for step in self.engine._survey(root, record).steps
+                          if step.id.startswith('review:')])
+        self.assertIn('Rolling restarts: continue the blueprint on the desk', self.log())
+        # The person has marked nothing ready: each was only continued on the desk.
+        person = workspace.person_statuses(root, session)
+        self.assertEqual((person['blueprint'], person['document']), ('draft', 'draft'))
+
+    def test_a_desk_deck_is_continued_in_the_default_look(self):
+        self.brand.offers_looks = True
+        root = self.begin(flow='desk', levels=['101'])
+        self.assertEqual(self.to_end(root), [])
+        record = self.record(root)
+        self.assertIsNone(record['problem'], self.view(root))
+        continued = self.continued(root)
+        for gate in ('gate:deck-outline@101', 'gate:deck-look@101', 'gate:deck@101'):
+            with self.subTest(gate=gate):
+                self.assertEqual((continued[gate]['by'], continued[gate]['decision']),
+                                 ('desk', CONTINUED))
+        name = self.brand.LOOKS[0]['name']
+        words = f"You chose the brand's default look at the start: {name}."
+        self.assertEqual(continued['gate:deck-look@101']['note'], words)
+        kept = record['deck']['101']
+        self.assertEqual((kept['look']['chosen']['by'], kept['look']['chosen']['words']),
+                         ('desk', words))
+        self.assertEqual(kept['approved']['by'], 'desk')
+        self.assertEqual(workspace.load(root)['artifacts']['deck@101']['approved']['by'], 'desk')
+        self.assertTrue((root / workspace.artifact(root, workspace.load(root),
+                                                   'deck@101')['file']).is_file())
+
+    def test_a_desk_run_is_never_grouped_for_review(self):
+        root = self.start(flow='desk', materials=['document'])
+        record = self.engine._load(root)
+        # A finished saved training opened on the desk keeps the level it ran under.
+        record['review_policy'] = {'schema': 1, 'level': 'balanced'}
+        self.engine._store(root, record)
+        listed = self.engine._survey(root, self.engine._load(root)).steps
+        self.assertFalse([step.id for step in listed if step.id.startswith('review:')])
+
+    def test_row_161_a_failed_step_on_the_desk_is_a_problem_not_a_gate(self):
+        root = self.space.training(workspace.slugify(FORM['title']))
+        before = []
+
+        def failing(tools, job):
+            before.append(workspace.load(root)['gate'])
+            return fails()(tools, job)
+
+        self.workers.then('document', failing, fails(), fails())
+        root = self.start(flow='desk', levels=['101'])
+        problem = self.record(root)['problem']
+        self.assertEqual((problem['step'], problem['action']), ('document@101', 'retry'))
+        self.assertEqual(workspace.load(root)['gate'], before[0])
+        self.assertEqual(self.state(root), 'failed')
+        self.assertEqual(self.continued(root)['gate:blueprint@101']['by'], 'desk')
+        self.assertNotIn('gate:document@101', self.continued(root))
+        # A step out of time three times offers more time, and is no gate either.
+        slow = 'It did not finish in 900 seconds, so it was stopped.'
+        self.workers.then('document', *[fails(slow, 'timeout')] * 3)
+        other = self.start(flow='desk', title='Slow restarts')
+        problem = self.record(other)['problem']
+        self.assertEqual((problem['step'], problem['action']), ('document', 'more-time'))
+        self.assertIsNone(workspace.load(other)['gate'])

@@ -73,7 +73,7 @@ import sync_guidance
 import workspace
 from workspace import WorkspaceError
 
-from runner import briefs, deck, gitstate, settings
+from runner import briefs, deck, drafts, gitstate, settings
 from runner import slides as slides_tool
 
 ATTEMPTS = 3            # tries at one step: the first, and two more with the reason added
@@ -1252,7 +1252,8 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     needed = any(not _done(step, seen) for step in listed if step.id in RESEARCHED)
     seen = replace(seen, supplied=_supplied(root, given, supplied, needed))
     done = frozenset(step.id for step in listed if _done(step, seen))
-    if review_policy.level(run) != 'step_by_step':
+    # A desk run has no review screens, even one opened on the desk with its saved level.
+    if review_policy.level(run) != 'step_by_step' and not drafts.on_desk(run):
         from runner import reviews
         listed, done = reviews.group(root, session, run, listed, done)
     first = next((step for step in listed if step.id not in done), None)
