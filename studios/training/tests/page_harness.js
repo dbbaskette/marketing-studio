@@ -24,7 +24,11 @@
 // the screen and which are still held; what was let go is listed beside the requests.
 // Nothing is laid out here, so nothing scrolls into view by itself: {see: the words a
 // picture's place begins with} says that it has. A plan with {unwatched: true} is a browser
-// that cannot say when anything comes into view. A plan with {narrow: true} is a phone:
+// that cannot say when anything comes into view. A plan with {state} opens the page at that
+// history entry, as an address or the browser's way back does; {transitions: true} is a
+// browser that changes screens with a view transition, which draws the next screen a moment
+// later. An answer {pending: true} is a request that is never answered while the plan runs.
+// A plan with {narrow: true} is a phone:
 // the page's own width queries match, and what the kit's stylesheet hides on a phone (the
 // filters behind Filters) or shows only there (Filters itself) is hidden or shown here too.
 //
@@ -676,6 +680,13 @@ async function app(file) {
   const timers = [];
   phone = Boolean(plan.narrow);
   build(fs.readFileSync(path.join(PAGE, 'index.html'), 'utf8'));
+  // A browser with view transitions draws the next screen after the current task.
+  if (plan.transitions) {
+    document.startViewTransition = (update) => {
+      const done = new Promise((resolve) => setImmediate(() => { update(); resolve(); }));
+      return { ready: done, finished: done, updateCallbackDone: done };
+    };
+  }
 
   class Notification {
     constructor(title, options) {
@@ -701,7 +712,7 @@ async function app(file) {
     location: { hash: plan.hash === undefined ? '#token=the-test-key' : plan.hash,
       reload() { report.reloads += 1; } },
     history: {
-      state: null,
+      state: plan.state || null,
       earlier: [],
       pushState(state) {
         this.earlier.push(this.state);
@@ -742,6 +753,7 @@ async function app(file) {
       const held = answers[method + ' ' + address] || answers[key];
       if (!held) return { ok: false, status: 404, json: async () => ({ error: 'No answer for ' + key }) };
       const answer = held.length > 1 ? held.shift() : held[0];
+      if (answer.pending) return new Promise(() => {});
       if (answer.picture === undefined) {
         return { ok: answer.status === 200, status: answer.status, json: async () => answer.body };
       }

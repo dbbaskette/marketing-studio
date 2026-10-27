@@ -21,6 +21,7 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
     listed = test_desk.RunnerScreenTests.listed
     detail = test_desk.RunnerScreenTests.detail
     gate_as_the_runner_gives_it = test_desk.RunnerScreenTests.gate_as_the_runner_gives_it
+    at_the_yoodli_gate = test_desk.RunnerScreenTests.at_the_yoodli_gate
 
     def run_page(self, answers: dict, steps: list, layout: bool = True, **plan) -> dict:
         return super().run_page(answers, steps, layout=layout, **plan)
@@ -661,6 +662,112 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         shot = result['snapshots']['run']
         self.assertIn('Use this look', shot['buttons'])
         self.assertEqual(shot['filled'], ['Try again'])
+
+
+    # --- what the review of the whole branch found -----------------------------------
+
+    def test_a_covered_gate_that_can_be_brought_back_has_one_filled_action(self):
+        self.at_the_blueprint_gate()
+        combined = {'name': 'first drafts review', 'phase': 'direction'}
+        answers = self.answers(**{'GET /api/gate': [self.gate_as_the_runner_gives_it(
+            'blueprint', combined=combined, decisions=['restore', 'skip'])]})
+        result = self.run_page(answers, [{'click': 'Review the blueprint'},
+                                         {'snapshot': 'gate'}])
+        shot = result['snapshots']['gate']
+        self.assertEqual(shot['filled'], ['Bring this stage back'])
+        self.assertIn({'name': 'Request changes in the first drafts review', 'filled': False,
+                       'quiet': True}, shot['toolbar'])
+
+    def test_deleting_several_says_what_one_delete_would_say(self):
+        found = self.four()
+        paths = self.paths
+        drive = [{'what': 'Preview', 'name': 'Preview: Going',
+                  'url': 'https://docs.example.com/presentation/d/one'}]
+        said = {'Going': {'stops': True, 'share': 'decision', 'drive': drive},
+                'Capacity': {'stops': True, 'share': 'asked'}, 'Failover': {}}
+        asked = {f"GET /api/delete?{urlencode({'path': paths[title]})}": [test_desk.leaving(
+            paths[title], 'working', title=title, **more)] for title, more in said.items()}
+        result = self.trainings([
+            {'tick': 'Select Going'}, {'tick': 'Select Capacity'}, {'tick': 'Select Failover'},
+            {'click': 'Delete 3 trainings'}, {'snapshot': 'asked'},
+            {'click': 'Delete 3 trainings'}, {'snapshot': 'done'}], found=found, **asked,
+            **{'POST /api/delete': [ok({'notice': 'Your team sees it gone straight away.'}),
+                                    ok({'notice': None}), ok({'notice': None})]})
+        sheet = result['snapshots']['asked']['sheet']
+        self.assertEqual(sheet.count('are working now. Deleting them stops them first'), 1)
+        stops = sheet.split('are working now.')[0].rsplit('\n', 1)[-1]
+        self.assertEqual(sorted(stops.strip().split(' and ')), ['Capacity', 'Going'])
+        self.assertIn('Going: its folder and what only this computer kept for it. Your team sees '
+                      'it gone straight away.', sheet)
+        self.assertIn('Capacity: its folder and what only this computer kept for it. Your team '
+                      'sees it gone the next time you press Share now.', sheet)
+        self.assertEqual(sheet.count('Training Studio never deletes anything in your Google '
+                                     'Drive.'), 1)
+        self.assertIn('Preview: Preview: Going', sheet)
+        toast = result['snapshots']['done']['toasts']
+        self.assertIn('Deleted 3 of 3 trainings. Your team sees it gone straight away.', toast)
+
+    def test_nothing_can_be_cancelled_or_sent_again_while_deleting(self):
+        found = self.four()
+        asked = {f"GET /api/delete?{urlencode({'path': path})}": [test_desk.leaving(
+            path, 'paused', title=title)] for title, path in self.paths.items()}
+        result = self.trainings([
+            {'fill': 'Where it stands', 'value': 'finished'},
+            {'tick': 'Select all on this page'},
+            {'click': 'Delete 2 trainings'}, {'click': 'Delete 2 trainings'},
+            {'snapshot': 'sending'}], found=found, **asked,
+            **{'POST /api/delete': [{'pending': True}]})
+        sending = result['snapshots']['sending']
+        self.assertIn('Cancel', sending['off'])
+        self.assertIn('Delete 2 trainings', sending['off'])
+        self.assertEqual(len(self.posts(result)), 1)
+
+    def test_the_sheet_keeps_the_focus_when_an_address_opens_it(self):
+        result = self.run_page(self.begun(), [{'snapshot': 'opened'}],
+                               state={'screen': 'new'}, transitions=True)
+        shot = result['snapshots']['opened']
+        self.assertIn('1. Learning goal', shot['sheet'])
+        self.assertEqual(shot['heading'], 'Home')
+        self.assertNotEqual(shot['focus'], 'title')
+        self.assertEqual(shot['focus'], 'sheet')
+
+    def test_typed_search_words_stay_while_a_choice_changes(self):
+        result = self.trainings([
+            {'fill': 'Search', 'value': 'capacity'},
+            {'fill': 'Where it stands', 'value': 'finished'}, {'snapshot': 'chosen'},
+            {'click': 'Search'}, {'snapshot': 'searched'}])
+        chosen = result['snapshots']['chosen']
+        self.assertEqual(chosen['fields']['Search'], 'capacity')
+        self.assertIn('2 of 4 trainings match.', chosen['text'])
+        self.assertIn('1 of 4 trainings match.', result['snapshots']['searched']['text'])
+
+    def test_each_list_keeps_its_own_filters_open_and_offers_only_real_choices(self):
+        found = self.four()
+        entries = [{'path': self.paths['Going'], 'id': 'going', 'title': 'Going',
+                    'revision': 1, 'at': '2026-10-20T09:00:00Z', 'by': None, 'ready': True,
+                    'current': True}]
+        answers = self.answers(**{'GET /api/trainings': [found],
+                                  'GET /api/published': [ok({'published': entries})]})
+        result = self.run_page(answers, [
+            {'click': 'Trainings'}, {'click': 'Filters'}, {'snapshot': 'trainings'},
+            {'click': 'Published'}, {'snapshot': 'published'}], narrow=True)
+        self.assertIn('Where it stands', result['snapshots']['trainings']['fields'])
+        published = result['snapshots']['published']
+        self.assertNotIn('Ready to use', published['fields'])
+        self.assertNotIn('More filters', published['buttons'])
+
+    def test_opening_a_sheet_on_a_gate_leaves_the_gate_as_it_was(self):
+        at = self.at_the_yoodli_gate()
+        gate = self.read('gate', path=str(self.root), artifact='yoodli:main')
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')], 'GET /api/gate': [gate]}
+        self.assertTrue(at)
+        result = self.run_page(answers, [
+            {'click': 'Review'}, {'hold': 'Copy Roleplay name'},
+            {'click': 'Ask for changes'}, {'snapshot': 'asking'}])
+        shot = result['snapshots']['asking']
+        self.assertTrue(shot['sheet'])
+        self.assertEqual(shot['still'], ['Copy Roleplay name'])
 
 
 if __name__ == '__main__':
