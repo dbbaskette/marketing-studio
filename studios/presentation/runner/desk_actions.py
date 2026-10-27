@@ -14,16 +14,18 @@ What a caller needs to know
 """
 from __future__ import annotations
 
+# isort: off
+import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError
 
-import runner  # noqa: F401  puts the core on the import path
 from runner import decks, desk, gitstate, stages
 from runner.jobs import gate_state, sha256_of
 from runner.steps import build, intake
 from runner.steps import deliver as delivering
 from runner.steps import look as looks
 from runner.steps import outline as outlines
+# isort: on
 
 NO_PICK = 'The look is not waiting to be picked now.'
 AGAIN = 3   # chains one rest on the desk may run for notes that came while it was put together

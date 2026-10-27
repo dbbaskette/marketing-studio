@@ -25,13 +25,16 @@ from __future__ import annotations
 import secrets
 from pathlib import Path
 
+# isort: off
+import runner  # noqa: F401  puts the core on the import path
 import home
 from studio_core import review_policy, step_times, stops
 from studio_core.drafting.store import Store
 from workspace import WorkspaceError
 
-import runner  # noqa: F401  puts the core on the import path
 from runner import decks, stages
+# isort: on
+
 
 PASSED = ('gate:classify', 'gate:research-plan', 'gate:research', 'gate:outline')
 DECISION = 'continued-on-the-desk'
