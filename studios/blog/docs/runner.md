@@ -294,8 +294,12 @@ Google Doc", lists each one, and sends nothing until you confirm.
   Doc repeats differently than the desk does, goes as a comment on the closest paragraph
   that is certain, quoting the paragraph as it was and as the desk has it.
 
-A change already sent is not sent again. A change in a paragraph that still has a
-suggestion waiting for the Doc's owner waits too, and goes next time.
+A note about a paragraph, such as formatting or a heading level, is a comment of its own,
+never part of a suggestion. A change already sent is not sent again. A change in a
+paragraph that still has a suggestion waiting for the Doc's owner waits too, and goes next
+time; so does everything while a change you sent and then edited again on the desk still
+waits there, so the Doc's owner never gets a suggestion that repeats or undoes another.
+When Google cannot take suggestions, the plan says the changes go as comments.
 
 A blog edited in the manuscript editor (**Edit manuscript**) keeps its own Google tools:
 selected suggestions or comments are previewed and sent only when you confirm. Its

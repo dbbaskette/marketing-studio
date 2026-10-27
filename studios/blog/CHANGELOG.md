@@ -15,8 +15,10 @@ changes for authors first, then what changes for maintainers.
   could place with any doubt is a comment on the closest certain paragraph, quoting it
   before and after. The desk's title line is no longer counted as a change when it is the
   Doc's name; a different title is a comment. The plan says "N suggestions and M comments
-  go to the Google Doc", and a change in a paragraph still waiting on an earlier
-  suggestion goes next time. For maintainers: `desk_finish.google_changes(baseline, body,
+  go to the Google Doc" (or that they go as comments, when Google cannot take
+  suggestions), and a change in a paragraph still waiting on an earlier suggestion goes
+  next time; while a change sent and then edited again still waits in the Doc, nothing is
+  sent. A note about a paragraph is a comment of its own. For maintainers: `desk_finish.google_changes(baseline, body,
   title)` diffs each paired paragraph's shown text word by word (`_styled` reads each
   character's style from the Markdown) and returns edits, comments and `remove` edits;
   `desk-google-plan` reads the Doc first for its name and returns `suggestions`,
@@ -25,8 +27,14 @@ changes for authors first, then what changes for maintainers.
   edit deletes and inserts only what differs from its quote at whole-word boundaries
   (`trimmed`), a replacement may hold line breaks, a finding may set `remove: true` to
   delete its whole paragraph with the break where the next block is a paragraph, a pure
-  deletion may cross style boundaries, and a plan that splits or removes a paragraph is
-  verified by its paragraphs' text (`targets_show` reads on across a suggested break).
+  deletion may cross style boundaries, text is inserted only at a quote's end or very
+  start, removing the last paragraph deletes the break before it, and a plan that splits
+  or removes a paragraph is verified by every character and its style across the accepted
+  view (`expected_text_sha256`), or by its paragraphs' text while other suggestions wait
+  (`targets_show` reads on across a suggested break). `_not_pending` counts copies in each
+  paragraph's text without pending insertions and places each change by index; the sent
+  record keeps each row's baseline transfer and the Doc's name, and Google is not read
+  when nothing changed. `tests/google_model.py` models Google's suggest mode more closely.
 - **Human-sounding suggestions, mixed into Check spelling and grammar.** Under **Check
   spelling and grammar**, tick **Also suggest more human-sounding wording** and choose
   **Light**, **Medium** or **Strong**: Humanize runs after Copy edit ("Looking for
