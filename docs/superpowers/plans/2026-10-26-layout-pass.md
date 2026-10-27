@@ -619,8 +619,9 @@ child]}`.
   - `test_check_computer_is_the_toolbar_primary_on_this_computer`: `#check` sits inside
     `.toolbar-actions`; `{show: 'computer'}` leaves it visible, `{show: 'home'}` and `{show:
     'settings'}` hide it.
-  - `test_installations_live_on_this_computer`: `#installations` is inside `#computer`;
-    the settings form has one submit button, `#save`.
+  - `test_installations_live_on_this_computer`: superseded. The owner decided on
+    2026-10-27 that `#installations` stays in Shared settings; the settings form has one
+    submit button, `#save`.
   - `test_first_run_setup_has_one_title_per_step`: with `setup = true`, `#step-label` and
     `#settings-title` are hidden; the workflow steps read `You and your assistant`, `Where
     your work lives`, `Brand and delivery`; `#settings-intro` reads `Set up once, and every
@@ -633,14 +634,14 @@ child]}`.
   - In `tests/test_ui_consistency.py`, `test_home_css_draws_no_shared_control`: no
     selector in `home.css` names `studio-icon`, `studio-status::before` or styles
     `site-row` with `border` or `padding`.
-  - Moved controls: `test_moved_setup_controls_are_reachable`: `#check`, `#paths-form`'s
-    submit, `#review-level`, `#model-profiles`, `#output` and each card's Connect exist and
+  - Moved controls: `test_moved_setup_controls_are_reachable`: `#check`,
+    `#review-level`, `#model-profiles`, `#output` and each card's Connect exist and
     are shown on their new view.
 - [ ] **Step 2: Run to fail:** `PYTHONPATH=.:tests python3 -m unittest tests.test_layout_pass tests.test_ui_consistency tests.test_research_sites -v`.
 - [ ] **Step 3: Implement** the spec's section 8. Split each `.setup-part` into a card with
   `h3.card-title` and its `data-step`; profiles become `fieldset.paper.profile-card` with
   `legend.field-label`; move `#check` into `.toolbar-actions` (hidden unless the view is
-  `computer`); move `#installations` into `#computer`; `.studio-icon` → `.studio-symbol` with
+  `computer`); leave `#installations` in Shared settings (owner, 2026-10-27); `.studio-icon` → `.studio-symbol` with
   an `icon` class on its `svg`; the status line through `stateLine`; research sites as a
   `table.table` of `tr.site-row`, the site in `td[data-label="Site"]`, Remove in the last
   `td`; `#home`, `#settings`, `#computer` and `.setup-form` take `class="stack"` and lose
@@ -654,8 +655,8 @@ child]}`.
 
 **Files:**
 - Modify: `docs/design/golden-gate.md` (Layout rules intro; take new screenshots only if the
-  owner asks), `README.md:288` ("Shared settings → Studio installations" → "This computer →
-  Studio installations"), `studios/presentation/docs/runner.md:45` (New deck is a sheet in
+  owner asks), `README.md:288` (stays "Shared settings → Studio installations", owner
+  2026-10-27), `studios/presentation/docs/runner.md:45` (New deck is a sheet in
   numbered steps), `studios/presentation/docs/capabilities.md:11,18` (the step names),
   `studios/training/docs/runner.md:106,144,238` (the four steps; Research from as ticks),
   `studios/blog/CHANGELOG.md` (Unreleased: "Controls are at least 44px tall, and the

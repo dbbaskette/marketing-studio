@@ -459,8 +459,9 @@ once, and every studio starts with these choices." The announcement for screen r
 
 **This computer.** Lede: "Check the tools your studios need on this computer." The second
 sentence, "Each studio checks sign-in when you use it.", becomes a hint under the results.
-"Check computer" moves into the toolbar (filled) on this screen only. "Studio installations"
-moves here, after Tools, with its own Save at its end. Item titles become `p.row-title`.
+"Check computer" moves into the toolbar (filled) on this screen only. Item titles become
+`p.row-title`. "Studio installations" stays in Shared settings, saved by Save settings: the
+owner decided on 2026-10-27 to keep one save rather than move the card here with its own.
 
 **Research sites** become a `.table` with one Remove per row (`tr.site-row`, the site in its
 first cell, Remove in its last); `home.css` keeps only `.site-row > td:first-child`'s
@@ -519,7 +520,7 @@ root `tests/test_layout_pass.py`, reach each control in its new place.
 | Control | Was | Now |
 | --- | --- | --- |
 | Check computer | A filled button under the Tools list | This computer's toolbar |
-| Studio installations, Save installation folders | Shared settings, after Save settings | This computer, after Tools |
+| Studio installations | Shared settings, with its own Save installation folders | Shared settings, saved by Save settings (owner, 2026-10-27) |
 | Review level | Inside You and your assistant | Its own card, step 1 of first-run setup |
 | Models for your work | Inside You and your assistant | Its own card |
 | Delivery and previews | Inside Brand and delivery | Its own card, step 3 |
