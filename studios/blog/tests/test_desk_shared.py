@@ -5,7 +5,9 @@ import unittest
 from unittest.mock import patch
 
 import desk
-from studio_core.drafting import parts, record, versions
+import desk_finish
+import desk_images
+from studio_core.drafting import guards, parts, proofread, record, versions
 from test_desk import DeskCase
 
 
@@ -22,6 +24,18 @@ class SharedCodecTests(unittest.TestCase):
         found = desk.split('# T\n\nOpen.\n\n## One\n\nA.\n')
         self.assertEqual(list(found), ['title', 'opening', 'sections', 'images'])
         self.assertEqual(desk.join(found), '# T\n\nOpen.\n\n## One\n\nA.\n')
+
+
+class SharedChecksTests(unittest.TestCase):
+    def test_finishing_checks_with_the_shared_guards_and_proofread(self):
+        self.assertIs(desk_finish.STRUCTURE, guards.STRUCTURE)
+        self.assertIs(desk_finish._mask_indented, proofread.mask_indented)
+        self.assertIs(desk_finish._sentences, proofread.sentences)
+        self.assertEqual(desk_images.REFERENCE.pattern, guards.REFERENCE.pattern)
+        self.assertEqual(
+            desk_finish.changes_facts('In 2024.', 'In 2025.'),
+            'Check the facts: this changes a number.',
+        )
 
 
 class SharedRecordTests(DeskCase):

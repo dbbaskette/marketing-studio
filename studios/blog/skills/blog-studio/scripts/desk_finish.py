@@ -14,6 +14,8 @@ import shutil
 import desk
 import desk_images
 import studio
+from studio_core.drafting import guards
+from studio_core.drafting import proofread as quick
 
 # The finishing job kinds and the tool each one is in the panel.
 TOOLS = {
@@ -440,13 +442,12 @@ def skip(root, ident, job, ids):
 # Quick check (the route and functions keep the name proofread): mechanical checks in
 # process, no job. Advisory, never an authorship verdict.
 AI_TELLS = ('blogforge', 'voice', 'assets', 'ai-tells')
-COMMON_STARTS = frozenset({'the', 'a', 'an'})
-PROOF_LIMIT = 300  # findings shown at once
-BOUNDARY = re.compile(
-    r'(?<=[.!?…])["”’)\]]*[ \t]+|\n[ \t]*\n|\n(?=[ \t]*(?:[-*+]|\d{1,3}[.)]|#|>)[ \t])'
-)
-WORD = re.compile(r'[^\W\d_]+(?:[’\'-][^\W\d_]+)*')
-SENTENCE_MAX = 2000  # a passage Fix rewrites; a longer run is cut to its line
+# The checks themselves are the shared desk's (studio_core.drafting.proofread).
+COMMON_STARTS = quick.COMMON_STARTS
+PROOF_LIMIT = quick.PROOF_LIMIT  # findings shown at once
+BOUNDARY = quick.BOUNDARY
+WORD = quick.WORD
+SENTENCE_MAX = quick.SENTENCE_MAX  # a passage Fix rewrites; a longer run is cut to its line
 
 
 def _listed(name):
@@ -471,214 +472,37 @@ def proof_rules():
     }
 
 
-def _sentences(text):
-    """(start, end) of each sentence-like run in a part, without the spaces around it."""
-    spans, at = [], 0
-    for cut in [*BOUNDARY.finditer(text), None]:
-        end = cut.start() if cut else len(text)
-        piece = text[at:end]
-        lead = len(piece) - len(piece.lstrip())
-        if piece.strip():
-            spans.append((at + lead, at + len(piece.rstrip())))
-        if cut:
-            at = cut.end()
-    return spans
-
-
-def _sentence(text, start, spans=None):
-    """The sentence holding `start`, as (its text, where it starts in the part)."""
-    for begin, end in spans or _sentences(text):
-        if begin <= start < end:
-            if end - begin > SENTENCE_MAX:
-                line_start = text.rfind('\n', 0, start) + 1
-                line_end = text.find('\n', start)
-                begin, end = line_start, line_end if line_end != -1 else len(text)
-                end = min(end, begin + SENTENCE_MAX)
-            return text[begin:end], begin
-    return text[start : start + 1], start
-
-
-def _offsets(draft):
-    """Where each part sits in the Markdown desk.join makes, to place findings in it."""
-    places, at = [], 0
-    if draft.get('title'):
-        places.append(('title', at + 2, draft['title']))
-        at += 2 + len(draft['title']) + 2
-    if draft.get('opening'):
-        places.append(('opening', at, draft['opening']))
-        at += len(draft['opening']) + 2
-    mark = desk.level(draft) + 1  # The heading's marks and its space, as join writes them.
-    for section in draft['sections']:
-        at += mark + len(section['heading'])
-        if section['text']:
-            places.append((section['id'], at + 2, section['text']))
-            at += 2 + len(section['text'])
-        at += 2
-    return places
-
-
-def _label(rule, target):
-    if rule == 'em-dash':
-        return 'A dash (' + target + '). Many readers take it as machine writing.', (
-            'Replace the dash with a comma, a full stop, a colon or brackets.'
-        )
-    if rule == 'double-hyphen':
-        return 'A double hyphen (--).', 'Replace the double hyphen with suitable punctuation.'
-    if rule.startswith('banished:'):
-        term = rule.partition(':')[2]
-        return '“' + target + '” often reads as machine-written.', (
-            'Say it without “' + term + '”, in plain words.'
-        )
-    if rule == 'duplicate-paragraph':
-        return 'This paragraph repeats an earlier one.', 'Cut the repetition, or say something new.'
-    if rule == 'ai-starter':
-        return '“' + target + '” to start a sentence often reads as machine-written.', (
-            'Start the sentence without “' + target + '”.'
-        )
-    if rule == 'repeated-start':
-        return 'Two sentences in a row start with “' + target + '”.', (
-            'Vary how this sentence starts.'
-        )
-    if rule == 'repeated-word':
-        return '“' + target + '” three times in one paragraph.', (
-            'Use “' + target + '” less often here.'
-        )
-    return 'This section opens the way another one does.', 'Open this section differently.'
-
-
-def _finding(part, text, rule, start, target, spans=None):
-    sentence, at = _sentence(text, start, spans)
-    label, fix = _label(rule, target)
-    return {
-        'part': part,
-        'rule': rule,
-        'label': label,
-        'fix': fix,
-        'target': target,
-        'sentence': sentence,
-        'start': at,
-        'at': start,
-    }
-
-
-LIST_LINE = re.compile(r'[ \t]*(?:[-*+]|\d{1,3}[.)])[ \t]')
-
-
-def _mask_indented(text):
-    """Indented code (four spaces or a tab after a blank line, outside a list) as spaces of
-    the same length, so findings keep their places and code is never read as prose."""
-    out, code, listed, blank = [], False, False, True
-    for line in text.split('\n'):
-        indented = line.startswith(('    ', '\t'))
-        if not line.strip():
-            out.append(line)
-            blank = True
-            continue
-        if indented and (code or (blank and not listed)):
-            code, blank = True, False
-            out.append(' ' * len(line))
-            continue
-        code = False
-        if LIST_LINE.match(line):
-            listed = True
-        elif not indented:
-            listed = False
-        out.append(line)
-        blank = False
-    return '\n'.join(out)
-
-
-def _clean(text):
-    from text_checks import mask_protected
-
-    return mask_protected(_mask_indented(text))
-
-
-def _units(paragraph):
-    """A paragraph, or each item of a list on its own: parallel items repeat by design."""
-    starts = [m.start() for m in re.finditer(r'(?m)^' + LIST_LINE.pattern, paragraph)]
-    if not starts:
-        return [(0, paragraph)]
-    cuts = ([0] if starts[0] else []) + starts + [len(paragraph)]
-    return [(a, paragraph[a:b]) for a, b in zip(cuts, cuts[1:], strict=False)]
+_sentences = quick.sentences
+_sentence = quick.sentence
+_offsets = quick.offsets
+_label = quick.label
+_finding = quick.finding
+LIST_LINE = quick.LIST_LINE
+_mask_indented = quick.mask_indented
+_clean = quick.clean
+_units = quick.units
+_openers = quick.openers
 
 
 def _repetition(part, text):
     """Within one part: an AI-tell sentence opener, two sentences in a row with the same
     first word, and a long word three times in one paragraph."""
-    clean = _clean(text)
-    spans = _sentences(text)
-    starters = {word.casefold() for word in _listed('sentence-starters.txt')}
-    found, previous = [], None
-    for begin, end in spans:
-        first = WORD.search(clean, begin, end)
-        word = first.group() if first and first.start() == begin else None
-        if word and word.casefold() in starters:
-            found.append(_finding(part, text, 'ai-starter', begin, word, spans))
-        elif (
-            word
-            and previous
-            and word.casefold() == previous.casefold()
-            and word.casefold() not in COMMON_STARTS
-        ):
-            found.append(_finding(part, text, 'repeated-start', begin, word, spans))
-        previous = word
-    for paragraph in re.finditer(r'\S[\s\S]*?(?=\n[ \t]*\n|\Z)', clean):
-        for offset, unit in _units(paragraph.group()):
-            seen = {}
-            for match in WORD.finditer(unit):
-                word = match.group().casefold()
-                if len(word) < 6:
-                    continue
-                seen[word] = seen.get(word, 0) + 1
-                if seen[word] == 3:
-                    start = paragraph.start() + offset + match.start()
-                    found.append(_finding(part, text, 'repeated-word', start, match.group(), spans))
-    return found
-
-
-def _openers(draft):
-    found, seen = [], {}
-    for section in draft['sections']:
-        paragraph = _clean(section['text']).strip().split('\n\n')[0]
-        opener = ' '.join(paragraph.lower().split()[:8])
-        if len(opener.split()) >= 6:
-            if opener in seen:
-                found.append(_finding(section['id'], section['text'], 'echoed-opener', 0, opener))
-            seen[opener] = section['id']
-    return found
+    return quick.repetition(part, text, _listed('sentence-starters.txt'))
 
 
 def proofread(root, ident):
     """Mechanical findings for each part, in draft order, each with the sentence Fix would
     rewrite. Reading only: nothing is written and no job starts."""
-    from text_checks import lint
+    import text_checks
 
-    draft = desk.read(root, ident)
-    places = _offsets(draft)
-    findings = []
-    for hit in lint(_mask_indented(desk.join(draft, images=False)), proof_rules())['findings']:
-        if 'start' not in hit:
-            continue
-        for part, offset, text in places:
-            if offset <= hit['start'] < offset + len(text):
-                local = hit['start'] - offset
-                target = text[local : local + len(hit['target'])].split('\n')[0][:200]
-                findings.append(_finding(part, text, hit['rule'], local, target))
-                break
-    for part, _, text in places:
-        findings += _repetition(part, text)
-    findings += _openers(draft)
-    order = {part: number for number, (part, _, _) in enumerate(places)}
-    findings.sort(key=lambda found: (order.get(found['part'], 0), found['at'], found['rule']))
-    return {
-        'id': ident,
-        'revision': draft['revision'],
-        'findings': findings[:PROOF_LIMIT],
-        'more': max(0, len(findings) - PROOF_LIMIT),
-        'limitations': 'Mechanical matches and repetition hints only; read for meaning. Code, '
-        'links and quotations are left out.',
-    }
+    return quick.check(
+        desk.read(root, ident),
+        proof_rules(),
+        _listed('sentence-starters.txt'),
+        ident,
+        join=lambda draft: desk.join(draft, images=False),
+        lint=text_checks.lint,
+    )
 
 
 # The tools that propose through a job: what each asks for, and how its result is read.
@@ -791,7 +615,7 @@ VERDICTS = {
     'contradicted': 'contradicted',
 }
 ASPECTS = ('shape', 'argument', 'audience', 'claims')
-NAME = re.compile(r'\b[A-Z][A-Za-z0-9]+\b')
+NAME = guards.NAME
 
 
 def _reference(*path):
@@ -912,123 +736,41 @@ def _text(value, limit):
     return value.strip()[:limit] if isinstance(value, str) else ''
 
 
+# Whether a proposal keeps the facts and the part's structure: the shared guards, with an
+# image reference read as desk_images reads it.
 def _names(text):
     """Capitalised words that are not the first word of a sentence: likely names. An image
     reference is not text: its alt and label are left out, and a word after it starts afresh."""
-    text = desk_images.REFERENCE.sub('. ', text)
-    found = set()
-    for match in NAME.finditer(text):
-        before = text[: match.start()].rstrip()
-        if before and before[-1] not in '.!?:"“(]' and len(match.group()) > 1:
-            found.add(match.group())
-    return found
+    return guards.names(text, desk_images.REFERENCE)
 
 
-def _named(name, text):
-    return re.search(r'(?<![A-Za-z0-9])' + re.escape(name) + r'(?![A-Za-z0-9])', text) is not None
+_named = guards.named
 
 
 def changes_facts(before, after, anywhere=False):
-    """What a rewrite changes that it should keep: numbers, links, quotes or names.
-
-    `anywhere` (a whole part rewritten in a voice) compares which names there are, not
-    where they sit: a name that only moves to the start of a sentence is kept, and one
-    added or dropped is flagged."""
-    from text_checks import preserve
-
-    changed = list(preserve(before, after)['changes'])
-    if anywhere:
-        dropped = {name for name in _names(before) if not _named(name, after)}
-        added = {name for name in _names(after) if not _named(name, before)}
-        if (dropped | added) - {'I'}:
-            changed.append('names')
-    elif _names(before) - _names(after) - {'I'}:
-        changed.append('names')
-    if not changed:
-        return ''
-    words = {'numbers': 'a number', 'links': 'a link', 'quotes': 'a quotation', 'names': 'a name'}
-    return 'Check the facts: this changes ' + ' and '.join(words[key] for key in changed) + '.'
+    """What a rewrite changes that it should keep: numbers, links, quotes or names."""
+    return guards.changes_facts(before, after, anywhere, desk_images.REFERENCE)
 
 
-STRUCTURE = 'Check the structure: this changes code or the part’s shape.'
-FENCE = re.compile(r'^[ \t]*(```|~~~)')
-INLINE_CODE = re.compile(r'(`+)(.+?)\1', re.S)
-TABLE_LINE = re.compile(r'^[ \t]*\|')
-QUOTE_LINE = re.compile(r'^\s{0,3}>')
+STRUCTURE = guards.STRUCTURE
+FENCE = guards.FENCE
+INLINE_CODE = guards.INLINE_CODE
+TABLE_LINE = guards.TABLE_LINE
+QUOTE_LINE = guards.QUOTE_LINE
 
 
 def _shape(text, paragraphs=True):
-    """The code and quotations a part holds, exactly (fenced blocks with their opening
-    line, indented code, inline code spans, blockquote lines), its image references in
-    order, and the count of its blocks: paragraphs, list items, fenced blocks and tables."""
-    fences, inline, outside = [], [], []
-    block, inside = None, False
-    for line in text.splitlines():
-        if FENCE.match(line):
-            if inside:
-                fences.append('\n'.join(block))
-                inside = False
-            else:
-                inside, block = True, [line.strip()]  # The language tag is part of the code.
-            outside.append('')
-            continue
-        if inside:
-            block.append(line)
-        else:
-            outside.append(line)
-    if inside:
-        fences.append('\n'.join(block))
-    # Indented code by the same rules the proofread uses: its lines exactly, then masked.
-    shown = '\n'.join(outside)
-    masked = _mask_indented(shown)
-    indented = [
-        line
-        for line, mask in zip(shown.split('\n'), masked.split('\n'), strict=True)
-        if line.strip() and not mask.strip()
-    ]
-    prose = masked
-    inline = [match.group(2) for match in INLINE_CODE.finditer(prose)]
-    lines = prose.splitlines()
-    quotes = [line.strip() for line in lines if QUOTE_LINE.match(line)]
-    items = sum(1 for line in lines if LIST_LINE.match(line))
-    tables = sum(
-        1
-        for at, line in enumerate(lines)
-        if TABLE_LINE.match(line) and (at == 0 or not TABLE_LINE.match(lines[at - 1]))
-    )
-    count = (
-        sum(
-            1
-            for chunk in re.split(r'\n[ \t]*\n', prose)
-            if chunk.strip()
-            and not all(
-                LIST_LINE.match(l) or TABLE_LINE.match(l) for l in chunk.strip().splitlines()
-            )
-        )
-        if paragraphs
-        else 0
-    )
-    images = [match.group(0) for match in desk_images.REFERENCE.finditer(prose)]
-    return fences, indented, inline, quotes, images, (count, items, len(fences), tables)
+    return guards.shape(text, paragraphs, desk_images.REFERENCE)
 
 
 def changes_structure(before, after, paragraphs=True):
-    """STRUCTURE when a rewrite changes code (fenced blocks or inline code spans, exactly),
-    drops, adds or alters an image reference, or changes the part's block structure; ''
-    otherwise."""
-    return STRUCTURE if _shape(before, paragraphs) != _shape(after, paragraphs) else ''
+    """STRUCTURE when a rewrite changes code, an image reference or the part's blocks."""
+    return guards.changes_structure(before, after, paragraphs, desk_images.REFERENCE)
 
 
 def _flags(before, after, anywhere=False, paragraphs=True):
     """Every reason a proposal waits to be checked one by one, as one line."""
-    return ' '.join(
-        flag
-        for flag in (
-            changes_facts(before, after, anywhere),
-            changes_structure(before, after, paragraphs),
-        )
-        if flag
-    )
+    return guards.flags(before, after, anywhere, paragraphs, desk_images.REFERENCE)
 
 
 def _located(draft, part, before):
