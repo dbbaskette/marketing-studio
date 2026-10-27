@@ -1018,6 +1018,7 @@ function open(next) {
   view.barred = '';
   view.doomed = null;
   view.leaving = null;
+  view.bulk = null;
   view.slide = 0;
   view.viewer = null;
   letGo();
@@ -1029,10 +1030,15 @@ function open(next) {
     else byId(id).removeAttribute('aria-current');
   }
   drawSheet();
-  swap(() => draw(true));
+  const drawn = swap(() => draw(true));
   if (making && view.screen === 'home') {
-    if (view.setup) openNew();
-    else view.wantsNew = true;
+    // The sheet opens over Home once Home is drawn, which a view transition does later.
+    const turn = view.turn;
+    Promise.resolve(drawn).then(() => {
+      if (turn !== view.turn) return;
+      if (view.setup) openNew();
+      else view.wantsNew = true;
+    });
   }
 }
 
@@ -1093,7 +1099,8 @@ function place(spec, nodes, fresh) {
   }
   if (fresh) {
     window.scrollTo(0, 0);
-    byId('title').focus({ preventScroll: true });
+    // Under an open sheet the focus stays in it: the sheet is aria-modal.
+    if (!view.sheet) byId('title').focus({ preventScroll: true });
     return;
   }
   if (focused) focusKey(focused);
@@ -1183,9 +1190,10 @@ function placeParts(spec, parts, fresh) {
   }
   if (fresh) {
     window.scrollTo(0, 0);
-    byId('title').focus({ preventScroll: true });
+    // Under an open sheet the focus stays in it: the sheet is aria-modal.
+    if (!view.sheet) byId('title').focus({ preventScroll: true });
   } else if (focused && !document.body.contains(active) && !focusKey(focused)) {
-    byId('title').focus({ preventScroll: true });
+    byId(view.sheet ? 'sheet' : 'title').focus({ preventScroll: true });
   }
 }
 
@@ -1620,17 +1628,25 @@ function matching() {
   }).map(([brief]) => brief);
 }
 
+// What is typed in a filter row's search box is kept as it is typed, and applied only on
+// Search or Enter: a choice changed meanwhile draws the row again with the words still there.
+function typedSearch(row, held) {
+  const box = row.querySelector('input');
+  if (box) box.addEventListener('input', () => { held.typed = box.value; });
+  return row;
+}
+
 function decksFilters() {
   const held = view.filters.decks;
-  return StudioLists.filterRow({ key: 'decks',
-    search: { id: 'text', label: 'Search', value: held.text,
-      hint: 'By its title, how it began, where it stands or who runs it.' },
+  return typedSearch(StudioLists.filterRow({ key: 'decks',
+    search: { id: 'text', label: 'Search', value: held.typed === undefined ? held.text
+      : held.typed, hint: 'By its title, how it began, where it stands or who runs it.' },
     choices: [{ id: 'stands', label: 'Where it stands', options: STANDS, value: held.stands },
       { id: 'began', label: 'How it began', options: BEGAN, value: held.began }],
     open: held.open,
     changed: (name, value) => { held[name] = value; draw(false); },
-    searched: (text) => { held.text = text; draw(false); },
-    toggled: (open) => { held.open = open; } });
+    searched: (text) => { held.text = text; held.typed = text; draw(false); },
+    toggled: (open) => { held.open = open; } }), held);
 }
 
 function drawDecks(fresh) {
@@ -3304,7 +3320,7 @@ function lookStep(draft, told) {
   const options = make('details', 'new-options');
   options.dataset.key = 'new-options';
   const summary = make('summary', '', 'Options');
-  summary.dataset.key = 'new-options';
+  summary.dataset.key = 'new-options-summary';
   const said = make('p', 'quiet', [OUTPUTS[draft.output][1], AGENT_NAMES[draft.agent]
     + draftModelWords(draft), limitsSays(limits) || 'no limits'].join(' · '));
   add(options, summary, said,
@@ -6006,7 +6022,8 @@ function paintDeck(fresh) {
       () => questionPart(run, title)] : null,
     gate ? ['gate-line', [gate.name, gate.label, read, driver, googleReady()],
       () => gateLine(run)] : null,
-    gate ? ['gate', [gate, read, narrow() ? lead : ''], () => gatePanel(run)] : null,
+    gate ? ['gate', [gate, read, narrow() ? lead : '', Boolean(view.sheet)],
+      () => gatePanel(run)] : null,
     noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
     run.build_progress ? ['build-progress', run.build_progress,
       () => buildProgressCard(run.build_progress)] : null,
@@ -6490,31 +6507,47 @@ function bulkDeleteSheet() {
     return [head, make('p', 'quiet', 'Reading what would go.'), add(make('div', 'bar'), cancel)];
   }
   const going = bulk.items.filter((item) => item.found && item.found.may);
+  // Each deck as the single delete sheet says it: what goes, and who sees it gone.
   const lines = bulk.items.map((item) => (item.found && item.found.may
-    ? item.title + ': its folder and what only this computer kept for it.'
+    ? [item.title + ': its folder and what only this computer kept for it.',
+      DELETE_SHARED[item.found.share] || ''].filter(Boolean).join(' ')
     : item.title + ': ' + ((item.found && item.found.why) || 'It cannot be deleted from here.')
       + ' It stays.'));
+  const drive = going.flatMap((item) => list(item.found.drive));
   const problem = problemLine();
   const confirm = going.length ? capsule('Delete ' + count(going.length, 'deck', 'decks'),
-    'danger', () => settleBulkDelete(going, confirm), 'send') : null;
+    'danger', () => settleBulkDelete(bulk, going, confirm, cancel), 'send') : null;
   return [head, bullets(lines),
     going.some((item) => item.found.stops) ? state('late', DELETE_STOPS) : null,
+    drive.length ? make('p', '', DELETE_DRIVE) : null,
+    drive.length ? add(make('ul', 'plain'), ...drive.map(driveItem)) : null,
     make('p', '', DELETE_UNDO), problem, add(make('div', 'bar'), confirm, cancel)]
     .filter(Boolean);
 }
 
 // Each deck is deleted in turn with the runner's own delete. A refusal does not stop the
-// rest; the toast names each one that stayed, in the runner's words.
-async function settleBulkDelete(going, pressed) {
+// rest; the toast names each one that stayed, in the runner's words, with what the runner
+// said of each that went. While they go, nothing in the sheet can be pressed. Should the
+// sheet be put away even so, by leaving the screen, nothing more is sent, and the toast
+// says how many went.
+async function settleBulkDelete(bulk, going, pressed, cancel) {
   if (view.busy) return;
   const turn = view.turn;
   view.busy = true;
   pressed.disabled = true;
+  cancel.disabled = true;
   const stayed = [];
+  const notices = [];
   let deleted = 0;
+  let stopped = false;
   for (const item of going) {
+    if (turn !== view.turn || view.bulk !== bulk) {
+      stopped = true;
+      break;
+    }
     try {
-      await send('delete', { path: item.path, title: item.title });
+      const found = await send('delete', { path: item.path, title: item.title });
+      if (found && found.notice && !notices.includes(found.notice)) notices.push(found.notice);
       deleted += 1;
       view.ticked.decks.delete(item.path);
       for (const kind of Object.keys(view.decks || {})) {
@@ -6525,11 +6558,15 @@ async function settleBulkDelete(going, pressed) {
     }
   }
   view.busy = false;
-  if (turn !== view.turn) return;
+  const said = ['Deleted ' + deleted + ' of ' + count(going.length, 'deck', 'decks') + '.',
+    ...notices, ...stayed, stopped ? 'The rest were not deleted.' : ''].filter(Boolean).join(' ');
+  if (turn !== view.turn || view.bulk !== bulk) {
+    toast(said);
+    return;
+  }
   view.sheet = '';
   view.bulk = null;
-  toast(['Deleted ' + deleted + ' of ' + count(going.length, 'deck', 'decks') + '.', ...stayed]
-    .join(' '));
+  toast(said);
   drawSheet();
   draw(false);
   refresh();
@@ -7300,16 +7337,16 @@ function paintPublished(fresh) {
       .toLowerCase().includes(word)));
   const names = [...new Set(found.map((entry) => entry.by).filter(Boolean))].sort();
   const again = () => paintPublished(false);
-  const row = StudioLists.filterRow({ key: 'published',
-    search: { id: 'text', label: 'Search', value: held.text,
-      hint: 'By its title or who published it.' },
+  const row = typedSearch(StudioLists.filterRow({ key: 'published',
+    search: { id: 'text', label: 'Search', value: held.typed === undefined ? held.text
+      : held.typed, hint: 'By its title or who published it.' },
     choices: [{ id: 'delivered', label: 'Delivered', options: DELIVERED, value: held.delivered }],
     more: names.length ? [{ id: 'by', label: 'Published by', value: held.by,
       options: [['', 'Anyone'], ...names.map((who) => [who, who])] }] : [],
     open: held.open,
     changed: (name, value) => { held[name] = value; again(); },
-    searched: (text) => { held.text = text; again(); },
-    toggled: (open) => { held.open = open; } });
+    searched: (text) => { held.text = text; held.typed = text; again(); },
+    toggled: (open) => { held.open = open; } }), held);
   const table = make('table', 'table');
   const head = make('tr');
   for (const title of ['Deck', 'Revision', 'Published', 'Delivered', '']) {

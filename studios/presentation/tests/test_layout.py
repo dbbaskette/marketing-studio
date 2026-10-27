@@ -534,5 +534,93 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertEqual(self.posts(result), [])
 
 
+    # --- what the review found -------------------------------------------------------
+
+    def test_several_decks_are_told_what_one_is_told_before_they_go(self):
+        decks = self.four()
+        answers = self.previews(decks)
+        for title, share, drive in (('Document deck', 'decision', []),
+                                    ('Rollback drill', None, [{'what': 'Preview',
+                                                               'name': 'Preview: Rollback drill',
+                                                               'url': 'https://drive.google.com/x'}])):
+            path = '/decks/' + title.lower().replace(' ', '-')
+            answers['GET /api/delete?' + urlencode({'path': path})] = [ok({
+                'path': path, 'title': title, 'may': True, 'documents': 0, 'revisions': 0,
+                'drive': drive, 'share': share, 'stops': title == 'Document deck'})]
+        result = self.decks([
+            {'tick': 'Select Document deck'}, {'tick': 'Select Rollback drill'},
+            {'click': 'Delete 2 decks'}, {'snapshot': 'asked'},
+            {'click': 'Delete 2 decks'}, {'snapshot': 'done'}], decks=decks, **answers,
+            **{'POST /api/delete': [ok({'notice': 'Press Share now to tell your team.'}),
+                                    ok({})]})
+        asked = result['snapshots']['asked']['sheet']
+        self.assertIn('Document deck: its folder and what only this computer kept for it. Your '
+                      'team sees it gone straight away.', asked)
+        self.assertIn('It is working now. Deleting it stops it first', asked)
+        self.assertIn('Presentation Studio never deletes anything in your Google Drive.', asked)
+        self.assertIn('Preview: Preview: Rollback drill', asked)
+        self.assertIn('Deleted 2 of 2 decks. Press Share now to tell your team.',
+                      result['snapshots']['done']['text'])
+
+    def test_nothing_can_be_cancelled_or_sent_again_while_several_go(self):
+        decks = self.four()
+        result = self.decks([
+            {'tick': 'Select Capacity planning'}, {'tick': 'Select Rollback drill'},
+            {'click': 'Delete 2 decks'}, {'click': 'Delete 2 decks'}, {'snapshot': 'sending'},
+            {'key': 'Escape'}, {'snapshot': 'still'}], decks=decks, **self.previews(decks),
+            **{'POST /api/delete': [{'pending': True}]})
+        sending = result['snapshots']['sending']
+        self.assertIn('Cancel', sending['off'])
+        self.assertIn('Delete 2 decks', sending['off'])
+        self.assertIn('Delete 2 decks?', result['snapshots']['still']['sheet'])
+        self.assertEqual(len(self.posts(result)), 1)
+
+    def test_the_sheet_keeps_the_focus_when_it_opens_from_an_address(self):
+        self.started(title='Waiting deck')
+        result = self.run_page(self.answers(), [
+            {'snapshot': 'home'}, {'back': True}, {'snapshot': 'opened'}],
+            earlier=[{'screen': 'new', 'path': None}], transitions=True)
+        opened = result['snapshots']['opened']
+        self.assertIn('1. How it begins', opened['sheet'])
+        self.assertEqual(opened['focus'], 'sheet')
+
+    def test_a_search_typed_and_not_sent_stays_when_a_choice_changes(self):
+        result = self.decks([
+            {'fill': 'Search', 'value': 'capacity', 'stay': True},
+            {'fill': 'Where it stands', 'value': 'finished'}, {'snapshot': 'chosen'},
+            {'click': 'Search'}, {'snapshot': 'searched'}])
+        chosen = result['snapshots']['chosen']
+        self.assertEqual(chosen['fields']['Search'], 'capacity')
+        self.assertEqual(self.opens(chosen), ['Capacity planning', 'Rollback drill'])
+        self.assertEqual(self.opens(result['snapshots']['searched']), ['Capacity planning'])
+        published = [{'path': '/decks/a', 'title': 'Capacity planning', 'revision': 2,
+                      'at': '2026-10-20T10:00:00Z', 'by': 'Sam Lee', 'ready': True,
+                      'current': True},
+                     {'path': '/decks/b', 'title': 'Rollback drill', 'revision': 1,
+                      'at': '2026-10-21T10:00:00Z', 'by': 'Alex Doe', 'ready': True,
+                      'current': True}]
+        shelf = self.run_page(self.answers(**{'GET /api/published': [ok({'published':
+                                                                         published})]}), [
+            {'click': 'Decks'}, {'click': 'Published'},
+            {'fill': 'Search', 'value': 'rollback', 'stay': True},
+            {'fill': 'Delivered', 'value': 'yes'}, {'snapshot': 'chosen'}])['snapshots']['chosen']
+        self.assertEqual(shelf['fields']['Search'], 'rollback')
+        self.assertEqual(len([name for name in shelf['buttons'] if name.startswith('Open ')]), 2)
+
+    def test_no_two_parts_of_the_new_deck_sheet_share_a_key(self):
+        result = self.run_page(self.answers(), [
+            {'click': 'New deck'}, {'click': 'Start from scratch'}, {'click': 'Options'},
+            {'snapshot': 'options'}])
+        self.assertEqual(result['snapshots']['options']['keyedTwice'], [])
+
+    def test_a_phone_keeps_the_review_send_after_a_sheet_closes(self):
+        path = self.started(title='Rolling restarts')
+        result = self.deck_screen(path, [
+            {'click': 'Ask for changes'}, {'snapshot': 'open'}, {'key': 'Escape'},
+            {'snapshot': 'closed'}], narrow=True)
+        self.assertEqual(result['snapshots']['closed']['filled'], ['Approve'])
+        self.assertEqual(result['snapshots']['closed']['sheet'], '')
+
+
 if __name__ == '__main__':
     unittest.main()
