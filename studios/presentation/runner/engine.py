@@ -3187,6 +3187,7 @@ class Engine(Jobs, Researching, DeskActions):
                             == 'maker' else {})}
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file(),
+            'desk': self._desk_view(root, record) if decks.on_desk(record) else None,
             'undo': bool(mine and state != 'working' and not run.busy and self._can_undo(root))}
 
     def _can_undo(self, root: Path) -> bool:

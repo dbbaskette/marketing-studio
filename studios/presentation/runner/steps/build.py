@@ -1187,13 +1187,11 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                  if entry.get('slide') in ids] if drawn and section in (
         state.get('repair') or ()) else []
     note, look = _note(run, request), []
+    # A note sent while the section is drawn; and on the desk, the section's notes in this
+    # ask, each handed to a composer once: keeping the section settles them.
+    feedback = [item for item in run.get('build_feedback', []) if item.get('section') == section]
     if decks.on_desk(run):
-        # A desk deck's composer is handed only its section's notes in this ask: each goes
-        # to a composer once, and keeping the section settles them.
-        feedback = desk.pending(run, section)
-    else:
-        feedback = [item for item in run.get('build_feedback', [])
-                    if item.get('section') == section]
+        feedback += desk.pending(run, section)
     if feedback:
         told = [f"Slide {item['number']}: {item['note']}" if item.get('slide') else item['note']
                 for item in feedback]

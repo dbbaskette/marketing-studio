@@ -100,6 +100,17 @@ class DeskActions:
         self._store(root, record)
         self._commit(root, 'the deck is on the desk' if first else 'the deck is back on the desk')
 
+    # --- what the desk shows -------------------------------------------------------------------
+
+    def _desk_view(self, root, record: dict) -> dict:
+        """What the page's desk shows of a desk deck: its cards, whether it has reached the
+        desk, what desk work is under way, and what Deliver is bound to."""
+        state = build.read_state(root)
+        shown = desk.cards(root, record)
+        return {**shown, 'arrived': desk.arrived(record),
+                'blockers': desk.blockers(state), 'blockers_seen': desk.blockers_seen(state),
+                'reviewed': desk.reviewed(state)}
+
     def _desk_held(self, path):
         """The deck, held for a change on the desk: refused when this computer may not
         change it, and when it is not on the desk."""

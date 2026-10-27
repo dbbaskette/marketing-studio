@@ -158,5 +158,83 @@ class DeskRefusalTests(DeskCase):
         self.assertEqual(self.waiting(root), 'gate:build')
 
 
+BLOCKED = {'status': 'BLOCKED', 'warnings': [],
+           'blockers': [{'slide': 3, 'says': 'Text runs off the slide.', 'code': 'OUT_OF_BOUNDS'}]}
+
+
+class DeskViewTests(DeskCase):
+    """The desk shows a card per slide, under the sections the deck was split into."""
+
+    def test_every_slide_has_a_card_in_its_section_in_deck_order(self):
+        root = self.start_desk(look='default')
+        shown = self.on_desk(root)['desk']
+        self.assertTrue(shown['drawn_here'])
+        self.assertTrue(shown['arrived'])
+        cards = [card for part in shown['sections'] for card in part['slides']]
+        self.assertEqual([card['number'] for card in cards], list(range(1, 9)))
+        self.assertEqual([(part['lead'], part['number'], [card['number'] for card in part['slides']])
+                          for part in shown['sections']],
+                         [(True, None, [1]), (False, 1, [2, 3, 4]), (False, 2, [5, 6, 7]),
+                          (True, None, [8])])
+        for card in cards:
+            self.assertEqual(card['image'], {'kind': 'build', 'ref': card['number']})
+        lead = cards[0]
+        self.assertTrue(lead['lead'])
+        self.assertEqual((lead['price'], lead['section']), ('', None))
+        self.assertEqual(cards[2]['section'], 'section-1')
+        last = self.engine._load(root)
+        from runner.steps import build
+        self.assertEqual(shown['expected'], build.read_state(root)['rounds'][-1]['deck'])
+        self.assertTrue(last)
+
+    def test_a_card_shows_its_words_and_notes_from_the_outline(self):
+        root = self.start_desk(look='default')
+        card = self.on_desk(root)['desk']['sections'][1]['slides'][0]
+        slide = LONG_OUTLINE['slides'][1]
+        self.assertEqual((card['number'], card['id']), (2, slide['id']))
+        self.assertEqual(card['words']['title'], slide['title'])
+        self.assertEqual(card['words']['points'], slide['points'])
+        self.assertEqual(card['words']['source'], slide['source'])
+        self.assertEqual(card['notes'], slide['notes'])
+
+    def test_a_blocker_shows_on_its_slide(self):
+        with mock.patch.object(self.brand, 'audit', return_value=BLOCKED):
+            root = self.start_desk(look='default')
+        shown = self.on_desk(root)['desk']
+        card = shown['sections'][1]['slides'][1]
+        self.assertEqual(card['number'], 3)
+        self.assertIn({'says': 'Text runs off the slide.', 'kind': 'error'}, card['audit'])
+        self.assertEqual(shown['blockers'], [{'number': 3, 'says': 'Text runs off the slide.'}])
+        self.assertEqual(shown['sections'][1]['slides'][0]['audit'], [])
+
+    def test_a_gated_deck_has_no_desk_view(self):
+        root = self.start()
+        self.assertIsNone(self.view(root)['desk'])
+
+    def test_notes_sent_while_drawing_are_not_sent_again_after_arrival(self):
+        sent = []
+
+        def noting(tools, job):
+            self.workers.section(tools, job)
+            root = self.engine.every()[0]
+            slide = self.engine.view(root)['build_progress']['slides'][0]
+            sent.append(slide)
+            self.engine.build_feedback(root, slide['ref'], 'Move the label beside its line.')
+            # The worker that was told to draw it before the note hands in nothing more.
+            import home
+            home.write_json(tools.folder / 'accepted/artifacts.json', {})
+
+        self.workers.then('section', noting)
+        root = self.start_desk(look='default')
+        self.on_desk(root)
+        record = self.record(root)
+        self.assertEqual(record['build_feedback'], [])
+        self.assertEqual([item['note'] for item in record['build_feedback_done']],
+                         ['Move the label beside its line.'])
+        self.assertFalse(record.get('desk_notes'))
+        told = [job for job in self.workers.of('section') if 'Move the label' in job.task]
+        self.assertEqual(len(told), 1)
+
+
 if __name__ == '__main__':
     unittest.main()
