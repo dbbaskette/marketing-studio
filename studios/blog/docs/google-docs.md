@@ -226,10 +226,10 @@ Doc as it was read:
 
 | On the desk | In the Doc |
 | --- | --- |
-| Words changed | A suggested edit for each separate change in a paragraph, deleting and inserting only the changed words. Text inserted takes the style of the words it replaces or follows, so a change inside a link's text stays linked. |
-| A paragraph added, or split | A suggested line break and the new text, after the end of the paragraph before it. The new paragraph takes that paragraph's style; a different kind (a heading, a list item) is said in its comment. |
-| A paragraph removed, or merged | A suggested deletion of its words and its break. Google cannot delete the break that ends a Doc, so the last paragraph is deleted with the break before it instead, where that paragraph is of the same kind; otherwise an empty paragraph is left, and the comment says so. |
-| A link's address, bold, italic, code, a heading level | A comment on the words, such as "Link changed: “setup guide” now points to …" or "Make “Key Data Patterns” bold." The Docs suggestion API takes only one text style per insertion, so formatting is the Doc owner's to apply. |
+| Words changed | A suggested edit for each separate change in a paragraph, deleting and inserting only the changed words. Text inserted comes in with the desk's bold, italic, underline and links, over the font of the words beside it. |
+| A paragraph added, or split | A suggested line break and the new text, after the end of the paragraph before it. The new paragraph takes that paragraph's kind; a different kind (a heading, a list item) is said in a comment. |
+| A paragraph removed, or merged | A suggested deletion of its words and its break. Google cannot delete the break that ends a Doc, so the last paragraph is deleted with the break before it instead, where that paragraph has the same settings, which it keeps; otherwise an empty paragraph is left. Either way the comment says so. |
+| A link's address, bold, italic or code on words already in the Doc, a heading level | A comment on the words, such as "Link changed: “setup guide” now points to …" or "Make “Key Data Patterns” bold." A suggestion changes words, not the look of words it keeps, so that formatting is the Doc owner's to apply. |
 | An image, a table row, a paragraph with an image | A comment on the closest paragraph that can take one, quoting the change. Google takes no suggestion in a paragraph that holds an image. |
 | A title other than the Doc's name | A comment: "Suggested title: …". The Doc's name is not body text. |
 
@@ -240,8 +240,10 @@ paragraph the Doc shows once instead, quoting the paragraph before and after. Co
 counted in the Doc's text as it was, without suggestions still waiting. A note about a
 paragraph is a comment of its own, never part of a suggestion. A change already sent is
 not sent again, and a change in a paragraph with a suggestion still waiting for the Doc's
-owner goes next time; while a change sent and then edited again on the desk still waits,
-nothing is sent, so no suggestion repeats or undoes another.
+owner goes next time; while one of this blog's suggestions that the desk has since edited
+again still waits, nothing is sent, so no suggestion repeats or undoes another. Someone
+else's suggestion, or one the owner already rejected, holds nothing. A note with no free
+paragraph nearby goes with the next send.
 
 ## Send proofreading for team review
 

@@ -98,7 +98,11 @@ def text_signature(value):
         native = rt.semantic(tab.get('documentTab', {}))
         for block in native.get('body', {}).get('content', []):
             if 'paragraph' in block:
-                found.extend(block['paragraph'].get('elements', []))
+                # A paragraph break's own style is left out, as are paragraph properties.
+                found.extend(
+                    {'char': '\n'} if element.get('char') == '\n' else element
+                    for element in block['paragraph'].get('elements', [])
+                )
             elif 'sectionBreak' not in block:
                 found.append(block)
     return digest(encoded(found))
@@ -444,6 +448,65 @@ def insertions(findings):
     return found
 
 
+LOOKS = ('bold', 'italic', 'underline', 'link')
+
+
+def _looks(finding, keep_start, keep_end):
+    """[(text, look)] for the text an edit inserts, from its `styles` ([[length, {bold,
+    italic, underline, link}]] over its whole replacement), or None when it has none."""
+    found = finding.get('styles')
+    if found is None:
+        return None
+    after = finding['after']
+    if (
+        not isinstance(found, list)
+        or any(
+            not isinstance(run, list)
+            or len(run) != 2
+            or type(run[0]) is not int
+            or run[0] < 1
+            or not isinstance(run[1], dict)
+            or set(run[1]) - set(LOOKS)
+            or not isinstance(run[1].get('link') or '', str)
+            for run in found
+        )
+        or sum(run[0] for run in found) != len(after)
+    ):
+        raise GoogleError('Give each run of a replacement its length and look.')
+    each = [look for length, look in found for _ in range(length)]
+    pieces = []
+    for at in range(keep_start, len(after) - keep_end):
+        if pieces and pieces[-1][1] == each[at]:
+            pieces[-1][0] += after[at]
+        else:
+            pieces.append([after[at], each[at]])
+    return [(text, look) for text, look in pieces]
+
+
+def _restyled(style, look):
+    """A Doc text style with the desk's bold, italic, underline and link: its font, size and
+    colour stay as the words beside it have them."""
+    result = copy.deepcopy(style)
+    for key in ('bold', 'italic', 'underline'):
+        if look.get(key):
+            result[key] = True
+        elif result.get(key):
+            result[key] = False
+    if look.get('link'):
+        result['link'] = {'url': look['link']}
+    else:
+        result.pop('link', None)
+    return result
+
+
+def stretched(space, following):
+    """Whether a space carries a link or bold that the words after it lack."""
+    return bool(
+        (space.get('link') and space.get('link') != following.get('link'))
+        or (space.get('bold') and not following.get('bold'))
+    )
+
+
 def _next_is_paragraph(document_value, tab_id, end):
     """Whether a body paragraph starts where this one ends, so its break can be deleted."""
     return any(
@@ -453,16 +516,16 @@ def _next_is_paragraph(document_value, tab_id, end):
 
 
 def _kind_of(paragraph):
-    style = paragraph.get('paragraphStyle', {})
-    return (
-        style.get('namedStyleType', 'NORMAL_TEXT'),
-        (paragraph.get('bullet') or {}).get('listId'),
-    )
+    """A paragraph's settings: its style (without its heading's own id) and its list."""
+    style = {k: v for k, v in paragraph.get('paragraphStyle', {}).items() if k != 'headingId'}
+    style.setdefault('namedStyleType', 'NORMAL_TEXT')
+    return (encoded(style), encoded(paragraph.get('bullet') or {}))
 
 
 def _previous_alike(document_value, tab_id, start, paragraph):
-    """Whether a body paragraph of the same kind ends where this one starts: the last
-    paragraph's own break cannot be deleted, so the one before it can be instead."""
+    """Whether a body paragraph with the same settings ends where this one starts: the last
+    paragraph's own break cannot be deleted, so the one before it can be instead, and the
+    paragraph before keeps its settings."""
     return any(
         'paragraph' in block
         and block.get('endIndex') == start
@@ -483,7 +546,7 @@ def validate(document_value, findings, selected_tabs):
     for f in findings:
         if (
             not isinstance(f, dict)
-            or set(f) - required - {'after', 'minor', 'remove'}
+            or set(f) - required - {'after', 'minor', 'remove', 'styles'}
             or required - set(f)
         ):
             raise GoogleError(
@@ -573,7 +636,7 @@ def validate(document_value, findings, selected_tabs):
             if f['start_index'] < right and end > left:
                 raise GoogleError('Overlapping findings must be combined before submission.')
         occupied[tab].append((f['start_index'], end))
-        style, cut, inserted, joined = None, None, '', False
+        style, cut, inserted, joined, runs = None, None, '', False, []
         if f['kind'] == 'edit':
             keep_start, keep_end = trimmed(f['before'], f['after'])
             da, db = a + keep_start, b - keep_end
@@ -585,12 +648,24 @@ def validate(document_value, findings, selected_tabs):
             ]
             # Inserted text takes the style of the words it replaces, or of the word it follows.
             style = styles[da] if da < db else styles[max(a, da - 1)]
-            if da == db and a < da < len(text) - 1 and text[da - 1].isspace():
-                # After a space, text takes the style of the words it comes before: a link or
-                # bold stretched over the space stays where it was.
+            if (
+                da == db
+                and a < da < len(text) - 1
+                and text[da - 1].isspace()
+                and stretched(styles[da - 1], styles[da])
+            ):
+                # A link or bold the Doc stretches over the space after its words stays there:
+                # text after that space takes the style of the words it comes before.
                 style = styles[da]
-            if inserted and any(v != style for v in styles[da:db]):
+            looks = _looks(f, keep_start, keep_end)
+            if inserted and looks is None and any(v != style for v in styles[da:db]):
                 raise GoogleError('Split replacements at style or link boundaries.')
+            # Each run of inserted text in its own look, over the style it takes from the Doc.
+            runs = (
+                [(inserted, style)]
+                if looks is None
+                else [(piece, _restyled(style, look)) for piece, look in looks]
+            )
             cut = (start + rt.utf16(text[:da]), start + rt.utf16(text[:db]))
             if f.get('remove'):
                 if text[:a].strip() or text[b:-1].strip():
@@ -623,6 +698,7 @@ def validate(document_value, findings, selected_tabs):
                 'cut': cut,
                 'deleted': (da, db) if f['kind'] == 'edit' else None,
                 'inserted': inserted,
+                'runs': runs,
                 'joined': joined,
             }
         )
@@ -639,6 +715,13 @@ def validate(document_value, findings, selected_tabs):
             item['joined'] = False
             item['cut'] = (item['cut'][0] + 1, item['cut'][1])
             item['note'] += ' The paragraph’s break stays, so an empty paragraph is left to remove.'
+            if len(item['note'].encode()) > 2048:
+                raise GoogleError('Comment exceeds Google’s 2048-byte limit.')
+        elif item['joined'] == 'previous':
+            item['note'] += (
+                ' The break before it goes too, so no empty paragraph is left; the paragraph '
+                'before keeps its settings.'
+            )
             if len(item['note'].encode()) > 2048:
                 raise GoogleError('Comment exceeds Google’s 2048-byte limit.')
     return items
@@ -693,12 +776,7 @@ def build(document_value, findings, selected_tabs, accepted=None):
                 )
             if item['inserted']:
                 # Suggested deletions retain inline indexes. Insert AFTER the retained old range.
-                at = left if f.get('remove') else right
-                inserted = {
-                    'tabId': tab,
-                    'startIndex': at,
-                    'endIndex': at + rt.utf16(item['inserted']),
-                }
+                at = right
                 group.append(
                     {
                         'insertText': {
@@ -707,15 +785,24 @@ def build(document_value, findings, selected_tabs, accepted=None):
                         }
                     }
                 )
-                group.append(
-                    {
-                        'updateTextStyle': {
-                            'range': inserted,
-                            'textStyle': item['style'],
-                            'fields': '*',
+                position = at
+                for piece, look in item['runs']:
+                    if not piece:
+                        continue
+                    group.append(
+                        {
+                            'updateTextStyle': {
+                                'range': {
+                                    'tabId': tab,
+                                    'startIndex': position,
+                                    'endIndex': position + rt.utf16(piece),
+                                },
+                                'textStyle': look,
+                                'fields': '*',
+                            }
                         }
-                    }
-                )
+                    )
+                    position += rt.utf16(piece)
             changes.setdefault((tab, item['paragraph_start']), []).append(item)
         requests.append((tab, f['start_index'], group))
     targets = []
@@ -739,7 +826,7 @@ def build(document_value, findings, selected_tabs, accepted=None):
                 chars = [] if removed is True else chars[-1:]
                 structural = True
                 continue
-            chars[da:db] = [(c, item['style']) for c in item['inserted']]
+            chars[da:db] = [(c, look) for piece, look in item['runs'] for c in piece]
             structural = structural or '\n' in item['inserted']
         if len(chars) == 1 and not any(item['finding'].get('remove') for item in edits):
             raise GoogleError(

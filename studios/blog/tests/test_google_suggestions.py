@@ -1084,6 +1084,40 @@ class ParagraphSuggestionTests(unittest.TestCase):
         self.assertEqual(gs.trimmed('teh.', 'the.'), (0, 0))
         self.assertEqual(gs.trimmed('Kit', 'new Kit'), (0, 3))
 
+    def test_text_inserted_after_a_plain_space_before_a_link_stays_plain(self):
+        blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
+        link = {'link': {'url': 'https://example.invalid'}}
+        blocks[3]['paragraph']['elements'] = [
+            {'textRun': {'content': 'proven ', 'textStyle': {}}},
+            {'textRun': {'content': 'data patterns', 'textStyle': link}},
+            {'textRun': {'content': '.\n', 'textStyle': {}}},
+        ]
+        reindex(blocks)
+        self.record['google']['baselines']['draft']['document']['format_sha256'] = gs.signature(
+            self.client.doc
+        )
+        studio.persist(self.directory, 'articles', self.record)
+        saved = self.plan([self.edit('new', 'proven ', 'proven new ', blocks[3]['startIndex'])])
+        styles = [
+            r['updateTextStyle']['textStyle'] for r in saved['requests'] if 'updateTextStyle' in r
+        ]
+        self.assertEqual(styles, [{}])
+
+    def test_a_paragraph_breaks_own_style_is_no_part_of_the_text_signature(self):
+        styled = copy.deepcopy(self.client.doc)
+        run = styled['tabs'][0]['documentTab']['body']['content'][2]['paragraph']['elements'][0]
+        run['textRun']['content'] = run['textRun']['content'][:-1]
+        run['endIndex'] -= 1
+        styled['tabs'][0]['documentTab']['body']['content'][2]['paragraph']['elements'].append(
+            {
+                'startIndex': run['endIndex'],
+                'endIndex': run['endIndex'] + 1,
+                'textRun': {'content': '\n', 'textStyle': {'bold': True}},
+            }
+        )
+        self.assertEqual(gs.text_signature(styled), gs.text_signature(self.client.doc))
+        self.assertNotEqual(gs.signature(styled), gs.signature(self.client.doc))
+
     def test_text_inserted_after_a_linked_space_is_not_linked(self):
         # Google may stretch a link over the space after its words; Markdown shows the space
         # outside. Words inserted after the space take the style of the words that follow.
@@ -1181,7 +1215,24 @@ class ParagraphSuggestionTests(unittest.TestCase):
         self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-pending')
         self.assertEqual(accepted_text(self.client), 'The delay is in handoffs.\n\n')
 
+    def same_settings(self):
+        blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
+        blocks[3]['paragraph']['paragraphStyle'] = copy.deepcopy(
+            blocks[2]['paragraph']['paragraphStyle']
+        )
+        self.record['google']['baselines']['draft']['document']['format_sha256'] = gs.signature(
+            self.client.doc
+        )
+        studio.persist(self.directory, 'articles', self.record)
+
+    def test_a_last_paragraph_with_other_settings_leaves_an_empty_one_and_says_so(self):
+        _, _, third = self.starts()
+        saved = self.plan([self.edit('last', 'Keep this link.', '', third, remove=True)])
+        self.assertIn('empty paragraph is left', saved['comments'][0]['content'])
+        self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-pending')
+
     def test_the_last_paragraph_removed_takes_the_break_before_it(self):
+        self.same_settings()
         _, second, third = self.starts()
         saved = self.plan([self.edit('last', 'Keep this link.', '', third, remove=True)])
         deleted = [
@@ -1190,7 +1241,10 @@ class ParagraphSuggestionTests(unittest.TestCase):
         self.assertEqual(
             [(r['startIndex'], r['endIndex']) for r in deleted], [(third - 1, third + 15)]
         )
-        self.assertNotIn('empty paragraph', saved['comments'][0]['content'])
+        self.assertIn(
+            'so no empty paragraph is left; the paragraph before keeps its settings',
+            saved['comments'][0]['content'],
+        )
         self.assertTrue(saved['expected_text_sha256'])
         self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-pending')
         self.assertEqual(
