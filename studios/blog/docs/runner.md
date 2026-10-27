@@ -297,8 +297,10 @@ Google Doc", lists each one, and sends nothing until you confirm.
 A note about a paragraph, such as formatting or a heading level, is a comment of its own,
 never part of a suggestion. A change already sent is not sent again. A change in a
 paragraph that still has a suggestion waiting for the Doc's owner waits too, and goes next
-time; so does everything while a change you sent and then edited again on the desk still
+time; so does everything while a suggestion you sent and then edited again on the desk still
 waits there, so the Doc's owner never gets a suggestion that repeats or undoes another.
+A teammate's suggestion, or one the owner rejected, holds nothing. A note with no free
+paragraph nearby goes with the next send.
 When Google cannot take suggestions, the plan says the changes go as comments.
 
 A blog edited in the manuscript editor (**Edit manuscript**) keeps its own Google tools:

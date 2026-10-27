@@ -17,10 +17,14 @@ changes for authors first, then what changes for maintainers.
   Doc's name; a different title is a comment. The plan says "N suggestions and M comments
   go to the Google Doc" (or that they go as comments, when Google cannot take
   suggestions), and a change in a paragraph still waiting on an earlier suggestion goes
-  next time; while a change sent and then edited again still waits in the Doc, nothing is
-  sent. A note about a paragraph is a comment of its own. For maintainers: `desk_finish.google_changes(baseline, body,
-  title)` diffs each paired paragraph's shown text word by word (`_styled` reads each
-  character's style from the Markdown) and returns edits, comments and `remove` edits;
+  next time; while one of the blog's own suggestions, edited again since, still waits in
+  the Doc, nothing is sent. Inserted words come in with the desk's bold, italic, underline
+  and links. A note about a paragraph is a comment of its own, and one with no free
+  paragraph nearby goes with the next send. For maintainers: a finding may carry `styles`
+  (`[[length, {bold, italic, underline, link}]]` over its replacement), and
+  `desk_finish.google_changes(baseline, body, title)` diffs each paired paragraph's shown
+  text word by word (`_styled` reads each character's style from the Markdown) and returns
+  edits, comments and `remove` edits;
   `desk-google-plan` reads the Doc first for its name and returns `suggestions`,
   `comments`, `waiting` and `left`, and `_not_pending` turns a proposal it cannot place
   into a comment on the closest paragraph the Doc shows once. In `google_suggestions`, an

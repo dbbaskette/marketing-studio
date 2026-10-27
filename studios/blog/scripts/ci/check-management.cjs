@@ -4163,6 +4163,7 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
   assert.ok(descendants(panel()).some(n=>n.textContent==='“slow” → “late”'));
   assert.ok(descendants(panel()).some(n=>n.textContent==='Comment on “Event logs”: Make “Event logs” bold.'));
   assert.equal(f.run("sDeskGoogleSaid({mode:'comments',count:3,suggestions:2,comments:1})"),'3 changes go to the Google Doc as comments: it cannot take suggestions, so its owner makes each change by hand.','comments fallback says comments');
+  assert.equal(f.run("sDeskGoogleSaid({count:1,suggestions:1,comments:0,later:2})"),'1 suggestion goes to the Google Doc. Its owner accepts or rejects each suggestion. 2 notes go with the next send (nearby paragraphs already have changes).','a note with no free paragraph goes next time');
   assert.ok(descendants(panel()).some(n=>n.textContent==='1 suggestion and 1 comment go to the Google Doc. Its owner accepts or rejects each suggestion. 2 changes were sent before.'));
   assert.ok(descendants(panel()).some(n=>n.textContent==='Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment.'));
   assert.ok(!descendants(panel()).some(n=>/stay here|stays here|cannot be suggestions|stays? on the desk/.test(n.textContent||'')),'nothing is said to stay on the desk');
