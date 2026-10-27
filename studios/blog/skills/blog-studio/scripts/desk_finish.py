@@ -2469,6 +2469,12 @@ def google_plan(root, ident, mode):
     # The Doc as it is now: its name is its title, and a suggestion still waiting for its owner
     # holds its paragraph.
     inline, _, _ = suggestions.read_for_review(client, base['document']['document_id'], mode)
+    # The Doc's pending suggestions as they are now: one decided in Google drops out.
+    import google_pending
+
+    google_pending.keep(
+        root, ident, base['document']['document_id'], inline, base['document']['tab_ids']
+    )
     record['name'] = ' '.join((inline.get('title') or '').split()) or None
     proposals, left, paragraphs = google_changes(baseline, body, inline.get('title'))
     current = {p['id'] for p in proposals}

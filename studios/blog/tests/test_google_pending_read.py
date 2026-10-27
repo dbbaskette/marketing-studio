@@ -192,6 +192,74 @@ class PendingReadTests(PendingDocCase):
         self.assertEqual(self.read()['status'], 'preview')
 
 
+class PendingRecordTests(PendingDocCase):
+    """Other people's pending suggestions, recorded beside the blog and placed on the desk."""
+
+    def test_the_record_says_kind_place_and_words_and_leaves_out_ours(self):
+        self.start()
+        import google_pending
+
+        found = google_pending.read(self.root, self.ident)
+        self.assertEqual(
+            [
+                (f['kind'], f['text'], f['start'], f['end'], f['inserted'], f['removed'])
+                for f in found
+            ],
+            [
+                (
+                    'replacement',
+                    'We keep the plan simple and clear.',
+                    17,
+                    28,
+                    'quite ',
+                    'simple and ',
+                ),
+                ('insertion', 'The end.', 0, 0, 'Truly ', ''),
+            ],
+        )
+        self.assertEqual(found[0]['ids'], ['teammate', 'teammate-d'])
+        # Our own suggestions, once sent, are not recorded as the Doc's.
+        self.edit([('An opening paragraph about harbours.', 'An opening paragraph about ports.')])
+        plan = self.act('google-plan', mode='auto')
+        self.act('google-send', plan=plan['plan'], confirmed=True)
+        with self.assertRaisesRegex(ValueError, 'sent before'):
+            self.act('google-plan', mode='auto')  # A re-read, with ours now waiting too.
+        self.assertEqual(len(google_pending.read(self.root, self.ident)), 2)
+
+    def test_marks_sit_where_the_words_still_read_so(self):
+        self.start()
+        import desk_jobs
+
+        shown = desk_jobs.view(self.root, self.ident)['doc_suggestions']
+        self.assertEqual(shown['count'], 2)
+        text = {
+            mark['part']: desk.text_of(desk.read(self.root, self.ident), mark['part'])
+            for mark in shown['marks']
+        }
+        placed = [
+            (m['kind'], text[m['part']][m['at'] : m['at'] + m['length']], m['inserted'])
+            for m in shown['marks']
+        ]
+        self.assertEqual(
+            placed, [('replacement', 'simple and ', 'quite '), ('insertion', '', 'Truly ')]
+        )
+        # Words reworded on the desk: that mark is left out, the other stays.
+        self.edit([('simple and clear', 'short and clear')])
+        shown = desk_jobs.view(self.root, self.ident)['doc_suggestions']
+        self.assertEqual(shown['count'], 2, 'still pending in the Doc')
+        self.assertEqual([m['kind'] for m in shown['marks']], ['insertion'])
+
+    def test_a_re_read_drops_what_google_decided(self):
+        self.start()
+        import desk_jobs
+
+        self.client.decide(accept_ids=set(), reject_ids={'teammate-2'})
+        self.edit([('An opening paragraph about harbours.', 'An opening paragraph about ports.')])
+        self.act('google-plan', mode='auto')
+        shown = desk_jobs.view(self.root, self.ident)['doc_suggestions']
+        self.assertEqual([m['kind'] for m in shown['marks']], ['replacement'])
+
+
 class PendingSendTests(PendingDocCase):
     """Our changes beside theirs land exactly, or go as comments, and theirs stay theirs."""
 

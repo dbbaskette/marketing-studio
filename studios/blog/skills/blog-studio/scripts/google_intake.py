@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import google_drive as drive
 import google_roundtrip as roundtrip
+from google_roundtrip import suggestions as rt_suggestions
 import google_workflow as workflow
 from editorial import mapping
 from google_drive import GoogleError
@@ -250,6 +251,8 @@ def start(root, data):
             str(snapshot),
         ]
     )
+    # The Doc's pending suggestions, as the read saw them, go with the blog (on this computer).
+    native = studio.read_json(snapshot / 'native.json')
     try:
         result = workflow.start(root, args)
     except BaseException:
@@ -257,6 +260,10 @@ def start(root, data):
             observation['structure_verified'] = False
             studio.write_json(snapshot / 'observation.json', observation)
         raise
+    if result.get('id') and rt_suggestions(native):
+        import google_pending
+
+        google_pending.keep(root, result['id'], document_id(saved['linked_document']), native)
     public = {key: result[key] for key in ('id', 'title', 'status', 'linked_document')}
     from management import share, receipt
 

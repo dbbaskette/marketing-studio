@@ -1831,6 +1831,15 @@ def images_view(root, ident):
     return {'id': ident, 'images': desk_images.served(data)}
 
 
+def _doc_suggestions(root, ident, draft):
+    import google_pending
+
+    return {
+        'count': len(google_pending.read(root, ident)),
+        'marks': google_pending.on_desk(root, ident, draft),
+    }
+
+
 def view(root, ident):
     """The desk as the page reads it: the draft, its Markdown, its jobs and version counts."""
     import desk_finish
@@ -1910,6 +1919,10 @@ def view(root, ident):
         'research': _research_read(directory),
         # Whether the blog's Google Doc can take the desk's wording as suggestions.
         'google_suggestions': sendable,
+        # Other people's suggestions pending in the blog's Google Doc, shown, never ours.
+        'doc_suggestions': _doc_suggestions(root, ident, draft)
+        if sendable
+        else {'count': 0, 'marks': []},
         # The blog record's version, for Mark as published, Delete and changing its driver.
         'expected': expected(root, ident),
         # In a team workspace, who drives the blog, as a run says it (blog_runner.describe).
