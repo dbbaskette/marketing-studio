@@ -100,8 +100,8 @@ Once the page is open, use its controls to drive the work:
    highlighted words in) and its reason, **Accept** and **Reject**. Each is labelled
    **Spelling**, **Grammar**, **Punctuation**, **Consistency**, **Wording** or, from
    Humanize, **Sounds human**; a wording fix may offer alternatives to pick from before **Accept**.
-   Suggestions stay independent: accepting one changes another only where it changed that
-   one's words, which it then takes in. **Accept all** applies them in reading order and
+   Suggestions stay independent: accepting one changes another only where it touched that
+   one's words, and never leaves one that would undo it. **Accept all** applies them in reading order and
    leaves a suggestion that changes a fact, code or shape for you to check. With
    human-sounding wording on, Quick check's findings are listed at the top with **Fix** and
    **Dismiss**. Click any paragraph to edit it yourself; **Check again** reruns the check. When nothing is left, a blog from a Google
