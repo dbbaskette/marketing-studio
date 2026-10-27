@@ -9,7 +9,7 @@ import unittest
 from urllib.parse import urlencode
 
 import test_desk
-from test_desk import SET_UP, a_run, ok, steps
+from test_desk import SET_UP, a_copy, a_run, ok, steps
 
 
 @unittest.skipUnless(test_desk.NODE, 'Node is needed to run the page scripts without a browser')
@@ -20,6 +20,7 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
     at_the_questions_gate = test_desk.RunnerScreenTests.at_the_questions_gate
     listed = test_desk.RunnerScreenTests.listed
     detail = test_desk.RunnerScreenTests.detail
+    gate_as_the_runner_gives_it = test_desk.RunnerScreenTests.gate_as_the_runner_gives_it
 
     def run_page(self, answers: dict, steps: list, layout: bool = True, **plan) -> dict:
         return super().run_page(answers, steps, layout=layout, **plan)
@@ -510,6 +511,156 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         self.assertTrue(body['content'])
         self.assertEqual(shots['saved']['sheet'], '')
         self.assertIn('The picture is recorded.', shots['saved']['toasts'])
+
+
+    # --- the combined review, the run screen and gates -------------------------------
+
+    def reviewing(self, **more) -> dict:
+        """A run at its first-drafts review, with two items to read."""
+        self.started()
+        waits = 'Review the first drafts.'
+        waiting = a_run('waiting', waits, **more)
+        waiting['body']['review'] = {
+            'phase': 'direction', 'label': 'Review the first drafts', 'expected': 'v1',
+            'items': [{'target': 'research', 'label': 'Research', 'text': '# Findings'},
+                      {'target': 'blueprint', 'label': 'Teaching plan', 'text': '# Plan'}]}
+        return self.answers(**{'GET /api/trainings': [self.listed('waiting', waits)],
+                               'GET /api/training': [self.detail('waiting', waits)],
+                               'GET /api/run': [waiting]})
+
+    def test_the_primary_follows_the_marks(self):
+        result = self.run_page(self.reviewing(), [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'unmarked'},
+            {'click': 'Needs changes in Research'}, {'snapshot': 'marked'}])
+        shots = result['snapshots']
+        unmarked = shots['unmarked']['toolbar']
+        self.assertEqual(unmarked[0], {'name': 'Approve the first drafts', 'filled': True,
+                                       'quiet': False})
+        marked = shots['marked']['toolbar']
+        self.assertEqual(marked[0], {'name': 'Send 1 request', 'filled': True, 'quiet': False})
+        self.assertIn({'name': 'Approve the first drafts', 'filled': False, 'quiet': True},
+                      marked)
+        # The bar holds the tally on a desktop; the one way to send is the toolbar's.
+        self.assertEqual(shots['marked']['buttons'].count('Send 1 request'), 1)
+        self.assertIn('1 item is marked for changes.', shots['marked']['text'])
+        self.assertEqual(self.posts(result), [])
+
+    def test_a_phone_sends_from_the_bar_above_the_tab_bar(self):
+        result = self.run_page(self.reviewing(), [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'unmarked'},
+            {'click': 'Needs changes in Research'}, {'snapshot': 'marked'}], narrow=True)
+        for name, filled in (('unmarked', 'Approve the first drafts'),
+                             ('marked', 'Send 1 request')):
+            shot = result['snapshots'][name]
+            with self.subTest(name):
+                self.assertEqual(shot['filled'], [filled])
+                self.assertEqual([control for control in shot['toolbar'] if control['filled']],
+                                 [])
+                self.assertIn('Approve the first drafts',
+                              [control['name'] for control in shot['toolbar']])
+
+    def test_looks_good_is_offered_at_every_width(self):
+        result = self.run_page(self.reviewing(), [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'review'},
+            {'click': 'Looks good: Research'}, {'snapshot': 'looked'}])
+        self.assertIn('Looks good: Research', result['snapshots']['review']['buttons'])
+        self.assertIn('1 of 2 looked at.', result['snapshots']['looked']['text'])
+        review = result['snapshots']['review']
+        self.assertEqual(len(review['ledes']), 1)
+
+    def test_a_question_comes_before_the_review(self):
+        question = {'id': 'q-1', 'from': 'The worker on the research',
+                    'text': 'Which version do your learners use?'}
+        result = self.run_page(self.reviewing(question=question), [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'run'}])
+        text = result['snapshots']['run']['text']
+        self.assertLess(text.index('Which version do your learners use?'),
+                        text.index('Review the first drafts below'))
+
+    def test_a_copy_conflict_comes_before_the_steps(self):
+        self.started()
+        copy = {**a_copy('document', 'the learner guide', 'google', 'out-of-date',
+                         'https://docs.example.com/d/one/edit',
+                         'Someone has changed the Google Doc since it was last sent.'),
+                'remote': 'both changed', 'conflict': True}
+        going = 'Writing the brief.'
+        run = a_run('working', going, steps=steps('done', 'working'), copies=[copy],
+                    workers=[{'id': 'w1', 'label': 'The brief',
+                              'started_at': '2030-01-02T03:04:05Z', 'lines': ['Writing']}])
+        answers = self.answers(**{'GET /api/trainings': [self.listed('working', going)],
+                                  'GET /api/training': [self.detail('working', going)],
+                                  'GET /api/run': [run]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'run'}])
+        text = result['snapshots']['run']['text']
+        self.assertLess(text.index("Use the Doc's version"), text.index('Working now'))
+        self.assertLess(text.index("Use the Doc's version"), text.index('All production steps'))
+        self.assertEqual(text.count("Use the Doc's version"), 1)
+
+    def gate_lede(self, artifact: str) -> None:
+        found = self.read('gate', path=str(self.root), artifact=artifact)
+        label = found['body']['label']
+        named = label[0].lower() + label[1:]
+        answers = {'GET /api/trainings': [self.read('trainings')],
+                   'GET /api/computer': [self.read('computer')], 'GET /api/gate': [found]}
+        result = self.run_page(answers, [{'click': 'Review ' + named}, {'snapshot': 'gate'}])
+        shot = result['snapshots']['gate']
+        self.assertEqual(shot['ledes'], ['Read ' + named + ', then approve it or ask for '
+                                         'changes.'])
+        asks = [control for control in shot['toolbar'] if control['name'] == 'Ask for changes']
+        self.assertEqual([control['quiet'] for control in asks], [True])
+        self.assertTrue(shot['toolbar'][0]['filled'])
+
+    def test_every_gate_has_one_lede(self):
+        self.at_the_blueprint_gate()
+        self.gate_lede('blueprint')
+
+    def test_the_questions_gate_has_one_lede_too(self):
+        self.started()
+        self.at_the_questions_gate()
+        self.gate_lede('research-plan')
+
+    def test_a_covered_gate_sends_you_to_the_review_from_its_toolbar(self):
+        self.at_the_blueprint_gate()
+        combined = {'name': 'first drafts review', 'phase': 'direction'}
+        waits = 'Review the first drafts.'
+        waiting = a_run('waiting', waits)
+        waiting['body']['review'] = {
+            'phase': 'direction', 'label': 'Review the first drafts', 'expected': 'v1',
+            'items': [{'target': 'blueprint', 'label': 'Teaching plan', 'text': '# Plan'}]}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', waits)],
+            'GET /api/training': [self.detail('waiting', waits)],
+            'GET /api/run': [waiting],
+            'GET /api/gate': [self.gate_as_the_runner_gives_it(
+                'blueprint', combined=combined,
+                decisions=['approve', 'revise', 'rebuild', 'skip'])]})
+        result = self.run_page(answers, [{'click': 'Review the blueprint'},
+                                         {'snapshot': 'gate'}])
+        shot = result['snapshots']['gate']
+        self.assertEqual(shot['toolbar'][0], {'name': 'Request changes in the first drafts '
+                                                      'review', 'filled': True, 'quiet': False})
+        self.assertEqual(shot['buttons'].count('Request changes in the first drafts review'), 1)
+
+    def test_use_this_look_is_not_filled_beside_a_problem(self):
+        self.started()
+        asking = 'Choose the look.'
+        look = {'level': None, 'artifact': 'deck', 'waiting': True,
+                'default': 'example-calm', 'sheet': False, 'chosen': None, 'notes': [],
+                'looks': [{'id': 'example-calm', 'name': 'Calm', 'useWhen': 'Explanations.',
+                           'number': 1}]}
+        problem = {'what': 'The previews could not be made.', 'kept': 'Everything was kept.',
+                   'action': 'retry', 'label': 'Try again'}
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', asking, needs=True)],
+            'GET /api/training': [self.detail('waiting', asking)],
+            'GET /api/run': [a_run('waiting', asking, look=look, problem=problem)],
+            'GET /api/slide': [test_desk.a_picture()]})
+        result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
+                                         {'snapshot': 'run'}])
+        shot = result['snapshots']['run']
+        self.assertIn('Use this look', shot['buttons'])
+        self.assertEqual(shot['filled'], ['Try again'])
 
 
 if __name__ == '__main__':

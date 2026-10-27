@@ -1904,7 +1904,7 @@ class ScriptedPage:
         return self.captured('GET', f'/api/{endpoint}' + (f'?{urlencode(params)}'
                                                           if params else ''))
 
-    def run_page(self, answers: dict, steps: list, layout: bool = False,
+    def run_page(self, answers: dict, steps: list, layout: bool = True,
                  **plan) -> dict:
         file = self.root.parent / 'plan.json'
         file.write_text(json.dumps({'answers': answers, 'steps': steps, **plan}),
@@ -3574,7 +3574,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         gate = result['snapshots']['gate']
         self.assertEqual(gate['heading'], 'The blueprint')
         # Only a stage can be left out from here; the file itself is decided in the review.
-        self.assertEqual((gate['toolbarButtons'], gate['filled']), ([], []))
+        # The one way on is the toolbar's: to the review that decides it.
+        self.assertEqual((gate['toolbarButtons'], gate['filled']),
+                         (['Request changes in the first drafts review'],
+                          ['Request changes in the first drafts review']))
         self.assertIn('More', gate['buttons'])
         self.assertIn('Skip this stage', result['snapshots']['more']['buttons'])
         for absent in ('Approve', 'Ask for changes', 'Rebuild it'):

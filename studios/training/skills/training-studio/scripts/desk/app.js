@@ -1359,6 +1359,8 @@ function openSheet(kind, opener) {
     for (const menu of document.querySelectorAll('.menu')) menu.open = false;
     view.sheet = kind;
     view.opener = opener;
+    // The screen under the sheet gives up its filled button while the sheet holds one.
+    repaintUnder();
     drawSheet();
     const field = byId('note-text');
     (field || byId('sheet')).focus();
@@ -2382,9 +2384,9 @@ function researchReading(found) {
     make('p', 'quiet', found.read));
   const finding = (id) => list(found.findings).find((one) => one.id === id);
   const show = (ids) => ids.map(finding).filter(Boolean).map((one) =>
-    add(make('div', 'card-part'), make('h3', 'row-title', one.title), make('p', '', one.summary)));
+    add(make('div', 'card-part'), make('p', 'row-title', one.title), make('p', '', one.summary)));
   if (list(found.questions).length) add(node, make('h2', 'doc-title', 'Your questions'));
-  for (const question of list(found.questions)) add(node, make('h3', 'row-title', question.question),
+  for (const question of list(found.questions)) add(node, make('p', 'row-title', question.question),
     ...(list(question.findings).length ? show(question.findings) : [make('p', 'quiet', 'The research did not answer this.')]));
   if (list(found.unplanned).length) add(node, make('h2', 'doc-title', 'Also found'), ...show(found.unplanned));
   for (const [label, text] of [['Read the full report', found.report], ['The evidence and the check’s notes', found.evidence]]) {
@@ -2620,9 +2622,7 @@ function standing(found) {
   // A file a combined review covers is decided there, with everything else it covers.
   if (found.combined && found.approval === 'page' && !reads(found.path)) {
     return callout('yours', make('p', '', 'This is part of the ' + found.combined.name
-      + ' that is waiting for you. It is decided there, with everything the review covers.'),
-    add(make('div', 'bar'), capsule('Request changes in the ' + found.combined.name, '',
-      () => show('run', { path: found.path }), 'combined')));
+      + ' that is waiting for you. It is decided there, with everything the review covers.'));
   }
   if (found.status === 'approved' && found.approved) {
     return callout('', add(make('p', ''), found.approved.by === 'review-policy'
@@ -2692,6 +2692,10 @@ function gateActions(found) {
   const lead = offers.includes('approve') ? 'approve' : offers.includes('restore') ? 'restore'
     : found.status === 'stale' && offers.includes('rebuild') ? 'rebuild' : '';
   const actions = [];
+  if (found.combined) {
+    actions.push(capsule('Request changes in the ' + found.combined.name, 'filled',
+      () => show('run', { path: found.path }), 'combined'));
+  }
   if (offers.includes('revise')) {
     actions.push(capsule('Ask for changes', '', openSheet('revise', 'revise'), 'revise'));
   }
@@ -2736,10 +2740,14 @@ function paintGate(fresh) {
   // A deck the runner rendered says that its pictures are of the very file being decided.
   const decked = slidesOf(found).length > 0;
   if (!decked) view.viewer = null;
+  // Only a gate waiting for this person's decision here says what to do at it.
+  const decides = found.waiting && found.approval === 'page' && !theirs && !found.combined;
   const intro = add(make('div', 'intro'), state(words[0], words[1]),
     beads(found.stages, false),
-    WHOSE[found.whose] ? make('p', 'lede', WHOSE[found.whose]) : null,
-    decked ? make('p', 'lede', 'These are the slides themselves. The pictures were made from '
+    decides ? make('p', 'lede', 'Read ' + lower(found.label)
+      + ', then approve it or ask for changes.') : null,
+    WHOSE[found.whose] ? make('p', 'quiet', WHOSE[found.whose]) : null,
+    decked ? make('p', 'quiet', 'These are the slides themselves. The pictures were made from '
       + 'the very file you are deciding on.') : null);
   const aside = add(make('aside', 'aside'), reviewOf(found) ? findingsNote(found) : null,
     found.research ? null : checkedNote(found), lookNote(found), changesNote(found.changes));
@@ -2922,7 +2930,7 @@ function findingsNote(found) {
       findings.forEach((finding, index) => {
         if (finding.category === category) add(items, item(finding, index));
       });
-      add(node, make('h3', 'row-title', CATEGORY_WORDS[category] || 'Found'), items);
+      add(node, make('p', 'row-title', CATEGORY_WORDS[category] || 'Found'), items);
     });
   } else {
     const items = make('ol', 'look findings');
@@ -2950,7 +2958,7 @@ function findingsNote(found) {
 function auditPart(audit) {
   const warnings = list(audit.warnings);
   const held = list(audit.blockers).filter(Boolean);
-  const node = add(make('div', 'audit'), make('h3', 'row-title', 'The brand’s own check'));
+  const node = add(make('div', 'audit'), make('p', 'row-title', 'The brand’s own check'));
   if (held.length) {
     const against = make('ul', 'look');
     for (const said of held) add(against, add(make('li'), state('late', String(said))));
@@ -3421,7 +3429,6 @@ function newButton(kind, key) {
 function openNew(opener) {
   if (!view.draft) view.draft = newDraft();
   openSheet('new', opener || 'new')();
-  repaintUnder();
   readAgents();
   readModels(view.draft.agent);
 }
@@ -5208,7 +5215,7 @@ function aheadLine(run) {
 }
 
 function runIntro(run, training, promised) {
-  const node = make('div', 'intro');
+  const node = add(make('div', 'intro'), make('p', 'lede run-says', run.sentence));
   if (run.decided) {
     const last = run.decided;
     const line = make('p', 'quiet', (last.decision === 'revise' ? 'You asked for changes to '
@@ -5219,7 +5226,6 @@ function runIntro(run, training, promised) {
   add(node, nowLine(run), state(...runStanding(run)));
   if (list(training.stages).length) add(node, beads(training.stages, false));
   add(node, aheadLine(run));
-  add(node, make('p', 'lede run-says', run.sentence));
   const next = nextGate(run);
   // What someone else runs asks nothing of this person, and promises them nothing: who
   // runs it, and what can be read, is said next.
@@ -5437,7 +5443,7 @@ function problemPart(run, lead) {
       read.disabled = true;
       try {
         const file = await ask('file', { path: view.path, artifact: found.objections });
-        shown.replaceChildren(make('h3', 'row-title', 'The research check'),
+        shown.replaceChildren(make('p', 'row-title', 'The research check'),
           window.StudioMarkdown.render(file.text || ''));
 
       } catch (failure) {
@@ -5514,7 +5520,7 @@ function stepsCard(run) {
   for (const step of steps) items.append(stepItem(step));
   add(node, items);
   const used = list(run.note && run.note.used);
-  if (used.length) add(node, make('h3', 'row-title', 'Notes for the next step'),
+  if (used.length) add(node, make('p', 'row-title', 'Notes for the next step'),
     bullets(used.map((item) => item.text + ' Went with: ' + stepLabel(run, item.step) + '.')));
   return node;
 }
@@ -5532,7 +5538,7 @@ function tickSteps(run) {
 function workerItem(worker) {
   const lines = list(worker.lines);
   const item = add(make('li', 'worker'), add(make('div', 'computer-top'),
-    make('h3', 'row-title', worker.label),
+    make('p', 'row-title', worker.label),
     add(make('span', 'quiet'), 'Started ', when(worker.started_at))));
   if (!lines.length) return add(item, make('p', 'quiet', 'Just starting.'));
   add(item, make('p', 'worker-now', lines[lines.length - 1]));
@@ -5859,7 +5865,7 @@ function documentsCard(run, lead) {
     for (const found of added) {
       items.append(documentItem(found, held.waiting, later.has(found.name)));
     }
-    add(node, make('h3', 'row-title', count(added.length, 'document', 'documents')
+    add(node, make('p', 'row-title', count(added.length, 'document', 'documents')
       + ' added'), items);
   } else if (held.waiting) {
     add(node, make('p', 'quiet', 'Nothing is added yet.'));
@@ -6040,10 +6046,25 @@ async function checkCopies(pressed) {
   focusKey('check-copies');
 }
 
+// A Google copy changed both there and here waits for the person's choice.
+function conflicted(found) {
+  return found.kind === 'google' && found.conflict && view.run?.mine !== false;
+}
+
+function conflictPart(run) {
+  const items = make('ul', 'rows');
+  for (const found of list(run.copies).filter(conflicted)) items.append(copyItem(found));
+  return add(card('A copy changed in two places', 'card-needs'),
+    make('p', 'quiet', 'Choose which version to keep. Nothing is sent until you confirm it.'),
+    items);
+}
+
 function copiesCard(run) {
   const node = card('Copies');
   const items = make('ul', 'rows');
-  for (const found of list(run.copies)) items.append(copyItem(found));
+  for (const found of list(run.copies).filter((one) => !conflicted(one))) {
+    items.append(copyItem(found));
+  }
   add(node, items);
   const docs = list(run.copies).some((found) => found.kind === 'google' && found.link);
   if (docs && run.mine !== false) {
@@ -6119,7 +6140,7 @@ function finishedPart(run, lead) {
   const found = run.finished;
   const limits = list(found.limitations);
   const yoodli = list(found.yoodli).map((item) => add(make('div', 'card-part'),
-    make('h3', 'row-title', item.label || 'Yoodli scenario'), yoodliCopies(item)));
+    make('p', 'row-title', item.label || 'Yoodli scenario'), yoodliCopies(item)));
   // The index is one more file of the training, read on a screen of its own.
   const open = found.index && !found.ready ? capsule('Open the index', '',
     () => show('index', { path: view.path, artifact: found.index }), 'index') : null;
@@ -6176,7 +6197,17 @@ async function steer(action, pressed) {
 function runActions(run, waiting, lead) {
   const actions = [];
   if (run.review && !run.question && !run.problem) {
-    const approve = capsule(combinedLabel(run.review), lead === 'combined' ? 'filled' : '',
+    // On a desktop the filled action follows the marks: Send once anything is marked, the
+    // approval otherwise. On a phone the filled one is the review bar's.
+    const asked = marked(run.review);
+    const leads = lead === 'combined' && !narrow();
+    if (asked.length && !narrow()) {
+      const send = capsule('Send ' + count(asked.length, 'request', 'requests'),
+        leads ? 'filled' : '', () => decideCombined(run.review, 'revise', null, null, send,
+          byId('combined-send-problem'), marked(run.review)), 'send-requests');
+      actions.push(send);
+    }
+    const approve = capsule(combinedLabel(run.review), leads && !asked.length ? 'filled' : '',
       () => decideCombined(run.review, 'approve', null, null, approve), 'approve-combined');
     actions.push(approve);
   }
@@ -6247,7 +6278,7 @@ function lookPicker(look, picked, changed) {
       alt) });
 }
 
-function lookPart(run) {
+function lookPart(run, leads) {
   const look = run.look;
   const deck = look.level ? 'the level ' + look.level + ' slide deck' : 'the slide deck';
   const node = callout('yours', make('p', '', 'Choose the look of ' + deck + '.'),
@@ -6259,13 +6290,13 @@ function lookPart(run) {
   const problem = alertLine('look-problem');
   add(node, lookPicker(look, held, (now) => Object.assign(held, now)), problem);
   if (look.failed) {
-    const again = capsule('Try again', 'filled',
+    const again = capsule('Try again', leads ? 'filled' : '',
       () => chooseLook(look, 'again', '', problem, again), 'look-again');
     const proceed = capsule('Carry on in the brand’s default look', '',
       () => chooseLook(look, 'default', '', problem, proceed), 'look-default');
     return add(node, again, proceed);
   }
-  const use = capsule('Use this look', 'filled', () => {
+  const use = capsule('Use this look', leads ? 'filled' : '', () => {
     if (!held.choice) return say(problem, 'Pick a look first.');
     return chooseLook(look, held.choice, held.words || '', problem, use);
   }, 'look-use');
@@ -6387,7 +6418,6 @@ function assetName(found) {
 function openPicture(found, index, opener) {
   view.picture = { found, index };
   openSheet('picture', opener)();
-  repaintUnder();
   const box = byId('asset-' + index + '-file');
   if (box) box.focus();
 }
@@ -6662,16 +6692,19 @@ async function decideCombined(review, decision, target, note, pressed,
 }
 
 // What is sent when the marked requests go: how many, and what each change is followed by.
-function reviewBar(review, theirs) {
+function reviewBar(review, theirs, leads) {
   const bar = make('div', 'review-bar');
   const says = make('p', '');
   const follows = make('p', 'quiet');
   const problem = alertLine('combined-send-problem');
-  // The toolbar's approval is the one filled button on the screen. On a phone the bar
-  // offers the approval again, under the thumb, once nothing is marked for changes.
-  const send = capsule('', '', () => decideCombined(review, 'revise', null, null, send,
-    problem, marked(review)), 'send-requests');
-  const approve = narrow() && !theirs ? capsule(combinedLabel(review), '',
+  // On a desktop the toolbar holds both actions and the bar the tally. On a phone the one
+  // filled action is the bar's, under the thumb and above the tab bar: Send while anything
+  // is marked for changes, the approval otherwise.
+  const small = narrow() && !theirs;
+  const kind = leads ? 'filled' : '';
+  const send = small ? capsule('', kind, () => decideCombined(review, 'revise', null, null,
+    send, problem, marked(review)), 'send-requests') : null;
+  const approve = small ? capsule(combinedLabel(review), kind,
     () => decideCombined(review, 'approve', null, null, approve), 'approve-combined-bar') : null;
   const update = () => {
     const asked = marked(review);
@@ -6685,8 +6718,10 @@ function reviewBar(review, theirs) {
       + (asked.length === 1 ? ' changes, ' : ' change, ') + 'these are written again from '
       + (asked.length === 1 ? 'it' : 'them') + ': ' + series(after) + '.' : '';
     follows.hidden = !after.length;
-    send.textContent = 'Send ' + count(asked.length, 'request', 'requests');
-    send.hidden = !asked.length;
+    if (send) {
+      send.textContent = 'Send ' + count(asked.length, 'request', 'requests');
+      send.hidden = !asked.length;
+    }
     if (approve) approve.hidden = Boolean(asked.length);
   };
   add(bar, says, follows, problem, add(make('div', 'bar'), send, approve));
@@ -6695,17 +6730,18 @@ function reviewBar(review, theirs) {
   return bar;
 }
 
-function combinedReview(run) {
+function combinedReview(run, leads) {
   const review = run.review;
   const theirs = run.mine === false;
   const small = narrow();
   const node = card(review.label);
-  add(node, make('p', 'lede', review.phase === 'direction'
+  // The screen's lede is the run's; what this review is for is a quiet line of its own.
+  add(node, make('p', 'quiet', review.phase === 'direction'
     ? 'Review the first drafts below: the research and what is written so far for each level. Approve them to go on to what is still to write.'
     : 'Review the completed materials together. Approval finishes this draft; publishing is a separate action.'));
   if (!theirs) {
     add(node, make('p', 'quiet', 'Mark what needs changes as you read, and send every request '
-      + 'at once' + (small ? '' : ', or approve from the toolbar') + '.'));
+      + 'at once' + (small ? '' : ' from the toolbar, or approve them there') + '.'));
   }
   const problem = problemLine();
   problem.id = 'combined-problem';
@@ -6714,7 +6750,7 @@ function combinedReview(run) {
   const items = [...review.items];
   if (review.phase === 'final') items.sort((a, b) => Number(material(b)) - Number(material(a)));
   const firstMaterial = items.find(material);
-  const bar = theirs ? null : reviewBar(review, theirs);
+  const bar = theirs ? null : reviewBar(review, theirs, leads);
   for (const item of items) {
     const detail = add(make('details', 'review-bundle'), make('summary', 'row-title', item.label));
     detail.dataset.key = 'combined-' + review.phase + '-' + item.target;
@@ -6801,8 +6837,10 @@ function combinedReview(run) {
         for (const [name, chipNode] of Object.entries(both)) {
           chipNode.setAttribute('aria-pressed', String(value === name));
         }
-        if (value === 'changes') request.focus();
         bar.update();
+        // The toolbar follows: Send is the filled action once anything is marked.
+        if (view.run && view.run.review === review) paintRun(false);
+        if (value === 'changes') request.focus();
       };
       // Each chip names its item, so the same words on every item are told apart.
       const both = {
@@ -6810,14 +6848,11 @@ function combinedReview(run) {
           'needs-' + item.target),
       };
       both.changes.setAttribute('aria-label', 'Needs changes in ' + item.label);
-      if (small) {
-        both.good = chip('Looks good', mark === 'good', (on) => set(on ? 'good' : ''),
-          'good-' + item.target);
-        both.good.setAttribute('aria-label', 'Looks good: ' + item.label);
-        add(marks, both.good, both.changes);
-      } else {
-        add(marks, both.changes);
-      }
+      // Looked at and fine: offered at every width, so the tally can count it.
+      both.good = chip('Looks good', mark === 'good', (on) => set(on ? 'good' : ''),
+        'good-' + item.target);
+      both.good.setAttribute('aria-label', 'Looks good: ' + item.label);
+      add(marks, both.good, both.changes);
       add(part, marks, asking);
     }
     add(node, detail);
@@ -6860,54 +6895,62 @@ function paintRun(fresh) {
     : runActions(run, waiting, lead),
   mark: [title, training.levels, run.state, lead, offered, waiting, outline
     && run.outline.level, theirs, driver, Boolean(run.outline), run.review,
-    run.finished] }, [
+    run.finished, run.review ? marked(run.review).length : 0] }, [
     ['intro', [run.state, run.sentence, run.decided, training.stages, promised, view.steered,
       nextGate(run), Boolean(run.problem), runStanding(run), supplying, outline, theirs,
       run.queue, run.steps, run.workers, run.spent],
     () => runIntro(run, training, promised)],
-    noting(run) ? ['note', [run.note, run.state], () => notePart(run)] : null,
     brought ? ['brought', brought, () => broughtPart(brought)] : null,
     theirs && (driver || !run.finished) ? ['theirs', [driver, lead, run.taken, run.notice,
       run.last_shared, run.kept, title], () => theirsPart(run, lead === 'take')] : null,
     !theirs && run.notice ? ['notice', [run.notice, run.clash, run.kept],
       () => noticePart(run)] : null,
-    run.problem ? ['problem', [run.problem, lead, theirs],
-      () => problemPart(run, lead === 'problem')] : null,
-    waitsForPicture(run) ? ['picture', [run.deck.assets], () => picturePart(run)] : null,
+    // What needs you: a worker's question, a problem, a copy changed in two places, and a
+    // picture the deck waits for.
     run.question && theirs ? ['asked', [run.question, driver], () => askedPart(run)] : null,
-    run.review ? ['combined-review', [run.review, theirs], () => combinedReview(run)] : null,
     run.question && !theirs ? ['question', [run.question, title],
       () => questionPart(run, title)] : null,
+    run.problem ? ['problem', [run.problem, lead, theirs],
+      () => problemPart(run, lead === 'problem')] : null,
+    list(run.copies).some(conflicted) ? ['conflict', [run.copies, view.copying, view.uncopied],
+      () => conflictPart(run)] : null,
+    waitsForPicture(run) ? ['picture', [run.deck.assets], () => picturePart(run)] : null,
     supplying ? ['documents', [run.documents, lead],
       () => documentsCard(run, lead === 'documents')] : null,
+    // Then the review, or the gate.
+    run.review ? ['combined-review', [run.review, theirs, lead],
+      () => combinedReview(run, lead === 'combined')] : null,
     waiting && !run.question && !run.review && !theirs ? ['gate', [waiting, training.sentence],
       () => gatePart(training, waiting, run.sentence)] : null,
     outline && !run.question && !run.review ? ['outline', [run.outline.level, run.sentence],
       () => outlinePart(run)] : null,
-    looking && !run.question && !run.review ? ['look', [run.look, run.sentence],
-      () => lookPart(run)] : null,
+    looking && !run.question && !run.review ? ['look', [run.look, run.sentence, lead],
+      () => lookPart(run, lead === 'look')] : null,
     run.deck_left ? ['deck-left', [run.deck_left, run.sentence, theirs],
       () => deckLeftPart(run)] : null,
     !theirs && run.controls && (run.controls.finish_level || run.controls.finishing
       || run.controls.skip_deck) ? ['controls', [run.controls], () => controlsPart(run)] : null,
-    run.finished ? ['finished', [run.finished, lead],
-      () => finishedPart(run, lead === 'finished')] : null,
-    theirs && !driver && run.finished ? ['free', [title], () => finishedFreePart()] : null,
+    // Then work in progress.
+    noting(run) ? ['note', [run.note, run.state], () => notePart(run)] : null,
     // While a deck is drawn, its sections and their latest previews are what there is to see.
     run.deck ? ['deck', [run.deck, run.outline && run.outline.level],
       () => deckCard(run)] : null,
+    list(run.workers).length ? ['workers', run.workers, () => workersCard(run)] : null,
     ['made', [training.path, training.view && training.view.files, theirs],
       () => madeCard(training, theirs)],
-    list(run.workers).length ? ['workers', run.workers, () => workersCard(run)] : null,
     ['steps', [list(run.steps).map((step) => [step.id, step.label, step.kind, step.status,
       step.attempts > 1, step.error]), run.note && run.note.used], () => stepsCard(run)],
-    list(run.copies).length ? ['copies', [run.copies, view.copying, view.uncopied, theirs],
-      () => copiesCard(run)] : null,
+    list(run.copies).some((found) => !conflicted(found)) ? ['copies', [run.copies,
+      view.copying, view.uncopied, theirs], () => copiesCard(run)] : null,
     // Once that is all of them, what was added is kept on the screen, with nothing to press.
     run.documents && !supplying && !theirs ? ['documents', [run.documents, ''],
       () => documentsCard(run, false)] : null,
     ['cost', [run.spent, run.agent, run.model, run.effort, limits.training_dollars],
       () => costCard(run)],
+    // Then what is finished.
+    run.finished ? ['finished', [run.finished, lead],
+      () => finishedPart(run, lead === 'finished')] : null,
+    theirs && !driver && run.finished ? ['free', [title], () => finishedFreePart()] : null,
     run.finished ? ['publish', [run.finished.ready, published, teamSpace()],
       () => publishCard(run, published)] : null,
     // What this computer runs for a team can be handed over, for anyone to take.
