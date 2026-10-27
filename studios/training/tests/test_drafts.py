@@ -394,6 +394,11 @@ class DeskHoldTests(DeckCase):
                 act(root, 'document@101')
         self.assertEqual(self.log(), commits)
         self.assertEqual(self.record(root)['drafts']['updates'], {})
+        # Once the plan's update is asked for, the card below waits only for that.
+        session = workspace.load(root)
+        self.assertEqual(drafts.hold_says(root, session, held - {'blueprint@101'},
+                                          'document@101', asked={'blueprint@101': {}}),
+                         'Waiting for the plan to be updated.')
 
     def test_row_158_the_practice_plan_holds_its_scenario(self):
         root = self.start(flow='desk', levels=['101'])

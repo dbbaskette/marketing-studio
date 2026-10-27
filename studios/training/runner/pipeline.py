@@ -99,6 +99,7 @@ SOURCES = {'public-web': 'Public web', 'supplied-only': 'Your documents only',
 WEB_ONLY = {'documents': False, 'sites': [], 'web': True}
 SITES_LINE = 'Sites: '      # in intake.md, under Source scope: the sites research keeps to
 NO_DECK = 'No deck was chosen when this training was started.'
+NOT_CHOSEN = 'Not selected in the new training form.'   # a material the start left out
 DECK_LEFT = ('Everything but the slide deck is made. A deck cannot be made on this computer '
              'yet: {why} Put that right and check this computer again, or leave the deck out.')
 DECK_AGAIN = ('Everything but the slide deck is settled. The deck is not approved as it '
@@ -700,7 +701,7 @@ def create(space: gitstate.Workspace, form: dict) -> Path:
             workspace.skip(root, 'deck', reason=NO_DECK, by='page')
         for stage in MATERIALS:
             if stage not in form.get('materials', MATERIALS):
-                workspace.skip(root, stage, reason='Not selected in the new training form.',
+                workspace.skip(root, stage, reason=NOT_CHOSEN,
                                by='page')
         workspace.write_atomic(root / 'intake.md', intake_text(form).encode('utf-8'))
         workspace.save(root, 'intake', built=True)

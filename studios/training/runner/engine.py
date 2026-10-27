@@ -1450,6 +1450,8 @@ class Engine(Reviewing):
             'dollars': dollars, 'tokens': tokens, 'outcome': outcome, 'error': error})
         if outcome == 'kept':
             entry['failed'] = 0
+            if drafts.on_desk(record):   # how long it took here, for the desk's estimate
+                drafts.took(record, step, seconds)
         elif outcome == 'failed':
             entry['failed'] = entry.get('failed', 0) + 1
         return entry
@@ -4129,6 +4131,10 @@ class Engine(Reviewing):
             given['later'] = [entry for entry in later if entry.get('name') != name]
             said = f'{name} is taken back: it was added after the research'
         else:
+            # A desk training's research is settled once its documents are all added: a
+            # source is added there from the desk's Sources.
+            if drafts.on_desk(record):
+                raise WorkspaceError(SETTLED)
             run = self._run(root)
             if run.workers or run.busy:
                 raise WorkspaceError(WORKING)

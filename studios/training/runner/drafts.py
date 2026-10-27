@@ -22,8 +22,9 @@ from pathlib import Path
 
 import home
 import workspace
-from studio_core import review_policy
+from studio_core import research_view, review_policy, step_times
 from studio_core.drafting import basis
+from studio_core.drafting.store import Store
 
 import runner  # noqa: F401  puts the core on the import path
 
@@ -59,6 +60,7 @@ NO_SCOPE = 'An update is of the whole material for now. Leave out what it covers
 HELD = 'Built from an earlier {what}.'
 CHANGED = ' {n} {parts} changed since.'
 WAITING = 'Waiting for {what} to be updated or kept.'
+UPDATING_FIRST = 'Waiting for {what} to be updated.'
 PRACTICE = 'The plan for this practice changed.'
 # Each kind of material, and each other thing one is built from, as the desk names it.
 WHAT = {'blueprint': 'plan', 'document': 'guide', 'brief': 'brief', 'research': 'research',
@@ -130,13 +132,15 @@ def input_of(root: Path, session: dict, name: str) -> list[str]:
         extra for extra in spec['extras'] if extra in NAMED)])
 
 
-def hold_says(root: Path, session: dict, holding, name: str, state: dict | None = None
-              ) -> str | None:
+def hold_says(root: Path, session: dict, holding, name: str, state: dict | None = None,
+              asked=()) -> str | None:
     """What a card says of a hold: that it waits for an input of its own to be updated or
-    kept, or what it was built from an earlier version of. None for a card not held."""
+    kept (only updated, once the person asked for its update: `asked`), or what it was
+    built from an earlier version of. None for a card not held."""
     waiting, changed = _hold(root, session, holding, name, state)
     if waiting is not None:
-        return WAITING.format(what=f'the {what(waiting)}')
+        said = UPDATING_FIRST if waiting in asked else WAITING
+        return said.format(what=f'the {what(waiting)}')
     if name not in holding:
         return None
     if 'practice' in changed:
@@ -236,3 +240,283 @@ def level_ready(root: Path, session: dict, level: str | None,
             if workspace.split(name)[1] == level
             and workspace.split(name)[0].partition(':')[0] == base
             and state.get(name) in ('draft', 'stale')]
+
+
+# --- how long the start takes here -------------------------------------------------------
+
+# The minutes each kind of step is guessed to take until this computer has times of its
+# own: research, a plan, a guide, a brief, a scenario and a Yoodli layout. A deck's guess is
+# `deck.RATE['minutes']` a slide, with SLIDES slides before what it says is written.
+GUESSES = {'research': 6, 'blueprint': 1, 'document': 3, 'brief': 2, 'scenario': 1,
+           'yoodli': 1}
+SLIDES = 8
+EACH_ITS_OWN = ('scenario', 'yoodli')   # a step for each scenario, named by its ID
+
+
+class Times(Store):
+    """Training Studio's store for how long desk steps take on this computer: kept in its
+    own data folder, never in a training's, and written outside any training's lock."""
+    product, word = 'Training Studio', 'training'
+
+    def held(self):
+        return True
+
+
+def times() -> Path:
+    """Where this computer keeps how long each kind of desk step took."""
+    return home.data_root() / 'draft-step-times.json'
+
+
+def _timed(base: str) -> str | None:
+    """The kind of step a step's ID is timed as, for one the estimate guesses: a plan, a
+    guide, a brief, a scenario or a Yoodli layout. None for any other, a research question
+    or a copy among them."""
+    kind = base.partition(':')[0]
+    if kind in GUESSES and kind != 'research' and (base == kind or kind in EACH_ITS_OWN):
+        return kind
+    return None
+
+
+def _since(record: dict, marker: str, belongs) -> float:
+    """The seconds of every kept try of the steps `belongs` names since `marker` was last
+    kept: the whole of one research, or of one deck."""
+    tried = record.get('steps') or {}
+    began = max((attempt.get('started_at') or '' for attempt in
+                 (tried.get(marker) or {}).get('attempts') or ()
+                 if attempt.get('outcome') == 'kept'), default='')
+    return float(sum(attempt.get('seconds') or 0 for name, entry in tried.items()
+                     if belongs(name) for attempt in entry.get('attempts') or ()
+                     if attempt.get('outcome') == 'kept'
+                     and (attempt.get('started_at') or '') >= began))
+
+
+def took(record: dict, step: str, seconds: float) -> None:
+    """Keep how long a desk step that worked took on this computer, for the start's
+    estimate: a plan, a guide, a brief, a scenario or a Yoodli layout as its step ends, and
+    the research and each deck whole, once their last step does. Best effort: a problem
+    keeping it never stops the step."""
+    from studio_core import research_contract
+
+    from runner import pipeline
+    base, level = workspace.split(step.partition(':')[0] if step.startswith('deck-')
+                                  else step)
+    try:
+        if base == 'research-report':
+            key, seconds = 'research', _since(record, 'research-start', lambda name: (
+                name == 'research' or name.startswith('research:')
+                or name in research_contract.LEGACY_JOBS))
+        elif base == 'deck-save':
+            key, seconds = 'deck', _since(
+                record, workspace.qualify('deck-handoff', level), lambda name: (
+                    workspace.split(name.partition(':')[0]) in
+                    [(each, level) for each in pipeline.DECK_STEPS]))
+        else:
+            key = _timed(base)
+        if key is not None:
+            step_times.note(Times(), times(), key, float(seconds or 0))
+    except (TypeError, ValueError, AttributeError, OSError):
+        return
+
+
+def _slides(root: Path, level: str | None) -> int:
+    """How many slides a deck has, from what it says once that is written; else SLIDES."""
+    try:
+        said = home.read_json(Path(root) / workspace.prefix(level) / 'deck' / 'outline.json',
+                              None)
+    except (OSError, ValueError):
+        said = None
+    slides = said.get('slides') if isinstance(said, dict) else None
+    return len(slides) if isinstance(slides, list) and slides else SLIDES
+
+
+def start_minutes(root: Path, record: dict, found) -> int:
+    """About how many minutes are left of a desk training's start: over the steps still to
+    run, this computer's usual time for each kind (`step_times.expected`), else its guess
+    (GUESSES; a deck's is `deck.RATE['minutes']` a slide). `found` is its survey."""
+    from runner import deck, pipeline
+    store, path, minutes, decks = Times(), times(), 0.0, set()
+    for step in found.steps:
+        if step.id in found.done:
+            continue
+        base, level = workspace.split(step.id)
+        if base in pipeline.DECK_STEPS:
+            if level not in decks:
+                decks.add(level)
+                minutes += step_times.expected(store, path, 'deck',
+                                               deck.RATE['minutes'] * _slides(root, level))
+            continue
+        kind = _timed(base) or (base if base == 'research' else None)
+        if step.kind == 'agent' and kind is not None:
+            minutes += step_times.expected(store, path, kind, GUESSES[kind])
+    return round(minutes)
+
+
+# --- the desk's view ---------------------------------------------------------------------
+
+ACTIONS = ('ready', 'update', 'keep', 'send', 'download')
+STATES = ('writing', 'draft', 'ready', 'held', 'needs', 'left-out')
+NOTHING_NEEDED = ('Nothing needed from you. Each material opens here as it is ready, in '
+                  'about {n} {minutes}.')
+WRITING = 'Being written. It opens here when it is ready.'
+UPDATING = 'Being made again from what it is built from now.'
+DRAFT = 'A draft. Nothing is ready until you mark it.'
+READY = 'Ready. You marked it ready.'
+NEEDS = 'Needs you before using.'
+LEFT_OUT = 'Left out.'
+PUTTING = 'Putting {it} on the desk.'
+QUESTION = 'A question is waiting for you: {text}'
+# What a saved training's list calls a material the desk accepted and the person has not
+# marked ready.
+DRAFT_WORDS = 'not marked ready yet'
+
+
+def _left_out(root: Path, session: dict, name: str) -> str | None:
+    """Why a material is left out, in the person's own words, or None for one left out as
+    the start was chosen (it has no card)."""
+    from runner import pipeline
+    stage = workspace.artifact(root, session, name)['stage']
+    if stage in session['unavailable']:
+        return session['unavailable'][stage]
+    said = [event.get('reason') for event in session.get('events') or ()
+            if event.get('event') == 'skip' and event.get('stage') == stage]
+    reason = said[-1] if said else None
+    if reason in (None, pipeline.NOT_CHOSEN, pipeline.NO_DECK):
+        return None
+    return reason
+
+
+def _checked(outcomes, name: str) -> dict:
+    """What a card's "Checked for you" says: the checks of this material that passed, and
+    each that did not, as the review screen shows them."""
+    import checks
+    own = [outcome for outcome in outcomes if checks.artifact_of(outcome['check']) == name]
+    return {'passed': sum(outcome['status'] == 'passed' for outcome in own),
+            'problems': [{'check': outcome['check'], 'problems': outcome['problems'],
+                          'words': ('could not run' if outcome['status'] == 'unavailable'
+                                    else 'failed')}
+                         for outcome in own if outcome['status'] != 'passed']}
+
+
+def _failing(found, problem: dict) -> str | None:
+    """The material whose step the run stopped at, or None."""
+    at = problem.get('step') or ''
+    return next((step.artifact for step in found.steps if step.artifact and at
+                 and (at == step.id or at.startswith(step.id + ':'))), None)
+
+
+def view(engine, root) -> dict:
+    """Everything the desk shows for one desk training: {'flow', 'title', 'levels',
+    'progress', 'needs', 'cards', 'sources', 'job', 'team'}.
+
+    `progress` is the start's band: {'running', 'doing', 'started_at', 'minutes', 'line'}.
+    `cards` are each level's materials in ORDER, each {'name', 'level', 'kind', 'label',
+    'state', 'says', 'checks', 'seen', 'held', 'actions', 'needs'}: `state` one of STATES,
+    read from what the person marked (the desk's acceptance is a draft), `seen` the hash of
+    its file, `actions` of ACTIONS (only `download` for a teammate). `needs` names the
+    cards that need the person, then the run's question or problem, and, once everything is
+    Ready, what still keeps the index from being written."""
+    import assess
+    import desk
+
+    from runner import pipeline
+    root = Path(root)
+    record = engine._load(root)
+    found = engine._survey(root, record, engine._wanted(root, record))
+    session = found.session
+    state, sentence = engine._state(record, found, engine._run(root))
+    mine, who, state, sentence, last = engine._whose(root, record, found, state, sentence)
+    plain = workspace.statuses(root, session)
+    person = workspace.person_statuses(root, session)
+    holding, asked, report = held(root, session, record, plain), updates(record), \
+        assess.run_checks(root, show_all=True)
+    problem, question = record.get('problem') or {}, record.get('question')
+    failing, busy_now = _failing(found, problem), busy(record)
+    copied_to = {entry['artifact'] for entry in found.copies}
+    levels = session['levels'] or [None]
+    names = workspace.artifact_names(root, session)
+    cards = []
+    for level in levels:
+        for base in ORDER:
+            for name in names:
+                kind = workspace.split(name)[0].partition(':')[0]
+                if workspace.split(name)[1] != level or kind != base:
+                    continue
+                spec = workspace.artifact(root, session, name)
+                seen = workspace.sha256_file(root / spec['file'])
+                waiting = _hold(root, session, holding, name, plain)[0]
+                needs = needs_you(root, found, name) if seen and kind == 'deck' else []
+                card_actions = ['download'] if seen else []
+                if person.get(name) in ('skipped', 'unavailable'):
+                    why = _left_out(root, session, name)
+                    if why is None:
+                        continue
+                    shown, says, card_actions = 'left-out', f'{LEFT_OUT} {why}'.strip(), []
+                elif name in asked:
+                    shown, says, card_actions = 'writing', UPDATING, []
+                elif name == failing and problem:
+                    shown, says = 'needs', problem.get('what') or NEEDS
+                elif seen is None:
+                    shown, says = (('needs', pipeline.deck_says(found))
+                                   if kind == 'deck' and found.missing
+                                   else ('writing', WRITING))
+                    card_actions = []
+                elif name in holding:
+                    shown = 'held'
+                    says = hold_says(root, session, holding, name, plain, asked)
+                    remade = (workspace.split(name)[0] not in NEVER_REMADE
+                              and name not in found.own)
+                    card_actions = [*(['update'] if remade and waiting is None
+                                      and not busy_now else []),
+                                    *(['keep'] if waiting is None else []), 'download']
+                elif needs:
+                    shown, says = 'needs', ' '.join([NEEDS, *needs])
+                elif person.get(name) == 'approved':
+                    shown, says = 'ready', READY
+                else:
+                    shown, says = 'draft', DRAFT
+                    card_actions = ['ready', *(['send'] if name in copied_to
+                                               and name not in sent(record) else []),
+                                    'download']
+                cards.append({
+                    'name': name, 'level': level or '', 'kind': kind,
+                    'label': workspace.label(name), 'state': shown, 'says': says,
+                    'checks': _checked(report['checks'], name) if seen else
+                    {'passed': 0, 'problems': []},
+                    'seen': seen, 'held': name in holding,
+                    'actions': card_actions if mine else ['download'], 'needs': needs})
+    needed = []
+    if mine:
+        needed = [card['label'] for card in cards if card['state'] in ('held', 'needs')]
+        if question:
+            needed.append(QUESTION.format(text=question['text']))
+        if problem.get('what'):
+            needed.append(problem['what'])
+        # Everything is Ready, and still no index: what else is in the way is said.
+        if not needed and not report['ready'] and cards and all(
+                card['state'] in ('ready', 'left-out') for card in cards):
+            needed += [desk.plainly(reason) for reason in report['blocking']]
+    running = state == 'working'
+    minutes = max(1, start_minutes(root, record, found)) if running else None
+    doing = ''
+    if running:
+        doing = (PUTTING.format(it=pipeline.subject(found.next.step))
+                 if found.next.kind == 'gate' else sentence)
+    plan = desk.document(root, session, 'research-plan')
+    questions = plan.get('questions') or []
+    listed = engine.documents.listed(root) if record.get('documents') else ()
+    jobs = (record.get('drafts') or {}).get('jobs') or ()
+    return {
+        'flow': FLOW, 'title': session['title'], 'levels': [level or '' for level in levels],
+        'progress': {'running': running, 'doing': doing,
+                     'started_at': record.get('started_at'), 'minutes': minutes,
+                     'line': NOTHING_NEEDED.format(
+                         n=minutes, minutes='minute' if minutes == 1 else 'minutes')
+                     if running else ''},
+        'needs': needed, 'cards': cards,
+        'sources': {'account': research_view.account(root / 'research', questions),
+                    'plan': questions,
+                    'documents': [{key: entry.get(key) for key in
+                                   ('name', 'bytes', 'readable', 'problem')}
+                                  for entry in listed]},
+        'job': next((dict(job) for job in reversed(jobs) if basis.busy(job)), None),
+        'team': {'ours': mine, 'driver': who, 'last_shared': last}}
