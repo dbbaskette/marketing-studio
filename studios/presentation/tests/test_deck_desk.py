@@ -521,5 +521,108 @@ class DeckNoteTests(DeskCase):
         self.assertEqual(notes, {'section-1': 'done', 'section-2': 'drawing'})
 
 
+class OutlineTabTests(DeskCase):
+    """The Outline tab: the outline saved, the document read the other way, the look."""
+
+    def deck(self, **changes) -> Path:
+        root = self.start_desk(**{'look': 'default', **changes})
+        self.on_desk(root)
+        return root
+
+    def edited(self, root: Path, number: int, **words) -> list:
+        slides = json.loads(json.dumps(self.desk_view(root)['outline']['slides']))
+        slides[number - 1].update(words)
+        return slides
+
+    def test_editing_one_slide_s_words_redraws_only_its_section(self):
+        root = self.deck()
+        slides = self.edited(root, 3, title='Capacity holds with two or more instances')
+        self.workers.outline_said = {**LONG_OUTLINE, 'slides': slides}
+        jobs = len(self.workers.of('section'))
+        self.engine.desk_outline(root, slides, self.desk_view(root)['outline']['expected'])
+        again = self.workers.of('section')[jobs:]
+        self.assertEqual(len(again), 1)
+        self.assertIn('Draw section 1 of', again[0].task)
+        from runner.steps import build
+        self.assertIn('-kept-', build.read_state(root)['sections']['section-2']['file'])
+        self.on_desk(root)
+        outline = json.loads((root / 'outline.json').read_text())
+        self.assertEqual(outline['slides'][2]['title'], 'Capacity holds with two or more instances')
+        self.assertEqual(self.record(root)['gates']['gate:outline']['by'], 'desk')
+
+    def test_the_outline_price_counts_the_sections_that_change(self):
+        root = self.deck()
+        slides = self.desk_view(root)['outline']['slides']
+        moved = [slides[0], slides[1], slides[4], slides[2], slides[3], *slides[5:]]
+        said = self.engine.desk_outline_price(root, moved)['says']
+        self.assertTrue(said.startswith('2 sections change and are redrawn; the rest stay as '
+                                        'drawn.'), said)
+        one = self.edited(root, 3, title='Capacity holds with two or more instances')
+        said = self.engine.desk_outline_price(root, one)['says']
+        self.assertTrue(said.startswith('1 section changes and is redrawn; the rest stay as '
+                                        'drawn.'), said)
+        self.assertIn('Last time', said)
+
+    def test_a_refused_outline_saves_nothing(self):
+        root = self.deck()
+        before = (root / 'outline.json').read_bytes()
+        slides = self.edited(root, 3, title='Capacity holds with two or more instances')
+        refused = {'status': 'findings', 'slides': 8, 'words': {},
+                   'findings': [{'slide': 's3', 'code': 'title-too-long'}]}
+        with mock.patch.object(self.slides, 'outline_check', return_value=refused):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.desk_outline(root, slides,
+                                         self.desk_view(root)['outline']['expected'])
+        self.assertTrue(str(caught.exception).startswith('The outline cannot be saved.'))
+        self.assertEqual((root / 'outline.json').read_bytes(), before)
+        self.assertEqual(self.waiting(root), 'gate:build')
+
+    def test_an_outline_read_before_it_changed_is_refused(self):
+        root = self.deck()
+        slides = self.edited(root, 3, title='Capacity holds with two or more instances')
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_outline(root, slides, '0' * 64)
+        self.assertEqual(str(caught.exception), desk.OUTLINE_CHANGED)
+
+    def test_reading_the_document_the_other_way_writes_the_outline_again(self):
+        root = self.deck(route='document',
+                         source={'kind': 'paste', 'text': 'Notes on rolling restarts.'})
+        self.assertEqual(self.desk_view(root)['outline']['reading']['kind'], 'material')
+        self.assertTrue(self.desk_view(root)['outline']['reading']['price'])
+        outlines = len(self.workers.of('outline'))
+        self.engine.desk_reread(root, 'spec')
+        self.assertEqual(self.record(root)['classified'], 'spec')
+        self.assertEqual(len(self.workers.of('outline')), outlines + 1)
+        self.on_desk(root)
+
+    def test_only_a_document_is_read_the_other_way(self):
+        root = self.deck()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_reread(root, 'spec')
+        self.assertEqual(str(caught.exception), 'Only a document is read as a script for '
+                                                'the slides or as material.')
+
+    def test_the_look_pick_is_the_person_s(self):
+        root = self.start_desk(look='pick')
+        self.pick_look(root)
+        record = self.record(root)
+        self.assertEqual(record['gates']['gate:look']['by'],
+                         self.gitstate.identity(self.space.repo))
+        self.assertFalse([event for event in record.get('review_events') or ()
+                          if event['gate'] == 'gate:look'])
+
+    def test_change_the_look_draws_it_again_and_every_section_after_the_pick(self):
+        root = self.deck()
+        self.assertTrue(self.desk_view(root)['outline']['look']['price'].startswith(
+            'Redraws every section.'))
+        jobs = len(self.workers.of('section'))
+        self.engine.desk_look_again(root)
+        self.assertEqual(self.waiting(root), 'gate:look')
+        self.pick_look(root, 'example-bold')
+        self.assertEqual(len(self.workers.of('section')) - jobs, 2)
+        self.assertEqual(looks.chosen(root)['choice'], 'example-bold')
+        self.on_desk(root)
+
+
 if __name__ == '__main__':
     unittest.main()

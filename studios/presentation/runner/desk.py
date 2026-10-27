@@ -52,6 +52,9 @@ NO_DRAWING = 'There is no drawing of this deck on this computer.'
 NO_NOTE = 'Say how the slide should change.'
 NO_DECK_NOTE = 'Say how the whole deck should change.'
 PUTTING = 'Putting the deck together, rendering and checking it'
+OUTLINE_CHANGED = 'The outline changed since this page read it. Reload it, then try again.'
+OUTLINE_BUSY = 'The deck is being redrawn now. Save the outline when that ends.'
+SECTION_SIZE = 4   # content slides one section holds at most, as the slides tool splits them
 NOTHING_TO_STOP = 'Nothing is being redrawn now, so there is nothing to stop.'
 NOT_ENDED = ('It was stopped, but something it started has not ended yet. Try Stop again in '
              'a moment.')
@@ -64,7 +67,9 @@ def passes(run: dict, gate: str) -> bool:
     the look, and the look itself when the start chose the brand's default."""
     if gate in PASSED:
         return True
-    return gate == 'gate:look' and (run.get('form') or {}).get('look') == 'default'
+    # Change the look asks for a pick, whatever the start chose.
+    return gate == 'gate:look' and (run.get('form') or {}).get('look') == 'default' \
+        and not (run.get('desk') or {}).get('pick')
 
 
 def receipt(run: dict, gate: str, evidence, at: str, note: str | None = None) -> None:
@@ -136,8 +141,10 @@ def working(root, run: dict, state: dict | None = None) -> dict | None:
         return None
     state = state if state is not None else build.read_state(root)
     asked = list(((state.get('asked') or {}).get('sections')) or ())
+    nxt = stages.survey(run).next
     if not asked:
-        return {'what': PUTTING, 'done': 0, 'total': 0}
+        building = nxt.stage == 'build' and nxt.name not in ('build-start', 'build-sections')
+        return {'what': PUTTING if building else nxt.doing, 'done': 0, 'total': 0}
     done = len(fresh(state) & set(asked))
     if len(asked) == 1:
         numbers = section_numbers(state, asked[0])
@@ -322,6 +329,68 @@ def section_price(run: dict, state: dict, section: str) -> dict:
     return {'seconds': seconds, 'dollars': dollars, 'recorded': True,
             'says': says + LAST_TOOK.format(cost=stops.cost(seconds, dollars))
             + usually(SLIDE_NOTE)}
+
+
+def split(slides: list[dict]) -> list[list[str]]:
+    """The sections the slides tool makes of an outline's slides, as it makes them: each
+    run of content slides between lead slides, cut into as few even parts of at most
+    SECTION_SIZE as it takes."""
+    from runner.steps import build
+    parts, run = [], []
+
+    def cut():
+        if not run:
+            return
+        count = -(-len(run) // SECTION_SIZE)
+        size = -(-len(run) // count)
+        parts.extend(run[at:at + size] for at in range(0, len(run), size))
+        run.clear()
+
+    for slide in slides:
+        if not isinstance(slide, dict):
+            continue
+        if slide.get('kind') in build.LEADS:
+            cut()
+        else:
+            run.append(slide.get('id'))
+    cut()
+    return parts
+
+
+def outline_price(run: dict, state: dict, outline: dict, edited: list) -> dict:
+    """What saving an edited outline redraws, said before it is saved: the sections whose
+    slides change, in any field their composer reads, or that hold other slides now, priced
+    as the sum of what each last took here."""
+    from runner.steps import build
+    before = {slide['id']: build._read_by_composer(slide) for slide in build.slides_of(outline)}
+    now = {slide.get('id'): build._read_by_composer(slide) for slide in edited
+           if isinstance(slide, dict)}
+    was = [entry['slides'] for entry in (state.get('start') or {}).get('sections') or ()] \
+        or split(build.slides_of(outline))
+    changed = []
+    for number, ids in enumerate(split(edited), 1):
+        old = was[number - 1] if number <= len(was) else None
+        if old != ids or any(before.get(ident) != now.get(ident) for ident in ids):
+            changed.append(f'section-{number}')
+    count = len(changed)
+    if not count:
+        says = ('No section changes: the deck is put together again from what is drawn, and '
+                'rendered and checked.')
+        return {'sections': [], 'says': says}
+    says = (f'{count} sections change and are redrawn; the rest stay as drawn.' if count > 1
+            else '1 section changes and is redrawn; the rest stay as drawn.')
+    priced = [section_price(run, state, section) for section in changed
+              if section in {entry['id'] for entry in (state.get('start') or {}).get(
+                  'sections') or ()}]
+    if len(priced) == count and all(one['recorded'] for one in priced):
+        seconds = sum(one['seconds'] for one in priced)
+        dollars = [one['dollars'] for one in priced]
+        total = None if None in dollars else round(sum(dollars), 4)
+        says += (' Last time those took ' if count > 1 else ' Last time that took ') \
+            + stops.cost(seconds, total) + '.'
+    else:
+        says += NO_RECORD
+    return {'sections': changed, 'says': says}
 
 
 def deck_price(last: dict) -> str:
