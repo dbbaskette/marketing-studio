@@ -590,6 +590,11 @@ function snapshot() {
     asked: report.requests.length,
     still: followed.filter(([node]) => document.body.contains(node)).map(([, named]) => named),
     href: (here && here.href) || '',
+    // A key two parts of the page share: focus kept by that key may land on the wrong one.
+    keyedTwice: [...document.body.all().filter((node) => node.dataset && node.dataset.key
+      && visible(node)).map((node) => node.dataset.key)
+      .reduce((seen, key) => seen.set(key, (seen.get(key) || 0) + 1), new Map())]
+      .filter(([, times]) => times > 1).map(([key]) => key),
     ...layout(),
   };
 }
@@ -702,7 +707,8 @@ async function app(file) {
     // A plan with {state} opens the page as a reload does, at the screen that state names.
     history: {
       state: plan.state || null,
-      earlier: [],
+      // A plan with {earlier: [states]} has been there before: Back goes to them in turn.
+      earlier: (plan.earlier || []).slice(),
       pushState(state) {
         this.earlier.push(this.state);
         this.state = state;
@@ -743,6 +749,8 @@ async function app(file) {
       if (!held && key === 'GET /api/storyboard') return {ok: true, status: 200, json: async () => ({html:'<h1>Fixture storyboard</h1>'})};
       if (!held) return { ok: false, status: 404, json: async () => ({ error: 'No answer for ' + key }) };
       const answer = held.length > 1 ? held.shift() : held[0];
+      // {pending: true} is an answer that has not come yet, and never does here.
+      if (answer.pending) return new Promise(() => {});
       if (answer.picture === undefined) {
         return { ok: answer.status === 200, status: answer.status, json: async () => answer.body };
       }
@@ -753,6 +761,14 @@ async function app(file) {
           size: Buffer.from(answer.picture, 'base64').length, from: address }) };
     },
   };
+  // A plan with {transitions: true} is a browser with view transitions: the new screen is
+  // drawn a moment after it is asked for, as startViewTransition does.
+  if (plan.transitions) {
+    document.startViewTransition = (update) => {
+      const done = new Promise((resolve) => setImmediate(resolve)).then(update);
+      return { ready: done, finished: done, updateCallbackDone: done };
+    };
+  }
   window.window = window;
   here = window.location;
   window.navigator.clipboard.writeText = () => Promise.resolve();
@@ -813,6 +829,8 @@ async function app(file) {
         }
       }
       if (step.hold !== undefined) followed.push([control(step.hold), step.hold]);
+      // The browser's own Back.
+      if (step.back) window.history.back();
       if (step.key) for (const listener of documentListeners.keydown || []) listener({ key: step.key });
     } catch (failure) {
       report.errors.push(String(failure && failure.stack ? failure.stack : failure));
