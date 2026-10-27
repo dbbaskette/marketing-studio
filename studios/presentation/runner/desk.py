@@ -94,6 +94,9 @@ PATCH_HERE = 'Draw it here first.'
 PLANNING = 'Planning the changes to your deck again, with your note'
 PATCHING = 'Making the changes to a copy of your deck, picturing and checking it'
 NOTES_DOING = 'Proposing speaker notes for every slide'
+REVIEWING = 'Reviewing the deck'
+REVIEW_HALTED = 'The review stopped. Stop it to give it up, or carry on.'
+JOB_HALTED = 'The change stopped. Stop it to give it up, or carry on.'
 
 
 # --- the stops ----------------------------------------------------------------------------
@@ -216,11 +219,20 @@ def working(root, run: dict, state: dict | None = None) -> dict | None:
     or None while the deck rests, before it reaches the desk and once it stopped."""
     from runner.steps import build
     jobs = run.get('desk_jobs') or []
+    # A job, or a review, that stopped or failed can still be given up with Stop.
+    halted = (run.get('halted') or {}).get('state') in ('stopped', 'failed')
+    if jobs and halted:
+        return {'what': JOB_HALTED, 'done': 0, 'total': 1, 'halted': True}
     if jobs and not run.get('halted'):
         if jobs[0].get('kind') == 'speaker-notes':
             return {'what': NOTES_DOING, 'done': 0, 'total': 1}
         return {'what': f"Changing the words of slide {jobs[0].get('number')}", 'done': 0,
                 'total': 1}
+    if run.get('review_requested') and arrived(run) and not decks.delivered(root):
+        if halted:
+            return {'what': REVIEW_HALTED, 'done': 0, 'total': 0, 'halted': True}
+        if not run.get('halted'):
+            return {'what': REVIEWING, 'done': 0, 'total': 0}
     if not arrived(run) or resting(run) or decks.delivered(root):
         return None
     nxt = stages.survey(run).next

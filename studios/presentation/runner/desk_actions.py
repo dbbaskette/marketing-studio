@@ -204,7 +204,7 @@ class DeskActions:
                 == finishing.audit_seen(state),
                 'finish_prices': {'review': finishing.review_price(record),
                                   'notes': finishing.notes_price(record)},
-                'reviewing': bool(record.get('review_requested')),
+                'reviewing': bool(record.get('review_requested')) and not record.get('halted'),
                 'rehearse': finishing.rehearse(desk._outline(root),
                                                (record.get('form') or {}).get('minutes'))}
 
@@ -372,9 +372,11 @@ class DeskActions:
         # A Stop that did not end in time left the deck stopped mid-redraw: Stop again waits
         # for it and tidies up.
         # A redraw that failed is given up the same way.
+        # So is a words or speaker-notes job, or Review the deck, that stopped or failed.
         again = (record.get('halted') or {}).get('state') in ('stopped', 'failed') and (
             desk.opened(record) or (build.read_state(root).get('asked') or {}).get('sections')
-            or desk.selected(record))
+            or desk.selected(record) or record.get('desk_jobs')
+            or record.get('review_requested'))
         if not again and desk.working(root, record) is None:
             raise WorkspaceError(desk.NOTHING_TO_STOP)
         if not again:
@@ -400,6 +402,18 @@ class DeskActions:
             record['halted'] = None
             record['desk'].pop('chain', None)
             what = 'stop the whole-deck note' if whole else 'stop the redraw'
+            if record.get('desk_jobs'):
+                # The words or speaker-notes job is given up: nothing it did is kept.
+                record['desk_jobs'] = []
+                what = 'stop the change on the desk'
+            if record.pop('review_requested', None) is not None:
+                # The review is given up: the deck rests on the desk as it did before it.
+                for name in ('build-review', 'build-repair', 'build-render'):
+                    if name in record['steps']:
+                        record['steps'][name] = {**record['steps'][name], 'done': True}
+                record['gates']['gate:build'] = {**(record['gates'].get('gate:build') or {}),
+                                                 'state': 'waiting'}
+                what = 'stop the review of the deck'
             if desk.selected(record):
                 # The plan made before the change is put back: the copy is made again from it.
                 kept = home.read_json(root / BEFORE, None)

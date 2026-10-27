@@ -248,6 +248,56 @@ class ReviewTests(FinishCase):
         self.assertEqual(str(caught.exception), finishing.REVIEWED)
         self.assertEqual(len(self.workers.of('review')), 1)
 
+    def given_up(self, root: Path, steps: dict) -> None:
+        """The review that stopped is given up: the desk rests as it did before it."""
+        shown = self.view(root)
+        self.assertTrue(shown['desk']['working']['halted'])
+        self.assertFalse(shown['desk']['reviewing'])
+        self.engine.desk_stop(root)
+        record = self.record(root)
+        self.assertNotIn('review_requested', record)
+        self.assertIsNone(record['halted'])
+        self.assertEqual({name: record['steps'][name]['done'] for name in steps}, steps)
+        shown = self.on_desk(root)
+        self.assertTrue(shown['desk']['deliverable'])
+        self.assertIsNone(shown['desk']['working'])
+        self.assertEqual(len(self.workers.of('review')), self.reviews)
+
+    def test_a_review_that_fails_can_be_given_up(self):
+        from runner_support import fails
+        root = self.deck()
+        self.workers.then('review', *[fails()] * 3)
+        self.review(root)
+        self.reviews = len(self.workers.of('review'))
+        self.assertEqual(self.view(root)['problem']['state'], 'failed')
+        self.given_up(root, {'build-review': True, 'build-repair': True, 'build-render': True})
+
+    def test_a_review_that_is_stopped_can_be_given_up(self):
+        root = self.deck()
+
+        def stopping(tools, job):
+            self.engine.act(root, 'stop')
+            return self.workers.review(tools, job)
+
+        self.workers.then('review', stopping)
+        self.review(root)
+        self.reviews = len(self.workers.of('review'))
+        self.assertEqual(self.record(root)['halted']['state'], 'stopped')
+        self.given_up(root, {'build-review': True, 'build-repair': True, 'build-render': True})
+
+    def test_a_review_under_way_says_so(self):
+        root = self.deck()
+        seen = []
+
+        def looking(tools, job):
+            seen.append(self.desk_view(root))
+            return self.workers.review(tools, job)
+
+        self.workers.then('review', looking)
+        self.review(root)
+        self.assertTrue(seen[0]['reviewing'])
+        self.assertEqual(seen[0]['working']['what'], desk.REVIEWING)
+
     def test_a_gated_deck_still_repairs_after_its_check(self):
         self.workers.found = [drawing_finding(5, self.NOTE, self.FIX)]
         root = self.gated(initial_review='user-first')
@@ -377,6 +427,40 @@ class SpeakerNotesTests(FinishCase):
         self.workers.then('speaker-notes', again)
         self.propose(root)
         self.assertEqual(refused, [desk.ONE_CHANGE])
+
+    def stopped_job(self, root: Path, kind: str) -> None:
+        """The job of `kind` that was stopped is given up with Stop, and the desk takes the
+        next change."""
+        record = self.record(root)
+        self.assertEqual(record['halted']['state'], 'stopped')
+        self.assertTrue(record['desk_jobs'])
+        self.assertTrue(self.desk_view(root)['working']['halted'])
+        self.engine.desk_stop(root)
+        record = self.record(root)
+        self.assertEqual((record.get('desk_jobs'), record['halted']), ([], None))
+        self.on_desk(root)
+        self.engine.desk_note(root, 6, 'Give the rollback its own row.', self.expected(root))
+        self.assertEqual(self.record(root)['desk_notes'][-1]['status'], 'done')
+
+    def stopping(self, root: Path, kind: str):
+        def act(tools, job):
+            self.engine.act(root, 'stop')
+            return getattr(self.workers, kind.replace('-', '_'))(tools, job)
+        return act
+
+    def test_a_stopped_speaker_notes_job_is_given_up(self):
+        root = self.deck()
+        self.workers.then('speaker-notes', self.stopping(root, 'speaker-notes'))
+        self.engine.desk_finish(root, 'notes')
+        self.stopped_job(root, 'speaker-notes')
+        self.assertNotIn('notes', self.desk_view(root)['finishing'])
+
+    def test_a_stopped_words_job_is_given_up(self):
+        root = self.deck()
+        self.workers.then('words', self.stopping(root, 'words'))
+        self.engine.desk_selection(root, 3, ('points', 0, 'text'), 0, 3, 'rephrase', None,
+                                   self.seen(root))
+        self.stopped_job(root, 'words')
 
 
 class RehearseTests(FinishCase):
