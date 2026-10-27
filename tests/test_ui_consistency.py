@@ -223,7 +223,7 @@ def plain(text: str, value: bool = False) -> str:
 
 def contexts(css: str):
     """Each style rule as (the at-rule it sits in or '', selector, declarations)."""
-    css, at, depth, start, found = uncommented(css), [], 0, 0, []
+    css, at, start, found = uncommented(css), [], 0, []
     for index, char in enumerate(css):
         if char == '{':
             head = css[start:index].rsplit(';', 1)[-1].strip()

@@ -5,7 +5,6 @@ computer's check in its toolbar, and launch cards drawn with the shared tile and
 Read from index.html and app.js, and through tests/settings_page_harness.js.
 """
 import json
-import re
 import shutil
 import subprocess
 import tempfile
