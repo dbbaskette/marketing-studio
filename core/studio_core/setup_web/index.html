@@ -20,14 +20,14 @@
     <p class="sidebar-foot">One place to get ready.<br>Three places to create.</p>
   </nav>
   <div class="content">
-    <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><button type="button" id="back-to-studio" class="button button-quiet" hidden>Back</button><span id="where" class="tag">On this computer</span></div></header></div>
+    <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><button type="button" id="back-to-studio" class="button button-quiet" hidden>Back</button><span id="where" class="tag">On this computer</span><button id="check" type="button" class="button button-filled" hidden>Check computer</button></div></header></div>
     <p id="problem" class="notice" role="alert" hidden></p>
     <main id="content" class="page" tabindex="-1">
       <p id="announce" class="offscreen" role="status" aria-live="polite"></p>
       <div id="message" class="paper callout" role="status" hidden></div>
       <section id="loading"><p class="large-title">Opening your studios…</p></section>
-      <section id="home" hidden>
-        <div class="intro"><h2 class="large-title">What will you make?</h2><p class="lede">Your settings are shared. Each studio has its own space to work.</p></div>
+      <section id="home" class="stack" hidden>
+        <div class="intro"><h2 class="large-title">What will you make?</h2><p class="lede">Open a studio to start or continue your work.</p></div>
         <div id="studio-list" class="studio-list"></div>
         <section class="card settings-summary"><div><h3 class="card-title">Ready when you are</h3><p id="summary-text"></p></div><button type="button" data-view="settings" class="button">Change settings</button></section>
         <section id="network-access" class="card" hidden aria-labelledby="network-heading">
@@ -39,10 +39,10 @@
         </section>
         <p class="quiet launch-note">Leave the Marketing Studio terminal open while you work. You can also open each studio with its own launcher.</p>
       </section>
-      <section id="settings" hidden>
+      <section id="settings" class="stack" hidden>
         <div class="intro"><p id="step-label" class="quiet"></p><h2 id="settings-title" class="large-title">Shared settings</h2><p id="settings-intro" class="lede">New work in every studio starts with these choices.</p></div>
         <ol id="setup-progress" class="workflow-steps" aria-label="Setup progress" hidden><li class="workflow-step">1. You and your assistant</li><li class="workflow-step">2. Your workspace</li><li class="workflow-step">3. Brand and delivery</li></ol>
-        <form id="settings-form" class="setup-form">
+        <form id="settings-form" class="setup-form stack">
           <section class="card" data-step="0"><h3 class="card-title">You and your assistant</h3><p class="quiet">Use your signed-in assistant for research, writing, and slide work.</p>
             <div class="field-grid">
               <div class="field"><label class="field-label" for="person-name">Your name</label><input id="person-name" class="input" name="person.name" autocomplete="name" maxlength="100"></div>
@@ -51,8 +51,9 @@
               <div class="field"><label class="field-label" for="assistant-effort">Reasoning</label><select id="assistant-effort" class="input" name="assistant.effort"></select></div>
             </div>
             <div class="model-catalog-bar"><p id="model-catalog-status" class="field-hint quiet" role="status">Loading model choices…</p><button type="button" id="refresh-models" class="button">Refresh models</button></div>
-            <div class="setup-part">
-              <div class="model-heading"><div><h4 class="sheet-part">Models for your work</h4><p class="quiet">Keep one model for everything, or choose a model for each kind of task.</p></div>
+          </section>
+          <section class="card" data-step="0"><h3 class="card-title">Models for your work</h3>
+              <div class="model-heading"><div><p class="quiet">Keep one model for everything, or choose a model for each kind of task.</p></div>
                 <div class="field"><p class="field-label" id="model-mode-label">Model routing</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="model-mode-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="models.mode" value="single" checked>One model</label><label class="seg-option"><input type="radio" name="models.mode" value="by_task">By task</label></div></div></div>
               <div id="model-profiles" hidden>
                 <p class="field-hint quiet">Quick handles extraction, classification and Presentation Studio outlines. Main handles research, drafting, slides, review and the first repair. Complex handles repeated slide findings and other dedicated repairs. Blog Studio uses Main for every job. New work saves these choices; existing work keeps its models.</p>
@@ -60,11 +61,10 @@
                 <div id="profile-review" class="paper callout" data-kind="yours" role="status" hidden><p>The assistant changed. Check the model IDs and reasoning levels before using these profiles with this assistant.</p><button type="button" id="confirm-profiles" class="button">Use these profiles with this assistant</button></div>
                 <p class="field-hint quiet">Use model IDs available in your signed-in account. The studios send your choice directly to the selected assistant and stop if it cannot be used.</p>
               </div>
-            </div>
-            <div id="review-part" class="setup-part"><h4 class="sheet-part">Where new work stops</h4>
+          </section>
+          <section id="review-part" class="card" data-step="0"><h3 class="card-title">Where new work stops</h3>
               <div class="field"><label class="field-label" for="review-level">Level</label><select id="review-level" class="input" name="review.level" aria-describedby="review-level-help"><option value="balanced">Balanced — direction and finished work</option><option value="automatic">Automatic draft — finished work only</option><option value="step_by_step">Step by step — every stage</option></select>
                 <p id="review-level-help" class="field-hint quiet">Balanced brings research and the planned direction together for one review, then shows the finished work. Automatic draft continues to the finished draft. Checks, visual review, repairs and spending limits still apply. Publishing is a separate action. New work saves this choice; existing runs keep their review level. A blog on the writing desk has no stops: this sets where new decks, trainings and blogs run step by step in chat stop.</p></div>
-            </div>
           </section>
           <section class="card" data-step="1"><h3 class="card-title">Your workspace</h3><p class="quiet">Keep a Git history on this computer, or share work through a repository.</p>
             <div class="field"><p class="field-label" id="storage-label">Workspace storage</p><div class="segmented" data-count="2" data-at="0" role="radiogroup" aria-labelledby="storage-label"><span class="seg-thumb" aria-hidden="true"></span><label class="seg-option"><input type="radio" name="storage" value="local" checked>Local Git on this computer</label><label class="seg-option"><input type="radio" name="storage" value="remote">Shared repository</label></div></div>
@@ -76,8 +76,8 @@
             </div>
             <p class="field-hint quiet">Finishing setup prepares installed studios that have no workspace yet. Existing work stays where it is.</p>
           </section>
-          <section class="card" data-step="2"><h3 class="card-title">Brand and delivery</h3><p class="quiet">Choose the brand new work starts with. You can change it for each presentation or training. Blogs written step by step in chat use it too. Existing work keeps its saved choice.</p>
-            <h4 class="sheet-part">Where is your brand skill?</h4>
+          <section class="card" data-step="2"><h3 class="card-title">Brand</h3><p class="quiet">Choose the brand new work starts with. You can change it for each presentation or training. Blogs written step by step in chat use it too. Existing work keeps its saved choice.</p>
+            <p class="field-label">Where is your brand skill?</p>
             <div class="bar"><button type="button" id="find-brands" class="button">Find installed brands</button></div>
             <p id="brand-catalog-status" role="status" class="field-hint quiet">Look up brand and variant IDs from installed skills, or enter them below. This does not install anything.</p>
             <div id="brand-choices" hidden></div>
@@ -91,15 +91,15 @@
             <details class="setup-more"><summary class="setup-more-label">Brand skill release options</summary>
               <div class="field"><label class="field-label" for="brand-release">Brand skill release <span class="quiet">(optional)</span></label><input id="brand-release" class="input" name="brand.release" placeholder="Newest release" aria-describedby="brand-release-hint"><p id="brand-release-hint" class="field-hint quiet">Pin a release tag from the repository, such as v1.4.0, or leave blank for the newest release.</p></div>
             </details>
-            <div id="delivery-part" class="setup-part"><h4 class="sheet-part">Delivery and previews</h4>
+          </section>
+          <section id="delivery-part" class="card" data-step="2"><h3 class="card-title">Delivery and previews</h3>
               <div class="field-grid">
                 <div class="field"><label class="field-label" for="output">Deliver as</label><select id="output" class="input" name="output"><option value="pptx">PowerPoint and Word files</option><option value="google">Google Slides and Docs</option></select></div>
                 <div class="field"><label class="field-label" for="render-previews">Slide previews</label><select id="render-previews" class="input" name="render.previews" aria-describedby="render-previews-hint"><option value="">Match delivery format</option><option value="local">Local rendering (LibreOffice)</option><option value="drive">Google Drive</option></select><p id="render-previews-hint" class="field-hint quiet">Local rendering needs LibreOffice and image tools; Google Drive needs sign-in. Each studio checks availability.</p></div>
               </div>
-            </div>
           </section>
           <section id="research-sites" class="card" data-step="settings" aria-labelledby="research-sites-heading"><h3 id="research-sites-heading" class="card-title">Research sites</h3><p class="quiet">Research in every studio can look in your documents, these sites and the public web. Each blog, presentation or training chooses, starting from this list, and can add a site of its own.</p>
-            <ul id="research-site-list" class="site-list" aria-label="Your research sites"></ul>
+            <table id="research-site-table" class="table" hidden><caption class="offscreen">Your research sites</caption><thead><tr><th scope="col">Site</th><th scope="col"><span class="offscreen">Remove</span></th></tr></thead><tbody id="research-site-list"></tbody></table>
             <p id="research-site-empty" class="field-hint quiet">No sites yet. Each blog, presentation or training still chooses where its research looks; sites you add here are offered there.</p>
             <div class="field"><label class="field-label" for="research-site-input">Add a site</label>
               <div class="copy-row"><input id="research-site-input" class="input" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="docs.example.com/guide" aria-describedby="research-site-hint"><button type="button" id="research-site-add" class="button">Add site</button></div>
@@ -110,9 +110,9 @@
           <div class="bar form-actions"><button type="button" id="back" class="button" hidden>Back</button><button type="submit" id="save" class="button button-filled">Save settings</button></div>
         </form>
       </section>
-      <section id="computer" hidden>
-        <div class="intro"><h2 class="large-title">This computer</h2><p class="lede">Check the tools available to your studios. Each studio checks sign-in when you use it.</p></div>
-        <section class="card"><h3 class="card-title">Tools</h3><ul id="computer-results" class="computer-items"><li class="quiet">Run a check to see what is installed.</li></ul><div class="bar"><button id="check" type="button" class="button button-filled">Check computer</button></div></section>
+      <section id="computer" class="stack" hidden>
+        <div class="intro"><h2 class="large-title">This computer</h2><p class="lede">Check the tools your studios need on this computer.</p></div>
+        <section class="card"><h3 class="card-title">Tools</h3><ul id="computer-results" class="computer-items"><li class="quiet">Run a check to see what is installed.</li></ul><p class="field-hint quiet">Each studio checks sign-in when you use it.</p></section>
       </section>
     </main>
   </div>
