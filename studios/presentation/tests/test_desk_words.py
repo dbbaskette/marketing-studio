@@ -780,5 +780,70 @@ class SelectedTests(DeskCase):
         self.assertEqual(self.plan(root)[0]['runs'], [{'index': 1, 'text': 'in minutes.'}])
 
 
+class StrictWordsTests(DeskCase):
+    """Brand only and Polish keep your own deck's words exactly: a word edit, a selection and
+    words redrawn are refused, and say so; speaker notes and a note on a slide still work."""
+
+    SESSION = 'b' * 16
+
+    def deck(self, level: str) -> Path:
+        root = self.existing_deck('automatic', level, flow='desk', look='default')
+        self.on_desk(root)
+        return root
+
+    def seen(self, root: Path) -> int:
+        return self.desk_view(root)['seen']
+
+    def outline_slide(self, root: Path, number: int) -> dict:
+        return json.loads((root / 'outline.json').read_text())['slides'][number - 1]
+
+    def refused(self, action, *given) -> str:
+        with self.assertRaises(WorkspaceError) as caught:
+            action(*given)
+        return str(caught.exception)
+
+    def test_brand_only_refuses_a_word_edit(self):
+        root = self.deck('brand-only')
+        before = (root / 'outline.json').read_bytes()
+        for field in ('title', ['points', 0, 'text']):
+            self.assertEqual(self.refused(self.engine.desk_words, root, 2, field, 'Run it fast',
+                                          self.seen(root), self.SESSION), desk.STRICT_WORDS)
+        self.assertEqual(self.refused(self.engine.desk_redraw_words, root, 2, 'title',
+                                      'Run it fast', self.desk_view(root)['expected']),
+                         desk.STRICT_WORDS)
+        self.assertEqual((root / 'outline.json').read_bytes(), before)
+        self.assertEqual(self.waiting(root), 'gate:build')
+
+    def test_polish_refuses_a_selection(self):
+        root = self.deck('polish')
+        self.assertEqual(self.refused(self.engine.desk_selection, root, 2, 'title', 0, 3,
+                                      'rephrase', None, self.seen(root)), desk.STRICT_WORDS)
+        self.assertEqual(self.workers.of('words'), [])
+        self.assertEqual(self.record(root).get('desk_jobs') or [], [])
+
+    def test_brand_only_takes_a_notes_edit_and_a_slide_note(self):
+        root = self.deck('brand-only')
+        sections = len(self.workers.of('section'))
+        self.engine.desk_notes(root, 2, 'Two minutes. Ask who ships weekly.', self.seen(root),
+                               self.SESSION)
+        self.on_desk(root)
+        self.assertEqual(self.outline_slide(root, 2)['notes'],
+                         'Two minutes. Ask who ships weekly.')
+        self.assertEqual(len(self.workers.of('section')), sections)
+        # The scripted composer draws the outline as it is now, notes and all.
+        self.workers.outline_said = json.loads((root / 'outline.json').read_text())
+        self.engine.desk_note(root, 2, 'Give the words more room.',
+                              self.desk_view(root)['expected'])
+        self.on_desk(root)
+        again = self.workers.of('section')[sections:]
+        self.assertEqual(len(again), 1)
+        self.assertIn('Give the words more room.', again[0].task)
+
+    def test_redesign_still_takes_a_word_edit(self):
+        root = self.deck('redesign')
+        self.engine.desk_words(root, 2, 'title', 'Run it fast', self.seen(root), self.SESSION)
+        self.assertEqual(self.outline_slide(root, 2)['title'], 'Run it fast')
+
+
 if __name__ == '__main__':
     unittest.main()

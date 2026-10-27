@@ -407,6 +407,7 @@ class DeskActions:
         with self.files:
             record, state = self._load(root), build.read_state(root)
             field = self._desk_field(record, field)
+            desk.refuse_words(record, field)
             found = self._desk_words_of(root, record, state, number, field)
             desk.check_seen(record, seen, found['slide'])
             if found['saved'] == text.strip():
@@ -522,6 +523,7 @@ class DeskActions:
         root, _, by = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
+            desk.refuse_words(record)
             if record.get('desk_jobs'):
                 raise WorkspaceError(desk.ONE_CHANGE)
             field = self._desk_field(record, field)
@@ -732,6 +734,7 @@ class DeskActions:
         root, space, by = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
+            desk.refuse_words(record, field)
             if not expected or desk.on_screen(root, record, state) != expected:
                 raise WorkspaceError(desk.CHANGED)
             if decks.delivered(root) is None and not desk.resting(record):

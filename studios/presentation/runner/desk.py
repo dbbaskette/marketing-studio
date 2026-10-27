@@ -78,6 +78,8 @@ SECTION_SIZE = 4   # content slides one section holds at most, as the slides too
 NOTHING_TO_STOP = 'Nothing is being redrawn now, so there is nothing to stop.'
 NOT_ENDED = ('It was stopped, but something it started has not ended yet. Try Stop again in '
              'a moment.')
+STRICT_WORDS = ("This deck keeps your own deck's words exactly. Change them in your deck, or "
+                'start again at Redesign, keep content.')
 OWN_NOTES = ('Speaker notes in your own deck are kept as they are. Selected changes changes '
              'only the text on the slides.')
 PATCH_BUSY = ('Your last change to your deck is still being made. Change it again when that is '
@@ -132,6 +134,20 @@ def selected(run: dict) -> bool:
     """Whether the deck is an existing deck at Selected changes: a copy of it is patched,
     and nothing is built, so it never has a start of the build."""
     return level(run) == 'selected'
+
+
+def words_locked(run: dict) -> str | None:
+    """Why a deck's words are not edited on the desk, or None where they are: at Brand only
+    and Polish (build.STRICT) the slides carry your own deck's words exactly."""
+    from runner.steps import build
+    return STRICT_WORDS if level(run) in build.STRICT else None
+
+
+def refuse_words(run: dict, field=None) -> None:
+    """Refuse a change to a slide's words at Brand only and Polish. Speaker notes are not
+    the slide's words: they are changed there too."""
+    if field != 'notes' and words_locked(run):
+        raise WorkspaceError(STRICT_WORDS)
 
 
 def on_screen(root, run: dict, state: dict) -> str | None:
