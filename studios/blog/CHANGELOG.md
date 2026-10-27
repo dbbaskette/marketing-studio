@@ -5,6 +5,39 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **A date chip in a Google Doc reads as its date.** A Doc with pending suggestions and a
+  date chip stopped at "This Google Doc holds something (dateElement)". The date now reads
+  as Google shows it, and a newer kind of chip reads by the text it shows instead of
+  stopping the read. Maintainers: `google_roundtrip.chip_text` is the one place a chip's
+  words come from, for the read, the pending-suggestion record and the send.
+- **A Google Doc with other people's pending suggestions reads like a clean one.** Reading a
+  Doc whose suggestions were still waiting stopped at "Review pull cannot project embedded
+  objects", and **Read Google Doc** looked stuck after it. Now the Doc reads as it is
+  without the suggestions, with its images and their data (as Google's export writes them),
+  smart chips, line breaks, footnotes and tables; page breaks, headers and footers are left
+  out. An image Google does not send stays a visible placeholder, and anything else is named
+  plainly, and the text is the very Markdown Google's export writes (links, lists, image
+  data), so a later read either way sees no change Google did not make. Reading again
+  after a failure says so as a new answer. On such a Doc a desk change beside an image, a
+  chip or someone else's suggestion goes as a suggestion placed by the Doc's own indexes;
+  only words their suggestion changes go as a comment, and a teammate's suggestion holds
+  nothing. For
+  maintainers: `google_suggestions.accepted_markdown(value, images=…)` reads every object
+  (projection `blog-studio-objects/1`, re-read from the snapshot with the image data it
+  kept), `google_drive.Client.image` fetches an image's `contentUri` from Google's image host
+  without a token, a comment may now sit on plain words of a paragraph with objects or
+  someone else's suggestion, and `tests/google_model.py` has `objects_doc()` and
+  `teammate()`.
+- **Other people's pending Doc suggestions are shown on the desk.** When a Doc is read, its
+  pending suggestions are recorded beside the blog (on this computer) and marked in Review
+  mode and on the full desk as **Suggested in the Doc**, with no Accept or Reject and never
+  counted with our fixes; Review mode says how many are pending. Copy edit and Humanize are
+  told what the Doc suggests, a fix over the same words is flagged as making it moot and
+  left out of Accept all, and the Google send plan says how many changes are over a Doc
+  suggestion's words (they go as comments). For maintainers: `google_pending.record`,
+  `keep`, `read` and `on_desk`; the desk view's `doc_suggestions` `{count, marks}`; review
+  payloads carry `doc_suggestions` with `DOC_PENDING` guidance; the plan returns
+  `doc_overlap`.
 - **Review suggestions stay independent.** Accepting a fix no longer throws away a
   Humanize rewrite of the same sentence, nor the other way round, and never leaves one that
   would undo it. Each suggestion is read by the words it actually changes. One whose own

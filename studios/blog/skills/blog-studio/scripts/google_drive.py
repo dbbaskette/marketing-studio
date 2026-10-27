@@ -24,6 +24,7 @@ UPLOAD = 'https://www.googleapis.com/upload/drive/v3/files'
 DOC_MIME = 'application/vnd.google-apps.document'
 DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 LIMIT = 20 * 1024 * 1024
+IMAGE_LIMIT = 5 * 1024 * 1024  # one image read from a Doc
 LOGIN = 'gcloud auth login <your-email> --enable-gdrive-access --force --no-activate'
 SIGN_IN = 'Sign in with google_drive.py login --account <your-email> (it runs ' + LOGIN + ').'
 STAGING = '.google-staging'
@@ -482,6 +483,26 @@ class Client:
             'incomplete': bool(result.get('nextPageToken')),
             'next_step': 'Inspect matches; an empty result does not authorize repeating an uncertain upload.',
         }
+
+    def image(self, uri):
+        """An image's bytes from the address a Docs read gives it (contentUri). The address is
+        already tied to this reader by Google, so no token is sent with it, and it is fetched
+        only from Google's own image host."""
+        parsed = urllib.parse.urlsplit(uri if isinstance(uri, str) else '')
+        if parsed.scheme != 'https' or not (
+            parsed.netloc == 'googleusercontent.com'
+            or parsed.netloc.endswith('.googleusercontent.com')
+        ):
+            raise GoogleError('This image is not at a Google image address.')
+        req = urllib.request.Request(uri, method='GET')
+        try:
+            with self.opener.open(req, timeout=60) as response:
+                data = response.read(IMAGE_LIMIT + 1)
+        except (urllib.error.URLError, OSError, ValueError) as exc:
+            raise GoogleError('Google did not send this image.', network=True) from exc
+        if len(data) > IMAGE_LIMIT:
+            raise GoogleError('This image is larger than a blog keeps.')
+        return data
 
     def export(self, file_id, format):
         meta = self.metadata(file_id)

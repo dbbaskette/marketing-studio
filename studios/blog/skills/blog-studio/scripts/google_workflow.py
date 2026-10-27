@@ -442,8 +442,15 @@ def snapshot(directory, transfer, name, body):
 def formatted_snapshot(path, obs, body):
     """Validate a helper-made capture against this exact observation. Returns its files by name."""
     from google_drive import validate_docx, GoogleError
-    from google_roundtrip import FORMAT_VERSION, PROJECTION, fingerprint, suggestion_ids, tabs
-    from google_suggestions import accepted_markdown, summary
+    from google_roundtrip import (
+        FORMAT_VERSION,
+        OBJECTS_PROJECTION,
+        PROJECTION,
+        fingerprint,
+        suggestion_ids,
+        tabs,
+    )
+    from google_suggestions import accepted_markdown, images_in, summary
 
     directory = Path(path)
     files = {}
@@ -453,7 +460,12 @@ def formatted_snapshot(path, obs, body):
         if source.is_symlink() or not source.is_file():
             raise ValueError('Snapshot files must be regular contained files.')
         if source.stat().st_size > limit:
-            raise ValueError('Snapshot exceeds the portable Hub artifact limit.')
+            raise ValueError(
+                'This Doc, with its images, comes to more than a blog keeps ('
+                + str(limit // (1024 * 1024))
+                + ' MiB). Make its images smaller in Google Docs, or remove some, then read it '
+                'again.'
+            )
         files[name] = source.read_bytes()
 
     for name in ('document.md', 'native.json', 'snapshot.json'):
@@ -514,6 +526,14 @@ def formatted_snapshot(path, obs, body):
             raise ValueError('Native snapshot formatting fingerprint disagrees.')
         if meta['projection'] == PROJECTION and accepted_markdown(accepted) != files['document.md']:
             raise ValueError('Snapshot Markdown is not the accepted text of this native snapshot.')
+        if meta['projection'] == OBJECTS_PROJECTION:
+            # Read again from the native snapshot with the image data the read kept: every word
+            # must be the accepted text's; the images are what Google sent.
+            body_text = files['document.md'].decode('utf-8', 'replace')
+            if accepted_markdown(accepted, images=images_in(body_text)) != files['document.md']:
+                raise ValueError(
+                    'Snapshot Markdown is not the accepted text of this native snapshot.'
+                )
     except GoogleError as exc:
         raise ValueError(str(exc)) from None
     review = meta.get('review_state')
@@ -945,6 +965,14 @@ def start(root, args):
         if stage.exists():
             shutil.rmtree(stage)
     studio.write_json(studio.inside(root, '.active-article.json'), {'id': value})
+    # The Doc's pending suggestions as the read saw them go with the blog, on this computer.
+    native = json.loads(files['native.json'])
+    from google_roundtrip import suggestions as pending_in
+
+    if pending_in(native):
+        import google_pending
+
+        google_pending.keep(root, value, obs['document_id'], native, obs['tab_ids'])
     discard(
         root, args.snapshot
     )  # Only removes a capture that sits in this workspace's staging folder.

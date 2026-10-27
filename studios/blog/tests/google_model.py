@@ -15,11 +15,41 @@ def u16(c):
     return rt.utf16(c)
 
 
+PNG = (
+    b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00'
+    b'\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf\xc0\x00\x00\x03\x01\x01\x00\xc9\xfe'
+    b'\x92\xef\x00\x00\x00\x00IEND\xaeB`\x82'
+)
+
+
 class Model(ReviewProvider):
     def __init__(self, doc, markdown=None):
         super().__init__()
         self.markdown = markdown
+        self.images = {}  # contentUri: bytes; an address left out is not sent
         self.load(doc)
+
+    def image(self, uri):
+        if uri not in self.images:
+            raise gd.GoogleError('Google did not send this image.', network=True)
+        return self.images[uri]
+
+    def teammate(self, words, before, ident='teammate', delete=None):
+        """A teammate's pending suggestion: `words` inserted before the first `before`, and
+        `delete` (words right after it) suggested for deletion."""
+        text = ''.join(item['ch'] for item in self.items)
+        at = text.index(before)
+        if delete:
+            gone = text.index(delete, at)
+            for item in self.items[gone : gone + len(delete)]:
+                item['del'] = ident + '-d'
+            self.threads.append({'suggestionId': ident + '-d', 'status': 'OPEN'})
+        style = self.items[at]['style']
+        self.items[at:at] = [
+            {'ch': c, 'style': dict(style), 'ins': ident, 'del': None} for c in words
+        ]
+        self.threads.append({'suggestionId': ident, 'status': 'OPEN'})
+        self.rev += 1
 
     def load(self, doc):
         self.base = copy.deepcopy(doc)
@@ -290,3 +320,109 @@ def styled_paragraphs(doc):
                 )
         out.append((kind, chars))
     return out
+
+
+def reindex(blocks):
+    """Indexes for body blocks whose paragraphs may hold objects, one index each."""
+    start = 1
+    for block in blocks:
+        if 'paragraph' not in block:
+            continue
+        block['startIndex'] = start
+        for element in block['paragraph']['elements']:
+            element['startIndex'] = start
+            start += rt.utf16(element['textRun']['content']) if 'textRun' in element else 1
+            element['endIndex'] = start
+        block['endIndex'] = start
+
+
+def run(text, **style):
+    return {'textRun': {'content': text, 'textStyle': style}}
+
+
+def objects_doc():
+    """A synthetic Doc with what blogs hold besides text: two images (one in a paragraph with
+    words), a smart chip, a person chip, a page break, a line break, a footnote and a bold
+    heading."""
+    paragraphs = [
+        ({'namedStyleType': 'NORMAL_TEXT'}, [run('An opening paragraph about harbours.\n')]),
+        (
+            {'namedStyleType': 'NORMAL_TEXT'},
+            [{'inlineObjectElement': {'inlineObjectId': 'kix.one'}}, run('\n')],
+        ),
+        (
+            {'namedStyleType': 'NORMAL_TEXT'},
+            [
+                run('See the chart '),
+                {'inlineObjectElement': {'inlineObjectId': 'kix.two'}},
+                run(' for the trend.\n'),
+            ],
+        ),
+        ({'namedStyleType': 'HEADING_3'}, [run('Key Patterns\n', bold=True)]),
+        (
+            {'namedStyleType': 'NORMAL_TEXT'},
+            [
+                run('Read the '),
+                {
+                    'richLink': {
+                        'richLinkId': 'r1',
+                        'richLinkProperties': {
+                            'title': 'Harbour plan',
+                            'uri': 'https://docs.google.com/document/d/plan',
+                        },
+                    }
+                },
+                run(' with '),
+                {
+                    'person': {
+                        'personId': 'p1',
+                        'personProperties': {'name': 'Ada Lovelace', 'email': 'ada@example.com'},
+                    }
+                },
+                run(' first.\n'),
+            ],
+        ),
+        ({'namedStyleType': 'NORMAL_TEXT'}, [run('Line one\x0bline two of one paragraph.\n')]),
+        (
+            {'namedStyleType': 'NORMAL_TEXT'},
+            [run('A page ends here.'), {'pageBreak': {}}, run('\n')],
+        ),
+        (
+            {'namedStyleType': 'NORMAL_TEXT'},
+            [
+                run('Tides vary'),
+                {'footnoteReference': {'footnoteId': 'f1', 'footnoteNumber': '1'}},
+                run(' by season.\n'),
+            ],
+        ),
+        ({'namedStyleType': 'NORMAL_TEXT'}, [run('We keep the plan simple and clear.\n')]),
+        ({'namedStyleType': 'NORMAL_TEXT'}, [run('The end.\n')]),
+    ]
+    blocks = [{'startIndex': 0, 'endIndex': 1, 'sectionBreak': {}}]
+    for style, elements in paragraphs:
+        blocks.append({'paragraph': {'paragraphStyle': style, 'elements': elements}})
+    reindex(blocks)
+
+    def image(uri, title=''):
+        return {
+            'inlineObjectProperties': {
+                'embeddedObject': {'title': title, 'imageProperties': {'contentUri': uri}}
+            }
+        }
+
+    native = {
+        'body': {'content': blocks},
+        'inlineObjects': {
+            'kix.one': image('https://lh3.googleusercontent.com/one'),
+            'kix.two': image('https://lh3.googleusercontent.com/two', 'A trend chart'),
+        },
+        'footnotes': {
+            'f1': {'content': [{'paragraph': {'elements': [run('Measured at noon.\n')]}}]}
+        },
+    }
+    return {
+        'documentId': 'fixture-doc',
+        'revisionId': 'r1',
+        'title': 'Harbour notes',
+        'tabs': [{'tabProperties': {'tabId': 't.0', 'title': 'Notes'}, 'documentTab': native}],
+    }

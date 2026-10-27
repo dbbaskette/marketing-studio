@@ -148,6 +148,8 @@ async function check(){
   await deskPublishKeeps();
   await deskGoogleDoc();
   await deskStartReopensALinkedDoc();
+  await deskStartReadsAGoogleDocAgainAfterAFailure();
+  await deskReviewDocSuggestions();
   await oldIntakeAddressesOpenTheDeskStart();
   await deskStartRecovery();
   await deskTakeOver();
@@ -3412,6 +3414,40 @@ const REVIEW_FIXES=[
   {part:'bbbbbbbb',before:'It reads 12 files in 3 seconds.',after:'It reads 14 files in 3 seconds.',note:'Wording.',flag:'Check the facts: this changes a number.'},
   {part:'title',before:'A synthetic agentic post',after:'A Synthetic Agentic Post',note:'Title case.'},
 ];
+// Other people's suggestions pending in the Google Doc, in Review mode and on the full desk:
+// marked where they sit, decided in Google Docs, never accepted, rejected, counted or
+// numbered here; a fix over their words is flagged and left out of Accept all.
+async function deskReviewDocSuggestions(){
+  const sentence='Timing and context is everything.',lead='A workflow coordinate agents.\n\n![][image1]\n\n';
+  // Theirs: "coordinate" for "links" where no fix of ours sits, and "context" under fix 4.
+  const doc={count:3,marks:[{id:'theirs-1',kind:'replacement',part:'aaaaaaaa',at:'A workflow '.length,length:'coordinate'.length,inserted:'links',removed:'coordinate'},{id:'theirs-2',kind:'replacement',part:'aaaaaaaa',at:lead.length+sentence.indexOf('context'),length:7,inserted:'setting',removed:'context'}]};
+  const fixes=REVIEW_FIXES.filter(fix=>fix.before!=='A workflow coordinate agents.');
+  const view={...reviewView(),working:null,jobs:[{id:'c1',kind:'finish-copyedit',status:'ready',applied:true,error:''}],finishing:{copyedit:finishSet('copyedit',fixes)},doc_suggestions:doc};
+  const t=deskStartFixture(url=>url.startsWith('/api/desk?')?view:url.startsWith('/api/desk-images')?{id:'review-blog',images:[{key:'k1',uri:'data:image/png;base64,AAAA'}]}:null);
+  await t.f.run("sRoute('desk','review-blog','review')");
+  const marks=t.nodes().filter(n=>n.className==='doc-suggestion');
+  assert.equal(marks.length,1,'a Doc suggestion is marked where no fix of ours sits');
+  const mark=marks[0];
+  assert.equal(mark.title,'Suggested in the Doc. Decide it in Google Docs.');
+  assert.ok(!descendants(mark).some(n=>n.tagName==='button'),'no Accept or Reject on a Doc suggestion');
+  assert.ok(!descendants(mark).some(n=>/review-num/.test(n.className)),'nor a number');
+  assert.ok(descendants(mark).some(n=>n.tagName==='del'&&n.className==='doc-removed'&&n.textContent==='coordinate'),'their removed words struck through');
+  assert.ok(descendants(mark).some(n=>n.tagName==='ins'&&n.className==='doc-inserted'&&n.textContent==='links'),'their inserted words underlined');
+  assert.equal(t.nodes().find(n=>n.className==='review-count').textContent,'5 fixes to review','theirs never count with ours');
+  assert.ok(t.nodes().some(n=>n.textContent==='Accept all (3)'),'a fix over their words is left out of Accept all, as is the flagged one');
+  assert.ok(t.nodes().some(n=>n.textContent==='3 suggestions are pending in the Google Doc. Decide them there; nothing to do here.'));
+  assert.ok(t.nodes().some(n=>n.textContent==='1 fix changes words a Doc suggestion also changes, so Accept all leaves it for you.'));
+  const flagged=t.nodes().find(n=>/(^| )review-fix( |$)/.test(n.className)&&descendants(n).some(c=>c.textContent==='A plural subject.'));
+  assert.ok(descendants(flagged).some(n=>n.textContent==='A Doc suggestion also changes these words; accepting this makes it moot.'),'the fix says so');
+  assert.ok(descendants(flagged).some(n=>n.textContent==='Accept'&&n.listeners.click),'and may still be accepted');
+  // The full desk lists them too, decided in Google Docs, with nothing to press.
+  await descendants(t.f.get('actions')).find(n=>n.textContent==='Open the full desk').listeners.click();
+  const card=t.nodes().find(n=>/doc-pending-card/.test(n.className));
+  assert.ok(card,'a card on the full desk');
+  assert.equal(descendants(card).filter(n=>n.className==='doc-suggestion').length,2);
+  assert.ok(!descendants(card).some(n=>n.tagName==='button'),'nothing to accept or reject there');
+  assert.ok(descendants(card).some(n=>n.textContent==='1 is on words the desk has changed since, so not marked here.'));
+}
 async function deskReviewMode(){
   let view=reviewView(),sent=0;
   const textOf=(found,part)=>part==='title'||part==='opening'?found[part]:found.sections.find(s=>s.id===part).text;
@@ -4204,6 +4240,7 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
   assert.ok(descendants(panel()).some(n=>n.textContent==='Comment on “Event logs”: Make “Event logs” bold.'));
   assert.equal(f.run("sDeskGoogleSaid({mode:'comments',count:3,suggestions:2,comments:1})"),'3 changes go to the Google Doc as comments: it cannot take suggestions, so its owner makes each change by hand.','comments fallback says comments');
   assert.equal(f.run("sDeskGoogleSaid({count:1,suggestions:1,comments:0,later:2})"),'1 suggestion goes to the Google Doc. Its owner accepts or rejects each suggestion. 2 notes go with the next send (nearby paragraphs already have changes).','a note with no free paragraph goes next time');
+  assert.equal(f.run("sDeskGoogleSaid({count:3,suggestions:1,comments:2,doc_overlap:2})"),'1 suggestion and 2 comments go to the Google Doc. Its owner accepts or rejects each suggestion. 2 of these change words a Doc suggestion also changes, so they go as comments; the Doc’s suggestion stays for its owner.','the plan says which change words a Doc suggestion changes');
   assert.ok(descendants(panel()).some(n=>n.textContent==='1 suggestion and 1 comment go to the Google Doc. Its owner accepts or rejects each suggestion. 2 changes were sent before.'));
   assert.ok(descendants(panel()).some(n=>n.textContent==='Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment.'));
   assert.ok(!descendants(panel()).some(n=>/stay here|stays here|cannot be suggestions|stays? on the desk/.test(n.textContent||'')),'nothing is said to stay on the desk');
@@ -4492,6 +4529,30 @@ async function deskStartReopensALinkedDoc(){
     assert.equal(t.requests.some(r=>r.url==='/api/desk-create'),false,'nothing is made again');
     assert.equal(t.requests.some(r=>['/api/google-start','/api/upload'].includes(r.url)),false,'nothing is imported again');
   }
+}
+// A Google Doc read that fails says why, and Read Google Doc reads again: a second failure
+// is said afresh, and a read that then works shows the Doc.
+async function deskStartReadsAGoogleDocAgainAfterAFailure(){
+  const url='https://docs.google.com/document/d/fixture-doc/edit';
+  const preview={status:'preview',preview:'c'.repeat(32),expected:'v1',title:'Synthetic Doc',linked_document:url,content:'Original text.',summary:{structure:{paragraphs:1}}};
+  const answers=[{__http:400,error:'The Doc holds a drawing this reader cannot take.'},{__http:400,error:'The Doc holds a drawing this reader cannot take.'},preview];
+  const t=deskStartFixture(asked=>asked==='/api/google-preview'?answers.shift():null);
+  await t.f.run("sDeskBegin({have:'draft',source:'google'})");
+  t.type('desk-google',url);
+  const problem=()=>t.nodes().find(n=>n.className==='problem'&&n.textContent)?.textContent||'';
+  await t.submit();
+  assert.ok(problem().includes('The Doc holds a drawing this reader cannot take.'),'the failure is said');
+  const reads=()=>t.requests.filter(r=>r.url==='/api/google-preview').length;
+  assert.equal(reads(),1);
+  await t.submit();
+  assert.equal(reads(),2,'Read Google Doc reads again');
+  assert.ok(problem().startsWith('Read again, and still: The Doc holds a drawing'),'a second failure is said as a new answer');
+  const button=t.nodes().find(n=>n.tagName==='button'&&n.textContent==='Read Google Doc');
+  assert.ok(button&&!button.disabled,'the button is ready again');
+  await t.submit();
+  assert.equal(reads(),3);
+  assert.equal(problem(),'','a read that works clears the problem');
+  assert.ok(t.nodes().some(n=>n.textContent==='Original text.'),'the Doc is shown');
 }
 // The old Polish, paste and Google Doc intake addresses open the polishing start.
 async function oldIntakeAddressesOpenTheDeskStart(){

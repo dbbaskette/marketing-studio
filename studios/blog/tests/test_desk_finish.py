@@ -2687,7 +2687,9 @@ class GooglePairingTests(unittest.TestCase):
         inline = fixtures.paragraph_doc(*[([(line + '\n', {})], {}, None) for line in doc_lines])
         found, _, expected = desk_finish.google_changes(baseline, body)
         document = {'document_id': 'fixture-doc', 'tab_ids': ['t.0']}
-        free, waiting, unplaced, _, _ = desk_finish._not_pending(inline, document, found, expected)
+        free, waiting, unplaced, _, _, _ = desk_finish._not_pending(
+            inline, document, found, expected
+        )
         return [(f['kind'], f['before']) for f in free], waiting, unplaced, free
 
     def test_a_quote_found_in_another_paragraph_goes_as_a_comment_on_a_certain_one(self):
@@ -2756,7 +2758,7 @@ class GooglePairingTests(unittest.TestCase):
         inline = fixtures.paragraph_doc(([('Keep it short.\n', {})], {}, None))
         found, _, expected = desk_finish.google_changes('Keep it short.\n', '### Keep it brief.\n')
         document = {'document_id': 'fixture-doc', 'tab_ids': ['t.0']}
-        free, waiting, unplaced, _, later = desk_finish._not_pending(
+        free, waiting, unplaced, _, later, _ = desk_finish._not_pending(
             inline, document, found, expected
         )
         self.assertEqual(([f['kind'] for f in free], waiting, unplaced, later), (['edit'], 0, 0, 1))
@@ -3451,18 +3453,21 @@ class ImageFinishingTests(DeskCase):
         baseline = GOOGLE.replace('The end.', 'See ![][image1] here.\n\nThe end.')
         body = baseline.replace('More text after', 'More words after').replace('here.', 'there.')
         found, left, paragraphs = desk_finish.google_changes(baseline, body)
-        # A paragraph with an image cannot take a suggestion: its change is a comment beside it.
+        # A paragraph with an image takes its change as a suggestion, by the Doc's own indexes.
         self.assertEqual(
             [(f['kind'], f['before'], f.get('after')) for f in found],
-            [('edit', 'text', 'words'), ('comment', 'The end.', None)],
+            [('edit', 'text', 'words'), ('edit', 'here', 'there')],
         )
-        self.assertIn('“See here.”, reads “See there.”', found[1]['reason'])
         self.assertEqual(left, 0)
         self.assertNotIn('data:image', json.dumps([found, paragraphs]))
-        # An image removed or replaced is made in the Doc by hand, never sent as words.
+        # An image removed is made in the Doc by hand, never sent as words; the same image's
+        # data read another way (Google's image host, or its export) is no change.
+        found, left, _ = desk_finish.google_changes(
+            baseline, baseline.replace(IMAGE_TWO, IMAGE_ONE)
+        )
+        self.assertEqual((found, left), ([], 0))
         for changed, said in (
             (baseline.replace('![][image2]\n\n', ''), 'The image here is removed'),
-            (baseline.replace(IMAGE_TWO, IMAGE_ONE), 'The image “image2” changed'),
         ):
             with self.subTest(said=said):
                 found, left, paragraphs = desk_finish.google_changes(baseline, changed)
