@@ -379,5 +379,52 @@ class SpeakerNotesTests(FinishCase):
         self.assertEqual(refused, [desk.ONE_CHANGE])
 
 
+class RehearseTests(FinishCase):
+    """Task 4.5: rehearse, counted in process."""
+
+    @staticmethod
+    def outline(*notes, kinds=None) -> dict:
+        kinds = kinds or ['content'] * len(notes)
+        return {'slides': [{'id': f'slide-{at}', 'kind': kind, 'title': 'A slide',
+                            **({'notes': said} if said else {})}
+                           for at, (said, kind) in enumerate(zip(notes, kinds), 1)]}
+
+    @staticmethod
+    def words(count: int) -> str:
+        return ' '.join(['word'] * count)
+
+    def test_rehearse_counts_notes_at_150_words_a_minute(self):
+        self.assertEqual(finishing.WPM, 150)
+        shown = finishing.rehearse(self.outline(self.words(300), self.words(150), None), 20)
+        self.assertEqual([one['minutes'] for one in shown['slides']], [2, 1, 0])
+        self.assertEqual(shown['total'], 3)
+        self.assertEqual(shown['says'], "Slide 1's notes take about 2 minutes; the deck's notes "
+                         'take about 3 of your 20 minutes.')
+
+    def test_rehearse_names_the_slides_that_run_long(self):
+        # 25 minutes over 5 content slides: a slide is long past 10 minutes.
+        notes = [self.words(150 * 4)] * 4 + [self.words(150 * 11)]
+        shown = finishing.rehearse(self.outline(None, *notes, None,
+                                                kinds=['cover', *['content'] * 5, 'closing']), 25)
+        self.assertEqual(shown['long'], [6])
+        self.assertEqual(shown['total'], 27)
+        self.assertEqual(shown['says'], "Slide 6's notes take about 11 minutes; the deck's notes "
+                         'take about 27 of your 25 minutes.')
+
+    def test_rehearse_with_no_minutes_says_the_time_alone(self):
+        shown = finishing.rehearse(self.outline(self.words(450), self.words(150)), None)
+        self.assertEqual(shown['says'], "The deck's notes take about 4 minutes.")
+        self.assertEqual(shown['long'], [])
+
+    def test_rehearse_starts_no_job(self):
+        root = self.deck()
+        jobs, log = len(self.workers.jobs), self.log()
+        shown = self.engine.desk_finish(root, 'rehearse')['desk']['rehearse']
+        self.assertEqual(len(self.workers.jobs), jobs)
+        self.assertEqual(self.log(), log)
+        outline = json.loads((root / 'outline.json').read_text())
+        self.assertEqual(shown, finishing.rehearse(outline, 20))
+
+
 if __name__ == '__main__':
     unittest.main()
