@@ -22,6 +22,7 @@ import desk
 import desk_images
 import studio
 import tool_jobs
+from studio_core import step_times
 from studio_core.drafting import basis, prompts
 
 KINDS = (
@@ -1286,7 +1287,7 @@ def retry(root, ident, seconds=None, skip_research=False):
         tool_jobs.write(root, saved)
 
 
-TIMES = 20  # step durations kept per step, for the estimate
+TIMES = step_times.TIMES  # step durations kept per step, for the estimate
 
 
 def _times_path(root):
@@ -1297,41 +1298,22 @@ def _step_key(step, length):
     return 'draft:' + (length or 'style') if step == 'draft' else step
 
 
-def _seconds(job):
-    from datetime import datetime
-
-    try:
-        return (
-            datetime.fromisoformat(job['finished_at']) - datetime.fromisoformat(job['started_at'])
-        ).total_seconds()
-    except (KeyError, TypeError, ValueError):
-        return None
+_seconds = step_times.seconds
 
 
 def _note_time(root, key, seconds):
     """Keep how long a step took on this computer; best effort."""
-    try:
-        found = studio.read_json(_times_path(root)) if _times_path(root).is_file() else {}
-        found = found if isinstance(found, dict) else {}
-        kept = [value for value in found.get(key, []) if isinstance(value, (int, float))]
-        found[key] = (kept + [round(seconds, 1)])[-TIMES:]
-        studio.write_json(_times_path(root), found)
-    except (ValueError, OSError):
-        pass
+    step_times.note(desk.BlogStore(root), _times_path(root), key, seconds)
 
 
 def expected_minutes(root, step, length):
     """How long a step usually takes: the median of its recent runs here, else a guess."""
-    import statistics
-
-    try:
-        found = studio.read_json(_times_path(root)) if _times_path(root).is_file() else {}
-        recent = [v for v in found.get(_step_key(step, length), []) if isinstance(v, (int, float))]
-    except (ValueError, OSError, AttributeError):
-        recent = []
-    if recent:
-        return max(1, statistics.median(recent) / 60)
-    return desk.estimate([step], length)
+    return step_times.expected(
+        desk.BlogStore(root),
+        _times_path(root),
+        _step_key(step, length),
+        lambda: desk.estimate([step], length),
+    )
 
 
 def _advance(root, job):
@@ -1363,23 +1345,11 @@ def _advance(root, job):
 
 def _timing(root, ident, start, job):
     """About how many minutes are left, and whether the step under way has overrun."""
-    from datetime import datetime, timezone
-
     if start.get('ended_at') or not start.get('step'):
         return {'minutes_left': 0, 'over': False}
     length = desk.read(root, ident).get('length')
     steps = start['steps'][start['steps'].index(start['step']) :]
-    now_expected = expected_minutes(root, steps[0], length)
-    later = sum(expected_minutes(root, step, length) for step in steps[1:])
-    began = (job or {}).get('started_at') or (job or {}).get('created_at')
-    try:
-        spent = (datetime.now(timezone.utc) - datetime.fromisoformat(began)).total_seconds() / 60
-    except (TypeError, ValueError):
-        spent = 0
-    return {
-        'minutes_left': max(1, round(max(0, now_expected - spent) + later)),
-        'over': bool(job and job.get('busy') and spent > now_expected),
-    }
+    return step_times.left([expected_minutes(root, step, length) for step in steps], job)
 
 
 def _start_view(root, ident, rows):

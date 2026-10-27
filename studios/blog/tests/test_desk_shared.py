@@ -9,6 +9,7 @@ import desk_finish
 import desk_images
 import desk_jobs
 import tool_jobs
+from studio_core import step_times
 from studio_core.drafting import (
     basis,
     guards,
@@ -122,6 +123,16 @@ class SharedSettleTests(DeskJobCase):
         self.assertIs(desk_jobs.busy, basis.busy)
         self.assertEqual(desk_jobs.STALE, basis.stale())
         self.assertIs(desk_jobs.ACTIONS, prompts.ACTIONS)
+
+    def test_a_step_s_time_is_kept_where_it_was_with_the_shared_estimate(self):
+        self.assertIs(desk_jobs._seconds, step_times.seconds)
+        for seconds in (60, 180, 600):
+            desk_jobs._note_time(self.root, 'draft:short', seconds)
+        self.assertEqual(desk_jobs.expected_minutes(self.root, 'draft', 'short'), 3)
+        self.assertEqual(desk_jobs.expected_minutes(self.root, 'outline', 'short'), 1)
+        kept = desk_jobs._times_path(self.root)
+        self.assertEqual(kept.name, 'desk-step-times.json')
+        self.assertEqual(kept.parent.name, '.blog-runs')
 
 
 class SharedProposalTests(DeskJobCase):
