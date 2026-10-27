@@ -18,9 +18,10 @@ import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError
 
-from runner import desk, gitstate, stages
+from runner import decks, desk, gitstate, stages
 from runner.jobs import gate_state
 from runner.steps import build
+from runner.steps import deliver as delivering
 from runner.steps import look as looks
 
 NO_PICK = 'The look is not waiting to be picked now.'
@@ -117,6 +118,83 @@ class DeskActions:
         root = self._held(path)
         desk.refuse_off_desk(self._load(root))
         return root
+
+    # --- notes --------------------------------------------------------------------------------
+
+    def _desk_change(self, path):
+        """Hold a desk deck for a change that draws something again: a deck this computer
+        delivered is taken back first, as asking for changes to it is."""
+        root = self._desk_held(path)
+        space = self.space()
+        if self._delivered_here(self._load(root)):
+            self._take(root, space)
+        self.hold(root)
+        return root, space, gitstate.identity(space.repo)
+
+    def _desk_ask(self, root, record: dict, state: dict, sections, note: str, space) -> tuple:
+        """Draw `sections` again for their notes, now, where the deck rests on the desk or
+        is delivered: the notes are in the ask, and gate:build is reopened. A deck whose
+        chain is under way is not touched: its notes wait, and the chain draws them at its
+        next safe point (`_desk_pick_up`). Call it holding `files`. Returns the run and what
+        else the commit lists."""
+        delivered = decks.delivered(root) is not None
+        if not (delivered or desk.resting(record)):
+            return record, ()
+        for item in desk.waiting(record):
+            if item.get('section') in sections:
+                item['status'] = 'drawing'
+        if delivered:
+            record = delivering.again(root, record, self.slides(), note, space,
+                                      sections=sections)
+            state = build.read_state(root)
+        desk.ask(state, sections)
+        build.write_state(root, state)
+        record = desk.reopen(record)
+        for step in self._reopened(record, 'gate:build'):
+            self._fresh(record, step)
+        return record, (self._listed(space) if delivered else ())
+
+    def desk_note(self, path, number, note, expected) -> dict:
+        """A note on one slide: its section is redrawn with it, and every other slide of the
+        section is kept exactly as it is drawn. Bound to the deck on screen (`expected`)."""
+        note = self._note(note)
+        if not note:
+            raise WorkspaceError(desk.NO_NOTE)
+        root, space, by = self._desk_change(path)
+        with self.files:
+            record, state = self._load(root), build.read_state(root)
+            if not expected or desk.last_round(state).get('deck') != expected:
+                raise WorkspaceError(desk.CHANGED)
+            item = desk.add_note(record, state, number, note, home.now(), by)
+            record, also = self._desk_ask(root, record, state, [item['section']], note, space)
+            self._store(root, record)
+            self._commit(root, f'ask to redraw slide {number}', also)
+        self.wake(root)
+        return self.view(root)
+
+    def _desk_pick_up(self, root) -> None:
+        """The notes that came while the deck's sections were drawn, for sections not drawn
+        again in this chain yet, go into the ask now, so this chain draws them before the
+        deck is put together. Call it holding `files`, between the drawing jobs."""
+        record = self._load(root)
+        if not decks.on_desk(record) or not desk.waiting(record):
+            return
+        state = build.read_state(root)
+        rounds = len(state.get('rounds') or ())
+        fresh = {ident for ident, entry in (state.get('sections') or {}).items()
+                 if entry.get('round', 0) >= rounds and rounds}
+        taken = sorted({item['section'] for item in desk.waiting(record)
+                        if item.get('section') and item['section'] not in fresh},
+                       key=build.numbered)
+        if not taken:
+            return
+        for item in desk.waiting(record):
+            if item.get('section') in taken:
+                item['status'] = 'drawing'
+        desk.ask(state, taken)
+        build.write_state(root, state)
+        self._store(root, record)
+        self._commit(root, 'draw the notes that came while the slides were drawn')
 
     # --- the look -----------------------------------------------------------------------------
 

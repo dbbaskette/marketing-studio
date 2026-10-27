@@ -236,5 +236,118 @@ class DeskViewTests(DeskCase):
         self.assertEqual(len(told), 1)
 
 
+def digests(root: Path) -> dict:
+    """Every drawn section file and every slide picture of this computer's last round, by
+    name, as SHA-256."""
+    import hashlib
+    from runner.steps import build
+    state = build.read_state(root)
+    found = {f"file:{ident}": hashlib.sha256((root / entry['file']).read_bytes()).hexdigest()
+             for ident, entry in state['sections'].items()}
+    for slide in state['rounds'][-1]['slides']:
+        found[f"slide:{slide['number']}"] = slide['sha256']
+    return found
+
+
+class SlideNoteTests(DeskCase):
+    """A note on a slide redraws only that slide's section, and is sent to its composer
+    once."""
+
+    def deck(self) -> Path:
+        root = self.start_desk(look='default')
+        self.on_desk(root)
+        return root
+
+    def expected(self, root: Path) -> str:
+        return self.desk_view(root)['expected']
+
+    def drawn(self) -> int:
+        return len(self.workers.of('section'))
+
+    def test_a_slide_note_redraws_its_section_and_keeps_the_rest_byte_for_byte(self):
+        root = self.deck()
+        before, jobs = digests(root), len(self.workers.jobs)
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.', self.expected(root))
+        again = self.workers.jobs[jobs:]
+        self.assertEqual([kind for kind, _, _ in again], ['section'])
+        kind, job, spec = again[0]
+        self.assertIn('Draw section 1 of', job.task)
+        self.assertIn('Slide 3: Make the diagram a sequence.', job.task)
+        unchanged = spec['artifacts']['section']['unchanged_slides']
+        self.assertEqual(sorted(unchanged), sorted([LONG_OUTLINE['slides'][1]['id'],
+                                                    LONG_OUTLINE['slides'][3]['id']]))
+        after = digests(root)
+        self.assertEqual(after['file:section-2'], before['file:section-2'])
+        for number in (1, 5, 6, 7, 8):
+            self.assertEqual(after[f'slide:{number}'], before[f'slide:{number}'])
+        self.on_desk(root)
+        notes = self.record(root)['desk_notes']
+        self.assertEqual([(item['number'], item['section'], item['status']) for item in notes],
+                         [(3, 'section-1', 'done')])
+
+    def test_a_later_redraw_does_not_send_an_old_note_again(self):
+        root = self.deck()
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.', self.expected(root))
+        jobs = self.drawn()
+        self.engine.desk_note(root, 6, 'Give the rollback its own row.', self.expected(root))
+        (job,) = self.workers.of('section')[jobs:]
+        self.assertIn('Draw section 2 of', job.task)
+        self.assertIn('Slide 6: Give the rollback its own row.', job.task)
+        self.assertNotIn('Slide 3:', job.task)
+
+    def test_notes_on_two_sections_are_drawn_in_one_chain(self):
+        root = self.deck()
+        said = []
+
+        def noting(tools, job):
+            said.append(self.engine.desk_note(root, 6, 'Give the rollback its own row.',
+                                              self.expected(root)))
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', noting)
+        jobs = self.drawn()
+        put = self.log().count('Rolling restarts: the deck is put together')
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.', self.expected(root))
+        tasks = [job.task for job in self.workers.of('section')[jobs:]]
+        self.assertEqual(len(tasks), 2)
+        self.assertIn('Slide 3: Make the diagram a sequence.', tasks[0])
+        self.assertIn('Slide 6: Give the rollback its own row.', tasks[1])
+        self.assertEqual(self.log().count('Rolling restarts: the deck is put together'), put + 1)
+        self.on_desk(root)
+        self.assertEqual({item['status'] for item in self.record(root)['desk_notes']}, {'done'})
+
+    def test_a_note_on_a_slide_being_redrawn_is_refused(self):
+        root = self.deck()
+        refused = []
+
+        def noting(tools, job):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.desk_note(root, 4, 'Shorter.', self.expected(root))
+            refused.append(str(caught.exception))
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', noting)
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.', self.expected(root))
+        self.assertEqual(refused, [desk.BUSY.format(number=4)])
+
+    def test_a_note_on_a_lead_slide_is_refused(self):
+        root = self.deck()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_note(root, 1, 'Bigger title.', self.expected(root))
+        self.assertEqual(str(caught.exception), desk.LEAD)
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_note(root, 99, 'Nowhere.', self.expected(root))
+        self.assertEqual(str(caught.exception), 'The deck has no slide 99.')
+
+    def test_a_note_against_an_old_deck_is_refused(self):
+        root = self.deck()
+        jobs = self.drawn()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_note(root, 3, 'Make the diagram a sequence.', '0' * 64)
+        self.assertEqual(str(caught.exception), desk.CHANGED)
+        self.assertEqual(self.drawn(), jobs)
+        self.assertFalse(self.record(root).get('desk_notes'))
+
+
 if __name__ == '__main__':
     unittest.main()

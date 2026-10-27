@@ -123,9 +123,10 @@ def record(root, run: dict, made: dict, space=None) -> dict:
     return record
 
 
-def again(root, run: dict, slides, note: str, space=None) -> dict:
+def again(root, run: dict, slides, note: str, space=None, sections=None) -> dict:
     """"Ask for changes" on a delivered deck: gate:build is reopened with the person's note,
-    and the deck is built again from there. Returns the run as it now is."""
+    and the deck is built again from there. Returns the run as it now is. `sections`, from
+    the desk, are the only ones asked, with no note of their own: their notes say it."""
     root = Path(root)
     note = note.strip() if isinstance(note, str) else ''
     if not note:
@@ -140,9 +141,10 @@ def again(root, run: dict, slides, note: str, space=None) -> dict:
     run = stages.reopen(run, GATE)
     state = build.read_state(root)
     if state.get('start'):
-        state.update(asked={'note': note, 'sections': [
-            entry['id'] for entry in state['start']['sections']], 'at': home.now()},
-            repaired=0)
+        state.update(asked={'note': None if sections is not None else note,
+                            'sections': list(sections) if sections is not None else [
+                                entry['id'] for entry in state['start']['sections']],
+                            'at': home.now()}, repaired=0)
         build.write_state(root, state)
     (root / decks.DELIVER).unlink(missing_ok=True)
     (root / SHARED).unlink(missing_ok=True)   # the deck being made again is not that file

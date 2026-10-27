@@ -42,6 +42,13 @@ NOT_ON_DESK = ('This deck is not on the desk. Use its own screen, or open it on 
 STATUSES = ('waiting', 'drawing', 'done', 'set aside')
 OPEN = ('waiting', 'drawing')
 
+BUSY = 'Slide {number} is being redrawn now. Your note is kept here; send it when that ends.'
+LEAD = ('A cover, section or closing slide is not drawn by an assistant: change its words on '
+        'the Outline tab.')
+CHANGED = 'The deck changed since this page read it. Reload it, then try again.'
+NO_DRAWING = 'There is no drawing of this deck on this computer.'
+NO_NOTE = 'Say how the slide should change.'
+
 
 # --- the stops ----------------------------------------------------------------------------
 
@@ -103,6 +110,39 @@ def note_of(slide: str | None, number: int | None, section: str | None, note: st
             by, status: str = 'waiting') -> dict:
     return {'id': secrets.token_hex(6), 'slide': slide, 'number': number, 'section': section,
             'note': note, 'at': at, 'by': by, 'status': status}
+
+
+def section_of(state: dict, number) -> str | None:
+    """The section that draws slide `number` of the last round: None for a lead slide,
+    which no composer draws. A number the deck's last drawing does not have is refused."""
+    rounds = state.get('rounds') or []
+    if not rounds:
+        raise WorkspaceError(NO_DRAWING)
+    if type(number) is not int:
+        raise WorkspaceError('Name the slide by its number.')
+    ident = next((slide['id'] for slide in rounds[-1]['slides'] if slide['number'] == number),
+                 None)
+    if ident is None:
+        raise WorkspaceError(f'The deck has no slide {number}.')
+    return next((entry['id'] for entry in (state.get('start') or {}).get('sections') or ()
+                 if ident in entry['slides']), None)
+
+
+def slide_of(state: dict, number: int) -> str:
+    return next(slide['id'] for slide in last_round(state)['slides'] if slide['number'] == number)
+
+
+def add_note(run: dict, state: dict, number: int, note: str, at: str, by) -> dict:
+    """Keep a note on slide `number`, waiting to be drawn. Refused for a lead slide, and
+    while its section is being redrawn for another note."""
+    section = section_of(state, number)
+    if section is None:
+        raise WorkspaceError(LEAD)
+    if busy(run, section):
+        raise WorkspaceError(BUSY.format(number=number))
+    item = note_of(slide_of(state, number), number, section, note, at, by)
+    run.setdefault('desk_notes', []).append(item)
+    return item
 
 
 def notes(run: dict) -> list[dict]:

@@ -1702,6 +1702,7 @@ class Engine(Jobs, Researching, DeskActions):
         if build.to_draw(root):
             self._draw(root, run, step, how)
         with self.files:
+            self._desk_pick_up(root)
             if not build.to_draw(root):
                 self._done(root, step, time.monotonic(), 'every section is drawn')
 
