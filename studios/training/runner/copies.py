@@ -17,8 +17,9 @@ What a caller needs to know
   artifacts get a copy.
 - `make` makes every wanted copy of an approved artifact that is not current, and leaves
   the rest alone; `only` names the one artifact whose copies are made. On the desk an
-  artifact is approved once the person marks it ready, or sends it to its copies. It never raises for a copy that cannot be made. A Word copy that cannot
-  be made is recorded through the core as unavailable, with the reason. A Google Doc that
+  artifact is approved once the person marks it ready, or sends it to its copies. It never
+  raises for a copy that cannot be made. A Word copy that cannot be made is recorded
+  through the core as unavailable, with the reason. A Google Doc that
   cannot be made has nowhere in the core to say why, so `make` returns `problems`:
   {artifact: sentence}. The caller keeps them and passes them back to `wanted`.
 - `google` is a `gdocs.Transport`; left out, it is `gdocs.GcloudTransport()`, which uses

@@ -3837,18 +3837,27 @@ class Engine(Reviewing):
         holding `files`."""
         if not isinstance(name, str):
             raise WorkspaceError(drafts.UP_TO_DATE)
+        state = self._settled(root, record, name)
+        if workspace.split(name)[0] == 'deck' and name in state \
+                and drafts.needs_you(root, self._survey_files(root, record), name):
+            raise WorkspaceError(drafts.NEEDS_YOU.format(it=workspace.label(name)))
+        # Never approved unseen: without the version the person saw, the core refuses it as
+        # one that has changed since it was opened.
+        workspace.decide(root, name, 'approve', by='page',
+                         seen=seen if isinstance(seen, str) else '')
+
+    @staticmethod
+    def _settled(root: Path, record: dict, name: str) -> dict:
+        """Refuse a desk change to a material being updated or held, saying what to settle
+        first, as its card says. Returns the training's statuses."""
         if name in drafts.updates(record):
             raise WorkspaceError(drafts.BUSY)
         session = workspace.load(root)
         state = workspace.statuses(root, session)
-        it = workspace.label(name) if name in state else name
         if state.get(name) == 'stale':
-            raise WorkspaceError(drafts.HELD_FIRST.format(
-                it=workspace.sentence(it), what=drafts.earlier(root, session, name, state)))
-        if workspace.split(name)[0] == 'deck' and name in state \
-                and drafts.needs_you(root, self._survey_files(root, record), name):
-            raise WorkspaceError(drafts.NEEDS_YOU.format(it=it))
-        workspace.decide(root, name, 'approve', by='page', seen=seen)
+            raise WorkspaceError(drafts.held_first(
+                root, session, drafts.held(root, session, record, state), name, state))
+        return state
 
     def _ready_again(self, root: Path) -> None:
         """A training whose index was written is to write it again once everything is Ready,
@@ -3910,6 +3919,10 @@ class Engine(Reviewing):
                     entry['artifact'] == name for entry in self._wanted(root, record)):
                 raise WorkspaceError(drafts.NO_COPY.format(
                     it=workspace.label(name) if isinstance(name, str) else 'it'))
+            # Nothing is sent of a material held, being updated or not written yet.
+            if self._settled(root, record, name).get(name) not in ('draft', 'approved'):
+                raise WorkspaceError(drafts.UNWRITTEN.format(
+                    it=workspace.sentence(workspace.label(name))))
             sent = record.setdefault('drafts', {}).setdefault('send', [])
             if name not in sent:
                 sent.append(name)

@@ -749,6 +749,30 @@ class DeskCopyTests(runner_support.StudioCase):
         self.engine.wake(root)
         self.assertEqual(len(self.copies.drive.docs), 2, 'nothing else is made')
 
+    def test_nothing_is_sent_of_a_held_or_unwritten_material(self):
+        root = self.start(flow='desk', levels=['101'], copies=['google'])
+        self.assertEqual(self.to_end(root), [])
+        # The plan typed into and accepted on the desk: the guide built from it is held.
+        plan = root / '101' / 'blueprint.md'
+        typed = self.base / 'blueprint.md'
+        typed.write_text(plan.read_text(encoding='utf-8') + '\nOne line more.\n',
+                         encoding='utf-8')
+        workspace.save(root, 'blueprint@101', source=typed, edit=True, via='save')
+        workspace.accept_desk(root, 'blueprint@101')
+        commits = self.log()
+        with self.assertRaisesRegex(
+                WorkspaceError, '^The level 101 learner guide is built from an earlier plan. '
+                                'Update it or keep it as it is first.$'):
+            self.engine.send_copy(root, 'document@101')
+        brief = root / workspace.artifact(root, workspace.load(root), 'brief@101')['file']
+        brief.unlink()
+        with self.assertRaisesRegex(WorkspaceError,
+                                    '^The level 101 brief has not been written yet.$'):
+            self.engine.send_copy(root, 'brief@101')
+        self.assertEqual(self.log(), commits, 'nothing is committed')
+        self.assertEqual(self.record(root)['drafts'].get('send') or [], [])
+        self.assertEqual(self.copies.drive.docs, {})
+
     def test_a_saved_run_s_copies_follow_its_approvals(self):
         root = self.start(levels=['101'], copies=['google'])
         self.to_end(root)

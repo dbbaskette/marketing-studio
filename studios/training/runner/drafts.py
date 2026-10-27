@@ -35,6 +35,7 @@ ORDER = ('blueprint', 'document', 'brief', 'deck', 'scenario', 'yoodli')
 HELD_FIRST = '{it} is built from an earlier {what}. Update it or keep it as it is first.'
 NEEDS_YOU = 'Settle what needs you on {it} before marking it ready.'
 NO_COPY = 'This training keeps no copy of {it}.'
+UNWRITTEN = '{it} has not been written yet.'
 # A training on a Harness Research that cannot synthesize is refused before anything is made,
 # whatever its flow: one check and one sentence, which the engine's NO_SYNTHESIS is.
 NEEDS_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
@@ -133,18 +134,40 @@ def hold_says(root: Path, session: dict, holding, name: str, state: dict | None 
               ) -> str | None:
     """What a card says of a hold: that it waits for an input of its own to be updated or
     kept, or what it was built from an earlier version of. None for a card not held."""
-    spec = workspace.artifact(root, session, name)
-    state = workspace.statuses(root, session) if state is None else state
-    waiting = next((upstream for upstream in spec['upstream']
-                    if upstream in holding or state.get(upstream) == 'stale'), None)
+    waiting, changed = _hold(root, session, holding, name, state)
     if waiting is not None:
         return WAITING.format(what=f'the {what(waiting)}')
     if name not in holding:
         return None
-    changed = _changed(root, session, name, [*spec['upstream'], *spec['extras']])
     if 'practice' in changed:
         return PRACTICE
     return HELD.format(what=' and '.join(what(key) for key in changed))
+
+
+def _hold(root: Path, session: dict, holding, name: str, state: dict | None
+          ) -> tuple[str | None, list[str]]:
+    """What a hold is: the input of its own it waits for, if any, and what it was built
+    from an earlier version of."""
+    spec = workspace.artifact(root, session, name)
+    state = workspace.statuses(root, session) if state is None else state
+    waiting = next((upstream for upstream in spec['upstream']
+                    if upstream in holding or state.get(upstream) == 'stale'), None)
+    return waiting, _changed(root, session, name, [*spec['upstream'], *spec['extras']])
+
+
+def held_first(root: Path, session: dict, holding, name: str, state: dict | None = None
+               ) -> str:
+    """Why a held material is not marked ready or sent to its copies, as its card says it:
+    the input of its own to update or keep first, a practice plan that changed, or what it
+    was built from an earlier version of."""
+    waiting, changed = _hold(root, session, holding, name, state)
+    it = workspace.label(name)
+    if waiting is not None:
+        return f'Update or keep {workspace.label(waiting)} first.'
+    if 'practice' in changed:
+        return f'{PRACTICE} Update {it} or keep it as it is first.'
+    return HELD_FIRST.format(it=workspace.sentence(it), what=' and '.join(
+        dict.fromkeys(what(key) for key in changed)) or 'version of its inputs')
 
 
 def close_updates(root: Path, session: dict, run: dict | None, state: dict | None = None
@@ -189,15 +212,6 @@ def ready(root: Path) -> bool:
     it: on the desk read from what the person marked ready, never the desk's acceptance."""
     import assess
     return bool(assess.run_checks(root)['ready'])
-
-
-def earlier(root: Path, session: dict, name: str, state: dict | None = None) -> str:
-    """What a held material was built from an earlier version of, as the desk names it."""
-    spec = workspace.artifact(root, session, name)
-    state = workspace.statuses(root, session) if state is None else state
-    changed = _changed(root, session, name, [*spec['upstream'], *spec['extras']]) or [
-        upstream for upstream in spec['upstream'] if state.get(upstream) == 'stale']
-    return ' and '.join(dict.fromkeys(what(key) for key in changed)) or 'version of its inputs'
 
 
 def needs_you(root: Path, found, name: str) -> list[str]:

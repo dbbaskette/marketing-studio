@@ -506,6 +506,12 @@ class DeskReadyTests(DeckCase):
                 WorkspaceError, '^The level 101 learner guide has changed since it was '
                                 r'opened\. Read the new version before deciding\.$'):
             self.engine.mark_ready(root, name, seen='0' * 64)
+        # Without the version the person saw, nothing is marked: it is never approved unseen.
+        for unseen in (None, '', 42):
+            with self.subTest(seen=unseen), self.assertRaisesRegex(
+                    WorkspaceError, '^The level 101 learner guide has changed since it was '
+                                    r'opened\. Read the new version before deciding\.$'):
+                self.engine.mark_ready(root, name, seen=unseen)
         self.assertEqual(self.log(), commits)
         self.assertEqual(self.person(root)[name], 'draft')
         self.engine.mark_ready(root, name, seen=self.seen(root, name))
@@ -530,6 +536,27 @@ class DeskReadyTests(DeckCase):
         self.assertNotEqual(self.person(root)['deck@101'], 'approved')
         # A held material is never Ready, so the index waits for it.
         self.assertIs(self.ready(root), False)
+
+    def test_a_held_card_says_what_to_settle_first(self):
+        root = self.desk()
+        plan = (root / '101' / 'blueprint.md').read_text(encoding='utf-8')
+        line = next(line for line in plan.splitlines() if line.startswith('- main:'))
+        edit(self, root, 'blueprint@101',
+             lambda text: text.replace(line, line + ' Who now asks about cost.'))
+        commits = self.log()
+        name = 'scenario:main@101'
+        with self.assertRaisesRegex(
+                WorkspaceError, '^The plan for this practice changed. Update the level 101 '
+                                'practice scenario or keep it as it is first.$'):
+            self.engine.mark_ready(root, name, seen=self.seen(root, name))
+        # A card whose own input is held waits for that input.
+        report = root / '.harness-research' / 'research-report.md'
+        report.write_text(report.read_text(encoding='utf-8') + '\nOne finding more.\n',
+                          encoding='utf-8')
+        with self.assertRaisesRegex(
+                WorkspaceError, '^Update or keep the level 101 blueprint first.$'):
+            self.engine.mark_ready(root, 'document@101', seen=self.seen(root, 'document@101'))
+        self.assertEqual(self.log(), commits)
 
     def test_mark_ready_is_the_desk_s_alone(self):
         root = self.start(levels=['101'])
