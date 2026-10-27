@@ -1356,7 +1356,6 @@ INLINE = re.compile(
 LITERAL = re.compile('(\x00[0-9]+\x00)')
 DEFINITION = re.compile(r'\s*\[([^\]^][^\]]*)\]:')
 TOKEN = re.compile(r"\w+(?:['’-]\w+)*|[^\S\n]+|.", re.S)
-WORD_TOKEN = re.compile(r'\w')
 NOTE_LIMIT = 1000  # characters in one suggestion's or comment's reason
 NOTE_BYTES = 1800  # and bytes, under Google's 2,048 for a comment with its marker
 # A character's style as the Doc shows it: bold, italic, code, underline, raised or lowered,
@@ -1828,7 +1827,7 @@ def _by_hand(old_line, found, lines):
         if not item or item['chars']
     )
     if not found:
-        what = 'The table row ' + _quoted(was)
+        what = ('The table row ' if was.startswith('|') else 'The line ') + _quoted(was)
     elif was:
         what = 'The paragraph with an image, ' + _quoted(was) + ','
     else:
@@ -2082,9 +2081,10 @@ def google_changes(baseline, body, title=None):
                 )
             else:
                 key = [old, quoted, change['reason'], copy, 'comment']
-            seen[json.dumps(key)] = seen.get(json.dumps(key), 0) + 1
-            if seen[json.dumps(key)] > 1:
-                key.append(seen[json.dumps(key)])
+            # The same change twice in one paragraph: each copy is its own.
+            seen[json.dumps(key)] = number = seen.get(json.dumps(key), 0) + 1
+            if number > 1:
+                key.append(number)
             item = {
                 'id': 'desk-' + studio.digest(json.dumps(key).encode())[:16],
                 'kind': kind,

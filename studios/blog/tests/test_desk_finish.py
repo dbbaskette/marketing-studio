@@ -2200,6 +2200,17 @@ class GooglePairingTests(unittest.TestCase):
         )
         self.assertEqual(expected[found[0]['id']]['text'], 'Read the setup guide before setup.')
 
+    def test_a_table_row_changed_is_a_comment_beside_the_table(self):
+        found, left, _ = desk_finish.google_changes(
+            'Before the table.\n\n| a | b |\n|---|---|\n\nAfter it.\n',
+            'Before the table.\n\n| a | c |\n|---|---|\n\nAfter it.\n',
+        )
+        self.assertEqual(
+            ([(f['kind'], f['before']) for f in found], left),
+            ([('comment', 'Before the table.')], 0),
+        )
+        self.assertIn('The table row “| a | b |” reads “| a | c |”', found[0]['reason'])
+
     def test_escapes_read_as_the_characters_they_stand_for(self):
         self.assertEqual(
             desk_finish._visible('A \\*star\\* and snake\\_case.'), 'A *star* and snake_case.'
