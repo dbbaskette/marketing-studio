@@ -32,6 +32,19 @@ def cards_of(desk: dict) -> list:
     return [card for part in desk['sections'] for card in part['slides']]
 
 
+def plan_on(number: int):
+    """A scripted plan job for a Selected changes deck: the second run of the slide's second
+    object, made shorter."""
+    def act(tools, job):
+        spec = tools.job['artifacts']['patch']
+        plan = {'sourceSha256': spec['sha256'], 'operations': [
+            {'slide': number, 'object': '3', 'expectedHash': spec['objects'][f'{number}:3'],
+             'runs': [{'index': 1, 'text': 'in minutes.'}]}]}
+        made = tools.submit_artifact('patch', json.dumps(plan))
+        assert made[0], made[1]
+    return act
+
+
 @unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
 class DeskPageCase(test_desk.ScriptedPage, PageCase):
     answers = test_desk.ScreenTests.answers
@@ -204,20 +217,56 @@ class StartTests(DeskPageCase):
         # Title and goal come before the document, in the third step.
         self.assertEqual(missing['focus'], 'new-title')
 
-    def test_the_existing_deck_card_opens_the_form_it_has_now(self):
+    def test_an_existing_deck_shows_its_levels_on_the_first_step(self):
         result = self.new_deck([
             {'click': 'An existing deck'}, {'snapshot': 'existing'},
+            {'click': 'Start'}, {'snapshot': 'missing'},
+            {'click': 'Selected changes'}, {'snapshot': 'selected'},
+            {'fill': 'Which slides, and what to fix', 'value': 'Slide 2: shorten it.'},
+            {'click': 'Redesign, keep content'}, {'snapshot': 'redesign'},
+            {'click': 'Selected changes'},
             {'attach': 'The deck, as a .pptx',
              'files': [{'name': 'old.pptx', 'bytes': test_desk.DECK.decode('latin-1')}]},
-            {'click': 'Polish'}, {'fill': 'A short title', 'value': 'Old deck'},
-            {'click': 'Start the deck'}])
-        existing = result['snapshots']['existing']
-        for part in ('1. How it begins', '2. Your deck and what changes', '5. Where it stops'):
-            self.assertIn(part, existing['parts'])
-        self.assertIn('Review level', existing['sheet'])
+            {'fill': 'A short title', 'value': 'Old deck'}, {'click': 'Start'}])
+        shots = result['snapshots']
+        existing, selected = shots['existing'], shots['selected']
+        self.assertEqual([part for part in existing['parts'] if part[:2] in ('1.', '2.', '3.')],
+                         ['1. Kind of deck', '2. Sources and settings', '3. What you have'])
+        sheet = existing['sheet']
+        first = sheet[sheet.index('1. Kind of deck'):sheet.index('2. Sources and settings')]
+        for level in ('Brand only', 'Polish', 'Redesign, keep content', 'Full rework',
+                      'Selected changes'):
+            self.assertIn(level, first)
+        self.assertNotIn('Which slides, and what to fix', existing['fields'])
+        # The deck itself is in the third step; an existing deck has no research, and no look
+        # to pick until it is redesigned.
+        have = sheet[sheet.index('3. What you have'):]
+        self.assertIn('The deck, as a .pptx', have)
+        for gone in ('Research first', 'Pick it when the samples are drawn', 'Review level',
+                     'Where it stops'):
+            self.assertNotIn(gone, sheet)
+        self.assertIn('Choose how much changes.', shots['missing']['sheet'])
+        self.assertEqual(shots['missing']['posts'], 0)
+        self.assertIn('Which slides, and what to fix', selected['fields'])
+        first = selected['sheet'][:selected['sheet'].index('2. Sources and settings')]
+        self.assertIn('Which slides, and what to fix', first)
+        self.assertIn('Pick it when the samples are drawn', shots['redesign']['buttons'])
+        self.assertNotIn('Which slides, and what to fix', shots['redesign']['fields'])
         (_, body), = self.posts(result)
-        self.assertEqual((body['form']['route'], body['form']['level']), ('existing', 'polish'))
-        self.assertNotIn('flow', body['form'])
+        form = body['form']
+        self.assertEqual((form['route'], form['flow'], form['level'], form['selected'],
+                          form['source'], form['title']),
+                         ('existing', 'desk', 'selected', 'Slide 2: shorten it.',
+                          {'kind': 'upload', 'name': 'old.pptx'}, 'Old deck'))
+        self.assertFalse(form['research'])
+        for gone in ('review_level', 'review_seen', 'review_default', 'initial_review'):
+            self.assertNotIn(gone, form)
+        # What the page sends is what the server takes: a deck on the desk.
+        self.workers.then('patch', plan_on(2))
+        made = self.post('decks', body)
+        shown = self.run_of(made['path'])
+        self.assertIsNotNone(shown['desk'])
+        self.assertEqual(shown['gate']['name'], 'gate:build', shown['sentence'])
 
 
 class ProgressTests(DeskPageCase):

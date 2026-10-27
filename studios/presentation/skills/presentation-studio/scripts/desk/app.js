@@ -128,12 +128,6 @@ const LEVELS = [
   ['rework', 'Full rework', 'It may tighten, split, merge or reorder content, then redesign.'],
   ['selected', 'Selected changes', 'Say which slides and what to fix.'],
 ];
-// Each route's steps after How it begins, by name, as the new-deck sheet numbers them.
-const NEW_STEPS = {
-  scratch: ['What it is about', 'How it looks', 'Where it stops'],
-  document: ['Your document', 'What it is about', 'How it looks', 'Where it stops'],
-  existing: ['Your deck and what changes', 'What it is about', 'How it looks', 'Where it stops'],
-};
 const DOCUMENT_TYPES = ['.txt', '.md', '.html', '.htm', '.docx', '.pdf'];
 const DOCUMENT_BYTES = 8000000;      // the largest document the runner reads
 const DECK_BYTES = 85000000;         // the largest deck the page sends, as base64 it is larger
@@ -2870,15 +2864,11 @@ function newDraft() {
   const brand = (view.setup && view.setup.brand && view.setup.brand.default) || {};
   return settleBrand({ route: null, step: 0, title: '', audience: '', goal: '', notes: '', minutes: '',
     delivery: null,
-    research: false, firstDraft: false, firstDraftExplicit: false, level: null, selected: '', source: 0, link: '', text: '', upload: null,
+    research: false, level: null, selected: '', source: 0, link: '', text: '', upload: null,
     reading: false, brand: brand.brand || '', variant: brand.variant || '',
     output: view.setup && view.setup.output === 'pptx' ? 1 : 0,
     agent: agent.default === 'codex' ? 'codex' : 'claude', model: agent.model || '',
     other: false, effort: agent.effort || '', starting: false });
-}
-
-function stepsOf(draft) {
-  return NEW_STEPS[draft.route] || [];
 }
 
 function sourceKind(draft) {
@@ -2890,22 +2880,6 @@ function sourceKind(draft) {
 function createStep(number, title, ...nodes) {
   return add(make('section', 'create-step'), make('h3', 'sheet-part', number + '. ' + title),
     ...nodes);
-}
-
-// The three ways to begin, as cards. Choosing one draws that route's steps under it.
-function routeStep() {
-  const node = make('div', 'pick-cards');
-  node.setAttribute('role', 'group');
-  node.setAttribute('aria-label', 'How the deck begins');
-  for (const [route, title, says] of ROUTES) {
-    add(node, pickCard(title, says, view.draft.route === route, () => {
-      chooseRoute(route);
-      paintNew(false);
-      readAgents();
-      readModels(view.draft.agent);
-    }, 'route ' + route));
-  }
-  return { title: 'How it begins', nodes: [node] };
 }
 
 // Why a file cannot be used, or nothing when it can.
@@ -3019,110 +2993,7 @@ function paintChosenLater(node) {
     + ', ' + megabytes(draft.upload.size) + '.') : make('p', 'quiet', 'Nothing chosen yet.'));
 }
 
-function documentStep(draft) {
-  return { title: 'Your document', nodes: [make('p', '', 'A script, notes, a write-up or a '
-    + 'transcript. It is read first, to tell a finished script from material to build from.'),
-  ...sourceFields(draft)] };
-}
-
-// How much of an existing deck changes, as five cards with what each does.
-function levelCards(draft) {
-  const node = make('div', 'pick-cards');
-  node.setAttribute('role', 'group');
-  node.setAttribute('aria-label', 'How much changes');
-  for (const [level, title, says] of LEVELS) {
-    add(node, pickCard(title, says, draft.level === level, () => {
-      draft.level = level;
-      // Where it stops, and the options, follow how much changes: the sheet is drawn again.
-      paintNew(false);
-    }, 'level ' + level));
-  }
-  const selected = add(make('div', ''), field('new-selected', 'Which slides, and what to fix',
-    draft, 'selected', { long: true, hint: 'For example: “Slides 3 and 7: the chart is '
-      + 'unreadable. Slide 12: shorten the bullets.” Only those slides change.' }));
-  selected.id = 'new-selected-part';
-  selected.hidden = draft.level !== 'selected';
-  return [make('p', 'field-label', 'How much changes'), node, alertLine('new-level-problem'),
-    selected];
-}
-
-function deckStep(draft) {
-  return { title: 'Your deck and what changes', nodes: [make('p', '', 'The original is never '
-    + 'changed: what you get is always a new copy.'), ...sourceFields(draft),
-  ...levelCards(draft)] };
-}
-
-// The level a deck stops at: the one its form chose, else the shared level the form read.
-function levelOf(draft) {
-  return draft.review_level || (view.setup && view.setup.review_level) || 'step_by_step';
-}
-
-// The gates that stop for the person under the deck's review level, in the words of what
-// they decide: the level's own rule, as review_policy.automatic applies it to a deck.
-// Under Balanced the outline's stop is the direction: the research, the outline and the
-// look, read together.
-// What the research chip says of the research at each level.
-const RESEARCH_SAYS = {
-  step_by_step: 'You approve the research plan, then the findings, before the outline is '
-    + 'drafted.',
-  balanced: 'The research is planned and done on its own. You see what it found with the '
-    + 'outline.',
-  automatic: 'The research is planned and done on its own. What it found is kept with the '
-    + 'deck.',
-};
-
-function stopsFor(draft) {
-  const level = levelOf(draft);
-  const gates = [];
-  if (draft.route !== 'scratch') {
-    gates.push(['gate:classify', draft.route === 'document' ? 'the kind of document'
-      : 'the slides read from your deck']);
-  }
-  if (draft.research && draft.route !== 'existing') {
-    gates.push(['gate:research-plan', 'the research plan'], ['gate:research', 'the research']);
-  }
-  const chosen = draft.route === 'existing' ? draft.level : null;
-  const looks = !chosen || ['redesign', 'rework'].includes(chosen);
-  if (!chosen || chosen === 'rework') {
-    const together = [draft.research && draft.route !== 'existing' ? 'the research' : null,
-      'the outline', looks ? 'the look' : null].filter(Boolean);
-    gates.push(['gate:outline', level === 'balanced'
-      ? 'the direction (' + series(together) + ' together)' : 'the outline']);
-  }
-  if (looks) gates.push(['gate:look', 'the look']);
-  gates.push(['gate:build', 'the deck']);
-  // Under Balanced a deck with no outline stop, such as a Redesign, has its direction
-  // review at the look.
-  const outlined = gates.some(([name]) => name === 'gate:outline');
-  const stops = level === 'step_by_step' ? gates : level === 'balanced'
-    ? gates.filter(([name]) => ['gate:outline', 'gate:build'].includes(name)
-      || (name === 'gate:look' && !outlined))
-    : gates.filter(([name]) => name === 'gate:build');
-  return REVIEW_WORDS[level] + ': it stops for ' + series(stops.map(([, words]) => words));
-}
-
 const LEVELS_SHOWN = Object.keys(REVIEW_WORDS);
-
-// Where this deck stops, chosen for this deck on its form. The chip also makes it the level
-// new work starts at in every studio, written when the deck starts. Nothing here leaves the
-// form.
-function whereItStops(draft) {
-  const line = make('p', 'quiet stops-line', stopsFor(draft));
-  // Where its research may look, with the sites named.
-  const looks = draft.research && draft.route !== 'existing'
-    ? researchSummary(researchFromOf(draft)) : '';
-  return { title: 'Where it stops', nodes: [
-    choice('Review level', LEVELS_SHOWN.map((one) => REVIEW_WORDS[one]),
-      LEVELS_SHOWN.indexOf(levelOf(draft)), (index) => {
-        draft.review_level = LEVELS_SHOWN[index];
-        line.textContent = stopsFor(draft);
-      }, 'review-level'),
-    line,
-    looks ? make('p', 'quiet research-line', looks + '.') : null,
-    add(make('div', 'field'), chip('Use this for new work in every studio',
-      draft.review_default, (on) => { draft.review_default = on; }, 'review-default'),
-    make('p', 'quiet field-hint', 'Saved when the deck starts.'))] };
-}
 
 // Settings: where new work stops in every studio, saved at once. A refusal, such as a level
 // another studio changed since this page read it, is said in the card.
@@ -3289,101 +3160,10 @@ function researchFromField(draft) {
       + 'assistant’s own web search tool, and only pages from under them are saved.') : null);
 }
 
-function aboutStep(draft) {
-  const research = draft.route !== 'existing' ? chip('Research first', draft.research,
-    (on) => {
-      draft.research = on;
-      paintNew(false);
-    }, 'research') : null;
-  return { title: 'What it is about', nodes: [
-    field('new-title', 'A short title', draft, 'title',
-      { limit: 120, hint: 'What it is called in every list, for example “Rolling restarts”.' }),
-    field('new-audience', 'Who is it for?', draft, 'audience', { long: true, limit: 2000,
-      hint: 'Their role, and what they already know.' }),
-    field('new-goal', 'What should they take away?', draft, 'goal', { long: true, limit: 2000,
-      hint: 'A sentence or two is enough.' }),
-    draft.route === 'scratch' ? field('new-notes', 'What should it cover? (optional)',
-      draft, 'notes', { long: true, limit: 4000, hint: 'Points, examples or a rough order. It goes to the research plan and the outline.' }) : null,
-    field('new-minutes', 'About how long, in minutes (optional)', draft, 'minutes',
-      { short: true, mode: 'numeric' }),
-    choice('Is this deck for a talk or a handout?', DELIVERIES.map((one) => one[1]),
-      deliveryOf(draft), (index) => { draft.delivery = index; }, 'delivery',
-      'A talk is presented, with fewer words on each slide; a handout is read on its own.'),
-    research ? add(make('div', 'field'), research, make('p', 'quiet field-hint',
-      (draft.route === 'document' ? 'Only where your document turns out to be material to '
-        + 'build from. ' : '') + RESEARCH_SAYS[levelOf(draft)])) : null,
-    research && draft.research ? researchFromField(draft) : null,
-    research && draft.research ? field('research-questions', 'What should the research answer? (optional)',
-      draft, 'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' }) : null] };
-}
-
-// How it looks: the brand and its variant, then the options, closed, with one line that says
-// what they are until they are opened.
-function lookStep(draft, told) {
-  const limits = (view.setup && view.setup.limits) || {};
-  const options = make('details', 'new-options');
-  options.dataset.key = 'new-options';
-  const summary = make('summary', '', 'Options');
-  summary.dataset.key = 'new-options-summary';
-  const said = make('p', 'quiet', [OUTPUTS[draft.output][1], AGENT_NAMES[draft.agent]
-    + draftModelWords(draft), limitsSays(limits) || 'no limits'].join(' · '));
-  add(options, summary, said,
-    ...explained('Delivered as', OUTPUTS.map((one) => one[1]), OUTPUT_SAYS, draft.output,
-      (index) => {
-        draft.output = index;
-      }, 'new-output'),
-    ...agentFields(draft, 'new', 'For this deck', told),
-    ...(draft.level === 'selected' ? [] : [add(make('div', 'field'),
-      chip('See the first draft before the deck is checked', Boolean(draft.firstDraft), on => {
-        draft.firstDraft = on; draft.firstDraftExplicit = true;
-      }, 'first-draft'), make('p', 'quiet field-hint', 'It is still built and rendered. The '
-        + 'check and its repairs run when you ask.'))]),
-    make('p', 'quiet', (limitsSays(limits) || 'No limits are set for this computer.')
-      + ' A deck that reaches a limit stops and asks you. The limits are changed in '
-      + 'Settings.'),
-    OUTPUTS[draft.output][0] === 'google' && !googleReady() ? make('p', '', NOT_CONNECTED)
-      : null);
-  return { title: 'How it looks', nodes: [brandFields(draft, 'new'), options] };
-}
-
-// The new-deck sheet: How it begins, then the route's steps, numbered, then what happens when
-// it starts, and Start the deck with Cancel. A deck from scratch has no source step, so the
-// numbers close up.
+// The new-deck sheet: the desk's start, in deck-desk.js's three steps, for every kind of
+// deck.
 function newSheet() {
-  const draft = view.draft;
-  // A deck from an idea or a document starts on the desk, in deck-desk.js's three steps. One
-  // from a deck you have keeps this form for now.
-  if (draft.route !== 'existing') return window.deckDesk.start();
-  const go = submitButton('Start the deck', 'continue');
-  const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
-  const drafted = make('span', '');
-  const told = () => {
-    drafted.textContent = 'It is drafted by ' + AGENT_NAMES[draft.agent]
-      + draftModelWords(draft) + '.';
-  };
-  told();
-  const form = make('form', 'create-flow');
-  form.noValidate = true;
-  // Enter in a box starts the deck, as the filled button does: every step is checked first.
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    startDeck(go);
-  });
-  let number = 0;
-  const step = (built) => {
-    number += 1;
-    return createStep(number, built.title, ...built.nodes);
-  };
-  add(form, step(routeStep()));
-  const builders = { scratch: [aboutStep, lookStep, whereItStops],
-    document: [documentStep, aboutStep, lookStep, whereItStops],
-    existing: [deckStep, aboutStep, lookStep, whereItStops] }[draft.route] || [];
-  for (const builder of builders) add(form, step(builder(draft, told)));
-  add(form, draft.route ? add(make('p', 'quiet'), 'It starts at once and works on its own. At '
-    + 'each stop you see what is made so far. ', drafted, ' This page tells you each time. In '
-    + 'between, you can close it.') : null, alertLine('new-problem'),
-  add(make('div', 'bar create-foot'), draft.route ? go : null, cancel));
-  return [add(make('div', 'sheet-heading'), sheetTitle('New deck')), form];
+  return window.deckDesk.start();
 }
 
 // The sheet drawn again in place: what had the focus has it again, and what was open stays
@@ -3443,19 +3223,6 @@ function missingIn(draft, name) {
   return missing;
 }
 
-// True when the step has everything it needs.
-function stepReady(draft, name) {
-  return !missingIn(draft, name).length;
-}
-
-// Every step is checked before anything is sent; the first answer missing has the focus.
-function sheetReady(draft) {
-  const missing = stepsOf(draft).flatMap((name) => missingIn(draft, name));
-  say(byId('new-problem'), missing.length ? 'Something above is missing.' : '');
-  if (missing.length && !focusKey(missing[0]) && byId(missing[0])) byId(missing[0]).focus();
-  return !missing.length;
-}
-
 // The form as the runner reads it, and what was uploaded with it.
 function formOf(draft) {
   const minutes = draft.minutes.trim();
@@ -3469,10 +3236,7 @@ function formOf(draft) {
     research_questions: (draft.researchQuestions || '').split('\n'),
     research_from: draft.route !== 'existing' && draft.research ? researchFromOf(draft)
       : undefined,
-    agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,
-    review_level: levelOf(draft), review_seen: (view.setup && view.setup.review_level) || null,
-    review_default: Boolean(draft.review_default) };
-  if (draft.firstDraftExplicit) form.initial_review = draft.firstDraft ? 'user-first' : 'standard';
+    agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null };
   const uploads = {};
   if (draft.route === 'existing') {
     form.level = draft.level;
@@ -3497,12 +3261,12 @@ async function startDeck(pressed, how) {
   const draft = view.draft;
   if (draft.starting) return;
   const problem = byId('new-problem');
-  if (!(how ? how.ready(draft) : sheetReady(draft))) return;
+  if (!how.ready(draft)) return;
   if (!draft.brand && brandsFound().length) {
     say(problem, 'Choose the brand the deck is made in.');
     return;
   }
-  const [form, uploads] = how ? how.form(draft) : formOf(draft);
+  const [form, uploads] = how.form(draft);
   draft.starting = true;
   pressed.disabled = true;
   say(problem, '');
@@ -7673,7 +7437,7 @@ function deskParts() {
     brandFields, brandsFound, agentFields, modelFields, draftModelWords, limitsSays,
     sourceFields, formOf, missingIn, startDeck, deliveryOf,
     words: { OUTPUTS, OUTPUT_SAYS, DELIVERIES, AGENT_NAMES, NOT_CONNECTED, ROUTES, KINDS,
-      STEERED },
+      LEVELS, STEERED },
   };
 }
 

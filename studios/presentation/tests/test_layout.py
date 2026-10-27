@@ -13,6 +13,7 @@ from urllib.parse import urlencode
 
 import test_desk
 import test_runner_page
+from runner_support import read_word_for_word
 from test_desk import DECK, PICTURE, ok
 
 NOT_THERE = {'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]}
@@ -366,16 +367,18 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
             {'attach': 'The deck, as a .pptx',
              'files': [{'name': 'old.pptx', 'bytes': DECK.decode('latin-1')}]},
             {'click': 'Selected changes'}, {'click': 'Polish'},
-            {'fill': 'A short title', 'value': 'Old deck'}, {'click': 'Start the deck'}])
+            {'fill': 'A short title', 'value': 'Old deck'}, {'click': 'Start'}])
         (address, body), = self.posts(result)
         self.assertEqual(address, '/api/decks')
         form = body['form']
-        self.assertEqual((form['route'], form['level'], form['source'], form['title']),
+        self.assertEqual((form['route'], form['level'], form['source'], form['title'],
+                          form['flow']),
                          ('existing', 'polish', {'kind': 'upload', 'name': 'old.pptx'},
-                          'Old deck'))
+                          'Old deck', 'desk'))
         self.assertEqual(base64.b64decode(body['uploads']['old.pptx']), DECK)
+        self.workers.queued['outline'] = [read_word_for_word(self)]
         self.assertEqual(self.run_of(self.post('decks', body)['path'])['gate']['name'],
-                         'gate:classify')
+                         'gate:build')
 
     def test_cancel_keeps_the_draft_for_the_session(self):
         result = self.run_page(self.answers(), [

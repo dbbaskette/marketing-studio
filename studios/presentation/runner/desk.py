@@ -78,6 +78,8 @@ SECTION_SIZE = 4   # content slides one section holds at most, as the slides too
 NOTHING_TO_STOP = 'Nothing is being redrawn now, so there is nothing to stop.'
 NOT_ENDED = ('It was stopped, but something it started has not ended yet. Try Stop again in '
              'a moment.')
+PLANNING = 'Planning the changes to your deck again, with your note'
+PATCHING = 'Making the changes to a copy of your deck, picturing and checking it'
 
 
 # --- the stops ----------------------------------------------------------------------------
@@ -113,6 +115,27 @@ def refuse_on_desk(run: dict) -> None:
 def refuse_off_desk(run: dict) -> None:
     if not decks.on_desk(run):
         raise WorkspaceError(NOT_ON_DESK)
+
+
+def level(run: dict) -> str | None:
+    """How much of an existing deck changes, or None for a deck that was not given."""
+    return (run.get('form') or {}).get('level') if run.get('route') == 'existing' else None
+
+
+def selected(run: dict) -> bool:
+    """Whether the deck is an existing deck at Selected changes: a copy of it is patched,
+    and nothing is built, so it never has a start of the build."""
+    return level(run) == 'selected'
+
+
+def on_screen(root, run: dict, state: dict) -> str | None:
+    """The deck the desk shows, as the hash Deliver and every redraw are bound to: the last
+    round's, or at Selected changes the patched copy's, once it is made here."""
+    if not selected(run):
+        return last_round(state).get('deck') if state.get('rounds') else None
+    from runner.jobs import sha256_of
+    kept = state.get('deck')
+    return sha256_of(Path(root) / kept) if kept else None
 
 
 def arrived(run: dict) -> bool:
@@ -173,6 +196,11 @@ def working(root, run: dict, state: dict | None = None) -> dict | None:
             'state') == 'waiting':
         return None   # a pause for the person, such as the look: not desk work
     state = state if state is not None else build.read_state(root)
+    if selected(run):
+        # Nothing is drawn: the plan is made again with a note, or the copy is patched.
+        if run.get('halted'):
+            return None
+        return {'what': PLANNING if nxt.name == 'patch' else PATCHING, 'done': 0, 'total': 0}
     if not state.get('start'):
         return None   # no drawing here: nothing is drawn until Draw it here
     asked = list(((state.get('asked') or {}).get('sections')) or ())
@@ -751,12 +779,16 @@ def cards(root, run: dict, price=None) -> dict:
     'audit', 'note', 'busy', 'price'}. Its words and notes are the outline's, which every
     computer has; its picture, findings and brand check are this computer's last round, so
     a deck with none here has cards without pictures. `price(section)` says what redrawing
-    a section costs."""
+    a section costs. An existing deck's card has its `before`, the slide as it was in the
+    deck given, at each level whose slides are the deck's own (existing.PAIRED)."""
     build = _build()
     state = build.read_state(root)
+    if selected(run):
+        return _selected_cards(root, run, state)
     outline = _outline(root)
     last = last_round(state)
     drawn = bool(state.get('rounds'))
+    before = originals(root, run)
     by_id = {slide['id']: slide for slide in build.slides_of(outline)}
     numbers = {slide['id']: slide['number'] for slide in last.get('slides') or ()} if drawn \
         else {slide['id']: at for at, slide in enumerate(build.slides_of(outline), 1)}
@@ -778,6 +810,7 @@ def cards(root, run: dict, price=None) -> dict:
                 'number': number, 'id': ident, 'section': section, 'lead': lead,
                 'kind': slide.get('kind'),
                 'image': {'kind': 'build', 'ref': number} if drawn and number else None,
+                'before': {'kind': 'original', 'ref': number} if number in before else None,
                 'words': {key: slide.get(key) for key in WORDS},
                 'notes': slide.get('notes') or '',
                 'findings': [{key: finding.get(key) for key in (
@@ -792,6 +825,70 @@ def cards(root, run: dict, price=None) -> dict:
                          'slides': slides})
     return {'sections': sections, 'expected': last.get('deck') if drawn else None,
             'drawn_here': drawn}
+
+
+def originals(root, run: dict) -> set:
+    """The numbers of the slides of the deck given that are pictured on this computer, at a
+    level whose slides are the deck's own; none otherwise."""
+    from runner.steps import existing
+    if level(run) not in existing.PAIRED:
+        return set()
+    return {number for number in existing._shots(Path(root) / existing.ORIGINAL_SHOTS)
+            if type(number) is int}
+
+
+# --- Selected changes ----------------------------------------------------------------------
+
+PATCH_SAYS = ('Plans the changes again with your note, then makes them to a copy of your deck '
+              'and pictures it. Your deck itself is never changed.')
+
+
+def patch_price(run: dict) -> str:
+    """What a note on a slide of a Selected changes deck costs, said before it is sent: the
+    plan, and the copy made and pictured, as they last took here."""
+    planned = _last_try(run, 'patch', kept=True)
+    if planned is None:
+        return PATCH_SAYS + NO_RECORD
+    tried = [planned, *filter(None, (_last_try(run, 'build-render'),))]
+    seconds = round(sum(float(attempt.get('seconds') or 0) for attempt in tried), 1)
+    return PATCH_SAYS + LAST_TOOK.format(cost=stops.cost(seconds, planned.get('dollars')))
+
+
+def _selected_cards(root, run: dict, state: dict) -> dict:
+    """The cards of a Selected changes deck: one for each slide of the deck given, from its
+    inventory, with its words as each object's runs read now that the plan's changes are
+    made, the slide as it was and as it is in the copy."""
+    from runner.steps import existing, words
+    from runner.steps import outline as outlines
+    root = Path(root)
+    inventory = outlines.inventory_of(root) or {}
+    after = set(existing._shots(root / existing.AFTER_SHOTS))
+    before = originals(root, run)
+    plan = words.plan_of(root)
+    kept, numbers = notes(run), []
+    priced = patch_price(run)
+    slides = []
+    for slide in inventory.get('slides') or ():
+        if not isinstance(slide, dict) or type(slide.get('number')) is not int:
+            continue
+        number = slide['number']
+        numbers.append(number)
+        noted = next((item for item in reversed(kept) if item.get('number') == number), None)
+        slides.append({
+            'number': number, 'id': str(slide.get('id')), 'section': None, 'lead': False,
+            'kind': None, 'hidden': bool(slide.get('hidden')),
+            'image': {'kind': 'build', 'ref': number} if number in after else None,
+            'before': {'kind': 'original', 'ref': number} if number in before else None,
+            'words': {'title': slide.get('title'), **{key: None for key in WORDS[1:]}},
+            'objects': words.objects_now(slide, plan),
+            'notes': '', 'findings': [],
+            'audit': audit_lines(state, number) if number in after else [],
+            'note': _note_shown(noted),
+            'busy': bool(noted and noted.get('status') in OPEN),
+            'unfit': None, 'price': priced})
+    drawn = bool(state.get('deck')) and (root / state['deck']).is_file()
+    return {'sections': [{'id': None, 'lead': False, 'number': None, 'slides': slides}],
+            'expected': on_screen(root, run, state) if drawn else None, 'drawn_here': drawn}
 
 
 def _note_shown(item: dict | None) -> dict | None:

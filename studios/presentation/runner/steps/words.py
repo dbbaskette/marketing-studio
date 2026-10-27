@@ -45,6 +45,7 @@ NOT_FOUND = 'The old words were not found once on the drawn slide.'
 NO_FIELD = 'Choose the title, subtitle, detail, a point, the caveat, the source or the notes.'
 TOO_LONG = 2000   # characters in one field's words
 NOTES_LONG = 4000  # characters in a slide's speaker notes
+SHARED_OPS = Path('desk') / 'patch-ops.json'   # the desk's changes to your own deck, shared
 
 
 def field_of(field):
@@ -273,3 +274,49 @@ def retold(root, whole: dict, knows=frozenset()) -> None:
     home.write_json(folder / 'given' / 'outline.json', whole)
     if (folder / build.TOOL_OUTLINE).is_file():
         home.write_json(folder / build.TOOL_OUTLINE, build.for_tool(whole, knows))
+
+
+# --- Selected changes: the words of your own deck, changed only through its plan ------------
+
+def plan_of(root) -> list[dict]:
+    """The operations of the plan the copy of the deck given is made from: work/patch.json,
+    else the desk's shared copy of the operations made on the desk."""
+    from runner.steps import existing
+    root = Path(root)
+    found = home.read_json(root / existing.PATCH, None)
+    if not isinstance(found, dict):
+        found = home.read_json(root / SHARED_OPS, None)
+    listed = found.get('operations') if isinstance(found, dict) else None
+    return [op for op in listed or () if isinstance(op, dict)]
+
+
+def objects_now(slide: dict, plan: list[dict]) -> list[dict]:
+    """The objects of one slide of the inventory that hold words, each with its runs as the
+    plan makes them: {'id', 'type', 'runs', 'changed'}."""
+    made = []
+    for item in slide.get('objects') or ():
+        runs = item.get('runs') if isinstance(item, dict) else None
+        if not isinstance(runs, list) or not runs:
+            continue
+        was = [str(one) for one in runs]
+        now = _applied(was, _op_on(plan, slide.get('number'), item.get('id')))
+        made.append({'id': str(item.get('id')), 'type': item.get('type'), 'runs': now,
+                     'changed': now != was})
+    return made
+
+
+def _op_on(plan: list[dict], number, object_id) -> dict | None:
+    return next((op for op in plan if op.get('slide') == number
+                 and str(op.get('object')) == str(object_id)), None)
+
+
+def _applied(runs: list[str], op: dict | None) -> list[str]:
+    """An object's runs with one operation of the plan made to them."""
+    now = list(runs)
+    if op is not None and isinstance(op.get('text'), str):
+        return [op['text']]
+    for edit in (op or {}).get('runs') or ():
+        if isinstance(edit, dict) and type(edit.get('index')) is int \
+                and 0 <= edit['index'] < len(now) and isinstance(edit.get('text'), str):
+            now[edit['index']] = edit['text']
+    return now

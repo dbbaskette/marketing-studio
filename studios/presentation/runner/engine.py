@@ -1005,7 +1005,7 @@ class Engine(Jobs, Researching, DeskActions):
                 if step is None:
                     return
                 if step.name in BUILT and step.name != 'build-start' and decks.on_desk(record) \
-                        and not build.read_state(root).get('start'):
+                        and not desk.selected(record) and not build.read_state(root).get('start'):
                     return   # no drawing of this desk deck here: drawn only when asked
                 if step.kind == 'gate' and decks.on_desk(record):
                     # A desk deck's stops are met on the desk: those it continues past, and
@@ -2716,7 +2716,7 @@ class Engine(Jobs, Researching, DeskActions):
         if nxt.kind == 'gate' and gate_state(record, nxt.name) == 'waiting':
             return 'waiting', f'{nxt.doing}.'
         if decks.on_desk(record) and nxt.name in BUILT and nxt.name != 'build-start' \
-                and not build.read_state(root).get('start'):
+                and not desk.selected(record) and not build.read_state(root).get('start'):
             return 'waiting', desk.NO_DRAWING + ' Draw it here to carry on.'
         if run.queued:
             ahead = self._slots.ahead(run) or 0

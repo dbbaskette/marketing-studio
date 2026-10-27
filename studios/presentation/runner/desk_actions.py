@@ -206,7 +206,7 @@ class DeskActions:
             record, state = self._load(root), build.read_state(root)
             if not desk.arrived(record):
                 raise WorkspaceError(desk.NOT_YET)
-            if not expected or desk.last_round(state).get('deck') != expected:
+            if not expected or desk.on_screen(root, record, state) != expected:
                 raise WorkspaceError(desk.CHANGED)
             item = desk.add_note(record, state, number, note, home.now(), by)
             desk.keep_slide(root, item['slide'], 'note')
@@ -231,7 +231,7 @@ class DeskActions:
             record, state = self._load(root), build.read_state(root)
             if not desk.arrived(record):
                 raise WorkspaceError(desk.NOT_YET)
-            if not expected or desk.last_round(state).get('deck') != expected:
+            if not expected or desk.on_screen(root, record, state) != expected:
                 raise WorkspaceError(desk.CHANGED)
             sections = [entry['id'] for entry in (state.get('start') or {}).get('sections') or ()]
             busy = [section for section in sections if desk.busy(record, section)]
@@ -619,7 +619,7 @@ class DeskActions:
         root, space, by = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
-            if not expected or desk.last_round(state).get('deck') != expected:
+            if not expected or desk.on_screen(root, record, state) != expected:
                 raise WorkspaceError(desk.CHANGED)
             if decks.delivered(root) is None and not desk.resting(record):
                 raise WorkspaceError(desk.WORDS_BUSY)
@@ -793,9 +793,9 @@ class DeskActions:
                     or desk.opened(record) or record.get('halted') or record.get('desk_jobs') \
                     or (record.get('desk') or {}).get('edits'):
                 raise WorkspaceError(desk.STILL)
-            if not state.get('rounds'):
+            if not (state.get('deck') if desk.selected(record) else state.get('rounds')):
                 raise WorkspaceError(desk.NO_DRAWING)
-            if not expected or desk.last_round(state).get('deck') != expected:
+            if not expected or desk.on_screen(root, record, state) != expected:
                 raise WorkspaceError(desk.CHANGED)
             if desk.blockers(state) and blockers_seen != desk.blockers_seen(state):
                 raise WorkspaceError(desk.BLOCKERS_CHANGED)

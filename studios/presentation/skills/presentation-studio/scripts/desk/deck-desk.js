@@ -25,8 +25,10 @@
   const READ_AS = { spec: 'Read as a script for the slides.',
     material: 'Read as material to build from.' };
   // Which gap the start puts the focus in first, in the order the sheet is filled.
-  const GAPS = ['research-documents', 'research-sites', 'new-minutes', 'new-title', 'new-file',
-    'new-text', 'new-link'];
+  const GAPS = ['level brand-only', 'new-selected', 'research-documents', 'research-sites',
+    'new-minutes', 'new-title', 'new-file', 'new-text', 'new-link'];
+  // The levels of an existing deck whose looks are drawn, for the person to pick from.
+  const LOOKED_LEVELS = ['redesign', 'rework'];
   const NOTHING_NEEDED = 'Nothing needed from you. The deck opens here when it is ready.';
   const NO_RECORD = 'This computer has no record yet of how long that takes.';
   const LOOK_PAUSE = 'One thing needs you: pick the look. The deck is drawn in it.';
@@ -97,7 +99,8 @@
 
   // --- the start -----------------------------------------------------------------------------
   // Three numbered steps: the kind of deck, its sources and settings, and what you have. Start
-  // sends it as a desk deck. An existing deck keeps the page's own form for now.
+  // sends it as a desk deck. An existing deck chooses how much of it changes on the first step,
+  // and gives the deck itself on the third.
 
   function start() {
     const draft = h.view.draft;
@@ -118,7 +121,8 @@
       event.preventDefault();
       h.startDeck(go, { ready, form: formFor });
     });
-    h.add(form, h.createStep(1, 'Kind of deck', kindCards(draft)));
+    h.add(form, h.createStep(1, 'Kind of deck', kindCards(draft),
+      ...(draft.route === 'existing' ? levelCards(draft) : [])));
     if (draft.route) {
       h.add(form, h.createStep(2, 'Sources and settings', ...settingsStep(draft, told)),
         h.createStep(3, 'What you have', ...haveStep(draft)));
@@ -146,9 +150,35 @@
     return node;
   }
 
+  // How much of an existing deck changes: five cards, the first step's own. Selected changes
+  // adds its box under them.
+  function levelCards(draft) {
+    const node = make('div', 'pick-cards');
+    node.setAttribute('role', 'group');
+    node.setAttribute('aria-label', 'How much changes');
+    for (const [level, title, says] of h.words.LEVELS) {
+      h.add(node, h.pickCard(title, says, draft.level === level, () => {
+        draft.level = level;
+        h.paintNew(false);
+      }, 'level ' + level));
+    }
+    const selected = draft.level === 'selected' ? h.field('new-selected',
+      'Which slides, and what to fix', draft, 'selected', { long: true, limit: 4000,
+        hint: 'For example: “Slides 3 and 7: the chart is unreadable. Slide 12: shorten the '
+          + 'bullets.” Only those slides change.' }) : null;
+    return [make('p', 'field-label', 'How much changes'), node,
+      h.alertLine('new-level-problem'), selected];
+  }
+
+  // Whether the deck's looks are drawn for it: from an idea or a document, and an existing
+  // deck redesigned or reworked.
+  function looked(draft) {
+    return draft.route !== 'existing' || LOOKED_LEVELS.includes(draft.level);
+  }
+
   // What happens once it starts, as the look chosen says.
   function startsSays(draft) {
-    return draft.look === 'default'
+    return draft.look === 'default' || !looked(draft)
       ? 'It starts at once and runs on its own, with no stops. The deck opens here when it is '
         + 'ready, for you to change and deliver.'
       : 'It starts at once and runs on its own. It stops once, for you to pick the look when '
@@ -158,10 +188,12 @@
   function settingsStep(draft, told) {
     const limits = (h.view.setup && h.view.setup.limits) || {};
     const words = h.words;
-    const research = h.chip('Research first', draft.research, (on) => {
+    // An existing deck has no research: what it says is the deck's own.
+    const researched = draft.route !== 'existing';
+    const research = researched ? h.chip('Research first', draft.research, (on) => {
       draft.research = on;
       h.paintNew(false);
-    }, 'research');
+    }, 'research') : null;
     const options = make('details', 'new-options');
     options.dataset.key = 'new-options';
     const summary = make('summary', '', 'Options');
@@ -173,13 +205,14 @@
       make('p', 'quiet', (h.limitsSays(limits) || 'No limits are set for this computer.')
         + ' A deck that reaches a limit stops and asks you. The limits are changed in '
         + 'Settings.'));
+    const asked = researched && draft.research;
     return [
-      h.add(make('div', 'field'), research, make('p', 'quiet field-hint',
+      researched ? h.add(make('div', 'field'), research, make('p', 'quiet field-hint',
         (draft.route === 'document' ? 'Only where your document turns out to be material to '
           + 'build from. ' : '') + 'The research is planned from your questions, or from the '
-          + 'goal, and done on its own. What it found is kept with the deck.')),
-      draft.research ? h.researchFromField(draft) : null,
-      draft.research ? h.field('research-questions', 'What should the research answer? '
+          + 'goal, and done on its own. What it found is kept with the deck.')) : null,
+      asked ? h.researchFromField(draft) : null,
+      asked ? h.field('research-questions', 'What should the research answer? '
         + '(optional)', draft, 'researchQuestions', { long: true, rows: 4,
         hint: 'One question a line, at most 8.' }) : null,
       h.field('new-minutes', 'About how long, in minutes (optional)', draft, 'minutes',
@@ -197,13 +230,13 @@
         }, 'new-output'),
       words.OUTPUTS[draft.output][0] === 'google' && !h.googleReady()
         ? make('p', '', words.NOT_CONNECTED) : null,
-      h.choice('The look', LOOKS.map((one) => one[1]),
+      looked(draft) ? h.choice('The look', LOOKS.map((one) => one[1]),
         Math.max(0, LOOKS.findIndex((one) => one[0] === draft.look)), (index) => {
           draft.look = LOOKS[index][0];
           const said = h.byId('new-starts');
           if (said) said.textContent = startsSays(draft);
         }, 'new-look', 'The brand draws a slide of your outline in each of its looks. Pick '
-          + 'one then, or leave it to the brand.'),
+          + 'one then, or leave it to the brand.') : null,
       options,
     ];
   }
@@ -223,6 +256,10 @@
     if (draft.route === 'document') {
       nodes.push(make('p', '', 'The document: a script, notes, a write-up or a transcript.'),
         ...h.sourceFields(draft), readingField(draft));
+    }
+    if (draft.route === 'existing') {
+      nodes.push(make('p', '', 'Your deck: the original is never changed. What you get is '
+        + 'always a new copy.'), ...h.sourceFields(draft));
     }
     return nodes;
   }
@@ -249,7 +286,8 @@
   // Every step is checked before anything is sent; the first gap, in the order the sheet is
   // filled, has the focus.
   function ready(draft) {
-    const names = ['What it is about', ...(draft.route === 'document' ? ['Your document'] : [])];
+    const names = ['What it is about', ...(draft.route === 'document' ? ['Your document']
+      : draft.route === 'existing' ? ['Your deck and what changes'] : [])];
     const rank = (key) => (GAPS.includes(key) ? GAPS.indexOf(key) : GAPS.length);
     const missing = names.flatMap((name) => h.missingIn(draft, name))
       .sort((one, other) => rank(one) - rank(other));
@@ -264,9 +302,6 @@
   // is read when that was said. A desk deck has no review level and no first-draft choice.
   function formFor(draft) {
     const [form, uploads] = h.formOf(draft);
-    for (const gone of ['review_level', 'review_seen', 'review_default', 'initial_review']) {
-      delete form[gone];
-    }
     form.flow = 'desk';
     form.look = draft.look === 'default' ? 'default' : 'pick';
     if (draft.route === 'document' && draft.readAs) form.reading = draft.readAs;

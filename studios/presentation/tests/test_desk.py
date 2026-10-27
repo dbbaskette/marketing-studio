@@ -17,7 +17,7 @@ from urllib.parse import urlencode
 
 import helpers
 import runner_support
-from runner_support import LONG_OUTLINE, QUOTE, URL, unsettled
+from runner_support import LONG_OUTLINE, QUOTE, URL, read_word_for_word, unsettled
 from test_runner_page import PageCase
 
 import server
@@ -295,15 +295,16 @@ class ScreenTests(ScriptedPage, PageCase):
                                                     'body': {'error': 'There is no deck there.'}}]})
         result = self.run_page(answers, [
             {'click': 'New deck'}, {'snapshot': 'routes'},
-            {'click': 'An existing deck'}, {'click': 'Start the deck'},
+            {'click': 'An existing deck'}, {'click': 'Start'},
             {'snapshot': 'missing'},
             {'attach': 'The deck, as a .pptx',
              'files': [{'name': 'old.pptx', 'bytes': DECK.decode('latin-1')}]},
             {'click': 'Selected changes'}, {'click': 'Polish'}, {'snapshot': 'levels'},
             {'fill': 'A short title', 'value': 'Old deck'},
-            {'snapshot': 'last'}, {'click': 'Start the deck'}])
+            {'snapshot': 'last'}, {'click': 'Start'}])
         shots = result['snapshots']
-        # The desk's start names the three kinds; an existing deck keeps the form it has now.
+        # The desk's start names the three kinds, and an existing deck's levels on its first
+        # step (test_desk_page.StartTests).
         for route in ('An idea', 'A document', 'An existing deck'):
             self.assertTrue(any(name.startswith(route) for name in shots['routes']['buttons']))
         self.assertIn('Choose the file first.', shots['missing']['text'])
@@ -313,18 +314,22 @@ class ScreenTests(ScriptedPage, PageCase):
                       'Selected changes'):
             self.assertIn(level, shots['levels']['text'])
         self.assertIn('Chosen: old.pptx', shots['levels']['text'])
-        self.assertIn('it stops for the slides read from your deck and the deck', shots['last']['text'])
+        self.assertIn('It starts at once and runs on its own, with no stops.',
+                      shots['last']['text'])
         (address, body), = self.posts(result)
         self.assertEqual(address, '/api/decks')
         self.assertEqual(set(body), {'form', 'uploads'})
         form = body['form']
-        self.assertEqual((form['route'], form['level'], form['source'], form['title']),
+        self.assertEqual((form['route'], form['level'], form['source'], form['title'],
+                          form['flow']),
                          ('existing', 'polish', {'kind': 'upload', 'name': 'old.pptx'},
-                          'Old deck'))
+                          'Old deck', 'desk'))
         self.assertEqual(base64.b64decode(body['uploads']['old.pptx']), DECK)
-        # What the page sends is what the server takes.
+        # What the page sends is what the server takes: a deck on the desk.
+        self.workers.queued['outline'] = [read_word_for_word(self)]
         made = self.post('decks', body)
-        self.assertEqual(self.run_of(made['path'])['gate']['name'], 'gate:classify')
+        self.assertEqual(self.run_of(made['path'])['gate']['name'], 'gate:build')
+        self.assertTrue(self.run_of(made['path'])['desk']['arrived'])
 
     def deck_screen(self, path: str, steps: list, narrow: bool = False, **more) -> dict:
         """The deck screen, opened from home, with the deck as the runner shows it now."""
@@ -649,68 +654,33 @@ class ScreenTests(ScriptedPage, PageCase):
         posted = [body for address, body in self.posts(result) if address == '/api/decks']
         self.assertNotIn('initial_review', posted[0]['form'])
 
-    def test_where_this_deck_stops_is_chosen_on_the_form(self):
-        answers = self.answers(**{'GET /api/setup': [self.setup_with(review_level='balanced')],
-                                  'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
-                                  'GET /api/run': [{'status': 404,
-                                                    'body': {'error': 'There is no deck there.'}}]})
-        # A deck from a deck you have keeps the gated form, and its choice of where it stops.
-        result = self.run_page(answers, [
-            {'click': 'New deck'}, {'click': 'An existing deck'},
-            {'attach': 'The deck, as a .pptx',
-             'files': [{'name': 'old.pptx', 'bytes': DECK.decode('latin-1')}]},
-            {'click': 'Full rework'},
-            {'fill': 'A short title', 'value': 'Rolling restarts'},
-            {'snapshot': 'balanced'},
-            {'click': 'Step by step'}, {'snapshot': 'step'},
-            {'click': 'Start the deck'}])
-        balanced, step = result['snapshots']['balanced'], result['snapshots']['step']
-        self.assertIn('Where it stops', balanced['text'])
-        for level in ('Balanced', 'Automatic draft', 'Step by step'):
-            self.assertIn(level, balanced['buttons'])
-        self.assertIn('Balanced', balanced['pressed'])
-        self.assertIn('Use this for new work in every studio', balanced['buttons'])
-        self.assertIn('Balanced: it stops for the direction (the outline and the look '
-                      'together) and the deck', balanced['text'])
-        self.assertIn('Step by step: it stops for the slides read from your deck, the outline, '
-                      'the look and the deck', step['text'])
-        self.assertFalse([link for link in balanced['links'] + step['links']
-                          if link['href'].startswith('/onboarding/')],
-                         'nothing on the form leaves it')
-        posted = [body for address, body in self.posts(result) if address == '/api/decks']
-        form = posted[0]['form']
-        self.assertEqual((form['review_level'], form['review_seen'], form['review_default']),
-                         ('step_by_step', 'balanced', False))
-
-    def test_the_form_names_the_stops_the_runner_makes(self):
+    def test_the_start_says_the_one_stop_an_existing_deck_makes(self):
         import route_stops
         titles = {'brand-only': 'Brand only', 'polish': 'Polish',
                   'redesign': 'Redesign, keep content', 'rework': 'Full rework',
                   'selected': 'Selected changes'}
         for case, form in route_stops.FORM.items():
-            # A deck from an idea or a document starts on the desk, which has no stops to
-            # name (test_desk_page.StartTests); a deck you have keeps this form.
+            # A desk deck stops only for a look the start chose to pick: an existing deck's
+            # looks are drawn only where it is redesigned. No start chooses a review level.
             if form['route'] != 'existing':
                 continue
-            steps = [{'click': 'An existing deck'},
-                     {'attach': 'The deck, as a .pptx',
-                      'files': [{'name': 'old.pptx', 'bytes': DECK.decode('latin-1')}]},
-                     {'click': titles[form['level']]}]
-            if form['level'] == 'selected':
-                steps.append({'fill': 'Which slides, and what to fix',
-                              'value': 'Slide 2: shorten it.'})
-            steps += [{'fill': 'A short title', 'value': 'Old deck'}]
-            for level in route_stops.LEVELS:
-                steps += [{'click': route_stops.LEVEL_WORDS[level]}, {'snapshot': level}]
             answers = self.answers(**{
                 'GET /api/setup': [self.setup_with(review_level='balanced')],
                 'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]})
-            result = self.run_page(answers, [{'click': 'New deck'}, *steps])
+            result = self.run_page(answers, [
+                {'click': 'New deck'}, {'click': 'An existing deck'},
+                {'click': titles[form['level']]}, {'snapshot': 'level'}])
             with self.subTest(case=case):
                 self.assertEqual(result['errors'], [])
-                for level in route_stops.LEVELS:
-                    self.assertIn(route_stops.line(case, level),
-                                  result['snapshots'][level]['text'], (case, level))
+                shot = result['snapshots']['level']
+                looks = 'gate:look' in route_stops.STOPS[form['stops']]['step_by_step']
+                self.assertIn('It stops once, for you to pick the look' if looks
+                              else 'It starts at once and runs on its own, with no stops.',
+                              shot['text'])
+                self.assertEqual('Pick it when the samples are drawn' in shot['buttons'], looks)
+                for gone in ('Review level', 'Where it stops',
+                             'Use this for new work in every studio'):
+                    self.assertNotIn(gone, shot['text'])
 
     def test_the_plan_says_where_each_question_is_answered_from(self):
         path = self.started(research=True)
