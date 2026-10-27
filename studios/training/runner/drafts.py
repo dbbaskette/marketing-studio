@@ -18,13 +18,18 @@ what is Ready or what the person sent (`copied`).
 """
 from __future__ import annotations
 
+import hashlib
+import re
+from contextlib import contextmanager
 from pathlib import Path
 
+import checks
 import home
 import workspace
 from studio_core import research_view, review_policy, step_times
-from studio_core.drafting import basis
-from studio_core.drafting.store import Store
+from studio_core.drafting import basis, parts
+from studio_core.drafting import record as desk_record
+from studio_core.drafting.store import Store, require_held
 
 import runner  # noqa: F401  puts the core on the import path
 
@@ -521,3 +526,385 @@ def view(engine, root) -> dict:
                                   for entry in listed]},
         'job': next((dict(job) for job in reversed(jobs) if basis.busy(job)), None),
         'team': {'ours': mine, 'driver': who, 'last_shared': last}}
+
+
+# --- parts: a training's guide, brief and plan as piece 3's parts ------------------------
+#
+# A material's file stays the one copy of its text. Each codec splits it into an opening
+# (everything before the first `## `, the `# ` title included) and its `## ` sections, and
+# joins them back to the same file byte for byte: each part keeps the blank lines around it
+# as they were written (`layout`), so a changed part goes into the file as it stood. A
+# section's covers or findings note is kept on the section, out of its text.
+
+NO_PARTS = 'Only a guide, a brief or a plan is written in parts.'
+BRIEF_SHAPE = 'A brief keeps its eight numbered sections, in order.'
+LOCKED = 'Sources is kept from the findings cited. Change the references in the text instead.'
+SECTION_LINE = re.compile(r'## +(\S.*?)[ \t\r]*')
+BLANK_LINES = re.compile(r'(?:[ \t\r]*\n)*')
+NUMBERED_HEADING = re.compile(r'(\d+)\. (.+)')
+ANY_SECTION_LINE = re.compile(r'^[ \t]*## ', re.MULTILINE)
+
+
+class _Note:
+    """A section's note: the key it is kept under, how its line reads, and the IDs in it."""
+
+    def __init__(self, key: str, ids: re.Pattern):
+        self.key, self.ids = key, ids
+        self.line = re.compile(r'[ \t]*<!--\s*' + key + r':\s*(.*?)\s*-->[ \t\r]*')
+
+    def read(self, line: str) -> list[str] | None:
+        found = self.line.fullmatch(line)
+        return None if found is None else self.ids.findall(found.group(1))
+
+    def written(self, ids) -> str:
+        return f"<!-- {self.key}: {' '.join(ids)} -->"
+
+
+COVERS_NOTE = _Note('covers', checks.COVERED_ID)
+FINDINGS_NOTE = _Note('findings', checks.FINDING_ID)
+
+
+def _id(seed: str, taken: set) -> str:
+    """A section id made from where the section is in its file, so the same file always
+    gives the same ids: a read holding the lock and one without agree."""
+    count = 0
+    while True:
+        value = hashlib.sha256(f'{seed}:{count}'.encode()).hexdigest()[:8]
+        if value not in taken:
+            taken.add(value)
+            return value
+        count += 1
+
+
+def _cut(body: str, note: _Note | None) -> dict:
+    """A part's written text as the blank lines before it, its note line and the blank lines
+    after that, its words, and what follows them."""
+    lead = BLANK_LINES.match(body).group(0)
+    rest, line, gap, ids = body[len(lead):], None, '', None
+    if note is not None:
+        first, newline, after = rest.partition('\n')
+        ids = note.read(first)
+        if ids is not None:
+            line, rest = first, newline + after
+            if rest:
+                gap = '\n' + BLANK_LINES.match(rest, 1).group(0)
+                rest = rest[len(gap):]
+    words = rest.rstrip()
+    return {'lead': lead, 'line': line, 'gap': gap, 'words': words,
+            'tail': rest[len(words):], 'ids': ids}
+
+
+def _starts(lines: list[str], code_too: bool) -> list[int]:
+    """The lines that start a section: each `## ` line outside fenced code, or in it too
+    when `code_too` (a brief's check reads every `## ` line)."""
+    outside = [True] * len(lines) if code_too else [free for _, free in parts.free(lines)]
+    return [at for at, line in enumerate(lines) if outside[at] and SECTION_LINE.fullmatch(line)]
+
+
+def _split(markdown: str, note: _Note | None, code_too: bool, locked) -> dict:
+    """A material's file as its opening and sections, each with how it was written around
+    its words; `locked(heading)` says which section is not typed in."""
+    lines = markdown.split('\n')
+    offsets, at = [], 0
+    for line in lines:
+        offsets.append(at)
+        at += len(line) + 1
+    starts = _starts(lines, code_too)
+    opening = _cut(markdown[:offsets[starts[0]] if starts else len(markdown)], None)
+    draft = {'opening': opening['words'],
+             'layout': {'lead': opening['lead'], 'tail': opening['tail'],
+                        'blank': not opening['words']}}
+    sections, taken = [], set()
+    digest = hashlib.sha256(markdown.encode()).hexdigest()
+    for number, start in enumerate(starts):
+        head = lines[start]
+        heading = SECTION_LINE.fullmatch(head).group(1)
+        end = offsets[starts[number + 1]] if number + 1 < len(starts) else len(markdown)
+        cut = _cut(markdown[offsets[start] + len(head):end], note)
+        section = {'id': _id(f'{digest}:{number}', taken), 'heading': heading, 'brief': '',
+                   'text': cut['words'], 'locked': locked(heading),
+                   'layout': {'head': head, 'lead': cut['lead'], 'line': cut['line'],
+                              'gap': cut['gap'], 'tail': cut['tail'],
+                              'blank': not cut['words']}}
+        if note is not None:
+            section[note.key] = cut['ids'] or []
+        sections.append(section)
+    draft['sections'] = sections
+    return draft
+
+
+def _join(draft: dict, note: _Note | None) -> str:
+    """The file a draft's parts make: each part as it was written around its words, and a
+    part whose words came or went (or whose note came) written the plain way."""
+    sections = draft['sections']
+    opening, layout = draft.get('opening') or '', draft.get('layout') or {}
+    if layout and layout.get('blank') == (not opening):
+        text = layout['lead'] + opening + layout['tail']
+    else:
+        text = opening + ('\n\n' if sections else '\n') if opening else ''
+    for number, section in enumerate(sections):
+        last = number == len(sections) - 1
+        words, kept = section.get('text') or '', section.get('layout') or {}
+        head = kept.get('head')
+        if not head or SECTION_LINE.fullmatch(head).group(1) != section['heading']:
+            head = '## ' + section['heading']
+        line, ids = None, section.get(note.key) or [] if note is not None else []
+        if note is not None and kept.get('line') is not None:
+            line = kept['line'] if note.read(kept['line']) == ids else (
+                note.written(ids) if ids else None)
+        elif ids:
+            line = note.written(ids)
+        if kept and kept.get('blank') == (not words) and (
+                line is None or kept.get('line') is not None):
+            noted = line + kept['gap'] if line is not None else ''
+            written = head + kept['lead'] + noted + words + kept['tail']
+            text += written if last or written.endswith('\n') else written + '\n'
+        elif line is None and not words:
+            text += head + ('\n' if last else '\n\n')
+        else:
+            noted = line + ('\n\n' if words else '') if line is not None else ''
+            text += head + '\n\n' + noted + words + ('\n' if last else '\n\n')
+    return text
+
+
+def _section_heading(text: str, level: int = 2) -> str:
+    """The marks of a `## ` heading a part holds outside code, which would start a section."""
+    return parts.heading_in(text, 2)
+
+
+def _sources(heading: str) -> bool:
+    return heading.lower() == 'sources'
+
+
+def _brief_fits(draft: dict, kind: str) -> bool:
+    """Whether a brief's sections are its kind's eight, numbered and in order."""
+    expected = checks.BRIEF_SECTIONS[kind]
+    sections = draft.get('sections') or []
+    if len(sections) != len(expected):
+        return False
+    for number, (section, title) in enumerate(zip(sections, expected, strict=True), 1):
+        found = NUMBERED_HEADING.fullmatch(section['heading'])
+        if not found or int(found.group(1)) != number \
+                or found.group(2).strip().lower() != title.lower():
+            return False
+    return True
+
+
+def _brief_kind(draft: dict) -> str:
+    """Which brief a draft is: its title says, or else its sections do."""
+    title = (draft.get('opening') or '').lstrip()
+    for kind, start in checks.BRIEF_TITLES.items():
+        if title.startswith(start):
+            return kind
+    for kind in checks.BRIEF_SECTIONS:
+        if _brief_fits(draft, kind):
+            return kind
+    raise ValueError(BRIEF_SHAPE)
+
+
+def _brief_split(markdown: str) -> dict:
+    draft = _split(markdown, FINDINGS_NOTE, True,
+                   lambda heading: _sources(heading.partition('. ')[2].strip()))
+    draft['kind'] = _brief_kind(draft)
+    if not _brief_fits(draft, draft['kind']):
+        raise ValueError(BRIEF_SHAPE)
+    return draft
+
+
+def _brief_join(draft: dict) -> str:
+    if not _brief_fits(draft, draft.get('kind') or _brief_kind(draft)):
+        raise ValueError(BRIEF_SHAPE)
+    return _join(draft, FINDINGS_NOTE)
+
+
+def _brief_heading(text: str, level: int = 2) -> str:
+    """A brief's check reads every `## ` line as a section, in code too: a part holds none."""
+    return '##' if ANY_SECTION_LINE.search(text) else parts.heading_in(text, 2)
+
+
+def GuideCodec() -> parts.Codec:
+    """A guide: its opening, then each `## ` section with its covers note. Sources, which
+    the references resolve to, is kept from the findings and not typed in."""
+    return parts.Codec(
+        fixed=('opening',), single=(), thing='draft', noun='section',
+        split=lambda markdown: _split(markdown, COVERS_NOTE, False, _sources),
+        join=lambda draft, after=(): _join(draft, COVERS_NOTE),
+        deepest=lambda draft: 2, heading_in=_section_heading)
+
+
+def BriefCodec() -> parts.Codec:
+    """A brief: its title, then its eight numbered sections in order, each with its findings
+    note. "8. Sources" is not typed in, and no section is added, taken out or moved."""
+    return parts.Codec(
+        fixed=('opening',), single=(), thing='draft', noun='section', split=_brief_split,
+        join=lambda draft, after=(): _brief_join(draft), deepest=lambda draft: 2,
+        heading_in=_brief_heading)
+
+
+def PlanCodec() -> parts.Codec:
+    """A plan: its opening, then the blueprint's `## ` sections, none of them locked."""
+    return parts.Codec(
+        fixed=('opening',), single=(), thing='draft', noun='section',
+        split=lambda markdown: _split(markdown, None, False, lambda heading: False),
+        join=lambda draft, after=(): _join(draft, None),
+        deepest=lambda draft: 2, heading_in=_section_heading)
+
+
+CODECS = {'document': GuideCodec(), 'brief': BriefCodec(), 'blueprint': PlanCodec()}
+
+
+def codec_of(name: str) -> parts.Codec:
+    """The codec a material's file is read with, by the material's name."""
+    found = CODECS.get(workspace.split(name)[0])
+    if found is None:
+        raise ValueError(NO_PARTS)
+    return found
+
+
+def _folder_name(name: str) -> str:
+    return name.replace(':', '-').replace('@', '-')
+
+
+class TrainingStore(Store):
+    """Training Studio's desk store over one training's folder.
+
+    A material's record is `work/drafts/<name>/` in its level folder (never shared: `work/`
+    is ignored), its waiting Finishing proposals are in this computer's data folder, and a
+    write saves the joined parts as the material's file. Every desk write runs holding the
+    engine's `files` lock, and `held()` is whether this thread holds it."""
+
+    product, word = 'Training Studio', 'training'
+
+    def __init__(self, engine, root: Path):
+        self.engine, self.root = engine, Path(root)
+        self._making: tuple[str, str | None] | None = None
+
+    def held(self) -> bool:
+        # `files` is a threading.RLock: `_is_owned` says whether this thread holds it, as
+        # threading.Condition asks it. Another thread holding it is not this one.
+        return self.engine.files._is_owned()
+
+    def folder(self, name: str) -> Path:
+        from runner import pipeline
+        return pipeline.place(self.root, workspace.split(name)[1], 'work/drafts') \
+            / _folder_name(name)
+
+    def local(self, name: str, *names: str) -> Path:
+        return home.data_root().joinpath('draft-proposals', self.root.name, _folder_name(name),
+                                         *names)
+
+    @contextmanager
+    def making(self, via: str, session: str | None):
+        """The kind of change and the page's session that writes made inside are saved
+        with, for a caller (piece 3's desk) that passes neither."""
+        before, self._making = self._making, (via, session)
+        try:
+            yield
+        finally:
+            self._making = before
+
+    def write(self, name: str, draft: dict, changed, via: str | None = None,
+              session: str | None = None) -> dict:
+        """One revision on, then the joined parts saved as the material's file: an edit,
+        which keeps what the material was built from, then accepted on the desk unless it is
+        out of date (an edit never clears that). The record keeps the file's hash."""
+        require_held(self)
+        made_via, made_session = self._making or ('save', None)
+        via = via or made_via
+        session = session if session is not None else made_session
+        text = codec_of(name).join(draft)
+        desk_record.advance(draft, changed, self.now())
+        spec = workspace.artifact(self.root, workspace.load(self.root), name)
+        joined = self.path(name, Path(spec['file']).name)
+        self.atomic(joined, text.encode('utf-8'))
+        try:
+            entry = workspace.save(self.root, name, source=joined, edit=True, via=via,
+                                   session_token=session)
+        finally:
+            joined.unlink(missing_ok=True)
+        draft['file_sha256'] = entry['sha256']
+        self.write_json(self.path(name, 'draft.json'), draft)
+        if workspace.statuses(self.root, workspace.load(self.root)).get(name) != 'stale':
+            workspace.accept_desk(self.root, name)
+        return draft
+
+
+def _noted(section: dict) -> tuple:
+    return tuple(section.get('covers') or section.get('findings') or ())
+
+
+def follow(before: dict | None, after: dict) -> dict:
+    """Give a fresh split the ids of the record it replaces: by heading, then by covers or
+    findings note, then by place. A section none of them matches keeps the id its split gave
+    it, or another when that one is taken."""
+    if not before:
+        return after
+    old = list(before.get('sections') or ())
+    used, ids = set(), [None] * len(after['sections'])
+    for same in (lambda one, other, at: one['heading'] == other['heading'],
+                 lambda one, other, at: bool(_noted(one)) and _noted(one) == _noted(other),
+                 lambda one, other, at: old.index(other) == at):
+        for at, section in enumerate(after['sections']):
+            if ids[at] is None:
+                found = next((other for other in old
+                              if other['id'] not in used and same(section, other, at)), None)
+                if found is not None:
+                    ids[at] = found['id']
+                    used.add(found['id'])
+    for at, section in enumerate(after['sections']):
+        if ids[at] is None:
+            ids[at] = section['id'] if section['id'] not in used else _id(section['id'], used)
+            used.add(ids[at])
+        section['id'] = ids[at]
+    return after
+
+
+def current(store: TrainingStore, codec: parts.Codec, name: str) -> dict:
+    """A material's draft record, following its file. When something else wrote the file (a
+    step, a Google pull, the conversation helper, another computer), it is split again: each
+    part keeps its id where it can (`follow`), the revision goes up by one, and every part
+    is marked changed, so a form opened before is told to reload. The record is kept only
+    holding the engine's `files`; without it, the same file reads the same way."""
+    root = store.root
+    file = workspace.managed(root, workspace.artifact(root, workspace.load(root), name)['file'])
+    digest = workspace.sha256_file(file)
+    if digest is None:
+        raise ValueError(UNWRITTEN.format(it=workspace.sentence(workspace.label(name))))
+    try:
+        before = store.read(name)
+    except ValueError:
+        before = None
+    if before is not None and before.get('file_sha256') == digest:
+        return before
+    draft = follow(before, codec.split(file.read_bytes().decode('utf-8')))
+    revision = (before or {}).get('revision', 0) + 1
+    draft.update(revision=revision, updated_at=store.now(), file_sha256=digest,
+                 changed={} if before is None else {
+                     part: revision for part in (*codec.fixed, *(
+                         section['id'] for section in draft['sections']))})
+    if store.held():
+        store.write_json(store.path(name, 'draft.json'), draft)
+    return draft
+
+
+class TrainingDesk(desk_record.Desk):
+    """Piece 3's desk over a training's store and one material's codec. A read follows the
+    file (`current`); a save names its kind of change, one of `workspace.VIA`, and the page's
+    session, which go on the material's save event; a locked part (Sources) is never typed
+    in. `versions` keeps the text a save replaces: Task 11 passes the material's own history;
+    until then, piece 3's version files in the record's folder."""
+
+    def __init__(self, store: TrainingStore, codec: parts.Codec, versions=None):
+        super().__init__(store, codec, workspace.VIA, versions)
+
+    def read(self, ident: str) -> dict:
+        return current(self.store, self.codec, ident)
+
+    def save(self, ident, seen, part, text, source='save', session=None):
+        if source not in workspace.VIA:
+            raise ValueError(workspace.NO_VIA)
+        if part not in self.codec.fixed and (
+                self.codec.section(self.read(ident), part) or {}).get('locked'):
+            raise ValueError(LOCKED)
+        with self.store.making(source, session):
+            return super().save(ident, seen, part, text, source=source, session=session)
