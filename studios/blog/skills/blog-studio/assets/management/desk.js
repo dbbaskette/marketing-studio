@@ -1200,8 +1200,8 @@ function reviewBlocks(text,marks){
 // The newest Copy edit, and Humanize when it is on, and what is left of them: open suggestions
 // whose words are still in the text, placed where they sit, in reading order (by part, then
 // by place in it) and numbered across both; the flagged ones; the gone and retired ones. A
-// suggestion keeps its number while these sets are shown, so a number still names the one
-// accepted: a retired suggestion says which one changed its words, a carried one which it took in.
+// suggestion keeps its number while its set is shown, so a number still names the one
+// accepted: a retired suggestion says which one changed its words, a carried one which it fits.
 function sReviewState(held){
   const view=held.view,finishing=view.finishing||{},human=view.review?.humanize||null,r=held.review||{};
   const kind=view.working?.kind,working=kind==='finish-copyedit'||kind==='finish-humanize'?view.working:null;
@@ -1222,9 +1222,11 @@ function sReviewState(held){
     pending.push({...row,at,base:item.after,baseFlag:item.flag||'',...(alternative?{picked:pick,after:alternative.after,flag:alternative.flag||''}:{})});
   }
   pending.sort((a,b)=>parts.indexOf(a.part)-parts.indexOf(b.part)||a.at-b.at||REVIEW_TOOLS.indexOf(a.tool)-REVIEW_TOOLS.indexOf(b.tool));
-  const signature=sets.map(([tool,set])=>tool+':'+set.job).join(' ');
-  if(r.numbersFor!==signature){r.numbersFor=signature;r.numbers={};}
-  const numbers=r.numbers||{};let next=Math.max(0,...Object.values(numbers));
+  // A set that is no longer shown takes its numbers with it; a set that lands later (Humanize
+  // after Copy edit's fixes) is numbered after the ones already shown, which keep theirs.
+  const shownSets=new Set(sets.map(([tool,set])=>tool+':'+set.job+':'));
+  const numbers=r.numbers=Object.fromEntries(Object.entries(r.numbers||{}).filter(([key])=>shownSets.has(key.slice(0,key.lastIndexOf(':')+1))));
+  let next=Math.max(0,...Object.values(numbers));
   for(const item of pending)item.number=numbers[item.key]??(numbers[item.key]=++next);
   const number=ref=>{const tool=sets.find(([,set])=>set.job===ref?.job)?.[0];return tool?numbers[tool+':'+ref.job+':'+ref.id]||null:null;};
   for(const item of pending)if(item.carried?.length)item.carriedBy=item.carried.map(number);
