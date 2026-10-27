@@ -1088,5 +1088,34 @@ class SavedSettingsTests(unittest.TestCase):
             self.assertFalse((base / 'studios-config.json').exists())
 
 
+class NoticeFileTests(unittest.TestCase):
+    """The notice file moving to the studios config leaves, byte for byte, as the code wrote
+    it before setup shared its parts."""
+
+    def test_the_notice_file_is_written_as_before(self):
+        import os as _os
+        import tempfile as _tempfile
+        from pathlib import Path as _Path
+        from unittest import mock as _mock
+        from runner import settings as _settings, setup as _setup
+        holder = _tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        base = _Path(holder.name)
+        with _mock.patch.dict(_os.environ, {'TRAINING_STUDIO_DATA': str(base / 'data'), 'HOME': str(base),
+                                            'STUDIOS_CONFIG': str(base / 'studios-config.json')}):
+            (base / 'data').mkdir()
+            _settings.path().write_text('{"schema": 1, "agent": "codex"}\n')
+            (base / 'studios-config.json').write_text(
+                '{"schema": 1, "assistant": {"agent": "claude"}}\n')
+            self.assertEqual(_setup.migrate(), [])
+            self.assertEqual(_setup.notice_path().read_bytes(),
+                             b'{\n  "says": "Training Studio now keeps the values every studio shares '
+                             b'only in ~/studios-config.json, which said otherwise for the agent, '
+                             b'so what this computer had chosen for those is no longer used."\n}\n')
+            self.assertIn('Training Studio now keeps', _setup.notice())
+            _setup.notice_read()
+            self.assertIsNone(_setup.notice())
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -291,7 +291,7 @@
       "path": "runner/setup.py",
       "from": "runner/setup.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "with defaults for a deck (person, brand, variant, output); the brand skill's repository (save_brand) and the studios config part follow runner/setup.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e; adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): no for_all_studios, share_all or base; team_moved, shared_notice, notice_read, shared_seen and migrate; name, brand, variant and output shared too"
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/setup.py`; the rest is this studio's. The port: with defaults for a deck (person, brand, variant, output); the brand skill's repository (save_brand) and the studios config part follow runner/setup.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e; adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): no for_all_studios, share_all or base; team_moved, shared_notice, notice_read, shared_seen and migrate; name, brand, variant and output shared too"
     },
     {
       "path": "runner/upkeep.py",
