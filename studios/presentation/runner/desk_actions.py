@@ -27,7 +27,7 @@ from runner import briefs, decks, desk, documents, gitstate, marks, stages
 from studio_core import research_view
 from studio_core.drafting import prompts
 from runner.jobs import gate_state, sha256_of
-from runner.steps import build, intake, words
+from runner.steps import build, finishing, intake, words
 from runner.steps import deliver as delivering
 from runner.steps import look as looks
 from runner.steps import outline as outlines
@@ -40,6 +40,13 @@ LEFT_OUT_ALREADY = 'Those findings are left out already.'
 PASTED = 'Pasted text'
 SOURCES_TOLD = ('The person\'s own sources are in your input "sources". Add only what they, '
                 'the slide or the outline support.')
+CHECK_BUSY = 'The deck is being redrawn now. Check it again when that ends.'
+REVIEW_BUSY = 'The deck is being redrawn now. Review it when that ends.'
+REVIEW_DELIVERED = ('This deck is delivered as it is. A change here makes the next revision: '
+                    'review that one before you deliver it.')
+OWN_REVIEW = ('Your own deck at Selected changes is not reviewed: only the slides you name '
+              'change, and the brand check looks at the copy.')
+NOT_DRAWN = 'This slide is not in the deck as it is drawn now, so it was not noted. Skip it.'
 EDITS = Path('work') / 'desk' / 'edits'   # words saved while a chain ran, until they land
 AGAIN = 3   # chains one rest on the desk may run for notes that came while it was put together
 # Selected changes: the plan and the shared copy as they were before the change under way,
@@ -178,7 +185,28 @@ class DeskActions:
                 'level': desk.level(record), 'words_locked': desk.words_locked(record),
                 'notes_locked': desk.OWN_NOTES if desk.selected(record) else None,
                 'sources': documents.listed(root),
-                **self._desk_research_view(root, record)}
+                **self._desk_research_view(root, record),
+                **self._desk_finishing_view(root, record, state, shown)}
+
+    def _desk_finishing_view(self, root, record: dict, state: dict, shown: dict) -> dict:
+        """The Finishing panel: the newest proposals of each tool, each finding with what
+        applying it redraws (its slide's price), the last render's brand check, what the
+        review and the speaker notes cost, and rehearse, counted here."""
+        prices = {card['id']: card['price'] for part in shown['sections']
+                  for card in part['slides']}
+        sets = finishing.summary(root)
+        for kept in sets.values():
+            for item in kept['items']:
+                if kept['kind'] != 'finish-notes' and item.get('part') in prices:
+                    item['price'] = prices[item['part']]
+        return {'finishing': sets, 'brand_check': finishing.brand(root, record),
+                'brand_current': (sets.get('brand') or {}).get('audit')
+                == finishing.audit_seen(state),
+                'finish_prices': {'review': finishing.review_price(record),
+                                  'notes': finishing.notes_price(record)},
+                'reviewing': bool(record.get('review_requested')),
+                'rehearse': finishing.rehearse(desk._outline(root),
+                                               (record.get('form') or {}).get('minutes'))}
 
     @staticmethod
     def _desk_research(record: dict) -> bool:
@@ -664,6 +692,8 @@ class DeskActions:
         from runner.steps import Work
         record = self._load(root)
         job = record['desk_jobs'][0]
+        if job.get('kind') == 'speaker-notes':
+            return self._desk_notes_job(root, run, job)
         field = self._desk_field(record, job['field'])
         own = desk.selected(record)
         named = 'words of one part of the slide' if own else words.field_words(field)
@@ -1316,6 +1346,250 @@ class DeskActions:
         self._desk_shared()
         self.wake(root)
         return self.view(root)
+
+    # --- Finishing -----------------------------------------------------------------------------
+
+    def desk_finish(self, path, tool, expected=None, again=False) -> dict:
+        """Run one of Finishing's tools (finishing.TOOLS). Each proposes, and nothing changes
+        until Apply: the brand check keeps what the last render's check says, or with
+        `again` what the brand's audit says of the deck now, in seconds; Review the deck asks
+        the deck's reviewer, bound to the deck on screen (`expected`); Speaker notes asks a
+        job for every slide's notes; Rehearse is counted on the page's view, with no job."""
+        if tool not in finishing.TOOLS:
+            raise WorkspaceError(finishing.NO_TOOL)
+        if again not in (None, False, True):
+            raise WorkspaceError('Say whether to check the deck again with true or false.')
+        if tool == 'review':
+            return self._desk_review(path, expected)
+        if tool == 'notes':
+            return self._desk_propose_notes(path)
+        root = self._desk_held(path)
+        if tool == 'rehearse':
+            return self.view(root)
+        with self.files:
+            record, state = self._load(root), build.read_state(root)
+            if not desk.arrived(record):
+                raise WorkspaceError(desk.NOT_YET)
+            if again:
+                if decks.delivered(root) is None and not desk.resting(record):
+                    raise WorkspaceError(CHECK_BUSY)
+                try:
+                    skill = self._skill()
+                except WorkspaceError:
+                    skill = None
+                finishing.check_again(root, record, skill)
+                state = build.read_state(root)
+            kept = finishing.proposals()
+            latest = kept.latest(str(root)).get('brand')
+            try:
+                current = kept.read(str(root), latest) if latest else None
+            except ValueError:
+                current = None
+            seen = finishing.audit_seen(state)
+            if again or current is None or current.get('audit') != seen:
+                kept.keep(str(root), secrets.token_hex(16), 'finish-brand',
+                          finishing.brand_items(finishing.brand(root, record)), audit=seen)
+        return self.view(root)
+
+    def _desk_review(self, path, expected) -> dict:
+        """Review the deck, as `review_draft` asks for a gated deck's first draft: the
+        reviewer job runs on the deck on screen (`expected`), and what it finds comes back
+        per slide as proposals; no section is sent back by itself (build.keep_review)."""
+        root = self._desk_held(path)
+        with self.files:
+            record, state = self._load(root), build.read_state(root)
+            if not desk.arrived(record):
+                raise WorkspaceError(desk.NOT_YET)
+            if desk.selected(record):
+                raise WorkspaceError(OWN_REVIEW)
+            if not state.get('rounds'):
+                raise WorkspaceError(finishing.NO_DECK)
+            if not expected or desk.on_screen(root, record, state) != expected:
+                raise WorkspaceError(desk.CHANGED)
+            if record.get('review_requested'):
+                return self.view(root)
+            if decks.delivered(root) is not None:
+                raise WorkspaceError(REVIEW_DELIVERED)
+            if not desk.resting(record) or desk.opened(record) or record.get('desk_jobs') \
+                    or (record.get('desk') or {}).get('edits') or record.get('halted'):
+                raise WorkspaceError(REVIEW_BUSY)
+            if desk.reviewed(state):
+                raise WorkspaceError(finishing.REVIEWED)
+            record['review_requested'] = {'at': home.now(), 'deck': expected}
+            # As review_draft does, except that what each step took is kept, for the price.
+            for name in ('build-review', 'build-repair', 'build-render'):
+                if name in record['steps']:
+                    record['steps'][name] = {**record['steps'][name], 'done': False}
+                self._fresh(record, name)
+            record['gates']['gate:build'] = {**(record['gates'].get('gate:build') or {}),
+                                             'state': 'absent'}
+            self._store(root, record)
+            self._commit(root, 'ask for a review of the deck on the desk')
+        self._desk_shared()
+        self.wake(root)
+        return self.view(root)
+
+    def _desk_reviewed(self, root) -> None:
+        """A desk deck's review is in: what it found is kept as proposals, per slide. Call it
+        holding `files`, as the review is kept."""
+        finishing.proposals().keep(str(root), secrets.token_hex(16), 'finish-review',
+                                   finishing.review_items(build.read_state(root)))
+
+    def _desk_propose_notes(self, path) -> dict:
+        """Speaker notes for every slide, proposed by a job from its words, the outline and
+        the sources: one change to a deck at a time, as a words job is."""
+        root = self._desk_held(path)
+        self.hold(root)
+        by = gitstate.identity(self.space().repo)
+        with self.files:
+            record = self._load(root)
+            if not desk.arrived(record):
+                raise WorkspaceError(desk.NOT_YET)
+            if desk.selected(record):
+                raise WorkspaceError(desk.OWN_NOTES)
+            if record.get('desk_jobs'):
+                raise WorkspaceError(desk.ONE_CHANGE)
+            record['desk_jobs'] = [{'id': secrets.token_hex(6), 'kind': 'speaker-notes',
+                                    'by': by, 'at': home.now()}]
+            self._store(root, record)
+            self._commit(root, 'ask for speaker notes for every slide')
+        self._desk_shared()
+        self.wake(root)
+        return self.view(root)
+
+    def _desk_notes_job(self, root, run, job: dict) -> None:
+        """The speaker-notes job the deck waits on: what it proposes is kept as proposals,
+        each slide's notes now beside the notes proposed. Nothing in the deck changes."""
+        from runner.steps import Work
+        step = stages.Step('desk-notes', 'build', 'agent', 'Propose speaker notes',
+                           'Proposing speaker notes for every slide')
+
+        def make(record, request, error):
+            outline = desk._outline(root)
+            slides = finishing.notes_slides(outline)
+            minutes = (record.get('form') or {}).get('minutes')
+            read = self._desk_sources(root)
+            told = [f"Propose speaker notes for every slide of \"{record.get('title') or 'the deck'}"
+                    '": what the speaker says while the slide is shown. Your input "slides" has '
+                    "each slide's ID, its words and its notes now; your input \"outline\" is the "
+                    'whole outline.',
+                    (f'The talk is given {minutes} minutes. Notes are said at about '
+                     f'{finishing.WPM} words a minute, so share the minutes among the slides.'
+                     if minutes else f'Notes are said at about {finishing.WPM} words a minute.')]
+            if read:
+                told.append(SOURCES_TOLD)
+            if error:
+                told.append(f'An earlier try at this job did not work: {error}\n'
+                            'Take care not to end the same way.')
+            told.append('Hand back a JSON list of {"slide", "notes"} with submit_artifact under '
+                        'the name "speaker-notes", naming slides only by the IDs in "slides".')
+            return Work(guidance=briefs.guidance('speaker-notes'), task='\n\n'.join(told),
+                        profile='write', name='speaker-notes',
+                        prepared={'inputs': {
+                            'slides': json.dumps(slides, ensure_ascii=False, indent=2),
+                            'outline': json.dumps(outline, ensure_ascii=False, indent=2),
+                            **({'sources': read} if read else {})}, 'ask': False,
+                            'artifacts': {'speaker-notes': {
+                                'kind': 'speaker-notes',
+                                'slides': [one['slide'] for one in slides]}}})
+
+        def keep(record, handed):
+            items = finishing.notes_items(desk._outline(root),
+                                          self._text(handed, 'speaker-notes'))
+            finishing.proposals().keep(str(root), secrets.token_hex(16), 'finish-notes', items)
+            record['desk_jobs'] = []
+            self._store(root, record)
+
+        try:
+            self._agent(root, run, step, make, keep, 'propose speaker notes', name='desk-notes',
+                        label='Propose speaker notes')
+        finally:
+            with self.files:
+                record = self._load(root)
+                if not record.get('halted') and record.get('desk_jobs'):
+                    record['desk_jobs'] = []
+                    self._store(root, record)
+                    self._commit(root, 'the speaker notes are proposed')
+
+    def desk_apply(self, path, set_id, ids, seen) -> dict:
+        """Apply proposals of one of Finishing's sets, against the desk's revision the page
+        read (`seen`): a brand check line or a review finding is a note on its slide, which
+        redraws its section, as a slide note does; speaker notes are saved as typed notes
+        are, with no redraw. `ids` names each proposal, or is {'id', 'after'} with the
+        person's own words."""
+        root, space, by = self._desk_change(path)
+        with self.files:
+            record, state = self._load(root), build.read_state(root)
+            if not desk.arrived(record):
+                raise WorkspaceError(desk.NOT_YET)
+            chosen = [one if isinstance(one, dict) else {'id': one}
+                      for one in ids] if isinstance(ids, list) else ids
+            numbers = {slide['id']: slide['number']
+                       for slide in desk.last_round(state).get('slides') or ()}
+            held = {'record': record, 'notes': [], 'also': (), 'numbers': []}
+
+            def note(ident, item, words):
+                number = numbers.get(item.get('part'))
+                if number is None:
+                    raise ValueError(NOT_DRAWN)
+                try:
+                    made = desk.add_note(held['record'], state, number, words, home.now(), by)
+                except WorkspaceError as refusal:
+                    raise ValueError(str(refusal)) from None
+                held['notes'].append(made)
+                held['numbers'].append(number)
+
+            def notes(ident, item, words):
+                number = numbers.get(item.get('part'))
+                if number is None:
+                    raise ValueError(NOT_DRAWN)
+                now = build.read_state(root)   # as the notes applied before left it
+                try:
+                    found = self._desk_words_of(root, held['record'], now, number, 'notes')
+                    made, _, also = self._desk_save(root, held['record'], now, number,
+                                                    'notes', words, None, space, found,
+                                                    'finishing')
+                except WorkspaceError as refusal:
+                    raise ValueError(str(refusal)) from None
+                if item['part'] in ((made.get('desk') or {}).get('unfit') or {}):
+                    raise ValueError(desk.UNFIT)
+                held['record'], held['also'] = made, (*held['also'], *also)
+                held['numbers'].append(number)
+
+            def noted(ident, applied):
+                if not held['notes']:
+                    return
+                for made in held['notes']:
+                    desk.keep_slide(root, made['slide'], 'finishing')
+                sections = sorted({made['section'] for made in held['notes']}, key=build.numbered)
+                made, also, now = self._desk_ask(root, held['record'], state, sections,
+                                                 'Apply what Finishing found.', space)
+                if now and desk.arrived(made):
+                    made['desk']['chain'] = {'kind': desk.SLIDE_NOTE, 'at': home.now()}
+                held['record'], held['also'] = made, (*held['also'], *also)
+
+            try:
+                done = finishing.proposals(note, noted, notes).apply(str(root), seen, set_id,
+                                                                    chosen)
+            except ValueError as refusal:
+                raise WorkspaceError(str(refusal)) from None
+            self._store(root, held['record'])
+            told = desk.slides_words(held['numbers']) if held['numbers'] else 'the deck'
+            self._commit(root, f'apply what Finishing proposed for {told}', held['also'])
+        self._desk_shared()
+        self.wake(root)
+        return {**self.view(root), 'finished': done}
+
+    def desk_skip(self, path, set_id, ids) -> dict:
+        """Skip proposals: each is kept as read, and nothing in the deck changes. Only this
+        computer's waiting set does."""
+        root = self._desk_held(path)
+        with self.files:
+            try:
+                done = finishing.proposals().skip(str(root), set_id, ids)
+            except ValueError as refusal:
+                raise WorkspaceError(str(refusal)) from None
+        return {**self.view(root), 'finished': done}
 
     # --- the look -----------------------------------------------------------------------------
 
