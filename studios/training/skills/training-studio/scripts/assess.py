@@ -30,6 +30,8 @@ def run_checks(root: Path, show_all: bool = False) -> dict:
     wanted = session['settings']['stages']
     found = workspace.scenarios(root, session)['found']
     profile = json.loads(workspace.profile_for(root).read_text(encoding='utf-8'))
+    # Only a desk training's references are checked: a saved training keeps its state.
+    on_desk = workspace.on_desk(session)
     outcomes, warnings, practice, blueprints = [], [], {}, {}
     without_scenario = []
 
@@ -72,10 +74,14 @@ def run_checks(root: Path, show_all: bool = False) -> dict:
         document = read(root, file_of(named('document')))
         if 'document' in wanted and document is not None:
             add(checks.document_coverage(parsed, document))
+            if on_desk:
+                add(checks.citations(document, 'document'))
         brief = read(root, file_of(named('brief')))
         if 'brief' in wanted and brief is not None:
             add(checks.check_brief(brief, session['settings']['brief_kind'],
                                    session['findings']))
+            if on_desk:
+                add(checks.citations(brief, 'brief'))
         yoodli_texts, idents = [], set()
         for name in own if 'scenario' in wanted else []:
             base = workspace.split(name)[0]

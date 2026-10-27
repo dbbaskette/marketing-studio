@@ -368,6 +368,69 @@ def check_brief(text: str, kind: str, findings: dict | None) -> list[dict]:
     return outcomes
 
 
+# --- references -----------------------------------------------------------------
+
+REFERENCE = re.compile(r'\[(\d{1,3})\]')
+SOURCES_ENTRY = re.compile(r'^(\d{1,3})\.\s')
+SOURCES_HEADING = re.compile(r'^## (?:\d+\. )?Sources\s*$')
+LIST_MARKER = re.compile(r'^\s*(?:[-*+>]|\d+\.)\s+', re.MULTILINE)
+SENTENCE_END = re.compile(r'[.!?:][*_"\'’”)\]]*\s+|\n+')
+WORD = re.compile(r"[A-Za-z][\w'’-]*")
+EXCERPT = 60
+
+
+def _sources(text: str) -> tuple[str, list[int]]:
+    """A guide's or brief's text outside Sources, and the numbers its Sources lists."""
+    body, entries, inside = [], [], False
+    for line in text.splitlines():
+        if line.startswith('## '):
+            inside = bool(SOURCES_HEADING.match(line))
+        if not inside:
+            body.append(line)
+        elif SOURCES_ENTRY.match(line):
+            entries.append(int(SOURCES_ENTRY.match(line).group(1)))
+    return '\n'.join(body), entries
+
+
+def _claims(paragraph: str, names) -> bool:
+    """Whether a paragraph states a number, a name or a product from intake."""
+    text = LIST_MARKER.sub('', paragraph)
+    if re.search(r'\d', text):
+        return True
+    if any(re.search(rf'(?<!\w){re.escape(name)}(?!\w)', text) for name in names if name):
+        return True
+    return any(word[0].isupper() and word != 'I'
+               for sentence in SENTENCE_END.split(text)
+               for word in WORD.findall(sentence)[1:])
+
+
+def citations(text: str, kind: str, added: list[str] | None = None, names=()) -> dict:
+    """A guide's or brief's references: every [n] is in Sources, every Sources entry is
+    cited, and each paragraph in `added` that makes a claim carries a reference. `kind` is
+    'document' or 'brief'; `names` are the product names intake gives."""
+    body, entries = _sources(COMMENT.sub('', text))
+    cited = {int(number) for number in REFERENCE.findall(body)}
+    problems = [f'Reference [{number}] is not in Sources.'
+                for number in sorted(cited - set(entries))]
+    problems += [f'Sources entry {number} is not cited.'
+                 for number in sorted(set(entries) - cited)]
+    for paragraph in added or ():
+        stripped = COMMENT.sub('', paragraph).strip()
+        plain = ' '.join(stripped.split())
+        if not plain or plain.startswith('#') or REFERENCE.search(plain) \
+                or not _claims(stripped, names):
+            continue
+        excerpt = plain[:EXCERPT].rstrip() + ('…' if len(plain) > EXCERPT else '')
+        problems.append(f'A claim with no reference: "{excerpt}"')
+    return result(f'{kind}.citations', problems)
+
+
+def dropped(before: str, after: str) -> list[int]:
+    """The reference numbers in `before` that are not in `after`."""
+    kept = {int(number) for number in REFERENCE.findall(after)}
+    return sorted({int(number) for number in REFERENCE.findall(before)} - kept)
+
+
 # --- scenario -------------------------------------------------------------------
 
 SCENARIO_TITLE = re.compile(r'^# Scenario:\s*(\S.*?)\s*$', re.MULTILINE)
