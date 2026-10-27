@@ -42,7 +42,7 @@ import home
 from studio_core import model_profiles, research_contract, stops
 from workspace import WorkspaceError
 
-from runner import agents, briefs, settings, stages, worker_tools
+from runner import agents, briefs, decks, settings, stages, worker_tools
 
 ATTEMPTS = 3            # tries at one step: the first, and two more with the reason added
 QUESTIONS = 3           # questions the workers on one step may put to the person
@@ -237,6 +237,10 @@ class Jobs:
             'dollars': dollars, 'tokens': tokens, 'outcome': outcome, 'error': error})
         if outcome == 'kept':
             entry['failed'] = 0
+            if decks.on_desk(record):
+                # How long a desk deck's steps take here, for its progress line.
+                from runner import desk
+                desk.took(desk.step_key(step), seconds)
         elif outcome == 'failed':
             entry['failed'] = entry.get('failed', 0) + 1
         return entry

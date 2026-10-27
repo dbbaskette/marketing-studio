@@ -207,6 +207,24 @@ class DeskViewTests(DeskCase):
         self.assertEqual(shown['blockers'], [{'number': 3, 'says': 'Text runs off the slide.'}])
         self.assertEqual(shown['sections'][1]['slides'][0]['audit'], [])
 
+    def test_progress_says_how_long_from_what_the_steps_took_here(self):
+        seen = []
+
+        def looking(tools, job):
+            root = next(path for path in self.engine.every()
+                        if not self.record(path).get('desk'))
+            seen.append(self.view(root)['desk']['progress'])
+            return self.workers.outline(tools, job)
+
+        self.workers.then('outline', looking, looking)
+        first = self.start_desk(look='default')
+        self.on_desk(first)
+        self.assertIsNone(self.desk_view(first)['progress'])
+        self.start_desk(look='default', title='Health checks')
+        self.assertIsNone(seen[0]['minutes_left'], 'nothing was recorded here yet')
+        self.assertGreaterEqual(seen[1]['minutes_left'], 1)
+        self.assertTrue(seen[1]['started_at'])
+
     def test_a_gated_deck_has_no_desk_view(self):
         root = self.start()
         self.assertIsNone(self.view(root)['desk'])

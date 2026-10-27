@@ -293,6 +293,27 @@ def took(key: str, seconds: float) -> None:
     step_times.note(DeckStore(), times(), key, seconds)
 
 
+def step_key(step: str) -> str:
+    """The step-time estimate's key for one of a desk deck's steps, or the job under one."""
+    return 'deck:' + step.partition(':')[0]
+
+
+def estimate(run: dict) -> int | None:
+    """About how many minutes are left before a desk deck reaches the desk, from how long
+    each step left took here before; None while one of them has no record here."""
+    names = [step.name for step in stages.steps(run)]
+    before = stages.steps(run)[:names.index('gate:build')] if 'gate:build' in names else []
+    left = [step for step in before if step.kind != 'gate'
+            and not (((run.get('steps') or {}).get(step.name)) or {}).get('done')]
+    minutes = 0.0
+    for step in left:
+        took = step_times.expected(DeckStore(), times(), step_key(step.name), None)
+        if took is None:
+            return None
+        minutes += took
+    return max(1, round(minutes))
+
+
 def slides_words(numbers) -> str:
     """'slide 4', 'slides 4 and 5', 'slides 4 to 6' or 'slides 2, 4 and 6'."""
     numbers = sorted(numbers)

@@ -122,6 +122,8 @@ class DeskActions:
         shown = desk.cards(root, record, lambda section: desk.section_price(
             record, state, section)['says'])
         return {**shown, 'arrived': desk.arrived(record),
+                'progress': None if desk.arrived(record) else {
+                    'minutes_left': desk.estimate(record), 'started_at': record.get('created')},
                 'working': desk.working(root, record, state),
                 'outline': self._desk_outline_view(root, record),
                 **({} if shown['drawn_here'] else {
