@@ -5,6 +5,16 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **A Google Doc with large images reads, its large images kept in the Doc.** Reading a Doc
+  whose images came to more than a blog's shared files hold stopped with "This Doc, with its
+  images, comes to more than a blog keeps (1 MiB)". Now its images come in, in document
+  order, while their data fits about 600 KiB; one too large for the room left stays in the Google Doc and
+  shows on the desk as "Image kept in the Google Doc", with one line saying how many. This
+  holds for a Doc read with or without pending suggestions; a kept image is never seen as
+  changed on a send or a later read, and Copy and Download leave it out. For maintainers:
+  `google_suggestions.fit_images` (and `IMAGE_ROOM`, `KEPT_ALT`, `kept_like` for the
+  snapshot check), applied in `google_roundtrip.capture` to both projections;
+  `desk_images.kept_in_doc` and the desk view's `kept_images`.
 - **A date chip in a Google Doc reads as its date.** A Doc with pending suggestions and a
   date chip stopped at "This Google Doc holds something (dateElement)". The date now reads
   as Google shows it, and a newer kind of chip reads by the text it shows instead of

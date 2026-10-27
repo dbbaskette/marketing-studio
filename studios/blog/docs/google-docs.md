@@ -21,6 +21,14 @@ or counts them as its own. An image Google does not send is kept as a visible pl
 Anything else the reader cannot take, such as an equation, is named in a plain message;
 replace it in the Doc and read it again.
 
+A blog's shared files hold at most 1 MiB of text each, and its draft carries its images as
+text. So a Doc's images come in, in order, while their data fits about 600 KiB; an image too
+large for the room left stays in the Google Doc and shows on the desk as a placeholder, "Image kept in the
+Google Doc", with a line saying how many. A read never fails because of image size. A kept
+image is never seen as changed or removed when you send or read again; delete its
+placeholder on the desk and it is treated as any image removed. Copy and Download leave
+kept images out, their placeholder in their place.
+
 Their suggestions are shown, not touched. Each is recorded on this computer when the Doc is
 read (what it inserts or removes, and where), and Review mode and the full desk mark it as
 **Suggested in the Doc**: inserted words underlined and removed words struck through, in

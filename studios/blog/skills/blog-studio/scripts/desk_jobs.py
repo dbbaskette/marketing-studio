@@ -1890,6 +1890,8 @@ def view(root, ident):
             if draft.get('images')
             else None,
         ),
+        # Images too large for the blog's shared files, kept in its Google Doc: shown as such.
+        'kept_images': desk_images.kept_in_doc(draft),
         'markdown': desk.join(draft, images=False),
         'jobs': rows,
         'chain': chain,

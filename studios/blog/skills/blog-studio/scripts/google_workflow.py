@@ -450,7 +450,7 @@ def formatted_snapshot(path, obs, body):
         suggestion_ids,
         tabs,
     )
-    from google_suggestions import accepted_markdown, images_in, summary
+    from google_suggestions import accepted_markdown, images_in, kept_like, summary
 
     directory = Path(path)
     files = {}
@@ -530,7 +530,8 @@ def formatted_snapshot(path, obs, body):
             # Read again from the native snapshot with the image data the read kept: every word
             # must be the accepted text's; the images are what Google sent.
             body_text = files['document.md'].decode('utf-8', 'replace')
-            if accepted_markdown(accepted, images=images_in(body_text)) != files['document.md']:
+            rendered = accepted_markdown(accepted, images=images_in(body_text)).decode()
+            if kept_like(rendered, body_text).encode() != files['document.md']:
                 raise ValueError(
                     'Snapshot Markdown is not the accepted text of this native snapshot.'
                 )
