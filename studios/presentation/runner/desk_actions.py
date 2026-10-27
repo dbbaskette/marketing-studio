@@ -89,6 +89,17 @@ class DeskActions:
                 item['status'] = 'set aside'
             left = []
         record['desk']['again'] = again + 1 if left else 0
+        chain = record['desk'].get('chain') if not left else None
+        if chain:
+            # What a note's chain took here, for the next price's "usually".
+            from datetime import datetime
+            try:
+                took = (datetime.fromisoformat(home.now().replace('Z', '+00:00'))
+                        - datetime.fromisoformat(chain['at'].replace('Z', '+00:00')))
+                desk.took(chain['kind'], max(0.0, took.total_seconds()))
+            except (KeyError, TypeError, ValueError):
+                pass
+            record['desk'].pop('chain', None)
         if left and state.get('rounds'):
             for item in left:
                 item['status'] = 'drawing'
@@ -107,8 +118,10 @@ class DeskActions:
         """What the page's desk shows of a desk deck: its cards, whether it has reached the
         desk, what desk work is under way, and what Deliver is bound to."""
         state = build.read_state(root)
-        shown = desk.cards(root, record)
+        shown = desk.cards(root, record, lambda section: desk.section_price(
+            record, state, section)['says'])
         return {**shown, 'arrived': desk.arrived(record),
+                'deck_price': desk.deck_price(self._last_build(record)),
                 'blockers': desk.blockers(state), 'blockers_seen': desk.blockers_seen(state),
                 'reviewed': desk.reviewed(state)}
 
@@ -135,11 +148,11 @@ class DeskActions:
         """Draw `sections` again for their notes, now, where the deck rests on the desk or
         is delivered: the notes are in the ask, and gate:build is reopened. A deck whose
         chain is under way is not touched: its notes wait, and the chain draws them at its
-        next safe point (`_desk_pick_up`). Call it holding `files`. Returns the run and what
-        else the commit lists."""
+        next safe point (`_desk_pick_up`). Call it holding `files`. Returns the run, what
+        else the commit lists, and whether it was asked now."""
         delivered = decks.delivered(root) is not None
         if not (delivered or desk.resting(record)):
-            return record, ()
+            return record, (), False
         for item in desk.waiting(record):
             if item.get('section') in sections:
                 item['status'] = 'drawing'
@@ -152,7 +165,7 @@ class DeskActions:
         record = desk.reopen(record)
         for step in self._reopened(record, 'gate:build'):
             self._fresh(record, step)
-        return record, (self._listed(space) if delivered else ())
+        return record, (self._listed(space) if delivered else ()), True
 
     def desk_note(self, path, number, note, expected) -> dict:
         """A note on one slide: its section is redrawn with it, and every other slide of the
@@ -166,7 +179,10 @@ class DeskActions:
             if not expected or desk.last_round(state).get('deck') != expected:
                 raise WorkspaceError(desk.CHANGED)
             item = desk.add_note(record, state, number, note, home.now(), by)
-            record, also = self._desk_ask(root, record, state, [item['section']], note, space)
+            record, also, now = self._desk_ask(root, record, state, [item['section']], note,
+                                               space)
+            if now and desk.arrived(record):
+                record['desk']['chain'] = {'kind': desk.SLIDE_NOTE, 'at': home.now()}
             self._store(root, record)
             self._commit(root, f'ask to redraw slide {number}', also)
         self.wake(root)

@@ -23,10 +23,12 @@ What a caller needs to know
 from __future__ import annotations
 
 import secrets
+from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import home
-from studio_core import review_policy, stops
+from studio_core import review_policy, step_times, stops
+from studio_core.drafting.store import Store
 from workspace import WorkspaceError
 
 from runner import decks, stages
@@ -203,6 +205,98 @@ def resting(run: dict) -> bool:
 
 def cost(seconds, dollars) -> str:
     return stops.cost(seconds, dollars)
+
+
+# --- prices -------------------------------------------------------------------------------
+
+SECTION_SAYS = ('Redraws section {number} ({slides}); the other slides stay exactly as they '
+                'are. Then the deck is put together, rendered and checked.')
+LAST_TOOK = ' Last time this took {cost}.'
+NO_RECORD = (' This computer has no record yet of what it costs. Expect minutes, not '
+             'seconds.')
+USUALLY = ' Usually about {minutes} here.'
+DECK_SAYS = 'Redraws every section.'
+DECK_TOOK = ' Last time the whole deck took {cost}.'
+SLIDE_NOTE = 'deck:slide-note'      # the step-time estimate's key for a slide note's chain
+DECK_NOTE = 'deck:deck-note'        # and for a whole-deck note's
+
+
+class DeckStore(Store):
+    """Presentation Studio's store for the shared desk parts: what this computer keeps of
+    how long desk work takes is in its own data folder, never in a deck's."""
+    product, word = 'Presentation Studio', 'deck'
+
+    def held(self):
+        return True
+
+
+def times() -> Path:
+    return home.data_root() / 'desk' / 'step-times.json'
+
+
+def usually(key: str) -> str:
+    """' Usually about N minutes here.' where this computer has a record of `key`."""
+    minutes = step_times.expected(DeckStore(), times(), key, None)
+    if minutes is None:
+        return ''
+    return USUALLY.format(minutes=stops.lasted(round(minutes) * 60))
+
+
+def took(key: str, seconds: float) -> None:
+    step_times.note(DeckStore(), times(), key, seconds)
+
+
+def slides_words(numbers) -> str:
+    """'slide 4', 'slides 4 and 5', 'slides 4 to 6' or 'slides 2, 4 and 6'."""
+    numbers = sorted(numbers)
+    if len(numbers) == 1:
+        return f'slide {numbers[0]}'
+    if len(numbers) > 2 and numbers == list(range(numbers[0], numbers[-1] + 1)):
+        return f'slides {numbers[0]} to {numbers[-1]}'
+    return 'slides ' + ', '.join(map(str, numbers[:-1])) + f' and {numbers[-1]}'
+
+
+def _last_try(run: dict, name: str, kept: bool = False) -> dict | None:
+    tried = [attempt for attempt in ((run.get('steps') or {}).get(name) or {}).get('tries') or ()
+             if not kept or attempt.get('outcome') == 'kept']
+    return tried[-1] if tried else None
+
+
+def section_numbers(state: dict, section: str) -> list[int]:
+    began = state.get('start') or {}
+    ids = next((entry['slides'] for entry in began.get('sections') or ()
+                if entry['id'] == section), [])
+    shown = {slide['id']: slide['number'] for slide in last_round(state).get('slides') or ()}
+    return [shown[ident] for ident in ids if ident in shown]
+
+
+def section_price(run: dict, state: dict, section: str) -> dict:
+    """What redrawing one section costs, said before it is asked: its last kept drawing,
+    and the last time the deck was put together and rendered. Without a kept drawing here,
+    there is no record, and it says to expect minutes."""
+    from runner.steps import build
+    numbers = section_numbers(state, section)
+    says = SECTION_SAYS.format(number=build.numbered(section), slides=slides_words(numbers)
+                               if numbers else 'its slides')
+    drawn = _last_try(run, f'build-sections:{section}', kept=True)
+    if drawn is None:
+        return {'seconds': None, 'dollars': None, 'recorded': False,
+                'says': says + NO_RECORD + usually(SLIDE_NOTE)}
+    tried = [drawn, *filter(None, (_last_try(run, 'build-whole'), _last_try(run, 'build-render')))]
+    seconds = round(sum(float(attempt.get('seconds') or 0) for attempt in tried), 1)
+    dollars = drawn.get('dollars')
+    return {'seconds': seconds, 'dollars': dollars, 'recorded': True,
+            'says': says + LAST_TOOK.format(cost=stops.cost(seconds, dollars))
+            + usually(SLIDE_NOTE)}
+
+
+def deck_price(last: dict) -> str:
+    """What redrawing every section costs, from what the last whole build took
+    (`Engine._last_build`)."""
+    if not last or not last.get('sections'):
+        return DECK_SAYS + NO_RECORD + usually(DECK_NOTE)
+    return DECK_SAYS + DECK_TOOK.format(cost=stops.cost(last.get('seconds'), last.get(
+        'dollars'))) + usually(DECK_NOTE)
 
 
 # --- the desk's cards ---------------------------------------------------------------------

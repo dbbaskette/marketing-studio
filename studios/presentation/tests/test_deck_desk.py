@@ -349,5 +349,57 @@ class SlideNoteTests(DeskCase):
         self.assertFalse(self.record(root).get('desk_notes'))
 
 
+class PriceTests(DeskCase):
+    """Every redraw on the desk says first what it last took on this computer."""
+
+    def card(self, root: Path, number: int) -> dict:
+        return next(card for part in self.desk_view(root)['sections'] for card in part['slides']
+                    if card['number'] == number)
+
+    def test_the_slides_of_a_section_are_said_as_a_person_says_them(self):
+        self.assertEqual(desk.slides_words([4]), 'slide 4')
+        self.assertEqual(desk.slides_words([4, 5]), 'slides 4 and 5')
+        self.assertEqual(desk.slides_words([4, 5, 6]), 'slides 4 to 6')
+        self.assertEqual(desk.slides_words([2, 4, 6]), 'slides 2, 4 and 6')
+
+    def test_a_slide_note_is_priced_from_its_section_s_last_try(self):
+        self.workers.cost = 0.31
+        root = self.start_desk(look='default')
+        price = self.card(root, 3)['price']
+        self.assertTrue(price.startswith('Redraws section 1 (slides 2 to 4); the other slides '
+                                         'stay exactly as they are.'), price)
+        self.assertIn('Last time this took', price)
+        self.assertIn('about $0.31', price)
+        self.assertEqual(self.card(root, 1)['price'], '')
+
+    def test_a_cost_nobody_reported_is_never_zero_dollars(self):
+        root = self.start_desk(look='default')
+        price = self.card(root, 3)['price']
+        self.assertIn('the assistant reported no cost', price)
+        self.assertNotIn('$0.00', price)
+
+    def test_a_section_never_drawn_here_says_there_is_no_record(self):
+        root = self.start_desk(look='default')
+        record = self.engine._load(root)
+        record['steps'].pop('build-sections:section-1')
+        self.engine._store(root, record)
+        self.assertTrue(self.card(root, 3)['price'].endswith('Expect minutes, not seconds.'))
+
+    def test_a_kept_slide_note_says_how_long_it_usually_takes_here(self):
+        root = self.start_desk(look='default')
+        self.assertNotIn('Usually about', self.card(root, 3)['price'])
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.',
+                              self.desk_view(root)['expected'])
+        self.assertIn(' Usually about 1 minute here.', self.card(root, 3)['price'])
+
+    def test_the_whole_deck_price_counts_every_section(self):
+        from studio_core import stops
+        root = self.start_desk(look='default')
+        said = self.desk_view(root)['deck_price']
+        last = self.engine._last_build(self.record(root))
+        self.assertTrue(said.startswith('Redraws every section.'), said)
+        self.assertIn(stops.lasted(last['seconds']), said)
+
+
 if __name__ == '__main__':
     unittest.main()
