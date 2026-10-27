@@ -704,6 +704,12 @@ class Engine(Reviewing):
         copies = self._wanted(root, record) if copies is None else copies
         return pipeline.survey(root, record, copies, supplied, self._deck_here(root, record))
 
+    def _survey_files(self, root: Path, record: dict) -> pipeline.Survey:
+        """Where a training is, from its files alone: what this computer has for a deck is
+        not looked at, so no tool is run and nothing is asked online."""
+        supplied = self.documents.listed(root) if record.get('documents') else ()
+        return pipeline.survey(root, record, self._wanted(root, record), supplied, None)
+
     def _deck_here(self, root: Path, record: dict | None = None) -> dict | None:
         """What this computer has for a training's deck. Not looked at for a training
         that wants none. A training none of whose decks has begun has new decks, which
@@ -5256,11 +5262,11 @@ class Engine(Reviewing):
             seen.add(root.resolve())
             try:
                 record = self._load(root)
-                done = self._survey(root, record).done
+                survey = self._survey_files(root, record)
+                done, title = survey.done, survey.session['title'] or root.name
                 level = review_policy.level(record)
             except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError):
                 continue
-            title = workspace.load(root)['title'] or root.name
             if not record.get('research_contract') and 'research' not in done:
                 found.setdefault('research-queue', []).append(saved_work.needs(
                     root, title, 'Its research has not run, and it was started before '

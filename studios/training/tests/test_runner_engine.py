@@ -180,9 +180,22 @@ class SavedWorkTests(StudioCase):
 
     def done(self, *steps):
         """The engine's survey, with `steps` done as well."""
-        survey = self.engine._survey
-        return mock.patch.object(self.engine, '_survey', lambda root, record, copies=None: replace(
-            survey(root, record, copies), done=survey(root, record, copies).done | set(steps)))
+        survey = self.engine._survey_files
+        return mock.patch.object(self.engine, '_survey_files', lambda root, record: replace(
+            survey(root, record), done=survey(root, record).done | set(steps)))
+
+    def test_nothing_is_run_or_asked_online_to_answer(self):
+        # Seeing what this computer has for a deck runs the slides tool and the brand skill,
+        # and may ask Google Drive; the answer needs only the files.
+        waiting = self.saved('Waiting training')
+        asked = mock.Mock(side_effect=AssertionError('the computer was looked at'))
+        with mock.patch.object(pipeline, 'wanted', lambda found: {'deck'}), \
+                mock.patch.object(self.engine, 'deck_needs', asked):
+            with self.assertRaises(AssertionError):
+                self.engine._survey(waiting, self.engine._load(waiting))
+            said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'research-queue'), {str(waiting): self.QUEUE})
+        asked.assert_called_once()
 
     def test_a_run_begun_on_the_queue_needs_it_until_its_research_has_run(self):
         waiting = self.saved('Waiting training')

@@ -116,7 +116,8 @@ def bind(namespace, source, names=(), methods=None):
 
     Refuses, with ValueError and before changing anything, a function that uses `super()`
     without arguments and a name or method the studio defines itself. What was bound is
-    appended to `namespace['__shared_parts__']`.
+    appended to `namespace['__shared_parts__']`. Only `super()` called by its name is
+    seen: write `super(Class, self)` in shared code, never `sup = super; sup()`.
     """
     methods = dict(methods or {})
     shared = vars(source)
