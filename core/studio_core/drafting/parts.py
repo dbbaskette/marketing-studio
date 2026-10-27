@@ -81,7 +81,6 @@ def divide(lines):
     return tidy(opening), sections
 
 
-
 def split(markdown, title='', take=None):
     """Title, opening and sections of a Markdown draft.
 

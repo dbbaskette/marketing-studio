@@ -113,6 +113,33 @@ class SharedSettleTests(DeskJobCase):
             tool_jobs.read(self.root, job['id'])['checks'], {self.part: guards.STRUCTURE}
         )
 
+    def test_a_flagged_first_pass_still_lands_and_keeps_each_part_s_check(self):
+        import json
+
+        desk.save(self.root, self.ident, 1, self.part, 'First text from 2024.')
+        job = desk_jobs.first_pass(self.root, self.ident, 2, 'tighten')
+        self.ready(job, json.dumps([{'id': self.part, 'text': 'First text from 2025.'}]))
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(
+            desk.read(self.root, self.ident)['sections'][0]['text'], 'First text from 2025.'
+        )
+        self.assertEqual(
+            tool_jobs.read(self.root, job['id'])['checks'],
+            {self.part: 'Check the facts: this changes a number.'},
+        )
+
+    def test_a_flagged_whole_draft_revision_still_lands_and_keeps_the_check(self):
+        desk.save(self.root, self.ident, 1, self.part, 'First text from 2024.')
+        job = desk_jobs.revise_all(self.root, self.ident, 2, 'Update the year.')
+        self.assertEqual(self.saved(job)['metadata']['desk']['part'], self.part)
+        self.ready(job, 'First text from 2025.')
+        desk_jobs.settle(self.root, self.ident)
+        self.assertEqual(
+            desk.read(self.root, self.ident)['sections'][0]['text'], 'First text from 2025.'
+        )
+        self.assertIn('a number', tool_jobs.read(self.root, job['id'])['checks'][self.part])
+        desk_jobs.stop(self.root, self.ident, job['id'])  # The note's next section waits.
+
     def test_the_section_job_reads_the_shared_edit_rule(self):
         job = desk_jobs.section(self.root, self.ident, 1, self.part, 'Add an example.')
         self.assertTrue(self.saved(job)['guidance'].startswith(prompts.edit_rule('blog draft')))
