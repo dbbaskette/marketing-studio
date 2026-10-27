@@ -3018,7 +3018,7 @@ class DeskPageTests(PageCase):
         self.assertFalse((Path(path) / pipeline.INDEX).is_file())
         self.assertEqual({card['state'] for card in marked['cards']}, {'ready'})
         # Nothing is a draft, and still no index: why is said.
-        self.assertEqual(marked['needs'], ['A check failed: brief.sections@101'])
+        self.assertEqual(marked['needs'], ["The level 101 brief's sections need fixing."])
         for line in marked['needs']:
             for word in FORBIDDEN:
                 self.assertNotIn(word, line.lower())

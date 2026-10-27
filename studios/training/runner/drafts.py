@@ -494,7 +494,7 @@ def view(engine, root) -> dict:
         # Everything is Ready, and still no index: what else is in the way is said.
         if not needed and not report['ready'] and cards and all(
                 card['state'] in ('ready', 'left-out') for card in cards):
-            needed += [desk.plainly(reason) for reason in report['blocking']]
+            needed += [desk.plainly_on_desk(reason) for reason in report['blocking']]
     running = state == 'working'
     minutes = max(1, start_minutes(root, record, found)) if running else None
     doing = ''

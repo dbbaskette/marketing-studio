@@ -1278,6 +1278,22 @@ class PlainWordsTests(PageCase):
             with self.subTest(said):
                 self.assertEqual(desk.plainly(said), plain)
 
+    def test_a_check_on_the_desk_is_named_in_plain_words(self):
+        for said, plain in (
+                ('brief.sections@101 failed', "The level 101 brief's sections need fixing."),
+                ('document.citations@101 failed',
+                 "The level 101 learner guide's references need fixing."),
+                ('document.coverage failed', "The learner guide's coverage needs fixing."),
+                ('research-plan.items failed', "The research plan's questions need fixing."),
+                ('yoodli:main.fields@301 failed',
+                 "The level 301 Yoodli scenario's fields need fixing."),
+                ('brief.findings@101 could not run: The research is not approved.',
+                 ("The level 101 brief's findings could not be checked: The research is not "
+                  'approved.')),
+                ('brief@101 is draft', 'The level 101 brief is not approved yet')):
+            with self.subTest(said):
+                self.assertEqual(desk.plainly_on_desk(said), plain)
+
     def test_nothing_the_page_composes_says_artifact_stale_or_lineage(self):
         self.research('--levels', '101,301')
         self.complete('101')
