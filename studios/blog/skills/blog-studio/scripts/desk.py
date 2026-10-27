@@ -132,6 +132,7 @@ CODEC = parts.MARKDOWN.replace(
     fitted=lambda draft, before: _fitted(draft, before),
     landed=lambda draft, before, text: _landed(draft, before, text),
     shown=lambda text: _shown(text),
+    scrub=lambda text: desk_images.scrub(text),
 )
 
 

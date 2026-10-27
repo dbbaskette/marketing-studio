@@ -9,12 +9,12 @@ hold the studio lock.
 """
 
 import re
-import shutil
 
 import desk
 import desk_images
 import studio
 from studio_core.drafting import guards
+from studio_core.drafting import proposals as shared
 from studio_core.drafting import proofread as quick
 
 # The finishing job kinds and the tool each one is in the panel.
@@ -27,22 +27,19 @@ TOOLS = {
     'finish-voice': 'voice',
 }
 KINDS = tuple(TOOLS)
-JOB = re.compile(r'[a-f0-9]{32}')
-ITEMS = 200  # proposals in one set
-DAY = 86_400  # an older set no longer shown is let go after this long
-LATEST = 'latest.json'  # the newest set for each tool, so a poll reads only those
-GONE = 'That text is no longer in this part, so the suggestion was not applied. Skip it.'
-NONE_LEFT = 'None of these suggestions match the text now, so nothing was applied.'
-SAME = (
-    'Nothing would change: image references stay as they are, and the rest of this '
-    'suggestion is the text already there. Skip it.'
-)
-EMPTY = (
-    'Write the words to use. To cut text, edit the part itself; a suggestion is not applied empty.'
-)
-OVERLAP = 'Another suggestion applied here covers the same words, so this one was not applied.'
-RETIRED = 'This suggestion no longer fits: another change replaced its words.'
-FLAGGED = 'It covers words a flagged suggestion still waits on, so Accept all left it for you.'
+# The proposals are kept, applied and skipped by the shared desk
+# (studio_core.drafting.proposals), with Blog Studio's store and desk record.
+JOB = shared.JOB
+ITEMS = shared.ITEMS  # proposals in one set
+DAY = shared.DAY  # an older set no longer shown is let go after this long
+LATEST = shared.LATEST  # the newest set for each tool, so a poll reads only those
+GONE = shared.GONE
+NONE_LEFT = shared.NONE_LEFT
+SAME = shared.SAME
+EMPTY = shared.EMPTY
+OVERLAP = shared.OVERLAP
+RETIRED = shared.RETIRED
+FLAGGED = shared.FLAGGED
 
 
 def _require_lock():
@@ -50,151 +47,67 @@ def _require_lock():
         raise RuntimeError('Desk writes run under the studio lock.')
 
 
+class _BlogProposals(shared.Proposals):
+    def sets(self, ident):
+        return sets(self.store.root, ident)  # This module's, looked up when called.
+
+
+def _proposals(root):
+    """Blog Studio's waiting proposals: sets keyed `blog`, in .blog-runs/desk-proposals."""
+    return _BlogProposals(
+        desk.BlogStore(root), desk._drafting(root), TOOLS, owner='blog', together=SENTENCES
+    )
+
+
 def _folder(root, ident):
-    return studio.inside(root, '.blog-runs', 'desk-proposals', studio.identifier(ident))
+    return _proposals(root).folder(ident)
 
 
 def _path(root, ident, job):
-    if not isinstance(job, str) or not JOB.fullmatch(job):
-        raise ValueError('Choose a set of suggestions on this blog.')
-    return studio.inside(
-        root, '.blog-runs', 'desk-proposals', studio.identifier(ident), job + '.json'
-    )
+    return _proposals(root).path(ident, job)
 
 
 def keep(root, ident, job, kind, items, **extra):
     """Keep a set of proposals for the person to preview; nothing in the draft changes."""
-    _require_lock()
-    if kind not in TOOLS:
-        raise ValueError('Choose a finishing tool.')
-    record = {
-        'schema': 1,
-        'job': job,
-        'kind': kind,
-        'blog': ident,
-        'made_at': studio.now(),
-        **extra,
-        'items': [
-            {**item, 'id': 'p' + str(number + 1), 'state': 'open'}
-            for number, item in enumerate(items[:ITEMS])
-        ],
-    }
-    studio.write_json(_path(root, ident, job), record)
-    newest = _latest(root, ident)
-    newest[TOOLS[kind]] = job
-    studio.write_json(studio.inside(_folder(root, ident), LATEST), newest)
-    _prune(root, ident, set(newest.values()))
-    return record
+    return _proposals(root).keep(ident, job, kind, items, **extra)
 
 
 def _latest(root, ident):
     """{tool: job} for the newest set of each tool, rebuilt from the sets when missing."""
-    target = studio.inside(_folder(root, ident), LATEST)
-    try:
-        found = studio.read_json(target) if target.is_file() and not target.is_symlink() else None
-    except (ValueError, OSError):
-        found = None
-    if isinstance(found, dict) and all(
-        tool in TOOLS.values() and isinstance(job, str) and JOB.fullmatch(job)
-        for tool, job in found.items()
-    ):
-        return found
-    newest = {}
-    for value in sets(root, ident):
-        newest[TOOLS[value['kind']]] = value['job']
-    return newest
+    return _proposals(root).latest(ident)
 
 
 def _prune(root, ident, shown):
     """Let go of sets no longer shown once nothing in them is open, or after a day."""
-    import time
-
-    folder = _folder(root, ident)
-    for target in sorted(folder.glob('*.json')) if folder.is_dir() else []:
-        if not JOB.fullmatch(target.stem) or target.stem in shown or target.is_symlink():
-            continue
-        try:
-            value = studio.read_json(target)
-            done = not any(item.get('state') == 'open' for item in value.get('items', []))
-            if done or time.time() - target.stat().st_mtime > DAY:
-                target.unlink()
-        except (ValueError, OSError, AttributeError):
-            continue
+    _proposals(root).prune(ident, shown)
 
 
 def read(root, ident, job):
-    target = _path(root, ident, job)
-    if not target.is_file() or target.is_symlink():
-        raise ValueError('These suggestions are no longer here. Run the tool again.')
-    found = studio.read_json(target)
-    if not isinstance(found, dict) or found.get('blog') != ident:
-        raise ValueError('These suggestions are no longer here. Run the tool again.')
-    return found
+    return _proposals(root).read(ident, job)
 
 
 def sets(root, ident):
     """Every set kept for this blog, oldest first."""
-    folder = _folder(root, ident)
-    found = []
-    for target in sorted(folder.glob('*.json')) if folder.is_dir() else []:
-        if target.is_symlink() or not JOB.fullmatch(target.stem):
-            continue
-        try:
-            value = studio.read_json(target)
-        except (ValueError, OSError):
-            continue
-        if isinstance(value, dict) and value.get('kind') in TOOLS and value.get('blog') == ident:
-            found.append(value)
-    return sorted(found, key=lambda value: value.get('made_at') or '')
+    return shared.Proposals.sets(_proposals(root), ident)
 
 
 def forget(root, ident):
     """Let a deleted blog's waiting suggestions go: they hold its text."""
-    folder = _folder(root, ident)
-    if folder.is_dir() and not folder.is_symlink():
-        shutil.rmtree(folder)
+    _proposals(root).forget(ident)
 
 
-def _once(text, before):
-    """Whether `before` occurs in `text` exactly once, counting overlapping occurrences."""
-    at = text.find(before) if before else -1
-    return at != -1 and text.find(before, at + 1) == -1
+_once = shared.once
 
 
 def present(draft, item):
     """Whether a proposal still fits the draft: its text is in its part, once, or the whole
     part is as it was for an alternative to the whole part. A comment needs only its part."""
-    if item.get('part') == 'whole':
-        return True
-    try:
-        text = desk.text_of(draft, item.get('part'))
-    except ValueError:
-        return False
-    if 'comment' in item:
-        return True
-    if item.get('whole'):
-        # A whole part is kept as the job saw it: image data kept as text is a token.
-        return desk_images.scrub(text) == item.get('before')
-    return _once(text, item.get('before') or '')
+    return shared.text_present(desk.CODEC)(draft, item)
 
 
 def summary(root, ident, draft):
     """The newest set for each tool, as the panel shows it. Only those sets are read."""
-    newest = {}
-    for tool, job in _latest(root, ident).items():
-        try:
-            value = read(root, ident, job)
-        except (ValueError, OSError):
-            continue
-        if TOOLS.get(value.get('kind')) == tool:
-            newest[tool] = value
-    return {
-        tool: {
-            **value,
-            'items': [{**item, 'present': present(draft, item)} for item in value['items']],
-        }
-        for tool, value in newest.items()
-    }
+    return _proposals(root).summary(ident, draft)
 
 
 def _busy_parts(root, ident):
@@ -217,184 +130,22 @@ def apply(root, ident, seen, job, chosen, every=False):
     that covers words a flagged one from Copy edit or Humanize still waits on is left out,
     so the flagged one is never retired without the person deciding on it. Each part
     changed keeps one `finishing` version first."""
-    found = read(root, ident, job)
-    if not isinstance(chosen, list) or not chosen or len(chosen) > ITEMS:
-        raise ValueError('Choose the suggestions to apply.')
-    if type(every) is not bool:
-        raise ValueError('Choose suggestions from this set.')
-    items = {item['id']: item for item in found['items']}
-    picks, named, gone = [], set(), []
-    for entry in chosen:
-        if (
-            not isinstance(entry, dict)
-            or set(entry) - {'id', 'after', 'alternative'}
-            or entry.get('id') not in items
-            or entry['id'] in named
-        ):
-            raise ValueError('Choose suggestions from this set.')
-        named.add(entry['id'])
-        item = items[entry['id']]
-        if 'comment' in item:
-            raise ValueError('A comment changes nothing. Make it a note, or skip it.')
-        if 'after' not in item and 'after' not in entry:
-            raise ValueError('Write the wording to use, then apply it.')
-        if item['state'] == 'retired':
-            if len(chosen) == 1 and not every:
-                raise ValueError(RETIRED)
-            gone.append(item['id'])  # Another change took its words; the rest still apply.
-            continue
-        if item['state'] != 'open':
-            raise ValueError('This suggestion was already applied or skipped.')
-        after = entry['after'] if 'after' in entry else item['after']
-        if 'alternative' in entry:
-            # One of a wording fix's alternatives, by its place in the list.
-            others = item.get('alternatives') or []
-            number = entry['alternative']
-            if 'after' in entry or type(number) is not int or not 0 <= number < len(others):
-                raise ValueError('Choose one of this suggestion’s alternatives.')
-            after = others[number]['after']
-        if not isinstance(after, str) or len(after) > desk.LIMIT:
-            raise ValueError('Keep one part under 200,000 characters.')
-        picks.append((item, after))
-    draft = desk.read(root, ident)
-    parts = sorted({item['part'] for item, _ in picks})
-    desk.checked(draft, seen, parts)
-    working = _busy_parts(root, ident)
-    if any(part in working or ('sections' in working and part not in desk.PARTS) for part in parts):
-        raise ValueError('A desk job is working on this part. Wait for it, or stop it, then apply.')
-    single = len(chosen) == 1 and not every  # Accept all never refuses: it leaves out.
-    texts, applied, left = {}, [], gone
-    # Where each applied suggestion sat in its part as it was, so two that cover the same
-    # words never both land, and the others it covered are retired once it does.
-    originals = {part: desk.text_of(draft, part) for part in parts}
-    spans = {part: [] for part in parts}
-    waiting = _flagged_spans(root, ident, job, found, originals, named) if every else {}
-    for item, after in picks:
-        part = item['part']
-        try:
-            if not after.strip():
-                raise ValueError(EMPTY)
-            span = _span(originals[part], item)
-            if span is not None and _covers(spans[part], span):
-                raise ValueError(OVERLAP)
-            if span is not None and _covers(waiting.get(part, []), span):
-                raise ValueError(FLAGGED)
-            text = texts[part] if part in texts else desk.text_of(draft, part)
-            if item.get('whole'):
-                fits = desk_images.scrub(text) == item['before']
-            else:
-                fits = _once(text, item['before'])
-            if not fits:
-                raise ValueError(GONE)
-            if item.get('whole'):
-                updated = after.strip()
-            else:
-                at = text.index(item['before'])
-                updated = text[:at] + after + text[at + len(item['before']) :]
-            if part != 'title':
-                # Image data kept as text comes back exactly, and no image reference the
-                # part had is lost: one the change left out goes back where it was.
-                updated = desk_images.restored(text, updated)
-                # Image data typed into the change moves out under a label of its own; the
-                # limits are checked when the draft is written (desk._write).
-                own = set()
-                updated, draft['images'] = desk_images.take(
-                    updated, draft.get('images'), rename=True, previous=text, touched=own
-                )
-                updated = desk_images.kept(text, updated, draft['images'], own)
-            # A change that only an image reference made, put back as it was, is no change.
-            if updated.strip() == text.strip():
-                raise ValueError(SAME)
-            desk.checked_text(part, updated, desk.limit(draft))
-            if part == 'title' and not updated.strip():
-                raise ValueError('Keep the title to one line, up to 500 characters.')
-        except ValueError:
-            if single:
-                raise
-            left.append(item['id'])
-            continue
-        texts[part] = updated
-        applied.append(item)
-        if span is not None:
-            spans[part].append(span)
-    if not applied:
-        if every:
-            return {'applied': 0, 'left': left}  # Each left for the person; nothing changed.
-        raise ValueError(NONE_LEFT)
-    changed = []
-    for part, text in texts.items():
-        before = desk.text_of(draft, part)
-        if before.strip() == text.strip():
-            continue
-        desk.keep(root, ident, part, before, 'finishing')
-        desk._set(draft, part, text)
-        changed.append(part)
-    if changed:
-        desk._write(root, ident, draft, changed)
-    # Only once the draft is written are the proposals marked applied.
-    for item in applied:
-        item['state'] = 'applied'
-        if item.get('group'):
-            for other in found['items']:
-                if other.get('group') == item['group'] and other['state'] == 'open':
-                    other['state'] = 'skipped'  # An alternative to the one chosen.
-    studio.write_json(_path(root, ident, job), found)
-    _retire(root, ident, job, found, originals, spans)
-    return {'applied': len(applied), 'left': left}
+    return _proposals(root).apply(
+        ident, seen, job, chosen, every, working=lambda: _busy_parts(root, ident)
+    )
 
 
 def _sentence_sets(root, ident, job, found):
     """[(job, set)] for the waiting Copy edit and Humanize sets, this one as it is held."""
-    found_sets = [(job, found)]
-    if found.get('kind') not in SENTENCES:
-        return found_sets
-    for tool, other in _latest(root, ident).items():
-        kind = next(kind for kind, name in TOOLS.items() if name == tool)
-        if kind in SENTENCES and other != job:
-            try:
-                found_sets.append((other, read(root, ident, other)))
-            except (ValueError, OSError):
-                continue
-    return found_sets
+    return _proposals(root)._together_sets(ident, job, found)
 
 
 def _flagged_spans(root, ident, job, found, originals, named):
-    """{part: [span]} of open, flagged suggestions still in the text that Accept all leaves
-    for the person, from either tool, other than the ones being applied."""
-    spans = {}
-    for name, value in _sentence_sets(root, ident, job, found):
-        for item in value.get('items', []):
-            part = item.get('part')
-            if (
-                item.get('state') != 'open'
-                or not item.get('flag')
-                or part not in originals
-                or (name == job and item.get('id') in named)
-            ):
-                continue
-            span = _span(originals[part], item)
-            if span is not None:
-                spans.setdefault(part, []).append(span)
-    return spans
+    return _proposals(root)._flagged_spans(ident, job, found, originals, named)
 
 
-def _span(text, item):
-    """Where a suggestion sits in its part's text, (start, end), or None when it is not
-    there once. A whole-part alternative covers the whole part."""
-    if item.get('whole'):
-        return (0, max(1, len(text)))
-    before = item.get('before') or ''
-    if 'comment' in item or not _once(text, before):
-        return None
-    at = text.index(before)
-    return (at, at + len(before))
-
-
-def _covers(spans, span):
-    """Whether `span` shares any character with one of `spans`: two suggestions that start
-    at the same place overlap too."""
-    start, end = span
-    return any(start < b and a < end for a, b in spans)
+_span = shared.span
+_covers = shared.covers
 
 
 # The tools whose sentence rewrites Review mode shows together; accepting one retires the
@@ -403,40 +154,12 @@ SENTENCES = ('finish-copyedit', 'finish-humanize')
 
 
 def _retire(root, ident, job, found, originals, spans):
-    """Mark open suggestions that covered words an applied one replaced as retired: they
-    no longer fit, whether or not their words still happen to be in the text. Only this
-    computer's waiting sets change."""
-    if not any(spans.values()):
-        return
-    for name, value in _sentence_sets(root, ident, job, found):
-        changed = False
-        for item in value.get('items', []):
-            part = item.get('part')
-            if item.get('state') != 'open' or part not in spans or not spans[part]:
-                continue
-            span = _span(originals[part], item)
-            if span is not None and _covers(spans[part], span):
-                item['state'] = 'retired'
-                changed = True
-        if changed:
-            studio.write_json(_path(root, ident, name), value)
+    _proposals(root)._retire(ident, job, found, originals, spans)
 
 
 def skip(root, ident, job, ids):
     """Set proposals aside. Only this computer's waiting set changes."""
-    found = read(root, ident, job)
-    if not isinstance(ids, list) or not ids or len(ids) > ITEMS:
-        raise ValueError('Choose the suggestions to skip.')
-    items = {item['id']: item for item in found['items']}
-    if any(not isinstance(name, str) or name not in items for name in ids):
-        raise ValueError('Choose suggestions from this set.')
-    skipped = 0
-    for name in set(ids):
-        if items[name]['state'] == 'open':
-            items[name]['state'] = 'skipped'
-            skipped += 1
-    studio.write_json(_path(root, ident, job), found)
-    return {'skipped': skipped}
+    return _proposals(root).skip(ident, job, ids)
 
 
 # Quick check (the route and functions keep the name proofread): mechanical checks in
@@ -775,14 +498,7 @@ def _flags(before, after, anywhere=False, paragraphs=True):
 
 def _located(draft, part, before):
     """`before` as it occurs once in its part, or None."""
-    try:
-        text = desk.text_of(draft, part)
-    except ValueError:
-        return None
-    before = before.strip() if isinstance(before, str) else ''
-    if not _once(text, before):
-        return None
-    return before
+    return shared.located(draft, part, before, desk.CODEC)
 
 
 def _prose_parts(draft):
@@ -792,17 +508,7 @@ def _prose_parts(draft):
 def _rows(found, key, fields):
     """The result's rows, each a dict whose named fields are text. A row of another shape is
     dropped; a result made only of such rows cannot be read."""
-    rows = found.get(key) if isinstance(found, dict) else None
-    if not isinstance(rows, list):
-        raise ValueError(UNREADABLE)
-    good = [
-        row
-        for row in rows[:60]
-        if isinstance(row, dict) and all(isinstance(row.get(name), str) for name in fields)
-    ]
-    if rows and not good:
-        raise ValueError(UNREADABLE)
-    return good, len(rows[:60]) - len(good)
+    return shared.rows(found, key, fields, UNREADABLE)
 
 
 def _replacement(draft, part, before, after):
@@ -1028,14 +734,7 @@ READERS = {
 def settle(root, ident, draft, job):
     """Read a finishing tool's result strictly and keep its proposals for the person. The
     draft is not changed; a result Blog Studio cannot read is refused readably."""
-    import json
-
-    content = ((job.get('result') or {}).get('content') or '').strip()
-    fenced = re.fullmatch(r'```(?:json)?\s*\n(.*)\n```', content, re.S)
-    try:
-        found = json.loads(fenced.group(1) if fenced else content)
-    except ValueError:
-        raise ValueError(UNREADABLE) from None
+    found = shared.read_result((job.get('result') or {}).get('content'), UNREADABLE)
     try:
         items, dropped, extra = READERS[job['kind']](draft, found)
     except (TypeError, AttributeError, KeyError):

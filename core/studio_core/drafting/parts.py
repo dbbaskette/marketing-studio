@@ -259,7 +259,8 @@ class Codec:
       own reasons; `taken(draft, part, text, previous) -> (text, draft)` takes something
       the text carries apart (Blog Studio: pasted image data), `fitted(draft, before)`
       checks the draft against the record it came from, `landed(draft, before, text)` is a
-      job's result as it lands, and `shown(text)` a kept version as the page shows it.
+      job's result as it lands, `shown(text)` a kept version as the page shows it, and
+      `scrub(text)` a part's text as a job sees it (Blog Studio: image data as tokens).
     """
 
     def __init__(
@@ -281,6 +282,7 @@ class Codec:
         fitted=None,
         landed=None,
         shown=None,
+        scrub=None,
     ):
         self.fixed, self.single, self.part = tuple(fixed), tuple(single), part
         self.thing, self.noun = thing, noun
@@ -295,13 +297,14 @@ class Codec:
         self.fitted = fitted or (lambda draft, before: draft)
         self.landed = landed or (lambda draft, before, text: text)
         self.shown = shown or (lambda text: text)
+        self.scrub = scrub or (lambda text: text)
 
     def replace(self, **changes):
         """This codec with some of its names or hooks changed."""
         names = (
             'fixed', 'single', 'part', 'thing', 'noun', 'split', 'join', 'deepest',
             'heading_in', 'break_message', 'added_message', 'vet', 'taken', 'fitted',
-            'landed', 'shown',
+            'landed', 'shown', 'scrub',
         )
         kept = {name: getattr(self, name) for name in names}
         return Codec(**{**kept, **changes})

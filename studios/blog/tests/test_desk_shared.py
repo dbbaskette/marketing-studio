@@ -9,7 +9,16 @@ import desk_finish
 import desk_images
 import desk_jobs
 import tool_jobs
-from studio_core.drafting import basis, guards, parts, prompts, proofread, record, versions
+from studio_core.drafting import (
+    basis,
+    guards,
+    parts,
+    prompts,
+    proofread,
+    proposals,
+    record,
+    versions,
+)
 from test_desk import DeskCase
 from test_desk_jobs import DeskJobCase
 
@@ -113,6 +122,45 @@ class SharedSettleTests(DeskJobCase):
         self.assertIs(desk_jobs.busy, basis.busy)
         self.assertEqual(desk_jobs.STALE, basis.stale())
         self.assertIs(desk_jobs.ACTIONS, prompts.ACTIONS)
+
+
+class SharedProposalTests(DeskJobCase):
+    JOB = 'c' * 32
+
+    def offer(self):
+        part = self.made['sections'][1]['id']
+        item = {'part': part, 'before': 'Second text.', 'after': 'Two.'}
+        return desk_finish.keep(self.root, self.ident, self.JOB, 'finish-humanize', [item])
+
+    def test_finishing_keeps_its_sets_keyed_blog_with_the_shared_proposals(self):
+        made = self.offer()
+        self.assertEqual(made['blog'], self.ident)
+        self.assertIsInstance(desk_finish._proposals(self.root), proposals.Proposals)
+        self.assertIs(desk_finish.GONE, proposals.GONE)
+        where = desk.BlogStore(self.root).local(self.ident, self.JOB + '.json')
+        self.assertTrue(where.is_file())
+        done = desk_finish.apply(self.root, self.ident, 1, self.JOB, [{'id': 'p1'}])
+        self.assertEqual(done, {'applied': 1, 'left': []})
+        self.assertEqual(
+            desk.versions(self.root, self.ident, made['items'][0]['part'])[0]['source'], 'finishing'
+        )
+
+    def test_rebuilding_the_newest_sets_still_reaches_this_module_s_sets(self):
+        from unittest.mock import patch
+
+        self.offer()
+        desk.BlogStore(self.root).local(self.ident, proposals.LATEST).unlink()
+        with patch('desk_finish.sets', side_effect=AssertionError('read every set')):
+            with self.assertRaisesRegex(AssertionError, 'read every set'):
+                desk_finish.summary(self.root, self.ident, desk.read(self.root, self.ident))
+        shown = desk_finish.summary(self.root, self.ident, desk.read(self.root, self.ident))
+        self.assertEqual(shown['humanize']['job'], self.JOB)
+
+    def test_an_apply_waits_for_a_job_working_on_its_part(self):
+        self.offer()
+        desk_jobs.first_pass(self.root, self.ident, 1, 'tighten')
+        with self.assertRaisesRegex(ValueError, 'A desk job is working on this part.'):
+            desk_finish.apply(self.root, self.ident, 1, self.JOB, [{'id': 'p1'}])
 
 
 if __name__ == '__main__':
