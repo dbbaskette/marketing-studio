@@ -1228,16 +1228,12 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
     if error:
         lines.append(f'An earlier try at this job did not work: {error}\n'
                      'Take care not to end the same way.')
-    strict = run.get('route') == 'existing' and _level(run) in STRICT
-    bare = wordless_slides(root, run, whole)
-    placed, titled = began.get('wordless') or {}, began.get('titled') or {}
-    if isinstance(titled, list):   # a deck started before pictures were carried this way
-        titled = {ident: {} for ident in titled}
-    drawn_bare = [ident for ident in ids if ident in bare and ident not in placed]
+    spec, made = _spec_of(root, run, section, renderer)
+    drawn_bare, pictured, supplied, set_bare = (made['drawn_bare'], made['pictured'],
+                                                made['supplied'], made['set_bare'])
     if drawn_bare:
         lines.append('These slides show no words in the deck you were given, so draw no '
                      'text on them: ' + ', '.join(drawn_bare) + '.')
-    fixed_spec = fixed(whole, ids, number, strict, bare, placed, titled)
     focused = {finding['slide'] for finding in grave(found) if finding.get('about') == 'drawing'}
     focused.update(entry['slide'] for entry in previewed)
     asked_numbers = ((run.get('gates') or {}).get('gate:build') or {}).get('slides')
@@ -1248,34 +1244,22 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                    if slide['number'] in noted)
     if drawn and focused:
         earlier = home.read_json(root / drawn['file'], {})
-        fixed_spec['unchanged_slides'] = {slide['id']: slide for slide in earlier.get('slides', [])
-                                         if slide['id'] not in focused}
+        spec['unchanged_slides'] = {slide['id']: slide for slide in earlier.get('slides', [])
+                                    if slide['id'] not in focused}
         lines.append('Only these slides need repair: ' + ', '.join(sorted(focused))
                      + '. Copy all other slides in your section exactly, including their drawing.')
-    pictured = [slide for slide in fixed_spec['slides'] if slide.get('image')]
     if pictured:
         lines.append('Each of these slides keeps the picture it showed. Place its image node '
                      'in its canvas, under the title, exactly as it is given here, and draw '
                      'no words:\n\n' + '\n'.join(
                          f"{slide['id']}: {json.dumps(slide['image'], ensure_ascii=False)}"
                          for slide in pictured))
-    # A picture the person gave a content slide: an image node by its asset ID, placed as
-    # it is given, with the slide's words drawn as text as always.
-    supplied = []
-    for slide in fixed_spec['slides']:
-        asset = (began.get('pictures') or {}).get(slide['id'])
-        if asset and not slide.get('image') and not slide.get('layout'):
-            stem = re.sub(r'[^A-Za-z0-9]', '', slide['id'])[:20] or 'slide'
-            slide['image'] = {'type': 'image', 'id': f"{fixed_spec['prefix']}{stem}_given",
-                              'asset': asset, 'fit': 'contain'}
-            supplied.append(slide)
     if supplied:
         lines.append('The person gave these slides a picture. Place its image node in the '
                      'slide\'s canvas exactly as it is given here, by its `asset`, and keep '
                      'every word of the slide as text:\n\n' + '\n'.join(
                          f"{slide['id']}: {json.dumps(slide['image'], ensure_ascii=False)}"
                          for slide in supplied))
-    set_bare = [slide for slide in fixed_spec['slides'] if slide.get('layout')]
     if set_bare:
         lines.append(
             'These slides show no words in the deck you were given, so each is set on a '
@@ -1285,17 +1269,7 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                 {key: slide[key] for key in ('id', 'title', 'sources', 'layout', 'picture',
                                              'notes') if slide.get(key)},
                 ensure_ascii=False) for slide in set_bare))
-    told_outline = root / began['folder'] / TOOL_OUTLINE
-    spec = {'kind': 'section', 'brand': began['brand'], **fixed_spec,
-            **({'outline': str(told_outline.resolve())} if told_outline.is_file() else {}),
-            **({'pictures': str((root / began['folder'] / PICTURES).resolve())}
-               if (root / began['folder'] / PICTURES).is_dir() else {}),
-            **({'asset_project': str((root / ASSETS).resolve())}
-               if began.get('pictures') else {}),
-            'previews': PREVIEWS, **how(root, run, renderer)}
     first_draft = decks.user_first(run)
-    if first_draft:
-        spec['user_first'] = True
     spec['progress'] = build_progress.begin(root, began['folder'], section,
         [{'id': slide['id'], 'title': slide.get('title') or '', 'number': number}
          for number, slide in enumerate(slides_of(whole), 1) if slide['id'] in ids])
@@ -1321,6 +1295,61 @@ Do not claim visual review or invent assessment evidence. Then stop.
                 guard=(section, (run.get('build_feedback_revisions') or {}).get(section, 0)),
                 prepared={'inputs': inputs, 'ask': False, 'look': look,
                           'artifacts': {'section': spec}})
+
+
+def _spec_of(root, run: dict, section: str, renderer='local',
+             outline: dict | None = None) -> tuple[dict, dict]:
+    """What a section's composer is handed, and the slides its task names: the section as
+    it is fixed before it is drawn, from the start's approved outline or `outline` in its
+    place. Returns (spec, {'drawn_bare', 'pictured', 'supplied', 'set_bare'})."""
+    root = Path(root)
+    state = read_state(root)
+    began, number = _started(state), numbered(section)
+    entry = next((one for one in began['sections'] if one['id'] == section), None)
+    if entry is None:
+        raise WorkspaceError(f'The deck has no {section}.')
+    ids = entry['slides']
+    whole = outline if outline is not None else home.read_json(
+        root / began['folder'] / 'given' / 'outline.json', {})
+    strict = run.get('route') == 'existing' and _level(run) in STRICT
+    bare = wordless_slides(root, run, whole)
+    placed, titled = began.get('wordless') or {}, began.get('titled') or {}
+    if isinstance(titled, list):   # a deck started before pictures were carried this way
+        titled = {ident: {} for ident in titled}
+    drawn_bare = [ident for ident in ids if ident in bare and ident not in placed]
+    fixed_spec = fixed(whole, ids, number, strict, bare, placed, titled)
+    pictured = [slide for slide in fixed_spec['slides'] if slide.get('image')]
+    # A picture the person gave a content slide: an image node by its asset ID, placed as
+    # it is given, with the slide's words drawn as text as always.
+    supplied = []
+    for slide in fixed_spec['slides']:
+        asset = (began.get('pictures') or {}).get(slide['id'])
+        if asset and not slide.get('image') and not slide.get('layout'):
+            stem = re.sub(r'[^A-Za-z0-9]', '', slide['id'])[:20] or 'slide'
+            slide['image'] = {'type': 'image', 'id': f"{fixed_spec['prefix']}{stem}_given",
+                              'asset': asset, 'fit': 'contain'}
+            supplied.append(slide)
+    set_bare = [slide for slide in fixed_spec['slides'] if slide.get('layout')]
+    told_outline = root / began['folder'] / TOOL_OUTLINE
+    spec = {'kind': 'section', 'brand': began['brand'], **fixed_spec,
+            **({'outline': str(told_outline.resolve())} if told_outline.is_file() else {}),
+            **({'pictures': str((root / began['folder'] / PICTURES).resolve())}
+               if (root / began['folder'] / PICTURES).is_dir() else {}),
+            **({'asset_project': str((root / ASSETS).resolve())}
+               if began.get('pictures') else {}),
+            'previews': PREVIEWS, **how(root, run, renderer)}
+    if decks.user_first(run):
+        spec['user_first'] = True
+    return spec, {'drawn_bare': drawn_bare, 'pictured': pictured, 'supplied': supplied,
+                  'set_bare': set_bare}
+
+
+def section_spec(root, run: dict, section: str, renderer='local',
+                 outline: dict | None = None) -> dict:
+    """The section as its composer is handed it, before anything a job of its own adds:
+    the fixed slides, the brand and how it is previewed. `outline` stands in for the start's
+    approved outline, as a word edit checks the new words against the drawing."""
+    return _spec_of(root, run, section, renderer, outline)[0]
 
 
 def keep_section(root, run: dict, section: str, handed) -> Path:
