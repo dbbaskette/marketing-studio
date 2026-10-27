@@ -115,7 +115,7 @@
       "path": "runner/brand.py",
       "from": "runner/brand.py",
       "revision": "0881ce768039ebeb9e1fa39b89cedf792bf5d40e",
-      "note": "a brand skill's version, from PR #66; without contracts(), which belongs to the move to harness-slides 0.14.1"
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/brand.py`. a brand skill's version, from PR #66; without contracts(), which belongs to the move to harness-slides 0.14.1"
     },
     {
       "path": "runner/research.py",
