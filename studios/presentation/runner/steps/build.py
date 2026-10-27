@@ -1203,6 +1203,8 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
     if lines_noted:
         note = '\n'.join(filter(None, [note, *lines_noted]))
     lines = [f'Draw section {number} of "{title}": the slides in your input "brief".']
+    retold = ((run.get('desk') or {}).get('retold') or {}).get(section) if decks.on_desk(run) \
+        else None
     if drawn:
         mine = [slide for slide in (last or {}).get('slides') or () if slide['id'] in ids]
         inputs['your earlier section'] = _read(root / drawn['file'])
@@ -1222,6 +1224,11 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                          "point's sentence whole in one shape and no text over other text.")
     lines += [f'Your inputs are {", ".join(inputs)}.', 'Hand the section in with '
               'submit_section.']
+    if retold:
+        # The person changed these slides' words on the desk after the brief was written.
+        lines.append(f"The words of slides {', '.join(retold)} changed since your brief was "
+                     'written; the words in your input and in the fixed slides are the '
+                     'approved ones.')
     if note:
         lines.append(f'The person asked for this change to the deck:\n\n{note}\n\nWhat a '
                      'slide says stays as it was approved: change how it is drawn.')
@@ -1374,6 +1381,7 @@ def keep_section(root, run: dict, section: str, handed) -> Path:
     write_state(root, state)
     if decks.on_desk(run):
         desk.settle_notes(run, section)
+        ((run.get('desk') or {}).get('retold') or {}).pop(section, None)
         decks.write_run(root, run)
     return root / file
 
@@ -1560,7 +1568,7 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
     found = preview_repairs(shown, slides_kept, bool(has and has(CLUSTERS)))
     made['preview_repair'] = found
     state['rounds'].append(made)
-    state.update(repair=[], asked=None, deck=None, audit=None, auditNote=None)
+    state.update(repair=[], asked=None, deck=None, audit=None, auditNote=None, rewhole=None)
     if found and state.get('repaired', 0) < REPAIRS:
         wanted = {entry['slide'] for entry in found}
         state['repair'] = [entry['id'] for entry in began['sections']

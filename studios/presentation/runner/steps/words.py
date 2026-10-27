@@ -29,11 +29,14 @@ import secrets
 import tempfile
 from pathlib import Path
 
+# isort: off
+import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError, write_atomic
 
-import runner  # noqa: F401  puts the core on the import path
 from runner.steps import build
+# isort: on
+
 
 FIELDS = ('title', 'subtitle', 'detail', 'caveat', 'source', 'notes')
 KEYS = ('label', 'text')
@@ -171,6 +174,43 @@ def with_words(whole: dict, outline: dict, slide_id: str) -> dict:
             made['slides'][at] = {**kept, **{key: now[key] for key in (*FIELDS, 'points')
                                              if key in now}}
     return made
+
+
+def lead_file(root, state: dict, slide_id: str) -> Path | None:
+    """The start's file for a lead slide (cover, section or closing), which no composer
+    draws: the deck is put together from it as it is."""
+    began = state.get('start') or {}
+    folder = Path(root) / began['folder']
+    for part in (home.read_json(folder / 'parts.json', {}) or {}).get('parts') or ():
+        if build.SECTION.match(Path(part).stem):
+            continue
+        made = home.read_json(folder / part, {})
+        if any(isinstance(one, dict) and one.get('id') == slide_id
+               for one in made.get('slides') or ()):
+            return folder / part
+    return None
+
+
+def lead_fits(patched: dict, brand, slides) -> list[str]:
+    """The slides tool's lines where a lead slide's new words do not compile."""
+    from runner import worker_tools
+    with tempfile.TemporaryDirectory(prefix='presentation-lead-') as scratch:
+        file = Path(scratch) / 'lead.json'
+        file.write_text(json.dumps(patched, ensure_ascii=False), encoding='utf-8')
+        try:
+            slides.compile(file, Path(brand))
+        except WorkspaceError as refusal:
+            return list(worker_tools.said_no(refusal))
+    return []
+
+
+def land_lead(root, file: Path, patched: dict) -> None:
+    """Keep a lead slide's new words in the start's file, and have the deck put together
+    again from it."""
+    write_atomic(Path(file), json.dumps(patched, ensure_ascii=False, indent=2) + '\n')
+    state = build.read_state(root)
+    state['rewhole'] = True
+    build.write_state(root, state)
 
 
 def land(root, run: dict, section: str, patched: dict) -> Path:

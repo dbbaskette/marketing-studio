@@ -449,6 +449,12 @@ def keep_outline(root, run: dict, handed, extracted: bool = False) -> dict:
 def apply_edits(root, run: dict, edited: list, slides, brand: Path) -> None:
     """The page's edited outline (reorder, add, remove, retitle) saved back and re-checked.
     Nothing is written when the slides tool, or the outline's own rules, refuse."""
+    _write(root, checked_edits(root, run, edited, slides, brand))
+
+
+def checked_edits(root, run: dict, edited: list, slides, brand: Path) -> dict:
+    """The outline with the page's edited slides, checked by the slides tool and the
+    outline's own rules, and not written. Refused in a sentence."""
     root = Path(root)
     current = json.loads((root / OUTLINE).read_text(encoding='utf-8'))
     if not isinstance(edited, list) or not all(isinstance(one, dict) for one in edited):
@@ -465,4 +471,4 @@ def apply_edits(root, run: dict, edited: list, slides, brand: Path) -> None:
                 for one in report.get('findings') or ()]
     if findings:
         raise WorkspaceError('The outline cannot be saved. ' + ' '.join(findings))
-    _write(root, outline)
+    return outline

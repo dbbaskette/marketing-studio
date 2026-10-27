@@ -108,5 +108,140 @@ class PatchTests(DeskCase):
                          'Capacity holds with two or more')
 
 
+class TypedWordsTests(DeskCase):
+    """A slide's words and speaker notes typed on its card: saved with no composer when they
+    still fit the drawing, and nothing saved when they do not."""
+
+    SESSION = 'a' * 16
+
+    def deck(self) -> Path:
+        root = self.start_desk(look='default')
+        self.on_desk(root)
+        return root
+
+    def seen(self, root: Path) -> int:
+        return self.desk_view(root)['seen']
+
+    def card(self, root: Path, number: int) -> dict:
+        return next(card for part in self.desk_view(root)['sections'] for card in part['slides']
+                    if card['number'] == number)
+
+    def outline_slide(self, root: Path, number: int) -> dict:
+        return json.loads((root / 'outline.json').read_text())['slides'][number - 1]
+
+    def put_together(self) -> int:
+        return self.log().count('Rolling restarts: the deck is put together')
+
+    def test_a_title_that_fits_lands_with_no_section_job(self):
+        root = self.deck()
+        jobs, rounds = len(self.workers.of('section')), len(build.read_state(root)['rounds'])
+        self.engine.desk_words(root, 3, 'title', 'Batches restart in turn', self.seen(root),
+                               self.SESSION)
+        self.assertEqual(len(self.workers.of('section')), jobs)
+        self.assertEqual(self.outline_slide(root, 3)['title'], 'Batches restart in turn')
+        self.on_desk(root)
+        self.assertEqual(len(build.read_state(root)['rounds']), rounds + 1)
+        state = build.read_state(root)
+        drawn = json.loads((root / state['sections']['section-1']['file']).read_text())
+        self.assertEqual(next(one for one in drawn['slides'] if one['id'] == SLIDE['id'])['title'],
+                         'Batches restart in turn')
+
+    def test_a_title_that_does_not_fit_saves_nothing(self):
+        root = self.deck()
+        before = (root / 'outline.json').read_bytes()
+        self.slides.run.fails['compose compile'] = TOO_LONG
+        shown = self.engine.desk_words(root, 3, 'title', 'A much longer title', self.seen(root),
+                                       self.SESSION)
+        self.slides.run.fails.pop('compose compile')
+        card = next(card for part in shown['desk']['sections'] for card in part['slides']
+                    if card['number'] == 3)
+        self.assertEqual(card['unfit']['text'], 'A much longer title')
+        self.assertIn(TOO_LONG, card['unfit']['lines'])
+        self.assertEqual(card['unfit']['says'], words.NO_FIT)
+        self.assertEqual((root / 'outline.json').read_bytes(), before)
+        self.assertEqual(self.waiting(root), 'gate:build')
+
+    def test_redraw_with_these_words_saves_them_and_redraws_the_section(self):
+        root = self.deck()
+        edited = json.loads(json.dumps(LONG_OUTLINE))
+        edited['slides'][2]['title'] = 'A much longer title'
+        self.workers.outline_said = edited
+        jobs = len(self.workers.of('section'))
+        self.engine.desk_redraw_words(root, 3, 'title', 'A much longer title',
+                                      self.desk_view(root)['expected'])
+        again = self.workers.of('section')[jobs:]
+        self.assertEqual(len(again), 1)
+        self.assertIn('changed since your brief was written', again[0].task)
+        self.assertIn('Fit the new words of slide 3.', again[0].task)
+        self.assertEqual(self.outline_slide(root, 3)['title'], 'A much longer title')
+        told = words.given(root)
+        self.assertEqual(build.slides_of(told)[2]['title'], 'A much longer title')
+        self.on_desk(root)
+        self.assertIsNone(self.card(root, 3)['unfit'])
+
+    def test_speaker_notes_save_with_no_section_job(self):
+        root = self.deck()
+        jobs, put = len(self.workers.of('section')), self.put_together()
+        self.engine.desk_notes(root, 3, 'Two minutes. Ask who runs one instance.',
+                               self.seen(root), self.SESSION)
+        self.assertEqual(len(self.workers.of('section')), jobs)
+        self.assertEqual(self.put_together(), put + 1)
+        self.assertEqual(self.outline_slide(root, 3)['notes'],
+                         'Two minutes. Ask who runs one instance.')
+        self.assertEqual(self.card(root, 3)['notes'], 'Two minutes. Ask who runs one instance.')
+
+    def test_two_notes_saves_while_the_deck_is_put_together_make_one_more_pass(self):
+        from unittest import mock
+        root = self.deck()
+        real, saved, wholes = build.draw_whole, [], []
+
+        def drawing(*given, **named):
+            wholes.append(True)
+            made = real(*given, **named)
+            if not saved:
+                for number, text in ((5, 'Show the check in the log.'), (6, 'One example.')):
+                    saved.append(self.engine.desk_notes(root, number, text, self.seen(root),
+                                                        self.SESSION))
+            return made
+
+        with mock.patch.object(build, 'draw_whole', drawing):
+            self.engine.desk_notes(root, 3, 'Two minutes.', self.seen(root), self.SESSION)
+        self.assertEqual(len(saved), 2)
+        # The first save's pass, and one more for the two saved while it ran.
+        self.assertEqual(len(wholes), 2)
+        self.on_desk(root)
+        self.assertEqual(self.outline_slide(root, 6)['notes'], 'One example.')
+        state = build.read_state(root)
+        drawn = json.loads((root / state['sections']['section-2']['file']).read_text())
+        self.assertEqual([one['notes'] for one in drawn['slides']][:2],
+                         ['Show the check in the log.', 'One example.'])
+
+    def test_an_old_form_is_refused_for_its_slide_only(self):
+        root = self.deck()
+        seen = self.seen(root)
+        self.engine.desk_words(root, 3, 'title', 'Batches restart in turn', seen, 'b' * 16)
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_words(root, 3, 'title', 'Another title', seen, 'c' * 16)
+        self.assertIn('changed since', str(caught.exception))
+        self.engine.desk_words(root, 5, 'title', 'Health first', seen, 'c' * 16)
+        self.assertEqual(self.outline_slide(root, 5)['title'], 'Health first')
+
+    def test_a_lead_slide_s_title_is_checked_on_its_own_and_has_no_points(self):
+        root = self.deck()
+        self.engine.desk_words(root, 1, 'title', 'Rolling restarts, plainly', self.seen(root),
+                               self.SESSION)
+        self.assertEqual(self.outline_slide(root, 1)['title'], 'Rolling restarts, plainly')
+        with self.assertRaises(WorkspaceError):
+            self.engine.desk_words(root, 1, ['points', 0, 'text'], 'x', self.seen(root),
+                                   self.SESSION)
+
+    def test_a_gated_deck_s_outline_is_never_patched(self):
+        from runner import desk
+        root = self.gated()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_words(root, 3, 'title', 'Batches restart in turn', 1, self.SESSION)
+        self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
+
+
 if __name__ == '__main__':
     unittest.main()

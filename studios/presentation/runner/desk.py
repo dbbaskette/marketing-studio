@@ -464,6 +464,10 @@ def deck_price(last: dict) -> str:
 # --- the desk's cards ---------------------------------------------------------------------
 
 WORDS = ('title', 'subtitle', 'detail', 'points', 'caveat', 'source')
+UNFIT = 'These words do not fit the slide as it is drawn.'
+NO_POINTS = 'A cover, section or closing slide has no points to change.'
+REDRAW_WORDS = 'Fit the new words of slide {number}.'
+WORDS_BUSY = 'The deck is being redrawn now. Redraw with these words when that ends.'
 SET_ASIDE = 'Not redrawn: you stopped the whole-deck note.'
 REDRAWING = 'Redrawing…'
 
@@ -557,6 +561,30 @@ def _parts(root, state: dict, outline: dict) -> list[tuple[str | None, bool, lis
     return parts
 
 
+def check_seen(run: dict, seen, part: str) -> None:
+    """Refuse a form older than the slide it changes: piece 3's per-part check, over the
+    desk's own revision and the revision each slide last changed at."""
+    from studio_core.drafting import record
+    held = run.get('desk') or {}
+    try:
+        record.checked({'revision': int(held.get('revision') or 1),
+                        'changed': held.get('changed') or {}}, seen, [part], 'deck')
+    except ValueError as refusal:
+        raise WorkspaceError(str(refusal)) from None
+
+
+def advance(run: dict, part: str) -> int:
+    """One revision on, with `part` changed at it. Returns the revision."""
+    held = run.setdefault('desk', {})
+    held['revision'] = int(held.get('revision') or 1) + 1
+    held.setdefault('changed', {})[part] = held['revision']
+    return held['revision']
+
+
+def revision(run: dict) -> int:
+    return int((run.get('desk') or {}).get('revision') or 1)
+
+
 def cards(root, run: dict, price=None) -> dict:
     """The desk's slide cards, under the sections the deck was split into, in deck order:
     {'sections': [{'id', 'lead', 'number', 'slides': [card]}], 'expected', 'drawn_here'}.
@@ -575,6 +603,7 @@ def cards(root, run: dict, price=None) -> dict:
         else {slide['id']: at for at, slide in enumerate(build.slides_of(outline), 1)}
     findings = build.ordered((last.get('review') or {}).get('findings')) if drawn else []
     kept = notes(run)
+    unfit = (run.get('desk') or {}).get('unfit') or {}
     sections, counted = [], 0
     for section, lead, ids in _parts(root, state, outline):
         counted += 0 if lead else 1
@@ -598,6 +627,7 @@ def cards(root, run: dict, price=None) -> dict:
                 'audit': audit_lines(state, number) if drawn and number else [],
                 'note': _note_shown(noted),
                 'busy': busy_now,
+                'unfit': {**unfit[ident], 'says': UNFIT} if ident in unfit else None,
                 'price': priced})
         sections.append({'id': section, 'lead': lead, 'number': None if lead else counted,
                          'slides': slides})

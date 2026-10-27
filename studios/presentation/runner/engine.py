@@ -995,6 +995,9 @@ class Engine(Jobs, Researching, DeskActions):
                     if self._settle(root, record):
                         continue
                 self._original(root, record)
+                if decks.on_desk(record) and (record.get('desk') or {}).get('edits'):
+                    self._desk_land_queued(root)   # words saved while the chain ran
+                    continue
                 step = first(record)
                 if step is None:
                     return
@@ -1591,7 +1594,7 @@ class Engine(Jobs, Researching, DeskActions):
         state = build.read_state(root)
         if not state.get('start') or build.to_draw(root):
             return False
-        if not state['rounds']:
+        if not state['rounds'] or state.get('rewhole'):
             return True
         made = state['rounds'][-1].get('made_from') or {}
         return any(made.get(ident) != entry.get('file')
