@@ -1071,5 +1071,22 @@ class ReachableTests(unittest.TestCase):
                          '(self-signed certificate in certificate chain)')
 
 
+class SavedSettingsTests(unittest.TestCase):
+    """runner.json, byte for byte, as the code wrote it before settings shared its parts."""
+
+    def test_runner_json_is_written_as_before(self):
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        base = Path(holder.name)
+        with mock.patch.dict(os.environ, {'TRAINING_STUDIO_DATA': str(base / 'data'),
+                                          'STUDIOS_CONFIG': str(base / 'studios-config.json')}):
+            settings.save(settings.Settings())
+            self.assertEqual(settings.path().read_bytes(),
+                             b'{\n  "look_for_updates": true,\n  "notify": false,\n'
+                             b'  "parallel": 2,\n  "schema": 1,\n  "step_seconds": 900,\n'
+                             b'  "training_dollars": 20.0\n}\n')
+            self.assertFalse((base / 'studios-config.json').exists())
+
+
 if __name__ == '__main__':
     unittest.main()

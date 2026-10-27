@@ -42,7 +42,7 @@
       "path": "runner/settings.py",
       "from": "runner/settings.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "brand_repository, brand_release, check_repository and check_release follow runner/settings.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66); brand and variant name no brand; adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): agent, model, effort, name, brand, variant, output, brand_repository and brand_release read from and saved to the studios config only (SHARED, from_shared, shared_now, seen, changes, save(shown) with the guard and STALE, own, forget_own)"
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/settings.py`; the rest is this studio's. The port: brand_repository, brand_release, check_repository and check_release follow runner/settings.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66); brand and variant name no brand; adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): agent, model, effort, name, brand, variant, output, brand_repository and brand_release read from and saved to the studios config only (SHARED, from_shared, shared_now, seen, changes, save(shown) with the guard and STALE, own, forget_own)"
     },
     {
       "path": "tests/helpers.py",
