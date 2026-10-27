@@ -357,6 +357,8 @@ function settle() {
 // The kit's phone rules for a filter row: on a phone only the search shows until Filters
 // opens the rest; on a desktop there is no Filters button.
 let phone = false;
+// Where the page sent the browser, when it set location.href: a page of its own is not left.
+let here = null;
 
 function styledAway(at) {
   if (at.nodeType !== 1) return false;
@@ -586,6 +588,7 @@ function snapshot() {
     pace: report.paces[report.paces.length - 1] || 0,
     asked: report.requests.length,
     still: followed.filter(([node]) => document.body.contains(node)).map(([, named]) => named),
+    href: (here && here.href) || '',
     ...layout(),
   };
 }
@@ -746,6 +749,7 @@ async function app(file) {
     },
   };
   window.window = window;
+  here = window.location;
   window.navigator.clipboard.writeText = () => Promise.resolve();
   const context = vm.createContext(window);
   context.navigator = window.navigator;

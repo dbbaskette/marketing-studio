@@ -2005,7 +2005,7 @@ class ScreenTests(ScriptedPage, PageCase):
         for shown in ('Running on this computer', 'Rolling restarts', 'Cost so far',
                       'This computer'):
             self.assertIn(shown, shots['status']['text'])
-        for shown in ('Workspace', 'What a new deck starts with', 'When this page is closed',
+        for shown in ('Workspace', 'Delivered as', 'When this page is closed',
                       'Updates'):
             self.assertIn(shown, shots['settings']['text'])
         self.assertEqual(self.posts(result), [])

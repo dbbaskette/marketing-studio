@@ -1355,6 +1355,8 @@ function drawSheet() {
 
 // --- home -------------------------------------------------------------------------
 
+const HOME_LEDE = 'What needs you comes first, then decks in progress, then ways to start one.';
+
 function greeting() {
   const hour = new Date().getHours();
   const hello = hour < 12 ? 'Good morning.' : hour < 18 ? 'Good afternoon.' : 'Good evening.';
@@ -1388,7 +1390,27 @@ function standingOf(brief) {
 }
 
 function newButton(kind) {
-  return capsule('New deck', kind, () => show('new'), 'new');
+  return capsule('New deck', kind, () => openNew(), 'new');
+}
+
+// The new-deck form, at a route when one is given: that route's first step.
+function openNew(route) {
+  if (!view.draft) view.draft = newDraft();
+  if (route && view.draft.route !== route) {
+    view.draft.route = route;
+    view.draft.step = 0;
+    view.draft.research = false;
+    view.draft.looks = null;
+  }
+  show('new');
+}
+
+// Ways to start a deck, after the decks in hand: the three routes, each opening the form.
+function startCard() {
+  return add(card('Start a deck'),
+    make('p', '', 'From an idea, from a document, or from a deck you already have.'),
+    add(make('div', 'bar'), ...ROUTES.map(([route, title]) => capsule(title, '',
+      () => openNew(route), 'start ' + route))));
 }
 
 // The contact sheet of a deck, small: one picture of all its slides.
@@ -1416,7 +1438,7 @@ function deliveredLine(brief) {
 
 function deckRow(brief, kind) {
   const title = brief.title || 'Untitled';
-  const text = add(make('div', 'row-text'), make('h3', 'row-title', title));
+  const text = add(make('div', 'row-text'), make('p', 'row-title', title));
   const route = routeWords(brief);
   if (route) add(text, make('p', 'quiet', route));
   if (kind !== 'needs' && kind !== 'finished') add(text, state(...standingOf(brief)));
@@ -1489,16 +1511,20 @@ function drawHome(fresh) {
   // With no deck yet, the invitation holds the one way to start one.
   const start = every().length ? newButton(lead ? '' : 'filled') : null;
   const said = greeting();
+  // What needs the person, then work in hand, then ways to start, then setup, then what is
+  // finished.
   const parts = [['greeting', [said], () => make('p', 'large-title', said)],
-    ['updates', [upkeepOf()], updatesCard]];
+    ['head', [], () => pageHead(HOME_LEDE)]];
   if (!every().length) {
-    parts.push(['invite', [], invitation]);
+    parts.push(['invite', [], invitation], ['updates', [upkeepOf()], updatesCard]);
   } else {
     parts.push(
       rows('Needs you', list(found.needs), 'needs', 'card-needs'),
       rows('In progress', list(found.working), 'working'),
-      rows('Finished', list(found.finished), 'finished'),
-      rows('Run by your teammates', list(found.elsewhere), 'elsewhere'));
+      rows('Run by your teammates', list(found.elsewhere), 'elsewhere'),
+      ['start', [], startCard],
+      ['updates', [upkeepOf()], updatesCard],
+      rows('Finished', list(found.finished), 'finished'));
   }
   parts.push(['foot', around(),
     () => add(make('footer', 'foot'), computerLine(), sharingLine(), fetchLine())]);
@@ -1615,7 +1641,7 @@ function computerItem(item) {
   const [shape, words] = COMPUTER_WORDS[item.state] || COMPUTER_WORDS.problem;
   const node = make('li', 'computer-item');
   const said = item.state !== 'ok' && item.optional ? words + ' (optional)' : words;
-  add(node, add(make('div', 'computer-top'), make('h3', 'row-title', item.name),
+  add(node, add(make('div', 'computer-top'), make('p', 'row-title', item.name),
     state(item.state !== 'ok' && item.optional ? 'none' : shape, said)));
   const facts = make('ul', 'facts');
   for (const found of list(item.facts)) facts.append(fact(found, item.optional));
@@ -1677,14 +1703,17 @@ function computerCard() {
 }
 
 function drawStatus(fresh) {
+  // The check comes first, so what it finds shows where the person is looking.
   placeParts({ title: 'Status', actions: [checkButton('filled')],
     mark: ['Status', view.checking, Boolean(view.computer)] }, [
+    ['head', [], () => pageHead('What is running, who runs it, and whether this computer has '
+      + 'what a deck needs.')],
+    ['computer', [view.computer, upkeepOf()], computerCard],
     ['runs', [view.status], runsCard],
     ['teammates', [view.status, teamSpace(), view.looked, view.found], teammatesCard],
     ['versions', [upkeepOf(), view.restarting], versionsCard],
     ['skills', [upkeepOf()], skillsCard],
-    ['studios', studiosMark(), studiosCard],
-    ['computer', [view.computer, upkeepOf()], computerCard]], fresh);
+    ['studios', studiosMark(), studiosCard]], fresh);
   // Every run and who runs what is asked for as the screen opens.
   if (fresh) {
     const turn = view.turn;
@@ -1713,7 +1742,7 @@ function alertsCard() {
       + 'what needs you.'));
   }
   return add(node, make('p', '', 'Be told when a deck needs you, even when this tab is '
-    + 'behind another.'), add(make('div', 'bar'), capsule('Turn on notifications', 'filled',
+    + 'behind another.'), add(make('div', 'bar'), capsule('Turn on notifications', '',
     async () => {
       try {
         await Notification.requestPermission();
@@ -1724,33 +1753,38 @@ function alertsCard() {
     }, 'alerts')));
 }
 
-// What a new deck starts with: whose it is, its brand, and where it is delivered.
-function defaultsCard() {
+// What every studio shares, with what a new deck starts with from it: whose it is, its
+// brand, and where it is delivered. They are changed in Marketing Studio's shared settings.
+function sharedCard() {
   const held = view.setup;
-  if (!held || !held.configured) return null;
-  const brand = (held.brand && held.brand.default) || {};
-  const output = OUTPUTS.find((one) => one[0] === held.output);
-  return add(card('What a new deck starts with'),
-    about([['Your name', (held.person && held.person.name) || 'not given yet'],
+  const node = add(card('Shared settings'),
+    make('p', '', 'Your assistant, workspace, brand and delivery choices apply across all studios.'));
+  if (held && held.configured) {
+    const brand = (held.brand && held.brand.default) || {};
+    const output = OUTPUTS.find((one) => one[0] === held.output);
+    add(node, about([['Your name', (held.person && held.person.name) || 'not given yet'],
       ['Brand', brand.brand ? brand.brand + (brand.variant ? ', ' + brand.variant : '') : ''],
-      ['Delivered as', output ? output[1] : '']]),
-    add(make('div', 'bar'), capsule('Change them', 'quiet', () => show('setup'),
-      'defaults')));
+      ['Delivered as', output ? output[1] : '']]));
+  }
+  return add(node, add(make('div', 'bar'), capsule('Change shared settings', 'quiet',
+    () => { location.href = settingsAddress(); }, 'shared-settings')));
 }
 
 function drawSettings(fresh) {
+  const held = view.setup || {};
   placeParts({ title: 'Settings', mark: ['Settings'] }, [
-    ['shared-settings', [], () => add(card('Shared settings'),
-      make('p', '', 'Your assistant, workspace, brand and delivery choices apply across all studios.'),
-      capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings'))],
+    ['head', [], () => pageHead('How Presentation Studio works on this computer; what every '
+      + 'studio shares is changed in Shared settings.')],
+    ['shared-settings', [held.configured, held.person, held.brand && held.brand.default,
+      held.output], sharedCard],
     ['review-level', [view.setup && view.setup.review_level, view.reviewRefused],
       reviewLevelCard],
-    ['workspace', around(), workspaceCard], ['studios', studiosMark(), studiosCard],
-    ['defaults', [view.setup], defaultsCard],
-    ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
-    ['look', [view.setup && view.setup.updates, view.lookRefused], lookCard],
+    ['workspace', around(), workspaceCard],
     ['brand-source', [view.setup && view.setup.brand && [view.setup.brand.repository,
       view.setup.brand.release], view.brandRefused, view.savingBrand], brandSourceCard],
+    ['look', [view.setup && view.setup.updates, view.lookRefused], lookCard],
+    ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
+    ['studios', studiosMark(), studiosCard],
     ['page', [], () => add(card('This page'),
       make('p', '', 'It runs on this computer and answers only to the link that opened it. '
         + 'The page sends what you read and decide nowhere else. The assistant that does the '
@@ -2408,7 +2442,7 @@ function placeCard(form) {
   const checks = make('div', 'checks');
   checks.id = 'setup-checks';
   checks.setAttribute('role', 'status');
-  return add(node, make('h3', 'row-title', 'Checked for you'), checks,
+  return add(node, make('p', 'row-title', 'Checked for you'), checks,
     add(make('div', 'bar'), capsule('Check again', 'quiet', again, 'check-again')));
 }
 
@@ -2559,9 +2593,9 @@ function paintSetup(fresh) {
   const save = submitButton(first ? 'Save and go on' : 'Save', 'save');
   const intro = add(make('div', 'intro'),
     first ? make('p', 'large-title', 'Welcome. Let’s get you set up.') : null,
-    make('p', 'lede', 'Check this computer, say where your team keeps its decks, and choose '
-      + 'what a new deck starts with. Each answer is checked as you give it, and nothing is '
-      + 'changed until you save.' + (first ? ' Then you can start your first deck.' : '')));
+    make('p', 'lede', 'Say where your team keeps its decks and what a new deck starts with.'),
+    make('p', 'quiet', 'Each answer is checked as you give it, and nothing is changed until '
+      + 'you save.' + (first ? ' Then you can start your first deck.' : '')));
   // The set-up is a form, so Enter in a box saves as the filled button does.
   const body = add(pageForm(() => saveSetup(save)), intro,
     first ? computerSetupCard() : null, placeCard(form),
@@ -6347,7 +6381,7 @@ function teammatesCard() {
       'theirs ' + one.path);
     go.setAttribute('aria-label', 'Open ' + title + ', to read it');
     add(items, add(make('li', 'row'), add(make('div', 'row-text'),
-      make('h3', 'row-title', title),
+      make('p', 'row-title', title),
       one.driver ? whoSays(one.driver, 'who') : null,
       lastLine(one.last_shared, 'row-says')
         || (one.sentence ? make('p', 'row-says', one.sentence) : null),

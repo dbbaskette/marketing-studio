@@ -4,7 +4,7 @@
 
 /* What is said of the slide on the stage, under it. */
 .slide-about {
-  margin-top: 0.7rem;
+  margin-top: 0.6rem;
 }
 
 .slide-about > * + * {
@@ -14,7 +14,7 @@
 .pair {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.8rem;
+  gap: 0.6rem;
 }
 
 .strip-item .tag {
@@ -34,7 +34,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   gap: 0.6rem;
-  margin: 0.4rem 0 0.8rem;
+  margin: 0.6rem 0;
 }
 
 .review-count {
@@ -111,7 +111,7 @@
 
 /* A slide's points and notes, folded under its row, spaced as the row is. */
 .outline-slide > details > * + * {
-  margin-top: 0.55rem;
+  margin-top: 0.6rem;
 }
 
 /* The outline engine's self-contained wireframe is isolated from the page, so it cannot
