@@ -1065,6 +1065,17 @@ class DeskActions:
                 record['form'] = {**(record.get('form') or {}), 'initial_review': 'user-first',
                                   'initial_review_source': 'desk'}
                 record.pop('review_requested', None)
+            # A look drawn again on the desk is picked as this deck's was: by the person, or
+            # the brand's default where the saved level chose it.
+            picked = looks.chosen(root) or {}
+            if picked and not (record.get('form') or {}).get('look'):
+                record['form'] = {**(record.get('form') or {}), 'look': 'default'
+                                  if picked.get('by') in ('review-policy', 'desk') else 'pick'}
+            # Notes from the gated flow were for the deck as delivered: nothing draws them
+            # on the desk, and they never ride along with a change made there.
+            record['build_feedback_done'] = [*(record.get('build_feedback_done') or []),
+                                             *(record.get('build_feedback') or [])]
+            record['build_feedback'] = []
             record['flow'] = 'desk'
             record['opened_on_desk'] = home.now()
             desk.arrive(record)

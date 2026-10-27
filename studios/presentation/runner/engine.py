@@ -1192,7 +1192,7 @@ class Engine(Jobs, Researching, DeskActions):
     def _automatic(record: dict, gate: str, holding=()) -> bool:
         """Whether the run's level accepts `gate` without the person, with every gate this
         deck has, so a combined stop is held where the deck has a stop."""
-        return review_policy.automatic(record, 'presentation', gate, holding=holding,
+        return review_policy.automatic(stages.unleveled(record), 'presentation', gate, holding=holding,
                                        run_gates=[step.name for step in stages.steps(record)])
 
     def _policy_gate(self, root: Path, step: stages.Step) -> None:
@@ -2023,7 +2023,7 @@ class Engine(Jobs, Researching, DeskActions):
         """A decision at a gate, applied and stored. Call it holding `files`. Returns what
         the commit says, and what else it lists."""
         it = WORDS[gate]
-        combined = gate == 'gate:outline' and review_policy.level(record) == 'balanced'
+        combined = gate == 'gate:outline' and stages.level(record) == 'balanced'
         if combined and (not expected or expected != self._direction_signature(root, record)):
             raise WorkspaceError('The direction changed. Read the latest review before deciding.')
         if target:
@@ -2326,7 +2326,7 @@ class Engine(Jobs, Researching, DeskActions):
             record.pop('look_again', None)
             if picked:
                 record['look_picked'] = picked
-        if gate == 'gate:outline' and review_policy.level(record) == 'balanced':
+        if gate == 'gate:outline' and stages.level(record) == 'balanced':
             # The direction review shows the looks: the person's pick is part of approving
             # it. It is kept in the run, so that whichever computer goes on draws the deck in
             # it, and is chosen with the brand when the look's own gate continues.
@@ -2380,7 +2380,7 @@ class Engine(Jobs, Researching, DeskActions):
                 record['look_again'] = {'name': picked.get('name') or picked.get('choice'),
                                         'choice': picked.get('choice')}
         else:
-            made = looks.choose_default(root, self._skill(), review_policy.level(record))
+            made = looks.choose_default(root, self._skill(), stages.level(record))
         return made is not None
 
     def _edit_outline(self, root: Path, record: dict, edited) -> None:
@@ -2912,7 +2912,7 @@ class Engine(Jobs, Researching, DeskActions):
             shown['last_build'] = self._last_build(record)
         elif nxt.name not in ('gate:research-plan', 'gate:research'):
             shown['redo'] = self._redo(record, nxt.name)
-        if nxt.name == 'gate:outline' and review_policy.level(record) == 'balanced':
+        if nxt.name == 'gate:outline' and stages.level(record) == 'balanced':
             shown['research'] = self._show_research(root, record)
             shown['leave_out_price'] = self._leave_out_price(record)
             shown['look'] = self._show_look(root, record)
@@ -3249,7 +3249,7 @@ class Engine(Jobs, Researching, DeskActions):
             'model_jobs': list(record.get('model_jobs') or [])[-20:],
             'build_feedback': list(record.get('build_feedback') or []),
             'build_timing': build_progress.timings(root),
-            'review_level': review_policy.level(record),
+            'review_level': stages.level(record),
             'workers': self._workers(run),
             'build_progress': progress,
             'build_sections': self._sections_kept(root),
@@ -3346,7 +3346,7 @@ class Engine(Jobs, Researching, DeskActions):
         counted), and the seconds of every try with the dollars of its agent's jobs, said
         only when every one of them reported its cost."""
         rows = [row for row in stages.timeline(record) if row['state'] != 'done']
-        gates = review_policy.ahead(record, 'presentation',
+        gates = review_policy.ahead(stages.unleveled(record), 'presentation',
                                     [row['name'] for row in rows if row['name'].startswith('gate:')],
                                     run_gates=[step.name for step in stages.steps(record)])
         if record.get('look_again') and any(row['name'] == 'gate:look' for row in rows):
@@ -3362,7 +3362,7 @@ class Engine(Jobs, Researching, DeskActions):
         # What the stop decides, as a sentence says it: under Balanced, the outline's stop
         # is the direction.
         words = nxt and ('direction' if nxt['name'] == 'gate:outline'
-                         and review_policy.level(record) == 'balanced' else WORDS[nxt['name']])
+                         and stages.level(record) == 'balanced' else WORDS[nxt['name']])
         return {'steps_left': len(rows), 'next_gate': nxt and nxt['name'],
                 'next_stop': nxt and nxt['label'], 'next_words': words, 'jobs': took['jobs'],
                 'seconds': took['seconds'], 'dollars': dollars,

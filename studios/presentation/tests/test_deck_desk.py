@@ -1266,6 +1266,79 @@ class OpenOnDeskTests(DeskCase):
         self.assertEqual((form.get('initial_review'), form.get('initial_review_source')),
                          ('user-first', 'desk'))
 
+    def opened_at(self, level: str, **changes) -> Path:
+        """A deck started the gated way under the review level `level`, delivered and opened
+        on the desk."""
+        self.review_level = level
+        root = self.delivered(**changes)
+        self.engine.open_on_desk(root)
+        return root
+
+    def back_on_desk(self, root: Path) -> None:
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown['problem'])
+        self.on_desk(root)
+
+    def test_change_the_look_on_an_opened_deck_reads_no_level(self):
+        for level in ('balanced', 'automatic'):
+            with self.subTest(level):
+                root = self.opened_at(level, title=f'Rolling restarts {level}')
+                self.assertEqual(self.view(root)['review_level'], 'step_by_step')
+                self.engine.desk_look_again(root)
+                shown = self.view(root)
+                self.assertIsNone(shown['problem'], shown['problem'])
+                self.assertEqual(self.waiting(root), 'gate:look')
+                self.pick_look(root, 'example-bold')
+                self.back_on_desk(root)
+                self.assertEqual(looks.chosen(root)['choice'], 'example-bold')
+
+    def test_reading_an_opened_document_the_other_way_reads_no_level(self):
+        for level in ('balanced', 'automatic'):
+            with self.subTest(level):
+                root = self.opened_at(level, title=f'Notes {level}', route='document',
+                                      source={'kind': 'paste',
+                                              'text': 'Notes on rolling restarts.'})
+                other = 'spec' if self.record(root).get('classified') == 'material' \
+                    else 'material'
+                self.engine.desk_reread(root, other)
+                shown = self.view(root)
+                self.assertIsNone(shown['problem'], shown['problem'])
+                # The person picked this deck's look, so a new outline's looks are theirs to
+                # pick again, as on a desk deck that chose to pick; the level's default
+                # look is chosen again by itself.
+                if level == 'balanced':
+                    self.pick_look(root)
+                self.back_on_desk(root)
+                self.assertEqual(self.record(root)['classified'], other)
+
+    def test_a_gated_balanced_deck_keeps_its_direction_review(self):
+        from runner import stages
+        self.review_level = 'balanced'
+        root = self.start()
+        names = [step.name for step in stages.steps(self.record(root))]
+        self.assertGreater(names.index('gate:outline'), names.index('look-preview'))
+        self.assertEqual(self.view(root)['review_level'], 'balanced')
+
+    def test_notes_left_from_the_gated_flow_are_not_drawn_on_the_desk(self):
+        root = self.delivered()
+        record = self.record(root)
+        slide = json.loads((root / 'outline.json').read_text())['slides'][2]['id']
+        record['build_feedback'] = [{'slide': slide, 'number': 3, 'section': 'section-1',
+                                     'note': 'Bigger arrows.', 'late': True,
+                                     'at': '2026-10-27T10:00:00Z'}]
+        (root / 'run.json').write_text(json.dumps(record))
+        self.git('commit', '-qam', 'a late note from the gated flow')
+        expected = self.engine.open_on_desk(root)['desk']['expected']
+        record = self.record(root)
+        self.assertEqual(desk.opened(record), [])
+        self.assertEqual([item['note'] for item in record['build_feedback_done']],
+                         ['Bigger arrows.'])
+        jobs = len(self.workers.of('section'))
+        self.engine.desk_note(root, 6, 'Shorter.', expected)
+        again = self.workers.of('section')[jobs:]
+        self.assertEqual(len(again), 1)
+        self.assertNotIn('Bigger arrows.', again[0].task)
+
     def test_opening_twice_keeps_one_open_version(self):
         root = self.delivered()
         first = self.engine.open_on_desk(root)

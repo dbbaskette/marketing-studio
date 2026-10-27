@@ -109,10 +109,24 @@ def _has(run: dict, name: str) -> bool:
     return route in ('scratch', 'document', 'existing') and not (existing and level == 'selected')
 
 
+def level(run: dict) -> str:
+    """The review level a deck keeps. A deck on the desk keeps none, whatever level it was
+    saved with before it was opened there: its stops are met on the desk, and it reads as
+    Step by step, which stops at every gate it does not continue past itself."""
+    if isinstance(run, dict) and run.get('flow') == 'desk':
+        return 'step_by_step'
+    return review_policy.level(run)
+
+
+def unleveled(run: dict) -> dict:
+    """The run as the shared review policy should read it: a desk deck without its level."""
+    return {**run, 'review_policy': None} if level(run) != review_policy.level(run) else run
+
+
 def steps(run: dict) -> list[Step]:
     """The steps this deck has, in order."""
     listed = [s for s in PIPELINE if _has(run, s.name)]
-    if review_policy.level(run) == 'balanced':
+    if level(run) == 'balanced':
         # Show the research, outline and rendered brand sample in one decision.
         direction = next((s for s in listed if s.name == 'gate:outline'), None)
         if direction:
