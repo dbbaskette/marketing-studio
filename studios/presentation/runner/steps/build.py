@@ -1568,7 +1568,8 @@ def draw_whole(root, run: dict, slides, renderer) -> dict:
     found = preview_repairs(shown, slides_kept, bool(has and has(CLUSTERS)))
     made['preview_repair'] = found
     state['rounds'].append(made)
-    state.update(repair=[], asked=None, deck=None, audit=None, auditNote=None, rewhole=None)
+    state.update(repair=[], asked=None, deck=None, audit=None, auditNote=None)
+    state.pop('rewhole', None)   # a lead slide's words put together: only a desk deck sets it
     if found and state.get('repaired', 0) < REPAIRS:
         wanted = {entry['slide'] for entry in found}
         state['repair'] = [entry['id'] for entry in began['sections']

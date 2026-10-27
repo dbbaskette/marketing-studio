@@ -156,11 +156,11 @@ DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
         '/api/desk-words': ('desk_words', ('number', 'field', 'text', 'seen', 'session?')),
         '/api/desk-notes': ('desk_notes', ('number', 'text', 'seen', 'session?')),
         '/api/desk-selection': ('desk_selection', ('number', 'field', 'start', 'end', 'action',
-                                                   'instruction?', 'seen')),
+                                                   'instruction?', 'seen', 'passage?')),
         '/api/desk-redraw-words': ('desk_redraw_words', ('number', 'field', 'text',
                                                          'expected')),
         '/api/desk-discard': ('desk_discard', ('number',)),
-        '/api/desk-restore': ('desk_restore', ('slide', 'index', 'seen'))}
+        '/api/desk-restore': ('desk_restore', ('slide', 'index', 'seen', 'stamp?'))}
 # What a desk change takes as it is sent, not as text.
 RAW = ('slides', 'field')
 WHOLE = ('seen', 'start', 'end', 'index')   # whole numbers, from zero

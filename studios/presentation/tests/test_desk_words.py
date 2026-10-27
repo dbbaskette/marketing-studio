@@ -424,5 +424,168 @@ class HistoryTests(DeskCase):
                                                     'computer.')
 
 
+class ChainEditTests(DeskCase):
+    """Words saved while the deck is put together: what the review of words on the desk
+    found, each held to here."""
+
+    POINT = ('points', 0, 'text')
+
+    def deck(self) -> Path:
+        root = self.start_desk(look='default')
+        self.on_desk(root)
+        return root
+
+    def seen(self, root: Path) -> int:
+        return self.desk_view(root)['seen']
+
+    def outline(self, root: Path) -> dict:
+        return json.loads((root / 'outline.json').read_text())
+
+    def drawn_slide(self, root: Path) -> dict:
+        state = build.read_state(root)
+        made = json.loads((root / state['sections']['section-1']['file']).read_text())
+        return next(one for one in made['slides'] if one['id'] == SLIDE['id'])
+
+    def during(self, name: str, *edits):
+        """Patch one step of the build to save `edits` (number, field, text) while it runs."""
+        from unittest import mock
+        real, done = getattr(build, name), []
+
+        def running(*given, **named):
+            made = real(*given, **named)
+            if not done:
+                done.append(True)
+                root = self.engine.every()[0]
+                for number, field, text in edits:
+                    self.engine.desk_words(root, number, field, text, self.seen(root),
+                                           secrets.token_hex(8))
+            return made
+
+        return mock.patch.object(build, name, running)
+
+    def test_two_edits_to_one_field_end_on_the_second(self):
+        root = self.deck()
+        with self.during('draw_whole', (3, self.POINT, 'The others carry the load at once.'),
+                         (3, self.POINT, 'The others carry the load in turn.')):
+            self.engine.desk_words(root, 5, 'title', 'Check it aloud', self.seen(root), 'f' * 16)
+        self.on_desk(root)
+        self.assertEqual(self.outline(root)['slides'][2]['points'][0]['text'],
+                         'The others carry the load in turn.')
+        self.assertIn('The others carry the load in turn.', json.dumps(self.drawn_slide(root)))
+        self.assertNotIn('at once', json.dumps(self.drawn_slide(root)))
+
+    def test_an_edit_that_grows_the_one_before_it_is_drawn_once(self):
+        root = self.deck()
+        with self.during('draw_whole', (3, self.POINT, 'The others carry the load. Then'),
+                         (3, self.POINT, 'The others carry the load. Then more')):
+            self.engine.desk_words(root, 5, 'title', 'Check it aloud', self.seen(root), 'f' * 16)
+        self.on_desk(root)
+        shown = json.dumps(self.drawn_slide(root))
+        self.assertIn('The others carry the load. Then more', shown)
+        self.assertNotIn('Then more Then', shown)
+
+    def test_words_typed_back_to_what_they_were_land_as_typed(self):
+        root = self.deck()
+        with self.during('draw_whole', (3, 'title', 'Changed title'), (3, 'title', SLIDE['title'])):
+            self.engine.desk_words(root, 5, 'title', 'Check it aloud', self.seen(root), 'f' * 16)
+        self.on_desk(root)
+        self.assertEqual(self.outline(root)['slides'][2]['title'], SLIDE['title'])
+        self.assertEqual(self.drawn_slide(root)['title'], SLIDE['title'])
+
+    def test_words_saved_after_the_last_put_together_are_put_together_before_the_rest(self):
+        root = self.deck()
+        with self.during('render', (3, 'title', 'Batches restart in turn')):
+            self.engine.desk_words(root, 5, 'title', 'Check it aloud', self.seen(root), 'f' * 16)
+        shown = self.on_desk(root)['desk']
+        self.assertFalse(self.engines.Engine._needs_whole(root))
+        self.assertTrue(shown['deliverable'])
+        state = build.read_state(root)
+        self.assertEqual(state['rounds'][-1]['made_from']['section-1'],
+                         state['sections']['section-1']['file'])
+        self.assertEqual(self.drawn_slide(root)['title'], 'Batches restart in turn')
+
+    def test_deliver_waits_for_a_words_job(self):
+        from runner import desk
+        root = self.deck()
+        refused = []
+
+        def delivering(tools, job):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.desk_deliver(root, self.desk_view(root)['expected'])
+            refused.append(str(caught.exception))
+            self.assertFalse(self.desk_view(root)['deliverable'])
+            return self.workers.words(tools, job)
+
+        self.workers.then('words', delivering)
+        text = self.outline(root)['slides'][2]['points'][0]['text']
+        start = text.index('the load')
+        self.engine.desk_selection(root, 3, self.POINT, start, start + len('the load'),
+                                   'rephrase', None, self.seen(root))
+        self.assertEqual(refused, [desk.STILL])
+
+    def test_a_words_job_that_cannot_be_saved_does_not_stop_the_deck(self):
+        root = self.deck()
+
+        def noting(tools, job):
+            self.engine.desk_note(root, 2, 'Fewer words.', self.desk_view(root)['expected'])
+            return self.workers.words(tools, job)
+
+        self.workers.then('words', noting)
+        text = self.outline(root)['slides'][2]['points'][0]['text']
+        start = text.index('the load')
+        self.engine.desk_selection(root, 3, self.POINT, start, start + len('the load'),
+                                   'rephrase', None, self.seen(root))
+        record = self.record(root)
+        self.assertIsNone(record['halted'])
+        self.assertEqual(record.get('desk_jobs') or [], [])
+        self.on_desk(root)
+
+    def test_the_outline_tab_changes_a_slide_for_its_card(self):
+        root = self.deck()
+        seen = self.seen(root)
+        slides = self.desk_view(root)['outline']['slides']
+        slides[2] = {**slides[2], 'title': 'Capacity holds with two or more'}
+        self.workers.outline_said = {**LONG_OUTLINE, 'slides': slides}
+        self.engine.desk_outline(root, slides, self.desk_view(root)['outline']['expected'])
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_words(root, 3, 'title', 'An older form', seen, 'g' * 16)
+        self.assertIn('changed since', str(caught.exception))
+        self.assertEqual(self.engine.desk_versions(root, SLIDE['id'])[0]['source'], 'outline')
+
+    def test_a_restore_is_bound_to_its_version(self):
+        root = self.deck()
+        self.engine.desk_words(root, 3, 'title', 'First change', self.seen(root), 'h' * 16)
+        self.engine.desk_words(root, 3, 'title', 'Second change', self.seen(root), 'i' * 16)
+        first = self.engine.desk_versions(root, SLIDE['id'])[-1]
+        self.engine.desk_restore(root, SLIDE['id'], 0, self.seen(root), stamp=first['stamp'])
+        self.assertEqual(self.outline(root)['slides'][2]['title'], SLIDE['title'])
+
+    def test_a_selection_of_words_that_changed_is_refused(self):
+        from runner import desk
+        root = self.deck()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_selection(root, 3, self.POINT, 0, 6, 'rephrase', None,
+                                       self.seen(root), passage='Others')
+        self.assertEqual(str(caught.exception), desk.SELECTION_CHANGED)
+
+    def test_a_restore_that_does_not_fit_is_redrawn_with_all_its_words(self):
+        import shutil
+        root = self.deck()
+        self.engine.desk_words(root, 3, 'title', 'Batches restart in turn', self.seen(root),
+                               'j' * 16)
+        self.engine.desk_notes(root, 3, 'New notes.', self.seen(root), 'k' * 16)
+        shutil.rmtree(root / 'work/desk/versions')
+        oldest = self.engine.desk_versions(root, SLIDE['id'])[-1]
+        self.slides.run.fails['compose compile'] = TOO_LONG
+        self.engine.desk_restore(root, SLIDE['id'], 0, self.seen(root), stamp=oldest['stamp'])
+        self.slides.run.fails.pop('compose compile')
+        card = next(card for part in self.desk_view(root)['sections'] for card in part['slides']
+                    if card['number'] == 3)
+        self.assertEqual(card['unfit']['field'], 'restore')
+        self.engine.desk_redraw_words(root, 3, 'restore', '', self.desk_view(root)['expected'])
+        outline = self.outline(root)['slides'][2]
+        self.assertEqual((outline['title'], outline['notes']), (SLIDE['title'], SLIDE['notes']))
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -160,6 +160,10 @@ def working(root, run: dict, state: dict | None = None) -> dict | None:
     """What desk work is under way, for the line above the desk: {'what', 'done', 'total'},
     or None while the deck rests, before it reaches the desk and once it stopped."""
     from runner.steps import build
+    jobs = run.get('desk_jobs') or []
+    if jobs and not run.get('halted'):
+        return {'what': f"Changing the words of slide {jobs[0].get('number')}", 'done': 0,
+                'total': 1}
     if not arrived(run) or resting(run) or decks.delivered(root):
         return None
     nxt = stages.survey(run).next
@@ -279,7 +283,8 @@ def deliverable(root, run: dict) -> bool:
     """Whether Deliver is offered now: the deck rests on the desk, nothing is halted, and no
     note waits to be drawn."""
     return resting(run) and not run.get('halted') and not opened(run) \
-        and decks.delivered(root) is None
+        and decks.delivered(root) is None and not run.get('desk_jobs') \
+        and not (run.get('desk') or {}).get('edits')
 
 
 def resting(run: dict) -> bool:
@@ -471,6 +476,7 @@ def deck_price(last: dict) -> str:
 WORDS = ('title', 'subtitle', 'detail', 'points', 'caveat', 'source')
 UNFIT = 'These words do not fit the slide as it is drawn.'
 ONE_CHANGE = 'A change is already being made to this deck. Wait or stop it.'
+SELECTION_CHANGED = 'The words changed since you selected them. Select them again.'
 RESTORE_BUSY = 'The deck is being redrawn now. Bring the version back when that ends.'
 NO_POINTS = 'A cover, section or closing slide has no points to change.'
 REDRAW_WORDS = 'Fit the new words of slide {number}.'

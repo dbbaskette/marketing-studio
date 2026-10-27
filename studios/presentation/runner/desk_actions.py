@@ -97,7 +97,14 @@ class DeskActions:
             for item in left:
                 item.update(status='set aside', aside='again')
             left = []
-        record['desk']['again'] = again + 1 if left else 0
+        whole = not left and again < AGAIN and bool(state.get('rounds')) \
+            and self._needs_whole(root)
+        record['desk']['again'] = again + 1 if left or whole else 0
+        if whole:
+            record = desk.reopen(record)
+            self._store(root, record)
+            self._commit(root, 'put the words saved after the deck was put together into it')
+            return
         chain = record['desk'].get('chain') if not left else None
         if chain:
             # What a note's chain took here, for the next price's "usually".
@@ -304,8 +311,22 @@ class DeskActions:
         slide = next((one for one in build.slides_of(outline) if one.get('id') == ident), None)
         if slide is None:
             raise WorkspaceError(f'The deck has no slide {number}.')
-        return {'slide': ident, 'section': section, 'outline': outline,
-                'old': words.text_of(slide, field)}
+        old = words.text_of(slide, field)
+        queued = self._desk_queued(root, record, ident, field)
+        return {'slide': ident, 'section': section, 'outline': outline, 'old': old,
+                'saved': queued['text'] if queued else old}
+
+    def _desk_queued(self, root, record: dict, ident: str, field) -> dict | None:
+        """The newest words queued for one field of one slide, with the name they wait
+        under, or None."""
+        wanted = list(field) if isinstance(field, tuple) else field
+        found = None
+        for name in (record.get('desk') or {}).get('edits') or ():
+            queued = home.read_json(root / EDITS / f'{name}.json', None)
+            if isinstance(queued, dict) and queued.get('slide') == ident \
+                    and queued.get('field') == wanted:
+                found = {**queued, 'name': name}
+        return found
 
     def desk_words(self, path, number, field, text, seen, session=None) -> dict:
         """A slide's words typed on its card, against the slide's revision the form saw.
@@ -320,7 +341,7 @@ class DeskActions:
             record, state = self._load(root), build.read_state(root)
             found = self._desk_words_of(root, record, state, number, field)
             desk.check_seen(record, seen, found['slide'])
-            if found['old'] == text.strip():
+            if found['saved'] == text.strip():
                 return self.view(root)
             record, what, also = self._desk_save(root, record, state, number, field, text,
                                                  session, space, found)
@@ -373,7 +394,13 @@ class DeskActions:
             what = f'change the words of slide {number} on the desk'
         else:
             # The chain under way puts the deck together: the words land between its
-            # steps, and join its next pass.
+            # steps, and join its next pass. Newer words for the field take the place of
+            # those queued for it.
+            earlier = self._desk_queued(root, record, ident, field)
+            if earlier:
+                (root / EDITS / f"{earlier['name']}.json").unlink(missing_ok=True)
+                record['desk']['edits'] = [name for name in record['desk'].get('edits') or ()
+                                           if name != earlier['name']]
             held = secrets.token_hex(6)
             home.write_json(root / EDITS / f'{held}.json', {**edit, 'patched': patched})
             record['desk'].setdefault('edits', []).append(held)
@@ -381,7 +408,7 @@ class DeskActions:
         return record, what, also
 
     def desk_selection(self, path, number, field, start, end, action, instruction,
-                       seen) -> dict:
+                       seen, passage=None) -> dict:
         """Rephrase, Shorten, Expand, Fix or Ask… on a passage of one slide's words: a small
         words job rewrites it, and its words are saved as typed words are. One change to a
         deck at a time."""
@@ -398,7 +425,9 @@ class DeskActions:
                 raise WorkspaceError(desk.ONE_CHANGE)
             found = self._desk_words_of(root, record, state, number, field)
             desk.check_seen(record, seen, found['slide'])
-            text = found['old']
+            text = found['saved']
+            if passage is not None and text[start:end] != passage:
+                raise WorkspaceError(desk.SELECTION_CHANGED)
             if type(start) is not int or type(end) is not int \
                     or not 0 <= start < end <= len(text):
                 raise WorkspaceError('Select some of the words first.')
@@ -459,13 +488,19 @@ class DeskActions:
 
         def keep(record, handed):
             state = build.read_state(root)
-            found = self._desk_words_of(root, record, state, job['number'], field)
-            if found['old'] != job['basis']:
-                return   # the words changed since: the job's are not kept
             text = (job['basis'][:job['start']] + self._text(handed, 'words').strip()
                     + job['basis'][job['end']:])
-            record, _, _ = self._desk_save(root, record, state, job['number'], field, text,
-                                           None, self.space(), found, 'selection')
+            try:
+                found = self._desk_words_of(root, record, state, job['number'], field)
+                if found['saved'] != job['basis']:
+                    return   # the words changed since: the job's are not kept
+                record, _, _ = self._desk_save(root, record, state, job['number'], field, text,
+                                               None, self.space(), found, 'selection')
+            except WorkspaceError as refusal:
+                # Kept on the card, as words that do not fit are: the deck carries on.
+                record['desk'].setdefault('unfit', {})[job['slide']] = {
+                    'number': job['number'], 'field': job['field'], 'text': text,
+                    'lines': [str(refusal)], 'at': home.now()}
             record['desk_jobs'] = []
             self._store(root, record)
 
@@ -487,25 +522,45 @@ class DeskActions:
     def _desk_land(self, root, record: dict, edit: dict, patched: dict, space) -> tuple:
         """Put saved words into the outline, the start's outline and the drawing, and have
         the deck put together again. A deck that rests or is delivered is reopened; one in
-        its chain puts them together in its next pass. Call it holding `files`, where no step
-        is writing the build. Returns the run and what else the commit lists."""
+        its chain is put together once more before it rests (`_on_desk`). Words queued while
+        a chain ran are put into the drawing as it is now, from the words the outline has
+        now, and checked again: where they no longer fit, WorkspaceError says why and nothing
+        is written. Call it holding `files`, where no step is writing the build. Returns the
+        run and what else the commit lists."""
         ident, section = edit['slide'], edit['section']
         state = build.read_state(root)
         if section is None:
             file = words.lead_file(root, state, ident)
+            if file is None:
+                raise WorkspaceError(desk.NO_DRAWING)
             current = home.read_json(file, {})
         else:
-            current = home.read_json(root / state['sections'][section]['file'], {})
+            entry = (state.get('sections') or {}).get(section)
+            if entry is None:
+                raise WorkspaceError(desk.NO_DRAWING)
+            current = home.read_json(root / entry['file'], {})
+        outline_now = desk._outline(root)
         if 'words' in edit:
             # A restore: every word of the slide at once, landed while the deck rests.
-            outline = desk.with_slide_words(desk._outline(root), ident, edit['words'])
+            outline = desk.with_slide_words(outline_now, ident, edit['words'])
         else:
             field = words.field_of(edit['field'])
-            outline = words.retext(desk._outline(root), ident, field, edit['text'])
-            # The words go into the drawing as it is now: another edit may have landed in
-            # it since these words were checked.
-            if current != patched:
-                patched = words.patch_section(current, ident, field, edit['old'], edit['text'])
+            slide = next((one for one in build.slides_of(outline_now)
+                          if one.get('id') == ident), None)
+            if slide is None:
+                raise WorkspaceError('The slide is not in the deck now.')
+            old = words.text_of(slide, field)
+            outline = words.retext(outline_now, ident, field, edit['text'])
+            if current != patched or old != edit.get('old'):
+                # The drawing or the words moved on since these words were checked.
+                patched = words.patch_section(current, ident, field, old, edit['text'])
+                whole = words.with_words(words.given(root), outline, ident)
+                lines = words.lead_fits(patched, state['start']['brand'], self.slides()) \
+                    if section is None else words.fits(root, record, section, patched,
+                                                        self.slides(), whole)
+                if lines:
+                    raise WorkspaceError(' '.join(lines))
+        # Every check is done: from here everything is written.
         desk.keep_slide(root, ident, edit.get('source') or 'save', edit.get('session'))
         outlines._write(root, outline)
         words.retold(root, words.with_words(words.given(root), outline, ident),
@@ -529,28 +584,35 @@ class DeskActions:
         return record, also
 
     def _desk_land_queued(self, root) -> None:
-        """Land the words saved while the chain ran, oldest first, between its steps."""
+        """Land the words saved while the chain ran, oldest first, between its steps. Words
+        that no longer fit are kept on their card, as typed words that do not fit are."""
         with self.files:
             record = self._load(root)
-            held = list((record.get('desk') or {}).get('edits') or ())
+            held, also = list((record.get('desk') or {}).get('edits') or ()), ()
             for name in held:
                 file = root / EDITS / f'{name}.json'
                 edit = home.read_json(file, None)
                 if isinstance(edit, dict):
                     try:
-                        record, _ = self._desk_land(root, record, edit, edit.pop('patched'),
-                                                    self.space())
-                    except WorkspaceError:
-                        pass   # the slide is gone or redrawn: its words are not drawn here
+                        record, more = self._desk_land(root, record, edit, edit.pop('patched'),
+                                                       self.space())
+                        also = also or more
+                    except Exception as refusal:  # noqa: BLE001  one edit never stops the deck
+                        record['desk'].setdefault('unfit', {})[edit.get('slide')] = {
+                            'number': edit.get('number'), 'field': edit.get('field'),
+                            'text': edit.get('text') or '',
+                            'lines': [str(refusal) if isinstance(refusal, WorkspaceError)
+                                      else words.NO_FIT], 'at': home.now()}
                 file.unlink(missing_ok=True)
             record['desk']['edits'] = []
             self._store(root, record)
-            self._commit(root, 'put in the words saved while the deck was put together')
+            self._commit(root, 'put in the words saved while the deck was put together', also)
 
     def desk_redraw_words(self, path, number, field, text, expected) -> dict:
         """Redraw with these words: the words that did not fit are saved to the outline,
         and the slide's section is redrawn to fit them, priced as its slide note is."""
-        field = words.field_of(field)
+        restoring = field == 'restore'
+        field = 'title' if restoring else words.field_of(field)
         root, space, by = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
@@ -562,7 +624,14 @@ class DeskActions:
             ident, section = found['slide'], found['section']
             if section is None:
                 raise WorkspaceError(desk.LEAD)
-            edited = words.retext(found['outline'], ident, field, text)
+            if restoring:
+                kept = ((record.get('desk') or {}).get('unfit') or {}).get(ident) or {}
+                if not kept.get('words'):
+                    raise WorkspaceError('There is no version of this slide waiting to be '
+                                         'redrawn.')
+                edited = desk.with_slide_words(found['outline'], ident, kept['words'])
+            else:
+                edited = words.retext(found['outline'], ident, field, text)
             outline = outlines.checked_edits(root, record, edited['slides'], self.slides(),
                                              self._contract(root))
             desk.keep_slide(root, ident, 'redraw')
@@ -593,7 +662,7 @@ class DeskActions:
         desk.refuse_off_desk(self._load(root))
         return desk.versions_of(root, slide)
 
-    def desk_restore(self, path, slide, index, seen) -> dict:
+    def desk_restore(self, path, slide, index, seen, stamp=None) -> dict:
         """Bring back a kept version of a slide: its words, and, where this computer kept
         it, its drawing, with no job. Without the drawing the words go back as typed words
         do, and where they no longer fit the card says so. A restore is a version too."""
@@ -601,6 +670,10 @@ class DeskActions:
         with self.files:
             record, state = self._load(root), build.read_state(root)
             kept = desk.versions_of(root, slide)
+            if stamp is not None:
+                # A version is named by its own stamp: a version kept since the page read
+                # the list never moves the one chosen.
+                index = next((at for at, one in enumerate(kept) if one['stamp'] == stamp), None)
             if type(index) is not int or not 0 <= index < len(kept):
                 raise WorkspaceError('Choose a saved version.')
             if decks.delivered(root) is None and not desk.resting(record):
@@ -617,6 +690,8 @@ class DeskActions:
             section = found['section']
             drawing = desk.version_drawing(root, slide, kept[index])
             lead = words.lead_file(root, state, slide) if section is None else None
+            if section is None and lead is None:
+                raise WorkspaceError(desk.NO_DRAWING)
             current = home.read_json(lead if lead else root / state['sections'][section]['file'],
                                      {})
             try:
@@ -637,8 +712,8 @@ class DeskActions:
                 lines = [str(refusal)]
             if lines:
                 record['desk'].setdefault('unfit', {})[slide] = {
-                    'number': number, 'field': 'title', 'text': wanted.get('title') or '',
-                    'lines': lines, 'at': home.now(), 'restore': index}
+                    'number': number, 'field': 'restore', 'text': wanted.get('title') or '',
+                    'words': wanted, 'lines': lines, 'at': home.now()}
                 what, also = f'keep version {index + 1} of slide {number}, which does not fit', ()
             else:
                 desk.advance(record, slide)
@@ -712,7 +787,8 @@ class DeskActions:
             record, state = self._load(root), build.read_state(root)
             step = stages.survey(record).next
             if step is None or step.name != 'gate:build' or not desk.resting(record) \
-                    or desk.opened(record) or record.get('halted'):
+                    or desk.opened(record) or record.get('halted') or record.get('desk_jobs') \
+                    or (record.get('desk') or {}).get('edits'):
                 raise WorkspaceError(desk.STILL)
             if not state.get('rounds'):
                 raise WorkspaceError(desk.NO_DRAWING)
@@ -760,7 +836,19 @@ class DeskActions:
             if 'gate:outline' not in {step.name for step in stages.steps(record)}:
                 raise WorkspaceError("This deck's words come from the deck you gave: change "
                                      'them there, or note the slide.')
+            before = {slide.get('id'): desk.words_of(slide)
+                      for slide in build.slides_of(desk._outline(root))}
+            outlines.checked_edits(root, record, edited, self.slides(), self._contract(root))
+            changed = [slide.get('id') for slide in edited if isinstance(slide, dict)
+                       and slide.get('id') in before
+                       and desk.words_of(slide) != before[slide.get('id')]]
+            for ident in changed:
+                desk.keep_slide(root, ident, 'outline')
             self._edit_outline(root, record, edited)   # nothing is written when refused
+            for ident in changed:
+                desk.advance(record, ident)
+            if changed:
+                self._store(root, record)
             record, also = self._desk_resting(root, self._load(root), space)
             kept = {name: dict(record['steps'].get(name) or {})
                     for name in ('outline', 'extract', 'brand', 'look-preview')}
@@ -812,6 +900,8 @@ class DeskActions:
             if decks.delivered(root) is None and not desk.resting(record):
                 raise WorkspaceError(desk.OUTLINE_BUSY)
             record, also = self._desk_resting(root, record, space)
+            for slide in build.slides_of(desk._outline(root)):
+                desk.advance(record, slide.get('id'))   # the outline is written again
             said = self._reclassify(root, record, {'kind': kind}, None, home.now(), by)
             self._commit(root, said + ' on the desk', also)
         self._desk_shared()

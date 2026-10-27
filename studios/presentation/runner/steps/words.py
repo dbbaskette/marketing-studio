@@ -44,6 +44,7 @@ NO_FIT = 'These words do not fit the slide as it is drawn.'
 NOT_FOUND = 'The old words were not found once on the drawn slide.'
 NO_FIELD = 'Choose the title, subtitle, detail, a point, the caveat, the source or the notes.'
 TOO_LONG = 2000   # characters in one field's words
+NOTES_LONG = 4000  # characters in a slide's speaker notes
 
 
 def field_of(field):
@@ -96,8 +97,9 @@ def text_of(slide: dict, field) -> str:
 def retext(outline: dict, slide_id: str, field, text: str) -> dict:
     """A new outline with one slide's words in one field changed. The given one is kept."""
     field = field_of(field)
-    if not isinstance(text, str) or len(text) > TOO_LONG:
-        raise WorkspaceError(f'Keep the words to {TOO_LONG:,} characters.')
+    most = NOTES_LONG if field == 'notes' else TOO_LONG
+    if not isinstance(text, str) or len(text) > most:
+        raise WorkspaceError(f'Keep the words to {most:,} characters.')
     if (field == 'title' or isinstance(field, tuple)) and '\n' in text.strip():
         raise WorkspaceError('Keep a title and a point to one line.')
     made = copy.deepcopy(outline)
