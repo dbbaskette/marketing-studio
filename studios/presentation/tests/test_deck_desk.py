@@ -1177,5 +1177,126 @@ class SourceTests(DeskCase):
         self.assertIn('Runbook', read[0])
 
 
+class OpenOnDeskTests(DeskCase):
+    """A saved deck, delivered the gated way, opens on the desk: still delivered, with one
+    version of each slide's words kept, until a change makes its next revision."""
+
+    ELSEWHERE = desk.NO_DRAWING + ' Draw it here first, or open it on the computer that made it.'
+
+    def delivered(self, **changes) -> Path:
+        from runner import decks
+        root = self.gated(**changes)
+        self.decide(root, 'gate:build')
+        self.assertIsNotNone(decks.delivered(root))
+        return root
+
+    def refused(self, root: Path) -> str:
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.open_on_desk(root)
+        return str(caught.exception)
+
+    def slide_ids(self, root: Path) -> list[str]:
+        return [slide['id'] for slide in json.loads((root / 'outline.json').read_text())['slides']]
+
+    def test_a_delivered_gated_deck_opens_on_the_desk_still_delivered(self):
+        root = self.delivered()
+        before = (root / 'deliver.json').read_bytes()
+        gates = self.record(root)['gates']
+        jobs = len(self.workers.of('section'))
+        shown = self.engine.open_on_desk(root)
+        record = self.record(root)
+        self.assertEqual(record['flow'], 'desk')
+        self.assertTrue(record['opened_on_desk'])
+        self.assertTrue(record['desk']['arrived_at'])
+        # The gates it passed are as they were, and nothing was drawn.
+        self.assertEqual({name: gate['by'] for name, gate in record['gates'].items()},
+                         {name: gate['by'] for name, gate in gates.items()})
+        self.assertEqual(len(self.workers.of('section')), jobs)
+        self.assertEqual((root / 'deliver.json').read_bytes(), before)
+        self.assertEqual(shown['desk']['delivered']['revision'], 1)
+        self.assertTrue(shown['desk']['arrived'])
+        self.assertTrue(shown['desk']['drawn_here'])
+        self.assertIsNone(shown['desk']['working'])
+        self.assertFalse(shown['desk']['deliverable'])
+        self.assertEqual(len(cards_of(shown['desk'])), 8)
+        for ident in self.slide_ids(root):
+            self.assertEqual([one['source'] for one in desk.versions_of(root, ident)], ['open'])
+        self.assertEqual(self.log()[-1], 'Rolling restarts: open the deck on the desk')
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        # From now on the gates are the desk's: the gated decision is refused.
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.decide(root, 'gate:build', 'changes', 'Shorter.', None, None)
+        self.assertEqual(str(caught.exception), desk.ON_DESK)
+
+    def test_a_waiting_gated_deck_cannot_be_opened(self):
+        root = self.gated()
+        self.assertEqual(self.refused(root), 'Deliver this deck, then open it on the desk.')
+        record = self.record(root)
+        self.assertNotIn('flow', record)
+        self.assertNotIn('opened_on_desk', record)
+        self.assertIsNone(self.view(root)['desk'])
+
+    def test_the_first_change_makes_the_next_revision(self):
+        from runner import decks
+        root = self.delivered()
+        expected = self.engine.open_on_desk(root)['desk']['expected']
+        jobs = len(self.workers.of('section'))
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.', expected)
+        self.assertIsNone(decks.delivered(root))
+        self.assertEqual([one['revision'] for one in self.record(root)['revisions']], [1])
+        again = self.workers.of('section')[jobs:]
+        self.assertEqual(len(again), 1)
+        self.assertIn('Draw section 1 of', again[0].task)
+        shown = self.on_desk(root)['desk']
+        self.assertEqual(shown['revision'], desk.DELIVERED_AGAIN.format(revision=1, next=2))
+        self.assertTrue(shown['deliverable'])
+        self.engine.desk_deliver(root, shown['expected'], shown['blockers_seen'])
+        self.assertEqual([one['revision'] for one in self.record(root)['revisions']], [1, 2])
+
+    def test_opening_twice_keeps_one_open_version(self):
+        root = self.delivered()
+        first = self.engine.open_on_desk(root)
+        again = self.engine.open_on_desk(root)
+        self.assertEqual(again['desk'], first['desk'])
+        for ident in self.slide_ids(root):
+            self.assertEqual(len(desk.versions_of(root, ident)), 1)
+        self.assertEqual(self.log().count('Rolling restarts: open the deck on the desk'), 1)
+
+    def test_a_deck_from_another_computer_says_there_is_no_drawing(self):
+        import shutil
+        root = self.delivered()
+        # work/ is never shared: a teammate's computer has the deck without its drawing.
+        shutil.rmtree(root / 'work')
+        self.assertEqual(self.refused(root), self.ELSEWHERE)
+        self.assertNotIn('flow', self.record(root))
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def selected(self) -> Path:
+        from test_desk_words import planned
+        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
+        root = self.existing_deck('automatic', 'selected',
+                                  selected='Shorten the words on slide 2')
+        self.decide(root, 'gate:build')
+        return root
+
+    def test_a_delivered_selected_changes_deck_opens_with_its_copy(self):
+        root = self.selected()
+        shown = self.engine.open_on_desk(root)['desk']
+        self.assertTrue(shown['drawn_here'])
+        self.assertTrue(shown['expected'])
+        self.assertEqual(shown['delivered']['revision'], 1)
+        self.assertEqual(self.record(root)['flow'], 'desk')
+
+    def test_a_selected_changes_deck_without_its_copy_here_says_so(self):
+        import shutil
+        root = self.selected()
+        shutil.rmtree(root / 'work')
+        self.assertEqual(self.refused(root), self.ELSEWHERE)
+
+
+def cards_of(shown: dict) -> list:
+    return [card for part in shown['sections'] for card in part['slides']]
+
+
 if __name__ == '__main__':
     unittest.main()

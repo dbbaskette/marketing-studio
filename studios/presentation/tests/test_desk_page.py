@@ -1310,5 +1310,38 @@ class FinishingPageTests(DeskPageCase):
                 self.assertNotIn(checked['desk']['finishing']['brand']['job'][:12], said)
 
 
+class OpenOnDeskPageTests(DeskPageCase):
+    """Task 5.1: a saved deck, delivered the gated way, opens on the desk from its screen."""
+
+    def test_a_delivered_deck_offers_open_on_the_desk(self):
+        path = self.started()
+        for _ in range(12):   # approved stop by stop, with the first look, and delivered
+            gate = self.run_of(path)['gate']
+            if gate is None:
+                break
+            offered = gate.get('offered') or (gate.get('look') or {}).get('offered')
+            picked = {'extra': {'look': offered['looks'][0]['id']}} \
+                if offered and not offered['chosen'] else {}
+            self.decided(path, gate['name'], **picked)
+        view = self.run_of(path)
+        self.assertIsNone(view['desk'])
+        opened = self.post('desk-open', {'path': path})
+        result = self.open_deck(path, view, [
+            {'snapshot': 'delivered'}, {'click': 'Open on the desk'}, {'snapshot': 'desk'}],
+            **{'POST /api/desk-open': [ok(opened)], 'GET /api/run': [ok(view), ok(view), ok(opened)]})
+        delivered, desk = result['snapshots']['delivered'], result['snapshots']['desk']
+        self.assertIn('Open on the desk', delivered['buttons'])
+        self.assertNotIn('Open on the desk', delivered['filled'])
+        self.assertIn('Delivered', delivered['text'])
+        self.assertEqual(self.posts(result), [('/api/desk-open', {'path': path})])
+        # The screen is the desk now: the deck's cards under their sections, still delivered.
+        self.assertIn('Section 1', desk['headings'])
+        self.assertIn('Delivered as revision 1.', desk['text'])
+        self.assertNotIn('Open on the desk', desk['buttons'])
+        # A deck on the desk already is not offered it again.
+        shot = self.open_deck(path, opened, [{'snapshot': 'again'}])['snapshots']['again']
+        self.assertNotIn('Open on the desk', shot['buttons'])
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -8,6 +8,8 @@ What a caller needs to know
   Every action begins with `_held` and refuses a deck that is not on the desk
   (`desk.NOT_ON_DESK`). Each records what was asked and, where something is to be drawn
   again, reopens gate:build (`desk.reopen`); the engine's own steps then do the work.
+  `open_on_desk` is the one way onto the desk for a saved deck: a deck delivered the gated
+  way opens there, still delivered.
 - `_desk_gate` meets a stop the desk deck continues past (`desk.passes`) as `_policy_gate`
   meets one a review level continues past: with what the stop shows, a desk receipt and a
   commit, and never as a person's approval.
@@ -1027,6 +1029,55 @@ class DeskActions:
                 self._store(root, record)
                 self._commit(root, f'let go of the new words of slide {number}')
         return self.view(root)
+
+    # --- a saved deck, opened on the desk ---------------------------------------------------
+
+    def open_on_desk(self, path) -> dict:
+        """Open a deck delivered the gated way on the desk, from this computer's last drawing
+        of it. The gates it passed stay as they were and deliver.json is left as it is: the
+        revision delivered stays delivered until a change is made, and the first change makes
+        the next revision, as any desk change to a delivered deck does. One version of each
+        slide's words is kept first. A deck on the desk already is returned as it is."""
+        root = self._held(path)
+        if decks.on_desk(self._load(root)):
+            return self.view(root)
+        space = self.space()
+        if decks.delivered(root) is None:
+            raise WorkspaceError(desk.NOT_DELIVERED)
+        if not self._drawn_here(root, self._load(root)):
+            raise WorkspaceError(desk.NO_DRAWING + ' ' + desk.OPEN_ELSEWHERE)
+        if self._delivered_here(self._load(root)):
+            self._take(root, space)
+        self.hold(root)
+        with self.files:
+            record = self._load(root)
+            if decks.on_desk(record):
+                return self.view(root)
+            if decks.delivered(root) is None:
+                raise WorkspaceError(desk.NOT_DELIVERED)
+            if not desk.selected(record):
+                # Your own deck at Selected changes keeps no versions of its slides.
+                for slide in build.slides_of(desk._outline(root)):
+                    desk.keep_slide(root, slide.get('id'), 'open')
+            record['flow'] = 'desk'
+            record['opened_on_desk'] = home.now()
+            desk.arrive(record)
+            self._store(root, record)
+            self._commit(root, 'open the deck on the desk')
+        self._desk_shared()
+        return self.view(root)
+
+    @staticmethod
+    def _drawn_here(root, record: dict) -> bool:
+        """Whether this computer has the deck's last drawing: the last round of its build,
+        with the start it was split by, or at Selected changes the plan and its copy."""
+        from runner.steps import existing
+        state = build.read_state(root)
+        if desk.selected(record):
+            kept = state.get('deck')
+            return bool(kept) and (Path(root) / kept).is_file() \
+                and (Path(root) / existing.PATCH).is_file()
+        return bool(state.get('rounds')) and bool((state.get('start') or {}).get('sections'))
 
     # --- a deck drawn elsewhere -------------------------------------------------------------
 

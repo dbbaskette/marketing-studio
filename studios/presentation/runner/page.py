@@ -86,6 +86,8 @@ What a caller needs to know
     `/api/desk-stop` {"path"} stops that redraw and keeps what was redrawn;
     `/api/desk-deliver` {"path", "expected", "blockers_seen"?} delivers the deck on screen;
     `/api/desk-draw-here` {"path"} draws a deck this computer has no drawing of;
+    `/api/desk-open` {"path"} opens a deck delivered the gated way on the desk, still
+    delivered, from this computer's drawing of it;
     `/api/desk-outline` {"path", "slides", "expected"} saves the Outline tab;
     `/api/desk-reread` {"path", "kind"} reads the document the other way; `/api/desk-look`
     {"path", "look", "note"?} picks the look at the deck's one pause; and
@@ -115,7 +117,7 @@ What a caller needs to know
     slides) answers {"says", "sections"}: what saving them redraws. `expected` is the view's
     `desk.expected` (the deck on screen) or `desk.outline.expected` (the outline read). A
     refusal is 400 with its sentence; a deck someone else drives is 409. A deck that is not on
-    the desk is refused with `desk.NOT_ON_DESK`.
+    the desk is refused with `desk.NOT_ON_DESK`, except by `/api/desk-open`.
 - A refusal is {"error": "<a sentence>"}. Something sent in the wrong shape is 400; a deck
   that is not one of this workspace's is 404; something that cannot be done as things
   stand, such as a change to a deck someone else drives, is 409.
@@ -175,7 +177,8 @@ DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
         '/api/desk-leave-out': ('desk_leave_out', ('ids',)),
         '/api/desk-finish': ('desk_finish', ('tool', 'expected?', 'again?')),
         '/api/desk-apply': ('desk_apply', ('set', 'ids', 'seen')),
-        '/api/desk-skip': ('desk_skip', ('set', 'ids'))}
+        '/api/desk-skip': ('desk_skip', ('set', 'ids')),
+        '/api/desk-open': ('open_on_desk', ())}
 SOURCE = '/api/desk-source'   # a source added on the desk: a file in base64, or pasted text
 SOURCE_LIMIT = 12_000_000     # bytes: a document of up to 8 MB, in base64, with its name
 # What a desk change takes as it is sent, not as text.

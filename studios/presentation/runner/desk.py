@@ -57,6 +57,8 @@ LEAD = ('A cover, section or closing slide is not drawn by an assistant: change 
         'the Outline tab.')
 CHANGED = 'The deck changed since this page read it. Reload it, then try again.'
 NO_DRAWING = 'There is no drawing of this deck on this computer.'
+NOT_DELIVERED = 'Deliver this deck, then open it on the desk.'
+OPEN_ELSEWHERE = 'Draw it here first, or open it on the computer that made it.'
 NO_NOTE = 'Say how the slide should change.'
 NOT_YET = ('The deck is still being drawn. Note a slide once the deck is on the desk, or '
            'use the note under its preview.')
