@@ -335,15 +335,16 @@ def render_paragraph(paragraph, objects=None):
                 add('[' + escape(title or uri) + '](' + uri + ')', None)
             else:
                 add(escape(title or uri), None)
-        elif kind == 'person':
-            props = value.get('personProperties') or {}
-            add(escape(str(props.get('name') or props.get('email') or '')), None)
+        elif kind in ('person', 'dateElement'):
+            add(escape(rt.chip_text(kind, value)), None)
         elif kind == 'footnoteReference':
             add(objects.footnote(value.get('footnoteId')), None)
         elif kind in ('pageBreak', 'columnBreak', 'autoText'):
             continue  # A blog has no pages or columns, nor page numbers.
         elif kind == 'horizontalRule':
             rule = True
+        elif rt.chip_text(kind, value):
+            add(escape(rt.chip_text(kind, value)), None)  # A newer kind of chip, by its text.
         else:
             raise _unreadable(kind)
     pieces = [
