@@ -11,12 +11,13 @@ is told, so a studio may start what draws them in one go; only then are they mar
 Skip keeps a finding as read (`skipped`), and changes nothing.
 
 Nothing here knows what a part is or how it is redrawn: the studio passes `note`, `noted`
-and `present(draft, item)`, whether the finding's part is still in the item.
+and `present(draft, item)`, whether the finding still fits its part: the part is in the
+item, and has not been drawn again since the finding was made.
 """
 
 from .proposals import ITEMS, Proposals
 
-FIELDS = ('number', 'severity', 'about', 'question', 'note', 'fix', 'source', 'kind', 'says')
+FIELDS = ('number', 'severity', 'about', 'question', 'note', 'fix', 'source')
 NOTE_LIMIT = 4000  # characters in one note made from a finding
 EMPTY = 'Write the note to make, then apply it.'
 LONG = 'Keep a note to ' + format(NOTE_LIMIT, ',') + ' characters.'
@@ -29,17 +30,18 @@ def words_of(finding):
     return ' '.join(said.split())
 
 
-def items(findings, part='slide', words=words_of):
-    """Each finding on a part, as a proposal: the part it names, what it found (FIELDS), and
-    `after`, the note Apply makes (`words(finding)`). A finding that names no part is left
-    out: there is nothing to note it on."""
+def items(findings, part, words=words_of, fields=()):
+    """Each finding on a part, as a proposal: the part it names (the finding's key `part`),
+    what it found (FIELDS, and the studio's own `fields`), and `after`, the note Apply makes
+    (`words(finding)`). A finding that names no part is left out: there is nothing to note
+    it on."""
     made = []
     for finding in findings or ():
         if not isinstance(finding, dict) or not isinstance(finding.get(part), str):
             continue
         made.append({
             'part': finding[part],
-            **{key: finding[key] for key in FIELDS if finding.get(key) is not None},
+            **{key: finding[key] for key in (*FIELDS, *fields) if finding.get(key) is not None},
             'after': words(finding),
         })
     return made[:ITEMS]
@@ -72,9 +74,10 @@ class Noted(Proposals):
                 if len(words) > NOTE_LIMIT:
                     raise ValueError(LONG)
                 if not self.present(draft, item):
+                    # Gone from the item, or drawn again since the finding was made.
                     raise ValueError(
-                        'This ' + self.codec.noun + ' is no longer in this '
-                        + self.store.word + ', so the note was not made. Skip it.'
+                        'This ' + self.codec.noun + ' changed since this was found, so it '
+                        'was not noted. Skip it.'
                     )
                 self.note(ident, item, words)
             except ValueError:

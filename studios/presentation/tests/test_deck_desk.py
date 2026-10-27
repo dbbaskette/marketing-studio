@@ -1090,13 +1090,15 @@ class SourceTests(DeskCase):
         self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
 
     def test_research_again_is_priced_before_it_runs(self):
-        from studio_core import research_view
+        from studio_core import research_contract
         root = self.deck(research=True)
         shown = self.desk_view(root)
-        said = research_view.price({}, drafted=False)['words']
-        self.assertEqual(shown['research_price'].split(':')[0], said.split(':')[0])
-        self.assertIn('Then it makes again: the outline, the look samples and the deck.',
-                      shown['research_price'])
+        # The research stand-in records no rounds, so there is no time or money to say.
+        self.assertEqual(shown['research_price'], (
+            'Asking for changes runs the research again: up to '
+            f'{research_contract.ROUNDS} rounds of writing and checking. No time or money was '
+            'recorded for its last try. Then it makes again: the outline, the look samples and '
+            'the deck.'))
         self.assertEqual([item['id'] for item in shown['research_items']],
                          list(self.engine._questions(root)))
 

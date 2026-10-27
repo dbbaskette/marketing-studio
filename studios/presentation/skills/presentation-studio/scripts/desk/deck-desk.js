@@ -1131,9 +1131,12 @@
       : '')));
   }
 
+  // 'about 3 minutes', or 'under a minute' for a time that rounds to no minutes, as the
+  // runner says it (finishing._minutes).
   function minutesOf(value) {
-    const whole = value > 0 ? Math.max(1, Math.round(value)) : 0;
-    return whole + (whole === 1 ? ' minute' : ' minutes');
+    const whole = Math.round(value || 0);
+    if (whole < 1) return 'under a minute';
+    return 'about ' + whole + (whole === 1 ? ' minute' : ' minutes');
   }
 
   // How long the speaker notes take to say, counted on the runner, with the slides that run
@@ -1143,7 +1146,7 @@
     const minutes = new Map(h.list(said.slides).map((one) => [one.number, one.minutes]));
     return [make('p', '', said.says || ''),
       long.length ? h.add(make('div'), make('h3', 'sheet-part', 'The slides that run long'),
-        h.bullets(long.map((number) => 'Slide ' + number + ': about '
+        h.bullets(long.map((number) => 'Slide ' + number + ': '
           + minutesOf(minutes.get(number) || 0)))) : null,
       make('p', 'quiet', 'Counted here, at 150 words a minute. Nothing is sent to an '
         + 'assistant.')].filter(Boolean);

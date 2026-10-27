@@ -37,7 +37,7 @@ class NotedCase(unittest.TestCase):
         self.notes.append((ident, item['part'], words))
 
     def offer(self, found=FOUND):
-        return self.kept.keep('one', JOB, 'finish-review', findings.items(found))
+        return self.kept.keep('one', JOB, 'finish-review', findings.items(found, 'slide'))
 
 
 class ItemTests(NotedCase):
@@ -53,10 +53,22 @@ class ItemTests(NotedCase):
         self.assertTrue(self.store.local('one', JOB + '.json').is_file())
         self.assertEqual(sorted(p.name for p in self.store.folder('one').iterdir()), ['draft.json'])
 
-    def test_a_studio_says_what_note_a_finding_makes(self):
-        made = findings.items([{'slide': 's1', 'says': 'Text runs off the slide.'}],
-                              words=lambda found: "The brand's check: " + found['says'])
+    def test_a_studio_says_what_note_a_finding_makes_and_what_else_it_keeps(self):
+        found = [{'slide': 's1', 'says': 'Text runs off the slide.', 'kind': 'blocker',
+                  'code': 'OUT_OF_BOUNDS'}]
+        made = findings.items(found, 'slide', fields=('kind', 'says'),
+                              words=lambda one: "The brand's check: " + one['says'])
         self.assertEqual(made[0]['after'], "The brand's check: Text runs off the slide.")
+        self.assertEqual((made[0]['kind'], made[0]['says']), ('blocker', 'Text runs off the slide.'))
+        self.assertNotIn('code', made[0])
+        # Only the fields a studio names are kept beside the shared ones.
+        self.assertNotIn('kind', findings.items(found, 'slide')[0])
+
+    def test_the_part_a_finding_names_is_said_by_the_studio(self):
+        with self.assertRaises(TypeError):
+            findings.items(FOUND)  # pylint: disable=no-value-for-parameter
+        made = findings.items([{'section': 'aaaaaaaa', 'note': 'Too long.'}], 'section')
+        self.assertEqual(made[0]['part'], 'aaaaaaaa')
 
 
 class ApplyTests(NotedCase):
@@ -95,7 +107,8 @@ class ApplyTests(NotedCase):
     def test_a_part_no_longer_there_is_refused(self):
         self.offer()
         self.gone.add('bbbbbbbb')
-        with self.assertRaisesRegex(ValueError, 'no longer in this item'):
+        with self.assertRaisesRegex(ValueError, 'This section changed since this was found, so '
+                                                'it was not noted. Skip it.'):
             self.kept.apply('one', 1, JOB, [{'id': 'p1'}])
         self.assertFalse(self.kept.summary('one', self.desk.read('one'))['review']['items'][0][
             'present'])

@@ -51,6 +51,8 @@ NOTES_SAYS = ('Proposes speaker notes for every slide from its words, the outlin
 REVIEWED = ('The deck was reviewed as it is drawn now. What the review found is under Review '
             'the deck.')
 NO_DECK = 'The deck has not been rendered yet. Review it once it is on the desk.'
+OWN_DECK = ('Finishing is for decks drawn here. Your own deck at Selected changes keeps its '
+            'slides: its brand check is on each card.')
 NOTES_SHAPE = 'Hand back a JSON list of {"slide", "notes"}, one for each slide you give notes.'
 
 
@@ -87,22 +89,23 @@ def check_again(root, run: dict, skill) -> list[dict]:
         raise WorkspaceError(NOT_CHECKED)
     form = run.get('form') or {}
     try:
-        audit, note = build.audited(skill.audit(deck, form.get('brand'), form.get('variant'))), None
+        audit = build.audited(skill.audit(deck, form.get('brand'), form.get('variant')))
     except WorkspaceError as refusal:
-        audit, note = None, f"The brand's check of this deck could not be run. {refusal}"
+        # The last check the deck had stands: only that this one could not be run is said.
+        raise WorkspaceError(f"The brand's check of this deck could not be run. {refusal}") \
+            from None
     state = build.read_state(root)
-    state.update(audit=audit, auditNote=note)
+    state.update(audit=audit, auditNote=None)
     build.write_state(root, state)
-    if note:
-        raise WorkspaceError(note)
     return brand(root, run)
 
 
 def brand_items(listed: list[dict]) -> list[dict]:
     """The brand check as proposals: each line on a slide applies as a note on that slide in
     the check's own words; a line about the whole deck is shown, and only skipped."""
-    on_slides = findings.items([one for one in listed if one['slide']],
-                               words=lambda one: BRAND_SAYS.format(says=one['says']))
+    on_slides = findings.items([one for one in listed if one['slide']], 'slide',
+                               words=lambda one: BRAND_SAYS.format(says=one['says']),
+                               fields=('kind', 'says'))
     whole = [{'part': None, 'number': None, 'kind': one['kind'], 'says': one['says'],
               'comment': one['says']} for one in listed if not one['slide']]
     return on_slides + whole
@@ -119,7 +122,17 @@ def review_items(state: dict) -> list[dict]:
     """The last round's review findings, gravest first, each a proposal on its slide whose
     Apply is a note made of the finding's note and fix."""
     found = (desk.last_round(state).get('review') or {}).get('findings')
-    return findings.items(build.ordered(found or ()))
+    drawn = drawings(state)
+    return [{**item, 'drawn': drawn.get(item['part'])}
+            for item in findings.items(build.ordered(found or ()), 'slide')]
+
+
+def drawings(state: dict) -> dict:
+    """Which drawing of its section each slide has now, {slide ID: the section's file}: a
+    section drawn again has another file, so a finding made before it no longer fits."""
+    files = {ident: entry.get('file') for ident, entry in (state.get('sections') or {}).items()}
+    return {slide: files.get(entry['id']) for entry in (state.get('start') or {}).get(
+        'sections') or () for slide in entry.get('slides') or ()}
 
 
 def _priced(run: dict, name: str, says: str) -> str:
@@ -218,17 +231,21 @@ class Desk:
         held = run.get('desk') or {}
         return {'revision': int(held.get('revision') or 1), 'changed': held.get('changed') or {},
                 'slides': {slide.get('id'): slide.get('notes') or ''
-                           for slide in build.slides_of(desk._outline(root))}}
+                           for slide in build.slides_of(desk._outline(root))},
+                'drawn': drawings(build.read_state(root))}
 
     def checked(self, draft, seen, parts=None):
         record.checked(draft, seen, parts, 'deck')
 
 
 def present(draft: dict, item: dict) -> bool:
-    """Whether a proposal still fits the deck: its slide is still in it and, for speaker
-    notes, the slide's notes are still as they were proposed against."""
+    """Whether a proposal still fits the deck: its slide is still in it; for a review's
+    finding, the slide has not been drawn again since the review; and for speaker notes, the
+    slide's notes are still as they were proposed against."""
     slides = draft.get('slides') or {}
     if item.get('part') not in slides:
+        return False
+    if 'drawn' in item and (draft.get('drawn') or {}).get(item['part']) != item['drawn']:
         return False
     return 'before' not in item or slides[item['part']] == item['before']
 
@@ -291,8 +308,11 @@ def summary(root) -> dict:
 # --- rehearse -----------------------------------------------------------------------------------
 
 def _minutes(value: float) -> str:
-    whole = max(1, round(value)) if value > 0 else 0
-    return f"{whole} minute{'' if whole == 1 else 's'}"
+    """'about 3 minutes', or 'under a minute' for a time that rounds to no minutes."""
+    whole = round(value)
+    if whole < 1:
+        return 'under a minute'
+    return f"about {whole} minute{'' if whole == 1 else 's'}"
 
 
 def rehearse(outline: dict, minutes=None) -> dict:
@@ -308,13 +328,15 @@ def rehearse(outline: dict, minutes=None) -> dict:
     given = minutes if type(minutes) in (int, float) and minutes > 0 else None
     share = 2 * given / len(content) if given and content else None
     long = [one['number'] for one in content if share is not None and one['minutes'] > share]
-    whole = max(1, round(total)) if total > 0 else 0
+    whole = round(total)
     if not total:
         says = 'The deck has no speaker notes yet.'
     elif given is None:
-        says = f"The deck's notes take about {_minutes(total)}."
+        says = f"The deck's notes take {_minutes(total)}."
     else:
         longest = max(counted, key=lambda one: one['minutes'])
-        says = (f"Slide {longest['number']}'s notes take about {_minutes(longest['minutes'])}; "
-                f"the deck's notes take about {whole} of your {_minutes(given)}.")
+        part = f'about {whole}' if whole >= 1 else 'under a minute'
+        says = (f"Slide {longest['number']}'s notes take {_minutes(longest['minutes'])}; "
+                f"the deck's notes take {part} of your {given:g} minute"
+                f"{'' if given == 1 else 's'}.")
     return {'slides': counted, 'total': total, 'long': long, 'says': says}

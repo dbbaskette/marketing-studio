@@ -88,18 +88,56 @@ class BrandCheckTests(FinishCase):
         self.assertEqual(items[0]['price'], card['price'])
 
     def test_the_last_render_s_check_is_kept_without_running_it_again(self):
-        with mock.patch.object(self.brand, 'audit', return_value=BLOCKED):
+        with mock.patch.object(self.brand, 'audit', return_value=BLOCKED) as audit:
             root = self.deck()
-        audited = len(self.brand.audited) if hasattr(self.brand, 'audited') else None
-        self.engine.desk_finish(root, 'brand')
-        items = self.finishing(root, 'brand')['items']
-        self.assertEqual([item['says'] for item in items], ['Text runs off the slide.'])
-        job = self.finishing(root, 'brand')['job']
-        # Opened again, the same check keeps the same set.
-        self.engine.desk_finish(root, 'brand')
-        self.assertEqual(self.finishing(root, 'brand')['job'], job)
-        if audited is not None:
-            self.assertEqual(len(self.brand.audited), audited)
+            audited = audit.call_count
+            self.engine.desk_finish(root, 'brand')
+            items = self.finishing(root, 'brand')['items']
+            self.assertEqual([item['says'] for item in items], ['Text runs off the slide.'])
+            job = self.finishing(root, 'brand')['job']
+            # Opened again, the same check keeps the same set.
+            self.engine.desk_finish(root, 'brand')
+            self.assertEqual(self.finishing(root, 'brand')['job'], job)
+            self.assertEqual(audit.call_count, audited, 'the brand check is not run again')
+
+    def test_a_check_again_that_fails_keeps_the_last_check(self):
+        from runner import brand as brand_skill
+        root = self.deck()
+        with mock.patch.object(self.brand, 'audit', return_value=BLOCKED):
+            self.engine.desk_finish(root, 'brand', again=True)
+        before = build.read_state(root)['audit']
+        crashed = brand_skill.Refused(['The checker crashed.'])
+        with mock.patch.object(self.brand, 'audit', side_effect=crashed), \
+                self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_finish(root, 'brand', again=True)
+        self.assertIn("The brand's check of this deck could not be run.", str(caught.exception))
+        state = build.read_state(root)
+        self.assertEqual(state['audit'], before)
+        self.assertFalse(state.get('auditNote'))
+        self.assertEqual(self.desk_view(root)['blockers'],
+                         [{'number': 3, 'says': 'Text runs off the slide.'}])
+
+    def test_again_is_true_or_false(self):
+        root = self.deck()
+        for given in (1, 0, 'yes'):
+            with self.subTest(given=given):
+                with self.assertRaises(WorkspaceError) as caught:
+                    self.engine.desk_finish(root, 'brand', again=given)
+                self.assertIn('true or false', str(caught.exception))
+
+    def test_a_selected_changes_deck_has_no_finishing(self):
+        from test_desk_words import planned
+        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
+        root = self.existing_deck('automatic', 'selected', flow='desk',
+                                  selected='Shorten the words on slide 2')
+        self.on_desk(root)
+        for name, given in (('desk_finish', ('brand',)), ('desk_finish', ('rehearse',)),
+                            ('desk_apply', ('a' * 32, ['p1'], 1)),
+                            ('desk_skip', ('a' * 32, ['p1']))):
+            with self.subTest(route=name, given=given):
+                with self.assertRaises(WorkspaceError) as caught:
+                    getattr(self.engine, name)(root, *given)
+                self.assertEqual(str(caught.exception), finishing.OWN_DECK)
 
     def test_check_again_runs_the_audit_on_the_current_deck(self):
         root = self.deck()
@@ -212,6 +250,28 @@ class ReviewTests(FinishCase):
         notes = self.record(root)['desk_notes']
         self.assertEqual([(item['number'], item['note'], item['status']) for item in notes],
                          [(3, f'{self.NOTE} {self.FIX}', 'done')])
+
+    def test_a_finding_on_a_slide_redrawn_since_the_review_is_refused(self):
+        root = self.deck()
+        self.workers.found = [lambda slides: [*drawing_finding(3, self.NOTE, self.FIX)(slides),
+                                              *drawing_finding(6, 'The rows crowd.', 'Space them.')(
+                                                  slides)]]
+        self.review(root)
+        kept = self.finishing(root, 'review')
+        self.assertEqual(kept['reviewed_deck'], build.read_state(root)['rounds'][-1]['deck'])
+        self.engine.desk_note(root, 4, 'Shorter.', self.expected(root))   # section 1 again
+        self.on_desk(root)
+        items = {item['number']: item for item in self.finishing(root, 'review')['items']}
+        self.assertFalse(items[3]['present'])
+        self.assertTrue(items[6]['present'])
+        drawn = self.sections()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_apply(root, kept['job'], [items[3]['id']], self.seen(root))
+        self.assertEqual(str(caught.exception), 'This slide changed since this was found, so it '
+                         'was not noted. Skip it.')
+        self.assertEqual(self.sections(), drawn)
+        self.engine.desk_apply(root, kept['job'], [items[6]['id']], self.seen(root))
+        self.assertEqual(self.sections(), drawn + 1)
 
     def test_a_slide_note_after_a_review_is_not_reviewed_again(self):
         root = self.deck()
@@ -486,14 +546,23 @@ class RehearseTests(FinishCase):
                          'take about 3 of your 20 minutes.')
 
     def test_rehearse_names_the_slides_that_run_long(self):
-        # 25 minutes over 5 content slides: a slide is long past 10 minutes.
-        notes = [self.words(150 * 4)] * 4 + [self.words(150 * 11)]
-        shown = finishing.rehearse(self.outline(None, *notes, None,
+        # 25 minutes over 5 content slides: a slide is long past 10 minutes. Counted over all
+        # 7 slides, it would be long past 7 minutes, and slide 2 would be named too; the lead
+        # slides' notes are counted in the time but never named.
+        notes = [self.words(150 * 8), *[self.words(150 * 7)] * 3, self.words(150 * 11)]
+        shown = finishing.rehearse(self.outline(self.words(150 * 12), *notes, None,
                                                 kinds=['cover', *['content'] * 5, 'closing']), 25)
         self.assertEqual(shown['long'], [6])
-        self.assertEqual(shown['total'], 27)
-        self.assertEqual(shown['says'], "Slide 6's notes take about 11 minutes; the deck's notes "
-                         'take about 27 of your 25 minutes.')
+        self.assertEqual(shown['total'], 52)
+        self.assertEqual(shown['says'], "Slide 1's notes take about 12 minutes; the deck's notes "
+                         'take about 52 of your 25 minutes.')
+
+    def test_rehearse_says_a_short_time_as_under_a_minute(self):
+        shown = finishing.rehearse(self.outline(self.words(30), self.words(20)), 20)
+        self.assertEqual(shown['says'], "Slide 1's notes take under a minute; the deck's notes "
+                         'take under a minute of your 20 minutes.')
+        shown = finishing.rehearse(self.outline(self.words(30)), None)
+        self.assertEqual(shown['says'], "The deck's notes take under a minute.")
 
     def test_rehearse_with_no_minutes_says_the_time_alone(self):
         shown = finishing.rehearse(self.outline(self.words(450), self.words(150)), None)

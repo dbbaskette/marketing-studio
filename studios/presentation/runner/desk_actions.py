@@ -1363,6 +1363,14 @@ class DeskActions:
 
     # --- Finishing -----------------------------------------------------------------------------
 
+    def _desk_finishing(self, path):
+        """The deck, held for Finishing: refused when it is not on the desk, and for your own
+        deck at Selected changes, whose slides are its own and not drawn here."""
+        root = self._desk_held(path)
+        if desk.selected(self._load(root)):
+            raise WorkspaceError(finishing.OWN_DECK)
+        return root
+
     def desk_finish(self, path, tool, expected=None, again=False) -> dict:
         """Run one of Finishing's tools (finishing.TOOLS). Each proposes, and nothing changes
         until Apply: the brand check keeps what the last render's check says, or with
@@ -1371,8 +1379,9 @@ class DeskActions:
         job for every slide's notes; Rehearse is counted on the page's view, with no job."""
         if tool not in finishing.TOOLS:
             raise WorkspaceError(finishing.NO_TOOL)
-        if again not in (None, False, True):
+        if again is not None and type(again) is not bool:
             raise WorkspaceError('Say whether to check the deck again with true or false.')
+        self._desk_finishing(path)
         if tool == 'review':
             return self._desk_review(path, expected)
         if tool == 'notes':
@@ -1446,8 +1455,12 @@ class DeskActions:
     def _desk_reviewed(self, root) -> None:
         """A desk deck's review is in: what it found is kept as proposals, per slide. Call it
         holding `files`, as the review is kept."""
+        state = build.read_state(root)
+        # The deck reviewed, and each finding with the drawing of its slide then: a slide
+        # drawn again since no longer takes it.
         finishing.proposals().keep(str(root), secrets.token_hex(16), 'finish-review',
-                                   finishing.review_items(build.read_state(root)))
+                                   finishing.review_items(state),
+                                   reviewed_deck=desk.last_round(state).get('deck'))
 
     def _desk_propose_notes(self, path) -> dict:
         """Speaker notes for every slide, proposed by a job from its words, the outline and
@@ -1531,6 +1544,7 @@ class DeskActions:
         redraws its section, as a slide note does; speaker notes are saved as typed notes
         are, with no redraw. `ids` names each proposal, or is {'id', 'after'} with the
         person's own words."""
+        self._desk_finishing(path)
         root, space, by = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
@@ -1597,7 +1611,7 @@ class DeskActions:
     def desk_skip(self, path, set_id, ids) -> dict:
         """Skip proposals: each is kept as read, and nothing in the deck changes. Only this
         computer's waiting set does."""
-        root = self._desk_held(path)
+        root = self._desk_finishing(path)
         with self.files:
             try:
                 done = finishing.proposals().skip(str(root), set_id, ids)
