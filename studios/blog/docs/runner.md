@@ -128,18 +128,41 @@ deciding on each fix, with the full desk one click away.
   **Accept** applies the one picked. Each alternative is checked like any suggestion, and
   one that changes a fact, code or shape is marked **Check this**. Click the paragraph to
   write your own instead.
-- **Suggestions that cover the same words** are listed under their part rather than marked
-  over each other. Accepting one retires the others that covered any of its words, from
-  either tool: they say they no longer fit, and two that start at the same place never both
-  apply.
+- **Suggestions stay independent.** Ones that cover the same words are listed under their
+  part rather than marked over each other. Accepting one changes another, from either
+  tool, only where it touched that one's words, and never leaves one that would undo it.
+  Each suggestion is read by its own change, the words it actually changes:
+  - One whose words the accepted one did not touch stays as it is.
+  - One whose own change the accepted one left as it was shrinks to that change and a
+    little context from the text as it is now, the accepted words included: accept a
+    Humanize rewrite that kept "Agentic AI" in its sentence, and a fix "Agentic AI" →
+    "agentic AI" stays, marked in place on those words; accept "leverage" → "use", and a
+    fix that cuts "really" before it becomes "really use" → "use". It says which
+    suggestion it now fits.
+  - A rewrite of the whole sentence takes an accepted fix in only where it kept the fixed
+    words: accept "Agentic AI" → "agentic AI", and "Here, Agentic AI has arrived." becomes
+    "Here, agentic AI has arrived."
+  - One whose own words the accepted one changed, or that adds words at the same place
+    the accepted one added its own, no longer fits: it says "No longer fits: its words
+    were changed by suggestion #N". So a rewrite that reworded the words a fix fixed
+    retires when you accept the fix, and the other way round, and two that both add "the"
+    before "two files" never both land. Suggestions keep their numbers while you review,
+    and ones that arrive later are numbered after them, so the number still names the one
+    you accepted.
+  - Alternatives follow the same rule, and a suggestion is checked again for a changed
+    fact, code or shape.
+  - Human-sounding suggestions that arrive after you accepted fixes are kept in step the
+    same way: they take a fix in, or arrive saying they no longer fit. One for words you
+    edited yourself meanwhile says so.
 - **Accept all** and **Reject all** sit at the top with the count left to review, for both
   tools, and act on what is shown. A suggestion that changes a fact, code or the shape of a
   part is flagged, and **Accept all** leaves it for you to check. Accept all applies the
-  fixes first, then the human-sounding suggestions that still fit. It never applies one
-  over a fix still waiting for you (flagged, or hidden by **Show**): that one is left for
-  you too, so a flagged fix is never retired without your say. With **Show: Fixes**, the
-  fixes go ahead over any hidden rewrite of the same words, which then no longer fits
-  (the message says how many); a flagged rewrite still waits for you.
+  rest in reading order, each against the text the ones before it left, by the same rule:
+  one that no longer fits is left out. It never retires a flagged suggestion, or a fix
+  hidden by **Show**: a suggestion that would change their words is left for you too
+  (accepting it yourself may retire them). A hidden rewrite still gives way to a fix you
+  accept. The message counts what was accepted, what was updated to fit, what no longer
+  fits and what is left for you.
 - **With human-sounding wording on, Quick check's findings** (dashes, words that often
   read as machine-written, repetition) are a short folded list at the top, labelled
   **Sounds human (quick check)** and read from the latest text with no assistant. **Fix**
@@ -155,11 +178,11 @@ deciding on each fix, with the full desk one click away.
   and grammar** offers the same choice; the choice is kept on this computer for **Check
   again**.
 - **When nothing is left to review**, a blog started from a Google Doc offers **Send
-  accepted changes to Google Doc**: the plan says how many wording changes go, as
-  suggestions for the Doc's owner, and nothing is sent until **Send**. It sends every
-  difference from the Google Doc as it was read: the fixes you accepted and any edits you
-  made, here or on the full desk. Rejected fixes are never sent. Other blogs offer
-  **Copy** and **Download**.
+  accepted changes to Google Doc**: the plan says how many suggestions and comments go,
+  and nothing is sent until **Send**. It sends every difference from the Google Doc as it
+  was read: the fixes you accepted and any edits you made, here or on the full desk.
+  Nothing stays only here; see [what a send makes](#what-a-send-to-the-google-doc-makes).
+  Rejected fixes are never sent. Other blogs offer **Copy** and **Download**.
 - **Open the full desk** shows the notes, the Outline tab and the whole Finishing panel;
   **Review fixes** there comes back. The address keeps Review mode (`stage=review`), so a
   reload stays in it.
@@ -273,6 +296,35 @@ start an assistant. Check the text shown, then **Start**. The Doc stays linked, 
 suggestions. A Doc that is already a blog here opens that blog instead of a second one.
 Images are left out of the text; inspect them in the original Doc. Pending suggestions
 stay in Google.
+
+### What a send to the Google Doc makes
+
+**Send accepted changes to Google Doc** (Review mode) and **Send to Google Doc**
+(Finishing) send every desk change. The plan says "N suggestions and M comments go to the
+Google Doc", lists each one, and sends nothing until you confirm.
+
+- **Wording** becomes suggestions the Doc's owner accepts or rejects: one for each separate
+  change in a paragraph, with changes a few words apart kept together, so only the changed
+  words are struck through. A change inside a link's text stays a link.
+- **A paragraph added** is a suggested insertion after the paragraph before it, **one
+  removed** a suggested deletion with its paragraph break, and a split or merged paragraph
+  a suggested line break.
+- **What the Doc shows no words for** becomes a comment on its words or paragraph: a link's
+  new address, bold or italic, a heading level, an image, or a table row.
+- **The title**: the desk's title is the Doc's name, so it is not a change. A different
+  title goes as a comment: "Suggested title: …".
+- A change that cannot be placed in the Doc with certainty, such as one in a paragraph the
+  Doc repeats differently than the desk does, goes as a comment on the closest paragraph
+  that is certain, quoting the paragraph as it was and as the desk has it.
+
+A note about a paragraph, such as formatting or a heading level, is a comment of its own,
+never part of a suggestion. A change already sent is not sent again. A change in a
+paragraph that still has a suggestion waiting for the Doc's owner waits too, and goes next
+time; so does everything while a suggestion you sent and then edited again on the desk still
+waits there, so the Doc's owner never gets a suggestion that repeats or undoes another.
+A teammate's suggestion, or one the owner rejected, holds nothing. A note with no free
+paragraph nearby goes with the next send.
+When Google cannot take suggestions, the plan says the changes go as comments.
 
 A blog edited in the manuscript editor (**Edit manuscript**) keeps its own Google tools:
 selected suggestions or comments are previewed and sent only when you confirm. Its

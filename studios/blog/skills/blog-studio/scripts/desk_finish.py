@@ -8,6 +8,7 @@ version of every part it changes first. Like desk.py, every function expects the
 hold the studio lock.
 """
 
+import functools
 import re
 
 import desk
@@ -27,8 +28,9 @@ TOOLS = {
     'finish-voice': 'voice',
 }
 KINDS = tuple(TOOLS)
-# The proposals are kept, applied and skipped by the shared desk
-# (studio_core.drafting.proposals), with Blog Studio's store and desk record.
+# The proposals are kept, read and skipped by the shared desk
+# (studio_core.drafting.proposals), with Blog Studio's store and desk record. Apply is Blog
+# Studio's own: Review mode's suggestions stay independent (see apply and _reconcile).
 JOB = shared.JOB
 ITEMS = shared.ITEMS  # proposals in one set
 DAY = shared.DAY  # an older set no longer shown is let go after this long
@@ -37,9 +39,15 @@ GONE = shared.GONE
 NONE_LEFT = shared.NONE_LEFT
 SAME = shared.SAME
 EMPTY = shared.EMPTY
-OVERLAP = shared.OVERLAP
 RETIRED = shared.RETIRED
-FLAGGED = shared.FLAGGED
+CHANGED = 'Its words were changed by an accepted suggestion.'
+EDITED = 'Its words were changed after it was suggested.'
+WAITING = (
+    'It would change words a suggestion left for you still waits on, so Accept all left it for you.'
+)
+FLAGGED = (
+    'It now changes a fact, code or the shape of a part, so Accept all left it for you to check.'
+)
 
 
 def _require_lock():
@@ -50,6 +58,10 @@ def _require_lock():
 class _BlogProposals(shared.Proposals):
     def sets(self, ident):
         return sets(self.store.root, ident)  # This module's, looked up when called.
+
+    def apply(self, ident, seen, job, chosen, every=False, working=frozenset()):
+        # Blog Studio's own Apply, which keeps Review mode's suggestions independent.
+        return apply(self.store.root, ident, seen, job, chosen, every)
 
 
 def _proposals(root):
@@ -125,14 +137,226 @@ def apply(root, ident, seen, job, chosen, every=False):
     """Apply chosen proposals, each with its suggested text or the person's own (Edit).
 
     One proposal that no longer fits is refused with nothing changed. Several at once
-    (Apply all) apply every one that still fits and leave the rest open, counted in `left`;
-    one retired meanwhile is left out too. `every` is Review mode's Accept all: a suggestion
-    that covers words a flagged one from Copy edit or Humanize still waits on is left out,
-    so the flagged one is never retired without the person deciding on it. Each part
-    changed keeps one `finishing` version first."""
-    return _proposals(root).apply(
-        ident, seen, job, chosen, every, working=lambda: _busy_parts(root, ident)
-    )
+    (Apply all) land one by one in reading order, each checked against the text as the ones
+    before it left it: one that no longer fits is left out, counted in `left`, and one
+    retired meanwhile is left out too. `every` is Review mode's Accept all, which may name
+    suggestions from the other waiting set of Copy edit and Humanize too (an entry's `job`),
+    and leaves out one that is flagged. Every other open suggestion stays independent unless
+    a change it took in changes its words (see _reconcile); the result counts the ones
+    `carried` and `retired`, when there are any. Each part changed keeps one `finishing`
+    version first."""
+    found = read(root, ident, job)
+    if not isinstance(chosen, list) or not chosen or len(chosen) > ITEMS:
+        raise ValueError('Choose the suggestions to apply.')
+    if type(every) is not bool:
+        raise ValueError('Choose suggestions from this set.')
+    held = dict(_sentence_sets(root, ident, job, found))
+    picks, named, gone = [], set(), []
+    for number, entry in enumerate(chosen):
+        name = entry.get('job', job) if isinstance(entry, dict) else None
+        items = (
+            {item['id']: item for item in held[name]['items']}
+            if isinstance(name, str) and name in held
+            else {}
+        )
+        if (
+            not isinstance(entry, dict)
+            or set(entry) - {'id', 'after', 'alternative', 'job'}
+            or entry.get('id') not in items
+            or (name, entry['id']) in named
+        ):
+            raise ValueError('Choose suggestions from this set.')
+        named.add((name, entry['id']))
+        item = items[entry['id']]
+        if 'comment' in item:
+            raise ValueError('A comment changes nothing. Make it a note, or skip it.')
+        if 'after' not in item and 'after' not in entry:
+            raise ValueError('Write the wording to use, then apply it.')
+        if item['state'] == 'retired':
+            if len(chosen) == 1 and not every:
+                raise ValueError(RETIRED)
+            gone.append(item['id'])  # Another change took its words; the rest still apply.
+            continue
+        if item['state'] != 'open':
+            raise ValueError('This suggestion was already applied or skipped.')
+        pick = {'job': name, 'item': item, 'kind': held[name].get('kind'), 'order': number}
+        if 'after' in entry:
+            pick['own'] = entry['after']
+        if 'alternative' in entry:
+            # One of a wording fix's alternatives, by its place in the list.
+            others = item.get('alternatives') or []
+            choice = entry['alternative']
+            if 'after' in entry or type(choice) is not int or not 0 <= choice < len(others):
+                raise ValueError('Choose one of this suggestion’s alternatives.')
+            pick['alternative'] = choice
+        if not isinstance(_after(pick), str) or len(_after(pick)) > desk.LIMIT:
+            raise ValueError('Keep one part under 200,000 characters.')
+        picks.append(pick)
+    draft = desk.read(root, ident)
+    parts = sorted({pick['item']['part'] for pick in picks})
+    desk.checked(draft, seen, parts)
+    working = _busy_parts(root, ident)
+    if any(part in working or ('sections' in working and part not in desk.PARTS) for part in parts):
+        raise ValueError('A desk job is working on this part. Wait for it, or stop it, then apply.')
+    single = len(chosen) == 1 and not every  # Accept all never refuses: it leaves out.
+    texts = {part: desk.text_of(draft, part) for part in parts}
+    picks.sort(key=lambda pick: _reading(draft, texts, pick))
+    # Every open suggestion from these sets whose words are in its part once is kept in
+    # step with the text as each chosen one lands.
+    watched = [
+        (name, item)
+        for name, value in held.items()
+        for item in value['items']
+        if item.get('state') == 'open'
+        and item.get('part') in texts
+        and not item.get('whole')
+        and 'comment' not in item
+        and _once(texts[item['part']], item.get('before') or '')
+    ]
+    applied, left, touched, carried, retired = [], gone, set(), set(), set()
+    chosen = {id(pick['item']) for pick in picks}
+    for pick in picks:
+        item = pick['item']
+        part = item['part']
+        if item['state'] != 'open':
+            continue  # Retired by one that landed before it: counted there.
+        text = texts[part]
+        try:
+            after = _after(pick)
+            if not after.strip():
+                raise ValueError(EMPTY)
+            if every and _pick_flag(pick):
+                raise ValueError(FLAGGED)  # A change it took in made it one to check.
+            # The shared text swap: GONE when its words are not there once; image data and
+            # references kept as Blog Studio's codec keeps them (desk._landed).
+            updated = shared.text_fit(desk.CODEC)(draft, item, after, text)
+            # A change that only an image reference made, put back as it was, is no change.
+            if updated.strip() == text.strip():
+                raise ValueError(SAME)
+            desk.checked_text(part, updated, desk.limit(draft))
+            if part == 'title' and not updated.strip():
+                raise ValueError('Keep the title to one line, up to 500 characters.')
+            edits = _word_edits(text, updated)
+            if every and _would_retire(held, watched, chosen, part, text, updated, edits):
+                raise ValueError(WAITING)
+        except ValueError:
+            if single:
+                raise
+            left.append(item['id'])
+            continue
+        texts[part] = updated
+        applied.append(pick)
+        touched.add(pick['job'])
+        item['state'] = 'applying'  # Marked applied once the draft is written.
+        item['landed'] = after
+        ref = {'job': pick['job'], 'id': item['id']}
+        for name, other in watched:
+            if other.get('part') != part or other['state'] != 'open':
+                continue
+            was = other['before']
+            if not _reconcile(other, text, updated, edits, lambda _, ref=ref: ref, picks):
+                continue
+            touched.add(name)
+            if other['state'] == 'retired':
+                retired.add(id(other))
+                carried.discard(id(other))
+            elif other['before'] != was:
+                carried.add(id(other))
+    if not applied:
+        if every:
+            return {'applied': 0, 'left': left}  # Each left for the person; nothing changed.
+        raise ValueError(NONE_LEFT)
+    changed = []
+    for part, text in texts.items():
+        before = desk.text_of(draft, part)
+        if before.strip() == text.strip():
+            continue
+        desk.keep(root, ident, part, before, 'finishing')
+        desk._set(draft, part, text)
+        changed.append(part)
+    if changed:
+        desk._write(root, ident, draft, changed)
+    # Only once the draft is written are the proposals marked applied, and the others kept
+    # in step with it.
+    for pick in applied:
+        item = pick['item']
+        item['state'] = 'applied'
+        carried.discard(id(item))
+        if item.get('group'):
+            for other in held[pick['job']]['items']:
+                if other.get('group') == item['group'] and other['state'] == 'open':
+                    other['state'] = 'skipped'  # An alternative to the one chosen.
+    for name in sorted(touched):
+        studio.write_json(_path(root, ident, name), held[name])
+    done = {'applied': len(applied), 'left': left}
+    if carried:
+        done['carried'] = len(carried)
+    if retired:
+        done['retired'] = len(retired)
+    return done
+
+
+def _would_retire(held, watched, chosen, part, old, new, edits):
+    """Whether landing a change would retire an open suggestion Accept all was not sent that
+    waits for the person: a flagged one from either tool, or a fix Show hides. Accept all
+    leaves such a change for the person; a hidden rewrite may give way to a fix."""
+    import copy
+
+    for name, other in watched:
+        waits = other.get('flag') or held[name].get('kind') == 'finish-copyedit'
+        if (
+            other.get('part') == part
+            and other['state'] == 'open'
+            and id(other) not in chosen
+            and waits
+        ):
+            if not _once(old, other['before']) or not _reaches(other, old, new, edits):
+                continue  # Only one the change reaches is tried.
+            trial = copy.deepcopy(other)
+            _reconcile(trial, old, new, edits, lambda _: None)
+            if trial['state'] == 'retired':
+                return True
+    return False
+
+
+def _after(pick):
+    """The wording a pick lands: the person's own, an alternative, or the suggestion's."""
+    item = pick['item']
+    if 'own' in pick:
+        return pick['own']
+    if 'alternative' in pick:
+        return item['alternatives'][pick['alternative']]['after']
+    return item['after']
+
+
+def _pick_flag(pick):
+    """Why a pick waits to be checked one by one, or '': the person's own wording never does."""
+    item = pick['item']
+    if 'own' in pick:
+        return ''
+    if 'alternative' in pick:
+        return item['alternatives'][pick['alternative']].get('flag') or ''
+    return item.get('flag') or ''
+
+
+def _reading(draft, texts, pick):
+    """A pick's place in reading order, as Review mode numbers them: its part, then where it
+    starts, Copy edit before Humanize, the shorter of two that start together, then as
+    chosen."""
+    item = pick['item']
+    order = ['title', 'opening'] + [section['id'] for section in draft['sections']]
+    text = texts[item['part']]
+    before = item.get('before') or ''
+    if item.get('whole'):
+        start, end = 0, len(text)
+    elif _once(text, before):
+        start = text.index(before)
+        end = start + len(before)
+    else:
+        start = end = len(text) + 1  # Not there once: it is left out wherever it goes.
+    tool = SENTENCES.index(pick['kind']) if pick['kind'] in SENTENCES else len(SENTENCES)
+    part = order.index(item['part']) if item['part'] in order else len(order)
+    return (part, start, tool, end, pick['order'])
 
 
 def _sentence_sets(root, ident, job, found):
@@ -140,21 +364,399 @@ def _sentence_sets(root, ident, job, found):
     return _proposals(root)._together_sets(ident, job, found)
 
 
-def _flagged_spans(root, ident, job, found, originals, named):
-    return _proposals(root)._flagged_spans(ident, job, found, originals, named)
-
-
-_span = shared.span
-_covers = shared.covers
-
-
-# The tools whose sentence rewrites Review mode shows together; accepting one retires the
-# others, from either tool, that covered the same words.
+# The tools whose sentence suggestions Review mode shows together. They stay independent:
+# accepting one changes another only where it changed the other's words.
 SENTENCES = ('finish-copyedit', 'finish-humanize')
+TOKENS = re.compile(r'\w+|\s+|[^\w\s]')
+WORDLIKE = re.compile(r'\w')
+ALIGN = 300  # characters of unchanged text each side that words are aligned with
+CONTEXT = 8  # words of context an item re-anchored by its own change may keep on each side
 
 
-def _retire(root, ident, job, found, originals, spans):
-    _proposals(root)._retire(ident, job, found, originals, spans)
+def _reconcile(other, old, new, edits, by, picks=()):
+    """Keep an open suggestion independent of an accepted change that turned `old` into
+    `new` (`edits`, from _word_edits); say whether the suggestion changed.
+
+    One whose words the change did not touch is left as it is, and still fits while its
+    words are in the text once, as whole words. Otherwise it is read by its own change, the
+    words it changes (and those each alternative, or the person's own wording for a pick
+    still to land, changes), as a three-way merge reads two changes to one text:
+    - when the accepted change replaced any of those words, or added words at the same
+      place it adds its own, it retires: it would undo or repeat it;
+    - otherwise its own change is moved onto the new text. It keeps its whole sentence when
+      the accepted change sits among its own changes, as in a rewrite that kept the accepted
+      words; else it shrinks to its own change and a little context from the new text, the
+      accepted words included, found there once.
+    A retired one names the accepted one (`by`, called with the edits that touched it)."""
+    before = other['before']
+    at = old.index(before)
+    end = at + len(before)
+    if not _near(old, at, end, edits):
+        # No accepted edit is where its own changes could be: it is left as it is.
+        return False if _whole(old, (at, end), new, before) else _retired(other, by([]))
+    wordings = _wordings(other, picks)
+    own, changes, touching = _own(old, at, end, wordings, edits)
+    low = min([at] + [change[0] for change in changes])
+    high = max([end] + [change[1] for change in changes])
+    if not touching:
+        if _whole(old, (at, end), new, before):
+            return False
+        return _retired(other, by(touching))
+    owner = by(touching)
+    if not changes:
+        return False if _whole(old, (at, end), new, before) else _retired(other, owner)
+    if any(_meet(a, b, c, d) for a, b, _, _ in touching for c, d, _ in changes):
+        return _retired(other, owner)
+    first = min(change[0] for change in changes)
+    last = max(change[1] for change in changes)
+
+    def moved(p, opens):
+        """Where `p` of `old` is in `new`; a change starting there (`opens`) goes after
+        words the accepted change added at that place, one ending there before them."""
+        shift = 0
+        for a, b, c, d in edits:
+            if a < p < b:
+                return None
+            if b < p or (b == p and (a < b or opens)):
+                shift += (d - c) - (b - a)
+        return p + shift
+
+    placed = []
+    for hunks in own:
+        row = []
+        for a, b, text in hunks:
+            start, stop = moved(a, a < b), moved(b, False)
+            if start is None or stop is None or new[start:stop] != old[a:b]:
+                return _retired(other, owner)
+            row.append((start, stop, text))
+        placed.append(row)
+    among = all(
+        (first < a < last) if a == b else (first <= a and b <= last) for a, b, _, _ in touching
+    )
+
+    def wordings_in(start, stop):
+        """Each wording with its own change made in `new[start:stop]`, or None when one is
+        left empty or none changes anything."""
+        window = new[start:stop]
+        found = []
+        for wording, hunks in zip(wordings, placed, strict=True):
+            text = window
+            for a, b, words in sorted(hunks, reverse=True):
+                text = text[: a - start] + words + text[b - start :]
+            if '  ' in text and '  ' not in window and '  ' not in wording:
+                text = re.sub(r'(?<=\S) {2,}(?=\S)', ' ', text)  # A cut left its space.
+            # Nor a space left at an edge, next to the space beside the words.
+            if text.endswith(' ') and not window.endswith(' ') and new[stop : stop + 1] == ' ':
+                text = text[:-1]
+            if (
+                text.startswith(' ')
+                and not window.startswith(' ')
+                and new[start - 1 : start] == ' '
+            ):
+                text = text[1:]
+            found.append(text)
+        if any(not text.strip() for text in found) or all(text == window for text in found):
+            return None
+        return found
+
+    carried = None
+    if among:
+        start, stop = moved(low, True), moved(high, False)
+        if start is not None and stop is not None:
+            if _whole(old, (low, high), new, new[start:stop]):
+                carried = wordings_in(start, stop)
+    else:
+        lo = min(row[0] for hunks in placed for row in hunks)
+        hi = max(row[1] for hunks in placed for row in hunks)
+        span = (_moved_edge(edits, low, new, True), _moved_edge(edits, high, new, False))
+        for start, stop in _windows(new, (lo, hi), span):
+            carried = wordings_in(start, stop)
+            if carried is not None:
+                break
+    if carried is None:
+        return _retired(other, owner)  # Nothing of its own, or nothing at all, is left.
+    # A space every wording keeps at an edge is not part of the suggestion, while the
+    # words without it are still found once.
+    trim, cut = start, list(carried)
+    while trim < stop and new[trim].isspace() and all(t[:1] == new[trim] for t in cut):
+        trim, cut = trim + 1, [t[1:] for t in cut]
+    end_at = stop
+    while (
+        end_at > trim and new[end_at - 1].isspace() and all(t[-1:] == new[end_at - 1] for t in cut)
+    ):
+        end_at, cut = end_at - 1, [t[:-1] for t in cut]
+    if (trim, end_at) != (start, stop) and _once(new, new[trim:end_at]):
+        start, stop, carried = trim, end_at, cut
+    window = new[start:stop]
+    other['before'] = window
+    _set_wordings(other, picks, carried)
+    # Read again for what it changes now, and still flagged if it was: it still waits.
+    if 'after' in other:
+        other['flag'] = _flags(window, other['after']) or other.get('flag') or ''
+    for alternative in other.get('alternatives') or []:
+        alternative['flag'] = _flags(window, alternative['after']) or alternative.get('flag') or ''
+    took = other.setdefault('carried', [])
+    if owner:
+        took.append(owner)
+    return True
+
+
+def _moved_edge(edits, p, new, opens):
+    """Where an edge `p` of a suggestion is in `new`, taking in the accepted words that run
+    across it: they become context it may keep."""
+    shift = 0
+    for a, b, c, d in edits:
+        if a < p < b:
+            return c if opens else d
+        if b < p or (b == p and (a < b or opens)):
+            shift += (d - c) - (b - a)
+    return p + shift
+
+
+def _windows(new, change, span):
+    """Each (start, end) in `new` of a suggestion's own change with a little context around
+    it, found there once as whole words, best first: up to CONTEXT words each side,
+    preferring one on each side from its own sentence (`span`), then more."""
+    lo, hi = change
+    near = new[max(0, lo - 2000) : hi + 2000]
+    base = max(0, lo - 2000)
+    words = [
+        (m.start() + base, m.end() + base) for m in TOKENS.finditer(near) if WORDLIKE.match(m[0])
+    ]
+    left = [w for w in reversed(words) if w[1] <= lo][:CONTEXT]
+    right = [w for w in words if w[0] >= hi][:CONTEXT]
+    inside = (
+        min(1, sum(1 for w in left if w[0] >= span[0])),
+        min(1, sum(1 for w in right if w[1] <= span[1])),
+    )
+    tries = sorted(
+        ((x, y) for x in range(len(left) + 1) for y in range(len(right) + 1)),
+        key=lambda pair: (
+            pair[0] < inside[0] or pair[1] < inside[1],
+            sum(pair),
+            abs(pair[0] - pair[1]),
+        ),
+    )
+    for x, y in tries:
+        start = left[x - 1][0] if x else lo
+        stop = right[y - 1][1] if y else hi
+        while start < lo and new[start].isspace():
+            start += 1
+        while stop > hi and new[stop - 1].isspace():
+            stop -= 1
+        # With the marks that hold on to its words, such as a full stop or quotation marks.
+        while start > 0 and not new[start - 1].isspace() and not WORDLIKE.match(new[start - 1]):
+            start -= 1
+        while stop < len(new) and not new[stop].isspace() and not WORDLIKE.match(new[stop]):
+            stop += 1
+        piece = new[start:stop]
+        if WORDLIKE.search(piece) and _once(new, piece) and len(_whole_words(new, piece)) == 1:
+            yield start, stop
+
+
+def _own(old, at, end, wordings, edits):
+    """A suggestion's own changes for each wording, read against the whole part as the
+    accepted change's are, so two that add words in one gap between words are seen to meet;
+    all of them; and the accepted edits that reach them, its words or an edge of them."""
+    own = []
+    for wording in wordings:
+        mine = old[:at] + wording + old[end:]
+        own.append([(a, b, mine[c:d]) for a, b, c, d in _word_edits(old, mine)])
+    changes = [change for hunks in own for change in hunks]
+    low = min([at] + [change[0] for change in changes])
+    high = max([end] + [change[1] for change in changes])
+    touching = [
+        edit
+        for edit in edits
+        if _meet(edit[0], edit[1], low, high) or edit[0] == edit[1] in (low, high)
+    ]
+    return own, changes, touching
+
+
+def _near(old, at, end, edits):
+    """Whether any accepted edit falls where a suggestion at `old[at:end]` could have its
+    own changes: inside the stretch _word_edits aligns them in, which holds them all."""
+    start = max(0, at - ALIGN)
+    while start > 0 and not old[start - 1].isspace():
+        start -= 1
+    stop = min(len(old), end + ALIGN)
+    while stop < len(old) and not old[stop].isspace():
+        stop += 1
+    return any(b >= start and a <= stop for a, b, _, _ in edits)
+
+
+def _reaches(other, old, new, edits):
+    """Whether an accepted change reaches a suggestion at all: _reconcile would change it."""
+    at = old.index(other['before'])
+    end = at + len(other['before'])
+    if not _near(old, at, end, edits):
+        return not _whole(old, (at, end), new, other['before'])
+    _, _, touching = _own(old, at, end, _wordings(other, ()), edits)
+    return bool(touching) or not _whole(old, (at, end), new, other['before'])
+
+
+def _retired(other, owner):
+    other['state'] = 'retired'
+    other['reason'] = CHANGED if owner else EDITED
+    if owner:
+        other['retired_by'] = owner
+    return True
+
+
+def _wordings(other, picks):
+    """Every wording a suggestion offers for its `before`: its own, each alternative's, and
+    the person's own for a pick still to land."""
+    found = [other['after']] if isinstance(other.get('after'), str) else []
+    found += [alternative['after'] for alternative in other.get('alternatives') or []]
+    found += [pick['own'] for pick in picks if pick['item'] is other and 'own' in pick]
+    return found
+
+
+def _set_wordings(other, picks, texts):
+    texts = iter(texts)
+    if isinstance(other.get('after'), str):
+        other['after'] = next(texts)
+    for alternative in other.get('alternatives') or []:
+        alternative['after'] = next(texts)
+    for pick in picks:
+        if pick['item'] is other and 'own' in pick:
+            pick['own'] = next(texts)
+
+
+def _meet(a, b, c, d):
+    """Whether stretch [a, b) and stretch [c, d) of one text share words. A point (an
+    insertion, a == b) meets a stretch it is strictly inside, or the same point."""
+    if a == b and c == d:
+        return a == c
+    if a == b:
+        return c < a < d
+    if c == d:
+        return a < c < b
+    return a < d and c < b
+
+
+def _spans(text):
+    return [(m.start(), m.end()) for m in TOKENS.finditer(text)]
+
+
+def _word_edits(old, new):
+    """[(start, end, new start, new end)]: each stretch of `old`, in whole words and marks,
+    that `new` changes, read by aligning their words where they differ."""
+    if old == new:
+        return []
+    # Aligned with the unchanged words around the change too, up to a sentence or two
+    # (ALIGN characters each side, ending between words), so the words line up as an
+    # alignment of the whole part would line them up.
+    start, old_end, new_end = _changed(old, new)
+    start = max(0, start - ALIGN)
+    grown = min(ALIGN, len(old) - old_end)
+    old_end, new_end = old_end + grown, new_end + grown
+    while start > 0 and not old[start - 1].isspace():
+        start -= 1  # The text before the change is the same in both.
+    while old_end < len(old) and not old[old_end].isspace():
+        old_end += 1  # And so is the text after it.
+        new_end += 1
+    return [
+        (start + x0, start + x1, start + y0, start + y1)
+        for x0, x1, y0, y1 in _aligned_words(old[start:old_end], new[start:new_end])
+    ]
+
+
+@functools.lru_cache(maxsize=4096)
+def _aligned_words(was, now):
+    """The stretches of `was` that `now` changes, word by word, relative to each. Kept for
+    the texts already aligned: an Accept all reads each suggestion again after every change
+    it lands, and most of them see the same words each time."""
+    import difflib
+
+    a, b = _spans(was), _spans(now)
+    old_words, new_words = [was[x:y] for x, y in a], [now[x:y] for x, y in b]
+    opcodes = difflib.SequenceMatcher(None, old_words, new_words, autojunk=False).get_opcodes()
+
+    def at(spans, text, i, j):
+        if i == j:
+            return (spans[i][0], spans[i][0]) if i < len(spans) else (len(text), len(text))
+        return spans[i][0], spans[j - 1][1]
+
+    found = []
+    for op, i1, i2, j1, j2 in opcodes:
+        if op != 'equal':
+            found.append((*at(a, was, i1, i2), *at(b, now, j1, j2)))
+    return tuple(found)
+
+
+def _whole(old, span, new, before):
+    """Whether `before` is in `new` once, and as whole words on each side where the
+    suggestion's words, at `span` in `old`, were whole words."""
+    if not _once(new, before):
+        return False
+    where = new.index(before)
+
+    def clear(text, start, end):
+        return (
+            start == 0 or not (WORDLIKE.match(text[start - 1]) and WORDLIKE.match(text[start])),
+            end == len(text) or not (WORDLIKE.match(text[end - 1]) and WORDLIKE.match(text[end])),
+        )
+
+    was, now = clear(old, *span), clear(new, where, where + len(before))
+    return (now[0] or not was[0]) and (now[1] or not was[1])
+
+
+def _changed(old, new):
+    """(start, end in old, end in new) of the one stretch where `new` differs from `old`:
+    the longest common start, then the longest common end of what is left."""
+    limit = min(len(old), len(new))
+    start = _longest(limit, lambda n: old[:n] == new[:n])
+    rest = limit - start
+    same = _longest(rest, lambda n: old[len(old) - n :] == new[len(new) - n :])
+    return start, len(old) - same, len(new) - same
+
+
+def _longest(limit, equal):
+    """The largest n up to `limit` for which `equal(n)` holds, where it holds for every
+    smaller n too, found by halving."""
+    low, high = 0, limit
+    while low < high:
+        middle = (low + high + 1) // 2
+        if equal(middle):
+            low = middle
+        else:
+            high = middle - 1
+    return low
+
+
+def _whole_words(text, words):
+    """Where `words` occur in `text` without starting or ending inside a word."""
+    found, at = [], text.find(words) if words else -1
+    while at != -1:
+        clear_start = at == 0 or not (WORDLIKE.match(words[0]) and WORDLIKE.match(text[at - 1]))
+        stop = at + len(words)
+        clear_end = stop == len(text) or not (
+            WORDLIKE.match(words[-1]) and WORDLIKE.match(text[stop])
+        )
+        if clear_start and clear_end:
+            found.append(at)
+        at = text.find(words, at + 1)
+    return found
+
+
+def _owner(fixes, part, new):
+    """For a set landing after fixes were accepted: the accepted fix in this part whose
+    wording, as it landed (an alternative or the person's own too), sits where the edits that
+    touched a suggestion are, as {job, id}, or None."""
+
+    def find(touching):
+        for job, item in fixes:
+            landed = item.get('landed', item.get('after'))
+            if item.get('part') != part or not isinstance(landed, str) or not landed.strip():
+                continue
+            for at in _whole_words(new, landed.strip()):
+                stop = at + len(landed.strip())
+                if any(at <= c <= stop and at <= d <= stop for _, _, c, d in touching):
+                    return {'job': job, 'id': item['id']}
+        return None
+
+    return find
 
 
 def skip(root, ident, job, ids):
@@ -542,18 +1144,35 @@ def _alternatives(draft, part, before, after, found):
     return kept
 
 
-def _read_humanize(draft, found, title=False, kinds=False):
+def _read_humanize(draft, found, title=False, kinds=False, earlier=None, fixes=()):
     """Sentence rewrites (Humanize, and Copy edit with the title too): each `before` found
     once in its part, and an `after` that changes it without adding a heading, on one line
     for the title. Any other row is dropped. With `kinds` (Copy edit), each fix names its
-    kind, grammar when it names none it may, and a wording fix may bring alternatives."""
+    kind, grammar when it names none it may, and a wording fix may bring alternatives.
+
+    `earlier` is the text the job read, {part: text}: a row for words changed since (fixes
+    accepted meanwhile, `fixes` [(job, item)]) is kept in step with the text as an accept
+    keeps the others (_reconcile), so it takes them in, or lands retired, saying why."""
     rows, dropped = _rows(found, 'suggestions', ('part', 'before', 'after'))
     parts = _prose_parts(draft) | ({'title'} if title else set())
-    items, seen = [], set()
+    items, seen, edits = [], set(), {}
     for row in rows:
         part = row.get('part')
         before = _located(draft, part, row.get('before')) if part in parts else None
+        since = None
+        if before is None and part in parts and part in (earlier or {}):
+            text = row.get('before').strip() if isinstance(row.get('before'), str) else ''
+            if text and _once(earlier[part], text):
+                before, since = text, earlier[part]
         after = None if before is None else _replacement(draft, part, before, row.get('after'))
+        if since is not None and after is not None:
+            now = desk.text_of(draft, part)
+            if part not in edits:
+                edits[part] = _word_edits(since, now)
+            moved = {'part': part, 'before': before, 'after': after, 'state': 'open'}
+            _reconcile(moved, since, now, edits[part], _owner(fixes, part, now))
+            before, after = moved['before'], moved['after']
+            since = moved
         if after is None or (part, before) in seen:
             dropped += 1
             continue
@@ -565,6 +1184,14 @@ def _read_humanize(draft, found, title=False, kinds=False):
             'note': _text(row.get('why'), 500),
             'flag': _flags(before, after),
         }
+        if since is not None:
+            item.update(
+                {
+                    key: since[key]
+                    for key in ('state', 'reason', 'retired_by', 'carried')
+                    if key in since
+                }
+            )
         if kinds:
             kind = row.get('kind')
             item['kind'] = kind if isinstance(kind, str) and kind in COPYEDIT_KINDS else 'grammar'
@@ -731,12 +1358,39 @@ READERS = {
 }
 
 
+def _earlier(job):
+    """{part: text} of the draft as a finishing job read it, from its payload."""
+    payload = job.get('payload') if isinstance(job.get('payload'), dict) else {}
+    found = {
+        part: payload[part] for part in ('title', 'opening') if isinstance(payload.get(part), str)
+    }
+    for section in payload.get('sections') or []:
+        if isinstance(section, dict) and isinstance(section.get('text'), str):
+            found[section.get('id')] = section['text']
+    return found
+
+
+def _accepted(root, ident):
+    """[(job, item)] for the fixes accepted from the newest Copy edit set."""
+    name = _latest(root, ident).get('copyedit')
+    try:
+        found = read(root, ident, name) if name else {'items': []}
+    except (ValueError, OSError):
+        return []
+    return [(name, item) for item in found.get('items', []) if item.get('state') == 'applied']
+
+
 def settle(root, ident, draft, job):
     """Read a finishing tool's result strictly and keep its proposals for the person. The
     draft is not changed; a result Blog Studio cannot read is refused readably."""
     found = shared.read_result((job.get('result') or {}).get('content'), UNREADABLE)
     try:
-        items, dropped, extra = READERS[job['kind']](draft, found)
+        if job['kind'] == 'finish-humanize':
+            items, dropped, extra = _read_humanize(
+                draft, found, earlier=_earlier(job), fixes=_accepted(root, ident)
+            )
+        else:
+            items, dropped, extra = READERS[job['kind']](draft, found)
     except (TypeError, AttributeError, KeyError):
         raise ValueError(UNREADABLE) from None  # A shape no reader expects, said plainly.
     meta = (job.get('metadata') or {}).get('desk') or {}
@@ -750,54 +1404,10 @@ def settle(root, ident, draft, job):
 # Before publishing: repurpose into new desk blogs, and send the desk's wording to the
 # blog's Google Doc as suggestions. The pre-publish check reads DRAFT.md, which every desk
 # write keeps in step.
-MARKS = frozenset('[]*`<>#')
 NO_DOC = (
     'This blog has no Google Doc to send suggestions to. A blog started from a Google Doc can '
     'send its desk changes back to that Doc.'
 )
-
-
-ESCAPED = re.compile(r'\\([\\`*_{}\[\]()#+\-.!<>|~])')
-VISIBLE = (
-    (re.compile(r'^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d{1,3}[.)]\s+)'), ''),  # line markers
-    (re.compile(r'!\[[^\]]*\]\([^)]*\)'), ''),  # images
-    (re.compile(r'!\[[^\]\n]*\]\[[^\]\n]*\]'), ''),  # images by reference, as Google exports
-    (re.compile(r'\[\^[^\]]+\]'), ''),  # footnote markers
-    (re.compile(r'\[([^\]]*)\]\([^)]*\)'), r'\1'),  # links show their text, not their target
-    (re.compile(r'<(https?://[^>\s]+)>'), r'\1'),
-    (re.compile(r'[*`]+'), ''),  # emphasis and code marks
-)
-
-
-def _visible(line):
-    """A Markdown line as the Doc's body paragraph shows it, or None for a line that is not
-    one (a table row, a fence, a footnote's own text)."""
-    bare = line.strip()
-    if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[[^\]]+\]:', bare):
-        return None  # Also a footnote's or a link's definition, such as an image's data.
-    # An escaped mark is the character itself, as Google's Markdown export writes it.
-    line = ESCAPED.sub(lambda found: '\x00' + str(ord(found.group(1))) + '\x00', line)
-    for pattern, replacement in VISIBLE:
-        line = pattern.sub(replacement, line)
-    return re.sub('\x00([0-9]+)\x00', lambda found: chr(int(found.group(1))), line)
-
-
-def _hidden_spans(line):
-    """Where a line holds what the Doc shows no text for: link targets and whole images."""
-    return [m.span(1) for m in re.finditer(r'\]\(([^)]*)\)', line)] + [
-        m.span()
-        for m in re.finditer(
-            r'!\[[^\]]*\]\([^)]*\)|!\[[^\]\n]*\]\[[^\]\n]*\]|<https?://[^>\s]+>', line
-        )
-    ]
-
-
-def _touches(spans, start, end):
-    return any(start < b and a < max(end, start + 1) for a, b in spans)
-
-
-def _shown(lines):
-    return [shown for shown in (_visible(line) for line in lines) if shown is not None]
 
 
 def _aligned(before, opcodes):
@@ -826,109 +1436,936 @@ def _aligned(before, opcodes):
     return out
 
 
-def google_changes(baseline, body):
-    """The desk's wording changes against the Google Doc as quoted suggestions, how many
-    changed paragraphs cannot be one (added, removed, split or formatted), and the Doc
-    paragraph each suggestion is in with how many times the Doc should show what locates it.
-    A suggestion's id stays the same wherever its paragraph moves, so one sent before is known
-    again. Copies are counted in the text a reader of the Doc sees, as Google's own search
-    finds it: link targets, images, table rows and footnote markers are not part of it."""
+ESCAPED = re.compile(r'\\([\\`*_{}\[\]()#+\-.!<>|~])')
+LINE_MARK = re.compile(
+    r'\s{0,3}(?P<heading>#{1,6})\s+|\s{0,3}>\s?|\s*(?P<bullet>[-*+])\s+|\s*\d{1,3}[.)]\s+'
+)
+INLINE = re.compile(
+    r'(?P<image>!\[[^\]]*\]\([^)]*\)|!\[[^\]\n]*\]\[[^\]\n]*\])'  # images, also by reference
+    r'|(?P<note>\[\^[^\]]+\])'  # footnote markers
+    r'|\[(?P<text>[^\]]*)\]\((?P<url>[^)]*)\)'  # links show their text, not their target
+    r'|<(?P<auto>https?://[^>\s]+)>'
+    r'|(?P<tag></?(?:u|sup|sub)>)'
+    r'|(?P<marks>[*`]+)'  # emphasis and code marks
+)
+LITERAL = re.compile('(\x00[0-9]+\x00)')
+DEFINITION = re.compile(r'\s*\[([^\]^][^\]]*)\]:')
+TOKEN = re.compile(r"\w+(?:['’-]\w+)*|[^\S\n]+|.", re.S)
+NOTE_LIMIT = 1000  # characters in one suggestion's or comment's reason
+NOTE_BYTES = 1800  # and bytes, under Google's 2,048 for a comment with its marker
+# A character's style as the Doc shows it: bold, italic, code, underline, raised or lowered,
+# and the address it links to.
+PLAIN = (False, False, False, False, None, None)
+BREAK = ('\n', PLAIN)
+
+
+def _inline(text, state, link, chars, images):
+    """The characters a run of inline Markdown shows, each with its style."""
+    at = 0
+    for found in INLINE.finditer(text):
+        _literal(text[at : found.start()], state, link, chars)
+        at = found.end()
+        if found['image']:
+            images.append(found['image'])
+        elif found['url'] is not None:
+            target = found['url'].strip().split()[0] if found['url'].strip() else ''
+            _inline(found['text'], state, target.strip('<>'), chars, images)
+        elif found['auto']:
+            _literal(found['auto'], state, found['auto'], chars)
+        elif found['tag']:
+            name = found['tag'].strip('</>')
+            if name == 'u':
+                state['underline'] = not found['tag'].startswith('</')
+            else:
+                state['script'] = None if found['tag'].startswith('</') else name
+        elif found['marks']:
+            for run in re.findall(r'\*+|`+', found['marks']):
+                if run.startswith('`'):
+                    state['code'] = not state['code']
+                    continue
+                if len(run) % 2:
+                    state['italic'] = not state['italic']
+                if len(run) // 2 % 2:
+                    state['bold'] = not state['bold']
+    _literal(text[at:], state, link, chars)
+
+
+def _literal(text, state, link, chars):
+    style = (
+        state['bold'],
+        state['italic'],
+        state['code'],
+        state['underline'],
+        state['script'],
+        link or None,
+    )
+    for piece in LITERAL.split(text):
+        if LITERAL.fullmatch(piece):
+            chars.append((chr(int(piece[1:-1])), style))  # An escaped mark is the character.
+        else:
+            chars.extend((character, style) for character in piece)
+
+
+def _styled(line):
+    """A Markdown line as the Doc's body paragraph shows it: its kind of paragraph, each
+    character with its style (without the spaces around them), and its images. None for a
+    line that is not a paragraph (a table row, a fence, a footnote's or a link's definition,
+    such as an image's data)."""
+    bare = line.strip()
+    if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[[^\]]+\]:', bare):
+        return None
+    # An escaped mark is the character itself, as Google's Markdown export writes it.
+    line = ESCAPED.sub(lambda found: '\x00' + str(ord(found.group(1))) + '\x00', line)
+    block, mark = 'text', LINE_MARK.match(line)
+    if mark:
+        if mark['heading']:
+            block = 'heading ' + str(len(mark['heading']))
+        elif mark['bullet']:
+            block = 'bullet'
+        elif '>' in mark.group():
+            block = 'quote'
+        else:
+            block = 'number'
+        line = line[mark.end() :]
+    chars, images = [], []
+    state = {'bold': False, 'italic': False, 'code': False, 'underline': False, 'script': None}
+    _inline(line, state, None, chars, images)
+    while chars and chars[0][0].isspace():
+        chars.pop(0)
+    while chars and chars[-1][0].isspace():
+        chars.pop()
+    return {'block': block, 'chars': chars, 'images': images}
+
+
+def _visible(line):
+    """A Markdown line's text as the Doc's body paragraph shows it, or None for a line that is
+    not one."""
+    found = _styled(line)
+    return None if found is None else ''.join(character for character, _ in found['chars'])
+
+
+def _count(text, needle):
+    """How many times `needle` occurs in `text`, overlapping ones too, as Google's search finds
+    them."""
+    found, at = 0, text.find(needle) if needle else -1
+    while at != -1:
+        found += 1
+        at = text.find(needle, at + 1)
+    return found
+
+
+def _uniform(chars, start, end):
+    return len({style for _, style in chars[start:end]}) <= 1
+
+
+def _tokens(chars):
+    """Words, runs of spaces, line breaks and single marks, each cut where the style changes."""
+    text = ''.join(character for character, _ in chars)
+    spans = []
+    for found in TOKEN.finditer(text):
+        start = found.start()
+        for at in range(found.start() + 1, found.end()):
+            if chars[at][1] != chars[at - 1][1]:
+                spans.append((start, at))
+                start = at
+        spans.append((start, found.end()))
+    return text, spans
+
+
+def _runs(old, new):
+    """The separate changed runs between two paragraphs' shown text, word by word, as
+    [old start, old end, new start, new end]. Runs a few words apart merge into one where the
+    Doc's words between share one style, but a new paragraph stays a change of its own. The
+    desk's formatting plays no part, so a word made bold later leaves the changes as sent."""
+    import difflib
+
+    old_text, old_tokens = _tokens(old)
+    new_text, new_tokens = _tokens(new)
+
+    def bounds(spans, low, high, length):
+        if high > low:
+            return spans[low][0], spans[high - 1][1]
+        at = spans[low][0] if low < len(spans) else length
+        return at, at
+
+    runs = []
+    for tag, a, b, c, d in difflib.SequenceMatcher(
+        None,
+        [old_text[x:y] for x, y in old_tokens],
+        [new_text[x:y] for x, y in new_tokens],
+        autojunk=False,
+    ).get_opcodes():
+        if tag == 'equal':
+            continue
+        run = [*bounds(old_tokens, a, b, len(old_text)), *bounds(new_tokens, c, d, len(new_text))]
+        if runs:
+            last = runs[-1]
+            between = old_text[last[1] : run[0]]
+            if (
+                len(re.findall(r'\w+', between)) <= 3
+                and len(between) <= 40
+                and '\n' not in ''.join(c for c, _ in new[last[2] : run[3]])
+                and _uniform(old, last[0], run[1])
+            ):
+                last[1], last[3] = run[1], run[3]
+                continue
+        runs.append(run)
+    return runs
+
+
+def _segments(chars, start, end):
+    """(start, end) of each stretch of one style between start and end."""
+    found, at = [], start
+    for position in range(start + 1, end):
+        if chars[position][1] != chars[position - 1][1]:
+            found.append((at, position))
+            at = position
+    if end > start:
+        found.append((at, end))
+    return found
+
+
+def _wanted(chars):
+    """The style a run of new text should have: that of its first visible character."""
+    return next((style for character, style in chars if not character.isspace()), None)
+
+
+def _edits(old, new):
+    """Minimal edits that turn one paragraph's shown text into the desk's, each as
+    [start, end, replacement] on the old text. An edit inserts text in one style only, the
+    style the Doc copies from the words it replaces or follows, so a run across a link or
+    formatting is cut where the style changes and its words go with the part in the style
+    they need; the other parts are deletions."""
+    edits = []
+    for start, end, low, high in _runs(old, new):
+        # Spaces both keep at either end are no part of the change.
+        while (
+            start < end and low < high and old[start][0] == new[low][0] and old[start][0].isspace()
+        ):
+            start, low = start + 1, low + 1
+        while (
+            start < end
+            and low < high
+            and old[end - 1][0] == new[high - 1][0]
+            and old[end - 1][0].isspace()
+        ):
+            end, high = end - 1, high - 1
+        replacement = new[low:high]
+        if start == end or _uniform(old, start, end):
+            edits.append([start, end, replacement])
+            continue
+        parts = _segments(old, start, end)
+        want = _wanted(replacement)
+        pick = next(
+            (i for i, (a, b) in enumerate(parts) if old[a][1] == want),
+            next(
+                (i for i, (a, b) in enumerate(parts) if ''.join(c for c, _ in old[a:b]).strip()), 0
+            ),
+        )
+        a, b = parts[pick]
+        if start < a:
+            edits.append([start, a, []])
+        edits.append([a, b, replacement])
+        if b < end:
+            edits.append([b, end, []])
+    return edits
+
+
+def _anchored(old, edits):
+    """Each edit with whole words to locate it by: an insertion takes the word beside it, in
+    the style its text needs where either side has that style, and a change of spaces only
+    takes the word before it. [start, end, before, after] on the old text, or None when two
+    would cover the same words."""
+    text, tokens = _tokens(old)
+    taken = [(start, end) for start, end, _ in edits if end > start]
+
+    def side(at, previous):
+        """The word just before (or after) `at`, with the spaces between, or None."""
+        if previous:
+            near = [span for span in tokens if span[1] <= at]
+            if not near:
+                return None
+            a = near[-1][0]
+            if not text[a:at].strip() and len(near) > 1:
+                a = near[-2][0]
+            return (a, at) if text[a:at].strip() else None
+        near = [span for span in tokens if span[0] >= at]
+        if not near:
+            return None
+        b = near[0][1]
+        if not text[at:b].strip() and len(near) > 1:
+            b = near[1][1]
+        return (at, b) if text[at:b].strip() else None
+
+    out = []
+    for start, end, replacement in edits:
+        added = ''.join(c for c, _ in replacement)
+        if end > start and text[start:end].strip():
+            out.append([start, end, text[start:end], added, [st for _, st in replacement]])
+            continue
+        if start == end:
+            # Inserted text starting with the space already there goes in after that space, so
+            # it neither starts with a space nor takes a link's or bold style from the left,
+            # unless the words on the left are in the style it needs (more words in a link).
+            while (
+                replacement
+                and replacement[0][0].isspace()
+                and start < len(text)
+                and text[start] == replacement[0][0]
+                and (
+                    not start
+                    or old[start - 1][1] != _wanted(replacement)
+                    or old[start][1] == _wanted(replacement)
+                )
+            ):
+                replacement = replacement[1:] + replacement[:1]
+                start = end = start + 1
+            # Ending with the space just before it, and the words before that space in the
+            # style it needs: it goes in before the space, beside those words.
+            while (
+                replacement
+                and replacement[-1][0].isspace()
+                and start > 1
+                and text[start - 1] == replacement[-1][0]
+                and old[start - 1][1] != _wanted(replacement)
+                and old[start - 2][1] == _wanted(replacement)
+            ):
+                replacement = replacement[-1:] + replacement[:-1]
+                start = end = start - 1
+            added = ''.join(c for c, _ in replacement)
+            want = _wanted(replacement)
+            before, after = side(start, True), side(start, False)
+            order = [before, after]
+            if (
+                after
+                and want is not None
+                and old[after[0]][1] == want
+                and (before is None or old[before[1] - 1][1] != want)
+            ):
+                order = [after, before]
+        else:
+            order = [side(start, True), side(end, False)]
+        for span in order:
+            if span is None:
+                continue
+            a, b = min(span[0], start), max(span[1], end)
+            taken_now = [t for t in taken if t != (start, end)]
+            if any(a < y and x < b for x, y in taken_now):
+                continue
+            out.append(
+                [
+                    a,
+                    b,
+                    text[a:b],
+                    text[a:start] + added + text[end:b],
+                    [st for _, st in old[a:start]]
+                    + [st for _, st in replacement]
+                    + [st for _, st in old[end:b]],
+                ]
+            )
+            taken = taken_now + [(a, b)]
+            break
+        else:
+            return None
+    return sorted(out)
+
+
+def _stretched(space, following):
+    """Whether a space carries a link or bold that the words after it lack (desk styles)."""
+    return bool((space[5] and space[5] != following[5]) or (space[0] and not following[0]))
+
+
+def _runs_of(looks):
+    """A replacement's looks as Google's suggestion takes them: [[length, {bold, italic,
+    underline, link}]]."""
+    runs = []
+    for look in looks:
+        found = {'bold': look[0], 'italic': look[1], 'underline': look[3], 'link': look[5]}
+        if runs and runs[-1][1] == found:
+            runs[-1][0] += 1
+        else:
+            runs.append([1, found])
+    return runs
+
+
+def _simulated(old, edits):
+    """The paragraph's characters and styles once every edit is accepted, as Google makes
+    them: kept words keep their style, and inserted text takes the desk's look (bold, italic,
+    underline, link) over the style of the first word it replaces, or of the word it follows. Each character says where it came from: ('old',
+    position) or ('edit', number)."""
+    import google_suggestions
+
+    out, at = [], 0
+    for number, (start, end, before, after, looks) in enumerate(edits):
+        out += [(old[i][0], old[i][1], ('old', i)) for i in range(at, start)]
+        keep_start, keep_end = google_suggestions.trimmed(before, after)
+        a, b = start + keep_start, end - keep_end
+        style = old[a][1] if a < b else old[max(start, a - 1)][1]
+        if (
+            a == b
+            and start < a < len(old)
+            and old[a - 1][0].isspace()
+            and _stretched(old[a - 1][1], old[a][1])
+        ):
+            style = old[a][1]  # A link or bold over the space stays there, as Google keeps it.
+        out += [(old[i][0], old[i][1], ('old', i)) for i in range(start, a)]
+        # Inserted text takes the desk's bold, italic, underline and link; code and raised
+        # text it takes from the Doc's words beside it.
+        out += [
+            (c, (look[0], look[1], style[2], look[3], style[4], look[5]), ('edit', number))
+            for c, look in zip(
+                after[keep_start : len(after) - keep_end],
+                looks[keep_start : len(looks) - keep_end],
+                strict=True,
+            )
+        ]
+        out += [(old[i][0], old[i][1], ('old', i)) for i in range(b, end)]
+        at = end
+    return out + [(old[i][0], old[i][1], ('old', i)) for i in range(at, len(old))]
+
+
+def _quoted(text, limit=200):
+    text = ' '.join(text.split())
+    return '“' + (text if len(text) <= limit else text[: limit - 1].rstrip() + '…') + '”'
+
+
+def _restyle(words, have, want):
+    """What to change by hand so `words` look as they do on the desk."""
+    said = []
+    if have[5] != want[5]:
+        if want[5] and have[5]:
+            said.append('Link changed: ' + words + ' now points to ' + want[5] + '.')
+        elif want[5]:
+            said.append('Link ' + words + ' to ' + want[5] + '.')
+        else:
+            said.append('Remove the link from ' + words + '.')
+    names = (('bold', 0), ('italic', 1), ('code', 2), ('underlined', 3))
+    on = [name for name, at in names if want[at] and not have[at]]
+    off = [name for name, at in names if have[at] and not want[at]]
+    if want[4] != have[4]:
+        (on if want[4] else off).append(
+            {'sup': 'superscript', 'sub': 'subscript'}.get(want[4] or have[4], 'raised')
+        )
+    if on:
+        said.append('Make ' + words + ' ' + ' and '.join(on) + '.')
+    if off:
+        said.append('Make ' + words + ' not ' + ' or '.join(off) + '.')
+    return ' '.join(said)
+
+
+def _styles(simulated, new):
+    """[(new start, new end, note, style)] where the paragraph's words, once its edits are accepted,
+    look different from the desk: a link, its address or formatting."""
+    found, group = [], None
+    for at, ((character, have, _), (_, want)) in enumerate(zip(simulated, new, strict=True)):
+        if character.isspace():
+            continue
+        if have == want:
+            group = None
+            continue
+        if (
+            group
+            and group[2:] == [have, want]
+            and not ''.join(c for c, _, _ in simulated[group[1] : at]).strip()
+        ):
+            group[1] = at + 1
+            continue
+        group = [at, at + 1, have, want]
+        found.append(group)
+    return [
+        (start, end, _restyle(_quoted(''.join(c for c, _ in new[start:end]), 80), have, want), want)
+        for start, end, have, want in found
+    ]
+
+
+KINDS_SAID = {
+    'text': 'normal text',
+    'bullet': 'a bulleted list item',
+    'number': 'a numbered list item',
+    'quote': 'a quotation',
+}
+
+
+def _kind(block):
+    if block.startswith('heading'):
+        return 'a heading (level ' + block.split()[1] + ')'
+    return KINDS_SAID.get(block, 'normal text')
+
+
+def _note(reason, notes):
+    """A reason with notes added, kept under the length one Google comment allows."""
+    text = ' '.join([reason, *notes]).strip()
+    if len(text) <= NOTE_LIMIT and len(text.encode()) <= NOTE_BYTES:
+        return text
+    text = text[:NOTE_LIMIT]
+    while len(text.encode()) > NOTE_BYTES - 3 or len(text) > NOTE_LIMIT - 1:
+        text = text[:-1]
+    return text.rstrip() + '…'
+
+
+def _paragraph_change(old_line, new_lines):
+    """How one Doc paragraph becomes the desk's lines: (edits, comments, notes, flat), with
+    edits as {start, end, before, after, reason[, remove]} and comments as {start, end, key,
+    reason} on the paragraph's shown text, notes [(key, text)] for the paragraph as a whole
+    (each sent as a comment of its own, never riding on an edit), and flat True when the
+    change cannot be made as edits and goes to the paragraph as one comment instead."""
+    old = _styled(old_line)
+    shown = ''.join(c for c, _ in old['chars'])
+    lines = [(line, _styled(line)) for line in new_lines]
+    texts = [(line, found) for line, found in lines if found is not None and found['chars']]
+    notes = [
+        (
+            ('line', line.strip()),
+            'The desk adds '
+            + ('a table row' if line.strip().startswith('|') else 'a line')
+            + ' here: '
+            + _quoted(line)
+            + '. Add it in the Doc by hand.',
+        )
+        for line, found in lines
+        if found is None and not DEFINITION.match(line)
+    ] + [
+        (
+            ('images', tuple(found['images'])),
+            'The desk adds an image here; add it in the Doc by hand.',
+        )
+        for _, found in lines
+        if found is not None and not found['chars'] and found['images']
+    ]
+    if not texts:
+        removed = {
+            'start': 0,
+            'end': len(shown),
+            'before': shown,
+            'after': '',
+            'reason': 'A paragraph removed on the writing desk.',
+            'remove': True,
+        }
+        return [removed], [], notes, False
+    new = []
+    for number, (_, found) in enumerate(texts):
+        if number:
+            new.append(BREAK)
+        new += found['chars']
+    images = [image for _, found in texts for image in found['images']]
+    if images:
+        notes.append(
+            (
+                ('images', tuple(images)),
+                'The desk has an image in this paragraph; add it in the Doc by hand.',
+            )
+        )
+    for _, found in texts:
+        if found['block'] != old['block']:
+            words = ''.join(c for c, _ in found['chars'])
+            subject = 'this paragraph' if len(texts) == 1 else 'the paragraph ' + _quoted(words, 60)
+            notes.append(
+                (
+                    ('kind', words, found['block']),
+                    'Make ' + subject + ' ' + _kind(found['block']) + '.',
+                )
+            )
+    if [c for c, _ in new] == [c for c, _ in old['chars']]:
+        edits = []
+    else:
+        edits = _anchored(old['chars'], _edits(old['chars'], new))
+        if edits is None:
+            return [], [], notes, True
+    simulated = _simulated(old['chars'], edits)
+    if ''.join(c for c, _, _ in simulated) != ''.join(c for c, _ in new):
+        return [], [], notes, True
+    found_edits = [
+        {
+            'start': start,
+            'end': end,
+            'before': before,
+            'after': after,
+            'reason': 'A paragraph added or split on the writing desk.'
+            if '\n' in after
+            else 'Wording changed on the writing desk.',
+            'styles': _runs_of(looks),
+        }
+        for start, end, before, after, looks in edits
+    ]
+    comments = []
+    for low, high, said, want in _styles(simulated, new):
+        words = ''.join(c for c, _ in new[low:high])
+        key = ('style', words, want)
+        places = [origin[1] for _, _, origin in simulated[low:high] if origin[0] == 'old']
+        if places and all(origin[0] == 'old' for _, _, origin in simulated[low:high]):
+            start, end = min(places), max(places) + 1
+            if not any(start < e['end'] and e['start'] < end for e in found_edits):
+                comments.append({'start': start, 'end': end, 'key': key, 'reason': said})
+                continue
+        # Words a suggestion brings in, or words beside one: said for the paragraph instead.
+        notes.append((key, said))
+    return found_edits, comments, notes, False
+
+
+def _by_hand(old_line, found, lines):
+    """A note for a change to a paragraph that cannot take a suggestion (it holds an image, or
+    is a table row), to make by hand."""
+    was = ''.join(c for c, _ in found['chars']) if found else old_line.strip()
+    had = found['images'] if found else []
+    now_found = [_styled(line) for line in lines]
+    now = ' / '.join(
+        ''.join(c for c, _ in item['chars']) if item else line.strip()
+        for line, item in zip(lines, now_found, strict=True)
+        if not item or item['chars']
+    )
+    if not found:
+        what = ('The table row ' if was.startswith('|') else 'The line ') + _quoted(was)
+    elif was:
+        what = 'The paragraph with an image, ' + _quoted(was) + ','
+    else:
+        what = 'The image here'
+    if not lines:
+        return what + ' is removed on the writing desk; remove it in the Doc by hand.'
+    images = [image for item in now_found if item for image in item['images']]
+    if had and images != had:
+        said = 'The image here changed on the writing desk; replace it in the Doc by hand.'
+        return said + (' Its words read ' + _quoted(now) + '.' if now and now != was else '')
+    return what + ' reads ' + _quoted(now) + ' on the writing desk; change it in the Doc by hand.'
+
+
+def _place(texts, k, shown, start, quoted):
+    """How a quote at `start` in paragraph `k`'s shown text is found in the Doc: its context,
+    occurrence, the text counted and how many times the Doc should show it. Copies are
+    counted in the paragraphs the Doc can take suggestions in."""
+    countable = [text for text in texts if text]
+    earlier = [text for text in texts[:k] if text]
+    copy = sum(_count(text, shown) for text in earlier)
+    copies = sum(_count(text, shown) for text in countable)
+    quotes = sum(_count(text, quoted) for text in countable)
+    if _count(shown, quoted) == 1 and (copies > 1 or quotes > 1):
+        return shown, copy + 1 if copies > 1 else None, shown, copies, copy
+    if quotes > 1:
+        within = sum(1 for at in range(start) if shown.startswith(quoted, at))
+        return (
+            None,
+            sum(_count(text, quoted) for text in earlier) + within + 1,
+            quoted,
+            quotes,
+            copy,
+        )
+    return None, None, quoted, quotes, copy
+
+
+def _anchorable(styled):
+    """Whether the Doc's paragraph can take a suggestion or comment: text, and no image."""
+    return bool(styled and not styled['images'] and styled['chars'])
+
+
+def _without_title(before, after, title):
+    """The desk's lines without its `# Title` line when the Doc has none (the Doc's name is
+    its title), and a note when the desk's title is not the Doc's name or first heading."""
+    if not after or not re.match(r'#\s', after[0]) or (before and re.match(r'#\s', before[0])):
+        return after, None
+    desk_title = _visible(after[0]) or ''
+
+    def same(value):
+        return ' '.join((value or '').split()).casefold() == ' '.join(desk_title.split()).casefold()
+
+    heading = next((line for line in before if re.match(r'\s{0,3}#{1,6}\s', line)), None)
+    shown = [_visible(line) for line in (before[:1] + ([heading] if heading else []))]
+    if title is None or same(title) or any(same(text) for text in shown):
+        return after[1:], None
+    return after[1:], (desk_title, 'Suggested title: ' + _quoted(desk_title) + '.')
+
+
+def _alike(old, new):
+    """How alike two lines are, by characters or word by word, whichever is closer: a short
+    line with a new link address and a long paragraph reworded in places both still pair, as
+    does a paragraph that only gained words at its start or end."""
+    import difflib
+
+    # The words as the Doc shows them too, so formatting added on the desk changes nothing.
+    shown_old, shown_new = _visible(old), _visible(new)
+    if shown_old is not None and shown_new is not None and (shown_old, shown_new) != (old, new):
+        score = _alike(shown_old, shown_new)
+    else:
+        score = 0
+    score = max(
+        score,
+        difflib.SequenceMatcher(None, old, new).ratio(),
+        difflib.SequenceMatcher(None, old.split(), new.split(), autojunk=False).ratio(),
+    )
+    short, long = sorted((old.strip(), new.strip()), key=len)
+    if len(short) >= 4 and (long.startswith(short) or long.endswith(short)):
+        score = max(score, 0.6 + 0.4 * len(short) / len(long))
+    return score
+
+
+def _pairs(olds, news):
+    """The Doc paragraphs and desk lines that pair, never crossing, as alike as they can be
+    taken together: one close pair never takes the place of two."""
+    best = [[(0.0, ())] * (len(news) + 1) for _ in range(len(olds) + 1)]
+    for i, old in enumerate(olds, 1):
+        for j, new in enumerate(news, 1):
+            choices = [best[i - 1][j], best[i][j - 1]]
+            score = _alike(old, new)
+            if score >= 0.6:
+                total, chosen = best[i - 1][j - 1]
+                choices.append((total + score, chosen + ((i - 1, j - 1),)))
+            best[i][j] = max(choices, key=lambda found: (round(found[0], 9), -len(found[1])))
+    return list(best[len(olds)][len(news)][1])
+
+
+def _joins(paragraph, line, after):
+    """Whether a new line inserted after (or before) this paragraph comes out as the desk has
+    it: the same kind of paragraph, and its first words in the style of the words it joins."""
+    if not paragraph or not paragraph['chars'] or not line or not line['chars']:
+        return False
+    beside = paragraph['chars'][-1 if after else 0][1]
+    return paragraph['block'] == line['block'] and beside == _wanted(line['chars'])
+
+
+def _attach(before, after, opcodes):
+    """For each Doc paragraph, the desk lines it becomes: {old index: [new indexes]}. A desk
+    line paired with a Doc paragraph replaces it; a desk line with none joins the paragraph
+    before it as a new paragraph after it (or the one after it, when the paragraph before
+    cannot take a suggestion or there is none). A Doc paragraph with no lines is removed."""
+
+    becomes = {}
+    anchorable = [_anchorable(_styled(line)) for line in before]
+    for tag, a, b, c, d in opcodes:
+        if tag == 'equal':
+            for i in range(b - a):
+                becomes.setdefault(a + i, []).append(c + i)
+            continue
+        olds, news = before[a:b], after[c:d]
+        pairs = []
+        if (
+            not a
+            and not c
+            and olds
+            and news
+            and re.match(r'#\s', olds[0])
+            and re.match(r'#\s', news[0])
+        ):
+            pairs.append((0, 0))  # The Doc's title paragraph and the desk's title.
+        if len(olds) * len(news) <= 40_000:
+            # Pair Doc paragraphs with desk lines, never two pairs that cross: a paragraph
+            # deleted next to an edited one is never rewritten into it.
+            skip = len(pairs)
+            pairs += [(i + skip, j + skip) for i, j in _pairs(olds[skip:], news[skip:])]
+        pairs.sort()
+        for i in range(len(olds)):
+            becomes.setdefault(a + i, [])
+        for i, j in pairs:
+            becomes[a + i].append(c + j)
+        paired = {j: i for i, j in pairs}
+        onward = False  # A line joined the paragraph after it: the rest before it do too.
+        for j in range(len(news)):
+            if j in paired:
+                onward = False
+                continue
+            earlier = [i for i, pj in pairs if pj < j]
+            later = [i for i, pj in pairs if pj > j]
+            behind = a + earlier[-1] if earlier else (a - 1 if a else None)
+            ahead = a + later[0] if later else (b if b < len(before) else None)
+            line = _styled(news[j])
+            if (
+                behind is None
+                or onward
+                or (not anchorable[behind] and ahead is not None and anchorable[ahead])
+            ):
+                target = ahead if ahead is not None else behind
+            elif (
+                ahead is not None
+                and anchorable[ahead]
+                and (
+                    _visible(before[ahead]).startswith(_visible(news[j]) or '\0')
+                    or (
+                        not _joins(_styled(before[behind]), line, True)
+                        and _joins(_styled(before[ahead]), line, False)
+                    )
+                )
+            ):
+                # A split's first part, or a paragraph that fits the one after it better: a new
+                # paragraph takes the kind and style of the one it is split from.
+                target = ahead
+            else:
+                target = behind
+            if target is None:
+                target = a  # A Doc of only removed paragraphs: the new lines replace the first.
+            onward = onward or (target == ahead and ahead is not None)
+            becomes.setdefault(target, []).append(c + j)
+    return {k: sorted(v) for k, v in becomes.items()}
+
+
+def google_changes(baseline, body, title=None):
+    """Every desk change against the Google Doc, as quoted suggestions and comments, how many
+    could not be placed anywhere, and the Doc paragraph each one is in with how many times the
+    Doc should show what locates it.
+
+    Each changed paragraph's shown words are compared word by word, and each separate changed
+    run is its own suggestion. A paragraph added is inserted after the one before it, and one
+    removed is deleted with its break. What the Doc shows no words for (a link's address,
+    formatting, an image) is a comment on its words or paragraph, as is a change in a
+    paragraph that cannot take a suggestion. The desk's `# Title` line is not a change when
+    it is the Doc's name (`title`) or its first heading. A suggestion's id stays the same
+    wherever its paragraph moves, so one sent before is known again. Copies are counted in
+    the text a reader of the Doc sees, as Google's own search finds it."""
     import difflib
     import json
 
     import manuscript_editor
 
-    # Paragraphs, without the blank lines between them, so the diff aligns on text.
-    before = [line for line in baseline.splitlines() if line.strip()]
-    after = [line for line in body.splitlines() if line.strip()]
-    found, left, paragraphs = [], 0, {}
+    # Paragraphs, without the blank lines between them, so the diff aligns on text. An image's
+    # data (a reference definition) is compared by its label, not as a paragraph.
+    def split(text):
+        lines, images = [], {}
+        for line in text.splitlines():
+            label = DEFINITION.match(line)
+            if label:
+                images[label.group(1)] = line.strip()
+            elif line.strip():
+                lines.append(line)
+        return lines, images
+
+    before, old_images = split(baseline)
+    after, new_images = split(body)
+    after, title_note = _without_title(before, after, title)
+    styled = [_styled(line) for line in before]
+    texts = [
+        ''.join(c for c, _ in found['chars']) if _anchorable(found) else None for found in styled
+    ]
     opcodes = _aligned(
         before, difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
     )
-    for tag, a, b, c, d in opcodes:
-        if tag == 'equal':
+    becomes = _attach(before, after, opcodes)
+    edits, comments, notes = {}, {}, {}  # By Doc paragraph.
+
+    def note(k, key, text, about=None):
+        notes.setdefault(k, []).append((key, text, about))
+
+    if title_note:
+        note(0, ('title', title_note[0]), title_note[1])
+    for label, line in old_images.items():
+        if new_images.get(label, line) != line:
+            where = next((k for k, l in enumerate(before) if '][' + label + ']' in l), 0)
+            note(
+                where,
+                ('image', label, studio.digest(new_images.get(label, '').encode())[:16]),
+                'The image ' + _quoted(label, 40) + ' changed on the writing desk; '
+                'replace it in the Doc by hand.',
+            )
+    for k, old_line in enumerate(before):
+        lines = [after[j] for j in becomes.get(k, [])]
+        if lines == [old_line]:
             continue
-        olds, news = before[a:b], after[c:d]
-        if len(olds) * len(news) > 40_000:
-            left += max(len(olds), len(news))  # Too much moved at once to pair safely.
+        found = styled[k]
+        if not _anchorable(found):
+            # A paragraph with an image, a table row or no words takes no suggestion: the
+            # change goes to the closest paragraph that can take one.
+            note(k, ('by-hand', tuple(lines)), _by_hand(old_line, found, lines))
             continue
-        # Pair Doc paragraphs with desk lines, the closest pairs first, never two pairs that
-        # cross: a paragraph deleted next to an edited one is never rewritten into it.
-        ratios = sorted(
-            (
-                (difflib.SequenceMatcher(None, old, new).ratio(), i, j)
-                for i, old in enumerate(olds)
-                for j, new in enumerate(news)
-            ),
-            key=lambda found: (-found[0], found[1], found[2]),
+        found_edits, found_comments, found_notes, flat = _paragraph_change(old_line, lines)
+        for key, text in found_notes:
+            note(k, key, text, texts[k])
+        if flat:
+            now = ' / '.join(
+                text for text in (_visible(line) for line in lines) if text is not None
+            )
+            note(
+                k,
+                ('by-hand', tuple(lines)),
+                'Change this paragraph by hand to read ' + _quoted(now, 400) + '.',
+                texts[k],
+            )
+            continue
+        edits[k] = found_edits
+        comments[k] = found_comments
+    found, paragraphs, left = [], {}, 0
+    anchorable = [m for m in range(len(before)) if texts[m]]
+
+    def nearest(k):
+        return sorted(anchorable, key=lambda m: (abs(m - k), m))
+
+    def same_lines(k):
+        return sum(1 for line in before[:k] if line == before[k])
+
+    for k in sorted(set(edits) | set(comments)):
+        old, shown = before[k], texts[k]
+        now = ' / '.join(
+            text for text in (_visible(after[j]) for j in becomes.get(k, [])) if text is not None
         )
-        pairs = []
-        for ratio, i, j in ratios:
-            if ratio < 0.6:
-                break
-            if all(i != pi and j != pj and (i < pi) == (j < pj) for pi, pj in pairs):
-                pairs.append((i, j))
-        pairs.sort()
-        left += max(len(olds), len(news)) - len(pairs)
-        for i, j in pairs:
-            old, new, at = olds[i], news[j], a + i
-            if old == new:
-                continue
-            # A link's address, an image or formatting changed only: the Doc shows no words
-            # for it, so it is made in the Doc by hand. Otherwise the change is found in the
-            # words the Doc shows, and every count is taken from those words.
-            shown, now = _visible(old), _visible(new)
-            raw_left, raw_tail = manuscript_editor.changed_bounds(old, new)
-            raw_quoted, raw_replacement = manuscript_editor.changed_span(old, new)
-            if (
-                shown is None
-                or now is None
-                or shown == now
-                or not now.strip()
-                or any(mark in raw_quoted + raw_replacement for mark in MARKS)
-                or _touches(_hidden_spans(old), raw_left, len(old) - raw_tail)
-                or _touches(_hidden_spans(new), raw_left, len(new) - raw_tail)
-            ):
-                left += 1  # A link or formatting change, made in the Doc by hand.
-                continue
-            start, _ = manuscript_editor.changed_bounds(shown, now)
-            quoted, replacement = manuscript_editor.changed_span(shown, now)
-            if not quoted.strip() or any(mark in quoted + replacement for mark in MARKS):
-                left += 1
-                continue
-            # Which copy this is of a paragraph the Doc repeats, so each copy is its own.
-            shown_before, shown_after = _shown(before[:at]), _shown(before[at:])
-            copy = sum(line.count(shown) for line in shown_before)
-            copies = copy + sum(line.count(shown) for line in shown_after)
-            quotes = sum(line.count(quoted) for line in shown_before + shown_after)
-            item = {
-                'id': 'desk-'
-                + studio.digest(json.dumps([old, quoted, replacement, copy]).encode())[:16],
-                'kind': 'edit',
-                'before': quoted,
-                'after': replacement,
-                'reason': 'Wording changed on the writing desk.',
-            }
-            occurrence, needle, matches = None, quoted, quotes
-            if shown.strip().count(quoted) == 1 and (copies > 1 or quotes > 1):
-                item['context'] = shown.strip()  # The paragraph, so the quote is found in it.
-                needle, matches = shown.strip(), copies
-                occurrence = copy + 1 if copies > 1 else None
-            elif quotes > 1:
-                occurrence = (
-                    sum(line.count(quoted) for line in shown_before)
-                    + shown[:start].count(quoted)
-                    + 1
+        seen = {}
+        items = [('edit', e) for e in edits.get(k, [])] + [
+            ('comment', c) for c in comments.get(k, [])
+        ]
+        for kind, change in sorted(items, key=lambda item: item[1]['start']):
+            quoted = change['before'] if kind == 'edit' else shown[change['start'] : change['end']]
+            context, occurrence, needle, matches, copy = _place(
+                texts, k, shown, change['start'], quoted
+            )
+            if kind == 'edit':
+                key = [old, quoted, change['after'], copy] + (
+                    ['remove'] if change.get('remove') else []
                 )
+            else:
+                # Its words and what they need, not how the note words it.
+                key = ['comment', old, copy, change['key']]
+            # The same change twice in one paragraph: each copy is its own.
+            seen[json.dumps(key)] = number = seen.get(json.dumps(key), 0) + 1
+            if number > 1:
+                key.append(number)
+            item = {
+                'id': 'desk-' + studio.digest(json.dumps(key).encode())[:16],
+                'kind': kind,
+                'before': quoted,
+                'reason': change['reason'],
+            }
+            if kind == 'edit':
+                item['after'] = change['after']
+            if context:
+                item['context'] = context
             item = manuscript_editor.proposal(item)
             if occurrence:
                 item['occurrence'] = occurrence
+            if change.get('remove'):
+                item['remove'] = True
+            elif kind == 'edit' and change['after']:
+                item['styles'] = change['styles']
             found.append(item)
             paragraphs[item['id']] = {
                 'paragraph': studio.digest(old.encode()),
                 'needle': needle,
                 'matches': matches,
-                'text': shown.strip(),  # The paragraph the change is meant for, as shown.
+                'text': shown,  # The paragraph the change is meant for, as shown.
+                'near': [texts[m] for m in nearest(k)[:8]],
+                'was': shown,
+                'now': now,
+            }
+    # A note for a paragraph as a whole is a comment of its own, placed when the plan is made
+    # on the closest paragraph nothing else in that plan uses, so it never rides on a
+    # suggestion and is never dropped with one sent before.
+    for k in sorted(notes):
+        if not anchorable:
+            left += len(notes[k])
+            continue
+        seen = {}
+        for key, text, about in notes[k]:
+            ident = json.dumps(['note', before[k], same_lines(k), key])
+            # Two equal notes for one paragraph (two equal new lines): each is its own.
+            seen[ident] = number = seen.get(ident, 0) + 1
+            if number > 1:
+                ident = json.dumps(['note', before[k], same_lines(k), key, number])
+            item = manuscript_editor.proposal(
+                {
+                    'id': 'desk-' + studio.digest(ident.encode())[:16],
+                    'kind': 'comment',
+                    'before': texts[nearest(k)[0]],
+                    'reason': _note(text, []),
+                }
+            )
+            found.append(item)
+            paragraphs[item['id']] = {
+                'paragraph': studio.digest(before[k].encode()),
+                'near': [texts[m] for m in nearest(k)[:8]],
+                'about': about,
+                'float': True,
             }
     return found, left, paragraphs
 
@@ -938,15 +2375,20 @@ def _sent_path(root, ident):
 
 
 def _sent(root, ident):
-    """What this computer sent to the blog's Doc: {'plans': {token: rows}, 'sent': rows},
-    each row {id, paragraph}. Kept beside the jobs, never in the blog's folder."""
+    """What this computer sent to the blog's Doc: {'plans': {token: rows}, 'sent': rows, 'name'},
+    each row {id, paragraph, base}, with the Doc's name as last read. Kept beside the jobs,
+    never in the blog's folder."""
     target = _sent_path(root, ident)
     try:
         found = studio.read_json(target) if target.is_file() and not target.is_symlink() else {}
     except (ValueError, OSError):
         found = {}
     found = found if isinstance(found, dict) else {}
-    return {'plans': dict(found.get('plans') or {}), 'sent': list(found.get('sent') or [])}
+    return {
+        'plans': dict(found.get('plans') or {}),
+        'sent': list(found.get('sent') or []),
+        'name': found.get('name') if isinstance(found.get('name'), str) else None,
+    }
 
 
 def _delivered(root, document, ident):
@@ -981,9 +2423,20 @@ def _google_expected(root, ident):
     return studio.digest(body + json.dumps(base, sort_keys=True).encode())
 
 
+def _counted(number, one, many):
+    return str(number) + ' ' + (one if number == 1 else many)
+
+
+def _desk_title(body):
+    first = next((line for line in body.splitlines() if line.strip()), '')
+    return ' '.join((_visible(first) or '').split()) if re.match(r'#\s', first) else None
+
+
 def google_plan(root, ident, mode):
-    """Check the desk's latest wording against the Google Doc as suggestions; nothing is sent."""
+    """Check the desk's latest text against the Google Doc as suggestions and comments;
+    nothing is sent."""
     import google_drive as drive
+    import google_suggestions as suggestions
     from google_workflow import snapshot_path
 
     import manuscript_editor
@@ -992,107 +2445,437 @@ def google_plan(root, ident, mode):
     if mode not in ('auto', 'native', 'comments'):
         raise ValueError('Choose suggestions, comments or suggestions with comments fallback.')
     baseline = snapshot_path(directory, base['transfer'], 'document').read_text()
-    proposals, left, paragraphs = google_changes(baseline, (directory / 'DRAFT.md').read_text())
-    # A suggestion sent before stays in the Doc for its owner and is not sent again.
+    body = (directory / 'DRAFT.md').read_text()
     record = _sent(root, ident)
+    # Nothing changed, with the desk's title the Doc's name as last read and nothing sent to
+    # this copy of the Doc: Google is not read.
+    title = _desk_title(body)
+    if (
+        not google_changes(baseline, body, title)[0]
+        and (title is None or title == record['name'])
+        and not any(row.get('base', base['transfer']) == base['transfer'] for row in record['sent'])
+    ):
+        raise ValueError('Nothing new to send: the desk’s text matches the Google Doc.')
+    client = drive.Client(drive.account_for(root))
+    # The Doc as it is now: its name is its title, and a suggestion still waiting for its owner
+    # holds its paragraph.
+    inline, _, _ = suggestions.read_for_review(client, base['document']['document_id'], mode)
+    record['name'] = ' '.join((inline.get('title') or '').split()) or None
+    proposals, left, paragraphs = google_changes(baseline, body, inline.get('title'))
+    current = {p['id'] for p in proposals}
+    # A suggestion sent before stays in the Doc for its owner and is not sent again, whether
+    # this computer or another one sent it.
     document = base['document'].get('document_id')
+    threads = ' '.join(
+        thread.get('headPost', {}).get('content', '') for thread in inline.get('comments', [])
+    )
     sent = {row.get('id') for row in record['sent']} | {
-        p['id'] for p in proposals if _delivered(root, document, p['id'])
+        p['id']
+        for p in proposals
+        if _delivered(root, document, p['id']) or '[Blog Studio ' + p['id'] + ']' in threads
     }
     before = sum(1 for p in proposals if p['id'] in sent)
-    proposals = [p for p in proposals if p['id'] not in sent]
-    client = drive.Client(drive.account_for(root))
-    # A paragraph the Doc shows with a suggestion still waiting for its owner waits too; once
-    # the owner accepts or rejects it, the paragraph can take another.
-    waiting = unsure = 0
+    # Words a suggestion sent before brought in, formatted otherwise on the desk since: the
+    # new look goes as a note, the suggestion staying as it was sent.
+    looks = {row.get('id'): row.get('styles') for row in record['sent'] if row.get('styles')}
+    restyled = [
+        note
+        for p in proposals
+        if p['id'] in sent and p.get('styles') and looks.get(p['id']) not in (None, p['styles'])
+        for note in _restyle_notes(p, looks[p['id']], paragraphs)
+    ]
+    proposals = [p for p in proposals if p['id'] not in sent] + [
+        note for note in restyled if note['id'] not in sent
+    ]
+    # A suggestion sent before that still waits in the Doc, which the desk no longer makes
+    # (reworded again, or undone), holds everything: sending around it could repeat or undo
+    # it. Only this blog's own suggestions count, by their markers, never comments or notes,
+    # nor a teammate's suggestion. Each such change is counted as waiting.
+    # A suggestion that no longer waits (accepted, rejected) never waits again: it is marked
+    # settled, so a later suggestion in its paragraph is never taken for it.
+    gone = []
+    for row in record['sent']:
+        if (
+            row.get('settled')
+            or row.get('base', base['transfer']) != base['transfer']
+            or row.get('kind', 'edit') != 'edit'
+        ):
+            continue
+        if not _still_waits(inline, row['id']):
+            row['settled'] = True
+        elif row.get('id') not in current:
+            gone.append(row)
+    waiting, covers, later = 0, {}, 0
+    if gone:
+        waiting, proposals = len(gone) + len(proposals), []
     if proposals:
-        proposals, waiting, unsure = _not_pending(
-            client, base['document'], proposals, paragraphs, mode
+        proposals, also, unplaced, covers, later = _not_pending(
+            inline, base['document'], proposals, paragraphs
         )
-        left += unsure
+        waiting += also
+        left += unplaced
     if not proposals:
+        studio.write_json(_sent_path(root, ident), record)
         said = []
         if before:
-            said.append(
-                str(before) + (' change was' if before == 1 else ' changes were') + ' sent before'
-            )
+            said.append(_counted(before, 'change was', 'changes were') + ' sent before')
         if waiting:
             said.append(
-                str(waiting)
-                + (' change is' if waiting == 1 else ' changes are')
-                + ' in a paragraph that still has a suggestion waiting for the Doc’s owner to '
-                'accept or reject'
+                _counted(waiting, 'change waits', 'changes wait')
+                + ' for the Doc’s owner to decide the earlier suggestion in '
+                + ('its paragraph' if waiting == 1 else 'their paragraphs')
             )
-        if unsure:
+        if left:
             said.append(
-                str(unsure)
-                + (' change' if unsure == 1 else ' changes')
-                + ' could not be placed in the Doc with certainty and '
-                + ('stays' if unsure == 1 else 'stay')
-                + ' on the desk'
+                _counted(left, 'change', 'changes')
+                + ' could not be placed in the Doc; pull the latest Doc and check again'
             )
-        if left - unsure:
-            said.append('paragraphs added, removed or formatted cannot be suggestions')
+        if later:
+            said.append(
+                _counted(later, 'note goes', 'notes go')
+                + ' with the next send (nearby paragraphs already have changes)'
+            )
         raise ValueError(
             'Nothing new to send'
             + (
                 ': ' + '; '.join(said) + '.'
                 if said
-                else ': the desk’s wording matches the Google Doc.'
+                else ': the desk’s text matches the Google Doc.'
             )
         )
     if len(proposals) > 100:
-        raise ValueError(
-            'More than 100 wording changes to send at once. Send fewer, or share the draft.'
-        )
+        raise ValueError('More than 100 changes to send at once. Send fewer, or share the draft.')
+    # Never two findings with one id: Google's plan would refuse them all. A repeat keeps its
+    # place's number, so it is the same next time.
+    named = {}
+    for p in proposals:
+        named[p['id']] = number = named.get(p['id'], 0) + 1
+        if number > 1:
+            paragraphs[p['id'] + '-' + str(number)] = paragraphs[p['id']]
+            p['id'] += '-' + str(number)
     plan = manuscript_editor.google_plan(
         client, root, ident, proposals, mode, _google_expected(root, ident), base['document']['url']
     )
+    rows = [
+        {
+            'id': name,
+            'paragraph': paragraphs[name]['paragraph'],
+            'base': base['transfer'],
+            'kind': p['kind'] if name == p['id'] else 'fallback',
+            **({'styles': p['styles']} if name == p['id'] and p.get('styles') else {}),
+        }
+        for p in proposals
+        for name in [p['id'], *covers.get(p['id'], [])]
+    ]
     record['plans'] = {
-        **{token: rows for token, rows in record['plans'].items() if token != plan['plan']},
-        plan['plan']: [
-            {'id': p['id'], 'paragraph': paragraphs[p['id']]['paragraph']} for p in proposals
-        ],
+        **{token: found for token, found in record['plans'].items() if token != plan['plan']},
+        plan['plan']: rows,
     }
     record['plans'] = dict(list(record['plans'].items())[-20:])
     studio.write_json(_sent_path(root, ident), record)
-    return {**plan, 'left': left, 'sent_before': before, 'waiting': waiting}
+    return {
+        **plan,
+        'suggestions': sum(1 for p in proposals if p['kind'] == 'edit'),
+        'comments': sum(1 for p in proposals if p['kind'] == 'comment'),
+        'left': left,
+        'later': later,
+        'sent_before': before,
+        'waiting': waiting,
+    }
 
 
-def _not_pending(client, document, proposals, expected, mode):
-    """The proposals that can go now, read from the Doc: how many wait for a pending
-    suggestion in their paragraph, and how many could land somewhere other than the paragraph
-    they are meant for (the Doc shows the quote a different number of times than the desk
-    counted, or it resolves to a paragraph with other words), which stay on the desk."""
+def _restyle_notes(proposal, sent, paragraphs):
+    """Notes, each a comment of its own, for the words a suggestion sent before brought in
+    whose bold, italic, underline or link the desk has changed since."""
+    import json
+
+    def each(runs):
+        return [look for length, look in runs for _ in range(length)]
+
+    def desk(look):
+        return (
+            bool(look.get('bold')),
+            bool(look.get('italic')),
+            False,
+            bool(look.get('underline')),
+            None,
+            look.get('link') or None,
+        )
+
+    was, now, after = each(sent), each(proposal['styles']), proposal['after']
+    if len(was) != len(after) or len(now) != len(after):
+        return []
+    found, group = [], None
+    for at, (old, new) in enumerate(zip(was, now, strict=True)):
+        if after[at].isspace():
+            continue
+        if old == new:
+            group = None
+        elif group and group[2:] == [old, new]:
+            group[1] = at + 1
+        else:
+            group = [at, at + 1, old, new]
+            found.append(group)
+    place = paragraphs.get(proposal['id']) or {}
+    notes = []
+    for start, end, old, new in found:
+        words = after[start:end]
+        # Where the words sit in the replacement too: the same words twice are two notes.
+        ident = json.dumps(['restyle', proposal['id'], start, words, new])
+        note = {
+            'id': 'desk-' + studio.digest(ident.encode())[:16],
+            'kind': 'comment',
+            'before': place.get('text') or proposal['before'],
+            'reason': _note(_restyle(_quoted(words, 80), desk(old), desk(new)), []),
+        }
+        notes.append(note)
+        paragraphs[note['id']] = {
+            'paragraph': place.get('paragraph'),
+            'near': place.get('near') or [],
+            'about': place.get('text'),
+            'float': True,
+        }
+    return notes
+
+
+def _still_waits(inline, ident):
+    """Whether this blog's suggestion sent with this id still waits in the Doc: the comment
+    carrying its marker is open, and the paragraph it sits in holds a pending suggestion."""
     import google_roundtrip as rt
     import google_suggestions as suggestions
     from google_drive import GoogleError
 
-    inline, _, _ = suggestions.read_for_review(client, document['document_id'], mode)
-    free, waiting, unsure = [], 0, 0
+    marker = '[Blog Studio ' + ident + ']'
+    anchors = {anchor.get('anchorId'): anchor for anchor in suggestions.native_anchors(inline)}
+    for thread in inline.get('comments', []):
+        if marker not in thread.get('headPost', {}).get('content', ''):
+            continue
+        if thread.get('status', 'OPEN') != 'OPEN':
+            continue
+        for found in (anchors.get(thread.get('anchorId')) or {}).get('ranges', []):
+            try:
+                key, paragraph = rt.paragraph_at(
+                    inline,
+                    found.get('tabId') or rt.tabs(inline)[0]['tabProperties']['tabId'],
+                    found['startIndex'],
+                )
+            except (GoogleError, KeyError):
+                continue
+            # Its paragraph holds a suggestion, or a suggested break split it from the one
+            # before (a new paragraph the suggestion brings in ahead of it).
+            if rt.suggestions(paragraph) or any(
+                k == key and not settled for k, _, _, settled in _paragraph_texts(inline, [key[0]])
+            ):
+                return True
+    return False
+
+
+def _paragraph_texts(inline, tabs):
+    """[(key, paragraph, text, settled)] for each Doc body paragraph of text, in order: its
+    text as the Doc had it (without suggested insertions, suggested deletions as they stand),
+    and whether nothing waits in it, nor in a paragraph a suggested break split it from."""
+    import google_roundtrip as rt
+
+    found, split = [], False
+    for key, paragraph in rt.paragraphs(inline).items():
+        runs = [element.get('textRun') for element in paragraph.get('elements', [])]
+        last = runs[-1] if runs and runs[-1] else {}
+        was_split = split
+        split = bool(last.get('suggestedInsertionIds')) and last.get('content', '').endswith('\n')
+        if key[0] not in tabs or not runs or not all(runs):
+            continue
+        text = ''.join(run['content'] for run in runs if not run.get('suggestedInsertionIds'))
+        found.append(
+            (
+                key,
+                paragraph,
+                text[:-1] if text.endswith('\n') else text,
+                not rt.suggestions(paragraph) and not was_split,
+            )
+        )
+    return found
+
+
+def _where(texts, proposal, found):
+    """(proposal located in the Doc, its paragraph's key, its paragraph, settled), or None
+    when the Doc does not show what locates it as many times as the desk counted, or does not
+    show it at all. Copies are counted in the text as the Doc had it, so a suggestion still
+    waiting never makes or hides one."""
+    before, context = proposal['before'], proposal.get('context')
+    needle = context or before
+    inner = needle.find(before) if context else 0
+    hits = []
+    for key, paragraph, text, settled in texts:
+        at = text.find(needle)
+        while at != -1:
+            hits.append((key, paragraph, text, at + inner, settled))
+            at = text.find(needle, at + 1)
+    if (proposal.get('occurrence') or context) and len(hits) != found.get('matches'):
+        return None
+    occurrence = proposal.get('occurrence')
+    if occurrence:
+        if not 1 <= occurrence <= len(hits):
+            return None
+        hits = [hits[occurrence - 1]]
+    if len(hits) != 1:
+        return None
+    key, paragraph, text, at, settled = hits[0]
+    import google_roundtrip as rt
+
+    located = {k: v for k, v in proposal.items() if k not in ('context', 'occurrence')}
+    located['tab_id'], located['start_index'] = key[0], key[1] + rt.utf16(text[:at])
+    return located, key, paragraph, settled
+
+
+def _fits(inline, tabs, proposal):
+    """Whether Google takes this proposal where it is located: one it would refuse (a style
+    the Doc has and its Markdown does not show) goes as a comment instead."""
+    import google_suggestions as suggestions
+    from google_drive import GoogleError
+
+    try:
+        suggestions.validate(inline, [suggestions.locate(inline, proposal, tabs)], tabs)
+    except GoogleError:
+        return False
+    return True
+
+
+def _elsewhere(inline, tabs, texts, group, found, used):
+    """One comment for changes that cannot go where they are meant, on the closest paragraph
+    the Doc shows once, as it had it, that nothing else in this plan uses. A note keeps its
+    own words; changes are quoted with their paragraph as it was and as the desk has it. It
+    carries the marker of every change it stands for, so another computer knows them sent.
+    None when no paragraph fits."""
+    import json
+
+    if found.get('float'):
+        said = [group[0]['reason']]
+    else:
+        was, now = found.get('was') or '', found.get('now') or ''
+        said = [
+            'This change could not be placed in the Doc with certainty, so it is here to make '
+            'by hand. The paragraph '
+            + _quoted(was, 300)
+            + ' '
+            + ('reads ' + _quoted(now, 300) if now else 'is removed')
+            + ' on the writing desk.'
+        ] + [p['reason'] for p in group if p['kind'] == 'comment']
+    single = len(group) == 1
+    ident = (
+        group[0]['id']
+        if single
+        else 'desk-'
+        + studio.digest(json.dumps(['elsewhere'] + [p['id'] for p in group]).encode())[:16]
+    )
+    markers = [] if single else [' '.join('[Blog Studio ' + p['id'] + ']' for p in group)]
+    about = found.get('about')
+    for text in found.get('near') or []:
+        wanted = ' '.join(text.split())
+        exact = [
+            number
+            for number, (_, _, shown, settled) in enumerate(texts)
+            if ' '.join(shown.split()) == wanted
+        ]
+        if len(exact) != 1 or not texts[exact[0]][3] or texts[exact[0]][0] in used:
+            continue
+        lead = '' if not about or text == about else 'In the paragraph ' + _quoted(about, 80) + ': '
+        comment = {
+            'id': ident,
+            'kind': 'comment',
+            'before': text,
+            'reason': _note(lead + ' '.join(said), markers),
+        }
+        # Every place the Doc shows these words, so this paragraph is named by its place.
+        hits = sum(_count(shown, text) for _, _, shown, _ in texts)
+        if hits > 1:
+            comment['occurrence'] = (
+                sum(_count(shown, text) for _, _, shown, _ in texts[: exact[0]]) + 1
+            )
+        located = _where(texts, comment, {'matches': hits})
+        if (
+            located is not None
+            and located[1] == texts[exact[0]][0]
+            and _fits(inline, tabs, located[0])
+        ):
+            used.add(located[1])
+            return located[0]
+    return None
+
+
+def _not_pending(inline, document, proposals, expected):
+    """The proposals that can go now, read from the Doc: how many wait for a pending
+    suggestion in their paragraph, and how many could not be placed anywhere. A change that
+    could land somewhere other than the paragraph it is meant for (the Doc shows its quote a
+    different number of times than the desk counted, or it resolves to a paragraph with other
+    words) goes as a comment on the closest paragraph that is certain instead, and one
+    paragraph's changes go, wait or move together. A note for a paragraph as a whole is placed
+    last, on a paragraph nothing else uses. Returns (free, waiting, unplaced, covers,
+    later): covers names the changes each such comment stands for, and later counts the notes
+    with no free paragraph nearby, which go with the next send."""
+    import json
+
+    tabs = document['tab_ids']
+    texts = _paragraph_texts(inline, tabs)
+    held = {' '.join(text.split()) for _, _, text, settled in texts if not settled}
+    groups, floats = {}, []
     for proposal in proposals:
         found = expected.get(proposal['id']) or {}
-        if proposal.get('occurrence') or proposal.get('context'):
-            seen = suggestions.quote_positions(
-                inline, document['tab_ids'], proposal['before'], proposal.get('context')
-            )
-            if len(seen) != found.get('matches'):
-                unsure += 1
-                continue
-        try:
-            where = suggestions.locate(inline, proposal, document['tab_ids'])
-            _, paragraph = rt.paragraph_at(inline, where['tab_id'], where['start_index'])
-        except GoogleError:
-            free.append(proposal)  # Planning says plainly why it cannot be found.
+        if found.get('float'):
+            floats.append(proposal)
             continue
-        meant = ' '.join((found.get('text') or '').split())
-        if rt.suggestions(paragraph):
-            waiting += 1
-        elif meant and ' '.join(rt.paragraph_text(paragraph).split()) != meant:
-            unsure += 1  # It would land in a paragraph with other words.
+        place = json.dumps([found.get('paragraph'), found.get('near')])
+        groups.setdefault(place, []).append(proposal)
+    free, waiting, moved, used, stopped = [], 0, [], set(), set()
+    for group in groups.values():
+        states = []
+        for proposal in group:
+            found = expected.get(proposal['id']) or {}
+            meant = ' '.join((found.get('text') or '').split())
+            where = _where(texts, proposal, found)
+            if where is not None and not where[3]:
+                states.append(('wait', proposal))
+            elif (
+                where is None
+                or (meant and ' '.join(_text_of(texts, where[1]).split()) != meant)
+                or not _fits(inline, tabs, where[0])
+            ):
+                states.append(('wait' if meant in held else 'move', proposal))
+            else:
+                states.append(('go', where))
+        if any(state == 'wait' for state, _ in states):
+            waiting += len(group)  # Its paragraph holds an earlier suggestion; it goes next time.
+            stopped.add((expected.get(group[0]['id']) or {}).get('paragraph'))
+        elif any(state == 'move' for state, _ in states):
+            moved.append(group)
         else:
-            free.append(proposal)
-    return free, waiting, unsure
+            for _, (located, key, _, _) in states:
+                free.append(located)
+                used.add(key)
+    unplaced, covers, later = 0, {}, 0
+    for group in moved:
+        found = expected.get(group[0]['id']) or {}
+        comment = _elsewhere(inline, tabs, texts, group, found, used)
+        if comment is None:
+            unplaced += len(group)
+            continue
+        free.append(comment)
+        covers[comment['id']] = [p['id'] for p in group if p['id'] != comment['id']]
+        expected.setdefault(comment['id'], {'paragraph': found.get('paragraph')})
+    for proposal in floats:
+        found = expected.get(proposal['id']) or {}
+        if found.get('paragraph') in stopped:
+            waiting += 1  # A note for a paragraph that waits goes with it.
+            continue
+        comment = _elsewhere(inline, tabs, texts, [proposal], found, used)
+        if comment is None:
+            later += 1  # Every paragraph near it has a change in this plan: it goes next time.
+        else:
+            free.append(comment)
+    return free, waiting, unplaced, covers, later
+
+
+def _text_of(texts, key):
+    return next((text for k, _, text, _ in texts if k == key), '')
 
 
 def google_send(root, ident, data):

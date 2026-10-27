@@ -583,6 +583,26 @@ class GoogleDeliveryTests(unittest.TestCase):
         result = self.action('google-send', plan=preview['plan'], confirmed=True)
         self.assertEqual(self.client.writes, writes)
 
+    def test_a_replacement_sharing_its_last_word_is_verified_as_sent(self):
+        # The words kept at the end are deleted and inserted again: text inserted inside the
+        # quote would change what the comment quotes, and the send would never verify.
+        self.action(
+            'proposals',
+            proposals=[
+                {
+                    'id': 'formal',
+                    'kind': 'edit',
+                    'before': 'isn’t slow.',
+                    'after': 'is not slow.',
+                    'reason': 'Formal voice.',
+                }
+            ],
+        )
+        preview = self.action('google-plan', mode='auto')
+        result = self.action('google-send', plan=preview['plan'], confirmed=True)
+        self.assertEqual(result['status'], 'verified-pending')
+        self.assertEqual([c['plainTextQuote'] for c in self.client.comments], ['isn’t slow.'])
+
     def test_comments_fallback_keeps_author_text(self):
         from test_google_review_comments import CommentProvider
 

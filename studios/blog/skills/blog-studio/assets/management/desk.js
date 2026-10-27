@@ -702,6 +702,10 @@ function deskSides(before,after){return DESK_KIT.sides(before,after);}
 function sDeskProposal(held,set,item,key){return DESK_KIT.proposal(held,set,item,key);}
 function sDeskApply(held,set,items,button){return DESK_KIT.apply(held,set,items,button);}
 function sDeskSkip(held,set,ids,button){return DESK_KIT.skip(held,set,ids,button);}
+// The kit's wording for what an accept did, and why a retired suggestion no longer fits:
+// Review mode says them too.
+function deskFinishedSaid(done){return DESK_KIT.finishedSaid(done);}
+function reviewNoLonger(item){return DESK_KIT.noLonger(item);}
 // Feedback: comments shown in the panel and in their section cards, each a note in one click.
 function sDeskCommentKey(view,part){return DESK_KIT.commentKey(view,part);}
 function sDeskComments(held,part){return DESK_KIT.comments(held,part);}
@@ -751,19 +755,40 @@ function sDeskRepurposeFollow(held,p){
     if(['queued','working'].includes(p.job?.status))sDeskRepurposeFollow(held,p);
   },DESK_POLL);
 }
+// What a plan sends to the Google Doc, said plainly: every desk change goes as a suggestion or
+// a comment; one in a paragraph still waiting on an earlier suggestion goes next time.
+function sDeskGoogleSaid(plan){
+  const n=plan.suggestions??plan.count,m=plan.comments||0,parts=[];
+  if(n)parts.push(n+(n===1?' suggestion':' suggestions'));
+  if(m)parts.push(m+(m===1?' comment':' comments'));
+  let said=parts.join(' and ')+(n+m===1?' goes':' go')+' to the Google Doc.';
+  // Comments fallback: Google cannot take suggestions here, so each change is a comment.
+  if(plan.mode==='comments')said=(n+m)+(n+m===1?' change goes':' changes go')+' to the Google Doc as comments: it cannot take suggestions, so its owner makes each change by hand.';
+  else if(n)said+=' Its owner accepts or rejects each suggestion.';
+  if(plan.waiting)said+=' '+plan.waiting+(plan.waiting===1?' change waits':' changes wait')+' for the Doc’s owner to decide the earlier suggestion in its paragraph, and '+(plan.waiting===1?'goes':'go')+' next time.';
+  if(plan.sent_before)said+=' '+plan.sent_before+(plan.sent_before===1?' change was':' changes were')+' sent before.';
+  if(plan.later)said+=' '+plan.later+(plan.later===1?' note goes':' notes go')+' with the next send (nearby paragraphs already have changes).';
+  if(plan.left)said+=' '+plan.left+(plan.left===1?' change':' changes')+' could not be placed in the Doc: pull the latest Doc and check again.';
+  return said;
+}
+function sDeskGoogleItem(item){
+  if(item.kind==='comment')return 'Comment on “'+item.before+'”: '+item.reason;
+  if(item.remove)return '“'+item.before+'” is removed';
+  return '“'+item.before+'” → “'+item.after.replace(/\n/g,' ¶ ')+'”';
+}
 function sDeskGoogleCard(held,p){
   const view=held.view,card=sCard('Send to Google Doc as suggestions');
   if(!view.google_suggestions&&!view.google?.url){const make=sButton('Make a Google Doc',()=>sDeskMakeDoc(held));make.disabled=!sDeskCan(held);card.append(sNode('p','','This blog has no Google Doc yet. Make a private one of this draft, and later desk changes are sent to it as suggestions for you to accept.'),sAdd(sNode('div','bar'),make));return card;}
   if(!view.google_suggestions){card.append(sNode('p','','This blog’s Google Doc cannot take suggestions yet: it has no confirmed copy of the draft to compare with.'));return card;}
-  card.append(sNode('p','quiet','Your desk wording goes to the Google Doc as suggestions its owner accepts or rejects. Paragraphs added or removed stay here.'));
+  card.append(sNode('p','quiet','Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment.'));
   if(view.google?.url){const doc=link(view.google.url,'Open the Google Doc ↗');card.append(sAdd(sNode('p',''),doc));}
   if(p.googleProblem)card.append(sNode('p','problem',p.googleProblem));
   const check=sButton(p.plan?'Check again':'Check what would be sent',async button=>{await busy(button,'Checking…',async()=>{try{await sDeskFlush(held);p.plan=await api('desk-google-plan',{id:held.id,mode:p.google.mode});p.sent=null;p.googleProblem='';}catch(error){p.plan=null;p.googleProblem=error.message;}sDeskPanelShow(held);});},p.plan?'quiet':'filled');check.disabled=!sDeskCan(held);
   if(p.sent){card.append(sStatus(['verified-pending','verified-comments'].includes(p.sent.status)?'done':'late',p.sent.message));}
   if(p.plan&&!p.sent){
-    const changes=sNode('ul','look');for(const item of p.plan.proposals||[])changes.append(sNode('li','','“'+item.before+'” → “'+item.after+'”'));
+    const changes=sNode('ul','look');for(const item of p.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
     const send=sButton('Send to Google Doc',async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery before trying anything else.'};p.googleProblem='';}catch(error){p.googleProblem=error.message;if(/changed/.test(error.message))p.plan=null;}sDeskPanelShow(held);});},'filled');send.disabled=!sDeskCan(held);
-    card.append(sNode('p','',p.plan.count+(p.plan.count===1?' wording change':' wording changes')+' checked against the Google Doc.'+(p.plan.left?' '+p.plan.left+(p.plan.left===1?' changed paragraph cannot be a suggestion and stays':' changed paragraphs cannot be suggestions and stay')+' on the desk.':'')),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,check));
+    card.append(sNode('p','',sDeskGoogleSaid(p.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,check));
     return card;
   }
   if(p.sent&&!['verified-pending','verified-comments'].includes(p.sent.status)&&p.plan){card.append(sAdd(sNode('div','bar'),sButton('Check delivery',async button=>{await busy(button,'Checking…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery before trying anything else.'};}catch(error){p.googleProblem=error.message;}sDeskPanelShow(held);});},'filled')));return card;}
@@ -778,9 +803,11 @@ function sDeskGoogleCard(held,p){
 // reading order, each with a small label (Spelling, Grammar, Punctuation, Wording or Sounds
 // human), struck words out and highlighted words in, its reason under the paragraph, and Accept
 // or Reject on each. A wording fix may offer alternatives to pick from before Accept. Accept is
-// Finishing's apply, keeping a version, and retires any other suggestion that covered the same
-// words; Reject sets one aside. A flagged suggestion (it changes a fact, code or shape) waits
-// to be checked one by one. Any paragraph can be clicked and edited in place; it saves after a
+// Finishing's apply, keeping a version; every other suggestion stays independent unless the
+// accepted one changed its words: one with them inside its own takes them in, its marks
+// updated in place, and one whose words are gone no longer fits and names the suggestion that
+// changed them. Reject sets one aside. A flagged suggestion (it changes a fact, code or shape)
+// waits to be checked one by one. Any paragraph can be clicked and edited in place; it saves after a
 // short pause or when focus leaves it, and a suggestion whose words are no longer in the text
 // drops out. Every text is set with textContent.
 const REVIEW_CHECKING='Checking spelling and grammar…',REVIEW_HUMAN='Looking for machine-like wording…';
@@ -837,7 +864,9 @@ function reviewBlocks(text,marks){
 }
 // The newest Copy edit, and Humanize when it is on, and what is left of them: open suggestions
 // whose words are still in the text, placed where they sit, in reading order (by part, then
-// by place in it) and numbered across both; the flagged ones; the gone and retired ones.
+// by place in it) and numbered across both; the flagged ones; the gone and retired ones. A
+// suggestion keeps its number while its set is shown, so a number still names the one
+// accepted: a retired suggestion says which one changed its words, a carried one which it fits.
 function sReviewState(held){
   const view=held.view,finishing=view.finishing||{},human=view.review?.humanize||null,r=held.review||{};
   const kind=view.working?.kind,working=kind==='finish-copyedit'||kind==='finish-humanize'?view.working:null;
@@ -858,7 +887,15 @@ function sReviewState(held){
     pending.push({...row,at,base:item.after,baseFlag:item.flag||'',...(alternative?{picked:pick,after:alternative.after,flag:alternative.flag||''}:{})});
   }
   pending.sort((a,b)=>parts.indexOf(a.part)-parts.indexOf(b.part)||a.at-b.at||REVIEW_TOOLS.indexOf(a.tool)-REVIEW_TOOLS.indexOf(b.tool));
-  pending.forEach((item,index)=>{item.number=index+1;});
+  // A set that is no longer shown takes its numbers with it; a set that lands later (Humanize
+  // after Copy edit's fixes) is numbered after the ones already shown, which keep theirs.
+  const shownSets=new Set(sets.map(([tool,set])=>tool+':'+set.job+':'));
+  const numbers=r.numbers=Object.fromEntries(Object.entries(r.numbers||{}).filter(([key])=>shownSets.has(key.slice(0,key.lastIndexOf(':')+1))));
+  let next=Math.max(0,...Object.values(numbers));
+  for(const item of pending)item.number=numbers[item.key]??(numbers[item.key]=++next);
+  const number=ref=>{const tool=sets.find(([,set])=>set.job===ref?.job)?.[0];return tool?numbers[tool+':'+ref.job+':'+ref.id]||null:null;};
+  for(const item of pending)if(item.carried?.length)item.carriedBy=item.carried.map(number);
+  for(const item of gone)if(item.retired_by)item.byNumber=number(item.retired_by);
   const filter=human&&REVIEW_SHOW.some(([value])=>value===r.filter)?r.filter:'all',fits=tool=>filter==='all'||(filter==='human')===(tool==='humanize');
   const shown=pending.filter(item=>fits(item.tool));
   // A check that did not finish: Copy edit's, and Humanize's when it came after it.
@@ -956,10 +993,10 @@ function sReviewGoogle(held){
   if(g.problem)out.push(sNode('p','problem',g.problem));
   if(g.sent){out.push(sStatus(['verified-pending','verified-comments'].includes(g.sent.status)?'done':'late',g.sent.message));if(held.view.google?.url)out.push(sAdd(sNode('p',''),link(held.view.google.url,'Open the Google Doc ↗')));return out;}
   if(g.plan){
-    const changes=sNode('ul','look');for(const item of g.plan.proposals||[])changes.append(sNode('li','','“'+item.before+'” → “'+item.after+'”'));
+    const changes=sNode('ul','look');for(const item of g.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
     const count=g.plan.count;
     const send=sButton('Send '+count+(count===1?' change':' changes'),async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:g.plan.plan,confirmed:true});g.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery in the full desk’s Finishing before trying anything else.'};g.problem='';}catch(error){g.problem=error.message;if(/changed/.test(error.message))g.plan=null;}sReviewHeadShow(held);});},'filled');send.disabled=!sDeskCan(held);
-    out.push(sNode('p','',count+(count===1?' wording change goes':' wording changes go')+' to the Google Doc as suggestions for its owner to accept or reject.'+(g.plan.left?' '+g.plan.left+(g.plan.left===1?' changed paragraph cannot be a suggestion and stays':' changed paragraphs cannot be suggestions and stay')+' here.':'')),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,sButton('Cancel',()=>{g.plan=null;sReviewHeadShow(held);})));
+    out.push(sNode('p','',sDeskGoogleSaid(g.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,sButton('Cancel',()=>{g.plan=null;sReviewHeadShow(held);})));
     return out;
   }
   const plan=sButton('Send accepted changes to Google Doc',async button=>{await busy(button,'Checking…',async()=>{try{await sReviewFlush(held);g.plan=await api('desk-google-plan',{id:held.id,mode:'auto'});g.problem='';}catch(error){g.plan=null;g.problem=error.message;}sReviewHeadShow(held);});},'filled');plan.disabled=!sDeskCan(held);
@@ -996,7 +1033,7 @@ function sReviewPaper(held,state){
   for(const part of state.parts){const box=sReviewPart(held,part,state);if(box){held.review.parts[part]=box;paper.append(box);}}
   return paper;
 }
-function sReviewKey(held,part,state){const editing=held.review.editing;return JSON.stringify([deskTextOf(held.view,part),!!state.working,sReviewFree(held),state.shown.filter(item=>item.part===part).map(item=>[item.key,item.number,item.at,item.after,item.flag,item.note,item.picked??null]),state.gone.filter(item=>item.part===part).length,editing&&editing.part===part?editing.start:null,(held.view.sections||[]).find(section=>section.id===part)?.heading||'']);}
+function sReviewKey(held,part,state){const editing=held.review.editing;return JSON.stringify([deskTextOf(held.view,part),!!state.working,sReviewFree(held),state.shown.filter(item=>item.part===part).map(item=>[item.key,item.number,item.at,item.before,item.after,item.flag,item.note,item.picked??null,item.carriedBy||null]),state.gone.filter(item=>item.part===part).map(item=>[item.key,item.state,item.byNumber??null]),editing&&editing.part===part?editing.start:null,(held.view.sections||[]).find(section=>section.id===part)?.heading||'']);}
 function sReviewPart(held,part,state){
   const view=held.view,text=deskTextOf(view,part),section=(view.sections||[]).find(row=>row.id===part);
   const marks=state.shown.filter(item=>item.part===part),gone=state.gone.filter(item=>item.part===part);
@@ -1004,13 +1041,16 @@ function sReviewPart(held,part,state){
   const box=sNode(part==='title'?'header':'section','review-part');box.dataset.part=part;box.deskKey=sReviewKey(held,part,state);
   if(section)box.append(sNode('h3','review-heading',deskHeading(section.heading)));
   // Suggestions that overlap one another, from either tool, are listed under the part, not
-  // marked in it; accepting one retires the others.
+  // marked in it; each stays independent of the others.
   const placed=[],loose=[];let end=-1;
   for(const item of marks){if(item.at>=end){placed.push(item);end=item.at+item.before.length;}else loose.push(item);}
   const blocks=part==='title'?[{start:0,end:text.length,text}]:reviewBlocks(text,placed);
   for(const block of blocks)box.append(sReviewBlock(held,part,block,placed.filter(item=>item.at>=block.start&&item.at<block.end||!block.text&&item.at===block.start)));
   if(loose.length)box.append(sReviewFixes(held,loose,true));
-  if(gone.length){const noun=state.human?['suggestion','suggestions']:['fix','fixes'];box.append(sNode('p','quiet review-gone',gone.length===1?'1 '+noun[0]+' no longer fits this text, so it was left out.':gone.length+' '+noun[1]+' no longer fit this text, so they were left out.'));}
+  // One an accepted suggestion retired says which; the others whose words were edited away are counted.
+  for(const item of gone.filter(row=>row.state==='retired')){const line=sAdd(sNode('p','quiet review-gone'),sNode('span','tag review-kind'+(item.tool==='humanize'?' review-kind-human':''),reviewLabel(item)),document.createTextNode(' '+reviewNoLonger(item)));line.dataset.item=item.id;line.dataset.tool=item.tool;box.append(line);}
+  const lost=gone.filter(row=>row.state!=='retired').length;
+  if(lost){const noun=state.human?['suggestion','suggestions']:['fix','fixes'];box.append(sNode('p','quiet review-gone',lost===1?'1 '+noun[0]+' no longer fits this text, so it was left out.':lost+' '+noun[1]+' no longer fit this text, so they were left out.'));}
   // A part kept as it was while a choice in it had focus is drawn again once focus leaves.
   box.addEventListener('focusout',()=>setTimeout(()=>{if(box.deskStale&&held.review?.parts?.[part]===box&&!sDeskTyping(box)&&sDeskCurrent(held))sReviewPartShow(held,part);},0));
   return box;
@@ -1052,6 +1092,7 @@ function sReviewFixes(held,items,loose){
     if(item.flag)said.append(sNode('span','tag','Check this'));
     row.append(said);
     if(item.flag)row.append(sNode('p','quiet',item.flag));
+    if(item.carriedBy?.length){const known=item.carriedBy.filter(Boolean);row.append(sNode('p','quiet review-carried',known.length?'Updated to fit accepted suggestion '+known.map(n=>'#'+n).join(', ')+'.':'Updated to fit an accepted suggestion.'));}
     if(item.alternatives?.length)row.append(sReviewChoices(held,item));
     if(loose)row.append(deskSides(item.before,item.after));
     const accept=sButton('Accept',button=>sReviewAccept(held,item,button));accept.disabled=!editable;accept.setAttribute('aria-label','Accept '+what+item.number);
@@ -1161,37 +1202,26 @@ async function sReviewAccept(held,item,button){
     await sReviewFlush(held);if(held.stale)return;
     const before=held.view;held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:item.job,items:[sReviewPick(item)]});
     if(held.review){held.review.google=null;delete held.review.picks[item.key];}
-    sToast('Accepted. The earlier text is in History.');
+    sToast('Accepted. The earlier text is in History.'+deskFinishedSaid(held.view.finished));
     sDeskRefresh(held,before);
   }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
 }
-// Accept all: every shown suggestion that still fits and is not flagged, the fixes first, then
-// what still fits of the rest. One that covered words a fix just changed is retired by the
-// server, never applied over it.
-// Whether two suggestions in one part cover any of the same words.
-function reviewOverlap(a,b){return a.part===b.part&&a.at<b.at+b.before.length&&b.at<a.at+a.before.length;}
+// Accept all: every shown suggestion that still fits and is not flagged, from both tools in one
+// request. The server lands them in reading order, each checked against the text the ones
+// before it left: one that took in an earlier one's words goes ahead with them, and one whose
+// words an earlier one changed no longer fits. Flagged and hidden ones are never sent; they
+// stay open unless their words were changed.
 async function sReviewAcceptAll(held,keys,button){
   await busy(button,'Accepting…',async()=>{
-    const before=held.view;let applied=0,left=0;
-    const retired=view=>REVIEW_TOOLS.reduce((sum,tool)=>sum+((view.finishing||{})[tool]?.items||[]).filter(item=>item.state==='retired').length,0),had=retired(before);
+    const before=held.view;
     try{
       await sReviewFlush(held);if(held.stale)return;
-      for(const tool of REVIEW_TOOLS){
-        // Read afresh after the fixes landed: a rewrite that covers any fix still waiting
-        // (flagged, or hidden by Show) is left for the person, never sent over it. A fix the
-        // person chose goes ahead over a rewrite, which retires as usual, unless that
-        // rewrite is flagged: flagged ones from either tool wait for the person.
-        const state=sReviewState(held),chosen=state.ready.filter(item=>item.tool===tool&&keys.includes(item.key));
-        const waiting=state.pending.filter(item=>item.tool!==tool&&(tool==='humanize'||item.flag));
-        const items=chosen.filter(item=>!waiting.some(other=>reviewOverlap(item,other)));left+=chosen.length-items.length;
-        if(!items.length)continue;
-        held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:items[0].job,items:items.map(sReviewPick),all:true});
-        const done=held.view.finished||{applied:items.length,left:[]};applied+=done.applied;left+=(done.left||[]).length;
-        for(const item of items)delete held.review.picks[item.key];
-      }
+      const chosen=sReviewState(held).ready.filter(item=>keys.includes(item.key));if(!chosen.length)return;
+      held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:chosen[0].job,items:chosen.map(item=>({job:item.job,...sReviewPick(item)})),all:true});
+      for(const item of chosen)delete held.review.picks[item.key];
       if(held.review)held.review.google=null;
-      const covered=retired(held.view)-had;
-      if(applied)sToast((applied===1?'Accepted.':'Accepted '+applied+'.')+' The earlier text is in History.'+(covered>0?' '+covered+(covered===1?' other suggestion covering the same words no longer fits.':' other suggestions covering the same words no longer fit.'):'')+(left?' '+left+(left===1?' is':' are')+' left for you to decide.':''));
+      const done=held.view.finished||{applied:chosen.length,left:[]},left=(done.left||[]).length,waits=left?' '+left+(left===1?' is':' are')+' left for you to decide.':'';
+      if(done.applied)sToast((done.applied===1?'Accepted.':'Accepted '+done.applied+'.')+' The earlier text is in History.'+deskFinishedSaid(done)+waits);
       else if(left)sToast('Nothing was accepted: '+(left===1?'1 is':left+' are')+' left for you to decide.');
     }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}
     if(held.view!==before)sDeskRefresh(held,before);

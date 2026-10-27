@@ -175,7 +175,8 @@ class Proposals:
         return self.store.local(ident, job + '.json')
 
     def keep(self, ident, job, kind, items, **extra):
-        """Keep a set of proposals for the person to preview; nothing in the item changes."""
+        """Keep a set of proposals for the person to preview; nothing in the item changes.
+        Each is open unless it comes with its state (one that already no longer fits)."""
         require_held(self.store)
         if kind not in self.tools:
             raise ValueError('Choose a finishing tool.')
@@ -187,7 +188,7 @@ class Proposals:
             'made_at': self.store.now(),
             **extra,
             'items': [
-                {**item, 'id': 'p' + str(number + 1), 'state': 'open'}
+                {'state': 'open', **item, 'id': 'p' + str(number + 1)}
                 for number, item in enumerate(items[:ITEMS])
             ],
         }

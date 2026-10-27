@@ -23,7 +23,15 @@ from google_drive import (
 )
 from hub_store import HubError, contained, locked, write_json
 
-BUILD_KEYS = ('requests', 'comments', 'expected_sha256', 'before_sha256', 'targets')
+BUILD_KEYS = (
+    'requests',
+    'comments',
+    'expected_sha256',
+    'before_sha256',
+    'targets',
+    'expected_text_sha256',
+    'before_text_sha256',
+)
 MONOSPACE = frozenset(
     (
         'courier new',
@@ -80,6 +88,24 @@ def content(value):
     if isinstance(value, list):
         return [content(child) for child in value]
     return value
+
+
+def text_signature(value):
+    """Every body character with its style, in order, and any other block as it is, leaving out
+    paragraph properties: a split or merged paragraph compares by its text and its styles."""
+    found = []
+    for tab in rt.tabs(content(value)):
+        native = rt.semantic(tab.get('documentTab', {}))
+        for block in native.get('body', {}).get('content', []):
+            if 'paragraph' in block:
+                # A paragraph break's own style is left out, as are paragraph properties.
+                found.extend(
+                    {'char': '\n'} if element.get('char') == '\n' else element
+                    for element in block['paragraph'].get('elements', [])
+                )
+            elif 'sectionBreak' not in block:
+                found.append(block)
+    return digest(encoded(found))
 
 
 def signature(value):
@@ -379,6 +405,135 @@ def locate(document_value, finding, selected_tabs):
     return result
 
 
+def trimmed(before, after):
+    """How many characters a replacement shares with its quote at the start and at the end,
+    each cut back so no word is split: only the words between are deleted and inserted, so a
+    suggestion shows just what changes."""
+
+    def splits(text, at):
+        return 0 < at < len(text) and text[at - 1].isalnum() and text[at].isalnum()
+
+    start = 0
+    while start < min(len(before), len(after)) and before[start] == after[start]:
+        start += 1
+    while start and (splits(before, start) or splits(after, start)):
+        start -= 1
+    end = 0
+    while end < min(len(before), len(after)) - start and before[-end - 1] == after[-end - 1]:
+        end += 1
+    while end and (splits(before, len(before) - end) or splits(after, len(after) - end)):
+        end -= 1
+    # Inserted text lands after the words deleted. Inside the quote it would sit within the
+    # comment's range and change what it quotes, so text goes in only at the quote's very start
+    # (nothing deleted before it) or at its end.
+    inserted = after[start : len(after) - end]
+    if inserted and end and (start or before[start : len(before) - end]):
+        end = 0
+    return start, end
+
+
+def insertions(findings):
+    """(tab, UTF-16 index, UTF-16 length) of the text each suggested edit inserts. Suggested
+    deletions stay inline, so text is inserted after the words it replaces, at the quote's end
+    or at its very start."""
+    found = []
+    for f in findings:
+        if f.get('kind') != 'edit' or not f.get('after'):
+            continue
+        start, end = trimmed(f['before'], f['after'])
+        text = f['after'][start : len(f['after']) - end]
+        if text:
+            at = f['start_index'] + rt.utf16(f['before'][: len(f['before']) - end])
+            found.append((f['tab_id'], at, rt.utf16(text)))
+    return found
+
+
+LOOKS = ('bold', 'italic', 'underline', 'link')
+
+
+def _looks(finding, keep_start, keep_end):
+    """[(text, look)] for the text an edit inserts, from its `styles` ([[length, {bold,
+    italic, underline, link}]] over its whole replacement), or None when it has none."""
+    found = finding.get('styles')
+    if found is None:
+        return None
+    after = finding['after']
+    if (
+        not isinstance(found, list)
+        or any(
+            not isinstance(run, list)
+            or len(run) != 2
+            or type(run[0]) is not int
+            or run[0] < 1
+            or not isinstance(run[1], dict)
+            or set(run[1]) - set(LOOKS)
+            or not isinstance(run[1].get('link') or '', str)
+            for run in found
+        )
+        or sum(run[0] for run in found) != len(after)
+    ):
+        raise GoogleError('Give each run of a replacement its length and look.')
+    each = [look for length, look in found for _ in range(length)]
+    pieces = []
+    for at in range(keep_start, len(after) - keep_end):
+        if pieces and pieces[-1][1] == each[at]:
+            pieces[-1][0] += after[at]
+        else:
+            pieces.append([after[at], each[at]])
+    return [(text, look) for text, look in pieces]
+
+
+def _restyled(style, look):
+    """A Doc text style with the desk's bold, italic, underline and link: its font, size and
+    colour stay as the words beside it have them."""
+    result = copy.deepcopy(style)
+    for key in ('bold', 'italic', 'underline'):
+        if look.get(key):
+            result[key] = True
+        elif result.get(key):
+            result[key] = False
+    if look.get('link'):
+        result['link'] = {'url': look['link']}
+    else:
+        result.pop('link', None)
+    return result
+
+
+def stretched(space, following):
+    """Whether a space carries a link or bold that the words after it lack."""
+    return bool(
+        (space.get('link') and space.get('link') != following.get('link'))
+        or (space.get('bold') and not following.get('bold'))
+    )
+
+
+def _next_is_paragraph(document_value, tab_id, end):
+    """Whether a body paragraph starts where this one ends, so its break can be deleted."""
+    return any(
+        'paragraph' in block and block.get('startIndex') == end
+        for block in _body(document_value, tab_id)
+    )
+
+
+def _kind_of(paragraph):
+    """A paragraph's settings: its style (without its heading's own id) and its list."""
+    style = {k: v for k, v in paragraph.get('paragraphStyle', {}).items() if k != 'headingId'}
+    style.setdefault('namedStyleType', 'NORMAL_TEXT')
+    return (encoded(style), encoded(paragraph.get('bullet') or {}))
+
+
+def _previous_alike(document_value, tab_id, start, paragraph):
+    """Whether a body paragraph with the same settings ends where this one starts: the last
+    paragraph's own break cannot be deleted, so the one before it can be instead, and the
+    paragraph before keeps its settings."""
+    return any(
+        'paragraph' in block
+        and block.get('endIndex') == start
+        and _kind_of(block['paragraph']) == _kind_of(paragraph)
+        for block in _body(document_value, tab_id)
+    )
+
+
 def validate(document_value, findings, selected_tabs):
     """Check scope, exact quotes, overlaps and style boundaries. Returns one resolved item per finding."""
     if not isinstance(findings, list) or not 1 <= len(findings) <= 100:
@@ -387,8 +542,13 @@ def validate(document_value, findings, selected_tabs):
     ids = set()
     occupied = {}
     items = []
+    foreign = rt.suggestions(document_value)
     for f in findings:
-        if not isinstance(f, dict) or set(f) - required - {'after', 'minor'} or required - set(f):
+        if (
+            not isinstance(f, dict)
+            or set(f) - required - {'after', 'minor', 'remove', 'styles'}
+            or required - set(f)
+        ):
             raise GoogleError(
                 'Each finding needs id, kind, tab_id, start_index, before, reason and optional after.'
             )
@@ -400,6 +560,8 @@ def validate(document_value, findings, selected_tabs):
             raise GoogleError('Use unique stable finding IDs from the saved review.')
         if 'minor' in f and type(f['minor']) is not bool:
             raise GoogleError('minor must be true or false.')
+        if 'remove' in f and (f['remove'] is not True or f['kind'] != 'edit' or f.get('after')):
+            raise GoogleError('Only a deletion of a whole paragraph removes it.')
         ids.add(f['id'])
         marker = '[Blog Studio ' + f['id'] + ']'
         if any(
@@ -424,17 +586,17 @@ def validate(document_value, findings, selected_tabs):
         if not isinstance(f['reason'], str) or not f['reason'].strip():
             raise GoogleError('Each finding needs a reason.')
         note = marker + ' ' + f['reason']
-        if len(note.encode()) > 2048:
-            raise GoogleError('Comment exceeds Google’s 2048-byte limit.')
         if f['kind'] == 'edit':
             after = f.get('after')
+            # A line break in the replacement starts a new paragraph, as a suggestion too.
             if (
                 not isinstance(after, str)
-                or any(ord(c) < 32 or c in '  ' for c in after)
+                or any((ord(c) < 32 and c != '\n') or c in '  ' for c in after)
                 or after == f['before']
             ):
                 raise GoogleError(
-                    'Provide a changed, single-paragraph replacement (empty means deletion).'
+                    'Provide a changed replacement, with a line break only between paragraphs '
+                    '(empty means deletion).'
                 )
         elif 'after' in f:
             raise GoogleError('Comments cannot also replace text.')
@@ -474,16 +636,55 @@ def validate(document_value, findings, selected_tabs):
             if f['start_index'] < right and end > left:
                 raise GoogleError('Overlapping findings must be combined before submission.')
         occupied[tab].append((f['start_index'], end))
-        style = None
+        style, cut, inserted, joined, runs = None, None, '', False, []
         if f['kind'] == 'edit':
+            keep_start, keep_end = trimmed(f['before'], f['after'])
+            da, db = a + keep_start, b - keep_end
+            inserted = f['after'][keep_start : len(f['after']) - keep_end]
             styles = [
                 e['textRun'].get('textStyle', {})
                 for e in paragraph['elements']
                 for _ in e['textRun']['content']
             ]
-            style = styles[a]
-            if any(v != style for v in styles[a:b]):
+            # Inserted text takes the style of the words it replaces, or of the word it follows.
+            style = styles[da] if da < db else styles[max(a, da - 1)]
+            if (
+                da == db
+                and a < da < len(text) - 1
+                and text[da - 1].isspace()
+                and stretched(styles[da - 1], styles[da])
+            ):
+                # A link or bold the Doc stretches over the space after its words stays there:
+                # text after that space takes the style of the words it comes before.
+                style = styles[da]
+            looks = _looks(f, keep_start, keep_end)
+            if inserted and looks is None and any(v != style for v in styles[da:db]):
                 raise GoogleError('Split replacements at style or link boundaries.')
+            # Each run of inserted text in its own look, over the style it takes from the Doc.
+            runs = (
+                [(inserted, style)]
+                if looks is None
+                else [(piece, _restyled(style, look)) for piece, look in looks]
+            )
+            cut = (start + rt.utf16(text[:da]), start + rt.utf16(text[:db]))
+            if f.get('remove'):
+                if text[:a].strip() or text[b:-1].strip():
+                    raise GoogleError('A paragraph is removed only with all of its words.')
+                da, db = 0, len(text) - 1
+                joined = _next_is_paragraph(document_value, tab, start + rt.utf16(text))
+                cut = (start, start + rt.utf16(text if joined else text[:-1]))
+                if (
+                    not joined
+                    and not foreign
+                    and _previous_alike(document_value, tab, start, paragraph)
+                ):
+                    # The Doc's last paragraph: the break before it goes with its words.
+                    joined = 'previous'
+                    cut = (start - 1, start + rt.utf16(text[:-1]))
+                elif not joined:
+                    note += ' The paragraph’s break stays, so an empty paragraph is left to remove.'
+        if len(note.encode()) > 2048:
+            raise GoogleError('Comment exceeds Google’s 2048-byte limit.')
         items.append(
             {
                 'finding': f,
@@ -494,9 +695,43 @@ def validate(document_value, findings, selected_tabs):
                 'end': end,
                 'style': style,
                 'note': note,
+                'cut': cut,
+                'deleted': (da, db) if f['kind'] == 'edit' else None,
+                'inserted': inserted,
+                'runs': runs,
+                'joined': joined,
             }
         )
+    for item in items:
+        # The break before the last paragraph is not taken where another change in this plan
+        # deletes it already: an empty paragraph is left instead, and said.
+        if item['joined'] == 'previous' and any(
+            other is not item
+            and other['tab'] == item['tab']
+            and other['cut']
+            and other['cut'][0] < item['cut'][0] + 1 <= other['cut'][1]
+            for other in items
+        ):
+            item['joined'] = False
+            item['cut'] = (item['cut'][0] + 1, item['cut'][1])
+            item['note'] += ' The paragraph’s break stays, so an empty paragraph is left to remove.'
+            if len(item['note'].encode()) > 2048:
+                raise GoogleError('Comment exceeds Google’s 2048-byte limit.')
+        elif item['joined'] == 'previous':
+            item['note'] += (
+                ' The break before it goes too, so no empty paragraph is left; the paragraph '
+                'before keeps its settings.'
+            )
+            if len(item['note'].encode()) > 2048:
+                raise GoogleError('Comment exceeds Google’s 2048-byte limit.')
     return items
+
+
+def _body(document_value, tab_id):
+    for tab in rt.tabs(document_value):
+        if tab['tabProperties']['tabId'] == tab_id:
+            return tab.get('documentTab', {}).get('body', {}).get('content', [])
+    return []
 
 
 def build(document_value, findings, selected_tabs, accepted=None):
@@ -506,6 +741,8 @@ def build(document_value, findings, selected_tabs, accepted=None):
     accepted is the suggestions-excluded view; it may be left out only when
     nothing is pending. Paragraphs that already carry someone's pending
     suggestion are refused one by one; the rest of the Doc stays open for review.
+    A replacement with a line break splits its paragraph, and a whole paragraph
+    removed takes its break with it where Google allows.
     """
     foreign = rt.suggestions(document_value)
     if foreign and accepted is None:
@@ -528,27 +765,49 @@ def build(document_value, findings, selected_tabs, accepted=None):
             {'id': f['id'], 'content': item['note'], 'quote': f['before'], 'range': span}
         )
         if f['kind'] == 'edit':
-            group.append({'deleteContentRange': {'range': span}})
-            if f['after']:
-                # Suggested deletions retain inline indexes. Insert AFTER the retained old range.
-                inserted = {'tabId': tab, 'startIndex': end, 'endIndex': end + rt.utf16(f['after'])}
-                group.append(
-                    {'insertText': {'location': {'tabId': tab, 'index': end}, 'text': f['after']}}
-                )
+            left, right = item['cut']
+            if right > left:
                 group.append(
                     {
-                        'updateTextStyle': {
-                            'range': inserted,
-                            'textStyle': item['style'],
-                            'fields': '*',
+                        'deleteContentRange': {
+                            'range': {**span, 'startIndex': left, 'endIndex': right}
                         }
                     }
                 )
-            changes.setdefault((tab, item['paragraph_start']), []).append(
-                (item['a'], item['b'], f['after'], item['style'])
-            )
+            if item['inserted']:
+                # Suggested deletions retain inline indexes. Insert AFTER the retained old range.
+                at = right
+                group.append(
+                    {
+                        'insertText': {
+                            'location': {'tabId': tab, 'index': at},
+                            'text': item['inserted'],
+                        }
+                    }
+                )
+                position = at
+                for piece, look in item['runs']:
+                    if not piece:
+                        continue
+                    group.append(
+                        {
+                            'updateTextStyle': {
+                                'range': {
+                                    'tabId': tab,
+                                    'startIndex': position,
+                                    'endIndex': position + rt.utf16(piece),
+                                },
+                                'textStyle': look,
+                                'fields': '*',
+                            }
+                        }
+                    )
+                    position += rt.utf16(piece)
+            changes.setdefault((tab, item['paragraph_start']), []).append(item)
         requests.append((tab, f['start_index'], group))
     targets = []
+    structural = False
+    merged = []
     for key, edits in changes.items():
         paragraph = paragraphs[key]
         original = rt.paragraph_text(paragraph)[:-1]
@@ -557,23 +816,61 @@ def build(document_value, findings, selected_tabs, accepted=None):
             for e in paragraph['elements']
             for c in e['textRun']['content']
         ]
-        for a, b, replacement, style in sorted(edits, key=lambda edit: edit[0], reverse=True):
-            chars[a:b] = [(c, style) for c in replacement]
-        if len(chars) == 1:
+        removed = False
+        for item in sorted(edits, key=lambda edit: edit['a'], reverse=True):
+            da, db = item['deleted']
+            if item['finding'].get('remove'):
+                # Its break deleted, or the one before it (the same kind of paragraph): either
+                # way the paragraph is gone. Otherwise an empty paragraph is left.
+                removed = item['joined']
+                chars = [] if removed is True else chars[-1:]
+                structural = True
+                continue
+            chars[da:db] = [(c, look) for piece, look in item['runs'] for c in piece]
+            structural = structural or '\n' in item['inserted']
+        if len(chars) == 1 and not any(item['finding'].get('remove') for item in edits):
             raise GoogleError(
-                'Deleting an entire paragraph is a structural edit; use a comment instead.'
+                'Deleting an entire paragraph is a structural edit; remove it as a whole paragraph '
+                'or use a comment instead.'
             )
-        paragraph['elements'] = [
-            {'textRun': {'content': c, 'textStyle': style}} for c, style in chars
-        ]
-        targets.append(
-            {
-                'tab_id': key[0],
-                'start_index': key[1],
-                'before': original,
-                'after': ''.join(c for c, _ in chars)[:-1],
-            }
-        )
+        # The accepted view: each line break ends a paragraph that keeps this one's style.
+        pieces, current = [], []
+        for c, style in chars:
+            current.append((c, style))
+            if c == '\n':
+                pieces.append(current)
+                current = []
+        blocks = []
+        for piece in pieces:
+            copied = copy.deepcopy(paragraph)
+            copied['elements'] = [
+                {'textRun': {'content': c, 'textStyle': style}} for c, style in piece
+            ]
+            blocks.append({'paragraph': copied})
+        body = _body(expected, key[0])
+        at = next(i for i, block in enumerate(body) if block.get('paragraph') is paragraph)
+        body[at : at + 1] = blocks
+        if removed == 'previous':
+            merged.append((key[0], blocks[0]))
+        target = {
+            'tab_id': key[0],
+            'start_index': key[1],
+            'before': original,
+            'after': ''.join(c for c, _ in chars)[:-1],
+        }
+        if removed:
+            target['removed'] = removed
+        targets.append(target)
+    for tab, kept in merged:
+        # The last paragraph's words and the break before it went: the paragraph before ends
+        # at this one's break.
+        body = _body(expected, tab)
+        at = next(i for i, block in enumerate(body) if block is kept)
+        elements = next(b for b in reversed(body[:at]) if 'paragraph' in b)['paragraph']['elements']
+        run = elements[-1]['textRun']
+        run['content'] = run['content'][:-1]
+        if not run['content']:
+            elements.pop()
     native_requests = [
         r
         for _, _, group in sorted(requests, key=lambda entry: entry[:2], reverse=True)
@@ -581,11 +878,12 @@ def build(document_value, findings, selected_tabs, accepted=None):
     ]
     for comment in comments:
         span = comment['range']
-        shift = inserted_before(findings, span['tabId'], span['startIndex'])
         comment['range'] = {
             **span,
-            'startIndex': span['startIndex'] + shift,
-            'endIndex': span['endIndex'] + shift,
+            'startIndex': span['startIndex']
+            + inserted_before(findings, span['tabId'], span['startIndex']),
+            'endIndex': span['endIndex']
+            + inserted_before(findings, span['tabId'], span['endIndex'], strict=True),
         }
         native_requests.append(
             {'insertComment': {'content': comment['content'], 'range': comment['range']}}
@@ -594,34 +892,62 @@ def build(document_value, findings, selected_tabs, accepted=None):
         'requests': native_requests,
         'comments': comments,
         # With other people's suggestions pending, an accept-all view would include their changes too,
-        # so the edited paragraphs are checked one by one instead (see targets_show).
-        'expected_sha256': None if foreign else signature(expected),
+        # so the edited paragraphs are checked one by one instead (see targets_show). A paragraph
+        # split or removed is checked the same way: its text, not Google's paragraph details.
+        'expected_sha256': None if foreign or structural else signature(expected),
         'before_sha256': signature(accepted),
+        # Split or removed paragraphs: every character and its style, in order, without the
+        # paragraphs' own properties, which Google sets for a new paragraph its own way.
+        'expected_text_sha256': text_signature(expected) if structural and not foreign else None,
+        'before_text_sha256': text_signature(accepted) if structural and not foreign else None,
         'targets': sorted(targets, key=lambda target: (target['tab_id'], target['start_index'])),
     }
 
 
-def inserted_before(findings, tab_id, index):
-    """UTF-16 units our suggested insertions add before an index. Suggested deletions stay inline."""
+def inserted_before(findings, tab_id, index, strict=False):
+    """UTF-16 units our suggested insertions add before an index (`strict`: an insertion at the
+    index itself is after it). Suggested deletions stay inline."""
     return sum(
-        rt.utf16(f['after'])
-        for f in findings
-        if f['kind'] == 'edit'
-        and f['tab_id'] == tab_id
-        and f['start_index'] + rt.utf16(f['before']) <= index
+        length
+        for tab, at, length in insertions(findings)
+        if tab == tab_id and (at < index if strict else at <= index)
     )
+
+
+def _runs_from(inline, tab_id, start):
+    """The runs of the paragraph at `start` and of any paragraph a suggested line break split
+    from it: up to the break the paragraph had before."""
+    runs, going = [], False
+    for block in _body(inline, tab_id):
+        if 'paragraph' not in block:
+            if going:
+                return None
+            continue
+        if block.get('startIndex') == start:
+            going = True
+        if not going:
+            continue
+        found = [element.get('textRun') for element in block['paragraph'].get('elements', [])]
+        if not found or not all(found):
+            return None
+        runs += found
+        last = found[-1]
+        if last['content'].endswith('\n') and not last.get('suggestedInsertionIds'):
+            return runs
+    return runs if going else None
 
 
 def targets_show(inline, saved, submitted):
     """Check the edited paragraphs directly in the inline view.
 
     submitted=True: each paragraph reads as its original text with our insertions
-    left out, and as the proposed text with our deletions left out.
+    left out, and as the proposed text with our deletions left out; a paragraph a
+    suggested break splits is read on to the break it had before.
     submitted=False: each paragraph is untouched, proving nothing was sent.
     """
     for target in saved.get('targets', []):
         shift = (
-            inserted_before(saved['findings'], target['tab_id'], target['start_index'])
+            inserted_before(saved['findings'], target['tab_id'], target['start_index'], strict=True)
             if submitted
             else 0
         )
@@ -631,15 +957,21 @@ def targets_show(inline, saved, submitted):
             )
         except GoogleError:
             return False
-        runs = [element.get('textRun') for element in paragraph.get('elements', [])]
-        if start != target['start_index'] + shift or not all(runs):
+        if start != target['start_index'] + shift:
+            return False
+        if not submitted:
+            runs = [element.get('textRun') for element in paragraph.get('elements', [])]
+            original = ''.join(run['content'] for run in runs if run) if all(runs) else None
+            if rt.suggestions(paragraph) or original != target['before'] + '\n':
+                return False
+            continue
+        runs = _runs_from(inline, target['tab_id'], start)
+        if runs is None:
             return False
         original = ''.join(run['content'] for run in runs if not run.get('suggestedInsertionIds'))
         proposed = ''.join(run['content'] for run in runs if not run.get('suggestedDeletionIds'))
-        if not submitted and (rt.suggestions(paragraph) or original != target['before'] + '\n'):
-            return False
-        if submitted and (
-            original != target['before'] + '\n' or proposed != target['after'] + '\n'
+        if original != target['before'] + '\n' or proposed != target['after'] + (
+            '' if target.get('removed') is True else '\n'
         ):
             return False
     return True
@@ -931,9 +1263,12 @@ def verify(client, root, saved):
     wants_edits = any(finding['kind'] == 'edit' for finding in saved['findings'])
     unchanged = stable and signature(before) == saved['before_sha256']
     whole_doc = saved.get('expected_sha256')
-    proposed = (
-        signature(after) == whole_doc if whole_doc else targets_show(inline, saved, submitted=True)
-    )
+    if whole_doc:
+        proposed = signature(after) == whole_doc
+    elif saved.get('expected_text_sha256'):
+        proposed = text_signature(after) == saved['expected_text_sha256']
+    else:
+        proposed = targets_show(inline, saved, submitted=True)
     complete = (
         unchanged
         and proposed
@@ -1004,6 +1339,8 @@ def nothing_landed(saved, inline, after, threads):
     if saved.get('expected_sha256'):
         # Nothing was pending before, so an accept-all view equal to accepted text means nothing is pending now.
         return signature(after) == saved['before_sha256']
+    if saved.get('before_text_sha256'):
+        return text_signature(after) == saved['before_text_sha256']
     return targets_show(inline, saved, submitted=False)
 
 
