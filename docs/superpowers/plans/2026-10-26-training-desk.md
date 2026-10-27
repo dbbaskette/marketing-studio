@@ -41,6 +41,10 @@ shared-desk and deck-desk specs (`2026-10-26-shared-desk-design.md`,
 **Before starting:**
 - Pieces 1 to 5 have merged. Re-read every file and line named here on this piece's own
   base: pieces 1 and 2 move and rename runner code.
+- The owner took every recommendation in the spec on 2026-10-26, except decision 13. A desk
+  deck's review of changed slides still runs by itself, but runs no repair round: its
+  findings are kept as piece 5's per-slide proposals (Apply, priced; Skip). Task 18 keeps
+  them, Task 20's updates are reviewed the same way, and Task 21 shows and acts on them.
 - Where this plan names a piece 3 member (`drafting.store.Store`, `drafting.parts.Codec`,
   `drafting.record.Desk`, `drafting.versions.Versions`, `drafting.basis.land_part`,
   `land_selection`, `settle`, `drafting.prompts.*`, `drafting.guards.flags`,
@@ -1187,6 +1191,11 @@ adds:
 - `submit_section` refuses a change to a frozen slide with "this slide has no requested
   repair. Keep its drawing unchanged."
 - The kept section marks its notes `done`.
+- On a desk run, the review of changed slides sends no section back (`deck.REPAIRS` rounds
+  are not used). Its findings are kept with piece 5's per-slide proposals (piece 3's
+  proposals module). **Apply** on one makes a slide note from the finding's note and fix, and
+  goes through `slide_note`. **Skip** keeps it as read. A grave finding still blocks Mark
+  ready until it is applied, or a later review no longer finds it.
 - `drafts.section_price(record, level, section) -> str`. It is piece 5's sentence with
   Training's step names: "Redraws section {n} (slides {a} to {b}); the other slides stay
   exactly as they are. Then the deck is put together, rendered and checked. Last time this
@@ -1200,6 +1209,8 @@ adds:
       slides;
     - the other section's drawn file is unchanged;
     - one review runs, of the changed slides only;
+    - with `self.workers.found` giving one major drawing finding on slide 5, no repair
+      section job runs, and the deck's proposal set holds the finding (decision 13);
     - the deck is `draft` in `person_statuses`.
   - `test_a_frozen_slide_cannot_change`: a scripted composer that changes a frozen slide is
     handed back the sentence above.
@@ -1337,6 +1348,9 @@ adds:
 - `Engine.look_samples(path, level)` runs `deck-look` again. `Engine.look_apply(path, level,
   choice, seen)` records the pick and redraws the deck. The sheet's price is
   `deck.before(slides)` or the last whole draw (`stops.redone`).
+- `Engine.finding_apply(path, level, finding, seen)` and `Engine.finding_skip(path, level,
+  finding, seen)` act on a review proposal (decision 13). POST `/api/drafts/finding` with
+  `{path, level, finding, action: 'apply'|'skip', seen}`.
 
 - [ ] **Step 1: Write the failing tests:**
   - `test_row_146_another_look_redraws_the_whole_deck`: after `look_apply`, every section is
@@ -1348,6 +1362,9 @@ adds:
     slide titles, "How should this slide change?" with **Redraw slide 5**, the price line,
     and **Try another look**. On a teammate's computer it has words only, with **Draw it
     here**.
+  - In `test_desk.py`: `test_a_review_finding_waits_on_its_slide`. A slide with a waiting
+    review proposal shows the finding with **Apply** (priced) and **Skip**. Apply sends a
+    slide note; Skip marks it read and it leaves the card (decision 13).
 - [ ] **Step 2: Run** them and see them fail.
 - [ ] **Step 3: Implement it.**
 - [ ] **Step 4: Add matrix row 146.**
