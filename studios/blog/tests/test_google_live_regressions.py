@@ -81,9 +81,14 @@ class LiveReviewRegressions(unittest.TestCase):
         self.assertEqual(
             planned['comments'][1]['range']['startIndex'], blocks[4]['startIndex'] + len('wait')
         )
-        unsupported = [{**findings[1], 'start_index': chart['startIndex']}]
+        # An edit never goes into the chart's paragraph; a comment may sit there only on its
+        # plain words, and this one has none of them.
+        unsupported = [{**findings[0], 'start_index': chart['startIndex']}]
         with self.assertRaisesRegex(gd.GoogleError, 'unsupported objects'):
             gs.build(self.client.doc, unsupported, ['t.0'])
+        misplaced = [{**findings[1], 'start_index': chart['startIndex']}]
+        with self.assertRaisesRegex(gd.GoogleError, 'not at the supplied start_index'):
+            gs.build(self.client.doc, misplaced, ['t.0'])
 
     def test_verified_native_response_with_tab_scoped_anchors_trimmed_quote_and_inherited_false(
         self,
