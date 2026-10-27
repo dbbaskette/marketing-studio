@@ -452,6 +452,19 @@ class SharedLookTests(unittest.TestCase):
                         self.assertEqual(path.resolve(), ROOT / 'ui-kit' / name)
         self.assertGreaterEqual(len(found), 8)
 
+    def test_home_css_draws_no_shared_control(self):
+        # Marketing Studio's launch tile is ui-kit's .studio-symbol, its status ui-kit's
+        # .state with a bead, and its research sites ui-kit's .table.
+        css = PAGE_STYLES[0].read_text()
+        for listed, block in rules(css):
+            for whole, classes, _, _ in selectors(listed):
+                with self.subTest(selector=whole):
+                    self.assertNotIn('studio-icon', whole)
+                    self.assertNotIn('studio-status', whole)
+                    if 'site-row' in classes:
+                        drawn = [p for p in properties(block) if p.startswith(('border', 'padding'))]
+                        self.assertEqual(drawn, [])
+
     def test_a_choice_set_straight_in_a_card_fits_it_at_phone_width(self):
         # Training Studio's "Where this training stops" puts its three levels straight in a
         # card; at 390px they spilled 24px past the screen. They now fit as a field's do.

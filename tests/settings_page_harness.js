@@ -13,7 +13,10 @@
 // the page's scope; {responses: {path: answer}} answers /api/<path> posts (an answer with
 // `error` is refused); {submit: true} submits the settings form; and a snapshot with
 // {read: [selector, ...]} adds each element's text and whether it is hidden, with every
-// request the page made.
+// request the page made. {show: view} runs show(view); {home: snapshot} hands the page that
+// snapshot and runs renderHome(). A snapshot with {ids: [id, ...]} adds `hidden` and `words`
+// for each, and every snapshot has `cards`: each launch card's studio, its filled and plain
+// buttons, the class of each of its parts in order, and its status line's bead and words.
 'use strict';
 
 const fs = require('fs');
@@ -38,7 +41,7 @@ class El {
   add() {}
   querySelector() { return new El(); }
   querySelectorAll(selector) {
-    if (selector === '.site-row .button') return this.children.map(row => row.children[1]);
+    if (selector === '.site-row .button') return this.children.map(row => row.children[1].children[0]);
     return [];
   }
 }
@@ -62,6 +65,7 @@ const document = {
   body: { dataset: { standalone: String(Boolean(early.standalone)),
     product: early.product || 'Marketing Studio', tokenHeader: 'X-Test' }, classList: { toggle() {} } },
   querySelector: find, querySelectorAll: () => [], createElement: tag => new El(tag),
+  createElementNS: (space, tag) => new El(tag), createTextNode: text => ({ textContent: text }),
 };
 const context = {
   document, console, setTimeout: () => 0, clearTimeout() {}, URL, URLSearchParams, JSON,
@@ -95,6 +99,11 @@ for (const step of steps) {
     context.shownSites = step.sites;
     form.elements.storage.value = 'local';
     run("snapshot = {shared: {research: {sites: shownSites}}, efforts: {claude: []}}; setup = false; researchSites = [...shownSites]; renderSites();");
+  } else if (step.show) {
+    run(`show(${JSON.stringify(step.show)})`);
+  } else if (step.home) {
+    context.homeSnapshot = step.home;
+    run('snapshot = homeSnapshot; renderHome();');
   } else if (step.run) {
     run(step.run);
   } else if (step.responses) {
@@ -106,7 +115,7 @@ for (const step of steps) {
   } else if (step.click === 'add') {
     find('#research-site-add').fire('click'); await settle(); await settle();
   } else if (step.click === 'remove') {
-    find('#research-site-list').children[step.index].children[1].fire('click');
+    find('#research-site-list').children[step.index].children[1].children[0].fire('click');
   } else if (step.key) {
     find('#research-site-input').fire('keydown', { key: step.key }); await settle(); await settle();
   } else if (step.snapshot) {
@@ -114,12 +123,23 @@ for (const step of steps) {
     try { change = run('changesForStep()').research ?? null; } catch (error) { change = 'error: ' + error.message; }
     shots[step.snapshot] = {
       rows: find('#research-site-list').children.map(row => row.children[0].textContent),
-      removeLabels: find('#research-site-list').children.map(row => row.children[1].getAttribute('aria-label')),
+      removeLabels: find('#research-site-list').children.map(row => row.children[1].children[0].getAttribute('aria-label')),
       hint: find('#research-site-hint').textContent,
       emptyHidden: find('#research-site-empty').hidden,
       input: find('#research-site-input').value,
       change,
       asked: asked.length,
+      cards: find('#studio-list').children.map(card => {
+        const buttons = card.children.filter(part => part.tagName === 'BUTTON' || part.tagName === 'A');
+        const state = card.children.find(part => part.className === 'state');
+        return { studio: card.dataset.studio,
+          filled: buttons.filter(part => /\bbutton-filled\b/.test(part.className)).map(part => part.textContent),
+          plain: buttons.filter(part => !/\bbutton-filled\b/.test(part.className)).map(part => part.textContent),
+          order: card.children.map(part => part.className),
+          status: state ? [state.children[0].dataset.state, state.children[1].textContent] : null };
+      }),
+      ...(step.ids ? { hidden: Object.fromEntries(step.ids.map(id => [id, find('#' + id).hidden])),
+        words: Object.fromEntries(step.ids.map(id => [id, find('#' + id).textContent])) } : {}),
       ...(step.read ? { read: Object.fromEntries(step.read.map(selector => [selector,
         { text: find(selector).textContent, hidden: find(selector).hidden }])),
       requests: asked.map(({ url, sent }) => ({ url: String(url), sent })) } : {}),
