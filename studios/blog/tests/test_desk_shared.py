@@ -2,9 +2,11 @@
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import unittest
+from unittest.mock import patch
 
 import desk
-from studio_core.drafting import parts
+from studio_core.drafting import parts, record, versions
+from test_desk import DeskCase
 
 
 class SharedCodecTests(unittest.TestCase):
@@ -20,6 +22,30 @@ class SharedCodecTests(unittest.TestCase):
         found = desk.split('# T\n\nOpen.\n\n## One\n\nA.\n')
         self.assertEqual(list(found), ['title', 'opening', 'sections', 'images'])
         self.assertEqual(desk.join(found), '# T\n\nOpen.\n\n## One\n\nA.\n')
+
+
+class SharedRecordTests(DeskCase):
+    def test_the_desk_record_is_the_shared_one_with_blog_s_store(self):
+        made = self.make()
+        kept = desk._drafting(self.root)
+        self.assertIsInstance(kept, record.Desk)
+        self.assertEqual((kept.store.product, kept.store.word), ('Blog Studio', 'blog'))
+        self.assertEqual(desk.SOURCES, versions.SOURCES + ('chat', 'google'))
+        self.assertEqual(kept.store.folder(made['id']), self.folder(made['id']) / 'desk')
+
+    def test_a_save_still_reaches_blog_s_own_write(self):
+        made = self.make()
+        part = made['sections'][0]['id']
+        with patch('desk._write', side_effect=OSError('Synthetic disk failure')) as write:
+            with self.assertRaisesRegex(OSError, 'Synthetic disk failure'):
+                desk.save(self.root, made['id'], 1, part, 'New first text.')
+        self.assertEqual(write.call_args.args[3], [part])
+        self.assertEqual(desk.read(self.root, made['id'])['revision'], 1)
+
+    def test_a_title_holding_an_image_is_refused_by_blog_s_own_rule(self):
+        made = self.make()
+        with self.assertRaisesRegex(ValueError, desk.TITLE_IMAGE):
+            desk.save(self.root, made['id'], 1, 'title', 'A ![x](data:image/png;base64,AAAA) title')
 
 
 if __name__ == '__main__':

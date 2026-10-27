@@ -243,10 +243,6 @@ def join(draft, after=()):
     return '\n\n'.join(parts + list(after)) + '\n'
 
 
-def _identity(draft, *rest):
-    return rest[0] if rest else draft
-
-
 class Codec:
     """The parts an item has and how its text is read.
 
@@ -296,7 +292,7 @@ class Codec:
         )
         self.vet = vet
         self.taken = taken
-        self.fitted = fitted or _identity
+        self.fitted = fitted or (lambda draft, before: draft)
         self.landed = landed or (lambda draft, before, text: text)
         self.shown = shown or (lambda text: text)
 

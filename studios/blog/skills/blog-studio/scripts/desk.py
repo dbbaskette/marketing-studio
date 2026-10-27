@@ -15,9 +15,12 @@ from types import SimpleNamespace
 import desk_images
 import studio
 from studio_core.drafting import parts
+from studio_core.drafting import record as desk_record
+from studio_core.drafting import versions as desk_versions
+from studio_core.drafting.store import Store
 
 DESK = 'desk'
-KEEP = 20  # versions kept per part
+KEEP = desk_versions.KEEP  # versions kept per part
 PARTS = parts.MARKDOWN.fixed  # ('title', 'opening'), plus each section id
 LIMIT = parts.LIMIT  # characters in one part, not counting image data (desk_images)
 ON_DESK = 'This blog is on the desk. Edit it there.'
@@ -82,10 +85,38 @@ def join(draft, images=True, data=None):
     return parts.join(draft, desk_images.definitions(draft, data) if images else [])
 
 
-# Blog Studio's codec: the shared Markdown one, reading and writing images beside the text.
+def _vet(part, text):
+    if part == 'title' and desk_images.holds(text):
+        raise ValueError(TITLE_IMAGE)
+
+
+def _taken(draft, part, text, previous):
+    """A part's new text with image data pasted into it moved out, under labels of its own."""
+    had = draft.get('images') or {}
+    text, images = desk_images.take(text, had, rename=True, previous=previous)
+    return text, (draft if images == had else {**draft, 'images': images})
+
+
+def _fitted(draft, before):
+    """The draft within the image limits, against the images the record had."""
+    return desk_images.fitted(draft, before=before.get('images') or {})
+
+
+def _shown(text):
+    """A kept version as the page shows it: a version kept before images moved out of the
+    text shows their references, not their data."""
+    return desk_images.take(text)[0].strip() if desk_images.holds(text) else text
+
+
+# Blog Studio's codec: the shared Markdown one, keeping images beside the text. Each hook
+# looks Blog's function up when called, so a patch on this module reaches it.
 CODEC = parts.MARKDOWN.replace(
     split=lambda markdown, title='': split(markdown, title),
     join=lambda draft, *rest, **named: join(draft, *rest, **named),
+    vet=lambda part, text: _vet(part, text),
+    taken=lambda draft, part, text, previous: _taken(draft, part, text, previous),
+    fitted=lambda draft, before: _fitted(draft, before),
+    shown=lambda text: _shown(text),
 )
 
 
@@ -114,6 +145,55 @@ def _paths(root, ident):
         raise ValueError('Choose a blog on the desk.')
     directory, _ = studio.item(root, 'articles', ident)
     return directory, studio.inside(directory, DESK, 'draft.json')
+
+
+class BlogStore(Store):
+    """Blog Studio's desk store: articles/<id>/desk, under the studio lock, written by
+    `_write`. Each member looks Blog's function up when called, so patches reach it."""
+
+    product = 'Blog Studio'
+    word = 'blog'
+
+    def __init__(self, root):
+        self.root = root
+
+    def held(self):
+        return studio.lock_held()
+
+    def folder(self, ident):
+        return _paths(self.root, ident)[1].parent
+
+    def path(self, ident, *names):
+        directory, _ = _paths(self.root, ident)
+        return studio.inside(directory, DESK, *names)
+
+    def local(self, ident, *names):
+        return studio.inside(
+            self.root, '.blog-runs', 'desk-proposals', studio.identifier(ident), *names
+        )
+
+    def read(self, ident):
+        return read(self.root, ident)
+
+    def write(self, ident, draft, parts):
+        return _write(self.root, ident, draft, parts)
+
+    def read_json(self, path):
+        return studio.read_json(path)
+
+    def write_json(self, path, value):
+        return studio.write_json(path, value)
+
+    def atomic(self, path, data):
+        return studio.atomic(path, data)
+
+    def now(self):
+        return studio.now()
+
+
+def _drafting(root):
+    """The shared desk record over this blog workspace."""
+    return desk_record.Desk(BlogStore(root), CODEC, SOURCES)
 
 
 def _source_text(root, ident):
@@ -798,11 +878,7 @@ def _write(root, ident, draft, parts=()):
     draft = {**draft, 'opening': opening.strip(), 'sections': sections, 'images': images}
     draft = desk_images.fitted(draft, before=had)
     record = studio.read_json(studio.metadata_path(directory, 'articles'))
-    draft['revision'] += 1
-    draft['updated_at'] = studio.now()
-    changed = draft.setdefault('changed', {})
-    for part in parts:
-        changed[part] = draft['revision']
+    desk_record.advance(draft, parts, studio.now())
     before = _data(root, ident)
     body = join(draft, data=before)
     current = studio.inside(directory, 'DRAFT.md')
@@ -833,59 +909,24 @@ def _write(root, ident, draft, parts=()):
 
 
 def checked(draft, seen, parts=None):
-    """Refuse a form older than the parts it changes.
+    """Refuse a form older than the parts it changes (studio_core.drafting.record).
 
     With no parts named, the whole draft must be as the form saw it. With parts, a form
     that saw revision `seen` may still change a part nothing else changed after it, so a
     rewrite landing in one section never refuses typing in another."""
-    if type(seen) is not int or not 1 <= seen <= draft['revision']:
-        raise ValueError('This draft changed since you opened it. Reload to see the latest.')
-    if parts is None:
-        stale = seen != draft['revision']
-    else:
-        changed = draft.get('changed') or {}
-        stale = any(changed.get(part, 1) > seen for part in parts)
-    if stale:
-        raise ValueError('This draft changed since you opened it. Reload to see the latest.')
+    desk_record.checked(draft, seen, parts, CODEC.thing)
 
 
 def checked_text(part, text, deepest=2):
     """Refuse text a part cannot hold. `deepest` is the draft's `limit`: a heading at that
     level or above would start a section."""
-    if not isinstance(text, str) or len(text) > LIMIT:
-        raise ValueError('Keep one part under 200,000 characters.')
-    if part == 'title' and desk_images.holds(text):
-        raise ValueError(TITLE_IMAGE)
-    if part == 'title' and (not text.strip() or '\n' in text.strip() or len(text.strip()) > 500):
-        raise ValueError('Keep the title to one line, up to 500 characters.')
-    if part != 'title' and has_heading(text, deepest):
-        raise ValueError(heading_problem(deepest))
-    return text
+    return desk_record.checked_text(part, text, CODEC, deepest)
 
 
 def save(root, ident, seen, part, text, source='save', session=None):
     """Save one part the form last saw at revision `seen`; an outdated form is refused. An
     image pasted as data, or a version kept with image data, leaves the text for `images`."""
-    if not isinstance(text, str):
-        raise ValueError('Keep one part under 200,000 characters.')
-    draft = read(root, ident)
-    had = draft.get('images') or {}
-    images = had
-    if part != 'title':
-        # A restored version replaces the part whole: its references are its own.
-        previous = '' if source == 'restore' else text_of(draft, part)
-        text, images = desk_images.take(text, had, rename=True, previous=previous)
-    before = text_of(draft, part)
-    if before == text.strip() and images == had:
-        return draft  # The same text again, as from a retried save: nothing to refuse.
-    checked(draft, seen, [part])  # An outdated form is told to reload before anything else.
-    checked_text(part, text, limit(draft))
-    # The text first, so an image it adds counts as used when the limits are checked.
-    draft = {**draft, 'images': images}
-    _set(draft, part, text)
-    draft = desk_images.fitted(draft, before=had)
-    keep(root, ident, part, before, source, session)
-    return _write(root, ident, draft, [part])
+    return _drafting(root).save(ident, seen, part, text, source, session)
 
 
 # Kinds that write every section or plan the outline: the outline waits while they work.
@@ -1070,57 +1111,25 @@ def reimport(root, ident, markdown, source, record=None):
     return draft
 
 
-REMOVED = 20  # removed sections kept to bring back
+REMOVED = desk_record.REMOVED  # removed sections kept to bring back
 
 
 def _removed_path(root, ident):
-    directory, _ = _paths(root, ident)
-    return studio.inside(directory, DESK, 'removed.json')
+    return _drafting(root)._removed_path(ident)
 
 
 def removed(root, ident):
     """Sections taken out on the Outline tab, newest first, each with its text and brief."""
-    target = _removed_path(root, ident)
-    if not target.is_file() or target.is_symlink():
-        return []
-    try:
-        found = studio.read_json(target)
-    except (ValueError, OSError):
-        return []
-    return [item for item in found if isinstance(item, dict)] if isinstance(found, list) else []
+    return _drafting(root).removed(ident)
 
 
 def _keep_removed(root, ident, sections):
-    if sections:
-        studio.write_json(_removed_path(root, ident), (sections + removed(root, ident))[:REMOVED])
+    _drafting(root).keep_removed(ident, sections)
 
 
 def unremove(root, ident, seen, index):
     """Bring a removed section back where it was, with its id, so its History comes too."""
-    found = removed(root, ident)
-    if type(index) is not int or not 0 <= index < len(found):
-        raise ValueError('Choose a removed section.')
-    draft = read(root, ident)
-    checked(draft, seen, ['outline'])
-    if len(draft['sections']) >= SECTIONS:
-        raise ValueError('Keep the outline to 60 sections.')
-    item = found[index]
-    taken = {section['id'] for section in draft['sections']}
-    kept = str(item.get('id') or '')
-    part = kept if PART.fullmatch(kept) and kept not in taken else _id(taken)
-    had = draft.get('images') or {}
-    text, draft['images'] = desk_images.take(str(item.get('text') or ''), had, rename=True)
-    section = {
-        'id': part,
-        'heading': ' '.join(str(item.get('heading') or 'Section').split())[:200],
-        'brief': str(item.get('brief') or '')[:BRIEF],
-        'text': text.strip(),
-    }
-    at = item.get('index') if type(item.get('index')) is int else len(draft['sections'])
-    draft['sections'].insert(max(0, min(at, len(draft['sections']))), section)
-    draft = desk_images.fitted(draft, before=had)
-    studio.write_json(_removed_path(root, ident), found[:index] + found[index + 1 :])
-    return _write(root, ident, draft, [part, 'outline'])
+    return _drafting(root).unremove(ident, seen, index)
 
 
 def _kept_ids(keep, sources):
@@ -1184,43 +1193,21 @@ def add_sources(root, ident, data):
 
 
 PART = parts.MARKDOWN.part
-SOURCES = (
-    'save',
-    'rewrite',
-    'revise-all',
-    'selection',
-    'first-pass',
-    'finishing',
-    'restore',
-    'draft',
+SOURCES = desk_versions.SOURCES + (
     'chat',  # A whole draft saved in chat, or restored from its history (`reimport`).
     'google',  # Google's accepted text brought back (`reimport`).
 )
 
 
+def _versions(root):
+    return _drafting(root).versions
+
+
 def _versions_path(root, ident, part):
-    if not isinstance(part, str) or (part not in PARTS and not PART.fullmatch(part)):
-        raise ValueError('Choose a part of this draft.')
-    directory, _ = _paths(root, ident)
-    target = studio.inside(directory, DESK, 'versions', part + '.jsonl')
-    for path in (target.parent.parent, target.parent, target):
-        if path.is_symlink() or (path.exists() and not (path.is_dir() or path.is_file())):
-            raise ValueError('A desk versions file is not a plain file. Nothing was changed.')
-    return target
+    return _versions(root).path(ident, part)
 
 
-def _entries(target):
-    if not target.is_file():
-        return []
-    entries = []
-    for line in target.read_text(encoding='utf-8').splitlines():
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            continue  # A torn line never hides the others.
-        if isinstance(entry, dict) and isinstance(entry.get('text'), str):
-            entries.append(entry)
-    return entries
+_entries = desk_versions.entries
 
 
 def keep(root, ident, part, text, source, session=None, extra=None):
@@ -1228,55 +1215,23 @@ def keep(root, ident, part, text, source, session=None, extra=None):
 
     Saves from one editing session (the page's session token) keep only the text before
     the first of them; every rewrite, revision, selection edit and restore keeps one."""
-    _require_lock()
-    if source not in SOURCES:
-        raise ValueError('Choose a listed kind of change.')
-    target = _versions_path(root, ident, part)
-    entries = _entries(target)
-    if (
-        source == 'save'
-        and session
-        and entries
-        and entries[-1].get('source') == 'save'
-        and entries[-1].get('session') == session
-    ):
-        return
-    entry = {'at': studio.now(), 'source': source, 'text': text, 'words': len(text.split())}
-    if source == 'save' and session:
-        entry['session'] = session
-    entry.update(extra or {})
-    lines = [json.dumps(item, ensure_ascii=False) for item in (entries + [entry])[-KEEP:]]
-    studio.atomic(target, ('\n'.join(lines) + '\n').encode())
+    _versions(root).keep(ident, part, text, source, session, extra)
 
 
 def versions(root, ident, part):
     """The kept versions of one part, newest first, each as the page shows it: a version kept
     before images moved out of the text shows their references, not their data."""
-    return [
-        {**entry, 'text': desk_images.take(entry['text'])[0].strip()}
-        if desk_images.holds(entry['text'])
-        else entry
-        for entry in _kept(root, ident, part)
-    ]
+    return _versions(root).versions(ident, part)
 
 
 def _kept(root, ident, part):
     """The kept versions of one part, newest first, as they were kept."""
-    return list(reversed(_entries(_versions_path(root, ident, part))))
+    return _versions(root).kept(ident, part)
 
 
 def counts(root, ident):
     """How many versions each part keeps, for parts that keep any."""
-    directory, _ = _paths(root, ident)
-    folder = studio.inside(directory, DESK, 'versions')
-    if not folder.is_dir() or folder.is_symlink():
-        return {}
-    found = {}
-    for path in sorted(folder.glob('*.jsonl')):
-        part = path.stem
-        if (part in PARTS or PART.fullmatch(part)) and path.is_file() and not path.is_symlink():
-            found[part] = len(_entries(path))
-    return {part: count for part, count in found.items() if count}
+    return _versions(root).counts(ident)
 
 
 def restore(root, ident, seen, part, index):
