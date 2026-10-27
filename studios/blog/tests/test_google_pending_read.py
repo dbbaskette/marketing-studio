@@ -78,7 +78,9 @@ class LenientReadTests(unittest.TestCase):
         self.assertIn('Oct 27, 2026 at Pier 39 ', body)
         # Without its shown text a date still reads, by its day.
         self.assertEqual(
-            rt.chip_text('dateElement', {'dateElementProperties': {'timestamp': '2026-10-27T15:00:00Z'}}),
+            rt.chip_text(
+                'dateElement', {'dateElementProperties': {'timestamp': '2026-10-27T15:00:00Z'}}
+            ),
             '2026-10-27',
         )
         # The send sees the same words where the chip sits, at one Doc index.
@@ -563,6 +565,126 @@ class PendingSendTests(PendingDocCase):
         self.assertEqual(len(plan['proposals']), 1)
         self.assertEqual(plan['proposals'][0]['kind'], 'edit', 'beside their insertion: ours')
         self.assertEqual(plan['doc_overlap'], 0, 'its words are not theirs')
+
+
+BIG = gm.PNG + b'\0' * 400_000  # about 530 KiB as base64: two do not fit a blog's room
+
+
+class LargeImageTests(unittest.TestCase):
+    """Images too large for the blog's shared files stay in the Google Doc, on either read."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / 'workspace'
+        studio.initialize(self.root)
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+
+    def client(self, pending):
+        import base64
+
+        client = gm.Model(gm.objects_doc())
+        client.images = {
+            'https://lh3.googleusercontent.com/one': BIG,
+            'https://lh3.googleusercontent.com/two': BIG,
+        }
+        if pending:
+            client.teammate('quite ', 'simple and clear')
+        else:
+            data = 'data:image/png;base64,' + base64.b64encode(BIG).decode()
+            client.markdown = gs.accepted_markdown(
+                gm.objects_doc(), images={'kix.one': data, 'kix.two': data}
+            ).decode()
+        return client
+
+    def start(self, client):
+        with patch.object(google_drive, 'Client', return_value=client):
+            found = google_intake.preview(self.root, {'url': URL})
+            made = google_intake.start(
+                self.root,
+                {
+                    'preview': found['preview'],
+                    'expected': found['expected'],
+                    'title': 'Harbour notes',
+                    'confirmed': True,
+                },
+            )
+        held = studio._HELD.set(True)
+        self.addCleanup(studio._HELD.reset, held)
+        return desk.create(self.root, {'article': made['id']})['id']
+
+    def test_fit_keeps_images_in_order_while_they_fit(self):
+        one, two = 'data:image/png;base64,' + 'A' * 400, 'data:image/png;base64,' + 'B' * 400
+        text = (
+            '![][image1]\n\nWords.\n\n![][image2]\n\n[image1]: <'
+            + one
+            + '>\n\n[image2]: <'
+            + two
+            + '>'
+        )
+        fitted, kept = gs.fit_images(text, room=600)
+        self.assertEqual(kept, 1)
+        self.assertIn('[image1]: <' + one + '>', fitted)
+        self.assertNotIn(two, fitted)
+        self.assertIn('![Image kept in the Google Doc][image2]', fitted)
+        self.assertEqual(gs.fit_images(fitted, room=600), (fitted, 0), 'the same every read')
+
+    def test_a_doc_over_the_room_reads_on_both_paths_and_fits_the_hub(self):
+        from hub_store import MAX_TEXT
+        import desk_jobs
+
+        for pending in (False, True):
+            with self.subTest(pending=pending):
+                ident = self.start(self.client(pending))
+                directory = studio.item(self.root, 'articles', ident)[0]
+                for path in directory.rglob('*'):
+                    if path.is_file() and path.suffix in ('.md', '.json'):
+                        self.assertLess(
+                            path.stat().st_size, MAX_TEXT, str(path.relative_to(directory))
+                        )
+                draft = (directory / 'DRAFT.md').read_text()
+                self.assertEqual(draft.count('data:image/png'), 1, 'the first image is kept')
+                self.assertIn('![Image kept in the Google Doc][image2]', draft)
+                view = desk_jobs.view(self.root, ident)
+                self.assertEqual(view['kept_images'], ['image2'])
+                import shutil
+
+                shutil.rmtree(self.root)
+                studio.initialize(self.root)
+
+    def test_a_send_and_a_re_read_leave_the_kept_image_alone(self):
+        client = self.client(True)
+        ident = self.start(client)
+        draft = desk.read(self.root, ident)
+        part = draft['sections'][0]['id'] if draft['sections'] else 'opening'
+        for part in ['opening'] + [s['id'] for s in draft['sections']]:
+            text = desk.text_of(draft, part)
+            if 'about harbours' in text:
+                desk.save(
+                    self.root,
+                    ident,
+                    draft['revision'],
+                    part,
+                    text.replace('about harbours', 'about ports'),
+                )
+                break
+        with patch.object(google_drive, 'Client', return_value=client):
+            plan = desk.dispatch(self.root, 'google-plan', {'id': ident, 'mode': 'auto'})
+        self.assertEqual(
+            [(p['kind'], p['before'], p.get('after')) for p in plan['proposals']],
+            [('edit', 'harbours', 'ports')],
+        )
+        # Read again, the same Doc reads the same way: nothing changed on Google's side.
+        directory, record = studio.item(self.root, 'articles', ident)
+        import google_workflow as gw
+
+        baseline = gw.snapshot_path(
+            directory, record['google']['baselines']['draft']['transfer'], 'document'
+        ).read_text()
+        with tempfile.TemporaryDirectory() as folder:
+            rt.capture(client, 'fixture-doc', 't.0', Path(folder) / 'again')
+            again = (Path(folder) / 'again' / 'document.md').read_text()
+        self.assertEqual(again, baseline)
 
 
 if __name__ == '__main__':

@@ -524,6 +524,53 @@ def image_order(value):
     return found
 
 
+# A blog's text files go to its Team Hub, each up to hub_store.MAX_TEXT (1 MiB), and its
+# DRAFT.md, ORIGINAL.md, desk images and read snapshots each carry the image data as text. So
+# images are kept in document order while their data stays within this room, leaving the
+# rest for the words and the desk's versions; every image after that stays in the Google Doc.
+IMAGE_ROOM = 600 * 1024
+KEPT_ALT = 'Image kept in the Google Doc'
+_DEFINED = re.compile(r'(?m)^\[(image[0-9]+)\]: <(data:[^>]+)>[ \t]*$')
+_REFERRED = re.compile(r'!\[([^\[\]\n]*)\]\[(image[0-9]+)\]')
+
+
+def fit_images(markdown, room=IMAGE_ROOM):
+    """A Doc's Markdown with its images' data kept in document order while it fits `room`;
+    each image after that is a reference with no data, `![Image kept in the Google Doc][…]`,
+    its image staying in the Doc. Returns (markdown, how many stayed in the Doc). The same
+    images always fit the same way, whichever way the Doc was read."""
+    defined = {match[1]: match[2] for match in _DEFINED.finditer(markdown)}
+    order = []
+    for match in _REFERRED.finditer(markdown):
+        if match[2] in defined and match[2] not in order:
+            order.append(match[2])
+    order += [label for label in defined if label not in order]
+    used, kept = 0, []
+    for label in order:
+        used += len(defined[label])
+        if used > room or kept:
+            kept.append(label)
+    if not kept:
+        return markdown, 0
+    gone, ending = set(kept), '\n' if markdown.endswith('\n') else ''
+    markdown = _DEFINED.sub(lambda match: '' if match[1] in gone else match[0], markdown)
+    markdown = _REFERRED.sub(
+        lambda match: '![' + KEPT_ALT + '][' + match[2] + ']' if match[2] in gone else match[0],
+        markdown,
+    )
+    markdown = re.sub(r'\n{3,}', '\n\n', markdown).rstrip('\n') + ending
+    return markdown, len(kept)
+
+
+def kept_like(rendered, markdown):
+    """`rendered` with each image `markdown` keeps in the Doc written as kept there too."""
+    kept = {match[2] for match in _REFERRED.finditer(markdown) if match[1] == KEPT_ALT}
+    return _REFERRED.sub(
+        lambda match: '![' + KEPT_ALT + '][' + match[2] + ']' if match[2] in kept else match[0],
+        rendered,
+    )
+
+
 def images_in(markdown):
     """The image data a lenient read defined, by number: [data URI or None]."""
     found = {}

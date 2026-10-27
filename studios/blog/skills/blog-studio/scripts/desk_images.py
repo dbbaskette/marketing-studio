@@ -446,6 +446,23 @@ def missing(draft, held=None):
     return found
 
 
+KEPT_ALT = 'Image kept in the Google Doc'  # as google_suggestions.KEPT_ALT writes it
+
+
+def kept_in_doc(draft):
+    """The labels of the images the text refers to as kept in the Google Doc (too large for
+    the blog's shared files), each once, that the draft holds no data for."""
+    images = entries(draft.get('images'))
+    held = {key(label) for label in images}
+    found = []
+    for text in _texts(draft):
+        for match in REFERENCE.finditer(_masked(text)):
+            label = (match.group(2) or match.group(1)).strip()
+            if match.group(1) == KEPT_ALT and key(label) not in held and label not in found:
+                found.append(label)
+    return found
+
+
 def found_in(texts, labels):
     """{key: entry} for each label a text defines image data for, the first text to define
     it counting, read once over the texts and stopping when every label is found."""
