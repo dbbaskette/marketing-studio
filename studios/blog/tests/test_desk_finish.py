@@ -2,7 +2,9 @@
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
+from pathlib import Path
 import secrets
+import tempfile
 import unittest
 
 import blog_runner
@@ -11,7 +13,7 @@ import desk_finish
 import desk_jobs
 import studio
 import tool_jobs
-from test_desk import DRAFT, GOOGLE, IMAGE_TWO, DeskCase
+from test_desk import DRAFT, GOOGLE, IMAGE_ONE, IMAGE_TWO, DeskCase
 from test_desk_team import TeamCase
 
 
@@ -618,7 +620,8 @@ class CopyEditTests(ToolCase):
             self.act('apply', seen=seen, job=job, items=[{'id': 'p2', 'after': pasted}])
         self.assertEqual(self.draft()['title'], title)
         shown = self.act('apply', seen=seen, job=job, items=[{'id': 'p1'}, {'id': 'p2'}])
-        self.assertEqual(shown['finished'], {'applied': 1, 'left': ['p1']})
+        # The one left takes in the word the other changed, and waits.
+        self.assertEqual(shown['finished'], {'applied': 1, 'left': ['p1'], 'carried': 1})
         self.assertEqual(self.draft()['title'], 'A synthetic heading, fixed')
         self.assertNotIn('data:image', json.dumps(self.draft()))
 
@@ -893,7 +896,8 @@ class ReviewTests(ToolCase):
 
 class MixedReviewTests(ToolCase):
     """Check spelling and grammar with human-sounding suggestions: Copy edit, then Humanize
-    at the chosen strength, their suggestions together, each retiring the others it covers."""
+    at the chosen strength, their suggestions together and independent: accepting one changes
+    another only where it changed the other's words."""
 
     def setUp(self):
         super().setUp()
@@ -944,31 +948,126 @@ class MixedReviewTests(ToolCase):
             self.check(humanize='loud')
 
     def test_copy_edits_suggestions_can_be_accepted_while_humanize_works(self):
+        desk.save(
+            self.root,
+            self.ident,
+            self.seen,
+            self.second,
+            'Agentic AI is here. Their are two parser. Agentic tools are there.',
+        )
+        self.seen += 1
         first = self.check(humanize='light')
         self.ready(
             first,
-            {'suggestions': [self.fix('Their are two parser.', 'There are two parsers.')]},
+            {
+                'suggestions': [
+                    self.fix('Agentic AI', 'agentic AI', kind='consistency'),
+                    self.fix('Their are two parser.', 'There are two parsers.'),
+                    self.fix('Agentic tools', 'agentic tools', kind='consistency'),
+                ]
+            },
         )
         shown = desk_jobs.view(self.root, self.ident)
         self.assertEqual(shown['working']['kind'], 'finish-humanize')
         job = shown['finishing']['copyedit']['job']
-        done = self.act('apply', seen=shown['revision'], job=job, items=[{'id': 'p1'}])
-        self.assertEqual(done['finished']['applied'], 1)
-        self.assertEqual(self.draft()['sections'][1]['text'], 'There are two parsers.')
-        # A Humanize suggestion for words Copy edit already changed is dropped as it lands.
+        items = [{'id': 'p1'}, {'id': 'p2'}, {'id': 'p3'}]
+        done = self.act('apply', seen=shown['revision'], job=job, items=items)
+        self.assertEqual(done['finished']['applied'], 3)
+        self.assertEqual(
+            self.draft()['sections'][1]['text'],
+            'agentic AI is here. There are two parsers. agentic tools are there.',
+        )
+        # Humanize read the text before those fixes. Its suggestions for words they changed
+        # take the fixes in where they kept those words, and otherwise land retired, saying
+        # why, never silently dropped.
         second = desk_jobs.jobs(self.root, self.ident)[-1]
         self.ready(
             second,
             {
                 'suggestions': [
+                    self.fix('Agentic AI is here.', 'Here, Agentic AI has arrived.'),
                     self.fix('Their are two parser.', 'Two parsers exist.'),
+                    self.fix('Agentic tools are there.', 'Agentic tools sit there.'),
                     self.fix('We leverage a robust parser.', 'We use a parser.', part=self.first),
+                    self.fix('Not in the text.', 'Nowhere.'),
                 ]
             },
         )
         found = self.shown('humanize')
-        self.assertEqual([i['before'] for i in found['items']], ['We leverage a robust parser.'])
-        self.assertEqual(found['dropped'], 1)
+        self.assertEqual(
+            [(i['before'], i.get('after'), i['state'], i['present']) for i in found['items']],
+            [
+                ('agentic AI is here.', 'Here, agentic AI has arrived.', 'open', True),
+                ('Their are two parser.', 'Two parsers exist.', 'retired', False),
+                ('tools are there.', 'tools sit there.', 'open', True),
+                ('We leverage a robust parser.', 'We use a parser.', 'open', True),
+            ],
+        )
+        self.assertEqual(found['dropped'], 1, 'only the one that was never in the text')
+        self.assertEqual(found['items'][1]['reason'], desk_finish.CHANGED)
+        self.assertEqual(found['items'][1]['retired_by'], {'job': job, 'id': 'p2'})
+        self.assertEqual(found['items'][0]['carried'], [{'job': job, 'id': 'p1'}])
+        done = self.act(
+            'apply',
+            seen=self.draft()['revision'],
+            job=found['job'],
+            items=[{'id': 'p1'}, {'id': 'p3'}],
+        )
+        self.assertEqual(
+            self.draft()['sections'][1]['text'],
+            'Here, agentic AI has arrived. There are two parsers. agentic tools sit there.',
+        )
+
+    def test_a_late_rewrite_names_the_fix_accepted_with_an_alternative(self):
+        first = self.check(humanize='light')
+        self.ready(
+            first,
+            {
+                'suggestions': [
+                    self.fix(
+                        'Their are two parser.',
+                        'There are two parsers.',
+                        kind='wording',
+                        alternatives=['Two parsers are here.'],
+                    )
+                ]
+            },
+        )
+        shown = desk_jobs.view(self.root, self.ident)
+        job = shown['finishing']['copyedit']['job']
+        self.act('apply', seen=shown['revision'], job=job, items=[{'id': 'p1', 'alternative': 0}])
+        self.assertEqual(self.draft()['sections'][1]['text'], 'Two parsers are here.')
+        self.ready(
+            desk_jobs.jobs(self.root, self.ident)[-1],
+            {'suggestions': [self.fix('Their are two parser.', 'Two parsers exist.')]},
+        )
+        item = self.shown('humanize')['items'][0]
+        self.assertEqual((item['state'], item['reason']), ('retired', desk_finish.CHANGED))
+        self.assertEqual(item['retired_by'], {'job': job, 'id': 'p1'})
+
+    def test_a_cut_beside_a_moved_edge_leaves_no_double_space(self):
+        self.write('A there the goal. “Files two AI café”!')
+        fixes = self.offer(
+            [self.fix('the goal. “Files', 'the goal. “'), self.fix('two AI', 'zq two AI')],
+            kind='finish-copyedit',
+        )
+        self.accept(fixes, {'id': 'p2'})
+        item = desk_finish.read(self.root, self.ident, fixes)['items'][0]
+        self.assertEqual(item['state'], 'open')
+        self.accept(fixes, {'id': 'p1'})
+        self.assertNotIn('  ', self.draft()['sections'][1]['text'])
+
+    def test_a_rewrite_of_words_edited_by_hand_meanwhile_lands_retired_saying_so(self):
+        first = self.check(humanize='light')
+        self.ready(first, {'suggestions': []})
+        desk.save(self.root, self.ident, self.draft()['revision'], self.second, 'Two parsers.')
+        self.ready(
+            desk_jobs.jobs(self.root, self.ident)[-1],
+            {'suggestions': [self.fix('Their are two parser.', 'Two parsers exist.')]},
+        )
+        item = self.shown('humanize')['items'][0]
+        self.assertEqual((item['state'], item['reason']), ('retired', desk_finish.EDITED))
+        self.assertNotIn('retired_by', item)
 
     def fix(self, before, after, part=None, why='A fix.', **extra):
         return {'part': part or self.second, 'before': before, 'after': after, 'why': why, **extra}
@@ -1092,75 +1191,303 @@ class MixedReviewTests(ToolCase):
         kept = desk.versions(self.root, self.ident, self.first)[0]
         self.assertEqual(kept['source'], 'finishing')
 
-    def test_accepting_one_retires_the_others_that_covered_its_words_from_either_tool(self):
-        text = 'We leverage a robust parser. It reads 12 files in 3 seconds at Acme Labs.'
+    def write(self, text, part=None):
+        desk.save(self.root, self.ident, self.draft()['revision'], part or self.second, text)
+
+    def states(self, job):
+        return [item['state'] for item in desk_finish.read(self.root, self.ident, job)['items']]
+
+    def accept(self, job, *entries, **extra):
+        seen = self.draft()['revision']
+        return self.act('apply', seen=seen, job=job, items=list(entries), **extra)
+
+    def test_a_fix_accepted_first_keeps_each_rewrite_independent_or_retires_it(self):
+        self.write('Agentic AI is here. Their are two parser.')
         fixes = self.offer(
             [
-                {
-                    'part': self.first,
-                    'before': 'We leverage a robust parser.',
-                    'after': 'We leverage a robust parser now.',
-                    'kind': 'wording',
-                },
-                {
-                    'part': self.second,
-                    'before': 'Their are two parser.',
-                    'after': 'There are two parsers.',
-                    'kind': 'grammar',
-                },
+                self.fix('Agentic AI', 'agentic AI', kind='consistency'),
+                self.fix('Their are', 'There are', kind='grammar'),
             ],
             kind='finish-copyedit',
         )
         human = self.offer(
             [
-                # Starts where the fix starts; its words would still be in the text after it.
-                {'part': self.first, 'before': 'We leverage', 'after': 'We rely on'},
-                {
-                    'part': self.first,
-                    'before': 'It reads 12 files',
-                    'after': 'It reads 12 files fast',
-                },
-                {'part': self.second, 'before': 'two parser', 'after': 'a pair of parsers'},
-            ],
+                self.fix('Agentic AI is here.', 'Agentic AI has arrived.', flag=''),
+                self.fix('Their are two parser.', 'Two parsers exist.', flag=''),
+            ]
         )
-        self.act('apply', seen=self.seen, job=fixes, items=[{'id': 'p1'}])
+        done = self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'carried': 1})
+        item = desk_finish.read(self.root, self.ident, human)['items'][0]
         self.assertEqual(
-            self.draft()['sections'][0]['text'], text.replace('parser.', 'parser now.', 1)
+            (item['state'], item['before'], item['after']),
+            ('open', 'AI is here.', 'AI has arrived.'),
+            'the rewrite keeps only its own change, with context from the text',
         )
-        states = [i['state'] for i in desk_finish.read(self.root, self.ident, human)['items']]
-        self.assertEqual(states, ['retired', 'open', 'open'])
+        self.assertEqual(item['carried'], [{'job': fixes, 'id': 'p1'}])
+        # A rewrite that rewrote the fixed words would undo the fix: it retires.
+        done = self.accept(fixes, {'id': 'p2'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'retired': 1})
+        item = desk_finish.read(self.root, self.ident, human)['items'][1]
+        self.assertEqual((item['state'], item['reason']), ('retired', desk_finish.CHANGED))
+        self.assertEqual(item['retired_by'], {'job': fixes, 'id': 'p2'})
+        # Kept with the waiting set: the view, as after a reload, shows them as they are now.
         shown = desk_jobs.view(self.root, self.ident)['finishing']['humanize']['items']
-        self.assertTrue(shown[0]['present'], 'its words are still there, but it is retired')
-        with self.assertRaisesRegex(ValueError, 'no longer fits'):
-            self.act('apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p1'}])
-        # The other way round: a Humanize suggestion accepted retires the fix it covered.
-        self.act('apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p3'}])
-        states = [i['state'] for i in desk_finish.read(self.root, self.ident, fixes)['items']]
-        self.assertEqual(states, ['applied', 'retired'])
-        self.assertEqual(self.draft()['sections'][1]['text'], 'Their are a pair of parsers.')
+        self.assertEqual(
+            [(i['before'], i['present'], i['state']) for i in shown],
+            [('AI is here.', True, 'open'), ('Their are two parser.', False, 'retired')],
+        )
+        self.accept(human, {'id': 'p1'})
+        self.assertEqual(
+            self.draft()['sections'][1]['text'], 'agentic AI has arrived. There are two parser.'
+        )
+        self.assertEqual(self.states(human), ['applied', 'retired'])
+        self.assertEqual(self.states(fixes), ['applied', 'applied'])
 
-    def test_two_suggestions_that_start_together_never_both_apply_at_once(self):
-        job = self.offer(
+    def test_a_rewrite_of_the_whole_sentence_takes_in_a_fix_only_where_it_kept_its_words(self):
+        self.write('Agentic AI is here. Agentic tools are there.')
+        fixes = self.offer(
             [
-                {
-                    'part': self.first,
-                    'before': 'We leverage a robust parser.',
-                    'after': 'We leverage a robust parser today.',
-                },
-                {'part': self.first, 'before': 'We leverage', 'after': 'We use'},
-                {'part': self.second, 'before': 'Their are', 'after': 'There are'},
+                self.fix('Agentic AI', 'agentic AI', kind='consistency'),
+                self.fix('Agentic tools', 'agentic tools', kind='consistency'),
             ],
             kind='finish-copyedit',
         )
-        shown = self.act(
-            'apply', seen=self.seen, job=job, items=[{'id': 'p1'}, {'id': 'p2'}, {'id': 'p3'}]
+        human = self.offer(
+            [
+                self.fix('Agentic AI is here.', 'Here, Agentic AI has arrived.'),
+                self.fix('Agentic tools are there.', 'Agentive tools sit there.'),
+            ]
         )
-        self.assertEqual(shown['finished'], {'applied': 2, 'left': ['p2']})
+        done = self.accept(fixes, {'id': 'p1'}, {'id': 'p2'})
+        self.assertEqual(done['finished'], {'applied': 2, 'left': [], 'carried': 1, 'retired': 1})
+        items = desk_finish.read(self.root, self.ident, human)['items']
+        self.assertEqual(
+            (items[0]['state'], items[0]['before'], items[0]['after']),
+            ('open', 'agentic AI is here.', 'Here, agentic AI has arrived.'),
+        )
+        self.assertEqual(items[1]['state'], 'retired', 'it reworded the fixed words')
+        self.accept(human, {'id': 'p1'})
+        self.assertEqual(
+            self.draft()['sections'][1]['text'],
+            'Here, agentic AI has arrived. agentic tools are there.',
+        )
+
+    def test_a_rewrite_accepted_first_never_leaves_a_fix_that_would_undo_it(self):
+        self.write('Agentic AI is here. It reads 12 files in 3 seconds.')
+        fixes = self.offer(
+            [
+                self.fix('Agentic AI is here.', 'agentic AI is here.', kind='consistency'),
+                self.fix(
+                    'It reads 12 files in 3 seconds.',
+                    'It reads 12 files in three seconds.',
+                    kind='consistency',
+                ),
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer(
+            [
+                self.fix('Agentic AI is here.', 'Here, Agentic AI has arrived.'),
+                self.fix('It reads 12 files in 3 seconds.', 'In 3 seconds it reads 12 files.'),
+            ]
+        )
+        done = self.accept(human, {'id': 'p1'}, {'id': 'p2'})
+        self.assertEqual(done['finished'], {'applied': 2, 'left': [], 'carried': 1, 'retired': 1})
+        items = desk_finish.read(self.root, self.ident, fixes)['items']
+        self.assertEqual(
+            (items[0]['state'], items[0]['before'], items[0]['after']),
+            ('open', 'Agentic AI', 'agentic AI'),
+            'the fix shrinks to its own change, which the rewrite kept',
+        )
+        self.assertEqual(items[1]['state'], 'retired', 'the rewrite moved the words it fixes')
+        self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(
+            self.draft()['sections'][1]['text'],
+            'Here, agentic AI has arrived. In 3 seconds it reads 12 files.',
+        )
+
+    def test_a_rewrite_accepted_first_leaves_a_fix_it_kept_open_and_retires_one_it_removed(self):
+        fixes = self.offer(
+            [self.fix('Their are', 'There are', kind='grammar')], kind='finish-copyedit'
+        )
+        kept = self.offer([self.fix('Their are two parser.', 'Their are two parsers, it seems.')])
+        done = self.accept(kept, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': []})
+        item = done['finishing']['copyedit']['items'][0]
+        self.assertEqual(
+            (item['state'], item['before'], item['present']), ('open', 'Their are', True)
+        )
+        self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(self.draft()['sections'][1]['text'], 'There are two parsers, it seems.')
+        # A rewrite that takes the fixed words away retires the fix, saying why.
+        self.write('Their are two parser.')
+        fixes = self.offer(
+            [self.fix('Their are', 'There are', kind='grammar')], kind='finish-copyedit'
+        )
+        gone = self.offer([self.fix('Their are two parser.', 'Two parsers exist.')])
+        done = self.accept(gone, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'retired': 1})
+        item = done['finishing']['copyedit']['items'][0]
+        self.assertEqual(item['state'], 'retired')
+        self.assertEqual(item['reason'], 'Its words were changed by an accepted suggestion.')
+        self.assertEqual(item['retired_by'], {'job': gone, 'id': 'p1'})
+        with self.assertRaisesRegex(ValueError, 'no longer fits'):
+            self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(self.draft()['sections'][1]['text'], 'Two parsers exist.')
+
+    def test_suggestions_that_share_no_changed_words_stay_open_whichever_is_accepted(self):
+        fixes = self.offer(
+            [
+                self.fix('We leverage', 'We use', self.first, kind='wording'),
+                self.fix('Their', 'There', kind='spelling'),
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer(
+            [
+                self.fix('at Acme Labs.', 'for Acme Labs.', self.first),
+                self.fix('two parser.', 'two parsers.'),
+            ]
+        )
+        done = self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': []})
+        self.assertEqual(self.states(human), ['open', 'open'])
+        self.accept(human, {'id': 'p2'})
+        self.assertEqual(self.states(fixes), ['applied', 'open'])
+        self.assertNotIn('carried', desk_finish.read(self.root, self.ident, fixes)['items'][1])
+        self.accept(human, {'id': 'p1'})
+        self.accept(fixes, {'id': 'p2'})
+        draft = self.draft()
+        self.assertEqual(
+            draft['sections'][0]['text'],
+            'We use a robust parser. It reads 12 files in 3 seconds for Acme Labs.',
+        )
+        self.assertEqual(draft['sections'][1]['text'], 'There are two parsers.')
+
+    def test_a_cut_beside_an_accepted_word_keeps_that_word_as_context(self):
+        self.write('We really leverage AI here.')
+        fixes = self.offer(
+            [self.fix('really leverage', 'leverage'), self.fix('leverage', 'use')],
+            kind='finish-copyedit',
+        )
+        done = self.accept(fixes, {'id': 'p2'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'carried': 1})
+        item = desk_finish.read(self.root, self.ident, fixes)['items'][0]
+        self.assertEqual(
+            (item['state'], item['before'], item['after']), ('open', 'really use', 'use')
+        )
+        self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(self.draft()['sections'][1]['text'], 'We use AI here.')
+        # The same after a rewrite that changed only the word beside the cut.
+        self.write('We really leverage AI here.')
+        fixes = self.offer([self.fix('really leverage AI', 'leverage AI')], kind='finish-copyedit')
+        human = self.offer([self.fix('We really leverage AI here.', 'We really use AI here.')])
+        self.accept(human, {'id': 'p1'})
+        item = desk_finish.read(self.root, self.ident, fixes)['items'][0]
+        self.assertEqual(
+            (item['state'], item['before'], item['after']), ('open', 'really use', 'use')
+        )
+        self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(self.draft()['sections'][1]['text'], 'We use AI here.')
+
+    def test_two_that_add_words_at_one_place_never_both_land(self):
+        for first, then in (('fix', 'human'), ('human', 'fix')):
+            with self.subTest(first=first):
+                self.write('We need two files here.')
+                jobs = {
+                    'fix': self.offer(
+                        [self.fix('two files', 'the two files')], kind='finish-copyedit'
+                    ),
+                    'human': self.offer([self.fix('two files here.', 'the two files are here.')]),
+                }
+                done = self.accept(jobs[first], {'id': 'p1'})
+                self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'retired': 1})
+                self.assertEqual(self.states(jobs[then]), ['retired'])
+                self.assertNotIn('the the', self.draft()['sections'][1]['text'])
+        self.write('We need two files. Then more.')
+        fixes = self.offer(
+            [self.fix('need two files', 'need two files today')], kind='finish-copyedit'
+        )
+        human = self.offer([self.fix('two files', 'both files today')])
+        self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(self.states(human), ['retired'], 'both add the same word at one place')
+        # Accept all of both lands one of them.
+        self.write('We need two files here.')
+        fixes = self.offer([self.fix('two files', 'the two files')], kind='finish-copyedit')
+        human = self.offer([self.fix('two files here.', 'the two files are here.')])
+        done = self.accept(fixes, {'id': 'p1'}, {'job': human, 'id': 'p1'}, all=True)
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'retired': 1})
+        self.assertEqual(self.draft()['sections'][1]['text'], 'We need the two files here.')
+
+    def test_context_from_beyond_a_suggestion_keeps_it_when_its_last_word_changes(self):
+        self.write('We ship the Café model now.')
+        fixes = self.offer([self.fix('Café model', 'Café model X')], kind='finish-copyedit')
+        human = self.offer([self.fix('model', 'Y')])
+        self.accept(human, {'id': 'p1'})
+        item = desk_finish.read(self.root, self.ident, fixes)['items'][0]
+        self.assertEqual(item['state'], 'open')
+        self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(self.draft()['sections'][1]['text'], 'We ship the Café Y X now.')
+
+    def test_a_word_added_onto_the_last_word_of_another_changes_its_words(self):
+        self.write('Each agent focus on one goal.')
+        fixes = self.offer(
+            [self.fix('Each agent focus on one goal.', 'Each agent focuses on one goal.')],
+            kind='finish-copyedit',
+        )
+        human = self.offer([self.fix('Each agent focus', 'Every agent keeps')])
+        done = self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'retired': 1})
+        self.assertEqual(self.states(human), ['retired'], 'its words are no longer whole there')
+
+    def test_two_that_start_together_both_apply_when_neither_changes_the_others_words(self):
+        job = self.offer(
+            [
+                self.fix(
+                    'We leverage a robust parser.', 'We leverage a robust parser today.', self.first
+                ),
+                self.fix('We leverage', 'We use', self.first),
+                self.fix('Their are', 'There are'),
+            ],
+            kind='finish-copyedit',
+        )
+        shown = self.accept(job, {'id': 'p1'}, {'id': 'p2'}, {'id': 'p3'})
+        self.assertEqual(shown['finished'], {'applied': 3, 'left': []})
         self.assertTrue(
-            self.draft()['sections'][0]['text'].startswith('We leverage a robust parser today.')
+            self.draft()['sections'][0]['text'].startswith('We use a robust parser today.')
         )
-        states = [i['state'] for i in desk_finish.read(self.root, self.ident, job)['items']]
-        self.assertEqual(states, ['applied', 'retired', 'applied'])
+        self.assertEqual(self.states(job), ['applied', 'applied', 'applied'])
+
+    def test_an_alternative_is_carried_too(self):
+        fixes = self.offer(
+            [
+                self.fix(
+                    'We leverage a robust parser.',
+                    'We use a robust parser.',
+                    self.first,
+                    kind='wording',
+                    flag='',
+                    alternatives=[
+                        {'after': 'We rely on a robust parser.', 'flag': ''},
+                        {'after': 'Our parser is robust.', 'flag': ''},
+                    ],
+                )
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer([self.fix('a robust parser', 'a sturdy parser', self.first)])
+        done = self.accept(human, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'carried': 1})
+        item = desk_finish.read(self.root, self.ident, fixes)['items'][0]
+        self.assertEqual(item['before'], 'We leverage a sturdy parser.')
+        self.assertEqual(item['after'], 'We use a sturdy parser.')
+        self.assertEqual(
+            [a['after'] for a in item['alternatives']],
+            ['We rely on a sturdy parser.', 'Our parser is sturdy.'],
+        )
+        self.accept(fixes, {'id': 'p1', 'alternative': 1})
+        self.assertTrue(self.draft()['sections'][0]['text'].startswith('Our parser is sturdy. It'))
 
     def test_accept_all_leaves_flagged_suggestions_from_both_tools(self):
         first = self.check(humanize='medium')
@@ -1249,92 +1576,181 @@ class MixedReviewTests(ToolCase):
         self.assertFalse(view['finishing']['humanize']['items'][0]['flag'])
         return view
 
-    def test_accept_all_never_retires_a_flagged_fix_from_the_other_tool(self):
-        view = self.flagged_fix_and_rewrite()
-        # Accept all as the page sends it: the unflagged fixes, then the unflagged rewrites.
-        for tool in ('copyedit', 'humanize'):
-            picked = [
-                {'id': i['id']}
-                for i in view['finishing'][tool]['items']
-                if i['state'] == 'open' and i['present'] and not i['flag']
-            ]
-            view = self.act(
-                'apply',
-                seen=view['revision'],
-                job=view['finishing'][tool]['job'],
-                items=picked,
-                all=True,
-            )
-        self.assertEqual(view['finished'], {'applied': 1, 'left': ['p1']})
-        states = {
-            t: [i['state'] for i in view['finishing'][t]['items']] for t in ('copyedit', 'humanize')
-        }
-        self.assertEqual(states, {'copyedit': ['open', 'applied'], 'humanize': ['open', 'applied']})
-        self.assertTrue(
-            view['finishing']['copyedit']['items'][0]['present'], 'the flagged fix waits'
-        )
-        self.assertIn('at Acme Labs.', self.draft()['sections'][0]['text'])
-        self.assertTrue(self.draft()['sections'][0]['text'].startswith('We use a parser.'))
-
-    def test_accept_all_with_only_a_rewrite_over_a_flagged_fix_changes_nothing(self):
-        view = self.flagged_fix_and_rewrite()
-        job = view['finishing']['humanize']['job']
-        done = self.act('apply', seen=view['revision'], job=job, items=[{'id': 'p1'}], all=True)
-        self.assertEqual(done['finished'], {'applied': 0, 'left': ['p1']})
-        self.assertEqual(done['revision'], view['revision'])
-        states = {
-            t: [i['state'] for i in done['finishing'][t]['items']] for t in ('copyedit', 'humanize')
-        }
-        self.assertEqual(states, {'copyedit': ['open', 'open'], 'humanize': ['open', 'open']})
-
-    def test_an_explicit_accept_still_retires_what_it_covers(self):
-        view = self.flagged_fix_and_rewrite()
-        job = view['finishing']['humanize']['job']
-        view = self.act('apply', seen=view['revision'], job=job, items=[{'id': 'p1'}])
-        self.assertEqual(view['finishing']['copyedit']['items'][0]['state'], 'retired')
-        self.assertTrue(
-            self.draft()['sections'][0]['text'].endswith(
-                'In 3 seconds it reads 12 files at Acme Labs.'
-            )
-        )
-
-    def test_a_retired_item_in_a_multi_item_accept_is_left_out_and_the_rest_apply(self):
+    def test_accept_all_lands_in_reading_order_shrinking_skipping_and_leaving_flagged_ones(self):
+        self.write('Agentic AI is here. Their are two parser.')
         fixes = self.offer(
             [
-                {
-                    'part': self.first,
-                    'before': 'We leverage a robust parser.',
-                    'after': 'We use a robust parser.',
-                }
+                self.fix('Agentic AI', 'agentic AI', kind='consistency'),
+                self.fix('Their are two parser.', 'There are two parsers.', kind='grammar'),
+                self.fix('robust parser', 'sturdy tool', self.first, kind='wording'),
+                self.fix('in 3 seconds', 'within 3 seconds', self.first, kind='wording'),
             ],
             kind='finish-copyedit',
         )
         human = self.offer(
             [
-                {
-                    'part': self.first,
-                    'before': 'We leverage a robust parser.',
-                    'after': 'We rely on a parser.',
-                },
-                {'part': self.second, 'before': 'Their are two parser.', 'after': 'Two parsers.'},
+                self.fix('Agentic AI is here.', 'Agentic AI has arrived.'),
+                self.fix('Their are two parser.', 'Two parsers exist.'),
+                self.fix(
+                    'It reads 12 files in 3 seconds',
+                    'It reads 15 files in 3 seconds',
+                    self.first,
+                    flag='Check the facts: this changes a number.',
+                ),
+                self.fix('We leverage a robust', 'We use a strong', self.first),
             ]
         )
-        self.act('apply', seen=self.seen, job=fixes, items=[{'id': 'p1'}])
+        with self.assertRaisesRegex(ValueError, 'Choose suggestions'):
+            self.accept(fixes, {'id': 'p1'}, {'job': 'f' * 32, 'id': 'p1'}, all=True)
+        # As the page sends it: every shown suggestion that is not flagged, from both sets.
+        done = self.accept(
+            fixes,
+            *({'id': name} for name in ('p1', 'p2', 'p3', 'p4')),
+            *({'job': human, 'id': name} for name in ('p1', 'p2', 'p4')),
+            all=True,
+        )
+        self.assertEqual(done['finished'], {'applied': 5, 'left': [], 'carried': 1, 'retired': 2})
+        draft = self.draft()
+        self.assertEqual(
+            draft['sections'][0]['text'],
+            'We use a strong parser. It reads 12 files within 3 seconds at Acme Labs.',
+        )
+        self.assertEqual(
+            draft['sections'][1]['text'], 'agentic AI has arrived. There are two parsers.'
+        )
+        self.assertEqual(self.states(fixes), ['applied', 'applied', 'retired', 'applied'])
+        self.assertEqual(self.states(human), ['applied', 'retired', 'open', 'applied'])
+        # The rewrite that started first landed; the fix whose words it changed retired, and
+        # the fix landed before the rewrite that reworded its words, which retired.
+        self.assertEqual(
+            desk_finish.read(self.root, self.ident, fixes)['items'][2]['retired_by'],
+            {'job': human, 'id': 'p4'},
+        )
+        self.assertEqual(
+            desk_finish.read(self.root, self.ident, human)['items'][1]['retired_by'],
+            {'job': fixes, 'id': 'p2'},
+        )
+        # The flagged one waits, shrunk to its own change, with its flag read again.
+        waiting = done['finishing']['humanize']['items'][2]
+        self.assertEqual(
+            (waiting['before'], waiting['after'], waiting['present']),
+            ('reads 12 files', 'reads 15 files', True),
+        )
+        self.assertIn('a number', waiting['flag'])
+        for part in (self.first, self.second):
+            self.assertEqual(
+                [v['source'] for v in desk.versions(self.root, self.ident, part)][:1],
+                ['finishing'],
+            )
+            self.assertEqual(
+                [v['source'] for v in desk.versions(self.root, self.ident, part)].count(
+                    'finishing'
+                ),
+                1,
+                'one version per part',
+            )
+
+    def test_accept_all_never_retires_a_flagged_fix_but_one_accept_may(self):
+        fixes = self.offer(
+            [
+                self.fix(
+                    'Acme Labs',
+                    'ACME Labs',
+                    self.first,
+                    kind='consistency',
+                    flag='Check the facts: this changes a name.',
+                ),
+                self.fix(
+                    'two parser',
+                    'three parsers',
+                    kind='grammar',
+                    flag='Check the facts: this changes a number.',
+                ),
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer(
+            [
+                self.fix(
+                    'It reads 12 files in 3 seconds at Acme Labs.',
+                    'In 3 seconds it reads 12 files at Acme Labs.',
+                    self.first,
+                ),
+                self.fix('Their are two parser.', 'There is a pair of parsers.'),
+            ]
+        )
+        # Accept all lands the rewrite that keeps the flagged fix's words, and leaves the one
+        # that would take them away, so the flagged fix still waits.
+        done = self.accept(human, {'id': 'p1'}, {'id': 'p2'}, all=True)
+        self.assertEqual(done['finished'], {'applied': 1, 'left': ['p2']})
+        self.assertEqual(self.states(fixes), ['open', 'open'])
+        self.assertEqual(self.states(human), ['applied', 'open'])
+        # One Accept of that rewrite is the person's say: the fix then retires.
+        done = self.accept(human, {'id': 'p2'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'retired': 1})
+        items = done['finishing']['copyedit']['items']
+        self.assertEqual(
+            [(i['state'], i['present']) for i in items], [('open', True), ('retired', False)]
+        )
+        self.assertEqual(items[1]['retired_by'], {'job': human, 'id': 'p2'})
+        self.assertEqual(self.states(fixes), ['open', 'retired'], 'as kept for a reload')
+
+    def test_accept_all_never_retires_a_fix_it_was_not_sent(self):
+        fixes = self.offer(
+            [self.fix('Their are', 'There are', kind='grammar')], kind='finish-copyedit'
+        )
+        human = self.offer([self.fix('Their are two parser.', 'Two parsers exist.')])
+        done = self.accept(human, {'id': 'p1'}, all=True)  # Show: Sounds human.
+        self.assertEqual(done['finished'], {'applied': 0, 'left': ['p1']})
+        self.assertEqual((self.states(fixes), self.states(human)), (['open'], ['open']))
+
+    def test_accept_all_leaves_a_flagged_pick_for_the_person(self):
+        human = self.offer(
+            [
+                self.fix(
+                    'It reads 12 files',
+                    'It reads 15 files',
+                    self.first,
+                    flag='Check the facts: this changes a number.',
+                )
+            ]
+        )
         revision = self.draft()['revision']
-        done = self.act('apply', seen=revision, job=human, items=[{'id': 'p1'}, {'id': 'p2'}])
+        done = self.accept(human, {'id': 'p1'}, all=True)
+        self.assertEqual(done['finished'], {'applied': 0, 'left': ['p1']})
+        self.assertEqual(self.draft()['revision'], revision)
+        self.assertEqual(self.states(human), ['open'])
+
+    def test_a_retired_item_in_a_multi_item_accept_is_left_out_and_the_rest_apply(self):
+        fixes = self.offer(
+            [
+                self.fix(
+                    'We leverage a robust parser. It reads',
+                    'We use a robust parser, and it reads',
+                    self.first,
+                )
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer(
+            [
+                self.fix('It reads 12 files', 'This reads 12 files', self.first),
+                self.fix('Their are two parser.', 'Two parsers.'),
+            ]
+        )
+        self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(self.states(human), ['retired', 'open'])
+        done = self.accept(human, {'id': 'p1'}, {'id': 'p2'})
         self.assertEqual(done['finished'], {'applied': 1, 'left': ['p1']})
         self.assertEqual(self.draft()['sections'][1]['text'], 'Two parsers.')
-        states = [i['state'] for i in desk_finish.read(self.root, self.ident, human)['items']]
-        self.assertEqual(states, ['retired', 'applied'])
+        self.assertEqual(self.states(human), ['retired', 'applied'])
         with self.assertRaisesRegex(ValueError, 'no longer fits'):
-            self.act('apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p1'}])
+            self.accept(human, {'id': 'p1'})
         with self.assertRaisesRegex(ValueError, 'Choose suggestions'):
-            self.act(
-                'apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p2'}], all='yes'
-            )
+            self.accept(human, {'id': 'p2'}, all='yes')
         # Accept all with only a retired item in it changes nothing, and says so.
         revision = self.draft()['revision']
-        done = self.act('apply', seen=revision, job=human, items=[{'id': 'p1'}], all=True)
+        done = self.accept(human, {'id': 'p1'}, all=True)
         self.assertEqual(done['finished'], {'applied': 0, 'left': ['p1']})
         self.assertEqual(self.draft()['revision'], revision)
 
@@ -1392,6 +1808,56 @@ class MixedReviewTests(ToolCase):
                 self.assertNotIn('data:image', job['guidance'])
                 self.assertNotIn(IMAGE_TWO, json.dumps(job))
                 self.assertIn('![][image1]', job['payload']['opening'])
+
+
+class ReviewSpeedTests(FinishCase):
+    """Accept all over many suggestions in one long part stays quick: it holds the studio
+    lock while it works."""
+
+    def test_accept_all_of_120_suggestions_in_a_5k_part_takes_seconds_not_minutes(self):
+        import random
+        import time
+
+        r = random.Random(7)
+        words = (
+            'agent agentic tools parser data model team runs fast slow robust goal focus '
+            'reads files café résumé naïve keeps every each there here'
+        ).split()
+
+        def sentence():
+            picked = [r.choice(words) for _ in range(r.randint(6, 12))]
+            return ' '.join(picked).capitalize() + r.choice('.!?')
+
+        paragraphs = [' '.join(sentence() for _ in range(6)) for _ in range(16)]
+        text = '\n\n'.join(paragraphs)
+        self.assertGreater(len(text), 5000)
+        desk.save(self.root, self.ident, 1, self.first, text)
+        found = desk.text_of(self.draft(), self.first)
+        fixes, rewrites, used = [], [], set()
+        while len(fixes) < 60 or len(rewrites) < 60:
+            size = 3 if len(fixes) < 60 else 7
+            tokens = found.split(' ')
+            start = r.randrange(0, len(tokens) - size)
+            before = ' '.join(tokens[start : start + size])
+            if '\n' in before or before in used or found.count(before) != 1:
+                continue
+            used.add(before)
+            changed = before.split(' ')
+            for at in r.sample(range(size), 1 if size == 3 else 3):
+                changed[at] = 'zq' + str(len(used)) + str(at)
+            row = {'part': self.first, 'before': before, 'after': ' '.join(changed), 'flag': ''}
+            (fixes if size == 3 else rewrites).append(row)
+        copyedit = self.offer(fixes, kind='finish-copyedit')
+        humanize = self.offer(rewrites)
+        entries = [{'job': copyedit, 'id': 'p%d' % n} for n in range(1, 61)]
+        entries += [{'job': humanize, 'id': 'p%d' % n} for n in range(1, 61)]
+        began = time.monotonic()
+        done = self.act(
+            'apply', seen=self.draft()['revision'], job=copyedit, items=entries, all=True
+        )
+        took = time.monotonic() - began
+        self.assertGreater(done['finished']['applied'], 60)
+        self.assertLess(took, 5, 'Accept all took %.1f seconds' % took)
 
 
 class VoiceTests(ToolCase):
@@ -1851,12 +2317,20 @@ class BeforePublishingTests(ToolCase):
             self.act('google-plan', mode='auto')
         self.assertFalse(desk_jobs.view(self.root, self.ident)['google_suggestions'])
 
-    def test_wording_changes_become_quoted_suggestions_and_the_rest_is_counted(self):
+    def test_every_change_becomes_a_suggestion_or_a_comment(self):
         baseline = '## Heading\n\nThe delay is long.\n\nKeep it.\n\nGone soon.\n'
         body = '# Title\n\n## Heading\n\nThe wait is long.\n\nKeep **it**.\n'
         found, left, _ = desk_finish.google_changes(baseline, body)
-        self.assertEqual([(f['before'], f['after']) for f in found], [('delay', 'wait')])
-        self.assertEqual(left, 3)  # The title line added, a formatting change, a paragraph cut.
+        self.assertEqual(
+            [(f['kind'], f['before'], f.get('after'), f.get('remove')) for f in found],
+            [
+                ('edit', 'delay', 'wait', None),
+                ('comment', 'it', None, None),  # Formatting the Doc shows no words for.
+                ('edit', 'Gone soon.', '', True),  # A paragraph cut, with its break.
+            ],
+        )
+        self.assertEqual(found[1]['reason'], 'Make “it” bold.')
+        self.assertEqual(left, 0, 'the desk’s title line is the Doc’s name, not a change')
 
 
 class ReviewFixTests(ToolCase):
@@ -2045,7 +2519,7 @@ class GooglePairingTests(unittest.TestCase):
 
     def changes(self, baseline, body):
         found, left, _ = desk_finish.google_changes(baseline, body)
-        return [(f['before'], f['after'], f.get('occurrence')) for f in found], left
+        return [(f['before'], f.get('after'), f.get('occurrence')) for f in found], left
 
     def test_a_deleted_paragraph_is_not_rewritten_into_its_edited_neighbour(self):
         self.assertEqual(
@@ -2053,7 +2527,7 @@ class GooglePairingTests(unittest.TestCase):
                 'We ship on Monday at noon.\n\nWe ship on Friday at noon.\n',
                 'We ship on Friday at nine.\n',
             ),
-            ([('noon', 'nine', None)], 1),
+            ([('We ship on Monday at noon.', '', None), ('noon', 'nine', None)], 0),
         )
         self.assertEqual(
             self.changes(
@@ -2061,7 +2535,13 @@ class GooglePairingTests(unittest.TestCase):
                 'Step two: install the checker on each machine.\n',
                 'Step two: install the reporter on each machine.\n',
             ),
-            ([('checker', 'reporter', None)], 1),
+            (
+                [
+                    ('Step one: install the parser on each machine.', '', None),
+                    ('checker', 'reporter', None),
+                ],
+                0,
+            ),
         )
 
     def test_pairs_never_cross(self):
@@ -2069,7 +2549,17 @@ class GooglePairingTests(unittest.TestCase):
             'Alpha one two three.\n\nBeta four five six.\n',
             'Beta four five seven.\n\nAlpha one two three.\n',
         )
-        self.assertEqual(left, 2)  # A move is not a wording change; it stays on the desk.
+        # A move is a paragraph added before the one it passes and the old one removed.
+        self.assertEqual(
+            (found, left),
+            (
+                [
+                    ('Alpha', 'Beta four five seven.\nAlpha', None),
+                    ('Beta four five six.', '', None),
+                ],
+                0,
+            ),
+        )
 
     def test_each_copy_of_a_repeated_paragraph_is_located_on_its_own(self):
         found, _, _ = desk_finish.google_changes(
@@ -2128,20 +2618,40 @@ class GooglePairingTests(unittest.TestCase):
             with self.subTest(edited=edited):
                 self.assertEqual(self.occurrence(baseline, '\n\n'.join(lines) + '\n'), (copy, 3))
 
-    def test_a_change_only_to_a_link_address_is_left_on_the_desk(self):
-        for baseline, body in (
+    def test_a_change_only_to_a_link_address_or_formatting_is_a_comment_on_its_words(self):
+        for baseline, body, words, said in (
             (
                 'See [docs](https://x.com/setup).\n\nRun setup first.\n',
                 'See [docs](https://x.com/install).\n\nRun setup first.\n',
+                'docs',
+                'Link changed: “docs” now points to https://x.com/install.',
             ),
             (
                 'Read [the setup guide](https://x.com/setup) before setup.\n',
                 'Read [the setup guide](https://x.com/install) before setup.\n',
+                'the setup guide',
+                'Link changed: “the setup guide” now points to https://x.com/install.',
             ),
-            ('Keep it short.\n', 'Keep it **short**.\n'),
+            ('Keep it short.\n', 'Keep it **short**.\n', 'short', 'Make “short” bold.'),
+            (
+                'Read [the guide](https://x.com/a) now.\n',
+                'Read the guide now.\n',
+                'the guide',
+                'Remove the link from “the guide”.',
+            ),
+            (
+                '### Heading\n\nText.\n',
+                'Heading\n\nText.\n',
+                'Heading',
+                'Make this paragraph normal text.',
+            ),
         ):
             with self.subTest(body=body):
-                self.assertEqual(self.changes(baseline, body), ([], 1))
+                found, left, _ = desk_finish.google_changes(baseline, body)
+                self.assertEqual(
+                    ([(f['kind'], f['before'], f['reason']) for f in found], left),
+                    ([('comment', words, said)], 0),
+                )
 
     def test_a_word_changed_beside_a_link_is_found_in_the_visible_text(self):
         found, left, expected = desk_finish.google_changes(
@@ -2154,59 +2664,115 @@ class GooglePairingTests(unittest.TestCase):
         )
         self.assertEqual(expected[found[0]['id']]['text'], 'Read the setup guide before setup.')
 
+    def test_a_table_row_changed_is_a_comment_beside_the_table(self):
+        found, left, _ = desk_finish.google_changes(
+            'Before the table.\n\n| a | b |\n|---|---|\n\nAfter it.\n',
+            'Before the table.\n\n| a | c |\n|---|---|\n\nAfter it.\n',
+        )
+        self.assertEqual(
+            ([(f['kind'], f['before']) for f in found], left),
+            ([('comment', 'Before the table.')], 0),
+        )
+        self.assertIn('The table row “| a | b |” reads “| a | c |”', found[0]['reason'])
+
     def test_escapes_read_as_the_characters_they_stand_for(self):
         self.assertEqual(
             desk_finish._visible('A \\*star\\* and snake\\_case.'), 'A *star* and snake_case.'
         )
 
-    def test_a_quote_found_in_another_paragraph_is_not_sent_even_with_equal_counts(self):
-        from unittest.mock import patch
+    def guard(self, doc_lines, baseline, body):
+        """What the placement guard sends to a Doc of these paragraphs."""
+        import test_google_suggestions as fixtures
 
-        import google_roundtrip
-        import google_suggestions
+        inline = fixtures.paragraph_doc(*[([(line + '\n', {})], {}, None) for line in doc_lines])
+        found, _, expected = desk_finish.google_changes(baseline, body)
+        document = {'document_id': 'fixture-doc', 'tab_ids': ['t.0']}
+        free, waiting, unplaced, _, _ = desk_finish._not_pending(inline, document, found, expected)
+        return [(f['kind'], f['before']) for f in free], waiting, unplaced, free
 
-        found, _, expected = desk_finish.google_changes(
+    def test_a_quote_found_in_another_paragraph_goes_as_a_comment_on_a_certain_one(self):
+        # The Doc's second paragraph has other words than the desk was made from: the change
+        # is not suggested there, but goes as a comment on the paragraph that is certain.
+        free, waiting, unplaced, found = self.guard(
+            ['Run setup first.', 'Then run setup again later.'],
             'Run setup first.\n\n**Then** run setup again.\n',
             'Run setup first.\n\n**Then** run install again.\n',
         )
-        document = {'document_id': 'd', 'tab_ids': ['t.0']}
-        other = {'elements': [{'textRun': {'content': 'Run setup first.\n'}}]}
-        with (
-            patch.object(google_suggestions, 'read_for_review', return_value=({}, {}, 'auto')),
-            patch.object(
-                google_suggestions, 'quote_positions', return_value=[('t.0', 1), ('t.0', 20)]
-            ),
-            patch.object(
-                google_suggestions, 'locate', return_value={'tab_id': 't.0', 'start_index': 1}
-            ),
-            patch.object(google_roundtrip, 'paragraph_at', return_value=(('t.0', 1), other)),
-        ):
-            free, waiting, unsure = desk_finish._not_pending(
-                object(), document, found, expected, 'auto'
-            )
-        self.assertEqual((free, waiting, unsure), ([], 0, 1))
+        self.assertEqual((free, waiting, unplaced), ([('comment', 'Run setup first.')], 0, 0))
+        self.assertIn('“Then run setup again.” reads “Then run install again.”', found[0]['reason'])
 
-    def test_a_quote_the_doc_shows_another_number_of_times_is_not_sent(self):
-        from unittest.mock import patch
-
-        import google_suggestions
-
-        found, _, expected = desk_finish.google_changes(
+    def test_a_quote_the_doc_shows_another_number_of_times_is_never_suggested(self):
+        free, waiting, unplaced, _ = self.guard(
+            ['Run setup first.', 'Then run setup again.', 'Then run setup again.'],
             'Run setup first.\n\n**Then** run setup again.\n',
             'Run setup first.\n\n**Then** run install again.\n',
         )
-        document = {'document_id': 'd', 'tab_ids': ['t.0']}
-        with (
-            patch.object(google_suggestions, 'read_for_review', return_value=({}, {}, 'auto')),
-            patch.object(google_suggestions, 'quote_positions', return_value=[('t.0', 1)] * 3),
-        ):
-            free, waiting, unsure = desk_finish._not_pending(
-                object(), document, found, expected, 'auto'
-            )
-        self.assertEqual((free, waiting, unsure), ([], 0, 1))
+        self.assertEqual((free, waiting, unplaced), ([('comment', 'Run setup first.')], 0, 0))
+        # With no paragraph the Doc shows once, nothing is placed, and it is counted.
+        free, waiting, unplaced, _ = self.guard(
+            ['Then run setup again.', 'Then run setup again.'],
+            'Then run setup again.\n',
+            'Then run install again.\n',
+        )
+        self.assertEqual((free, waiting, unplaced), ([], 0, 1))
+
+    def test_a_comment_standing_for_several_changes_carries_each_ones_marker(self):
+        free, waiting, unplaced, found = self.guard(
+            ['Run setup first.', 'Then we run setup on every machine again later.'],
+            'Run setup first.\n\nThen we run setup on every machine again.\n',
+            'Run setup first.\n\nNow we run setup on every machine today.\n',
+        )
+        self.assertEqual((free, waiting, unplaced), ([('comment', 'Run setup first.')], 0, 0))
+        changes, _, _ = desk_finish.google_changes(
+            'Run setup first.\n\nThen we run setup on every machine again.\n',
+            'Run setup first.\n\nNow we run setup on every machine today.\n',
+        )
+        self.assertEqual(len(changes), 2)
+        for change in changes:
+            self.assertIn('[Blog Studio ' + change['id'] + ']', found[0]['reason'])
+
+    def test_a_comments_id_does_not_change_with_its_wording(self):
+        from unittest.mock import patch
+
+        case = ('Keep it short.\n', 'Keep it **short**.\n')
+        first = desk_finish.google_changes(*case)[0][0]['id']
+        with patch.object(desk_finish, '_restyle', return_value='Embolden “short”.'):
+            again = desk_finish.google_changes(*case)[0]
+        self.assertEqual((again[0]['id'], again[0]['reason']), (first, 'Embolden “short”.'))
+
+    def test_inserted_words_never_start_with_the_space_already_there(self):
+        for after in ('Second new item here.', 'Second 😀 item here.'):
+            with self.subTest(after=after):
+                (found,), _, _ = desk_finish.google_changes('Second item here.\n', after + '\n')
+                import google_suggestions
+
+                keep, end = google_suggestions.trimmed(found['before'], found['after'])
+                inserted = found['after'][keep : len(found['after']) - end]
+                self.assertFalse(inserted[0].isspace(), inserted)
+
+    def test_a_note_with_no_free_paragraph_nearby_goes_with_the_next_send(self):
+        import test_google_suggestions as fixtures
+
+        inline = fixtures.paragraph_doc(([('Keep it short.\n', {})], {}, None))
+        found, _, expected = desk_finish.google_changes('Keep it short.\n', '### Keep it brief.\n')
+        document = {'document_id': 'fixture-doc', 'tab_ids': ['t.0']}
+        free, waiting, unplaced, _, later = desk_finish._not_pending(
+            inline, document, found, expected
+        )
+        self.assertEqual(([f['kind'] for f in free], waiting, unplaced, later), (['edit'], 0, 0, 1))
+
+    def test_each_change_lands_in_the_paragraph_it_is_meant_for(self):
+        free, waiting, unplaced, _ = self.guard(
+            ['Keep it short.', 'Middle.', 'Keep it short.'],
+            'Keep it short.\n\nMiddle.\n\nKeep it short.\n',
+            'Keep it short.\n\nMiddle.\n\nKeep it brief.\n',
+        )
+        self.assertEqual((free, waiting, unplaced), ([('edit', 'short')], 0, 0))
 
 
 import google_drive  # noqa: E402
+import google_roundtrip as rt  # noqa: E402
+import google_workflow as gw  # noqa: E402
 import test_google_start  # noqa: E402
 
 
@@ -2222,6 +2788,8 @@ class DeskGoogleTests(unittest.TestCase):
         self.made = desk.create(self.root, {'article': ident})
         self.ident = self.made['id']
         self.part = self.made['sections'][0]['id']
+        # The Doc's name is its title, as when a blog starts from it.
+        self.client.doc['title'] = self.made['title']
 
     def act(self, action, **data):
         from unittest.mock import patch
@@ -2236,7 +2804,7 @@ class DeskGoogleTests(unittest.TestCase):
         plan = self.act('google-plan', mode='auto')
         self.assertEqual(plan['count'], 1)
         self.assertEqual([(p['before'], p['after']) for p in plan['proposals']], [('slow', 'late')])
-        self.assertEqual(plan['left'], 1)  # The title line the desk adds is not a suggestion.
+        self.assertEqual((plan['left'], plan['suggestions'], plan['comments']), (0, 1, 0))
         self.assertEqual(self.client.writes, 0)
         result = self.act('google-send', plan=plan['plan'], confirmed=True)
         self.assertEqual(result['status'], 'verified-pending')
@@ -2255,6 +2823,10 @@ class DeskGoogleTests(unittest.TestCase):
             self.act('google-send', plan=plan['plan'], confirmed=False)
 
     def test_nothing_changed_is_said(self):
+        with self.assertRaisesRegex(ValueError, 'Nothing new to send'):
+            self.act('google-plan', mode='auto')
+        # Once the Doc's name is known, nothing changed is said without reading Google.
+        self.client.native_read = None
         with self.assertRaisesRegex(ValueError, 'Nothing new to send'):
             self.act('google-plan', mode='auto')
 
@@ -2301,7 +2873,9 @@ class DeskGoogleTests(unittest.TestCase):
         first = self.act('google-plan', mode='auto')
         self.act('google-send', plan=first['plan'], confirmed=True)
         desk.save(self.root, self.ident, 2, self.part, text.replace('slow', 'very late'))
-        with self.assertRaisesRegex(ValueError, 'still has a suggestion waiting'):
+        with self.assertRaisesRegex(
+            ValueError, 'waits? for the Doc’s owner to decide the earlier suggestion'
+        ):
             self.act('google-plan', mode='auto')
         # The Doc's owner rejects it: the paragraph is free again and the new wording goes.
         self.client.doc = unsent
@@ -2309,6 +2883,477 @@ class DeskGoogleTests(unittest.TestCase):
         self.assertEqual(
             [(p['before'], p['after']) for p in again['proposals']], [('slow', 'very late')]
         )
+
+
+def link(url):
+    return {'link': {'url': url}}
+
+
+def harbour_doc():
+    """A synthetic Doc shaped like a real one: no title line (its name is its title), a bold
+    lead line and a bold level-3 heading, links inside paragraphs, curly quotes and a
+    paragraph that repeats."""
+    import test_google_suggestions as fixtures
+
+    bold, normal, heading = (
+        {'bold': True},
+        {'namedStyleType': 'NORMAL_TEXT'},
+        {'namedStyleType': 'HEADING_3'},
+    )
+    doc = fixtures.paragraph_doc(
+        ([('Plans for the Harbour Data Service\n', bold)], normal, None),
+        (
+            [
+                (
+                    'Most early Machine Learning (ML) projects stalled. To move Agentic Search '
+                    'past basic demos, we rely on proven ',
+                    {},
+                ),
+                ('data patterns', link('https://example.com/patterns')),
+                (' that keep improving.\n', {}),
+            ],
+            normal,
+            None,
+        ),
+        ([('Key Data Patterns\n', bold)], heading, None),
+        (
+            [
+                ('This is where ', {}),
+                ('Harbour Flow', link('https://example.com/flow')),
+                (' comes in. Built on the open ', {}),
+                ('Stream Kit', link('https://example.com/kit')),
+                (' project, it runs batch tasks.\n', {}),
+            ],
+            normal,
+            None,
+        ),
+        (
+            [
+                (
+                    'It refers to systems, or ‘agents’, that act alone. Event logs track every step.\n',
+                    {},
+                )
+            ],
+            normal,
+            None,
+        ),
+        (
+            [
+                ('Read the ', {}),
+                ('setup guide', link('https://example.com/old')),
+                (' first.\n', {}),
+            ],
+            normal,
+            None,
+        ),
+        ([('Keep it short.\n', {})], normal, None),
+        ([('A paragraph that goes away.\n', {})], normal, None),
+        ([('Keep it short.\n', {})], normal, None),
+        ([('The end.\n', {})], normal, None),
+    )
+    doc['title'] = 'Plans for Harbour'
+    return doc
+
+
+# Every kind of desk change to the Doc above.
+HARBOUR_EDITS = (
+    ('Most early Machine Learning (ML)', 'Most early machine learning (ML)'),
+    ('move Agentic Search', 'move agentic search'),
+    ('that keep improving.', 'that improve over time.'),
+    (
+        'This is where [Harbour Flow](<https://example.com/flow>) comes in. Built on the open '
+        '[Stream Kit]',
+        '[Harbour Flow](<https://example.com/flow>) is built for this job. Based on the open '
+        '[Stream Toolkit]',
+    ),
+    ('‘agents’,', '“agents,”'),
+    ('Event logs', '**Event logs**'),
+    (
+        '(<https://example.com/old>) first.',
+        '(<https://example.com/new>) first.\n\nA new '
+        'paragraph with a [link](<https://example.com/added>) in it.',
+    ),
+    ('A paragraph that goes away.\n\n', ''),
+    ('Keep it short.\n\nThe end.', 'Keep it brief.\n\nThe end.'),
+)
+
+
+class GoogleSendAllTests(unittest.TestCase):
+    """Every desk change goes to the Google Doc, as a suggestion or a comment: none stays
+    only on the desk."""
+
+    def setUp(self):
+        import test_google_suggestions as fixtures
+
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.root = self.base / 'workspace'
+        studio.initialize(self.root)
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        self.client = self.provider(fixtures)
+        capture = self.base / 'capture'
+        rt.capture(self.client, 'fixture-doc', 't.0', capture)
+        observation = capture / 'observation.json'
+        found = json.loads(observation.read_text())
+        found['structure_verified'] = True
+        observation.write_text(json.dumps(found))
+        words = [
+            '--root',
+            str(self.root),
+            'google',
+            'start',
+            '--title',
+            'Plans for Harbour',
+            '--observation',
+            str(observation),
+            '--file',
+            str(capture / 'document.md'),
+            '--snapshot',
+            str(capture),
+        ]
+        with studio.locked(self.root):
+            ident = gw.command(self.root, studio.parser().parse_args(words))['id']
+        held = studio._HELD.set(True)
+        self.addCleanup(studio._HELD.reset, held)
+        self.ident = desk.create(self.root, {'article': ident})['id']
+
+    def provider(self, fixtures):
+        client = fixtures.ReviewProvider()
+        client.doc = harbour_doc()
+        return client
+
+    def act(self, action, **data):
+        from unittest.mock import patch
+
+        with patch.object(google_drive, 'Client', return_value=self.client):
+            return desk.dispatch(self.root, action, {'id': self.ident, **data})
+
+    def edit(self, changes):
+        draft = desk.read(self.root, self.ident)
+        for part in ['opening'] + [section['id'] for section in draft['sections']]:
+            text = desk.text_of(draft, part)
+            changed = text
+            for old, new in changes:
+                changed = changed.replace(old, new)
+            if changed != text:
+                desk.save(self.root, self.ident, draft['revision'], part, changed)
+                draft = desk.read(self.root, self.ident)
+
+    def desk_text(self):
+        """The desk's paragraphs as the Doc shows them, without its title line."""
+        directory, _ = studio.item(self.root, 'articles', self.ident)
+        lines = [line for line in (directory / 'DRAFT.md').read_text().splitlines() if line.strip()]
+        return [desk_finish._visible(line) for line in lines[1:]]
+
+    def doc_text(self, accepted=True):
+        doc = self.client.native_read('fixture-doc', accepted_preview=accepted)
+        text = ''.join(
+            rt.paragraph_text(block['paragraph'])
+            for block in doc['tabs'][0]['documentTab']['body']['content']
+            if 'paragraph' in block
+        )
+        return text.splitlines()
+
+    def test_every_change_goes_to_the_doc_and_accepting_all_gives_the_desks_text(self):
+        self.edit(HARBOUR_EDITS)
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(plan['left'], 0, 'nothing stays only on the desk')
+        self.assertEqual(plan['waiting'], 0)
+        self.assertEqual(plan['count'], plan['suggestions'] + plan['comments'])
+        edits = [(p['before'], p['after']) for p in plan['proposals'] if p['kind'] == 'edit']
+        self.assertEqual(
+            edits,
+            [
+                ('Machine Learning', 'machine learning'),
+                ('Agentic Search', 'agentic search'),
+                ('keep improving', 'improve over time'),
+                ('This is where ', ''),
+                ('comes in. Built', 'is built for this job. Based'),
+                ('Kit', 'Toolkit'),
+                ('‘agents’,', '“agents,”'),
+                ('.', '.\nA new paragraph with a link in it.'),
+                ('A paragraph that goes away.', ''),
+                ('short', 'brief'),
+            ],
+        )
+        removed = [p for p in plan['proposals'] if p.get('remove')]
+        self.assertEqual([p['before'] for p in removed], ['A paragraph that goes away.'])
+        comments = {p['before']: p['reason'] for p in plan['proposals'] if p['kind'] == 'comment'}
+        self.assertEqual(
+            comments,
+            {
+                'Event logs': 'Make “Event logs” bold.',
+                'setup guide': 'Link changed: “setup guide” now points to https://example.com/new.',
+            },
+        )
+        repeated = next(p for p in plan['proposals'] if p['before'] == 'short')
+        # Placed on the second copy, by the Doc's own indexes.
+        copies = [
+            block['startIndex']
+            for block in self.client.doc['tabs'][0]['documentTab']['body']['content']
+            if rt.paragraph_text(block.get('paragraph', {})) == 'Keep it short.\n'
+        ]
+        self.assertEqual(repeated['start_index'], copies[1] + len('Keep it '))
+        self.assertEqual(self.client.writes, 0, 'nothing is sent until Send')
+        self.assertNotEqual(self.doc_text(), self.desk_text())
+        result = self.act('google-send', plan=plan['plan'], confirmed=True)
+        self.assertEqual(result['status'], 'verified-pending')
+        self.assertTrue(all(comment['verified'] for comment in result['comments']))
+        self.assertEqual(self.doc_text(accepted=False)[-1], 'The end.')
+        self.assertEqual(self.doc_text(), self.desk_text(), 'accepting every suggestion')
+        # Nothing is sent twice.
+        with self.assertRaisesRegex(ValueError, str(plan['count']) + ' changes were sent before'):
+            self.act('google-plan', mode='auto')
+
+    def test_a_change_in_a_paragraph_with_a_pending_suggestion_goes_next_time(self):
+        self.edit(HARBOUR_EDITS[:1])
+        first = self.act('google-plan', mode='auto')
+        self.act('google-send', plan=first['plan'], confirmed=True)
+        self.edit([('we rely on', 'we count on')])
+        with self.assertRaisesRegex(
+            ValueError,
+            '1 change was sent before; 1 change waits for the Doc’s owner to decide the '
+            'earlier suggestion in its paragraph',
+        ):
+            self.act('google-plan', mode='auto')
+
+    def test_a_title_other_than_the_docs_name_goes_as_a_comment(self):
+        draft = desk.read(self.root, self.ident)
+        desk.save(self.root, self.ident, draft['revision'], 'title', 'Harbour plans, revised')
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['kind'], p['before'], p['reason']) for p in plan['proposals']],
+            [
+                (
+                    'comment',
+                    'Plans for the Harbour Data Service',
+                    'Suggested title: “Harbour plans, revised”.',
+                )
+            ],
+        )
+        self.assertEqual((plan['suggestions'], plan['comments']), (0, 1))
+
+
+class GooglePendingTests(GoogleSendAllTests):
+    """Sends again while earlier suggestions wait for the Doc's owner, on a closer model of
+    Google's suggest mode: a suggested break splits its paragraph, and inserted text takes
+    its left neighbour's style until it is set."""
+
+    def provider(self, fixtures):
+        import google_model
+
+        return google_model.Model(harbour_doc())
+
+    def send(self):
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            self.act('google-send', plan=plan['plan'], confirmed=True)['status'], 'verified-pending'
+        )
+        return plan
+
+    def accepted(self):
+        import google_model
+
+        self.client.decide()
+        return google_model.styled_paragraphs(self.client.native_read('x', accepted_preview=True))
+
+    def test_a_note_after_a_suggestion_sent_before_still_goes(self):
+        self.edit([('keep improving', 'improve over time')])
+        self.send()
+        self.edit([('improve over time', '**improve** over time')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['kind'], p['reason']) for p in plan['proposals']],
+            [
+                (
+                    'comment',
+                    'In the paragraph “Most early Machine Learning (ML) projects stalled. To move Agentic Search past…”: Make “improve” bold.',
+                )
+            ],
+        )
+        self.assertEqual(plan['sent_before'], 1)
+        draft = desk.read(self.root, self.ident)
+        desk.save(self.root, self.ident, draft['revision'], 'title', 'Harbour, renamed')
+        plan = self.act('google-plan', mode='auto')
+        self.assertIn(
+            'Suggested title: “Harbour, renamed”.', [p['reason'] for p in plan['proposals']]
+        )
+
+    def test_formatting_added_later_leaves_the_change_sent_before_as_it_was(self):
+        self.edit([('The end.', 'The finish.')])
+        self.send()
+        self.edit([('The finish.', 'The **finish**.')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['kind'], p['reason']) for p in plan['proposals']],
+            [('comment', 'In the paragraph “The end.”: Make “finish” bold.')],
+        )
+        self.assertEqual((plan['sent_before'], plan['waiting']), (1, 0))
+
+    def test_two_equal_notes_for_one_paragraph_each_have_their_own_id(self):
+        for added in ('A closing **naïve** line.', '| a | b |'):
+            with self.subTest(added=added):
+                self.edit([('The end.', 'The end.\n\n' + added + '\n\n' + added)])
+                plan = self.act('google-plan', mode='auto')
+                ids = [p['id'] for p in plan['proposals']]
+                self.assertEqual(len(ids), len(set(ids)))
+                self.edit([('The end.\n\n' + added + '\n\n' + added, 'The end.')])
+
+    def test_words_inserted_after_a_space_keep_the_spaces_style(self):
+        # Inserted before a link's or bold words, the new words stay plain, as on the desk.
+        self.edit(
+            [
+                ('proven [data', 'proven new [data'),
+                ('This is where [Harbour', 'This is where fresh [Harbour'),
+            ]
+        )
+        plan = self.send()
+        self.assertFalse([p for p in plan['proposals'] if p['kind'] == 'comment'])
+        for _, chars in self.accepted():
+            text = ''.join(c for c, _ in chars)
+            for word in ('new ', 'fresh '):
+                if word in text:
+                    at = text.index(word)
+                    self.assertEqual(
+                        {style for _, style in chars[at : at + len(word)]}, {(False, False, None)}
+                    )
+
+    def test_a_teammates_suggestion_or_a_rejected_change_holds_nothing(self):
+        self.edit([('keep improving', 'keep growing')])
+        self.send()
+        self.client.decide(accept_ids=set(), reject_ids=None)  # The owner rejects it.
+        self.edit([('keep growing', 'keep rising')])
+        self.send()  # Nothing waits, so the new wording goes.
+        self.edit([('The end.', 'The finish.')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['before'], p.get('after')) for p in plan['proposals']], [('end', 'finish')]
+        )
+        self.assertEqual(plan['waiting'], 0)
+        # A teammate's own suggestion in another paragraph holds nothing either.
+        items = self.client.items
+        at = next(
+            i for i in range(len(items)) if ''.join(x['ch'] for x in items[i : i + 8]) == 'The end.'
+        )
+        items[at:at] = [{'ch': c, 'style': {}, 'ins': 'teammate', 'del': None} for c in 'Truly ']
+        self.client.threads.append({'suggestionId': 'teammate', 'status': 'OPEN'})
+        self.client.rev += 1
+        self.edit([('Plans for the Harbour', 'Plans for a Harbour')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertIn(('the', 'a'), [(p['before'], p.get('after')) for p in plan['proposals']])
+
+    def test_inserted_words_come_in_with_the_desks_bold_and_links(self):
+        # A new first paragraph beside a bold one, and new words with a link: Google sets each
+        # run's look, so nothing is left to fix by hand.
+        self.edit(
+            [
+                (
+                    '**Plans for',
+                    'A plain opening with a [link](<https://example.com/new>).\n\n**Plans for',
+                ),
+                ('basic demos', 'basic **bold** demos'),
+            ]
+        )
+        plan = self.send()
+        self.assertFalse([p for p in plan['proposals'] if p['kind'] == 'comment'])
+        desk = [
+            [(c, (style[0], style[1], style[5])) for c, style in found['chars']]
+            for found in (
+                desk_finish._styled(line)
+                for line in (studio.item(self.root, 'articles', self.ident)[0] / 'DRAFT.md')
+                .read_text()
+                .splitlines()[1:]
+                if line.strip()
+            )
+        ]
+        doc = [[(c, style) for c, style in chars if c != '\n'] for _, chars in self.accepted()]
+        self.assertEqual(doc, desk)
+
+    def test_the_same_words_made_bold_twice_after_a_send_are_two_notes(self):
+        self.edit([('The end.', 'The end.\n\nA closing naïve line.\n\nA closing naïve line.')])
+        self.send()
+        self.edit([('naïve', '**naïve**')])
+        plan = self.act('google-plan', mode='auto')
+        notes = [p for p in plan['proposals'] if p['kind'] == 'comment']
+        self.assertEqual(len(notes), 2)
+        self.assertEqual(len({p['id'] for p in notes}), 2)
+
+    def test_copies_are_counted_in_the_text_the_doc_had(self):
+        # A pending suggestion adds a copy of "Keep it short." in the last paragraph; the desk
+        # then rewords the second copy, which must be the one changed.
+        self.edit(
+            [
+                ('Keep it short.\n\nA paragraph', 'Keep it very short.\n\nA paragraph'),
+                ('The end.', 'The end. Keep it short.'),
+            ]
+        )
+        self.send()
+        self.edit([('away.\n\nKeep it short.', 'away.\n\nKeep it brief.')])
+        plan = self.send()
+        self.assertEqual(
+            [(p['before'], p['after']) for p in plan['proposals']], [('short', 'brief')]
+        )
+        texts = [''.join(c for c, _ in chars).strip() for _, chars in self.accepted()]
+        self.assertEqual(texts, self.desk_text())
+
+    def test_a_change_to_a_suggestion_still_waiting_waits_and_is_never_undone(self):
+        self.edit([('keep improving.', 'keep improving fast.')])
+        self.send()
+        writes = self.client.writes
+        for changes in (
+            [('improving fast.', 'improving slowly.')],
+            [('improving slowly.', 'improving.')],
+        ):
+            self.edit(changes)
+            with self.assertRaisesRegex(ValueError, 'waits? for the Doc’s owner to decide'):
+                self.act('google-plan', mode='auto')
+        self.assertEqual(self.client.writes, writes, 'nothing is sent around a waiting suggestion')
+
+    def test_a_new_paragraph_takes_the_kind_and_style_of_the_paragraph_it_joins(self):
+        self.edit(
+            [
+                ('This is where', 'A plain new paragraph.\n\nThis is where'),
+                ('act alone. Event logs', 'act alone.\n\nEvent logs'),
+            ]
+        )
+        plan = self.send()
+        self.assertFalse(
+            [p for p in plan['proposals'] if p['kind'] == 'comment'], 'nothing to fix by hand'
+        )
+        found = [
+            (
+                kind,
+                ''.join(c for c, _ in chars).strip(),
+                {style for c, style in chars if not c.isspace()},
+            )
+            for kind, chars in self.accepted()
+        ]
+        self.assertIn(('text', 'A plain new paragraph.', {(False, False, None)}), found)
+        self.assertIn(('text', 'Event logs track every step.', {(False, False, None)}), found)
+        self.assertEqual([text for _, text, _ in found], self.desk_text())
+
+    def test_a_wrong_style_landing_in_a_split_is_noticed(self):
+        original = self.client.native_review_update
+
+        def bold(file_id, revision, requests):
+            landed = []
+            for request in requests:
+                if 'updateTextStyle' in request:
+                    request = {
+                        'updateTextStyle': {
+                            **request['updateTextStyle'],
+                            'textStyle': {'bold': True},
+                        }
+                    }
+                landed.append(request)
+            return original(file_id, revision, landed)
+
+        self.client.native_review_update = bold
+        self.edit([('The end.', 'The end.\n\nA new last paragraph.')])
+        plan = self.act('google-plan', mode='auto')
+        result = self.act('google-send', plan=plan['plan'], confirmed=True)
+        self.assertEqual(result['status'], 'needs-reconciliation')
 
 
 class ImageFinishingTests(DeskCase):
@@ -2406,14 +3451,24 @@ class ImageFinishingTests(DeskCase):
         baseline = GOOGLE.replace('The end.', 'See ![][image1] here.\n\nThe end.')
         body = baseline.replace('More text after', 'More words after').replace('here.', 'there.')
         found, left, paragraphs = desk_finish.google_changes(baseline, body)
+        # A paragraph with an image cannot take a suggestion: its change is a comment beside it.
         self.assertEqual(
-            sorted((f['before'], f['after']) for f in found), [('here', 'there'), ('text', 'words')]
+            [(f['kind'], f['before'], f.get('after')) for f in found],
+            [('edit', 'text', 'words'), ('comment', 'The end.', None)],
         )
+        self.assertIn('“See here.”, reads “See there.”', found[1]['reason'])
         self.assertEqual(left, 0)
         self.assertNotIn('data:image', json.dumps([found, paragraphs]))
-        # An image moved or removed is made in the Doc by hand, never sent as words.
-        _, left = desk_finish.google_changes(baseline, baseline.replace('![][image2]\n\n', ''))[:2]
-        self.assertEqual(left, 1)
+        # An image removed or replaced is made in the Doc by hand, never sent as words.
+        for changed, said in (
+            (baseline.replace('![][image2]\n\n', ''), 'The image here is removed'),
+            (baseline.replace(IMAGE_TWO, IMAGE_ONE), 'The image “image2” changed'),
+        ):
+            with self.subTest(said=said):
+                found, left, paragraphs = desk_finish.google_changes(baseline, changed)
+                self.assertEqual(([f['kind'] for f in found], left), (['comment'], 0))
+                self.assertIn(said, found[0]['reason'])
+                self.assertNotIn('data:image', json.dumps([found, paragraphs]))
 
     def test_the_prepublish_check_reads_images_sensibly(self):
         import prepublish
@@ -2481,6 +3536,68 @@ class CopyEditTeamTests(TeamCase):
             'The first text.',
             support.git(self.remote, 'show', 'main:blogs/' + ident + '/DRAFT.md'),
         )
+
+    def test_a_carried_or_retired_suggestion_stays_on_this_computer(self):
+        import management
+        from studio_sync import gitstate
+
+        ident = self.made['id']
+        seen = management.view(self.root, 'desk', {'id': [ident]})['revision']
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': ident,
+                'seen': seen,
+                'part': self.part,
+                'text': 'Agentic AI is here. Their are two parser.',
+                'session': 'a' * 16,
+            },
+        )
+        fixes, human = secrets.token_hex(16), secrets.token_hex(16)
+        with studio.locked(self.root):
+            desk_finish.keep(
+                self.root,
+                ident,
+                fixes,
+                'finish-copyedit',
+                [
+                    {'part': self.part, 'before': 'Agentic AI', 'after': 'agentic AI'},
+                    {'part': self.part, 'before': 'Their are', 'after': 'There are'},
+                ],
+            )
+            desk_finish.keep(
+                self.root,
+                ident,
+                human,
+                'finish-humanize',
+                [
+                    {
+                        'part': self.part,
+                        'before': 'Agentic AI is here.',
+                        'after': 'Agentic AI has arrived.',
+                    },
+                    {'part': self.part, 'before': 'Their are two parser.', 'after': 'Two parsers.'},
+                ],
+            )
+        remote = self.remote_commits()
+
+        def accept(job, item):
+            seen = management.view(self.root, 'desk', {'id': [ident]})['revision']
+            return management.dispatch(
+                self.root, 'desk-apply', {'id': ident, 'seen': seen, 'job': job, 'items': [item]}
+            )
+
+        done = accept(fixes, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'carried': 1})
+        done = accept(human, {'id': 'p2'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'retired': 1})
+        self.assertEqual(gitstate.changed(self.found), [], 'the waiting sets are not shared')
+        self.assertGreater(self.remote_commits(), remote, 'the accepts are')
+        self.assertEqual(self.remote_commits(), self.local_commits())
+        shown = management.view(self.root, 'desk', {'id': [ident]})['finishing']
+        self.assertEqual(shown['humanize']['items'][0]['before'], 'AI is here.')
+        self.assertEqual(shown['copyedit']['items'][1]['state'], 'retired')
 
 
 if __name__ == '__main__':

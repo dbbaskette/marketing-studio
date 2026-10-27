@@ -5,6 +5,86 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Review suggestions stay independent.** Accepting a fix no longer throws away a
+  Humanize rewrite of the same sentence, nor the other way round, and never leaves one that
+  would undo it. Each suggestion is read by the words it actually changes. One whose own
+  change the accepted one left as it was stays, shrunk to that change and a little context
+  and marked in place: a fix "Agentic AI" → "agentic AI" stays after a rewrite that kept
+  "Agentic AI". A rewrite of the whole sentence takes a fix in where it kept the fixed
+  words ("Here, Agentic AI has arrived." becomes "Here, agentic AI has arrived."). One
+  whose own words the accepted one changed says "No longer fits: its words were changed
+  by suggestion #N", as does one that adds words where the accepted one added its own (so
+  "the" is never added twice); suggestions keep their numbers while you review, and later
+  ones are numbered after them. A cut beside a changed word keeps the new word as context
+  ("really use" → "use"), and no double space is left. Alternatives follow the same
+  rule. Human-sounding suggestions that arrive after fixes were accepted are kept
+  in step the same way instead of being dropped, and one for words edited by hand
+  meanwhile says so. **Accept all** applies what is shown and not flagged, from both
+  tools, in reading order, each against the text the ones before it left; it no longer
+  leaves out a rewrite over a waiting fix. A flagged or hidden suggestion stays unless its
+  words were changed, and Accept all leaves a suggestion that would retire a flagged one or
+  a fix **Show** hides. Its message counts what was accepted, updated to fit, no longer fits
+  and left for you. For maintainers: `desk_finish.apply` no longer retires by overlap (`_retire`,
+  `_flagged_spans`, `_covers` and the `OVERLAP` refusal are gone). Picks land one by one in
+  reading order (`_reading`: part, start, Copy edit first, shorter first). After each,
+  `_reconcile` checks every other open item from the waiting Copy edit and Humanize sets.
+  `_word_edits` aligns words to find what a text change, or an item's own wording, changes.
+  Both the accepted change and an item's own wordings are aligned against the whole part
+  (`ALIGN` characters of context), as a three-way merge would. An item the accepted change
+  touched, or added words at its edge, retires when the two meet, including two insertions
+  at one place. Otherwise its own changes move onto the new text: it keeps its sentence
+  when the change sits among them, else it shrinks to its own change with up to `CONTEXT`
+  words of context from the new text and its marks, found once as whole words (`_windows`).
+  A wording left empty retires the item, a cut no longer leaves a double space, and a flag
+  is read again but never dropped. With `all: true`, a pick that would retire an unsent
+  flagged item or an unsent Copy edit item is left out (`_would_retire`, `WAITING`).
+  Applied items record the wording that `landed`, which `_owner` matches. Each word alignment is
+  kept for the texts it read (`_aligned_words`), a suggestion no accepted edit comes near is
+  not aligned at all (`_near`), and a waiting one is tried only when the change reaches it
+  (`_reaches`), so Accept all over 120 suggestions in a 5,000-character part takes under a
+  second while it holds the studio lock.
+  A retired item gets `reason` and `retired_by: {job, id}`; an updated one records
+  `carried: [{job, id}]`; all stay in the ignored proposal sets. `settle` reads a Humanize
+  result against the text its job read (`_earlier`) and reconciles rows for words changed
+  since, naming the accepted fix (`_accepted`, `_owner`) or `EDITED`. `desk-apply` items may
+  name another waiting sentence set with `job`; `all: true` leaves out a flagged pick; and
+  `finished` adds `carried` and `retired` counts when there are any. Review mode sends
+  Accept all as one request, keeps each suggestion's number while its set is shown and numbers a later set after them (`numbers`), and shows
+  `carriedBy` and `byNumber`.
+- **Every desk change goes to the Google Doc.** **Send accepted changes to Google Doc** and
+  **Send to Google Doc** no longer leave changed paragraphs on the desk. Each separate
+  change in a paragraph is its own suggestion, so only the changed words are struck
+  through, also beside or inside a link's text. A paragraph added is a suggested insertion
+  after the one before it, one removed a suggested deletion with its break, and a split a
+  suggested line break. A link's new address, bold or italic, a heading level, an image or
+  a table row is a comment on its words or the closest paragraph, and a change the Doc
+  could place with any doubt is a comment on the closest certain paragraph, quoting it
+  before and after. The desk's title line is no longer counted as a change when it is the
+  Doc's name; a different title is a comment. The plan says "N suggestions and M comments
+  go to the Google Doc" (or that they go as comments, when Google cannot take
+  suggestions), and a change in a paragraph still waiting on an earlier suggestion goes
+  next time; while one of the blog's own suggestions, edited again since, still waits in
+  the Doc, nothing is sent. Inserted words come in with the desk's bold, italic, underline
+  and links. A note about a paragraph is a comment of its own, and one with no free
+  paragraph nearby goes with the next send. For maintainers: a finding may carry `styles`
+  (`[[length, {bold, italic, underline, link}]]` over its replacement), and
+  `desk_finish.google_changes(baseline, body, title)` diffs each paired paragraph's shown
+  text word by word (`_styled` reads each character's style from the Markdown) and returns
+  edits, comments and `remove` edits;
+  `desk-google-plan` reads the Doc first for its name and returns `suggestions`,
+  `comments`, `waiting` and `left`, and `_not_pending` turns a proposal it cannot place
+  into a comment on the closest paragraph the Doc shows once. In `google_suggestions`, an
+  edit deletes and inserts only what differs from its quote at whole-word boundaries
+  (`trimmed`), a replacement may hold line breaks, a finding may set `remove: true` to
+  delete its whole paragraph with the break where the next block is a paragraph, a pure
+  deletion may cross style boundaries, text is inserted only at a quote's end or very
+  start, removing the last paragraph deletes the break before it, and a plan that splits
+  or removes a paragraph is verified by every character and its style across the accepted
+  view (`expected_text_sha256`), or by its paragraphs' text while other suggestions wait
+  (`targets_show` reads on across a suggested break). `_not_pending` counts copies in each
+  paragraph's text without pending insertions and places each change by index; the sent
+  record keeps each row's baseline transfer and the Doc's name, and Google is not read
+  when nothing changed. `tests/google_model.py` models Google's suggest mode more closely.
 - **Every control is at least 44px tall,** and on a phone the selection bar sits above the
   tab bar. The library's filter row, selection bar, ticks, research choice and sheet steps
   now take their styles from the shared stylesheet; nothing else a person sees changes.
@@ -15,10 +95,8 @@ changes for authors first, then what changes for maintainers.
   meanwhile. In Review mode every suggestion is labelled **Spelling**, **Grammar**,
   **Punctuation**, **Consistency**, **Wording** or **Sounds human**, both tools read together in order
   under one count, and **Show: All · Fixes · Sounds human** narrows them. A wording fix may
-  offer up to three alternatives to pick from before **Accept**. Accepting a suggestion
-  retires the others, from either tool, that covered the same words, so two never both
-  land; **Accept all** applies the fixes first, still leaves flagged ones from both, and
-  never applies a rewrite over a fix still waiting for you.
+  offer up to three alternatives to pick from before **Accept**, and **Accept all** still
+  leaves flagged ones from both (see **Review suggestions stay independent** above).
   Quick check's findings are listed at the top with **Fix** and **Dismiss**, and **Check
   again** reruns both. A save that finds sections reordered elsewhere now shows the new
   order. For maintainers: `desk-create` takes `humanize: "light" | "medium" | "strong" |
@@ -30,9 +108,7 @@ changes for authors first, then what changes for maintainers.
   carries `review: {humanize, problem}`. Copy edit items carry `kind` (spelling, grammar,
   punctuation, consistency or wording, else grammar) and, for wording, up to three
   `alternatives` `[{after, flag}]`; `desk-apply` takes `{id, alternative}` items and
-  `all: true` for Accept all, which leaves out a pick covering an open flagged Copy edit or
-  Humanize item. Apply leaves out a pick that overlaps one applied in the same call, or one
-  already retired, and marks overlapping open Copy edit and Humanize items `retired`. A Copy
+  `all: true` for Accept all, and leaves out a pick already retired. A Copy
   edit that fails at model routing or is interrupted (`tool_jobs.recover`) still queues its
   Humanize, once.
 - **Workflow fixes on the writing desk.** A teammate can take over a desk blog (**Take

@@ -448,7 +448,7 @@ const Drafting = (() => {
       if (item.note) card.append(make('p', 'quiet', item.note));
       if (item.verdict && item.verdict !== 'supported' && !item.passage) card.append(make('p', 'quiet', 'No passage in your sources says this.'));
       if (item.passage) card.append(make('p', 'quiet', 'From ' + (item.source || 'your sources') + ': “' + item.passage + '”'));
-      if (item.state !== 'open') { card.append(make('p', 'quiet', item.state === 'applied' ? 'Applied. The earlier text is in History.' : item.state === 'retired' ? 'No longer fits: another change replaced these words.' : item.verdict ? 'Kept as it is.' : 'Skipped.')); return card; }
+      if (item.state !== 'open') { card.append(make('p', 'quiet', item.state === 'applied' ? 'Applied. The earlier text is in History.' : item.state === 'retired' ? k.noLonger(item) : item.verdict ? 'Kept as it is.' : 'Skipped.')); return card; }
       const skip = a.ui.button(item.verdict ? 'Keep it' : 'Skip', control => k.skip(held, set, [item.id], control)); skip.disabled = !a.canEdit(held);
       if (!item.present) { card.append(make('p', 'quiet', 'The text changed since this was suggested, so it no longer fits.'), add(make('div', 'bar'), skip)); return card; }
       if (item.verdict === 'supported') return card;
@@ -466,6 +466,19 @@ const Drafting = (() => {
       card.append(add(make('div', 'bar'), apply, edit, source, skip));
       return card;
     };
+    // Why a retired proposal no longer fits: the suggestion that changed its words, by the
+    // number a screen gave it (`byNumber`), else the reason the studio kept with it.
+    k.noLonger = item => {
+      if (item.byNumber) return 'No longer fits: its words were changed by suggestion #' + item.byNumber + '.';
+      const reason = String(item.reason || '');
+      return reason ? 'No longer fits: ' + reason.charAt(0).toLowerCase() + reason.slice(1) : 'No longer fits: another change replaced these words.';
+    };
+    // What an apply did to the other proposals, when the studio says: the ones that took in
+    // its words (`carried`), and the ones whose words it changed (`retired`).
+    k.finishedSaid = done => {
+      const carried = (done && done.carried) || 0, retired = (done && done.retired) || 0;
+      return (carried ? ' ' + carried + (carried === 1 ? ' other suggestion was updated to fit.' : ' other suggestions were updated to fit.') : '') + (retired ? ' ' + retired + (retired === 1 ? ' suggestion no longer fits: its words were changed.' : ' suggestions no longer fit: their words were changed.') : '');
+    };
     k.apply = async (held, set, items, control) => {
       await a.ui.busy(control, 'Applying…', async () => {
         try {
@@ -473,7 +486,7 @@ const Drafting = (() => {
           const before = held.view; held.view = await a.api(a.routes.apply, { id: held.id, seen: held.view.revision, job: set.job, items });
           for (const chosen of items) delete held.finish.editing[chosen.id];
           const done = held.view.finished || { applied: items.length, left: [] }, left = (done.left || []).length;
-          a.ui.toast((done.applied === 1 ? 'Applied.' : 'Applied ' + done.applied + '.') + ' The earlier text is in History.' + (left ? ' ' + left + (left === 1 ? ' no longer fits and is' : ' no longer fit and are') + ' left for you.' : ''));
+          a.ui.toast((done.applied === 1 ? 'Applied.' : 'Applied ' + done.applied + '.') + ' The earlier text is in History.' + k.finishedSaid(done) + (left ? ' ' + left + (left === 1 ? ' no longer fits and is' : ' no longer fit and are') + ' left for you.' : ''));
           a.hooks.refresh(held, before); k.panelShow(held);
         } catch (error) { if (stale(error)) { held.stale = true; k.stale(held); } else a.ui.notice(error.message, true); }
       });
