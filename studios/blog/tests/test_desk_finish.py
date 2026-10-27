@@ -2223,7 +2223,7 @@ class GooglePairingTests(unittest.TestCase):
         inline = fixtures.paragraph_doc(*[([(line + '\n', {})], {}, None) for line in doc_lines])
         found, _, expected = desk_finish.google_changes(baseline, body)
         document = {'document_id': 'fixture-doc', 'tab_ids': ['t.0']}
-        free, waiting, unplaced, _ = desk_finish._not_pending(inline, document, found, expected)
+        free, waiting, unplaced, _, _ = desk_finish._not_pending(inline, document, found, expected)
         return [(f['kind'], f['before']) for f in free], waiting, unplaced, free
 
     def test_a_quote_found_in_another_paragraph_goes_as_a_comment_on_a_certain_one(self):
@@ -2285,6 +2285,17 @@ class GooglePairingTests(unittest.TestCase):
                 keep, end = google_suggestions.trimmed(found['before'], found['after'])
                 inserted = found['after'][keep : len(found['after']) - end]
                 self.assertFalse(inserted[0].isspace(), inserted)
+
+    def test_a_note_with_no_free_paragraph_nearby_goes_with_the_next_send(self):
+        import test_google_suggestions as fixtures
+
+        inline = fixtures.paragraph_doc(([('Keep it short.\n', {})], {}, None))
+        found, _, expected = desk_finish.google_changes('Keep it short.\n', '### Keep it brief.\n')
+        document = {'document_id': 'fixture-doc', 'tab_ids': ['t.0']}
+        free, waiting, unplaced, _, later = desk_finish._not_pending(
+            inline, document, found, expected
+        )
+        self.assertEqual(([f['kind'] for f in free], waiting, unplaced, later), (['edit'], 0, 0, 1))
 
     def test_each_change_lands_in_the_paragraph_it_is_meant_for(self):
         free, waiting, unplaced, _ = self.guard(
@@ -2610,10 +2621,6 @@ class GoogleSendAllTests(unittest.TestCase):
             {
                 'Event logs': 'Make “Event logs” bold.',
                 'setup guide': 'Link changed: “setup guide” now points to https://example.com/new.',
-                # The new paragraph's link is a comment of its own, on a paragraph with no
-                # suggestion, never riding on the suggestion that brings the words in.
-                'Key Data Patterns': 'In the paragraph “Read the setup guide first.”: Link '
-                '“link” to https://example.com/added.',
             },
         )
         repeated = next(p for p in plan['proposals'] if p['before'] == 'short')
@@ -2719,6 +2726,94 @@ class GooglePendingTests(GoogleSendAllTests):
             [('comment', 'In the paragraph “The end.”: Make “finish” bold.')],
         )
         self.assertEqual((plan['sent_before'], plan['waiting']), (1, 0))
+
+    def test_two_equal_notes_for_one_paragraph_each_have_their_own_id(self):
+        for added in ('A closing **naïve** line.', '| a | b |'):
+            with self.subTest(added=added):
+                self.edit([('The end.', 'The end.\n\n' + added + '\n\n' + added)])
+                plan = self.act('google-plan', mode='auto')
+                ids = [p['id'] for p in plan['proposals']]
+                self.assertEqual(len(ids), len(set(ids)))
+                self.edit([('The end.\n\n' + added + '\n\n' + added, 'The end.')])
+
+    def test_words_inserted_after_a_space_keep_the_spaces_style(self):
+        # Inserted before a link's or bold words, the new words stay plain, as on the desk.
+        self.edit(
+            [
+                ('proven [data', 'proven new [data'),
+                ('This is where [Harbour', 'This is where fresh [Harbour'),
+            ]
+        )
+        plan = self.send()
+        self.assertFalse([p for p in plan['proposals'] if p['kind'] == 'comment'])
+        for _, chars in self.accepted():
+            text = ''.join(c for c, _ in chars)
+            for word in ('new ', 'fresh '):
+                if word in text:
+                    at = text.index(word)
+                    self.assertEqual(
+                        {style for _, style in chars[at : at + len(word)]}, {(False, False, None)}
+                    )
+
+    def test_a_teammates_suggestion_or_a_rejected_change_holds_nothing(self):
+        self.edit([('keep improving', 'keep growing')])
+        self.send()
+        self.client.decide(accept_ids=set(), reject_ids=None)  # The owner rejects it.
+        self.edit([('keep growing', 'keep rising')])
+        self.send()  # Nothing waits, so the new wording goes.
+        self.edit([('The end.', 'The finish.')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['before'], p.get('after')) for p in plan['proposals']], [('end', 'finish')]
+        )
+        self.assertEqual(plan['waiting'], 0)
+        # A teammate's own suggestion in another paragraph holds nothing either.
+        items = self.client.items
+        at = next(
+            i for i in range(len(items)) if ''.join(x['ch'] for x in items[i : i + 8]) == 'The end.'
+        )
+        items[at:at] = [{'ch': c, 'style': {}, 'ins': 'teammate', 'del': None} for c in 'Truly ']
+        self.client.threads.append({'suggestionId': 'teammate', 'status': 'OPEN'})
+        self.client.rev += 1
+        self.edit([('Plans for the Harbour', 'Plans for a Harbour')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertIn(('the', 'a'), [(p['before'], p.get('after')) for p in plan['proposals']])
+
+    def test_inserted_words_come_in_with_the_desks_bold_and_links(self):
+        # A new first paragraph beside a bold one, and new words with a link: Google sets each
+        # run's look, so nothing is left to fix by hand.
+        self.edit(
+            [
+                (
+                    '**Plans for',
+                    'A plain opening with a [link](<https://example.com/new>).\n\n**Plans for',
+                ),
+                ('basic demos', 'basic **bold** demos'),
+            ]
+        )
+        plan = self.send()
+        self.assertFalse([p for p in plan['proposals'] if p['kind'] == 'comment'])
+        desk = [
+            [(c, (style[0], style[1], style[5])) for c, style in found['chars']]
+            for found in (
+                desk_finish._styled(line)
+                for line in (studio.item(self.root, 'articles', self.ident)[0] / 'DRAFT.md')
+                .read_text()
+                .splitlines()[1:]
+                if line.strip()
+            )
+        ]
+        doc = [[(c, style) for c, style in chars if c != '\n'] for _, chars in self.accepted()]
+        self.assertEqual(doc, desk)
+
+    def test_the_same_words_made_bold_twice_after_a_send_are_two_notes(self):
+        self.edit([('The end.', 'The end.\n\nA closing naïve line.\n\nA closing naïve line.')])
+        self.send()
+        self.edit([('naïve', '**naïve**')])
+        plan = self.act('google-plan', mode='auto')
+        notes = [p for p in plan['proposals'] if p['kind'] == 'comment']
+        self.assertEqual(len(notes), 2)
+        self.assertEqual(len({p['id'] for p in notes}), 2)
 
     def test_copies_are_counted_in_the_text_the_doc_had(self):
         # A pending suggestion adds a copy of "Keep it short." in the last paragraph; the desk

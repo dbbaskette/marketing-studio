@@ -1606,19 +1606,37 @@ def _anchored(old, edits):
     for start, end, replacement in edits:
         added = ''.join(c for c, _ in replacement)
         if end > start and text[start:end].strip():
-            out.append([start, end, text[start:end], added])
+            out.append([start, end, text[start:end], added, [st for _, st in replacement]])
             continue
         if start == end:
             # Inserted text starting with the space already there goes in after that space, so
-            # it neither starts with a space nor takes a link's or bold style from the left.
+            # it neither starts with a space nor takes a link's or bold style from the left,
+            # unless the words on the left are in the style it needs (more words in a link).
             while (
                 replacement
                 and replacement[0][0].isspace()
                 and start < len(text)
                 and text[start] == replacement[0][0]
+                and (
+                    not start
+                    or old[start - 1][1] != _wanted(replacement)
+                    or old[start][1] == _wanted(replacement)
+                )
             ):
                 replacement = replacement[1:] + replacement[:1]
                 start = end = start + 1
+            # Ending with the space just before it, and the words before that space in the
+            # style it needs: it goes in before the space, beside those words.
+            while (
+                replacement
+                and replacement[-1][0].isspace()
+                and start > 1
+                and text[start - 1] == replacement[-1][0]
+                and old[start - 1][1] != _wanted(replacement)
+                and old[start - 2][1] == _wanted(replacement)
+            ):
+                replacement = replacement[-1:] + replacement[:-1]
+                start = end = start - 1
             added = ''.join(c for c, _ in replacement)
             want = _wanted(replacement)
             before, after = side(start, True), side(start, False)
@@ -1639,7 +1657,17 @@ def _anchored(old, edits):
             taken_now = [t for t in taken if t != (start, end)]
             if any(a < y and x < b for x, y in taken_now):
                 continue
-            out.append([a, b, text[a:b], text[a:start] + added + text[end:b]])
+            out.append(
+                [
+                    a,
+                    b,
+                    text[a:b],
+                    text[a:start] + added + text[end:b],
+                    [st for _, st in old[a:start]]
+                    + [st for _, st in replacement]
+                    + [st for _, st in old[end:b]],
+                ]
+            )
             taken = taken_now + [(a, b)]
             break
         else:
@@ -1647,23 +1675,55 @@ def _anchored(old, edits):
     return sorted(out)
 
 
+def _stretched(space, following):
+    """Whether a space carries a link or bold that the words after it lack (desk styles)."""
+    return bool((space[5] and space[5] != following[5]) or (space[0] and not following[0]))
+
+
+def _runs_of(looks):
+    """A replacement's looks as Google's suggestion takes them: [[length, {bold, italic,
+    underline, link}]]."""
+    runs = []
+    for look in looks:
+        found = {'bold': look[0], 'italic': look[1], 'underline': look[3], 'link': look[5]}
+        if runs and runs[-1][1] == found:
+            runs[-1][0] += 1
+        else:
+            runs.append([1, found])
+    return runs
+
+
 def _simulated(old, edits):
     """The paragraph's characters and styles once every edit is accepted, as Google makes
-    them: kept words keep their style, and inserted text takes the style of the first word
-    it replaces, or of the word it follows. Each character says where it came from: ('old',
+    them: kept words keep their style, and inserted text takes the desk's look (bold, italic,
+    underline, link) over the style of the first word it replaces, or of the word it follows. Each character says where it came from: ('old',
     position) or ('edit', number)."""
     import google_suggestions
 
     out, at = [], 0
-    for number, (start, end, before, after) in enumerate(edits):
+    for number, (start, end, before, after, looks) in enumerate(edits):
         out += [(old[i][0], old[i][1], ('old', i)) for i in range(at, start)]
         keep_start, keep_end = google_suggestions.trimmed(before, after)
         a, b = start + keep_start, end - keep_end
         style = old[a][1] if a < b else old[max(start, a - 1)][1]
-        if a == b and start < a < len(old) and old[a - 1][0].isspace():
-            style = old[a][1]  # After a space: the style of the words it comes before.
+        if (
+            a == b
+            and start < a < len(old)
+            and old[a - 1][0].isspace()
+            and _stretched(old[a - 1][1], old[a][1])
+        ):
+            style = old[a][1]  # A link or bold over the space stays there, as Google keeps it.
         out += [(old[i][0], old[i][1], ('old', i)) for i in range(start, a)]
-        out += [(c, style, ('edit', number)) for c in after[keep_start : len(after) - keep_end]]
+        # Inserted text takes the desk's bold, italic, underline and link; code and raised
+        # text it takes from the Doc's words beside it.
+        out += [
+            (c, (look[0], look[1], style[2], look[3], style[4], look[5]), ('edit', number))
+            for c, look in zip(
+                after[keep_start : len(after) - keep_end],
+                looks[keep_start : len(looks) - keep_end],
+                strict=True,
+            )
+        ]
         out += [(old[i][0], old[i][1], ('old', i)) for i in range(b, end)]
         at = end
     return out + [(old[i][0], old[i][1], ('old', i)) for i in range(at, len(old))]
@@ -1828,8 +1888,9 @@ def _paragraph_change(old_line, new_lines):
             'reason': 'A paragraph added or split on the writing desk.'
             if '\n' in after
             else 'Wording changed on the writing desk.',
+            'styles': _runs_of(looks),
         }
-        for start, end, before, after in edits
+        for start, end, before, after, looks in edits
     ]
     comments = []
     for low, high, said, want in _styles(simulated, new):
@@ -2170,6 +2231,8 @@ def google_changes(baseline, body, title=None):
                 item['occurrence'] = occurrence
             if change.get('remove'):
                 item['remove'] = True
+            elif kind == 'edit' and change['after']:
+                item['styles'] = change['styles']
             found.append(item)
             paragraphs[item['id']] = {
                 'paragraph': studio.digest(old.encode()),
@@ -2187,8 +2250,13 @@ def google_changes(baseline, body, title=None):
         if not anchorable:
             left += len(notes[k])
             continue
+        seen = {}
         for key, text, about in notes[k]:
             ident = json.dumps(['note', before[k], same_lines(k), key])
+            # Two equal notes for one paragraph (two equal new lines): each is its own.
+            seen[ident] = number = seen.get(ident, 0) + 1
+            if number > 1:
+                ident = json.dumps(['note', before[k], same_lines(k), key, number])
             item = manuscript_editor.proposal(
                 {
                     'id': 'desk-' + studio.digest(ident.encode())[:16],
@@ -2273,7 +2341,6 @@ def google_plan(root, ident, mode):
     """Check the desk's latest text against the Google Doc as suggestions and comments;
     nothing is sent."""
     import google_drive as drive
-    import google_roundtrip as rt
     import google_suggestions as suggestions
     from google_workflow import snapshot_path
 
@@ -2313,23 +2380,41 @@ def google_plan(root, ident, mode):
         if _delivered(root, document, p['id']) or '[Blog Studio ' + p['id'] + ']' in threads
     }
     before = sum(1 for p in proposals if p['id'] in sent)
-    proposals = [p for p in proposals if p['id'] not in sent]
-    # While the Doc holds suggestions, a change sent before that the desk no longer makes
-    # (reworded again, or undone) holds everything: sending around it could repeat or undo a
-    # suggestion still waiting for the Doc's owner. Each such change is counted as waiting.
+    # Words a suggestion sent before brought in, formatted otherwise on the desk since: the
+    # new look goes as a note, the suggestion staying as it was sent.
+    looks = {row.get('id'): row.get('styles') for row in record['sent'] if row.get('styles')}
+    restyled = [
+        note
+        for p in proposals
+        if p['id'] in sent and p.get('styles') and looks.get(p['id']) not in (None, p['styles'])
+        for note in _restyle_notes(p, looks[p['id']], paragraphs)
+    ]
+    proposals = [p for p in proposals if p['id'] not in sent] + [
+        note for note in restyled if note['id'] not in sent
+    ]
+    # A suggestion sent before that still waits in the Doc, which the desk no longer makes
+    # (reworded again, or undone), holds everything: sending around it could repeat or undo
+    # it. Only this blog's own suggestions count, by their markers, never comments or notes,
+    # nor a teammate's suggestion. Each such change is counted as waiting.
+    # A suggestion that no longer waits (accepted, rejected) never waits again: it is marked
+    # settled, so a later suggestion in its paragraph is never taken for it.
     gone = []
-    if rt.suggestions(inline):
-        gone = [
-            row
-            for row in record['sent']
-            if row.get('base', base['transfer']) == base['transfer']
-            and row.get('id') not in current
-        ]
-    waiting, covers = 0, {}
+    for row in record['sent']:
+        if (
+            row.get('settled')
+            or row.get('base', base['transfer']) != base['transfer']
+            or row.get('kind', 'edit') != 'edit'
+        ):
+            continue
+        if not _still_waits(inline, row['id']):
+            row['settled'] = True
+        elif row.get('id') not in current:
+            gone.append(row)
+    waiting, covers, later = 0, {}, 0
     if gone:
         waiting, proposals = len(gone) + len(proposals), []
     if proposals:
-        proposals, also, unplaced, covers = _not_pending(
+        proposals, also, unplaced, covers, later = _not_pending(
             inline, base['document'], proposals, paragraphs
         )
         waiting += also
@@ -2350,6 +2435,11 @@ def google_plan(root, ident, mode):
                 _counted(left, 'change', 'changes')
                 + ' could not be placed in the Doc; pull the latest Doc and check again'
             )
+        if later:
+            said.append(
+                _counted(later, 'note goes', 'notes go')
+                + ' with the next send (nearby paragraphs already have changes)'
+            )
         raise ValueError(
             'Nothing new to send'
             + (
@@ -2360,11 +2450,25 @@ def google_plan(root, ident, mode):
         )
     if len(proposals) > 100:
         raise ValueError('More than 100 changes to send at once. Send fewer, or share the draft.')
+    # Never two findings with one id: Google's plan would refuse them all. A repeat keeps its
+    # place's number, so it is the same next time.
+    named = {}
+    for p in proposals:
+        named[p['id']] = number = named.get(p['id'], 0) + 1
+        if number > 1:
+            paragraphs[p['id'] + '-' + str(number)] = paragraphs[p['id']]
+            p['id'] += '-' + str(number)
     plan = manuscript_editor.google_plan(
         client, root, ident, proposals, mode, _google_expected(root, ident), base['document']['url']
     )
     rows = [
-        {'id': name, 'paragraph': paragraphs[name]['paragraph'], 'base': base['transfer']}
+        {
+            'id': name,
+            'paragraph': paragraphs[name]['paragraph'],
+            'base': base['transfer'],
+            'kind': p['kind'] if name == p['id'] else 'fallback',
+            **({'styles': p['styles']} if name == p['id'] and p.get('styles') else {}),
+        }
         for p in proposals
         for name in [p['id'], *covers.get(p['id'], [])]
     ]
@@ -2379,9 +2483,96 @@ def google_plan(root, ident, mode):
         'suggestions': sum(1 for p in proposals if p['kind'] == 'edit'),
         'comments': sum(1 for p in proposals if p['kind'] == 'comment'),
         'left': left,
+        'later': later,
         'sent_before': before,
         'waiting': waiting,
     }
+
+
+def _restyle_notes(proposal, sent, paragraphs):
+    """Notes, each a comment of its own, for the words a suggestion sent before brought in
+    whose bold, italic, underline or link the desk has changed since."""
+    import json
+
+    def each(runs):
+        return [look for length, look in runs for _ in range(length)]
+
+    def desk(look):
+        return (
+            bool(look.get('bold')),
+            bool(look.get('italic')),
+            False,
+            bool(look.get('underline')),
+            None,
+            look.get('link') or None,
+        )
+
+    was, now, after = each(sent), each(proposal['styles']), proposal['after']
+    if len(was) != len(after) or len(now) != len(after):
+        return []
+    found, group = [], None
+    for at, (old, new) in enumerate(zip(was, now, strict=True)):
+        if after[at].isspace():
+            continue
+        if old == new:
+            group = None
+        elif group and group[2:] == [old, new]:
+            group[1] = at + 1
+        else:
+            group = [at, at + 1, old, new]
+            found.append(group)
+    place = paragraphs.get(proposal['id']) or {}
+    notes = []
+    for start, end, old, new in found:
+        words = after[start:end]
+        # Where the words sit in the replacement too: the same words twice are two notes.
+        ident = json.dumps(['restyle', proposal['id'], start, words, new])
+        note = {
+            'id': 'desk-' + studio.digest(ident.encode())[:16],
+            'kind': 'comment',
+            'before': place.get('text') or proposal['before'],
+            'reason': _note(_restyle(_quoted(words, 80), desk(old), desk(new)), []),
+        }
+        notes.append(note)
+        paragraphs[note['id']] = {
+            'paragraph': place.get('paragraph'),
+            'near': place.get('near') or [],
+            'about': place.get('text'),
+            'float': True,
+        }
+    return notes
+
+
+def _still_waits(inline, ident):
+    """Whether this blog's suggestion sent with this id still waits in the Doc: the comment
+    carrying its marker is open, and the paragraph it sits in holds a pending suggestion."""
+    import google_roundtrip as rt
+    import google_suggestions as suggestions
+    from google_drive import GoogleError
+
+    marker = '[Blog Studio ' + ident + ']'
+    anchors = {anchor.get('anchorId'): anchor for anchor in suggestions.native_anchors(inline)}
+    for thread in inline.get('comments', []):
+        if marker not in thread.get('headPost', {}).get('content', ''):
+            continue
+        if thread.get('status', 'OPEN') != 'OPEN':
+            continue
+        for found in (anchors.get(thread.get('anchorId')) or {}).get('ranges', []):
+            try:
+                key, paragraph = rt.paragraph_at(
+                    inline,
+                    found.get('tabId') or rt.tabs(inline)[0]['tabProperties']['tabId'],
+                    found['startIndex'],
+                )
+            except (GoogleError, KeyError):
+                continue
+            # Its paragraph holds a suggestion, or a suggested break split it from the one
+            # before (a new paragraph the suggestion brings in ahead of it).
+            if rt.suggestions(paragraph) or any(
+                k == key and not settled for k, _, _, settled in _paragraph_texts(inline, [key[0]])
+            ):
+                return True
+    return False
 
 
 def _paragraph_texts(inline, tabs):
@@ -2523,8 +2714,9 @@ def _not_pending(inline, document, proposals, expected):
     different number of times than the desk counted, or it resolves to a paragraph with other
     words) goes as a comment on the closest paragraph that is certain instead, and one
     paragraph's changes go, wait or move together. A note for a paragraph as a whole is placed
-    last, on a paragraph nothing else uses. Returns (free, waiting, unplaced, covers): covers
-    names the changes each such comment stands for."""
+    last, on a paragraph nothing else uses. Returns (free, waiting, unplaced, covers,
+    later): covers names the changes each such comment stands for, and later counts the notes
+    with no free paragraph nearby, which go with the next send."""
     import json
 
     tabs = document['tab_ids']
@@ -2564,7 +2756,7 @@ def _not_pending(inline, document, proposals, expected):
             for _, (located, key, _, _) in states:
                 free.append(located)
                 used.add(key)
-    unplaced, covers = 0, {}
+    unplaced, covers, later = 0, {}, 0
     for group in moved:
         found = expected.get(group[0]['id']) or {}
         comment = _elsewhere(inline, tabs, texts, group, found, used)
@@ -2581,10 +2773,10 @@ def _not_pending(inline, document, proposals, expected):
             continue
         comment = _elsewhere(inline, tabs, texts, [proposal], found, used)
         if comment is None:
-            unplaced += 1
+            later += 1  # Every paragraph near it has a change in this plan: it goes next time.
         else:
             free.append(comment)
-    return free, waiting, unplaced, covers
+    return free, waiting, unplaced, covers, later
 
 
 def _text_of(texts, key):
