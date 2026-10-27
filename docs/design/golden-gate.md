@@ -87,6 +87,7 @@ shared setup, Blog Studio, Presentation Studio and Training Studio:
 | Studio mark | `.studio-symbol`, the rounded tile that carries a studio's drawing in its accent colour |
 | Studio identity | `[data-studio]` sets `--studio-color` and `--studio-wash`; `.card[data-studio]` takes that studio's colour for its accent, link, focus and hover border |
 | Way back | `.suite-link`, the "Marketing Studio" sidebar item a studio shows when Marketing Studio opened it |
+| Desk | `.desk-*` from `drafting.js`: the reading column and aside, part cards, the selection bar, History and the Finishing panel |
 
 A page stylesheet (`home.css`, `blog.css`, `deck.css`, or an inline style on a static page)
 lays out its own parts. It may size and place a shared control, but never draws one, never
