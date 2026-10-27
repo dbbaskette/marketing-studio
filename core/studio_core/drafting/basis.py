@@ -46,7 +46,7 @@ def sections_basis(draft):
     return fingerprint([[section['id'], section['text']] for section in draft['sections']])
 
 
-def _openings(draft, codec):
+def _openings(codec):
     """The fixed parts a whole-draft job works on as sections: each that is not one line."""
     return [part for part in codec.fixed if part not in codec.single]
 
@@ -54,7 +54,7 @@ def _openings(draft, codec):
 def pass_basis(draft, codec=MARKDOWN):
     """What a whole-draft pass was asked about: the opening and every section."""
     return fingerprint(
-        [[part, draft[part]] for part in _openings(draft, codec)]
+        [[part, draft[part]] for part in _openings(codec)]
         + [[s['id'], s['text']] for s in draft['sections']]
     )
 
@@ -196,7 +196,7 @@ def land_sections(draft, meta, content, codec=MARKDOWN, divide=None):
         raise ValueError(stale(codec))
     found = section_texts(content)
     sections = {section['id']: section for section in draft['sections']}
-    openings = {part for part in _openings(draft, codec) if (draft.get(part) or '').strip()}
+    openings = {part for part in _openings(codec) if (draft.get(part) or '').strip()}
     ids = [item['id'] for item in found]
     if len(set(ids)) != len(ids) or any(name not in set(sections) | openings for name in ids):
         raise ValueError(UNKNOWN)
