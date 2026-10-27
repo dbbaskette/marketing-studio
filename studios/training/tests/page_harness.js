@@ -416,15 +416,19 @@ function layout() {
   const cards = main.querySelectorAll('.card').filter(visible);
   const bar = document.body.querySelectorAll('.selection-bar').filter(visible)[0];
   return {
-    toolbar: actions.querySelectorAll('button, a, summary').filter(visible).map((node) => ({
-      name: name(node), filled: node.classes().includes('button-filled'),
-      quiet: node.classes().includes('button-quiet') })),
+    // The toolbar's own actions: a menu is its opener, not the items it opens on.
+    toolbar: actions.children.map((node) => (node.tagName === 'DETAILS'
+      ? node.children.find((child) => child.tagName === 'SUMMARY') : node))
+      .filter((node) => node && visible(node)).map((node) => ({
+        name: name(node), filled: node.classes().includes('button-filled'),
+        quiet: node.classes().includes('button-quiet') })),
     ledes: [main, sheet].filter((part) => visible(part))
       .flatMap((part) => part.querySelectorAll('.lede').filter(visible))
       .map((node) => node.textContent.trim()),
     cardHeadings: cards.map((card) => [...new Set(card.all()
+      // A document read in a card keeps its own outline: its headings are not the card's.
       .filter((node) => HEADINGS.includes(node.tagName) && visible(node)
-        && !inside(node, card, 'card'))
+        && !inside(node, card, 'card') && !inside(node, card, 'md'))
       .map((node) => node.tagName.toLowerCase()))].sort()),
     nested: cards.filter((card) => inside(card, main, 'card')).length,
     parts: document.body.querySelectorAll('.card-title, .sheet-part, .selection-count')
@@ -435,9 +439,15 @@ function layout() {
   };
 }
 
+// A closed list shows the one option chosen in it, not every option it holds.
 function words(node) {
   if (node.nodeType === 3) return node.data;
   if (node.hidden || styledAway(node)) return '';
+  if (node.tagName === 'SELECT') {
+    const options = node.querySelectorAll('option');
+    const chosen = options.find((option) => option.value === node.value) || options[0];
+    return chosen ? chosen.textContent : '';
+  }
   const inline = ['SPAN', 'CODE', 'STRONG', 'EM', 'A', 'BUTTON', 'P', 'LI', 'H1', 'H2', 'H3',
     'TIME', 'TH', 'TD', 'LABEL', 'SUMMARY'];
   return node.childNodes.map(words).join(inline.includes(node.tagName) ? '' : '\n');
