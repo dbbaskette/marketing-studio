@@ -33,6 +33,15 @@ class DraftingPageTests(unittest.TestCase):
     def test_selection_on_the_page_kit(self):
         self.group('selection')
 
+    def test_cards_on_the_page_kit(self):
+        self.group('cards')
+
+    def test_job_on_the_page_kit(self):
+        self.group('job')
+
+    def test_progress_on_the_page_kit(self):
+        self.group('progress')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -114,7 +114,6 @@ function studio(answers = {}) {
       beforeFlush: async () => { said.flushed++; },
       saved: async (held, part, text) => { said.saved.push([part, text]); },
       versionNote: version => (version.divided || []).length ? 'A note on ' + version.divided.length : '',
-      job: async (held, control, route, data, done) => { said.jobs.push([route, data]); if (done) done(); },
       extra: (held, part) => { said.extras.push(part); return own('div', 'piece-extra'); },
       left: () => {},
       started: (held, shown) => { said.started.push(shown.start.open); held.tab = shown.start.open; },
@@ -270,7 +269,7 @@ const groups = {
     assert.equal(bar.hidden, false);
     same(bar.children.map(n => n.textContent), ['Rephrase', 'Shorten', 'Expand', 'Fix', 'Ask…']);
     await button(bar, 'Shorten').fire('click');
-    same(said.jobs.at(-1), ['piece-selection', { part: 's1', text: 'one two', start: 0, action: 'shorten' }]);
+    same(said.requests.at(-1), { route: 'piece-selection', data: { id: 'p1', seen: 3, part: 's1', text: 'one two', start: 0, action: 'shorten' } });
     assert.equal(held.selection, null);
     kit.selected(held, 's1', input);
     await button(bar, 'Ask…').fire('click');
@@ -283,7 +282,7 @@ const groups = {
     same(said.notices, [['Say what to do with the passage.', true]]);
     box.value = ' Say it plainly. ';
     await button(bar, 'Go').fire('click');
-    same(said.jobs.at(-1), ['piece-selection', { part: 's1', text: 'one two', start: 0, action: 'ask', instruction: 'Say it plainly.' }]);
+    same(said.requests.at(-1), { route: 'piece-selection', data: { id: 'p1', seen: 3, part: 's1', text: 'one two', start: 0, action: 'ask', instruction: 'Say it plainly.' } });
     kit.selected(held, 's1', input); await button(bar, 'Ask…').fire('click'); await button(bar, 'Cancel').fire('click');
     assert.equal(bar.hidden, true);
     // A selection inside a part with leading spaces starts where the saved text does.
@@ -296,6 +295,165 @@ const groups = {
     held.view.working = null; a.editable = false; kit.selected(held, 's1', later); assert.equal(bar.hidden, true);
   },
 };
+
+Object.assign(groups, {
+  async cards() {
+    const { a, said } = studio({ 'piece-note': () => view({ revision: 4 }) });
+    const kit = Drafting.kit(a), held = desk(kit);
+    held.view.versions = { s1: 2 };
+    const first = kit.part(held, 's1');
+    assert.equal(first.className, 'card desk-part'); assert.equal(first.dataset.part, 's1');
+    assert.equal(first.querySelector('h2.card-title').textContent, 'First');
+    assert.equal(button(first, 'History (2)').disabled, false);
+    const text = first.querySelector('textarea.desk-text');
+    assert.equal(text.value, 'one two one'); assert.equal(text.getAttribute('aria-label'), 'Text of First'); assert.equal(text.readOnly, false);
+    const note = first.querySelector('textarea.desk-note-text');
+    assert.equal(note.placeholder, 'How should this change?'); assert.equal(note.getAttribute('aria-label'), 'How should First change?'); assert.equal(note.maxLength, 4000);
+    assert.ok(button(first, 'Write again'));
+    note.value = 'Shorter, please.'; await note.fire('input');
+    assert.ok(button(first, 'Rewrite')); assert.equal(held.notes.s1, 'Shorter, please.');
+    await button(first, 'Rewrite').fire('click'); await settle();
+    same(said.requests.find(r => r.route === 'piece-note').data, { id: 'p1', seen: 3, part: 's1', note: 'Shorter, please.' });
+    assert.equal(held.notes.s1, undefined);
+    assert.equal(said.extras.includes('s1'), true, 'the studio adds its own nodes to a card');
+    const second = kit.part(held, 's2');
+    assert.equal(button(second, 'History').disabled, true);
+    // Typed text waiting to save is what the card shows.
+    held.pending.s2 = { text: 'Typed.' }; assert.equal(kit.part(held, 's2').querySelector('textarea.desk-text').value, 'Typed.');
+    delete held.pending.s2;
+    // While a job works on a section its card says so, with the note it works from.
+    held.view.working = { id: 'j1', kind: 'piece-section', part: 's1', note: 'Shorter, please.' };
+    const working = kit.part(held, 's1');
+    assert.equal(working.className, 'card desk-part desk-working');
+    assert.equal(working.querySelector('textarea.desk-text').readOnly, true);
+    assert.ok(texts(working).includes('Working on this section'));
+    assert.ok(texts(working).includes('Your note: Shorter, please.'));
+    assert.equal(button(working, 'Write again').disabled, true);
+    assert.equal(kit.workingIn(held.view, 's1'), true); assert.equal(kit.workingIn(held.view, 's2'), false);
+    held.view.working = { id: 'j2', kind: 'piece-pass', part: 'sections' };
+    assert.equal(kit.workingIn(held.view, 's2'), true); assert.equal(kit.workingIn(held.view, 'title'), false);
+    held.view.working = null;
+    // A one-line part is an input of up to 500 characters, with no note box.
+    const title = kit.part(held, 'title');
+    const input = title.querySelector('input.desk-text');
+    assert.equal(input.type, 'text'); assert.equal(input.maxLength, 500); assert.equal(input.getAttribute('aria-label'), 'Name');
+    assert.equal(title.querySelector('textarea.desk-note-text'), null);
+    // The note for the whole piece.
+    const whole = kit.whole(held);
+    assert.equal(whole.querySelector('h2').textContent, 'Note for the whole piece');
+    const box = whole.querySelector('textarea');
+    assert.equal(box.id, 'desk-whole-note'); assert.equal(box.getAttribute('aria-label'), 'Note for the whole piece');
+    assert.equal(box.placeholder, 'For example: tighten throughout, or make it more casual.');
+    assert.ok(texts(whole).includes('Each section is revised for the note with the whole piece in view. Your text is kept as a version first.'));
+    await button(whole, 'Revise the piece').fire('click');
+    same(said.notices.at(-1), ['Write the note for the whole piece.', true]);
+    box.value = 'Warmer.'; await box.fire('input');
+    await button(whole, 'Revise the piece').fire('click'); await settle();
+    same(said.requests.at(-1), { route: 'piece-revise', data: { id: 'p1', seen: 4, note: 'Warmer.' } });
+    assert.equal(held.wholeNote, '');
+    // What the last job left: a result not applied, named by its Finishing tool.
+    a.toolList = [{ key: 'polish', name: 'Polish' }];
+    held.view.jobs = [{ id: 'j3', kind: 'finish-polish', status: 'failed', error: 'It stopped.' }];
+    const problem = kit.problem(held);
+    assert.equal(problem.className, 'decision-notice desk-problem');
+    assert.equal(problem.children[0].textContent, 'Polish did not finish: It stopped.');
+    await button(problem, 'Dismiss').fire('click');
+    assert.equal(held.dismissed, 'j3'); assert.equal(kit.problem(held), null);
+    held.view.jobs = [{ id: 'j4', kind: 'piece-section', status: 'ready', applied: false, error: 'The piece changed.' }];
+    assert.equal(kit.problem(held).children[0].textContent, 'The last change was not applied: The piece changed.');
+    held.view.jobs = [{ id: 'j5', kind: 'piece-whole', chain: 'c', status: 'ready' }];
+    held.view.chain = { total: 3, revised: 2, working: false, problems: [{ part: 's2', heading: 'Second', error: 'Too long.' }] };
+    const chain = kit.problem(held);
+    assert.equal(chain.querySelector('p').textContent, 'Revised 2 of 3 sections for your note. These were not:');
+    same(chain.querySelector('ul.gap-items').children.map(n => n.textContent), ['“Second”: Too long.']);
+  },
+  async job() {
+    let answer = () => view({ revision: 4, working: { id: 'j', kind: 'piece-section', part: 's2' } });
+    const { a, said } = studio({ 'piece-note': () => answer(), piece: () => view({ revision: 5, jobs: [{ id: 'j', kind: 'piece-section', applied: true }] }) });
+    const kit = Drafting.kit(a), held = desk(kit);
+    held.view.working = { id: 'j', kind: 'piece-whole', part: 's2', total: 3, index: 1 };
+    assert.equal(kit.statusWords(held), 'Revising section 2 of 3…');
+    held.view.working = { id: 'j', kind: 'piece-section', part: 's2' };
+    assert.equal(kit.statusWords(held), 'Rewriting “Second”…');
+    held.view.working = { id: 'j', kind: 'piece-whole', part: 'opening', total: 1 };
+    assert.equal(kit.statusWords(held), 'Revising “opening”…');
+    held.view.working = { id: 'j', kind: 'other' };
+    assert.equal(kit.statusWords(held), 'Working…');
+    held.view.working = null; assert.equal(kit.statusWords(held), '');
+    let done = 0;
+    const control = a.ui.button('Rewrite', () => {});
+    a.hooks.beforeJob = async () => { said.before++; assert.equal(said.requests.length, 0, 'the studio flushes before the job is sent'); };
+    await kit.job(held, control, 'piece-note', { part: 's2', note: '' }, () => { done++; });
+    same(said.requests.map(r => r.route), ['piece-note']);
+    same(said.requests[0].data, { id: 'p1', seen: 3, part: 's2', note: '' });
+    assert.equal(said.before, 1); assert.equal(done, 1); assert.equal(said.refreshes, 1);
+    a.hooks.beforeJob = async () => { said.before++; };
+    // The desk follows the job until it ends, then says where the earlier text is.
+    same(waiting(), [3000]); assert.equal(held.watching, true);
+    await tick();
+    same(said.requests.at(-1).route, 'piece?id=p1');
+    same(said.toasts, ['Done. The earlier text is in History.']);
+    assert.equal(held.watching, false);
+    // A Finishing job's suggestions wait in the panel; a studio may say it its own way.
+    held.view.working = { id: 'k' }; a.answers = null;
+    said.toasts.length = 0;
+    const { a: b, said: told } = studio({ piece: () => view({ jobs: [{ id: 'k', kind: 'finish-polish', applied: true }] }) });
+    const other = Drafting.kit(b), followed = desk(other); followed.view.working = { id: 'k' };
+    other.watch(followed); await tick();
+    same(told.toasts, ['Suggestions are ready in Finishing.']);
+    b.hooks.landed = (shown, last) => 'Marked in your ' + last.kind + '.';
+    followed.view.working = { id: 'k' }; other.watch(followed); await tick();
+    same(told.toasts.at(-1), 'Marked in your finish-polish.');
+    // A refusal for a changed piece shows the banner; any other is a notice.
+    answer = () => new Error('This draft changed since you opened it. Reload to see the latest.');
+    await kit.job(held, control, 'piece-note', { part: 's2', note: '' });
+    assert.equal(held.stale, true);
+    held.stale = false; answer = () => new Error('Busy.');
+    await kit.job(held, control, 'piece-note', { part: 's2', note: '' });
+    same(said.notices.at(-1), ['Busy.', true]);
+  },
+  async progress() {
+    const minutes = n => new Date(Date.now() - n * 60000).toISOString();
+    const { a, said } = studio({ piece: () => view({ start: { ended_at: 'x', open: 'plan' } }), 'piece-stop': () => view() });
+    const kit = Drafting.kit(a);
+    assert.equal(kit.estimate({ minutes_left: 3 }, 'The piece'), 'Nothing needed from you. The piece opens here when it is ready, in about 3 minutes.');
+    assert.equal(kit.estimate({ minutes_left: 1 }, 'The piece'), 'Nothing needed from you. The piece opens here when it is ready, in about 1 minute.');
+    assert.equal(kit.estimate({ over: true, started_at: new Date().toISOString() }, 'The piece'), 'Nothing needed from you. Taking longer than usual; still working, under a minute so far. The piece opens here when it is ready.');
+    assert.equal(kit.clock({ started_at: minutes(2) }), '2 minutes so far, for the whole start.');
+    assert.equal(kit.clock({ started_at: minutes(1) }), '1 minute so far, for the whole start.');
+    assert.equal(kit.spent({}), 'under a minute');
+    const held = desk(kit);
+    held.view.start = { steps: ['gather', 'write'], step: 'write', status: 'working', busy: true, job: 'j', started_at: minutes(2), minutes_left: 3, phase: '' };
+    const shownStart = held.view.start, shown = kit.progress(held, 'The piece');
+    assert.equal(shown.above, 'Writing on its own');
+    assert.equal(shown.lede.textContent, 'Nothing needed from you. The piece opens here when it is ready, in about 3 minutes.');
+    assert.equal(shown.lede.getAttribute('role'), 'status');
+    assert.equal(shown.stopped, null);
+    const steps = shown.card.querySelector('ol.desk-steps');
+    assert.equal(steps.getAttribute('aria-label'), 'Steps of this start');
+    same(steps.children.map(row => [row.querySelector('h3').textContent, row.children[0].dataset.state]), [['Gathering', 'done'], ['Writing', 'current']]);
+    assert.equal(steps.children[1].querySelector('p.row-says').textContent, 'Under way');
+    assert.equal(shown.card.querySelector('h2').textContent, 'Progress');
+    assert.equal(shown.card.querySelector('p.desk-clock').textContent, '2 minutes so far, for the whole start.');
+    await shown.stop.fire('click'); await settle();
+    same(said.requests.at(-1), { route: 'piece-stop', data: { id: 'p1', job: 'j' } });
+    assert.equal(said.shows, 1);
+    // A stopped start: the studio's own exits in the notice.
+    held.view.start = { ...shownStart, busy: false, problem: 'It stopped.' };
+    const stopped = kit.progress(held, 'The piece');
+    assert.equal(stopped.above, 'Stopped'); assert.equal(stopped.stop, null);
+    assert.equal(stopped.lede.textContent, 'This start stopped before the piece was ready. Retry the step when you are ready.');
+    assert.ok(button(stopped.stopped, 'Try again'));
+    same(stopped.card.querySelector('ol').children.map(row => row.children[0].dataset.state), ['done', 'late']);
+    assert.equal(stopped.card.querySelector('p.row-says'), null);
+    // Followed until the piece opens, then the studio's ready line.
+    kit.followStart(held); kit.followStart(held);
+    same(waiting(), [3000]);
+    await tick();
+    same(said.started, ['plan']); assert.equal(said.renders, 1);
+    same(said.toasts, ['The plan is ready.']);
+  },
+});
 
 // A desk's view with two sections, and the screen state a studio keeps for it.
 function view(extra = {}) {

@@ -338,34 +338,21 @@ async function sDesk(ident){
   sDeskRender(held);
   sDeskWatch(held);
 }
-function sDeskStarting(view){return !!view?.start&&!view.start.ended_at;}
+function sDeskStarting(view){return DESK_KIT.starting(view);}
 function sDeskHasText(view){return !!view.opening||(view.sections||[]).some(section=>section.text);}
 
 // A start under way: nothing is needed from the person; the draft opens on its own.
-function sDeskElapsed(start){const then=Date.parse(start.started_at||'');return then?Math.max(0,(Date.now()-then)/60000):0;}
-function sDeskSpent(start){const minutes=Math.floor(sDeskElapsed(start));return minutes<1?'under a minute':minutes+(minutes===1?' minute':' minutes');}
-function sDeskClock(start){const spent=sDeskSpent(start);return spent.charAt(0).toUpperCase()+spent.slice(1)+' so far, for the whole start.';}
+function sDeskElapsed(start){return DESK_KIT.elapsed(start);}
+function sDeskSpent(start){return DESK_KIT.spent(start);}
+function sDeskClock(start){return DESK_KIT.clock(start);}
 // About how long is left, from recent runs of each step here; an overrun step says so.
-function sDeskEstimate(start,what){if(start.over)return 'Nothing needed from you. Taking longer than usual; still working, '+sDeskSpent(start)+' so far. '+what+' opens here when it is ready.';const left=Math.max(1,start.minutes_left||start.minutes||1);return 'Nothing needed from you. '+what+' opens here when it is ready, in about '+left+(left===1?' minute.':' minutes.');}
+function sDeskEstimate(start,what){return DESK_KIT.estimate(start,what);}
 function sDeskProgress(held){
-  const view=held.view,start=view.start,problem=start.problem,what=start.open==='outline'?'The outline':'The draft';
-  const stop=start.busy?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{try{held.view=await api('desk-stop',{id:held.id,job:start.job});sDeskProgress(held);}catch(error){notice(error.message,true);}});}):null;
-  if(stop)stop.disabled=!sDeskCan(held);
+  const view=held.view,start=view.start,p=DESK_KIT.progress(held,start.open==='outline'?'The outline':'The draft');
   // Driven on another computer, or by nobody: the start says so, and offers to take it.
-  sFrame(view.title,[sDeskTeam(view),stop],sDeskDriverWords(view)||(problem?'Stopped':'Writing on its own'),()=>sRoute('blogs'));
-  const first=sNode('p','lede',problem?'This start stopped before '+what.toLowerCase()+' was ready. Retry the step when you are ready.':sDeskEstimate(start,what));
-  first.setAttribute('role','status');
-  const steps=sNode('ol','rows desk-steps'),at=start.steps.indexOf(start.step);steps.setAttribute('aria-label','Steps of this start');
-  start.steps.forEach((step,index)=>{
-    const state=index<at?'done':index===at?(problem?'late':'current'):'none';
-    const now=index===at&&!problem?(start.phase||(start.status==='queued'?'Reading your sources':'Under way')):'';
-    steps.append(sAdd(sNode('li','row step'),sBead(state),sAdd(sNode('div','row-text'),sNode('h3','row-title',DESK_STEPS[step]||step),now?sNode('p','row-says',now):null)));
-  });
-  const parts=[first,sDeskElsewhere(view)];
-  if(problem)parts.push(sDeskStopped(held));
-  parts.push(sCard('Progress',steps,sNode('p','quiet desk-clock',sDeskClock(start))));
-  sPage(...parts);
-  if(!problem)sDeskFollowStart(held);
+  sFrame(view.title,[sDeskTeam(view),p.stop],sDeskDriverWords(view)||p.above,()=>sRoute('blogs'));
+  sPage(p.lede,sDeskElsewhere(view),p.stopped,p.card);
+  if(!start.problem)sDeskFollowStart(held);
 }
 // A stopped start: the ways on a run has. More time for a step out of time, no research for
 // a research step that stopped, Status and what the assistant said for one that failed,
@@ -385,23 +372,12 @@ function sDeskSkipResearch(held){
   const go=sButton('Continue without research',async button=>{await busy(button,'Saving…',async()=>{try{held.view=await api('desk-retry',{id:held.id,skip_research:true});sCloseSheet();sToast('Continuing without research.');sDeskProgress(held);}catch(error){problem.textContent=error.message;}});},'filled');
   sOpenSheet('Continue without research?',sNode('p','','The research step leaves this start, and the writing goes on from your point and sources. It gets no research findings, and research cannot be added back to this start.'),problem,sAdd(sNode('div','bar'),go,sButton('Cancel',sCloseSheet)));
 }
-function sDeskFollowStart(held){
-  if(held.startWatching)return;held.startWatching=true;
-  setTimeout(async()=>{
-    held.startWatching=false;if(!sDeskCurrent(held))return;
-    try{
-      const view=await api('desk?id='+encodeURIComponent(held.id));if(!sDeskCurrent(held))return;held.view=view;
-      if(sDeskStarting(view))return sDeskProgress(held);
-      held.tab=view.start?.open==='outline'?'outline':'draft';held.outline=null;
-      sDeskRender(held);sDeskWatch(held);sToast(held.tab==='outline'?'The outline is ready. Shape it here, then write the draft.':'The draft is ready. Edit it here.');
-    }catch(error){notice(error.message,true);sDeskFollowStart(held);}
-  },DESK_POLL);
-}
+function sDeskFollowStart(held){return DESK_KIT.followStart(held);}
 function sDeskCurrent(held){return studio.screen==='desk'&&studio.desk===held;}
 // Whether the job under way changes this part: its own section, or every section.
-function sDeskWorkingIn(view,part){const job=view?.working;if(!job)return false;return job.part===part||job.part==='sections'&&part!=='title'&&(part!=='opening'||job.kind==='desk-first-pass');}
-function sDeskWorking(held,part){return sDeskWorkingIn(held.view,part);}
-function sDeskStatusWords(held){const job=held.view.working;if(!job)return '';if(job.kind==='desk-revise-all'&&job.part==='opening')return 'Revising the opening…';if(job.kind==='desk-revise-all'&&job.total)return 'Revising section '+(job.index+1)+' of '+job.total+'…';return (DESK_DOING[job.kind]||'Working')+(job.kind==='desk-section'||job.kind==='desk-selection'?' '+deskPartName(held.view,job.part):'')+'…';}
+function sDeskWorkingIn(view,part){return DESK_KIT.workingIn(view,part);}
+function sDeskWorking(held,part){return DESK_KIT.workingIn(held.view,part);}
+function sDeskStatusWords(held){return DESK_KIT.statusWords(held);}
 function sDeskTabs(held){return sChoice('Work on',[['draft','Draft'],['outline','Outline']],held,'tab',async()=>{await sDeskOutlineFlush(held);held.outline=null;sDeskRender(held);});}
 // In a team workspace a blog has one driver. While another computer drives it, or nobody
 // does, the desk is read only and the toolbar offers Take over or Take this blog.
@@ -521,52 +497,11 @@ function sDeskPartLeft(held,part,card){
   setTimeout(()=>{if(!card.deskStale||held.cards?.[part]!==card||sDeskTyping(card)||!sDeskCurrent(held)||held.mode==='review')return;const fresh=sDeskPart(held,part);card.replaceWith(fresh);held.cards[part]=fresh;sDeskImagesLoad(held);},0);
 }
 // What the last job left: a result not applied, or a job that failed.
-function sDeskProblem(held){
-  const last=(held.view.jobs||[]).at(-1);if(!last||held.dismissed===last.id)return null;
-  const chain=held.view.chain;
-  if(last.chain&&chain){if(chain.working||!chain.problems.length)return null;return sAdd(sNode('div','decision-notice desk-problem'),sAdd(sNode('div',''),sNode('p','',chain.total===1&&chain.problems[0].part==='opening'?'Your note was not applied:':'Revised '+chain.revised+' of '+chain.total+' sections for your note. These were not:'),sAdd(sNode('ul','gap-items'),...chain.problems.map(problem=>sNode('li','',(problem.part==='opening'?'The opening':'“'+problem.heading+'”')+': '+problem.error)))),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));}
-  const failed=last.status==='failed'||last.status==='ready'&&last.applied===false;if(!failed||!last.error)return null;
-  const tool=/^finish-/.test(last.kind||'')?deskTool(last.kind.slice(7)):null;
-  return sAdd(sNode('div','decision-notice desk-problem'),sNode('p','',(tool?tool[1]+' did not finish: ':last.status==='failed'?'The last change could not finish: ':'The last change was not applied: ')+last.error),sButton('Dismiss',()=>{held.dismissed=last.id;sDeskRender(held);}));
-}
-function sDeskWhole(held){
-  const card=sCard('Note for the whole draft');
-  const box=sNode('textarea','input');box.id='desk-whole-note';box.rows=2;box.maxLength=4000;box.setAttribute('aria-label','Note for the whole draft');box.value=held.wholeNote||'';box.placeholder='For example: tighten throughout, or make it more casual.';
-  box.addEventListener('input',()=>{held.wholeNote=box.value;});
-  const go=sButton('Revise the draft',async button=>{const text=(held.wholeNote||'').trim();if(!text){notice('Write the note for the whole draft.',true);return;}await sDeskJob(held,button,'desk-revise',{note:text},()=>{held.wholeNote='';});},'filled');
-  go.disabled=!sDeskCan(held)||!!held.view.working;held.wholeGo=go;
-  return sAdd(card,box,sNode('p','quiet field-hint','Each section is revised for the note with the whole draft in view. Your text is kept as a version first.'),sAdd(sNode('div','bar'),go));
-}
+function sDeskProblem(held){return DESK_KIT.problem(held);}
+function sDeskWhole(held){return DESK_KIT.whole(held);}
 // The note for the whole draft is never drawn again by a poll: only its button follows the job.
 function sDeskWholeState(held){if(held.wholeGo)held.wholeGo.disabled=!sDeskCan(held)||!!held.view.working;}
-function sDeskPart(held,part){
-  const view=held.view,section=(view.sections||[]).find(row=>row.id===part),working=sDeskWorking(held,part);
-  const card=sNode('section','card desk-part'+(working?' desk-working':''));card.dataset.part=part;
-  const heading=sNode('h2','card-title',part==='title'?'Title':part==='opening'?'Opening':deskHeading(section.heading));
-  const count=(view.versions||{})[part]||0,history=sButton(count?'History ('+count+')':'History',()=>sDeskHistory(held,part));history.disabled=!count;
-  card.append(sAdd(sNode('div','desk-part-head'),heading,history));
-  const text=held.pending[part]?.text??deskTextOf(view,part);
-  const input=sNode(part==='title'?'input':'textarea','input desk-text');input.value=text;input.setAttribute('aria-label',part==='title'?'Title':part==='opening'?'Opening':'Text of '+deskHeading(section.heading));
-  if(part==='title'){input.type='text';input.maxLength=500;}else{input.rows=Math.min(24,Math.max(3,Math.ceil(text.length/90)+text.split('\n').length));}
-  input.readOnly=working||!sDeskCan(held);card.deskInput=input;
-  input.addEventListener('input',()=>sDeskTyped(held,part,input.value));
-  if(part!=='title'){for(const kind of ['select','mouseup','keyup'])input.addEventListener(kind,()=>sDeskSelected(held,part,input));}
-  else input.addEventListener('select',()=>sDeskSelected(held,part,input));
-  card.append(input);
-  const thumbs=part==='title'?null:sDeskThumbs(held,part);if(thumbs)card.append(thumbs);
-  const comments=sDeskComments(held,part);if(comments)card.append(comments);
-  if(working){const note=sNode('p','desk-working-note','Working on this section');note.setAttribute('role','status');card.append(note);card.deskWorkingNotes=[note];if(view.working.note){const said=sNode('p','quiet','Your note: '+view.working.note);card.append(said);card.deskWorkingNotes.push(said);}}
-  if(section){
-    const typed=(held.notes||{})[part]||'',row=sNode('div','desk-note');
-    const box=sNode('textarea','input desk-note-text');box.rows=typed.includes('\n')?4:1;box.maxLength=4000;box.value=typed;box.placeholder='How should this change?';box.setAttribute('aria-label','How should '+deskHeading(section.heading)+' change?');
-    const go=sButton(typed.trim()?'Rewrite':'Write again',async button=>{const note=((held.notes||{})[part]||'').trim();await sDeskJob(held,button,'desk-note',{part,note},()=>{if(held.notes)delete held.notes[part];});});
-    go.disabled=!sDeskCan(held)||!!view.working;card.deskGo=go;
-    box.addEventListener('input',()=>{held.notes=held.notes||{};held.notes[part]=box.value;go.textContent=box.value.trim()?'Rewrite':'Write again';});
-    card.append(sAdd(row,box,go));
-  }
-  card.addEventListener('focusout',()=>sDeskPartLeft(held,part,card));
-  return card;
-}
+function sDeskPart(held,part){return DESK_KIT.part(held,part);}
 function sDeskAside(held){
   const view=held.view,aside=sNode('aside','desk-aside');aside.setAttribute('aria-label','Sources and gaps');
   const sources=sCard('Sources');
@@ -601,25 +536,8 @@ function sDeskStale(held){return DESK_KIT.stale(held);}
 function sDeskShare(held){return DESK_KIT.share(held);}
 
 // Notes and selection edits start a job; the desk follows it until it ends.
-async function sDeskJob(held,button,route,data,done){
-  await busy(button,'Starting…',async()=>{try{
-    await sDeskFlush(held);await sDeskOutlineFlush(held);if(held.stale)return;
-    const before=held.view;held.view=await api(route,{id:held.id,seen:held.view.revision,...data});if(done)done();
-    sDeskRefresh(held,before);sDeskWatch(held);
-  }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
-}
-function sDeskWatch(held){
-  if(!held.view.working||held.watching)return;held.watching=true;
-  const follow=async()=>{
-    if(!sDeskCurrent(held)){held.watching=false;return;}
-    try{await sDeskFlush(held);const view=await api('desk?id='+encodeURIComponent(held.id));if(!sDeskCurrent(held)){held.watching=false;return;}
-      const ended=!view.working,before=held.view;held.view=view;sDeskRefresh(held,before);
-      if(ended){held.watching=false;const last=(view.jobs||[]).at(-1);if(last?.applied)sToast(held.mode==='review'&&last.kind==='finish-copyedit'?'The fixes are marked in your text.':held.mode==='review'&&last.kind==='finish-humanize'?'The suggestions are marked in your text.':/^finish-/.test(last.kind)?'Suggestions are ready in Finishing.':'Done. The earlier text is in History.');if(held.finish?.tool==='proofread'&&!/^finish-/.test(last?.kind||''))await sDeskProofread(held);return;}
-    }catch(error){if(held.status)held.status.textContent=error.message;}
-    setTimeout(follow,DESK_POLL);
-  };
-  setTimeout(follow,DESK_POLL);
-}
+function sDeskJob(held,button,route,data,done){return DESK_KIT.job(held,button,route,data,done);}
+function sDeskWatch(held){return DESK_KIT.watch(held);}
 
 // A small bar for the selected passage: Rephrase, Shorten, Expand, Fix and Ask….
 function sDeskSelected(held,part,input){return DESK_KIT.selected(held,part,input);}
@@ -1522,10 +1440,28 @@ const DESK_KIT=Drafting.kit({
   canEdit:held=>sDeskCan(held),
   current:held=>sDeskCurrent(held),
   page:()=>$('studio-page'),
-  hooks:{render:held=>sDeskRender(held),refresh:(held,before)=>sDeskRefresh(held,before),reload:held=>{held.pending={};held.stale=false;held.saved='';return sDesk(held.id);},beforeJob:held=>sDeskOutlineFlush(held),beforeFlush:held=>held.review?.editing?.dirty?sReviewSave(held):undefined,saved:(held,part,text)=>sDeskSaved(held,part,text),versionNote:version=>deskVersionNote(version),job:(...x)=>sDeskJob(...x)},
+  hooks:{
+    render:held=>sDeskRender(held),
+    refresh:(held,before)=>sDeskRefresh(held,before),
+    reload:held=>{held.pending={};held.stale=false;held.saved='';return sDesk(held.id);},
+    beforeJob:held=>sDeskOutlineFlush(held),
+    // Review mode's paragraph editor saves before the parts typing left waiting.
+    beforeFlush:held=>held.review?.editing?.dirty?sReviewSave(held):undefined,
+    saved:(held,part,text)=>sDeskSaved(held,part,text),
+    versionNote:version=>deskVersionNote(version),
+    // Under a part's text: its image thumbnails; and a card drawn again once focus leaves it.
+    extra:(held,part)=>part==='title'?null:sDeskThumbs(held,part),
+    left:(held,part,card)=>sDeskPartLeft(held,part,card),
+    comments:(held,part)=>sDeskComments(held,part),
+    proofread:held=>sDeskProofread(held),
+    // A start that ended opens the draft, or the outline it wrote.
+    started:(held,view)=>{held.tab=view.start?.open==='outline'?'outline':'draft';held.outline=null;},
+    // In Review mode, Copy edit's and Humanize's suggestions are marked in the text itself.
+    landed:(held,last)=>held.mode==='review'&&last.kind==='finish-copyedit'?'The fixes are marked in your text.':held.mode==='review'&&last.kind==='finish-humanize'?'The suggestions are marked in your text.':'',
+  },
   parts:{title:(view,part)=>part==='title'?'Title':part==='opening'?'Opening':deskHeading(((view.sections||[]).find(row=>row.id===part)||{}).heading),textOf:(view,part)=>deskTextOf(view,part),nameOf:(view,part)=>deskPartName(view,part),single:part=>part==='title',noted:(view,part)=>(view.sections||[]).some(row=>row.id===part)},
-  words:()=>({thing:'draft',sources:DESK_SOURCES,doing:DESK_DOING,steps:DESK_STEPS,named:['desk-section','desk-selection'],ready:tab=>tab==='outline'?'The outline is ready. Shape it here, then write the draft.':'The draft is ready. Edit it here.'}),
-  tools:()=>DESK_TOOLS,
-  progress:{stopped:held=>sDeskStopped(held)},
+  words:()=>({thing:'draft',sources:DESK_SOURCES,doing:DESK_DOING,steps:DESK_STEPS,named:['desk-section','desk-selection'],withOpening:['desk-first-pass'],ready:tab=>tab==='outline'?'The outline is ready. Shape it here, then write the draft.':'The draft is ready. Edit it here.'}),
+  tools:()=>DESK_TOOLS.map(([key,name,says])=>({key,name,says})),
+  progress:{stopped:held=>sDeskStopped(held),show:held=>sDeskProgress(held)},
 });
 if(typeof window.addEventListener==='function')window.addEventListener('resize',()=>{if(typeof clearTimeout==='function')clearTimeout(window.deskResize);window.deskResize=setTimeout(sDeskResized,150);});
