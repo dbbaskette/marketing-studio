@@ -8,6 +8,7 @@ version of every part it changes first. Like desk.py, every function expects the
 hold the studio lock.
 """
 
+import functools
 import re
 import shutil
 
@@ -408,11 +409,12 @@ def _would_retire(held, watched, chosen, part, old, new, edits):
             and id(other) not in chosen
             and waits
         ):
+            if not _once(old, other['before']) or not _reaches(other, old, new, edits):
+                continue  # Only one the change reaches is tried.
             trial = copy.deepcopy(other)
-            if _once(old, trial['before']):
-                _reconcile(trial, old, new, edits, lambda _: None)
-                if trial['state'] == 'retired':
-                    return True
+            _reconcile(trial, old, new, edits, lambda _: None)
+            if trial['state'] == 'retired':
+                return True
     return False
 
 
@@ -476,7 +478,7 @@ def _sentence_sets(root, ident, job, found):
 SENTENCES = ('finish-copyedit', 'finish-humanize')
 TOKENS = re.compile(r'\w+|\s+|[^\w\s]')
 WORDLIKE = re.compile(r'\w')
-ALIGN = 600  # characters of unchanged text each side that words are aligned with
+ALIGN = 300  # characters of unchanged text each side that words are aligned with
 CONTEXT = 8  # words of context an item re-anchored by its own change may keep on each side
 
 
@@ -498,21 +500,13 @@ def _reconcile(other, old, new, edits, by, picks=()):
     before = other['before']
     at = old.index(before)
     end = at + len(before)
+    if not _near(old, at, end, edits):
+        # No accepted edit is where its own changes could be: it is left as it is.
+        return False if _whole(old, (at, end), new, before) else _retired(other, by([]))
     wordings = _wordings(other, picks)
-    # Its own changes, read against the whole part as the accepted change's are, so two that
-    # add words in one gap between words are seen to meet.
-    own = []
-    for wording in wordings:
-        mine = old[:at] + wording + old[end:]
-        own.append([(a, b, mine[c:d]) for a, b, c, d in _word_edits(old, mine)])
-    changes = [change for hunks in own for change in hunks]
+    own, changes, touching = _own(old, at, end, wordings, edits)
     low = min([at] + [change[0] for change in changes])
     high = max([end] + [change[1] for change in changes])
-    touching = [
-        edit
-        for edit in edits
-        if _meet(edit[0], edit[1], low, high) or edit[0] == edit[1] in (low, high)
-    ]
     if not touching:
         if _whole(old, (at, end), new, before):
             return False
@@ -669,6 +663,47 @@ def _windows(new, change, span):
             yield start, stop
 
 
+def _own(old, at, end, wordings, edits):
+    """A suggestion's own changes for each wording, read against the whole part as the
+    accepted change's are, so two that add words in one gap between words are seen to meet;
+    all of them; and the accepted edits that reach them, its words or an edge of them."""
+    own = []
+    for wording in wordings:
+        mine = old[:at] + wording + old[end:]
+        own.append([(a, b, mine[c:d]) for a, b, c, d in _word_edits(old, mine)])
+    changes = [change for hunks in own for change in hunks]
+    low = min([at] + [change[0] for change in changes])
+    high = max([end] + [change[1] for change in changes])
+    touching = [
+        edit
+        for edit in edits
+        if _meet(edit[0], edit[1], low, high) or edit[0] == edit[1] in (low, high)
+    ]
+    return own, changes, touching
+
+
+def _near(old, at, end, edits):
+    """Whether any accepted edit falls where a suggestion at `old[at:end]` could have its
+    own changes: inside the stretch _word_edits aligns them in, which holds them all."""
+    start = max(0, at - ALIGN)
+    while start > 0 and not old[start - 1].isspace():
+        start -= 1
+    stop = min(len(old), end + ALIGN)
+    while stop < len(old) and not old[stop].isspace():
+        stop += 1
+    return any(b >= start and a <= stop for a, b, _, _ in edits)
+
+
+def _reaches(other, old, new, edits):
+    """Whether an accepted change reaches a suggestion at all: _reconcile would change it."""
+    at = old.index(other['before'])
+    end = at + len(other['before'])
+    if not _near(old, at, end, edits):
+        return not _whole(old, (at, end), new, other['before'])
+    _, _, touching = _own(old, at, end, _wordings(other, ()), edits)
+    return bool(touching) or not _whole(old, (at, end), new, other['before'])
+
+
 def _retired(other, owner):
     other['state'] = 'retired'
     other['reason'] = CHANGED if owner else EDITED
@@ -716,8 +751,6 @@ def _spans(text):
 def _word_edits(old, new):
     """[(start, end, new start, new end)]: each stretch of `old`, in whole words and marks,
     that `new` changes, read by aligning their words where they differ."""
-    import difflib
-
     if old == new:
         return []
     # Aligned with the unchanged words around the change too, up to a sentence or two
@@ -732,11 +765,22 @@ def _word_edits(old, new):
     while old_end < len(old) and not old[old_end].isspace():
         old_end += 1  # And so is the text after it.
         new_end += 1
-    was, now = old[start:old_end], new[start:new_end]
+    return [
+        (start + x0, start + x1, start + y0, start + y1)
+        for x0, x1, y0, y1 in _aligned_words(old[start:old_end], new[start:new_end])
+    ]
+
+
+@functools.lru_cache(maxsize=4096)
+def _aligned_words(was, now):
+    """The stretches of `was` that `now` changes, word by word, relative to each. Kept for
+    the texts already aligned: an Accept all reads each suggestion again after every change
+    it lands, and most of them see the same words each time."""
+    import difflib
+
     a, b = _spans(was), _spans(now)
-    matcher = difflib.SequenceMatcher(
-        None, [was[x:y] for x, y in a], [now[x:y] for x, y in b], autojunk=False
-    )
+    old_words, new_words = [was[x:y] for x, y in a], [now[x:y] for x, y in b]
+    opcodes = difflib.SequenceMatcher(None, old_words, new_words, autojunk=False).get_opcodes()
 
     def at(spans, text, i, j):
         if i == j:
@@ -744,12 +788,10 @@ def _word_edits(old, new):
         return spans[i][0], spans[j - 1][1]
 
     found = []
-    for op, i1, i2, j1, j2 in matcher.get_opcodes():
+    for op, i1, i2, j1, j2 in opcodes:
         if op != 'equal':
-            x0, x1 = at(a, was, i1, i2)
-            y0, y1 = at(b, now, j1, j2)
-            found.append((start + x0, start + x1, start + y0, start + y1))
-    return found
+            found.append((*at(a, was, i1, i2), *at(b, now, j1, j2)))
+    return tuple(found)
 
 
 def _whole(old, span, new, before):
@@ -770,15 +812,26 @@ def _whole(old, span, new, before):
 
 
 def _changed(old, new):
-    """(start, end in old, end in new) of the one stretch where `new` differs from `old`."""
+    """(start, end in old, end in new) of the one stretch where `new` differs from `old`:
+    the longest common start, then the longest common end of what is left."""
     limit = min(len(old), len(new))
-    start = 0
-    while start < limit and old[start] == new[start]:
-        start += 1
-    same = 0
-    while same < limit - start and old[-1 - same] == new[-1 - same]:
-        same += 1
+    start = _longest(limit, lambda n: old[:n] == new[:n])
+    rest = limit - start
+    same = _longest(rest, lambda n: old[len(old) - n :] == new[len(new) - n :])
     return start, len(old) - same, len(new) - same
+
+
+def _longest(limit, equal):
+    """The largest n up to `limit` for which `equal(n)` holds, where it holds for every
+    smaller n too, found by halving."""
+    low, high = 0, limit
+    while low < high:
+        middle = (low + high + 1) // 2
+        if equal(middle):
+            low = middle
+        else:
+            high = middle - 1
+    return low
 
 
 def _whole_words(text, words):

@@ -1810,6 +1810,56 @@ class MixedReviewTests(ToolCase):
                 self.assertIn('![][image1]', job['payload']['opening'])
 
 
+class ReviewSpeedTests(FinishCase):
+    """Accept all over many suggestions in one long part stays quick: it holds the studio
+    lock while it works."""
+
+    def test_accept_all_of_120_suggestions_in_a_5k_part_takes_seconds_not_minutes(self):
+        import random
+        import time
+
+        r = random.Random(7)
+        words = (
+            'agent agentic tools parser data model team runs fast slow robust goal focus '
+            'reads files café résumé naïve keeps every each there here'
+        ).split()
+
+        def sentence():
+            picked = [r.choice(words) for _ in range(r.randint(6, 12))]
+            return ' '.join(picked).capitalize() + r.choice('.!?')
+
+        paragraphs = [' '.join(sentence() for _ in range(6)) for _ in range(16)]
+        text = '\n\n'.join(paragraphs)
+        self.assertGreater(len(text), 5000)
+        desk.save(self.root, self.ident, 1, self.first, text)
+        found = desk.text_of(self.draft(), self.first)
+        fixes, rewrites, used = [], [], set()
+        while len(fixes) < 60 or len(rewrites) < 60:
+            size = 3 if len(fixes) < 60 else 7
+            tokens = found.split(' ')
+            start = r.randrange(0, len(tokens) - size)
+            before = ' '.join(tokens[start : start + size])
+            if '\n' in before or before in used or found.count(before) != 1:
+                continue
+            used.add(before)
+            changed = before.split(' ')
+            for at in r.sample(range(size), 1 if size == 3 else 3):
+                changed[at] = 'zq' + str(len(used)) + str(at)
+            row = {'part': self.first, 'before': before, 'after': ' '.join(changed), 'flag': ''}
+            (fixes if size == 3 else rewrites).append(row)
+        copyedit = self.offer(fixes, kind='finish-copyedit')
+        humanize = self.offer(rewrites)
+        entries = [{'job': copyedit, 'id': 'p%d' % n} for n in range(1, 61)]
+        entries += [{'job': humanize, 'id': 'p%d' % n} for n in range(1, 61)]
+        began = time.monotonic()
+        done = self.act(
+            'apply', seen=self.draft()['revision'], job=copyedit, items=entries, all=True
+        )
+        took = time.monotonic() - began
+        self.assertGreater(done['finished']['applied'], 60)
+        self.assertLess(took, 5, 'Accept all took %.1f seconds' % took)
+
+
 class VoiceTests(ToolCase):
     """Apply a voice: the draft rewritten in a voice guide, section by section."""
 
