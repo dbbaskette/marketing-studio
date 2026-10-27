@@ -1041,5 +1041,152 @@ class SuggestionsTests(unittest.TestCase):
         )
 
 
+def accepted_text(client):
+    """Every body paragraph's text once all suggestions are accepted, as one string."""
+    doc = client.native_read('fixture-doc', accepted_preview=True)
+    return ''.join(
+        rt.paragraph_text(block['paragraph'])
+        for block in doc['tabs'][0]['documentTab']['body']['content']
+        if 'paragraph' in block
+    )
+
+
+class ParagraphSuggestionTests(unittest.TestCase):
+    """Several minimal edits in one paragraph, a new paragraph and a paragraph removed."""
+
+    setUp = SuggestionsTests.setUp
+    plan = SuggestionsTests.plan
+
+    def edit(self, ident, before, after, start, **extra):
+        return dict(
+            id=ident,
+            kind='edit',
+            tab_id='t.0',
+            start_index=start,
+            before=before,
+            after=after,
+            reason='Desk change.',
+            **extra,
+        )
+
+    def starts(self):
+        blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
+        return [block['startIndex'] for block in blocks if 'paragraph' in block]
+
+    def test_only_the_changed_words_are_deleted_and_inserted(self):
+        self.assertEqual(gs.trimmed('The delay', 'The wait'), (4, 0))
+        self.assertEqual(gs.trimmed('handoffs.', 'handoffs.\nNew.'), (9, 0))
+        self.assertEqual(gs.trimmed('isn’t', 'is not'), (0, 0), 'never inside a word')
+        self.assertEqual(gs.trimmed('slow', 'slower'), (0, 0))
+        self.assertEqual(gs.trimmed('word ', 'word\n'), (4, 0))
+
+    def test_several_edits_and_a_new_paragraph_land_with_the_right_indexes(self):
+        first, second, _ = self.starts()
+        findings = [
+            self.edit('one', 'The delay', 'The wait', first),
+            self.edit('two', 'in', 'within', first + 13),
+            self.edit('three', 'handoffs.', 'handoffs.\nA paragraph of its own.', first + 16),
+            self.edit('four', 'isn’t', 'is not', second + 8),
+        ]
+        saved = self.plan(findings)
+        texts = [r['insertText']['text'] for r in saved['requests'] if 'insertText' in r]
+        self.assertEqual(texts, ['is not', '\nA paragraph of its own.', 'within', 'wait'])
+        deleted = [
+            r['deleteContentRange']['range'] for r in saved['requests'] if 'deleteContentRange' in r
+        ]
+        self.assertEqual(
+            [(r['startIndex'], r['endIndex']) for r in deleted],
+            [(second + 8, second + 13), (first + 13, first + 15), (first + 4, first + 9)],
+            'the kept words are not struck through',
+        )
+        self.assertIsNone(saved['expected_sha256'], 'a split paragraph is checked by its text')
+        result = gs.apply(self.client, self.root, saved)
+        self.assertEqual(result['status'], 'verified-pending')
+        self.assertTrue(all(comment['verified'] for comment in result['comments']))
+        self.assertEqual(
+            accepted_text(self.client),
+            'The wait is within handoffs.\nA paragraph of its own.\n😀 This is not slow.\n'
+            'Keep this link.\n',
+        )
+
+    def test_a_removed_paragraph_takes_its_break_unless_it_is_the_last(self):
+        first, second, third = self.starts()
+        saved = self.plan(
+            [
+                self.edit('gone', '😀 This isn’t slow.', '', second, remove=True),
+                self.edit('last', 'Keep this link.', '', third, remove=True),
+            ]
+        )
+        deleted = [
+            r['deleteContentRange']['range'] for r in saved['requests'] if 'deleteContentRange' in r
+        ]
+        self.assertEqual(
+            [(r['startIndex'], r['endIndex']) for r in deleted],
+            [(third, third + 15), (second, third)],
+        )
+        notes = {comment['id']: comment['content'] for comment in saved['comments']}
+        self.assertIn('empty paragraph', notes['last'])
+        self.assertNotIn('empty paragraph', notes['gone'])
+        self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-pending')
+        self.assertEqual(accepted_text(self.client), 'The delay is in handoffs.\n\n')
+
+    def test_a_removal_needs_the_whole_paragraph_and_no_replacement(self):
+        _, second, _ = self.starts()
+        for finding in (
+            self.edit('part', 'This isn’t', '', second + 3, remove=True),
+            self.edit('words', '😀 This isn’t slow.', 'Other.', second, remove=True),
+        ):
+            with self.subTest(finding=finding['id']), self.assertRaises(gd.GoogleError):
+                gs.build(self.client.doc, [finding], ['t.0'])
+
+    def test_a_split_reads_on_to_the_break_the_paragraph_had_as_google_shows_it(self):
+        def run(text, **marks):
+            return {'textRun': {'content': text, 'textStyle': {}, **marks}}
+
+        inserted = {'suggestedInsertionIds': ['s1']}
+        deleted = {'suggestedDeletionIds': ['s2']}
+        inline = {
+            'tabs': [
+                {
+                    'tabProperties': {'tabId': 't.0'},
+                    'documentTab': {
+                        'body': {
+                            'content': [
+                                {'paragraph': {'elements': [run('A b.'), run('\n', **inserted)]}},
+                                {'paragraph': {'elements': [run('New.', **inserted), run('\n')]}},
+                                {
+                                    'paragraph': {
+                                        'elements': [run('Gone.', **deleted), run('\n', **deleted)]
+                                    }
+                                },
+                                {'paragraph': {'elements': [run('End.\n')]}},
+                            ]
+                        }
+                    },
+                }
+            ]
+        }
+        reindex(inline['tabs'][0]['documentTab']['body']['content'])
+        saved = {
+            'findings': [
+                self.edit('split', 'b.', 'b.\nNew.', 3),
+                self.edit('gone', 'Gone.', '', 6, remove=True),
+            ],
+            'targets': [
+                {'tab_id': 't.0', 'start_index': 1, 'before': 'A b.', 'after': 'A b.\nNew.'},
+                {
+                    'tab_id': 't.0',
+                    'start_index': 6,
+                    'before': 'Gone.',
+                    'after': '',
+                    'removed': True,
+                },
+            ],
+        }
+        self.assertTrue(gs.targets_show(inline, saved, submitted=True))
+        saved['targets'][0]['after'] = 'A b.\nOther.'
+        self.assertFalse(gs.targets_show(inline, saved, submitted=True))
+
+
 if __name__ == '__main__':
     unittest.main()
