@@ -251,27 +251,86 @@ class ReviewTests(FinishCase):
         self.assertEqual([(item['number'], item['note'], item['status']) for item in notes],
                          [(3, f'{self.NOTE} {self.FIX}', 'done')])
 
-    def test_a_finding_on_a_slide_redrawn_since_the_review_is_refused(self):
-        root = self.deck()
-        self.workers.found = [lambda slides: [*drawing_finding(3, self.NOTE, self.FIX)(slides),
-                                              *drawing_finding(6, 'The rows crowd.', 'Space them.')(
-                                                  slides)]]
+    CHANGED = 'This slide changed since this was found, so it was not noted. Skip it.'
+
+    def reviewed(self, root: Path) -> dict:
+        """A review that finds something on slides 2 and 3, both in section 1, and on slide
+        6: its findings, by slide number."""
+        self.workers.found = [lambda slides: [
+            *drawing_finding(2, 'The boxes crowd.', 'Give them room.')(slides),
+            *drawing_finding(3, self.NOTE, self.FIX)(slides),
+            *drawing_finding(6, 'The rows crowd.', 'Space them.')(slides)]]
         self.review(root)
         kept = self.finishing(root, 'review')
         self.assertEqual(kept['reviewed_deck'], build.read_state(root)['rounds'][-1]['deck'])
-        self.engine.desk_note(root, 4, 'Shorter.', self.expected(root))   # section 1 again
-        self.on_desk(root)
-        items = {item['number']: item for item in self.finishing(root, 'review')['items']}
-        self.assertFalse(items[3]['present'])
-        self.assertTrue(items[6]['present'])
+        return kept
+
+    def items(self, root: Path) -> dict:
+        return {item['number']: item for item in self.finishing(root, 'review')['items']}
+
+    def refused(self, root: Path, kept: dict, number: int) -> None:
         drawn = self.sections()
         with self.assertRaises(WorkspaceError) as caught:
-            self.engine.desk_apply(root, kept['job'], [items[3]['id']], self.seen(root))
-        self.assertEqual(str(caught.exception), 'This slide changed since this was found, so it '
-                         'was not noted. Skip it.')
+            self.engine.desk_apply(root, kept['job'], [self.items(root)[number]['id']],
+                                   self.seen(root))
+        self.assertEqual(str(caught.exception), self.CHANGED)
         self.assertEqual(self.sections(), drawn)
-        self.engine.desk_apply(root, kept['job'], [items[6]['id']], self.seen(root))
+
+    def test_a_finding_stays_appliable_when_another_slide_of_its_section_is_redrawn(self):
+        root = self.deck()
+        kept = self.reviewed(root)
+        # A note on slide 4 redraws section 1, and keeps slides 2 and 3 exactly as drawn.
+        self.engine.desk_note(root, 4, 'Shorter.', self.expected(root))
+        self.on_desk(root)
+        self.assertTrue(all(item['present'] for item in self.items(root).values()))
+        # Applying one finding redraws section 1; its sibling's finding still applies.
+        self.engine.desk_apply(root, kept['job'], [self.items(root)[2]['id']], self.seen(root))
+        self.on_desk(root)
+        self.assertTrue(self.items(root)[3]['present'])
+        drawn = self.sections()
+        self.engine.desk_apply(root, kept['job'], [self.items(root)[3]['id']], self.seen(root))
         self.assertEqual(self.sections(), drawn + 1)
+
+    def test_a_finding_on_a_slide_redrawn_since_the_review_is_refused(self):
+        root = self.deck()
+        kept = self.reviewed(root)
+
+        def redrawing(tools, job):
+            # Slide 3 is drawn another way this time: its boxes take other IDs.
+            ident = LONG_OUTLINE['slides'][2]['id']
+
+            def other(handed):
+                def drawn(text, *rest):
+                    made = json.loads(text)
+                    for at, slide in enumerate(made['slides']):
+                        if slide.get('id') == ident:
+                            made['slides'][at] = json.loads(json.dumps(slide).replace('_p', '_q'))
+                    return handed(json.dumps(made), *rest)
+                return drawn
+
+            tools.preview_section = other(tools.preview_section)
+            tools.submit_section = other(tools.submit_section)
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', redrawing)
+        self.engine.desk_note(root, 3, 'Draw it again.', self.expected(root))
+        self.on_desk(root)
+        items = self.items(root)
+        self.assertEqual((items[2]['present'], items[3]['present'], items[6]['present']),
+                         (True, False, True))
+        self.refused(root, kept, 3)
+        self.engine.desk_apply(root, kept['job'], [items[6]['id']], self.seen(root))
+        self.on_desk(root)
+
+    def test_a_finding_on_a_slide_whose_words_changed_since_the_review_is_refused(self):
+        root = self.deck()
+        kept = self.reviewed(root)
+        self.engine.desk_words(root, 3, 'title', 'Capacity holds with two', self.seen(root),
+                               'c' * 16)
+        self.on_desk(root)
+        items = self.items(root)
+        self.assertEqual((items[2]['present'], items[3]['present']), (True, False))
+        self.refused(root, kept, 3)
 
     def test_a_slide_note_after_a_review_is_not_reviewed_again(self):
         root = self.deck()

@@ -1456,10 +1456,10 @@ class DeskActions:
         """A desk deck's review is in: what it found is kept as proposals, per slide. Call it
         holding `files`, as the review is kept."""
         state = build.read_state(root)
-        # The deck reviewed, and each finding with the drawing of its slide then: a slide
-        # drawn again since no longer takes it.
+        # The deck reviewed, and each finding with its slide's own drawing then: the slide
+        # drawn again since, or its words changed, no longer takes it.
         finishing.proposals().keep(str(root), secrets.token_hex(16), 'finish-review',
-                                   finishing.review_items(state),
+                                   finishing.review_items(root, state),
                                    reviewed_deck=desk.last_round(state).get('deck'))
 
     def _desk_propose_notes(self, path) -> dict:

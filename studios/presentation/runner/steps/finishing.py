@@ -118,21 +118,40 @@ def audit_seen(state: dict) -> str:
 
 # --- the review -------------------------------------------------------------------------------
 
-def review_items(state: dict) -> list[dict]:
+def review_items(root, state: dict) -> list[dict]:
     """The last round's review findings, gravest first, each a proposal on its slide whose
-    Apply is a note made of the finding's note and fix."""
+    Apply is a note made of the finding's note and fix, with the slide's own drawing then."""
     found = (desk.last_round(state).get('review') or {}).get('findings')
-    drawn = drawings(state)
+    drawn = drawings(root, state)
     return [{**item, 'drawn': drawn.get(item['part'])}
             for item in findings.items(build.ordered(found or ()), 'slide')]
 
 
-def drawings(state: dict) -> dict:
-    """Which drawing of its section each slide has now, {slide ID: the section's file}: a
-    section drawn again has another file, so a finding made before it no longer fits."""
-    files = {ident: entry.get('file') for ident, entry in (state.get('sections') or {}).items()}
-    return {slide: files.get(entry['id']) for entry in (state.get('start') or {}).get(
-        'sections') or () for slide in entry.get('slides') or ()}
+def drawings(root, state: dict) -> dict:
+    """Each slide's own drawing now, as a fingerprint: {slide ID: SHA-256 of the slide as
+    its section's file (or a lead slide's file) draws it}. A section drawn again for another
+    of its slides keeps this slide exactly, so its fingerprint stays; the slide drawn again,
+    or its words changed, gives another, and a finding made before no longer fits."""
+    from runner.steps import words
+    root = Path(root)
+    began = state.get('start') or {}
+    if not began:
+        return {}
+    files = {ident: root / entry['file'] for ident, entry in (state.get('sections') or {}).items()
+             if entry.get('file')}
+    found = {}
+    for slide in build.slides_of(desk._outline(root)):
+        ident = slide.get('id')
+        section = next((entry['id'] for entry in began.get('sections') or ()
+                        if ident in (entry.get('slides') or ())), None)
+        file = files.get(section) if section else words.lead_file(root, state, ident)
+        drawn = next((one for one in (home.read_json(file, {}) or {}).get('slides') or ()
+                      if isinstance(one, dict) and one.get('id') == ident), None) \
+            if file else None
+        if drawn is not None:
+            found[ident] = hashlib.sha256(json.dumps(drawn, sort_keys=True,
+                                                     ensure_ascii=False).encode()).hexdigest()
+    return found
 
 
 def _priced(run: dict, name: str, says: str) -> str:
@@ -232,7 +251,7 @@ class Desk:
         return {'revision': int(held.get('revision') or 1), 'changed': held.get('changed') or {},
                 'slides': {slide.get('id'): slide.get('notes') or ''
                            for slide in build.slides_of(desk._outline(root))},
-                'drawn': drawings(build.read_state(root))}
+                'drawn': drawings(root, build.read_state(root))}
 
     def checked(self, draft, seen, parts=None):
         record.checked(draft, seen, parts, 'deck')
