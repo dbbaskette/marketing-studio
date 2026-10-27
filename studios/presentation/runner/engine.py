@@ -1079,7 +1079,8 @@ class Engine(Jobs, Researching, DeskActions):
             again.append('look-preview')
         if did('patch') and (lacks or not (root / existing.PATCH).is_file()):
             again += ['patch', 'build-render']
-        if desk_deck and not build.read_state(root).get('start') and desk.opened(record):
+        if desk_deck and not build.read_state(root).get('start') and desk.opened(record) \
+                and any(did(name) for name in BUILT):
             # A desk deck is drawn here only when asked (desk_draw_here): what the driving
             # computer was drawing for its notes is drawn here then.
             with self.files:
@@ -2702,6 +2703,9 @@ class Engine(Jobs, Researching, DeskActions):
                                     f" {said['notice']}" if said.get('notice') else ''))
         if nxt.kind == 'gate' and gate_state(record, nxt.name) == 'waiting':
             return 'waiting', f'{nxt.doing}.'
+        if decks.on_desk(record) and nxt.name in BUILT and nxt.name != 'build-start' \
+                and not build.read_state(root).get('start'):
+            return 'waiting', desk.NO_DRAWING + ' Draw it here to carry on.'
         if run.queued:
             ahead = self._slots.ahead(run) or 0
             return 'working', 'Waiting for its turn. ' + (

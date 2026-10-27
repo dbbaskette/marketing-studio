@@ -50,6 +50,11 @@ LEAD = ('A cover, section or closing slide is not drawn by an assistant: change 
 CHANGED = 'The deck changed since this page read it. Reload it, then try again.'
 NO_DRAWING = 'There is no drawing of this deck on this computer.'
 NO_NOTE = 'Say how the slide should change.'
+NOT_YET = ('The deck is still being drawn. Note a slide once the deck is on the desk, or '
+           'use the note under its preview.')
+STOPPED_ASIDE = 'Not redrawn: you stopped the redraw.'
+AGAIN_ASIDE = ('Not redrawn: it came while the deck was being put together, too often in a '
+               'row. Send it again.')
 NO_DECK_NOTE = 'Say how the whole deck should change.'
 PUTTING = 'Putting the deck together, rendering and checking it'
 STILL = 'Your last change is still being put together. Deliver when it is done.'
@@ -146,6 +151,8 @@ def working(root, run: dict, state: dict | None = None) -> dict | None:
     if stages.survey(run).next is None:
         return None
     state = state if state is not None else build.read_state(root)
+    if not state.get('start'):
+        return None   # no drawing here: nothing is drawn until Draw it here
     asked = list(((state.get('asked') or {}).get('sections')) or ())
     nxt = stages.survey(run).next
     if not asked:
@@ -166,7 +173,7 @@ def section_of(state: dict, number) -> str | None:
     which no composer draws. A number the deck's last drawing does not have is refused."""
     rounds = state.get('rounds') or []
     if not rounds:
-        raise WorkspaceError(NO_DRAWING)
+        raise WorkspaceError(NO_DRAWING if state.get('start') is None else NOT_YET)
     if type(number) is not int:
         raise WorkspaceError('Name the slide by its number.')
     ident = next((slide['id'] for slide in rounds[-1]['slides'] if slide['number'] == number),
@@ -576,7 +583,9 @@ def cards(root, run: dict, price=None) -> dict:
 def _note_shown(item: dict | None) -> dict | None:
     if not item:
         return None
+    aside = {'stopped': SET_ASIDE if not item.get('slide') else STOPPED_ASIDE,
+             'again': AGAIN_ASIDE}.get(item.get('aside'), SET_ASIDE)
     says = {'waiting': 'Your note is kept: it is drawn next.', 'drawing': REDRAWING,
-            'set aside': SET_ASIDE}.get(item.get('status'))
+            'set aside': aside}.get(item.get('status'))
     return {'note': item.get('note'), 'status': item.get('status'), 'whole': not item.get('slide'),
             **({'says': says} if says else {})}

@@ -685,7 +685,8 @@ class Researching:
             items = []
             for text in asked:
                 ident = marks.new_id(text, [item['id'] for item in items])
-                items.append(dict(id=ident, question=text, public_query=None, claim=None))
+                items.append(dict(id=ident, question=text,
+                                  public_query=text if fetches else None, claim=None))
             listed = documents.sources(root)[0] if looks['documents'] and documents.listed(root) \
                 else []
             plan = dict(topic=record.get('title') or form.get('title'), purpose='planning',

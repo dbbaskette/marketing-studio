@@ -87,7 +87,7 @@ class DeskActions:
         if left and again >= AGAIN:
             # Drawn as often as one rest allows and still open: set aside, never looped on.
             for item in left:
-                item['status'] = 'set aside'
+                item.update(status='set aside', aside='again')
             left = []
         record['desk']['again'] = again + 1 if left else 0
         chain = record['desk'].get('chain') if not left else None
@@ -188,6 +188,8 @@ class DeskActions:
         root, space, by = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
+            if not desk.arrived(record):
+                raise WorkspaceError(desk.NOT_YET)
             if not expected or desk.last_round(state).get('deck') != expected:
                 raise WorkspaceError(desk.CHANGED)
             item = desk.add_note(record, state, number, note, home.now(), by)
@@ -236,9 +238,15 @@ class DeskActions:
         the deck is put together from what it has."""
         from runner.engine import Engine
         root = self._desk_held(path)
-        if desk.working(root, self._load(root)) is None:
+        record = self._load(root)
+        # A Stop that did not end in time left the deck stopped mid-redraw: Stop again waits
+        # for it and tidies up.
+        again = (record.get('halted') or {}).get('state') == 'stopped' and (
+            desk.opened(record) or (build.read_state(root).get('asked') or {}).get('sections'))
+        if not again and desk.working(root, record) is None:
             raise WorkspaceError(desk.NOTHING_TO_STOP)
-        self.act(root, 'stop')
+        if not again:
+            self.act(root, 'stop')
         run = self._run(root)
         if not Engine._ended(run):
             raise WorkspaceError(desk.NOT_ENDED)
@@ -251,13 +259,16 @@ class DeskActions:
                 kept = [section for section in asked if section in drawn]
                 state['asked'] = {**state['asked'], 'sections': kept} if kept else None
                 build.write_state(root, state)
+            whole = False
             for item in desk.opened(record):
-                if item.get('section') in undrawn or item.get('status') == 'waiting':
-                    item['status'] = 'set aside'
+                if item.get('section') in undrawn or item.get('status') == 'waiting' \
+                        or item.get('section') not in drawn:
+                    item.update(status='set aside', aside='stopped')
+                    whole = whole or not item.get('slide')
             record['halted'] = None
             record['desk'].pop('chain', None)
             self._store(root, record)
-            self._commit(root, 'stop the whole-deck note')
+            self._commit(root, 'stop the whole-deck note' if whole else 'stop the redraw')
         run.stop.clear()
         self._desk_shared()
         self.wake(root)
@@ -312,6 +323,8 @@ class DeskActions:
             if step is None or step.name != 'gate:build' or not desk.resting(record) \
                     or desk.opened(record) or record.get('halted'):
                 raise WorkspaceError(desk.STILL)
+            if not state.get('rounds'):
+                raise WorkspaceError(desk.NO_DRAWING)
             if not expected or desk.last_round(state).get('deck') != expected:
                 raise WorkspaceError(desk.CHANGED)
             if desk.blockers(state) and blockers_seen != desk.blockers_seen(state):
@@ -329,16 +342,17 @@ class DeskActions:
 
     # --- the Outline tab -----------------------------------------------------------------------
 
-    def _desk_resting(self, root, record: dict, space) -> dict:
+    def _desk_resting(self, root, record: dict, space) -> tuple[dict, tuple]:
         """A change the Outline tab makes is taken while the deck rests on the desk or is
         delivered: a delivered deck is set aside first, to make its next revision. Call it
-        holding `files`. Returns the run."""
+        holding `files`, once every check of the change has passed. Returns the run, and
+        what else its commit lists."""
         if decks.delivered(root) is not None:
-            return delivering.again(root, record, self.slides(), 'Change the outline.', space,
-                                    sections=[])
+            return (delivering.again(root, record, self.slides(), 'Change the outline.', space,
+                                     sections=[]), self._listed(space))
         if not desk.resting(record):
             raise WorkspaceError(desk.OUTLINE_BUSY)
-        return record
+        return record, ()
 
     def desk_outline(self, path, edited, expected) -> dict:
         """Save the outline as the Outline tab edited it, checked by the slides tool: the
@@ -355,7 +369,7 @@ class DeskActions:
                 raise WorkspaceError("This deck's words come from the deck you gave: change "
                                      'them there, or note the slide.')
             self._edit_outline(root, record, edited)   # nothing is written when refused
-            record = self._desk_resting(root, self._load(root), space)
+            record, also = self._desk_resting(root, self._load(root), space)
             kept = {name: dict(record['steps'].get(name) or {})
                     for name in ('outline', 'extract', 'brand', 'look-preview')}
             look = dict(record['gates'].get('gate:look') or {})
@@ -371,9 +385,7 @@ class DeskActions:
             for step in self._reopened(record, 'gate:outline'):
                 self._fresh(record, step)
             self._store(root, record)
-            self._commit(root, 'save the outline on the desk',
-                         self._listed(space) if decks.delivered(root) is None
-                         and record.get('revisions') else ())
+            self._commit(root, 'save the outline on the desk', also)
         self._desk_shared()
         self.wake(root)
         return self.view(root)
@@ -381,7 +393,10 @@ class DeskActions:
     def desk_outline_price(self, path, edited) -> dict:
         """What saving these unsaved slides would redraw, said before Save: {'says',
         'sections'}. None is the outline as it is saved."""
-        root = self._desk_held(path)
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('There is no deck there.')
+        desk.refuse_off_desk(self._load(root))
         if edited is None:
             edited = build.slides_of(desk._outline(root))
         if not isinstance(edited, list) or not all(isinstance(one, dict) for one in edited):
@@ -398,9 +413,15 @@ class DeskActions:
             record = self._load(root)
             if record.get('route') != 'document' or kind not in intake.KINDS:
                 raise WorkspaceError(decks.WRONG_READING)
-            record = self._desk_resting(root, record, space)
+            if kind == record.get('classified'):
+                raise WorkspaceError('Your document is read as '
+                                     + ('a spec' if kind == 'spec' else 'material')
+                                     + ' already.')
+            if decks.delivered(root) is None and not desk.resting(record):
+                raise WorkspaceError(desk.OUTLINE_BUSY)
+            record, also = self._desk_resting(root, record, space)
             said = self._reclassify(root, record, {'kind': kind}, None, home.now(), by)
-            self._commit(root, said + ' on the desk')
+            self._commit(root, said + ' on the desk', also)
         self._desk_shared()
         self.wake(root)
         return self.view(root)
@@ -413,7 +434,7 @@ class DeskActions:
             record = self._load(root)
             if 'gate:look' not in {step.name for step in stages.steps(record)}:
                 raise WorkspaceError('This deck keeps the look of the deck you gave.')
-            record = self._desk_resting(root, record, space)
+            record, also = self._desk_resting(root, record, space)
             looks.drop(root)
             record.pop('look_picked', None)
             record = stages.reopen(record, 'gate:look')
@@ -423,7 +444,7 @@ class DeskActions:
             for step in self._reopened(record, 'gate:look'):
                 self._fresh(record, step)
             self._store(root, record)
-            self._commit(root, 'draw the looks again on the desk')
+            self._commit(root, 'draw the looks again on the desk', also)
         self._desk_shared()
         self.wake(root)
         return self.view(root)

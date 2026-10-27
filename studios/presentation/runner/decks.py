@@ -255,6 +255,8 @@ def _desk_form(sent: dict, checked: dict) -> None:
         return
     if flow not in FLOWS:
         raise WorkspaceError('A deck is started on the desk, or without a flow.')
+    if checked['route'] == 'existing':
+        raise WorkspaceError('An existing deck is started with its own form, not on the desk.')
     look = sent.get('look')
     look = 'pick' if look in (None, '') else look
     if look not in LOOKS:

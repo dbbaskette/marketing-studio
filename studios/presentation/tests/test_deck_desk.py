@@ -819,5 +819,128 @@ class DeskTeamTests(DeskCase, runner_support.TeamCase):
         self.assertEqual(self.shared().count('Rolling restarts: keep section 1'), kept)
 
 
+class ReviewFixTests(DeskCase):
+    """What the first review of the desk found, each held to here."""
+
+    def deck(self, **changes) -> Path:
+        root = self.start_desk(**{'look': 'default', **changes})
+        self.on_desk(root)
+        return root
+
+    def test_a_refused_reading_leaves_a_delivered_deck_delivered(self):
+        from runner import decks
+        root = self.deck(route='document',
+                         source={'kind': 'paste', 'text': 'Notes on rolling restarts.'})
+        self.engine.desk_deliver(root, self.desk_view(root)['expected'])
+        before = (root / 'deliver.json').read_bytes()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_reread(root, 'material')
+        self.assertIn('read as material already', str(caught.exception))
+        self.assertEqual((root / 'deliver.json').read_bytes(), before)
+        self.assertIsNotNone(decks.delivered(root))
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_a_change_to_a_delivered_deck_leaves_nothing_uncommitted(self):
+        root = self.deck()
+        self.engine.desk_deliver(root, self.desk_view(root)['expected'])
+        self.engine.desk_look_again(root)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_stop_again_after_it_did_not_end_in_time(self):
+        import threading
+
+        from runner import engine as engines
+        root = self.deck()
+        tried, done = [], []
+
+        def stopping(tools, job):
+            if section_of_job(tools) == 2:
+                def stop():
+                    with mock.patch.object(engines.Engine, '_ended', return_value=False):
+                        try:
+                            self.engine.desk_stop(root)
+                        except WorkspaceError as refusal:
+                            tried.append(str(refusal))
+                    done.append(True)
+                thread = threading.Thread(target=stop)
+                thread.start()
+                thread.join(30)
+                return None
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', stopping, stopping)
+        self.engine.desk_deck_note(root, 'Fewer words.', self.desk_view(root)['expected'])
+        self.assertEqual(tried, [desk.NOT_ENDED])
+        self.assertEqual(self.record(root)['halted']['state'], 'stopped')
+        self.engine.desk_stop(root)
+        self.on_desk(root)
+        self.assertIsNone(self.record(root)['halted'])
+        self.assertFalse(desk.opened(self.record(root)))
+
+    def test_a_note_before_the_deck_reaches_the_desk_says_so(self):
+        said = []
+
+        def noting(tools, job):
+            root = self.engine.every()[0]
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.desk_note(root, 3, 'Shorter.', 'x')
+            said.append(str(caught.exception))
+            return self.workers.outline(tools, job)
+
+        self.workers.then('outline', noting)
+        self.deck()
+        self.assertEqual(said, [desk.NOT_YET])
+
+    def test_an_existing_deck_is_not_started_on_the_desk_yet(self):
+        from runner import decks
+        with self.assertRaises(WorkspaceError):
+            decks.check_form({**runner_support.FORM, 'route': 'existing', 'level': 'polish',
+                              'source': {'kind': 'upload', 'name': 'old.pptx'},
+                              'flow': 'desk'}, None)
+
+    def test_a_web_plan_from_the_form_searches_with_its_questions(self):
+        from runner import research_steps
+        contract = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        with mock.patch.object(self.engines.research_contract, 'snapshot',
+                               return_value=contract), \
+                mock.patch.object(research_steps.research_contract, 'native',
+                                  side_effect=WorkspaceError('Stopped here for the test.')):
+            root = self.start_desk(look='default', research=True,
+                                   research_questions=['What starts the next batch?'])
+        plan = json.loads((root / 'research/plan.json').read_text())
+        self.assertEqual(plan['items'][0]['public_query'], 'What starts the next batch?')
+
+
+class DeskTeamFixTests(DeskCase, runner_support.TeamCase):
+    def test_draw_it_here_sends_the_notes_with_the_first_drawing(self):
+        with self.be(self.alex):
+            root = self.start_desk(look='default')
+            self.engine.share()
+        theirs = self.theirs(self.blake, root)
+
+        def taken_over(tools, job):
+            self.as_(self.blake, self.blake.engine.fetch)
+            self.as_(self.blake, self.blake.engine.drive, theirs, 'take')
+            with self.be(self.alex):
+                self.alex.engine.fetch()
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', taken_over)
+        with self.be(self.alex):
+            self.engine.desk_note(root, 3, 'Make the diagram a sequence.',
+                                  self.desk_view(root)['expected'])
+        shown = self.as_(self.blake, self.blake.engine.view, theirs)
+        self.assertNotEqual(shown['state'], 'working')
+        self.assertIsNone(shown['desk']['working'])
+        jobs = len(self.workers.of('section'))
+        self.as_(self.blake, self.blake.engine.desk_draw_here, theirs)
+        again = self.workers.of('section')[jobs:]
+        self.assertEqual(len(again), 2)
+        self.assertEqual(sum('Slide 3: Make the diagram a sequence.' in job.task
+                             for job in again), 1)
+        notes = self.as_(self.blake, self.blake.engine._load, theirs)['desk_notes']
+        self.assertEqual([item['status'] for item in notes], ['done'])
+
+
 if __name__ == '__main__':
     unittest.main()
