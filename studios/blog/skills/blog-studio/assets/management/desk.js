@@ -1078,19 +1078,37 @@ function sDeskRepurposeFollow(held,p){
     if(['queued','working'].includes(p.job?.status))sDeskRepurposeFollow(held,p);
   },DESK_POLL);
 }
+// What a plan sends to the Google Doc, said plainly: every desk change goes as a suggestion or
+// a comment; one in a paragraph still waiting on an earlier suggestion goes next time.
+function sDeskGoogleSaid(plan){
+  const n=plan.suggestions??plan.count,m=plan.comments||0,parts=[];
+  if(n)parts.push(n+(n===1?' suggestion':' suggestions'));
+  if(m)parts.push(m+(m===1?' comment':' comments'));
+  let said=parts.join(' and ')+(n+m===1?' goes':' go')+' to the Google Doc.';
+  if(n)said+=' Its owner accepts or rejects each suggestion.';
+  if(plan.waiting)said+=' '+plan.waiting+(plan.waiting===1?' change waits':' changes wait')+' for the Doc’s owner to decide the earlier suggestion in its paragraph, and '+(plan.waiting===1?'goes':'go')+' next time.';
+  if(plan.sent_before)said+=' '+plan.sent_before+(plan.sent_before===1?' change was':' changes were')+' sent before.';
+  if(plan.left)said+=' '+plan.left+(plan.left===1?' change':' changes')+' could not be placed in the Doc: pull the latest Doc and check again.';
+  return said;
+}
+function sDeskGoogleItem(item){
+  if(item.kind==='comment')return 'Comment on “'+item.before+'”: '+item.reason;
+  if(item.remove)return '“'+item.before+'” is removed';
+  return '“'+item.before+'” → “'+item.after.replace(/\n/g,' ¶ ')+'”';
+}
 function sDeskGoogleCard(held,p){
   const view=held.view,card=sCard('Send to Google Doc as suggestions');
   if(!view.google_suggestions&&!view.google?.url){const make=sButton('Make a Google Doc',()=>sDeskMakeDoc(held));make.disabled=!sDeskCan(held);card.append(sNode('p','','This blog has no Google Doc yet. Make a private one of this draft, and later desk changes are sent to it as suggestions for you to accept.'),sAdd(sNode('div','bar'),make));return card;}
   if(!view.google_suggestions){card.append(sNode('p','','This blog’s Google Doc cannot take suggestions yet: it has no confirmed copy of the draft to compare with.'));return card;}
-  card.append(sNode('p','quiet','Your desk wording goes to the Google Doc as suggestions its owner accepts or rejects. Paragraphs added or removed stay here.'));
+  card.append(sNode('p','quiet','Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment.'));
   if(view.google?.url){const doc=link(view.google.url,'Open the Google Doc ↗');card.append(sAdd(sNode('p',''),doc));}
   if(p.googleProblem)card.append(sNode('p','problem',p.googleProblem));
   const check=sButton(p.plan?'Check again':'Check what would be sent',async button=>{await busy(button,'Checking…',async()=>{try{await sDeskFlush(held);p.plan=await api('desk-google-plan',{id:held.id,mode:p.google.mode});p.sent=null;p.googleProblem='';}catch(error){p.plan=null;p.googleProblem=error.message;}sDeskPanelShow(held);});},p.plan?'quiet':'filled');check.disabled=!sDeskCan(held);
   if(p.sent){card.append(sStatus(['verified-pending','verified-comments'].includes(p.sent.status)?'done':'late',p.sent.message));}
   if(p.plan&&!p.sent){
-    const changes=sNode('ul','look');for(const item of p.plan.proposals||[])changes.append(sNode('li','','“'+item.before+'” → “'+item.after+'”'));
+    const changes=sNode('ul','look');for(const item of p.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
     const send=sButton('Send to Google Doc',async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery before trying anything else.'};p.googleProblem='';}catch(error){p.googleProblem=error.message;if(/changed/.test(error.message))p.plan=null;}sDeskPanelShow(held);});},'filled');send.disabled=!sDeskCan(held);
-    card.append(sNode('p','',p.plan.count+(p.plan.count===1?' wording change':' wording changes')+' checked against the Google Doc.'+(p.plan.left?' '+p.plan.left+(p.plan.left===1?' changed paragraph cannot be a suggestion and stays':' changed paragraphs cannot be suggestions and stay')+' on the desk.':'')),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,check));
+    card.append(sNode('p','',sDeskGoogleSaid(p.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,check));
     return card;
   }
   if(p.sent&&!['verified-pending','verified-comments'].includes(p.sent.status)&&p.plan){card.append(sAdd(sNode('div','bar'),sButton('Check delivery',async button=>{await busy(button,'Checking…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:p.plan.plan,confirmed:true});p.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery before trying anything else.'};}catch(error){p.googleProblem=error.message;}sDeskPanelShow(held);});},'filled')));return card;}
@@ -1283,10 +1301,10 @@ function sReviewGoogle(held){
   if(g.problem)out.push(sNode('p','problem',g.problem));
   if(g.sent){out.push(sStatus(['verified-pending','verified-comments'].includes(g.sent.status)?'done':'late',g.sent.message));if(held.view.google?.url)out.push(sAdd(sNode('p',''),link(held.view.google.url,'Open the Google Doc ↗')));return out;}
   if(g.plan){
-    const changes=sNode('ul','look');for(const item of g.plan.proposals||[])changes.append(sNode('li','','“'+item.before+'” → “'+item.after+'”'));
+    const changes=sNode('ul','look');for(const item of g.plan.proposals||[])changes.append(sNode('li','',sDeskGoogleItem(item)));
     const count=g.plan.count;
     const send=sButton('Send '+count+(count===1?' change':' changes'),async button=>{await busy(button,'Sending…',async()=>{try{const result=await api('desk-google-send',{id:held.id,plan:g.plan.plan,confirmed:true});g.sent={status:result.status,message:result.status==='verified-pending'?'Suggestions are ready for the Doc’s owner to accept or reject.':result.status==='verified-comments'?'Comments were added to the Google Doc.':'The result is not yet verified. Check delivery in the full desk’s Finishing before trying anything else.'};g.problem='';}catch(error){g.problem=error.message;if(/changed/.test(error.message))g.plan=null;}sReviewHeadShow(held);});},'filled');send.disabled=!sDeskCan(held);
-    out.push(sNode('p','',count+(count===1?' wording change goes':' wording changes go')+' to the Google Doc as suggestions for its owner to accept or reject.'+(g.plan.left?' '+g.plan.left+(g.plan.left===1?' changed paragraph cannot be a suggestion and stays':' changed paragraphs cannot be suggestions and stay')+' here.':'')),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,sButton('Cancel',()=>{g.plan=null;sReviewHeadShow(held);})));
+    out.push(sNode('p','',sDeskGoogleSaid(g.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,sButton('Cancel',()=>{g.plan=null;sReviewHeadShow(held);})));
     return out;
   }
   const plan=sButton('Send accepted changes to Google Doc',async button=>{await busy(button,'Checking…',async()=>{try{await sReviewFlush(held);g.plan=await api('desk-google-plan',{id:held.id,mode:'auto'});g.problem='';}catch(error){g.plan=null;g.problem=error.message;}sReviewHeadShow(held);});},'filled');plan.disabled=!sDeskCan(held);
