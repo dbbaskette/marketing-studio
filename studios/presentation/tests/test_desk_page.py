@@ -1310,5 +1310,77 @@ class FinishingPageTests(DeskPageCase):
                 self.assertNotIn(checked['desk']['finishing']['brand']['job'][:12], said)
 
 
+class OpenOnDeskPageTests(DeskPageCase):
+    """Task 5.1: a saved deck, delivered the gated way, opens on the desk from its screen."""
+
+    def delivered(self, **changes) -> str:
+        """A deck started the gated way, approved stop by stop with the first look, and
+        delivered."""
+        path = self.started(**changes)
+        for _ in range(12):
+            gate = self.run_of(path)['gate']
+            if gate is None:
+                break
+            offered = gate.get('offered') or (gate.get('look') or {}).get('offered')
+            picked = {'extra': {'look': offered['looks'][0]['id']}} \
+                if offered and not offered['chosen'] else {}
+            self.decided(path, gate['name'], **picked)
+        return path
+
+    def test_open_on_the_desk_says_what_the_deck_s_level_lets_change(self):
+        path = self.delivered()
+        view = self.run_of(path)
+        said = {None: 'Open it on the desk to note a slide, or change its words or its speaker '
+                      'notes.',
+                'redesign': 'Open it on the desk to note a slide, or change its words or its '
+                            'speaker notes.',
+                'brand-only': 'Open it on the desk to note a slide or change its speaker '
+                              'notes. Its words stay your own deck’s.',
+                'polish': 'Open it on the desk to note a slide or change its speaker notes. '
+                          'Its words stay your own deck’s.',
+                'selected': 'Open it on the desk to change your deck’s words on a copy, or '
+                            'note a slide.'}
+        for level, line in said.items():
+            with self.subTest(level):
+                shown = copy.deepcopy(view)
+                shown['level'] = level
+                text = self.open_deck(path, shown, [{'snapshot': 'delivered'}])[
+                    'snapshots']['delivered']['text']
+                self.assertIn(line + ' It stays delivered until you change it; a change '
+                              'makes the next revision.', text)
+                self.assertNotIn('to change a slide, its words or its speaker notes', text)
+
+    def test_an_opened_powerpoint_delivery_still_goes_to_google_slides(self):
+        path = self.delivered(output='pptx')
+        opened = self.post('desk-open', {'path': path})
+        self.assertTrue(opened['deliver']['to_google'])
+        result = self.open_deck(path, opened, [
+            {'snapshot': 'desk'}, {'click': 'Send to Google Slides'}],
+            **{'POST /api/deliver': [ok(opened)]})
+        self.assertIn('Send to Google Slides', result['snapshots']['desk']['buttons'])
+        self.assertEqual(self.posts(result), [('/api/deliver', {'path': path})])
+
+    def test_a_delivered_deck_offers_open_on_the_desk(self):
+        path = self.delivered()
+        view = self.run_of(path)
+        self.assertIsNone(view['desk'])
+        opened = self.post('desk-open', {'path': path})
+        result = self.open_deck(path, view, [
+            {'snapshot': 'delivered'}, {'click': 'Open on the desk'}, {'snapshot': 'desk'}],
+            **{'POST /api/desk-open': [ok(opened)], 'GET /api/run': [ok(view), ok(view), ok(opened)]})
+        delivered, desk = result['snapshots']['delivered'], result['snapshots']['desk']
+        self.assertIn('Open on the desk', delivered['buttons'])
+        self.assertNotIn('Open on the desk', delivered['filled'])
+        self.assertIn('Delivered', delivered['text'])
+        self.assertEqual(self.posts(result), [('/api/desk-open', {'path': path})])
+        # The screen is the desk now: the deck's cards under their sections, still delivered.
+        self.assertIn('Section 1', desk['headings'])
+        self.assertIn('Delivered as revision 1.', desk['text'])
+        self.assertNotIn('Open on the desk', desk['buttons'])
+        # A deck on the desk already is not offered it again.
+        shot = self.open_deck(path, opened, [{'snapshot': 'again'}])['snapshots']['again']
+        self.assertNotIn('Open on the desk', shot['buttons'])
+
+
 if __name__ == '__main__':
     unittest.main()

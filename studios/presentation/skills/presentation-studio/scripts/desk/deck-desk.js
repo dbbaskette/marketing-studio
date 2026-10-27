@@ -718,6 +718,14 @@
         + 'deck.'),
       make('p', 'quiet', 'A note or an edit here makes the next revision, delivered when you '
         + 'press Deliver. This one is kept.'));
+    // Delivered as a PowerPoint file: the same deck goes to Google Slides on request.
+    const sent = run.deliver || {};
+    if (sent.to_google && !h.theirs(run) && h.googleReady()) {
+      const google = h.capsule(h.view.delivering ? 'Delivering…' : 'Send to Google Slides', '',
+        () => h.deliverToGoogle(run, google), 'deliver-google');
+      h.add(node, make('p', 'quiet', 'The same deck goes to Google Slides as the next '
+        + 'revision. Nothing in it is built again.'), bar(google));
+    }
     return node;
   }
 

@@ -17,6 +17,7 @@ outline.md         each slide's title, key message and notes
 look.md            the brand the deck is made in, and its looks
 brand/             brand-contract.json, DESIGN.md, VOICE.md
 reviews/build-<n>.md    what the review of each round of the build found
+desk/              a desk deck's kept versions of each slide's words
 deliver.json       the Google Slides link or the .pptx name, and the revision
 contact-sheet.png  one small picture of the deck
 sources/           never shared: documents and the original deck
@@ -26,7 +27,7 @@ work/              never shared: harness-slides' workspace, the build plan and w
 
 ## run.json
 
-The runner reads it to know where a deck stands, so write it in its shape:
+Write it in the runner's shape:
 
 - `schema` 1, or 2 when `review_policy` is not Step by step (3 is the runner's, for research it started under a research contract), `id`, `title`, `route`, and `form`: `route`, `title`, `audience`, `goal`, `minutes`, `brand`, `variant`, `output`, `research`; for an existing deck also `level`, and `selected` for that level.
 - `classified`: `"spec"` or `"material"` for a document, once decided; else `null`. `look`: `null`.
@@ -34,6 +35,7 @@ The runner reads it to know where a deck stands, so write it in its shape:
 - `gates`: each stop, `gate:classify`, `gate:research-plan`, `gate:research`, `gate:outline`, `gate:look` (the look) or `gate:build`, as `{"state": "approved"}`, or `"changes"` with the person's `note`, with `at`, and `by` from `person.name`.
 - `review_policy`: `{"schema": 1, "level": "step_by_step"}`, or `balanced` or `automatic`: the level the person chose, kept when the runner brings the deck in. Without it the deck is read as Step by step.
 - `revisions` `[]`, and `driver`, `halted` as `null`.
+- `flow` `"desk"`, with `desk` and `opened_on_desk`, mark a [desk](desk.md) deck: the runner's alone.
 
 The runner carries on at the first step not done or stop not approved. Work kept in `sources/` and `work/` is not shared, so it redoes a step whose work it lacks.
 
@@ -45,4 +47,4 @@ The runner carries on at the first step not done or stop not approved. Work kept
 
 - **One computer drives a deck at a time.** A deck whose `run.json` names a driver other than this computer is someone else's: read it, do not change it.
 - **Each decision is a commit**, saying what was decided. Share it when the person asks, or after each decision when `share` in the shared values is `decision`. Never force a push. If the shared version moved on, stop and say so.
-- **The runner.** Keep `run.json` in the shape above: the runner can bring a deck made here into its workspace and carry on from what it says. A deck the runner drives is never also driven from a conversation.
+- **The runner** can bring a deck made here into its workspace and carry on from its `run.json`. A deck the runner drives is never also driven from a conversation.

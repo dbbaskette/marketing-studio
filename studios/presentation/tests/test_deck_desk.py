@@ -1177,5 +1177,212 @@ class SourceTests(DeskCase):
         self.assertIn('Runbook', read[0])
 
 
+class OpenOnDeskTests(DeskCase):
+    """A saved deck, delivered the gated way, opens on the desk: still delivered, with one
+    version of each slide's words kept, until a change makes its next revision."""
+
+    ELSEWHERE = desk.NO_DRAWING + ' Draw it here first, or open it on the computer that made it.'
+
+    def delivered(self, **changes) -> Path:
+        from runner import decks
+        root = self.gated(**changes)
+        self.decide(root, 'gate:build')
+        self.assertIsNotNone(decks.delivered(root))
+        return root
+
+    def refused(self, root: Path) -> str:
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.open_on_desk(root)
+        return str(caught.exception)
+
+    def slide_ids(self, root: Path) -> list[str]:
+        return [slide['id'] for slide in json.loads((root / 'outline.json').read_text())['slides']]
+
+    def test_a_delivered_gated_deck_opens_on_the_desk_still_delivered(self):
+        root = self.delivered()
+        before = (root / 'deliver.json').read_bytes()
+        gates = self.record(root)['gates']
+        jobs = len(self.workers.of('section'))
+        shown = self.engine.open_on_desk(root)
+        record = self.record(root)
+        self.assertEqual(record['flow'], 'desk')
+        self.assertTrue(record['opened_on_desk'])
+        self.assertTrue(record['desk']['arrived_at'])
+        # The gates it passed are as they were, and nothing was drawn.
+        self.assertEqual({name: gate['by'] for name, gate in record['gates'].items()},
+                         {name: gate['by'] for name, gate in gates.items()})
+        self.assertEqual(len(self.workers.of('section')), jobs)
+        self.assertEqual((root / 'deliver.json').read_bytes(), before)
+        self.assertEqual(shown['desk']['delivered']['revision'], 1)
+        self.assertTrue(shown['desk']['arrived'])
+        self.assertTrue(shown['desk']['drawn_here'])
+        self.assertIsNone(shown['desk']['working'])
+        self.assertFalse(shown['desk']['deliverable'])
+        self.assertEqual(len(cards_of(shown['desk'])), 8)
+        for ident in self.slide_ids(root):
+            self.assertEqual([one['source'] for one in desk.versions_of(root, ident)], ['open'])
+        self.assertEqual(self.log()[-1], 'Rolling restarts: open the deck on the desk')
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        # From now on the gates are the desk's: the gated decision is refused.
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.decide(root, 'gate:build', 'changes', 'Shorter.', None, None)
+        self.assertEqual(str(caught.exception), desk.ON_DESK)
+
+    def test_a_waiting_gated_deck_cannot_be_opened(self):
+        root = self.gated()
+        self.assertEqual(self.refused(root), 'Deliver this deck, then open it on the desk.')
+        record = self.record(root)
+        self.assertNotIn('flow', record)
+        self.assertNotIn('opened_on_desk', record)
+        self.assertIsNone(self.view(root)['desk'])
+
+    def test_the_first_change_makes_the_next_revision(self):
+        from runner import decks
+        root = self.delivered()
+        expected = self.engine.open_on_desk(root)['desk']['expected']
+        jobs = len(self.workers.of('section'))
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.', expected)
+        self.assertIsNone(decks.delivered(root))
+        self.assertEqual([one['revision'] for one in self.record(root)['revisions']], [1])
+        again = self.workers.of('section')[jobs:]
+        self.assertEqual(len(again), 1)
+        self.assertIn('Draw section 1 of', again[0].task)
+        shown = self.on_desk(root)['desk']
+        self.assertEqual(shown['revision'], desk.DELIVERED_AGAIN.format(revision=1, next=2))
+        self.assertTrue(shown['deliverable'])
+        self.engine.desk_deliver(root, shown['expected'], shown['blockers_seen'])
+        self.assertEqual([one['revision'] for one in self.record(root)['revisions']], [1, 2])
+
+    def test_a_slide_note_on_an_opened_deck_runs_no_review(self):
+        root = self.delivered()   # Step by step: its deck was reviewed before it was delivered
+        self.assertTrue(self.workers.of('review'))
+        expected = self.engine.open_on_desk(root)['desk']['expected']
+        reviews = len(self.workers.of('review'))
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.', expected)
+        self.on_desk(root)
+        self.assertEqual(len(self.workers.of('review')), reviews)
+        # It is reviewed from Finishing, as every desk deck is.
+        form = self.record(root)['form']
+        self.assertEqual((form.get('initial_review'), form.get('initial_review_source')),
+                         ('user-first', 'desk'))
+
+    def opened_at(self, level: str, **changes) -> Path:
+        """A deck started the gated way under the review level `level`, delivered and opened
+        on the desk."""
+        self.review_level = level
+        root = self.delivered(**changes)
+        self.engine.open_on_desk(root)
+        return root
+
+    def back_on_desk(self, root: Path) -> None:
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown['problem'])
+        self.on_desk(root)
+
+    def test_change_the_look_on_an_opened_deck_reads_no_level(self):
+        for level in ('balanced', 'automatic'):
+            with self.subTest(level):
+                root = self.opened_at(level, title=f'Rolling restarts {level}')
+                self.assertEqual(self.view(root)['review_level'], 'step_by_step')
+                self.engine.desk_look_again(root)
+                shown = self.view(root)
+                self.assertIsNone(shown['problem'], shown['problem'])
+                self.assertEqual(self.waiting(root), 'gate:look')
+                self.pick_look(root, 'example-bold')
+                self.back_on_desk(root)
+                self.assertEqual(looks.chosen(root)['choice'], 'example-bold')
+
+    def test_reading_an_opened_document_the_other_way_reads_no_level(self):
+        for level in ('balanced', 'automatic'):
+            with self.subTest(level):
+                root = self.opened_at(level, title=f'Notes {level}', route='document',
+                                      source={'kind': 'paste',
+                                              'text': 'Notes on rolling restarts.'})
+                other = 'spec' if self.record(root).get('classified') == 'material' \
+                    else 'material'
+                self.engine.desk_reread(root, other)
+                shown = self.view(root)
+                self.assertIsNone(shown['problem'], shown['problem'])
+                # The person picked this deck's look, so a new outline's looks are theirs to
+                # pick again, as on a desk deck that chose to pick; the level's default
+                # look is chosen again by itself.
+                if level == 'balanced':
+                    self.pick_look(root)
+                self.back_on_desk(root)
+                self.assertEqual(self.record(root)['classified'], other)
+
+    def test_a_gated_balanced_deck_keeps_its_direction_review(self):
+        from runner import stages
+        self.review_level = 'balanced'
+        root = self.start()
+        names = [step.name for step in stages.steps(self.record(root))]
+        self.assertGreater(names.index('gate:outline'), names.index('look-preview'))
+        self.assertEqual(self.view(root)['review_level'], 'balanced')
+
+    def test_notes_left_from_the_gated_flow_are_not_drawn_on_the_desk(self):
+        root = self.delivered()
+        record = self.record(root)
+        slide = json.loads((root / 'outline.json').read_text())['slides'][2]['id']
+        record['build_feedback'] = [{'slide': slide, 'number': 3, 'section': 'section-1',
+                                     'note': 'Bigger arrows.', 'late': True,
+                                     'at': '2026-10-27T10:00:00Z'}]
+        (root / 'run.json').write_text(json.dumps(record))
+        self.git('commit', '-qam', 'a late note from the gated flow')
+        expected = self.engine.open_on_desk(root)['desk']['expected']
+        record = self.record(root)
+        self.assertEqual(desk.opened(record), [])
+        self.assertEqual([item['note'] for item in record['build_feedback_done']],
+                         ['Bigger arrows.'])
+        jobs = len(self.workers.of('section'))
+        self.engine.desk_note(root, 6, 'Shorter.', expected)
+        again = self.workers.of('section')[jobs:]
+        self.assertEqual(len(again), 1)
+        self.assertNotIn('Bigger arrows.', again[0].task)
+
+    def test_opening_twice_keeps_one_open_version(self):
+        root = self.delivered()
+        first = self.engine.open_on_desk(root)
+        again = self.engine.open_on_desk(root)
+        self.assertEqual(again['desk'], first['desk'])
+        for ident in self.slide_ids(root):
+            self.assertEqual(len(desk.versions_of(root, ident)), 1)
+        self.assertEqual(self.log().count('Rolling restarts: open the deck on the desk'), 1)
+
+    def test_a_deck_from_another_computer_says_there_is_no_drawing(self):
+        import shutil
+        root = self.delivered()
+        # work/ is never shared: a teammate's computer has the deck without its drawing.
+        shutil.rmtree(root / 'work')
+        self.assertEqual(self.refused(root), self.ELSEWHERE)
+        self.assertNotIn('flow', self.record(root))
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def selected(self) -> Path:
+        from test_desk_words import planned
+        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
+        root = self.existing_deck('automatic', 'selected',
+                                  selected='Shorten the words on slide 2')
+        self.decide(root, 'gate:build')
+        return root
+
+    def test_a_delivered_selected_changes_deck_opens_with_its_copy(self):
+        root = self.selected()
+        shown = self.engine.open_on_desk(root)['desk']
+        self.assertTrue(shown['drawn_here'])
+        self.assertTrue(shown['expected'])
+        self.assertEqual(shown['delivered']['revision'], 1)
+        self.assertEqual(self.record(root)['flow'], 'desk')
+
+    def test_a_selected_changes_deck_without_its_copy_here_says_so(self):
+        import shutil
+        root = self.selected()
+        shutil.rmtree(root / 'work')
+        self.assertEqual(self.refused(root), self.ELSEWHERE)
+
+
+def cards_of(shown: dict) -> list:
+    return [card for part in shown['sections'] for card in part['slides']]
+
+
 if __name__ == '__main__':
     unittest.main()

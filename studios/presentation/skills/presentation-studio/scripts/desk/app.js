@@ -5078,13 +5078,20 @@ function deliverPart(run) {
   // A delivery made before its file was shared is on the computer that made it.
   if (found.not_here) add(node, make('p', 'quiet', found.not_here));
   if (found.notice) add(node, make('p', 'fix', found.notice));
+  // A saved deck, delivered the gated way, opens on the desk, still delivered.
+  const desk = !run.desk && !theirs(run) ? capsule(view.opening ? 'Opening…' : 'Open on the desk',
+    '', () => openOnDesk(run, desk), 'desk-open') : null;
+  // What the desk lets change, as the deck's level allows: Brand only and Polish keep the
+  // deck's own words, and Selected changes changes them only on a copy.
+  const deskSays = desk ? make('p', 'quiet', (OPEN_SAYS[run.level] || OPEN_SAYS.other)
+    + ' It stays delivered until you change it; a change makes the next revision.') : null;
   if (found.to_google && !theirs(run) && googleReady()) {
     const google = capsule(view.delivering ? 'Delivering…' : 'Send to Google Slides', '',
       () => deliverToGoogle(run, google), 'deliver-google');
     add(node, make('p', 'quiet', 'Once you are signed in to Google with gcloud on this '
       + 'computer, the same deck goes to Google Slides as the next revision. Nothing in it '
-      + 'is built again.'), add(make('div', 'bar'), google));
-  }
+      + 'is built again.'), deskSays, add(make('div', 'bar'), google, desk));
+  } else if (desk) add(node, deskSays, add(make('div', 'bar'), desk));
   if (found.to_google && !theirs(run) && !googleReady()) add(node, make('p', 'quiet',
     'Sign in to Google (Status → Check this computer says how) to send this deck to '
     + 'Google Slides later.'));
@@ -5151,6 +5158,37 @@ async function deliverToGoogle(run, pressed) {
     view.delivering = false;
     pressed.disabled = false;
     toast(failure.message + ' Nothing was sent.');
+  }
+}
+
+// What Open on the desk says the desk lets change, by the level of an existing deck.
+const OPEN_SAYS = {
+  'brand-only': 'Open it on the desk to note a slide or change its speaker notes. Its words '
+    + 'stay your own deck’s.',
+  polish: 'Open it on the desk to note a slide or change its speaker notes. Its words stay '
+    + 'your own deck’s.',
+  selected: 'Open it on the desk to change your deck’s words on a copy, or note a slide.',
+  other: 'Open it on the desk to note a slide, or change its words or its speaker notes.',
+};
+
+// A delivered saved deck opened on the desk: the screen becomes the desk.
+async function openOnDesk(run, pressed) {
+  if (view.opening || view.busy) return;
+  const turn = view.turn;
+  view.opening = true;
+  pressed.disabled = true;
+  try {
+    const shown = await send('desk-open', { path: run.path });
+    view.opening = false;
+    if (turn === view.turn) {
+      view.run = shown;
+      paintDeck(true);
+    }
+    refresh();
+  } catch (failure) {
+    view.opening = false;
+    pressed.disabled = false;
+    toast(failure.message);
   }
 }
 
@@ -7431,7 +7469,8 @@ function deskParts() {
     // server names it by, and `mark` changes when a newer one is drawn.
     picture: (image, alt, mark) => pictureAt(pictureOf(view.path, image), alt, mark),
     pictureAt, pictureOf, sheetTitle, openSheet, closeSheet, drawSheet, paintDeck, steer,
-    askDelete, downloadDeck, theirs, theirsPart, noticePart, problemPart, questionPart,
+    askDelete, downloadDeck, deliverToGoogle, theirs, theirsPart, noticePart, problemPart,
+    questionPart,
     findingItems, routeWords, nameOf, googleReady, createStep, chooseRoute, paintNew,
     paintAgents, readAgents, readModels, researchFromField, researchSummary, researchFromOf,
     brandFields, brandsFound, agentFields, modelFields, draftModelWords, limitsSays,

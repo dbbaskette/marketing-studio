@@ -1,6 +1,6 @@
 # The five levels for an existing deck
 
-The person chooses how much may change. They are harness-slides' own intake levels, so follow its intake guidance for the one chosen. Whatever the level, the original is never changed and a new copy is delivered.
+The person chooses how much may change. They are harness-slides' intake levels: follow its guidance for the one chosen. The original is never changed; a new copy is delivered.
 
 | Level | What may change | Steps after Classify |
 | --- | --- | --- |
@@ -14,15 +14,17 @@ The person chooses how much may change. They are harness-slides' own intake leve
 
 - **brand-only.** Every slide, in its order, with the same points in the same order. No slide is added, dropped, merged or split.
 - **polish.** Every word, and the order of slides and points, exactly. A better arrangement may be chosen where the original's layout hid what the slide says.
-- **A slide with no words of its own** (a picture or a diagram alone), at brand-only and polish. The outline gives it a short title so it can be named. When the slide shows one picture and nothing else (an empty placeholder or a hidden shape aside), the picture is a PNG or JPEG (not a video's), and the brand's template has a layout that shows no title with a picture slot of nearly the same shape (within a tenth, after the original's crop), the build sets the slide on that layout with the picture in the slot and draws nothing else: it gains no words. Otherwise the slide is drawn as before, without words of its own but under its approved title, so nothing on it is lost. Where its one picture can be carried, it is placed under the title as it was, and Build notes on that slide: "This slide is drawn with a title because its picture can't be carried onto a layout without one." Where it cannot (several objects, shapes alone, a video, another kind of picture), the slide is drawn afresh and Build says so on that slide, asking the person to compare it with the original.
+- **A slide with no words of its own** (a picture or a diagram alone), at brand-only and polish, gets a short title in the outline so it can be named. When it shows only one PNG or JPEG picture (an empty placeholder or hidden shape aside; not a video's), and the template has an untitled layout whose picture slot is nearly its shape (within a tenth, after the crop), the build sets it there with the picture in the slot and nothing else: it gains no words. Otherwise it is drawn under its approved title, so nothing on it is lost. Where its one picture can be carried, it sits under the title as it was, and Build notes on that slide: "This slide is drawn with a title because its picture can't be carried onto a layout without one." Where it cannot (several objects, shapes alone, a video, another kind of picture), the slide is drawn afresh and Build says so there, asking the person to compare it with the original.
 - **redesign.** Every slide, its message and its qualifications. The words of every title, point, caveat and note are copied exactly. No new claim. No design stop: mark slides at the deck to change them.
-- **rework.** The deck's evidence. The text used is still copied from the deck; where the new story needs a connecting line the deck does not have, say so and leave it out rather than invent it. The proposed new shape is the outline, and the person approves it before anything is drawn.
+- **rework.** The deck's evidence. The text used is still copied from the deck; where the new story needs a connecting line the deck does not have, say so and leave it out, never invent it. The proposed new shape is the outline, and the person approves it before anything is drawn.
 - **selected.** Ask at intake which slides and what to change, and record it in the form as `selected`. Change only those, as a scoped patch through harness-slides. Every other slide must come out exactly as it went in, which harness-slides' compare confirms.
 
 ## Steps without a stop
 
-Every level but `selected` first pulls the deck's outline out of its inventory (the `extract` step), and every level exports the brand contract before Build. Neither stops for the person: for `brand-only` and `polish` the next stop is Build. `selected` plans its patch instead of extracting.
+Every level but `selected` first pulls the deck's outline out of its inventory (the `extract` step), and every level exports the brand contract before Build. Neither stops: for `brand-only` and `polish` the next stop is Build. `selected` plans its patch instead of extracting.
 
 ## At Build
 
 Show each changed slide beside the original; for `selected`, only those. Changes after delivery come as the next numbered revision.
+
+On the [desk](desk.md), `brand-only` and `polish` refuse word edits but take speaker notes; `selected` patches text into a copy and keeps the notes.

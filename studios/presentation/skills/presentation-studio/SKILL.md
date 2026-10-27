@@ -5,7 +5,7 @@ description: Make a slide deck in your organisation's brand from an idea, a docu
 
 # Presentation Studio
 
-Conversation guidance. `studio` opens the page. Reuse settled choices and honor explicit review cadence; show the storyboard before construction and retain the final native checkpoint unless waived.
+Conversation guidance; `studio` opens the page. A deck started here is gated: reuse settled choices, honor its review level, show the storyboard before building, keep the final checkpoint unless waived. A `run.json` with `"flow": "desk"` is on [the desk](references/desk.md): change it on the page.
 
 ## Rules
 
@@ -13,19 +13,19 @@ Conversation guidance. `studio` opens the page. Reuse settled choices and honor 
 - **Slides are made by harness-slides.** Draw, check, preview, render and patch slides through its commands and guidance. Never write or edit a slide file yourself.
 - **Each slide is designed on its own,** from what it says. Never have the person pick a layout for the whole deck.
 - **The brand is the person's brand skill.** Before the first step that needs the brand, export its contract into the deck's `brand/` folder with the brand skill's own `contract export` command, and give that contract to harness-slides with `--brand`. Presentation Studio names no brand: offer the brands and variants the brand skill lists.
-- **Research follows harness-research guidance** when the person enables it.
+- **Research follows harness-research guidance** when enabled.
 - **An original is never changed.** A deck being improved is read; the result is always a new file.
 - **Stay inside the deck's folder** under `presentations/`. Never write anywhere else.
 
 ## Before you start
 
-1. Check that harness-slides, harness-research and a brand skill are installed for this assistant. If one is missing, say which and stop: the person installs the companions with Presentation Studio's installer, and the brand skill from the page's Settings or by hand.
-2. Read the shared values, read-only, from `~/.config/studios-config.json` (the `STUDIOS_CONFIG` variable names another file): `team.repository` and `share`, `person.name`, `brand.brand` and `brand.variant` as the brand offered first, and `output` (`google` or `pptx`). A file that is missing or cannot be read means no defaults; say so once. Never write it from a conversation.
+1. Check that harness-slides, harness-research and a brand skill are installed for this assistant. If one is missing, say which and stop: the companions come with Presentation Studio's installer, the brand skill from the page's Settings or by hand.
+2. Read the shared values, read-only, from `~/.config/studios-config.json` (the `STUDIOS_CONFIG` variable names another file): `team.repository` and `share`, `person.name`, `brand.brand` and `brand.variant` as the brand offered first, and `output` (`google` or `pptx`). A missing or unreadable file means no defaults; say so once. Never write it from a conversation.
 3. Find or make the deck's folder, as [the workspace](references/workspace.md) says. If the page's runner drives that deck, do not work on it here.
 
 ## The steps
 
-Ask how the person is starting and follow [the three routes](references/routes.md): from scratch, from a document, or from an existing deck. For an existing deck, they choose one of [the five levels](references/levels.md), which decides which steps run.
+Ask how the person is starting and follow [the three routes](references/routes.md). For an existing deck, they choose one of [the five levels](references/levels.md), which decides which steps run.
 
 | Step | Stops for the person |
 | --- | --- |
@@ -37,13 +37,13 @@ Ask how the person is starting and follow [the three routes](references/routes.m
 | Build: the whole deck, its preview and its checks | Yes, or changes |
 | Deliver: Google Slides or PowerPoint | No: say where it is |
 
-"Ask for changes" at any stop means doing that step again with their words, then stopping again. A change to a delivered deck reopens Build for the slides named and delivers a new numbered revision.
+"Ask for changes" at any stop means redoing that step with their words, then stopping again. A change to a delivered deck reopens Build for the slides named and delivers a new numbered revision.
 
 For fresh synthesis research, read [the research handoff](references/research.md).
 
 ## Checking where a deck stands
 
 `run.json` in the deck's folder says which steps are done and which stop waits. Read it before you resume. A deck made in conversation can be copied into the
-page's workspace with Decks → Bring in a deck; its original stays untouched.
+page's workspace with Decks → Bring in a deck, leaving its original.
 
 `studio status` lists remembered decks as JSON without serving.
