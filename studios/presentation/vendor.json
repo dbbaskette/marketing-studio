@@ -119,7 +119,8 @@
     {
       "path": "runner/research.py",
       "from": "runner/research.py",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
+      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/research.py`."
     },
     {
       "path": "runner/documents.py",
