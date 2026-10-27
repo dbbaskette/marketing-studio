@@ -121,6 +121,7 @@ class DeskActions:
         shown = desk.cards(root, record, lambda section: desk.section_price(
             record, state, section)['says'])
         return {**shown, 'arrived': desk.arrived(record),
+                'working': desk.working(root, record, state),
                 'deck_price': desk.deck_price(self._last_build(record)),
                 'blockers': desk.blockers(state), 'blockers_seen': desk.blockers_seen(state),
                 'reviewed': desk.reviewed(state)}
@@ -185,6 +186,66 @@ class DeskActions:
                 record['desk']['chain'] = {'kind': desk.SLIDE_NOTE, 'at': home.now()}
             self._store(root, record)
             self._commit(root, f'ask to redraw slide {number}', also)
+        self.wake(root)
+        return self.view(root)
+
+    def desk_deck_note(self, path, note, expected) -> dict:
+        """A note for the whole deck: every section is redrawn with it, three at a time, and
+        the deck is put together once they are. Bound to the deck on screen."""
+        note = self._note(note)
+        if not note:
+            raise WorkspaceError(desk.NO_DECK_NOTE)
+        root, space, by = self._desk_change(path)
+        with self.files:
+            record, state = self._load(root), build.read_state(root)
+            if not expected or desk.last_round(state).get('deck') != expected:
+                raise WorkspaceError(desk.CHANGED)
+            sections = [entry['id'] for entry in (state.get('start') or {}).get('sections') or ()]
+            busy = [section for section in sections if desk.busy(record, section)]
+            if busy:
+                numbers = desk.section_numbers(state, busy[0])
+                raise WorkspaceError(desk.BUSY.format(number=numbers[0] if numbers else 1))
+            at = home.now()
+            for section in sections:
+                record.setdefault('desk_notes', []).append(
+                    desk.note_of(None, None, section, note, at, by))
+            record, also, now = self._desk_ask(root, record, state, sections, note, space)
+            if now:
+                record['desk']['chain'] = {'kind': desk.DECK_NOTE, 'at': home.now()}
+            self._store(root, record)
+            self._commit(root, 'ask to redraw every section', also)
+        self.wake(root)
+        return self.view(root)
+
+    def desk_stop(self, path) -> dict:
+        """Stop the redraw under way, as Stop does, and wait for it to end. What was redrawn
+        is kept; the sections not redrawn yet come off the ask, their notes set aside, and
+        the deck is put together from what it has."""
+        from runner.engine import Engine
+        root = self._desk_held(path)
+        if desk.working(root, self._load(root)) is None:
+            raise WorkspaceError(desk.NOTHING_TO_STOP)
+        self.act(root, 'stop')
+        run = self._run(root)
+        if not Engine._ended(run):
+            raise WorkspaceError(desk.NOT_ENDED)
+        with self.files:
+            record, state = self._load(root), build.read_state(root)
+            asked = list(((state.get('asked') or {}).get('sections')) or ())
+            drawn = desk.fresh(state)
+            undrawn = [section for section in asked if section not in drawn]
+            if state.get('asked'):
+                kept = [section for section in asked if section in drawn]
+                state['asked'] = {**state['asked'], 'sections': kept} if kept else None
+                build.write_state(root, state)
+            for item in desk.opened(record):
+                if item.get('section') in undrawn or item.get('status') == 'waiting':
+                    item['status'] = 'set aside'
+            record['halted'] = None
+            record['desk'].pop('chain', None)
+            self._store(root, record)
+            self._commit(root, 'stop the whole-deck note')
+        run.stop.clear()
         self.wake(root)
         return self.view(root)
 

@@ -50,6 +50,11 @@ LEAD = ('A cover, section or closing slide is not drawn by an assistant: change 
 CHANGED = 'The deck changed since this page read it. Reload it, then try again.'
 NO_DRAWING = 'There is no drawing of this deck on this computer.'
 NO_NOTE = 'Say how the slide should change.'
+NO_DECK_NOTE = 'Say how the whole deck should change.'
+PUTTING = 'Putting the deck together, rendering and checking it'
+NOTHING_TO_STOP = 'Nothing is being redrawn now, so there is nothing to stop.'
+NOT_ENDED = ('It was stopped, but something it started has not ended yet. Try Stop again in '
+             'a moment.')
 
 
 # --- the stops ----------------------------------------------------------------------------
@@ -112,6 +117,35 @@ def note_of(slide: str | None, number: int | None, section: str | None, note: st
             by, status: str = 'waiting') -> dict:
     return {'id': secrets.token_hex(6), 'slide': slide, 'number': number, 'section': section,
             'note': note, 'at': at, 'by': by, 'status': status}
+
+
+def fresh(state: dict) -> set[str]:
+    """The sections kept since the deck was last put together: drawn in this chain."""
+    rounds = len(state.get('rounds') or ())
+    return {ident for ident, entry in (state.get('sections') or {}).items()
+            if rounds and entry.get('round', 0) >= rounds}
+
+
+def working(root, run: dict, state: dict | None = None) -> dict | None:
+    """What desk work is under way, for the line above the desk: {'what', 'done', 'total'},
+    or None while the deck rests, before it reaches the desk and once it stopped."""
+    from runner.steps import build
+    if not arrived(run) or resting(run) or run.get('halted') or decks.delivered(root):
+        return None
+    if stages.survey(run).next is None:
+        return None
+    state = state if state is not None else build.read_state(root)
+    asked = list(((state.get('asked') or {}).get('sections')) or ())
+    if not asked:
+        return {'what': PUTTING, 'done': 0, 'total': 0}
+    done = len(fresh(state) & set(asked))
+    if len(asked) == 1:
+        numbers = section_numbers(state, asked[0])
+        what = f'Redrawing section {build.numbered(asked[0])}' + (
+            f' ({slides_words(numbers)})' if numbers else '')
+    else:
+        what = f'Redrawing: {done} of {len(asked)} sections'
+    return {'what': what, 'done': done, 'total': len(asked)}
 
 
 def section_of(state: dict, number) -> str | None:

@@ -244,6 +244,7 @@ def digests(root: Path) -> dict:
     state = build.read_state(root)
     found = {f"file:{ident}": hashlib.sha256((root / entry['file']).read_bytes()).hexdigest()
              for ident, entry in state['sections'].items()}
+    found.update({f'path:{ident}': entry['file'] for ident, entry in state['sections'].items()})
     for slide in state['rounds'][-1]['slides']:
         found[f"slide:{slide['number']}"] = slide['sha256']
     return found
@@ -278,6 +279,8 @@ class SlideNoteTests(DeskCase):
                                                     LONG_OUTLINE['slides'][3]['id']]))
         after = digests(root)
         self.assertEqual(after['file:section-2'], before['file:section-2'])
+        self.assertEqual(after['path:section-2'], before['path:section-2'])
+        self.assertNotEqual(after['path:section-1'], before['path:section-1'])
         for number in (1, 5, 6, 7, 8):
             self.assertEqual(after[f'slide:{number}'], before[f'slide:{number}'])
         self.on_desk(root)
@@ -399,6 +402,123 @@ class PriceTests(DeskCase):
         last = self.engine._last_build(self.record(root))
         self.assertTrue(said.startswith('Redraws every section.'), said)
         self.assertIn(stops.lasted(last['seconds']), said)
+
+
+def section_of_job(tools) -> int:
+    return int(tools.job['artifacts']['section']['prefix'].strip('s_'))
+
+
+class DeckNoteTests(DeskCase):
+    """One note for the whole deck redraws every section, three at a time, with Stop."""
+
+    NOTE = 'Use fewer words on every slide.'
+
+    def deck(self) -> Path:
+        root = self.start_desk(look='default')
+        self.on_desk(root)
+        return root
+
+    def kept_now(self, root: Path, section: str) -> bool:
+        from runner.steps import build
+        state = build.read_state(root)
+        entry = state['sections'].get(section) or {}
+        return entry.get('round', -1) >= len(state['rounds'])
+
+    def wait_for(self, check, seconds: float = 20) -> None:
+        import time
+        deadline = time.monotonic() + seconds
+        while not check():
+            if time.monotonic() > deadline:
+                self.fail('It never happened.')
+            time.sleep(0.02)
+
+    def test_a_whole_deck_note_redraws_every_section_and_says_how_far_it_is(self):
+        root = self.deck()
+        seen = []
+
+        def second(tools, job):
+            if section_of_job(tools) == 2:
+                self.wait_for(lambda: self.kept_now(root, 'section-1'))
+                seen.append(self.desk_view(root)['working'])
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', second, second)
+        jobs = len(self.workers.of('section'))
+        self.engine.desk_deck_note(root, self.NOTE, self.desk_view(root)['expected'])
+        self.assertEqual(seen, [{'what': 'Redrawing: 1 of 2 sections', 'done': 1, 'total': 2}])
+        tasks = [job.task for job in self.workers.of('section')[jobs:]]
+        self.assertEqual(len(tasks), 2)
+        for task in tasks:
+            self.assertIn(self.NOTE, task)
+            self.assertNotIn('Copy all other slides', task)
+        shown = self.on_desk(root)['desk']
+        self.assertIsNone(shown['working'])
+        self.assertEqual({item['status'] for item in self.record(root)['desk_notes']}, {'done'})
+
+    def test_one_section_redrawn_says_which(self):
+        root = self.deck()
+        seen = []
+
+        def looking(tools, job):
+            seen.append(self.desk_view(root)['working'])
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', looking)
+        self.engine.desk_note(root, 6, 'Give the rollback its own row.',
+                              self.desk_view(root)['expected'])
+        self.assertEqual(seen, [{'what': 'Redrawing section 2 (slides 5 to 7)', 'done': 0,
+                                 'total': 1}])
+
+    def test_stop_keeps_what_was_redrawn_and_sets_the_rest_aside(self):
+        import threading
+        root = self.deck()
+        before = digests(root)
+        stopped = []
+
+        def second(tools, job):
+            if section_of_job(tools) == 2:
+                self.wait_for(lambda: self.kept_now(root, 'section-1'))
+                stopping = threading.Thread(target=lambda: stopped.append(
+                    self.engine.desk_stop(root)))
+                stopping.start()
+                self.wait_for(lambda: (self.engine._load(root).get('halted') or {}).get(
+                    'state') == 'stopped')
+                stopped.append(stopping)
+                return None
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', second, second)
+        self.engine.desk_deck_note(root, self.NOTE, self.desk_view(root)['expected'])
+        stopped[0].join(30)
+        self.on_desk(root)
+        after = digests(root)
+        self.assertNotEqual(after['path:section-1'], before['path:section-1'])
+        self.assertEqual((after['path:section-2'], after['file:section-2']),
+                         (before['path:section-2'], before['file:section-2']))
+        shown = self.desk_view(root)
+        cards = {card['number']: card for part in shown['sections'] for card in part['slides']}
+        for number in (5, 6, 7):
+            self.assertEqual(cards[number]['note']['status'], 'set aside')
+            self.assertEqual(cards[number]['note']['says'], desk.SET_ASIDE)
+        self.assertEqual(cards[3]['note']['status'], 'done')
+        self.assertIsNone(self.record(root)['halted'])
+        self.assertIn('Rolling restarts: stop the whole-deck note', self.log())
+
+    def test_a_section_that_fails_leaves_the_others_done(self):
+        root = self.deck()
+
+        def failing(tools, job):
+            if section_of_job(tools) == 2:
+                return runner_support.fails()(tools, job)
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', *[failing] * 8)
+        self.engine.desk_deck_note(root, self.NOTE, self.desk_view(root)['expected'])
+        shown = self.view(root)
+        self.assertIn('Draw section 2', shown['problem']['why'])
+        self.assertTrue(self.kept_now(root, 'section-1'))
+        notes = {item['section']: item['status'] for item in self.record(root)['desk_notes']}
+        self.assertEqual(notes, {'section-1': 'done', 'section-2': 'drawing'})
 
 
 if __name__ == '__main__':
