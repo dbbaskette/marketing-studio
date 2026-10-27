@@ -108,5 +108,55 @@ class DeskGateTests(DeskCase):
         self.assertNotIn('flow', self.record(root))
 
 
+class DeskRefusalTests(DeskCase):
+    """A desk deck is changed only on the desk, and a gated deck only on its own screen."""
+
+    # Each desk route, with what it is sent, by name.
+    ROUTES = {'desk_look': ('example-clear',)}
+
+    def test_a_desk_deck_refuses_a_gate_decision(self):
+        root = self.start_desk(look='default')
+        self.on_desk(root)
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.decide(root, 'gate:build', 'changes', 'Shorter.')
+        self.assertEqual(str(caught.exception), desk.ON_DESK)
+        expected = self.view(root)['gate']['expected_deck']
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.review_draft(root, expected)
+        self.assertEqual(str(caught.exception), desk.ON_DESK)
+        self.assertEqual(self.waiting(root), 'gate:build')
+
+    def test_build_feedback_still_works_while_a_desk_deck_is_drawn(self):
+        taken = []
+
+        def noting(tools, job):
+            root = next(self.space.repo.rglob('run.json')).parent
+            taken.append(self.engine.build_feedback(root, 'a' * 32, 'Name the batch size.',
+                                                    number=3))
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', noting)
+        root = self.start_desk(look='default')
+        self.assertEqual(len(taken), 1)
+        self.on_desk(root)
+        # The note came after its section was drawn: on the desk it is drawn, once.
+        record = self.record(root)
+        self.assertEqual([(item['number'], item['note'], item['status'])
+                          for item in record['desk_notes']],
+                         [(3, 'Name the batch size.', 'done')])
+        told = [job.task for job in self.workers.of('section')
+                if 'Slide 3: Name the batch size.' in job.task]
+        self.assertEqual(len(told), 1)
+
+    def test_a_gated_deck_refuses_every_desk_route(self):
+        root = self.gated()
+        for name, given in self.ROUTES.items():
+            with self.subTest(route=name):
+                with self.assertRaises(WorkspaceError) as caught:
+                    getattr(self.engine, name)(root, *given)
+                self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
+        self.assertEqual(self.waiting(root), 'gate:build')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1047,6 +1047,21 @@ class DeskCase(StudioCase):
     def desk_view(self, root: Path) -> dict:
         return self.view(root)['desk']
 
+    def gated(self, **changes) -> Path:
+        """A deck started the gated way, approved stop by stop, with the first look where
+        one is asked for, until its deck waits at gate:build."""
+        root = self.start(**changes)
+        for _ in range(12):
+            gate = self.view(root)['gate']
+            assert gate is not None, self.view(root)['sentence']
+            if gate['name'] == 'gate:build':
+                return root
+            offered = gate.get('offered') or (gate.get('look') or {}).get('offered')
+            self.decide(root, gate['name'], 'approve', None,
+                        {'look': offered['looks'][0]['id']}
+                        if offered and not offered['chosen'] else None)
+        self.fail('gate:build never came up')
+
 
 class Notifier:
     """Stands in for the computer's own notifications: `sent` lists each title told."""

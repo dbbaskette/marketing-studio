@@ -24,6 +24,7 @@ from runner.steps import build
 from runner.steps import look as looks
 
 NO_PICK = 'The look is not waiting to be picked now.'
+AGAIN = 3   # chains one rest on the desk may run for notes that came while it was put together
 
 
 class DeskActions:
@@ -80,6 +81,13 @@ class DeskActions:
         for item in desk.opened(record):
             if item.get('section') not in known:
                 item['status'] = 'set aside'
+        again = int((record.get('desk') or {}).get('again') or 0)
+        if left and again >= AGAIN:
+            # Drawn as often as one rest allows and still open: set aside, never looped on.
+            for item in left:
+                item['status'] = 'set aside'
+            left = []
+        record['desk']['again'] = again + 1 if left else 0
         if left and state.get('rounds'):
             for item in left:
                 item['status'] = 'drawing'

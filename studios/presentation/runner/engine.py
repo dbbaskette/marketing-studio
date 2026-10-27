@@ -1829,6 +1829,7 @@ class Engine(Jobs, Researching, DeskActions):
     def review_draft(self, path, expected: str) -> dict:
         """Explicitly request normal AI review for the exact native draft on screen."""
         root = self._held(path)
+        desk.refuse_on_desk(self._load(root))   # a desk deck is reviewed from Finishing
         with self.files:
             record = self._load(root)
             last = (build.read_state(root).get('rounds') or [{}])[-1]
@@ -1892,6 +1893,7 @@ class Engine(Jobs, Researching, DeskActions):
         if root is None:
             raise WorkspaceError('There is no deck there.')
         saved = self._load(root)
+        desk.refuse_on_desk(saved)   # a desk deck's stops are met on the desk
         if decision == 'approve' and saved.get('research_contract') and (saved.get('steps', {}).get('research-report') or {}).get('done'):
             from studio_core.research_contract import read_bundle
             try:
