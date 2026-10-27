@@ -301,6 +301,9 @@ class DeskActions:
         a lead slide) and its words in the outline now. Refused while its section is redrawn."""
         if not desk.arrived(record):
             raise WorkspaceError(desk.NOT_YET)
+        if gate_state(record, 'gate:build') == 'approved' and decks.delivered(root) is None:
+            # Deliver was pressed: words saved now would miss the deck it sends.
+            raise WorkspaceError(desk.DELIVERING)
         section = desk.section_of(state, number)
         ident = desk.slide_of(state, number)
         if section is None and isinstance(field, tuple):

@@ -477,6 +477,7 @@ WORDS = ('title', 'subtitle', 'detail', 'points', 'caveat', 'source')
 UNFIT = 'These words do not fit the slide as it is drawn.'
 ONE_CHANGE = 'A change is already being made to this deck. Wait or stop it.'
 SELECTION_CHANGED = 'The words changed since you selected them. Select them again.'
+DELIVERING = 'The deck is being delivered now. Change its words once it is delivered.'
 RESTORE_BUSY = 'The deck is being redrawn now. Bring the version back when that ends.'
 NO_POINTS = 'A cover, section or closing slide has no points to change.'
 REDRAW_WORDS = 'Fit the new words of slide {number}.'

@@ -552,6 +552,26 @@ class ChainEditTests(DeskCase):
         self.assertIn('changed since', str(caught.exception))
         self.assertEqual(self.engine.desk_versions(root, SLIDE['id'])[0]['source'], 'outline')
 
+    def test_words_are_refused_while_the_deck_is_being_delivered(self):
+        from unittest import mock
+        from runner import desk
+        root = self.deck()
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.desk_deliver(root, self.desk_view(root)['expected'])
+            for change in (lambda: self.engine.desk_words(root, 3, 'title', 'Typed after Deliver',
+                                                          self.seen(root), 'l' * 16),
+                           lambda: self.engine.desk_notes(root, 3, 'Later notes.',
+                                                          self.seen(root), 'l' * 16),
+                           lambda: self.engine.desk_selection(root, 3, self.POINT, 0, 3,
+                                                              'rephrase', None,
+                                                              self.seen(root))):
+                with self.assertRaises(WorkspaceError) as caught:
+                    change()
+                self.assertEqual(str(caught.exception), desk.DELIVERING)
+        self.engine.wake(root)
+        self.assertEqual(self.outline(root)['slides'][2]['title'], SLIDE['title'])
+        self.assertTrue((root / 'deliver.json').is_file())
+
     def test_a_restore_is_bound_to_its_version(self):
         root = self.deck()
         self.engine.desk_words(root, 3, 'title', 'First change', self.seen(root), 'h' * 16)
