@@ -38,7 +38,11 @@ changes for authors first, then what changes for maintainers.
   A wording left empty retires the item, a cut no longer leaves a double space, and a flag
   is read again but never dropped. With `all: true`, a pick that would retire an unsent
   flagged item or an unsent Copy edit item is left out (`_would_retire`, `WAITING`).
-  Applied items record the wording that `landed`, which `_owner` matches.
+  Applied items record the wording that `landed`, which `_owner` matches. Each word alignment is
+  kept for the texts it read (`_aligned_words`), a suggestion no accepted edit comes near is
+  not aligned at all (`_near`), and a waiting one is tried only when the change reaches it
+  (`_reaches`), so Accept all over 120 suggestions in a 5,000-character part takes under a
+  second while it holds the studio lock.
   A retired item gets `reason` and `retired_by: {job, id}`; an updated one records
   `carried: [{job, id}]`; all stay in the ignored proposal sets. `settle` reads a Humanize
   result against the text its job read (`_earlier`) and reconciles rows for words changed
