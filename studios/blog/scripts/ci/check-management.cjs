@@ -151,7 +151,7 @@ async function check(){
   await deskStartRecovery();
   await deskTakeOver();
   pageDefinesEveryElement();
-  const checks=['Review mode’s Accept all never sending a rewrite over a fix still waiting, flagged or hidden by the filter; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, an overlap retired once one is accepted, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Send accepted changes to Google Doc counting its suggestions and comments, a new paragraph, a removed one and a comment listed, none said to stay here, Copy and Download otherwise, Open the full desk and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send with every change a suggestion or a comment, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  const checks=['Review mode’s Accept all sending what is shown and not flagged from both sets in one request, a hidden fix never accepted, the toast counting what was accepted, carried and no longer fits, and a retired suggestion naming the one that changed its words; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, a suggestion overlapping an accepted fix taking in its words and its marks updated in place, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Send accepted changes to Google Doc counting its suggestions and comments, a new paragraph, a removed one and a comment listed, none said to stay here, Copy and Download otherwise, Open the full desk and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send with every change a suggestion or a comment, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
     'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start asks what you are writing, then what you have, then sources and settings','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','a desk start that stopped on another computer: who drives it, Take over or Take this blog with the desk’s version, then Retry','element ids'];
@@ -3629,7 +3629,7 @@ async function deskReviewMode(){
   assert.equal(nodes().find(n=>n.className==='review-count').textContent,'3 fixes to review');
   // 5. Accept all applies every fix that fits and is not flagged, in reading order.
   await press(head(),'Accept all (2)');
-  assert.deepEqual(last('/api/desk-apply').items,[{id:'p6'},{id:'p4'}]);
+  assert.deepEqual(last('/api/desk-apply'),{id:'review-blog',seen:view.revision-1,job:view.finishing.copyedit.job,items:[{job:view.finishing.copyedit.job,id:'p6'},{job:view.finishing.copyedit.job,id:'p4'}],all:true},'one request, each naming its set');
   assert.equal(nodes().find(n=>n.className==='review-count').textContent,'1 fix to review');
   assert.equal(descendants(head()).find(n=>n.textContent==='Accept all (0)').disabled,true,'the flagged fix waits to be checked');
   await press(row('p5'),'Reject');
@@ -3678,6 +3678,56 @@ async function deskReviewMode(){
 // their labels, a wording fix's alternatives, an overlap retired once one is accepted, Accept
 // all leaving flagged ones from both, the Show filter, Quick check's list with Fix and
 // Dismiss, Check again rerunning both, and the paragraph being edited kept while Humanize lands.
+// The server's apply as Review mode sees it (desk_finish.apply): the chosen suggestions land
+// in reading order, from either set, each against the text the ones before it left. Every
+// other open suggestion stays as it is unless the change touched its words: one with the
+// changed words inside its own takes them in (its wording too, where it has the earlier
+// words), and one whose words are gone, or no longer whole words, retires, naming the change.
+function reviewApply(view,data){
+  const textOf=(found,part)=>part==='title'||part==='opening'?found[part]:found.sections.find(s=>s.id===part).text;
+  const withText=(found,part,text)=>part==='title'||part==='opening'?{...found,[part]:text}:{...found,sections:found.sections.map(s=>s.id===part?{...s,text}:s)};
+  const word=ch=>/\w/.test(ch||''),once=(text,words)=>text.split(words).length===2;
+  const whole=(text,at,end)=>[at===0||!(word(text[at-1])&&word(text[at])),end===text.length||!(word(text[end-1])&&word(text[end]))];
+  const sets=Object.fromEntries(Object.entries(view.finishing).map(([tool,set])=>[tool,{...set,items:set.items.map(item=>({...item}))}]));
+  const tools=Object.keys(sets),setOf=job=>Object.values(sets).find(set=>set.job===job);
+  const order=['title','opening',...view.sections.map(s=>s.id)];
+  const picks=data.items.map((entry,index)=>{const job=entry.job||data.job;return {entry,job,index,tool:tools.find(tool=>sets[tool].job===job),item:setOf(job).items.find(i=>i.id===entry.id)};});
+  const where=pick=>textOf(view,pick.item.part).indexOf(pick.item.before);
+  picks.sort((a,b)=>order.indexOf(a.item.part)-order.indexOf(b.item.part)||where(a)-where(b)||tools.indexOf(a.tool)-tools.indexOf(b.tool)||a.item.before.length-b.item.before.length||a.index-b.index);
+  let next=view,applied=0;const left=[],carried=new Set(),retired=new Set();
+  for(const {entry,job,item} of picks){
+    if(item.state!=='open')continue;
+    const text=textOf(next,item.part),at=text.indexOf(item.before);
+    if(at<0||!once(text,item.before)||(data.all&&item.flag)){left.push(item.id);continue;}
+    const after=entry.alternative===undefined?item.after:item.alternatives[entry.alternative].after;
+    const now=text.slice(0,at)+after+text.slice(at+item.before.length);
+    let start=0;while(start<Math.min(text.length,now.length)&&text[start]===now[start])start++;
+    let same=0;while(same<Math.min(text.length,now.length)-start&&text[text.length-1-same]===now[now.length-1-same])same++;
+    const oldEnd=text.length-same,newEnd=now.length-same;
+    item.state='applied';applied++;carried.delete(item);
+    for(const other of Object.values(sets).flatMap(set=>set.items)){
+      if(other.state!=='open'||other.part!==item.part||!once(text,other.before))continue;
+      const from=text.indexOf(other.before),to=from+other.before.length;
+      const touches=start===oldEnd?from<start&&start<to:start<to&&from<oldEnd;
+      let fits;
+      if(touches&&from<=start&&oldEnd<=to){
+        let a=start,grown=0;if(word(text[a])||word(now[a]))while(a>from&&word(text[a-1]))a--;
+        if(word(text[oldEnd-1])||word(now[newEnd-1]))while(oldEnd+grown<to&&word(text[oldEnd+grown]))grown++;
+        const earlier=text.slice(a,oldEnd+grown),later=now.slice(a,newEnd+grown);
+        other.before=now.slice(from,to+now.length-text.length);
+        const hits=[...other.after.matchAll(new RegExp('(?<!\\w)'+earlier.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?!\\w)','g'))];
+        if(earlier&&hits.length===1)other.after=other.after.slice(0,hits[0].index)+later+other.after.slice(hits[0].index+earlier.length);
+        other.carried=[...(other.carried||[]),{job,id:item.id}];carried.add(other);
+      }
+      const found=now.indexOf(other.before),was=whole(text,from,to),is=found<0?[false,false]:whole(now,found,found+other.before.length);
+      fits=once(now,other.before)&&(is[0]||!was[0])&&(is[1]||!was[1]);
+      if(!fits){other.state='retired';other.reason='Its words were changed by an accepted suggestion.';other.retired_by={job,id:item.id};retired.add(other);carried.delete(other);}
+    }
+    next=withText(next,item.part,now);
+  }
+  const finishing={...view.finishing};for(const tool of tools)finishing[tool]=sets[tool];
+  return {...next,revision:view.revision+(applied?1:0),finishing,finished:{applied,left,...(carried.size?{carried:carried.size}:{}),...(retired.size?{retired:retired.size}:{})}};
+}
 const HUMAN_COPY=[
   {part:'opening',kind:'spelling',before:'Agentic apps is the new microservices.',after:'Agentic apps are the new microservices.',note:'Subject and verb agree.'},
   {part:'aaaaaaaa',kind:'wording',before:'A workflow coordinate agents.',after:'A workflow coordinates agents.',note:'Plainer.',alternatives:[{after:'A workflow links the agents.',flag:''},{after:'Workflows coordinate 3 agents.',flag:'Check the facts: this changes a number.'}]},
@@ -3700,15 +3750,7 @@ async function deskReviewHumanize(){
     if(url.startsWith('/api/desk?'))return view;
     if(url.startsWith('/api/desk-images'))return {id:'review-blog',images:[{key:'k1',uri:'data:image/png;base64,AAAA'}]};
     if(url.startsWith('/api/desk-proofread?'))return {id:'review-blog',revision:view.revision,more:0,limitations:'',findings:[{part:'bbbbbbbb',rule:'banished:delve',label:'“delve” often reads as machine-written.',fix:'Say it without “delve”, in plain words.',target:'delve',sentence:'We delve into it.',start:32,at:35},{part:'opening',rule:'em-dash',label:'A dash (—).',fix:'Replace the dash.',target:'—',sentence:'Each agent focus on one goal.',start:0,at:3}]};
-    if(url==='/api/desk-apply'){
-      // The server's apply: the picked wording lands, and any open suggestion from either
-      // tool that covered the same words is retired.
-      const tool=Object.keys(view.finishing).find(key=>view.finishing[key].job===data.job),set=view.finishing[tool];let next=view;const spans=[];
-      for(const entry of data.items){const item=set.items.find(i=>i.id===entry.id),text=textOf(next,item.part),at=text.indexOf(item.before),after=entry.alternative===undefined?item.after:item.alternatives[entry.alternative].after;spans.push([item.part,at,at+item.before.length]);next=withText(next,item.part,text.slice(0,at)+after+text.slice(at+item.before.length));}
-      const finishing={};
-      for(const [key,other] of Object.entries(view.finishing))finishing[key]={...other,items:other.items.map(item=>{if(key===tool&&data.items.some(e=>e.id===item.id))return {...item,state:'applied'};if(item.state!=='open')return item;const at=textOf(view,item.part).indexOf(item.before);return spans.some(([part,a,b])=>part===item.part&&at<b&&a<at+item.before.length)?{...item,state:'retired'}:item;})};
-      view=fit({...next,revision:view.revision+1,finishing,finished:{applied:data.items.length,left:[]}});return view;
-    }
+    if(url==='/api/desk-apply'){view=fit(reviewApply(view,data));return view;}
     if(url==='/api/desk-skip'){const tool=Object.keys(view.finishing).find(key=>view.finishing[key].job===data.job);view={...view,finishing:{...view.finishing,[tool]:{...view.finishing[tool],items:view.finishing[tool].items.map(i=>data.items.includes(i.id)?{...i,state:'skipped'}:i)}}};return view;}
     if(url==='/api/desk-save'){view=fit({...withText(view,data.part,data.text.trim()),revision:view.revision+1});return view;}
     if(url==='/api/desk-review'){view={...view,working:{id:'c'+(++job),kind:'finish-copyedit',status:'queued',busy:true,part:'finishing'}};return view;}
@@ -3769,8 +3811,8 @@ async function deskReviewHumanize(){
   const order=()=>nodes().filter(n=>/(^| )review-fix( |$)/.test(n.className)&&n.dataset.tool).map(n=>[n.dataset.tool,n.dataset.item,descendants(n).find(c=>/review-kind/.test(c.className)).textContent]);
   // Each part's marked suggestions in place, then those that overlap them, listed under it.
   assert.deepEqual(order(),[['copyedit','p1','Spelling'],['humanize','p1','Sounds human'],['humanize','p2','Sounds human'],['copyedit','p2','Wording'],['copyedit','p3','Grammar'],['humanize','p4','Sounds human']],'by part, then place in it, labelled');
-  assert.deepEqual(nodes().filter(n=>/(^| )review-fix( |$)/.test(n.className)&&n.dataset.tool).map(n=>descendants(n).find(c=>c.className==='review-num').textContent),['1','3','2','4','5','6'],'numbered across both tools in reading order');
-  assert.deepEqual(nodes().filter(n=>n.className==='review-num'&&n.tagName==='sup').map(n=>n.textContent),['1','3','4','5'],'the overlapping ones are not marked over the others');
+  assert.deepEqual(nodes().filter(n=>/(^| )review-fix( |$)/.test(n.className)&&n.dataset.tool).map(n=>descendants(n).find(c=>c.className==='review-num').textContent),['1','3','2','4','6','7'],'numbered across both tools in reading order, each keeping the number it was shown with');
+  assert.deepEqual(nodes().filter(n=>n.className==='review-num'&&n.tagName==='sup').map(n=>n.textContent),['1','3','4','6'],'the overlapping ones are not marked over the others');
   assert.ok(words(part('aaaaaaaa')).includes('1 suggestion no longer fits this text, so it was left out.'),'the edited sentence’s suggestion drops out');
   assert.match(mark('humanize','p1').className,/review-human/,'Humanize marked as its own');
   assert.equal(nodes().find(n=>n.className==='review-count').textContent,'6 suggestions to review','the count covers both');
@@ -3789,20 +3831,27 @@ async function deskReviewHumanize(){
   await press(row('copyedit','p2'),'Accept');
   assert.deepEqual(last('/api/desk-apply'),{id:'review-blog',seen:view.revision-1,job:view.finishing.copyedit.job,items:[{id:'p2',alternative:0}]});
   assert.ok(words(part('aaaaaaaa')).includes('A workflow links the agents.'));
-  // 6. Accepting a fix retires the Humanize suggestion that covered the same words, even
-  // though they started together and its words would still be there.
-  assert.ok(row('humanize','p2'),'the overlapping one waits first');
+  // 6. Accepting a fix keeps the Humanize suggestion that covered the same words: it takes in
+  // the fixed words, its marks updated in place, and says which suggestion it took in.
+  assert.ok(row('humanize','p2'),'the overlapping one waits first');assert.equal(mark('humanize','p2'),undefined,'listed under the part');
   await press(row('copyedit','p1'),'Accept');
-  assert.equal(row('humanize','p2'),undefined,'retired once the fix is accepted');assert.equal(view.finishing.humanize.items[1].state,'retired');
-  assert.ok(words(part('opening')).includes('1 suggestion no longer fits this text, so it was left out.'));
+  assert.equal(view.finishing.humanize.items[1].state,'open');assert.equal(view.finishing.humanize.items[1].before,'Agentic apps are the new');
+  assert.ok(mark('humanize','p2'),'marked in the text now the fix is in');
+  assert.ok(descendants(mark('humanize','p2')).some(n=>n.tagName==='del'&&n.textContent==='are'),'its marks show the fixed words');
+  assert.ok(descendants(mark('humanize','p2')).some(n=>n.tagName==='ins'&&n.textContent==='have become'));
+  assert.ok(words(row('humanize','p2')).includes('Updated with accepted suggestion #1.'));
+  assert.equal(f.get('toasts').children.at(-1).textContent,'Accepted. The earlier text is in History. 1 other suggestion was updated with the accepted words.');
+  assert.ok(!words(part('opening')).includes('no longer fit'),'nothing in the opening retired');
   // 7. Show: Sounds human, then Accept all on what is shown, leaving the flagged one.
   const show=nodes().find(n=>n.attributes?.['aria-label']==='Show');assert.ok(show,'a small filter');
   await descendants(show).find(n=>n.textContent==='Sounds human').listeners.click();
   assert.ok(!nodes().some(n=>/(^| )review-fix( |$)/.test(n.className)&&n.dataset.tool==='copyedit'),'only the human-sounding ones');
   await descendants(nodes().find(n=>n.attributes?.['aria-label']==='Show')).find(n=>n.textContent==='All').listeners.click();
   const applies=all('/api/desk-apply').length;
-  await press(head(),'Accept all (1)');
-  assert.deepEqual(all('/api/desk-apply').slice(applies).map(d=>[d.job,d.items]),[[view.finishing.humanize.job,[{id:'p1'}]]],'the flagged fix and Humanize suggestion are left');
+  await press(head(),'Accept all (2)');
+  const human=view.finishing.humanize.job;
+  assert.deepEqual(all('/api/desk-apply').slice(applies).map(d=>[d.job,d.items,d.all]),[[human,[{job:human,id:'p2'},{job:human,id:'p1'}],true]],'one request in reading order; the flagged fix and Humanize suggestion are left');
+  assert.equal(f.get('toasts').children.at(-1).textContent,'Accepted 2. The earlier text is in History.');
   assert.deepEqual(nodes().filter(n=>/(^| )review-fix( |$)/.test(n.className)&&n.dataset.tool).map(n=>[n.dataset.tool,n.dataset.item]),[['copyedit','p3'],['humanize','p4']]);
   // 8. Quick check's findings are a short list at the top, each with Fix and Dismiss.
   const quick=nodes().find(n=>/review-quick( |$)/.test(n.className)&&n.tagName==='details');
@@ -3825,8 +3874,9 @@ async function deskReviewHumanize(){
   ask.checked=false;ask.listeners.change();
   await press(head(),'Check spelling and grammar');assert.deepEqual(last('/api/desk-review'),{id:'review-blog',seen:view.revision,humanize:null},'turned off');
 }
-// Review mode's fixes from its review: Accept all never sends a Humanize rewrite over a fix
-// still waiting (flagged, or hidden by the filter); keys carry their set; the Consistency
+// Review mode's fixes from its review: Accept all sends what is shown and not flagged, from both
+// sets in one request, and says what it accepted, carried and retired, each retired one naming
+// the suggestion that changed its words; keys carry their set; the Consistency
 // label; a choice made while a paragraph is open closes it; Fix, Dismiss, the filter and
 // the checkbox keep focus across a redraw; Quick check is read again after a pause or on
 // opening, not on every save; and a dismissed finding stays dismissed when text before it moves.
@@ -3855,12 +3905,7 @@ async function deskReviewHumanizeFixes(){
       {part:'bbbbbbbb',rule:'banished:e',label:'An “e”.',fix:'Drop it.',target:'e',sentence,start:0,at:4},
       {part:'bbbbbbbb',rule:'banished:e',label:'An “e”.',fix:'Drop it.',target:'e',sentence,start:0,at:15},
     ]};}
-    if(url==='/api/desk-apply'){
-      const tool=Object.keys(view.finishing).find(k=>view.finishing[k].job===data.job),text=part=>part==='opening'?view.opening:view.sections.find(x=>x.id===part).text;
-      const spans=view.finishing[tool].items.filter(i=>data.items.some(e=>e.id===i.id)).map(i=>[i.part,text(i.part).indexOf(i.before),text(i.part).indexOf(i.before)+i.before.length]);
-      const finishing=Object.fromEntries(Object.entries(view.finishing).map(([key,set])=>[key,{...set,items:set.items.map(i=>{if(key===tool&&data.items.some(e=>e.id===i.id))return {...i,state:'applied'};const at=text(i.part).indexOf(i.before);return i.state==='open'&&spans.some(([part,a,b])=>part===i.part&&at<b&&a<at+i.before.length)?{...i,state:'retired'}:i;})}]));
-      view={...view,revision:view.revision+1,finishing,finished:{applied:data.items.length,left:[]}};return view;
-    }
+    if(url==='/api/desk-apply'){view=reviewApply(view,data);return view;}
     if(url==='/api/desk-save'){shift+=5;view={...view,revision:view.revision+1,...(data.part==='opening'?{opening:data.text}:{sections:view.sections.map(s=>s.id===data.part?{...s,text:data.text}:s)})};return view;}
     return null;
   });
@@ -3877,27 +3922,51 @@ async function deskReviewHumanizeFixes(){
   assert.deepEqual(descendants(row('copyedit','p3')).filter(n=>/review-kind/.test(n.className)).map(n=>n.textContent),['Consistency']);
   const keys=JSON.parse(f.run('JSON.stringify(sReviewState(studio.desk).pending.map(item=>item.key))'));
   assert.ok(keys.includes('copyedit:'+view.finishing.copyedit.job+':p3'),'a key names its set');
-  // 1. Accept all: the fixes, then the rewrites that cover no fix still waiting.
+  const copy=view.finishing.copyedit.job,human=view.finishing.humanize.job;
+  const toast=()=>f.get('toasts').children.at(-1).textContent,words=node=>descendants(node).map(n=>n.textContent).join(' ');
+  const gone=part=>descendants(nodes().find(n=>n.className==='review-part'&&n.dataset.part===part)).filter(n=>/review-gone/.test(n.className)).map(n=>descendants(n).map(c=>c.textContent).join(''));
+  // 1. Accept all: every suggestion shown that is not flagged, from both sets, in reading order
+  // in one request. The fix lands first where two start together, and the rewrite whose last
+  // word it changed retires; the flagged fix takes in the rewrite of its sentence and waits.
   assert.ok(descendants(head()).some(n=>n.textContent==='Accept all (5)'));
   await press(head(),'Accept all (5)');
-  assert.deepEqual(all('/api/desk-apply').map(d=>[d.job,d.items,d.all]),[[view.finishing.copyedit.job,[{id:'p1'},{id:'p2'}],true],[view.finishing.humanize.job,[{id:'p2'}],true]],'the rewrite over the flagged fix is left out');
-  assert.equal(view.finishing.copyedit.items[2].state,'open','the flagged fix waits');assert.ok(row('humanize','p1'),'and so does the rewrite over it');
-  // 2. With Sounds human shown, the fixes are hidden but still keep the rewrites off them.
+  assert.deepEqual(all('/api/desk-apply').map(d=>[d.job,d.items,d.all]),[[copy,[{job:copy,id:'p1'},{job:human,id:'p3'},{job:copy,id:'p2'},{job:human,id:'p2'},{job:human,id:'p1'}],true]],'the flagged fix is never sent');
+  assert.equal(toast(),'Accepted 4. The earlier text is in History. 1 other suggestion was updated with the accepted words. 1 suggestion no longer fits: its words were changed.');
+  assert.deepEqual(gone('opening'),['Sounds human No longer fits: its words were changed by suggestion #1.'],'it names the suggestion that changed its words');
+  assert.deepEqual(gone('bbbbbbbb'),[]);
+  assert.deepEqual([view.finishing.copyedit.items[2].state,view.finishing.copyedit.items[2].before],['open','In 3 seconds it reads 12 files.']);
+  assert.ok(words(row('copyedit','p3')).includes('Updated with accepted suggestion #6.'),'the flagged fix says what it took in');
+  assert.match(row('copyedit','p3').className,/review-flagged/,'and still waits to be checked');
+  // 2. With Sounds human shown, only the rewrites go: a hidden fix is never accepted, and one
+  // with a rewrite's words inside its own takes them in and waits.
   fresh();await open();
   focusOn(show('Sounds human'));await show('Sounds human').listeners.click();
   assert.equal(show('Sounds human').focused,true,'the filter keeps focus');
   const before=all('/api/desk-apply').length;await press(head(),'Accept all (3)');
-  assert.deepEqual(all('/api/desk-apply').slice(before).map(d=>d.items),[[{id:'p2'}]],'a hidden fix still keeps the rewrite off it');
+  assert.deepEqual(all('/api/desk-apply').slice(before).map(d=>d.items),[[{job:human,id:'p3'},{job:human,id:'p2'},{job:human,id:'p1'}]],'hidden fixes are never sent');
+  assert.equal(toast(),'Accepted 3. The earlier text is in History. 2 other suggestions were updated with the accepted words.');
+  assert.deepEqual([view.finishing.copyedit.items[0].state,view.finishing.copyedit.items[0].before],['open','Every agent keeps on one goal.'],'the hidden fix waits, carried');
   await show('All').listeners.click();
-  // With Fixes shown, the fixes chosen apply even over a hidden rewrite, which retires as
-  // usual and is said; the flagged fix still waits.
+  assert.ok(words(row('copyedit','p1')).includes('Updated with accepted suggestion #2.'));
+  // With Fixes shown, the fixes chosen apply even over a hidden rewrite, which retires only
+  // because the fix changed its last word; the flagged fix still waits.
   fresh();await open();await show('Fixes').listeners.click();
   const fixesFrom=all('/api/desk-apply').length;await press(head(),'Accept all (2)');
-  assert.deepEqual(all('/api/desk-apply').slice(fixesFrom).map(d=>[d.job,d.items]),[[view.finishing.copyedit.job,[{id:'p1'},{id:'p2'}]]],'the fixes chosen are applied');
-  assert.equal(view.finishing.humanize.items[2].state,'retired','the rewrite they covered retires');assert.equal(view.finishing.copyedit.items[2].state,'open','the flagged fix waits');
-  const toast=f.get('toasts').children.at(-1).textContent;
-  assert.equal(toast,'Accepted 2. The earlier text is in History. 1 other suggestion covering the same words no longer fits.');
+  assert.deepEqual(all('/api/desk-apply').slice(fixesFrom).map(d=>[d.job,d.items]),[[copy,[{job:copy,id:'p1'},{job:copy,id:'p2'}]]],'the fixes chosen are applied');
+  assert.equal(view.finishing.humanize.items[2].state,'retired','the rewrite whose words changed retires');assert.equal(view.finishing.humanize.items[0].state,'open','one whose words survive stays');
+  assert.equal(view.finishing.copyedit.items[2].state,'open','the flagged fix waits');
+  assert.equal(toast(),'Accepted 2. The earlier text is in History. 1 suggestion no longer fits: its words were changed.');
   await show('All').listeners.click();
+  // One Accept: the rewrite whose last word the fix changed says which suggestion changed it,
+  // and, opened again, that an accepted suggestion did.
+  fresh();await open();
+  await press(row('copyedit','p1'),'Accept');
+  assert.equal(toast(),'Accepted. The earlier text is in History. 1 suggestion no longer fits: its words were changed.');
+  assert.equal(row('humanize','p3'),undefined);assert.deepEqual(gone('opening'),['Sounds human No longer fits: its words were changed by suggestion #1.']);
+  assert.ok(row('humanize','p1')&&row('copyedit','p3'),'the others stay, numbered as they were');
+  assert.equal(descendants(row('copyedit','p3')).find(n=>n.className==='review-num').textContent,'5');
+  await open();
+  assert.deepEqual(gone('opening'),['Sounds human No longer fits: its words were changed by an accepted suggestion.']);
   // 3. A choice while another paragraph of the part is open: the paragraph saves and closes
   // instead of being stuck, and the pick shows.
   fresh();await open();

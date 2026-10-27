@@ -1209,6 +1209,17 @@ class MixedReviewTests(ToolCase):
         )
         self.assertEqual(draft['sections'][1]['text'], 'There are two parsers.')
 
+    def test_a_word_added_onto_the_last_word_of_another_changes_its_words(self):
+        self.write('Each agent focus on one goal.')
+        fixes = self.offer(
+            [self.fix('Each agent focus on one goal.', 'Each agent focuses on one goal.')],
+            kind='finish-copyedit',
+        )
+        human = self.offer([self.fix('Each agent focus', 'Every agent keeps')])
+        done = self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'retired': 1})
+        self.assertEqual(self.states(human), ['retired'], 'its words are no longer whole there')
+
     def test_two_that_start_together_both_apply_when_neither_changes_the_others_words(self):
         job = self.offer(
             [

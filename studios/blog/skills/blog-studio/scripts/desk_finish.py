@@ -405,8 +405,9 @@ def _pick_flag(pick):
 
 
 def _reading(draft, texts, pick):
-    """A pick's place in reading order: its part, then where it starts, the shorter of two
-    that start together first, then Copy edit before Humanize, then as chosen."""
+    """A pick's place in reading order, as Review mode numbers them: its part, then where it
+    starts, Copy edit before Humanize, the shorter of two that start together, then as
+    chosen."""
     item = pick['item']
     order = ['title', 'opening'] + [section['id'] for section in draft['sections']]
     text = texts[item['part']]
@@ -420,7 +421,7 @@ def _reading(draft, texts, pick):
         start = end = len(text) + 1  # Not there once: it is left out wherever it goes.
     tool = SENTENCES.index(pick['kind']) if pick['kind'] in SENTENCES else len(SENTENCES)
     part = order.index(item['part']) if item['part'] in order else len(order)
-    return (part, start, end, tool, pick['order'])
+    return (part, start, tool, end, pick['order'])
 
 
 def _sentence_sets(root, ident, job, found):
@@ -450,7 +451,8 @@ def _reconcile(other, old, new, by, job, picks):
     `old` into `new`; say whether the suggestion changed.
 
     One whose words the change did not touch is left as it is, and still fits while its
-    words are in the text once. One with the changed words inside its own takes them in:
+    words are in the text once, as whole words where they were (a word added onto its last
+    one changes its words too). One with the changed words inside its own takes them in:
     its `before` becomes the new text there, and its wording (each alternative too, and the
     person's own for a pick still to land) takes the same change where it still has the
     earlier words in the same place, or else keeps its own rewrite of them; its flag is read
@@ -463,7 +465,7 @@ def _reconcile(other, old, new, by, job, picks):
         touches = at < start < end  # Words added, none taken away.
     else:
         touches = start < end and at < old_end
-    if not touches and _once(new, other['before']):
+    if not touches and _whole(old, (at, end), new, other['before']):
         return False
     if touches and at <= start and old_end <= end:
         was = other['before']
@@ -480,16 +482,33 @@ def _reconcile(other, old, new, by, job, picks):
                 pick['own'] = _carried(was, pick['own'], swaps)
         other.setdefault('carried', []).append({'job': job, 'id': by['id']})
         wordings = [other.get('after')] + [a['after'] for a in other.get('alternatives') or []]
-        fits = _once(new, other['before']) and (
+        fits = _whole(old, (at, end), new, other['before']) and (
             'after' not in other or any(text != other['before'] for text in wordings)
         )
     else:
-        fits = _once(new, other['before'])
+        fits = _whole(old, (at, end), new, other['before'])
     if not fits:
         other['state'] = 'retired'
         other['reason'] = CHANGED
         other['retired_by'] = {'job': job, 'id': by['id']}
     return True
+
+
+def _whole(old, span, new, before):
+    """Whether `before` is in `new` once, and as whole words on each side where the
+    suggestion's words, at `span` in `old`, were whole words."""
+    if not _once(new, before):
+        return False
+    where = new.index(before)
+
+    def clear(text, start, end):
+        return (
+            start == 0 or not (WORDLIKE.match(text[start - 1]) and WORDLIKE.match(text[start])),
+            end == len(text) or not (WORDLIKE.match(text[end - 1]) and WORDLIKE.match(text[end])),
+        )
+
+    was, now = clear(old, *span), clear(new, where, where + len(before))
+    return (now[0] or not was[0]) and (now[1] or not was[1])
 
 
 def _changed(old, new):
