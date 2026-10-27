@@ -174,5 +174,92 @@ class BrandCheckTests(FinishCase):
                 self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
 
 
+class ReviewTests(FinishCase):
+    """Task 4.3: Review the deck, with what it finds as proposals."""
+
+    NOTE, FIX = 'The steps read right to left.', 'Draw them left to right.'
+
+    def review(self, root: Path) -> dict:
+        return self.engine.desk_finish(root, 'review', self.expected(root))
+
+    def test_review_findings_arrive_as_proposals_and_nothing_is_redrawn(self):
+        root = self.deck()
+        self.workers.found = [drawing_finding(3, self.NOTE, self.FIX)]
+        drawn = self.sections()
+        self.review(root)
+        self.assertEqual(len(self.workers.of('review')), 1)
+        self.assertEqual(self.sections(), drawn)
+        self.on_desk(root)
+        items = self.finishing(root, 'review')['items']
+        self.assertEqual([(item['number'], item['severity'], item['after']) for item in items],
+                         [(3, 'major', f'{self.NOTE} {self.FIX}')])
+        self.assertEqual(build.read_state(root)['repair'], [])
+        record = self.record(root)
+        self.assertNotIn('review_requested', record)
+        self.assertTrue(self.desk_view(root)['reviewed'])
+
+    def test_apply_on_a_finding_is_a_slide_note(self):
+        root = self.deck()
+        self.workers.found = [drawing_finding(3, self.NOTE, self.FIX)]
+        self.review(root)
+        kept = self.finishing(root, 'review')
+        drawn = self.sections()
+        self.engine.desk_apply(root, kept['job'], ['p1'], self.seen(root))
+        tasks = [job.task for job in self.workers.of('section')[drawn:]]
+        self.assertEqual(len(tasks), 1)
+        self.assertIn(f'Slide 3: {self.NOTE} {self.FIX}', tasks[0])
+        self.on_desk(root)
+        notes = self.record(root)['desk_notes']
+        self.assertEqual([(item['number'], item['note'], item['status']) for item in notes],
+                         [(3, f'{self.NOTE} {self.FIX}', 'done')])
+
+    def test_a_slide_note_after_a_review_is_not_reviewed_again(self):
+        root = self.deck()
+        self.workers.found = [drawing_finding(3, self.NOTE, self.FIX)]
+        self.review(root)
+        self.engine.desk_note(root, 6, 'Give the rollback its own row.', self.expected(root))
+        self.on_desk(root)
+        self.assertEqual(len(self.workers.of('review')), 1)
+
+    def test_review_is_priced_from_its_last_try(self):
+        root = self.deck()
+        said = self.desk_view(root)['finish_prices']['review']
+        self.assertTrue(said.endswith(desk.NO_RECORD), said)
+        self.workers.cost = 0.42
+        self.review(root)
+        tried = self.record(root)['steps']['build-review']['tries'][-1]
+        from studio_core import stops
+        said = self.desk_view(root)['finish_prices']['review']
+        self.assertIn(desk.LAST_TOOK.format(cost=stops.cost(tried['seconds'], tried['dollars'])),
+                      said)
+
+    def test_a_review_of_another_deck_is_refused(self):
+        root = self.deck()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_finish(root, 'review', 'x')
+        self.assertEqual(str(caught.exception), desk.CHANGED)
+        self.assertEqual(self.workers.of('review'), [])
+
+    def test_the_same_deck_is_not_reviewed_twice(self):
+        root = self.deck()
+        self.review(root)
+        with self.assertRaises(WorkspaceError) as caught:
+            self.review(root)
+        self.assertEqual(str(caught.exception), finishing.REVIEWED)
+        self.assertEqual(len(self.workers.of('review')), 1)
+
+    def test_a_gated_deck_still_repairs_after_its_check(self):
+        self.workers.found = [drawing_finding(5, self.NOTE, self.FIX)]
+        root = self.gated(initial_review='user-first')
+        drawn = self.sections()
+        expected = self.view(root)['gate']['expected_deck']
+        self.engine.review_draft(root, expected)
+        tasks = [job.task for job in self.workers.of('section')[drawn:]]
+        self.assertTrue(tasks)
+        self.assertIn('Draw section 2 of', tasks[0])
+        self.assertTrue(self.record(root).get('review_requested'))
+        self.assertEqual(self.waiting(root), 'gate:build')
+
+
 if __name__ == '__main__':
     unittest.main()

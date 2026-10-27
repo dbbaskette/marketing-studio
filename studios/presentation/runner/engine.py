@@ -1771,9 +1771,13 @@ class Engine(Jobs, Researching, DeskActions):
                 self._done(root, step, time.monotonic(), 'every section is drawn')
 
     def _review(self, root: Path, run: _Run, step: stages.Step) -> None:
+        def keep(record, handed):
+            build.keep_review(root, record, handed)
+            if decks.on_desk(record):
+                self._desk_reviewed(root)   # what it found waits in Finishing, per slide
+
         self._agent(root, run, step,
-                    lambda record, request, error: build.review_work(root, record),
-                    lambda record, handed: build.keep_review(root, record, handed),
+                    lambda record, request, error: build.review_work(root, record), keep,
                     'keep the review of the deck', name=f'{step.name}:review'
                     if step.name == 'build-repair' else None,
                     label='Review the deck again' if step.name == 'build-repair' else None)
