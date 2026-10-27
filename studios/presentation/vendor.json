@@ -126,7 +126,7 @@
     {
       "path": "runner/documents.py",
       "from": "runner/documents.py",
-      "note": "a deck folder (run.json); add_text and text_of added",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/documents.py`. a deck folder (run.json); add_text and text_of added",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
