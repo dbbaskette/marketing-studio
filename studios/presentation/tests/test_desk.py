@@ -154,7 +154,7 @@ class MarkdownTests(unittest.TestCase):
 class ScriptedPage:
     """Runs app.js in the harness, and checks what every screen it shows must hold."""
 
-    def run_page(self, answers: dict, steps: list, layout: bool = False,
+    def run_page(self, answers: dict, steps: list, layout: bool = True,
                  **plan) -> dict:
         file = self.base / 'plan.json'
         file.write_text(json.dumps({'answers': answers, 'steps': steps, **plan}),
