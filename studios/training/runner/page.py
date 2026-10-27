@@ -152,6 +152,15 @@ What a caller needs to know
   runner does next, not what an assistant in a conversation would.
 - Reading never starts or wakes a run: `GET /api/run` can be asked for as often as the
   page likes.
+- A training started on the desk (`flow: 'desk'`) is shown and changed there: `GET
+  /api/drafts?path=` answers `drafts.view`, and `POST /api/drafts/ready` {path, name,
+  seen}, `/api/drafts/level-ready` {path, level, seen: {name: hash}}, `/api/drafts/update`
+  {path, name}, `/api/drafts/keep` {path, name, reason, seen} and `/api/drafts/send` {path,
+  name} each answer it after the change (`level-ready` adds `marked` and `stopped`, `send`
+  adds `made` and `problems`). Each is 409 with `drafts.NOT_ON_DESK` for a saved training,
+  and a desk training is 409 with `drafts.ON_DESK` at `/api/decide`, `/api/review`,
+  `/api/outline`, `/api/look` and `GET /api/gate`. A teammate reads the desk with only
+  Download on each card, and each change is refused with who runs the training.
 - While a run is driving a training, its decisions cannot be moved back to a conversation:
   a gate the runner waits at would then be one an assistant could pass. They can be moved
   once the run is done as far as it goes, which is how a slide deck gets made. Moving them
@@ -177,20 +186,26 @@ from workspace import WorkspaceError
 from studio_core import research_sites
 
 from runner import engine as engines
-from runner import gitstate, pipeline, setup
+from runner import drafts, gitstate, pipeline, setup
 
 from studio_core import modules
 from studio_core.shared_runner import page as _shared
 modules.bind(globals(), _shared, _shared.NAMES)
 
+DRAFTS = '/api/drafts'
+# The desk's decisions, each under DRAFTS: Mark ready, Mark this level ready, Update, Keep as
+# it is, and Send to its copies.
+DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'update', 'keep',
+                                                     'send'))
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
-         '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket')
+         '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
+         DRAFTS)
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
-          '/api/review-level', '/api/research-site')
+          '/api/review-level', '/api/research-site', *DECIDED)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -261,7 +276,11 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.run(one('path')))
         if path == '/api/delete':
             return desk.as_json(HTTPStatus.OK, self.engine.leaving(self.driving(one('path'))))
+        if path == DRAFTS:
+            return desk.as_json(HTTPStatus.OK, drafts.view(self.engine,
+                                                           self.on_desk(one('path'))))
         if path == '/api/gate':
+            self.not_on_desk(one('path'))
             return desk.as_json(HTTPStatus.OK, self.gate(one('path'), one('artifact')))
         if path == '/api/slide':
             return HTTPStatus.OK, PNG, self.slide(one)
@@ -409,6 +428,53 @@ class RunnerPage(desk.Page):
             raise desk.Refusal(HTTPStatus.NOT_FOUND, 'No run is driving this training.')
         return path
 
+    def on_desk(self, path: str) -> Path:
+        """A desk training's folder, once this computer knows it and a run drives it. A
+        saved training is refused: the desk's routes are not its own."""
+        desk.registered(path)
+        root = self.engine.driven(path)
+        if root is None:
+            raise desk.Refusal(HTTPStatus.NOT_FOUND, 'No run is driving this training.')
+        if not drafts.on_desk(drafts.run_of(root)):
+            raise desk.Refusal(HTTPStatus.CONFLICT, drafts.NOT_ON_DESK)
+        return root
+
+    def not_on_desk(self, path: str) -> None:
+        """Refuse a review screen's route for a desk training, which has none: it is
+        changed on the desk. Any other training is answered as it always was."""
+        root = self.engine.driven(path)
+        if root is not None and drafts.on_desk(drafts.run_of(root)):
+            raise desk.Refusal(HTTPStatus.CONFLICT, drafts.ON_DESK)
+
+    def drafted(self, path: str, sent: dict) -> dict:
+        """One of the desk's decisions, as the person made it on a card, answered with the
+        desk's view: Mark ready {name, seen}, Mark this level ready {level, seen: {name:
+        hash}}, which adds `marked` and `stopped`, Update {name}, Keep as it is {name,
+        reason, seen}, and Send to its copies {name}, which adds `made` and `problems`."""
+        root = self.on_desk(desk.text(sent, 'path'))
+        name = None if path == f'{DRAFTS}/level-ready' else desk.text(sent, 'name')
+        added = {}
+        try:
+            if path == f'{DRAFTS}/ready':
+                self.engine.mark_ready(root, name, desk.text(sent, 'seen', False))
+            elif path == f'{DRAFTS}/level-ready':
+                level, seen = sent.get('level'), sent.get('seen')
+                if level is not None and not isinstance(level, str) \
+                        or seen is not None and not isinstance(seen, dict):
+                    raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give the level as text and '
+                                       'what was shown of each card by its name.')
+                added = self.engine.mark_level_ready(root, level or None, seen or {})
+            elif path == f'{DRAFTS}/update':
+                self.engine.update(root, name)
+            elif path == f'{DRAFTS}/keep':
+                self.engine.keep(root, name, desk.text(sent, 'reason', False),
+                                 desk.text(sent, 'seen', False))
+            else:
+                added = self.engine.send_copy(root, name)
+        except WorkspaceError as refusal:
+            raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+        return {**drafts.view(self.engine, root), **added}
+
     def run(self, path: str) -> dict:
         """One training's run, for a training this computer knows."""
         desk.registered(path)
@@ -441,9 +507,15 @@ class RunnerPage(desk.Page):
         if found.get('busy_since') and item.get('activity_at'):
             item['activity_at'] = max(item['activity_at'], found['busy_since'])
         session = workspace.load(Path(item['path']))
+        # On the desk a material the desk accepted is a draft until the person marks it
+        # ready.
+        person = (workspace.person_statuses(Path(item['path']), session)
+                  if workspace.on_desk(session) else {})
         for file in (item.get('view') or {}).get('files') or ():
             accepted = (session['artifacts'].get(file['artifact']) or {}).get('approved') or {}
-            if file['status'] == 'approved' and accepted.get('by') == 'review-policy':
+            if file['status'] == 'approved' and person.get(file['artifact']) == 'draft':
+                file.update(status='draft', words=drafts.DRAFT_WORDS)
+            elif file['status'] == 'approved' and accepted.get('by') == 'review-policy':
                 file['words'] = 'Continued automatically'
         if not found['mine']:   # it waits for whoever drives it, not for the person here
             if item.get('state') == 'needs-you' or (item.get('state') == 'in-progress'
@@ -463,7 +535,9 @@ class RunnerPage(desk.Page):
     def decide(self, path: str, target: str, decision: str, note: str | None,
                seen: str | None, refresh: bool = False) -> dict:
         """Record a decision as the desk does. For a training a run is driving it is then
-        committed, shared if that is wanted, and the run is woken."""
+        committed, shared if that is wanted, and the run is woken. A desk training has no
+        gates: it is refused, and changed on the desk."""
+        self.not_on_desk(path)
         with self.engine.files:
             self.engine.hold(path)
             try:   # a deck the slides tool presented has the approval sent to it first
@@ -576,7 +650,10 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.engine.share())
         if path == ASSET:
             return desk.as_json(HTTPStatus.OK, self.asset(sent))
+        if path in DECIDED:
+            return desk.as_json(HTTPStatus.OK, self.drafted(path, sent))
         if path == '/api/review':
+            self.not_on_desk(desk.text(sent, 'path'))
             self.run(desk.text(sent, 'path'))
             looks = sent.get('looks')
             if looks is not None and not isinstance(looks, dict):
@@ -636,6 +713,7 @@ class RunnerPage(desk.Page):
     def outline(self, sent: dict) -> dict:
         """Record what the person decided about what a deck says: approve it, or say
         what should change. It is theirs alone to decide, and decided here."""
+        self.not_on_desk(desk.text(sent, 'path'))
         path, decision = desk.text(sent, 'path'), desk.text(sent, 'decision')
         level, note = desk.text(sent, 'level', False), desk.text(sent, 'note', False)
         if decision not in engines.DECIDING:
@@ -651,6 +729,7 @@ class RunnerPage(desk.Page):
     def look(self, sent: dict) -> dict:
         """Record the look the person chose for a deck from the brand's samples, with their
         words. It is theirs alone to choose, and chosen here."""
+        self.not_on_desk(desk.text(sent, 'path'))
         path, choice = desk.text(sent, 'path'), desk.text(sent, 'choice')
         level, words = desk.text(sent, 'level', False), desk.text(sent, 'words', False)
         self.run(path)

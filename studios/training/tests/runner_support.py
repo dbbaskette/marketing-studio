@@ -1360,15 +1360,16 @@ class Copies:
         from runner import copies
         return copies.remake(root, name, google or self.drive)
 
-    def make(self, root: Path, google=None, word=None) -> tuple[list[dict], dict]:
+    def make(self, root: Path, google=None, word=None, only=None) -> tuple[list[dict], dict]:
         import gdocs
         import workspace
+        from runner import drafts
         self.calls += 1
         session, problems, made = workspace.load(root), {}, []
-        state = workspace.statuses(root, session)
+        approved = drafts.copied(root, session, drafts.run_of(root))
         for entry in self.wanted(root):
             name = entry['artifact']
-            if entry['state'] == 'made' or state.get(name) != 'approved':
+            if entry['state'] == 'made' or name not in approved or only not in (None, name):
                 continue
             file = Path(root) / workspace.artifact(root, session, name)['file']
             if entry['kind'] == 'google' and 'google' in self.refuse:

@@ -777,7 +777,8 @@ async function app(file) {
   vm.runInContext(fs.readFileSync(panels, 'utf8'), context, { filename: 'deck-panels.js' });
   const lists = path.join(PAGE, '..', 'studio_core', 'deck_web', 'lists.js');
   vm.runInContext(fs.readFileSync(lists, 'utf8'), context, { filename: 'lists.js' });
-  for (const script of ['markdown.js', 'app.js']) {
+  // The shared desk kit before app.js, and the training desk, built on both, after it.
+  for (const script of ['markdown.js', 'drafting.js', 'app.js', 'drafts.js']) {
     vm.runInContext(fs.readFileSync(path.join(PAGE, script), 'utf8'), context, { filename: script });
   }
   await settle();

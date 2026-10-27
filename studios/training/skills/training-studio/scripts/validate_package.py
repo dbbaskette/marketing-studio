@@ -56,6 +56,8 @@ REQUIRED = (
     'scripts/desk/app.js',
     'scripts/desk/markdown.js',
     'scripts/desk/style.css',
+    'scripts/desk/drafting.js',
+    'scripts/desk/drafts.js',
     'scripts/hub.py',
     'scripts/cmd_hub.py',
 )

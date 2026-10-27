@@ -63,6 +63,21 @@ DELIVERY_OF_OLD = 'reading'
 WRITTEN_FOR = {'live': 'a talk', 'reading': 'reading on its own'}
 NO_DELIVERY = 'Choose live or reading for the deck.'
 APPROVAL = ('chat', 'page')
+# How a training is worked on. A training saved before the desk has no flow and keeps its
+# gates and review screens.
+FLOWS = ('desk',)
+NO_FLOW = 'Choose a listed flow.'
+# How a save was made, recorded on its event: what the desk shows in a material's History.
+VIA = ('save', 'rewrite', 'revise-all', 'selection', 'restore', 'google', 'finishing',
+       'update')
+NO_VIA = 'Choose a listed kind of change.'
+# Who accepted a material on a desk run's way through without the person: not their mark.
+DESK_ACCEPTED = ('desk', 'review-policy')
+# The kinds of material the person marks ready on the desk.
+PERSON_MARKED = ('blueprint', 'document', 'brief', 'deck', 'scenario', 'yoodli')
+NOT_ON_DESK = 'This training is not on the desk.'
+KEPT = 'Kept on the desk.'
+UP_TO_DATE = 'This is up to date.'
 DECISIONS = ('approve', 'accept', 'revise', 'rebuild', 'skip', 'restore')
 REQUESTS = ('revise', 'rebuild')
 WHERE = {'chat': 'in the conversation', 'page': 'on the page'}
@@ -168,7 +183,7 @@ def store(root: Path, session: dict) -> None:
     write_atomic(session_path(root), text.encode('utf-8'))
 
 
-def log(session: dict, event: str, **details) -> None:
+def log(session: dict, event: str, /, **details) -> None:
     session['events'].append({'at': now(), 'event': event, **details})
 
 
@@ -266,9 +281,12 @@ def refuse_the_wrong_place(root: Path) -> None:
 def init(root: Path, title: str, levels=(), brief_kind: str = 'product',
          deck_target: str | None = None, brand: str | None = None,
          yoodli: bool = False, copies=(), approval: str = 'chat',
-         delivery: str = 'live', walkthrough: bool = False) -> dict:
+         delivery: str = 'live', walkthrough: bool = False,
+         flow: str | None = None) -> dict:
     if not title.strip():
         raise WorkspaceError('A training needs a title.')
+    if flow is not None and flow not in FLOWS:
+        raise WorkspaceError(NO_FLOW)
     if delivery not in DELIVERIES:
         raise WorkspaceError(NO_DELIVERY)
     if walkthrough not in (True, False):
@@ -314,10 +332,20 @@ def init(root: Path, title: str, levels=(), brief_kind: str = 'product',
         'decisions': [],
         'events': [],
     }
+    if flow is not None:
+        session['flow'] = flow
+        # A scenario is made from its line in the practice plan. Only a training started on
+        # the desk says so: one opened on the desk later was never built that way.
+        session['practice_inputs'] = True
     log(session, 'init')
     with locked(root):
         store(root, session)
     return session
+
+
+def on_desk(session: dict) -> bool:
+    """Whether a training is worked on at the desk, with no gates or review screens."""
+    return session.get('flow') == 'desk'
 
 
 # --- artifacts ----------------------------------------------------------------
@@ -390,7 +418,8 @@ def artifact(root: Path, session: dict, name: str) -> dict:
     kind, _, ident = base.partition(':')
     if kind == 'scenario' and SCENARIO_ID.match(ident):
         return {'file': scenario_file(root, level, ident), 'upstream': (),
-                'stage': 'scenario', 'extras': ()}
+                'stage': 'scenario',
+                'extras': ('practice',) if session.get('practice_inputs') else ()}
     if kind == 'yoodli' and SCENARIO_ID.match(ident):
         return {'file': f'{folder}yoodli/{ident}.md',
                 'upstream': (same('blueprint'), same('brief'), same(f'scenario:{ident}')),
@@ -465,6 +494,18 @@ def profile_for(root: Path) -> Path:
     return pinned if pinned and pinned.is_file() else PROFILE
 
 
+def practice_line(text: str, ident: str) -> str | None:
+    """A scenario's line in a blueprint's practice plan, `- <ident>: …`, trimmed; None when the
+    plan has no line for it."""
+    section = None
+    for line in (text or '').splitlines():
+        if line.startswith('## '):
+            section = line[3:].strip().lower()
+        elif section == 'practice plan' and line.strip().startswith(f'- {ident}:'):
+            return line.strip()
+    return None
+
+
 def inputs(root: Path, session: dict, name: str) -> dict:
     """What an artifact is built from: upstream content, and the settings that affect it."""
     spec = artifact(root, session, name)
@@ -477,6 +518,12 @@ def inputs(root: Path, session: dict, name: str) -> dict:
     for extra in spec['extras']:
         if extra == 'profile':
             found[extra] = sha256_file(profile_for(root))
+        elif extra == 'practice':
+            base, level = split(name)
+            blueprint = root / artifact(root, session, qualify('blueprint', level))['file']
+            text = blueprint.read_text(encoding='utf-8') if blueprint.is_file() else ''
+            line = practice_line(text, base.partition(':')[2])
+            found[extra] = 'none' if line is None else hashlib.sha256(line.encode()).hexdigest()
         else:
             found[extra] = session['settings'][extra.partition(':')[2]]
     return found
@@ -552,13 +599,17 @@ def check_coverage(root: Path, session: dict, name: str, coverage) -> None:
 
 @mutating
 def save(root: Path, name: str, source: Path | None = None, built: bool = False,
-         coverage: dict | None = None, edit: bool = False) -> dict:
+         coverage: dict | None = None, edit: bool = False, via: str | None = None,
+         session_token: str | None = None) -> dict:
     """Record an artifact. `source` replaces the file first; `built` marks a rebuild.
 
     `edit` says the text from `source` is someone's edit, not a rebuild: the old version
     still goes to history, but what the artifact was built from is left as it was, so an
-    edit can never clear staleness.
+    edit can never clear staleness. `via` says how the change was made, one of VIA, and
+    `session_token` which desk session made it; both go on the save's event when given.
     """
+    if via is not None and via not in VIA:
+        raise WorkspaceError(NO_VIA)
     session = load(root)
     spec = artifact(root, session, name)
     path = managed(root, spec['file'])
@@ -584,7 +635,9 @@ def save(root: Path, name: str, source: Path | None = None, built: bool = False,
         entry['reviewed_coverage'] = {'deck_sha256': entry['sha256'],
                                       'blueprint_sha256': sha256_file(root / blueprint),
                                       'at': now(), 'objectives': coverage}
-    log(session, 'save', artifact=name, sha256=entry['sha256'])
+    made = {'via': via, 'session': session_token}
+    log(session, 'save', artifact=name, sha256=entry['sha256'],
+        **{key: value for key, value in made.items() if value is not None})
     store(root, session)
     return entry
 
@@ -617,6 +670,24 @@ def statuses(root: Path, session: dict) -> dict[str, str]:
     known: dict[str, str] = {}
     for name in artifact_names(root, session):
         known[name] = _status(root, session, name, known)
+    return known
+
+
+def person_statuses(root: Path, session: dict) -> dict[str, str]:
+    """Status of every artifact as the person sees it. On the desk a plan or material the desk
+    accepted on its way through is still a draft until the person marks it ready; a training
+    not on the desk reads its statuses as they are."""
+    known = statuses(root, session)
+    if not on_desk(session):
+        return known
+    ready = session.get('desk_ready') or {}
+    for name, status in known.items():
+        base = split(name)[0].partition(':')[0]
+        approved = (session['artifacts'].get(name) or {}).get('approved') or {}
+        if (base in PERSON_MARKED and status == 'approved'
+                and approved.get('by') in DESK_ACCEPTED
+                and ready.get(name) != approved.get('sha256')):
+            known[name] = 'draft'
     return known
 
 
@@ -795,6 +866,8 @@ def input_label(key: str) -> str:
     """One of the things an artifact is built from, in plain words: "the blueprint"."""
     if key.startswith('setting:'):
         return f"the {key.partition(':')[2].replace('_', ' ')} setting"
+    if key == 'practice':
+        return 'the practice plan'
     return 'the Yoodli profile' if key == 'profile' else label(key)
 
 
@@ -864,7 +937,8 @@ def _approve(root: Path, session: dict, name: str, accept_stale: str | None,
                              if value == 'pending')
             if pending:
                 warnings.append('Research questions still pending: ' + ', '.join(pending))
-    log(session, 'continued-automatically' if policy else 'approve',
+    log(session, 'continued-on-the-desk' if by == 'desk'
+        else 'continued-automatically' if policy else 'approve',
         artifact=name, sha256=entry['sha256'], by=by)
     return {'artifact': name, 'approved': entry['approved'], 'warnings': warnings}
 
@@ -899,6 +973,73 @@ def accept_policy(root: Path, name: str, policy: dict) -> dict:
     after_approval(root, session, name, 'Continued automatically under the saved review level.')
     store(root, session)
     return outcome
+
+
+@mutating
+def accept_desk(root: Path, name: str) -> dict:
+    """Accept a current draft on a desk run's way through, so the run goes on without a stop.
+
+    The person has not marked it ready: `person_statuses` still reads it as a draft. It uses
+    the same dependency and input checks as approval and never accepts an older set of inputs.
+    """
+    session = load(root)
+    if not on_desk(session):
+        raise WorkspaceError(NOT_ON_DESK)
+    if name == 'intake':
+        raise WorkspaceError(f"{sentence(label('intake'))} is approved on the page.")
+    entry = session['artifacts'].get(name) or {}
+    spec = artifact(root, session, name)
+    if entry.get('sha256') != sha256_file(managed(root, spec['file'])):
+        raise WorkspaceError('This document changed after its checks. Review it before continuing.')
+    outcome = _approve(root, session, name, None, 'desk', policy=True)
+    after_approval(root, session, name, 'Continued on the desk.')
+    store(root, session)
+    return outcome
+
+
+@mutating
+def keep_as_is(root: Path, name: str, reason: str | None = None, by: str = 'page',
+               seen: str | None = None) -> dict:
+    """Keep a held material as it is: what it is built from becomes what is there now.
+
+    A material the person marked ready stays ready; anything else is accepted on the desk
+    again. Refused while one of its own inputs is held, which is kept or updated first, and
+    for a material that is not out of date.
+    """
+    session = load(root)
+    if not on_desk(session):
+        raise WorkspaceError(NOT_ON_DESK)
+    spec = artifact(root, session, name)
+    current = sha256_file(managed(root, spec['file']))
+    if seen is not None and seen != current:
+        raise WorkspaceError(f'{sentence(label(name))} has changed since it was opened. '
+                             'Read the new version before deciding.')
+    state = statuses(root, session)
+    for upstream in spec['upstream']:
+        if state.get(upstream) == 'stale':
+            raise WorkspaceError(f'Update or keep {label(upstream)} first.')
+    entry = session['artifacts'].get(name)
+    if entry is None or current is None:
+        raise WorkspaceError(f'{sentence(label(name))} has nothing to keep yet.')
+    # Only a material built from what has since changed is kept as it is: anything else has
+    # nothing to keep, and no decision or limitation is recorded for it.
+    if state.get(name) != 'stale':
+        raise WorkspaceError(UP_TO_DATE)
+    found = pinned_inputs(root, session, name)
+    session['decisions'].append({'at': now(), 'artifact': name, 'decision': 'kept-as-is',
+                                 'from': entry.get('built_from'), 'to': found,
+                                 'reason': reason or KEPT, 'by': by})
+    entry['built_from'] = found
+    approved = entry.get('approved')
+    if approved and approved.get('by') == 'page' and approved.get('sha256') == current:
+        approved['inputs'] = dict(found)
+    else:
+        # Accepted on the desk again, as accept_desk does, so the stage moves on.
+        _approve(root, session, name, None, 'desk', policy=True)
+        after_approval(root, session, name, KEPT)
+    log(session, 'kept-as-is', artifact=name, by=by)
+    store(root, session)
+    return {'artifact': name, 'status': person_statuses(root, session)[name]}
 
 
 # --- where the training is ------------------------------------------------------

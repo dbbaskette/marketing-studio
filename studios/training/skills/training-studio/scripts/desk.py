@@ -33,6 +33,8 @@ PAGE = {
     '/index.html': ('index.html', 'text/html; charset=utf-8'),
     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
     '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8'),
+    '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8'),
+    '/drafts.js': ('drafts.js', 'text/javascript; charset=utf-8'),
     '/style.css': ('style.css', 'text/css; charset=utf-8'),
 }
 STATUSES = ('approved', 'draft', 'stale', 'not-started', 'skipped', 'unavailable')
@@ -105,6 +107,9 @@ REWORDED = (
                       'to do'),
     _reword(r'(\S+) was accepted as it was after its inputs changed: (.*)',
             lambda m: f'{named(m[1])} was accepted as it was, after what it was built from '
+                      f'changed: {m[2]}'),
+    _reword(r'(\S+) was kept as it was after its inputs changed: (.*)',
+            lambda m: f'{named(m[1])} was kept as it was, after what it was built from '
                       f'changed: {m[2]}'),
     _reword(r'(\S+) has no export(.*)', lambda m: f'{named(m[1])} has no Word copy{m[2]}'),
     _reword(r'The export of (\S+) is out of date',

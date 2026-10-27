@@ -185,6 +185,16 @@ What a caller needs to know
 - `bring` copies a training's folder into the workspace under the name its title gives,
   moves its decisions to the page, gives it a run record that takes it, and commits. The
   folder it came from is only read. The run then carries on from what the files say.
+- A form with `flow: 'desk'` starts the training on the desk: a run of schema 4 with
+  `flow: 'desk'` in the run and the session, and no review level. None is saved with it and
+  the shared one is never written from its form, so its start promises no stops. The engine
+  carries a desk run past every gate, deck outline and look (`_desk_gate`), each with a desk
+  receipt in `review_events`, and never groups it for review. That is not the person's
+  approval of a material, which they give on the desk. A problem still stops it.
+- On the desk, what a change reaches is held, not remade (`drafts.held`). `update` asks for
+  a held material to be made again, through its own steps, and carries on; `keep` keeps it
+  as it is (`workspace.keep_as_is`, by the page). Each commits; an update closes in the
+  commit that lands its material. A saved run remakes as it always did.
 """
 from __future__ import annotations
 
@@ -209,7 +219,7 @@ import hub
 import workspace
 from workspace import WorkspaceError
 
-from runner import agents, companion, deck, gitstate, pipeline, settings, team, worker_tools
+from runner import agents, companion, deck, drafts, gitstate, pipeline, settings, team, worker_tools
 from runner import brand as brand_skill
 from runner import brand_source
 from runner import copies as copies_made
@@ -220,7 +230,7 @@ from runner import research as research_cli
 from runner import slides as slides_tool
 
 SCHEMA = 1
-RECORD = f'{workspace.STATE_DIR}/run.json'
+RECORD = drafts.RECORD   # f'{workspace.STATE_DIR}/run.json'
 # Written when a step starts and removed when it ends, and never shared. One left behind
 # says the runner ended in the middle of a step, not that a person changed a file.
 IN_HAND = f'{workspace.STATE_DIR}/step.lock'
@@ -332,8 +342,8 @@ STALE = {'review-stale', 'asset-hash-changed', 'asset-file-missing', 'input-miss
 # What a slides tool says of an asset an approved design names and that is not to hand.
 CANDIDATE = ('asset-unresolved', 'provider-missing', 'asset-conflict')
 ASSETS_WAIT = ('The deck is not drawn until what its approved design uses is to hand. {said}')
-NO_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
-                'here cannot do it. Update Harness Research, then start again.')
+# Every start is refused so, on the desk or not: one check and one sentence.
+NO_SYNTHESIS = drafts.NEEDS_SYNTHESIS
 # True lets a new run start on the legacy question queue. Only the test suites that still
 # drive the queue through its stand-in set it; piece 7 removes it with the queue.
 LEGACY_RESEARCH = False
@@ -391,6 +401,9 @@ KEPT_BACK = ('{name} took this training on {when}, before your deletion of it wa
              'it was not deleted. It is as they shared it.')
 WAITS = ('It is gone from this computer. Your team sees it gone the next time the workspace '
          'is shared.')
+# How what a deck says was kept, when the person did not approve it, as the slides tool is told.
+CONTINUED = {'review-policy': 'Continued under the saved review level',
+             'desk': 'Continued on the desk'}
 DRIVE = {'preview': 'Preview presentation', 'slides': 'Google Slides deck',
          'doc': 'Google Doc'}
 
@@ -401,13 +414,18 @@ def read_record(root: Path) -> dict | None:
     if not path.is_file():
         return None
     record = home.read_json(path, None)
-    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3) \
+    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA) \
             or not isinstance(record.get('steps'), dict):
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
                              'will not drive this training.')
     if record.get('schema') == 2 and not record.get('review_policy'):
         raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
-    if record.get('schema') == 3 and (record.get('research_contract') or {}).get('schema') != 2:
+    contracted = (record.get('research_contract') or {}).get('schema') == 2
+    # A desk run is started with a research contract, as every run is, except on the legacy
+    # queue the test suites still drive.
+    if record.get('schema') == drafts.SCHEMA:
+        contracted = drafts.on_desk(record) and (contracted or LEGACY_RESEARCH)
+    if record.get('schema') in (3, drafts.SCHEMA) and not contracted:
         raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
 
@@ -739,9 +757,16 @@ class Engine(Reviewing):
         if self._run(root).gone:
             gitstate.discard(self.space(), root)
             raise _Gone('This training is no longer run from this computer.')
+        self._updates_made(root)
         self._decision_arrived(root)
         title = workspace.load(root)['title']
         gitstate.commit(self.space(), f'{title}: {what}', [root])
+
+    def _updates_made(self, root: Path) -> None:
+        """Close each desk update whose material is made again, in the commit that lands it."""
+        record = self._load(root)
+        if drafts.close_updates(root, workspace.load(root), record):
+            self._store(root, record)
 
     def _decision_arrived(self, root: Path) -> None:
         """Retire decision feedback in the normal commit that reaches its next stop."""
@@ -750,9 +775,11 @@ class Engine(Reviewing):
             return
         found = self._survey(root, record)
         step = found.next
-        automatic = step.kind in ('wait', 'outline', 'look') and review_policy.automatic(
-            record, 'training', step.step.id,
-            holding=pipeline.holding(root, found, step.step))
+        # A desk run continues every gate, outline and look on the desk: none is a stop.
+        automatic = step.kind in ('wait', 'outline', 'look') and (
+            drafts.on_desk(record) or review_policy.automatic(
+                record, 'training', step.step.id,
+                holding=pipeline.holding(root, found, step.step)))
         if (record.get('question') or record.get('problem') or (not automatic and step.kind in
                 ('wait', 'outline', 'look', 'review', 'stuck', 'documents', 'done'))):
             record['last_decision_stop'] = home.now()
@@ -1029,11 +1056,17 @@ class Engine(Reviewing):
             contract = None
         if contract is None and not LEGACY_RESEARCH:
             raise WorkspaceError(NO_SYNTHESIS)
+        # A training on the desk has no review level: none is saved with it, and the shared
+        # one is never written from its form.
+        desk = drafts.on_desk(form)
         with self.files:
             record = new_record(agent, model, chosen, form['source_scope'], effort,
                                 form.get('research_from'))
             record['research_questions'] = form.get('research_questions') or []
-            if form.get('review_default'):
+            if desk:
+                record.pop('review_policy')
+                record.pop('review_layout')
+            elif form.get('review_default'):
                 # Use this for new work in every studio: written under the studios config's
                 # lock, or refused, with nothing made, when another studio changed the level
                 # the form read.
@@ -1045,7 +1078,7 @@ class Engine(Reviewing):
                     raise WorkspaceError(str(error)) from None
             # A per-training choice does not write shared settings and stays valid even
             # when another studio changes the default while this form is open.
-            if form.get('review_level'):  # this training's own choice, saved with its run
+            if form.get('review_level') and not desk:  # this training's own, saved with it
                 record['review_policy'] = {'schema': 1, 'level': form['review_level']}
             root = pipeline.create(space, form)
             try:
@@ -1054,10 +1087,14 @@ class Engine(Reviewing):
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
+                if desk:
+                    record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
+                        'jobs': [], 'updates': {}, 'findings_before': None})
                 session = workspace.load(root)
                 if contract:
                     session['research_contract'] = contract
-                session['review_policy'] = record['review_policy']
+                if not desk:
+                    session['review_policy'] = record['review_policy']
                 workspace.store(root, session)
                 record['driver'] = team.claim(space)
                 self._tried(record, 'intake', home.now(), 0.0, 'kept')
@@ -1080,7 +1117,7 @@ class Engine(Reviewing):
         decks = max(1, len(form['levels'])) if drawn else 0
         balanced = 2 if pipeline.planned_from_form(record) else 3
         return {'path': str(root), 'id': root.name, 'gates': (
-            pipeline.gates(form, drawn) if chosen == 'step_by_step'
+            0 if desk else pipeline.gates(form, drawn) if chosen == 'step_by_step'
             else (balanced if chosen == 'balanced' else 1) + decks)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
@@ -1246,6 +1283,12 @@ class Engine(Reviewing):
                     return  # someone else drives it, or nobody does
                 found = self._survey(root, record)
                 step = found.next
+                # A desk run never stops for review: each stop is continued on the desk.
+                if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
+                                                               'look') \
+                        and drafts.on_desk(record):
+                    self._desk_gate(root, found)
+                    continue
                 if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
                                                                'look') \
                         and review_policy.automatic(record, 'training', step.step.id,
@@ -1302,6 +1345,29 @@ class Engine(Reviewing):
             if held:    # given back before the run counts as ended
                 self._slots.give_back()
             run.queued = run.busy = False
+
+    def _desk_gate(self, root: Path, found: pipeline.Survey) -> None:
+        """Continue a desk run past the stop it has come to, with the desk's receipt: a look
+        in the brand's default, what a deck says as it was written, and any other gate
+        accepted on the desk. Nothing here is the person's approval of a material."""
+        step = found.next
+        if step.kind == 'look':
+            return self._look_default(root, step.step, by='desk')
+        if pipeline.bare(step.step.id) == 'gate:deck-outline':
+            if step.kind == 'gate':
+                self._ask(root, self._run(root), found, step)
+            return self._desk_outline(root, self._survey(root, self._load(root)))
+        with self.files:
+            session = workspace.load(root)
+            spec = workspace.artifact(root, session, step.step.artifact)
+            digest = workspace.sha256_file(review_layout.contained(root, spec['file']))
+            self.deck_decided(root, step.step.artifact, 'approve', 'Continued on the desk.',
+                              digest)
+            outcome = workspace.accept_desk(root, step.step.artifact)
+            record = self._load(root)   # deck_decided may have stored a receipt in the run
+            drafts.receipt(record, step.step.id, outcome['approved'], home.now())
+            self._store(root, record)
+            self._commit(root, f'continue {workspace.label(step.step.artifact)} on the desk')
 
     def _do(self, root: Path, run: _Run, found: pipeline.Survey,
             step: pipeline.Next) -> None:
@@ -1384,6 +1450,8 @@ class Engine(Reviewing):
             'dollars': dollars, 'tokens': tokens, 'outcome': outcome, 'error': error})
         if outcome == 'kept':
             entry['failed'] = 0
+            if drafts.on_desk(record):   # how long it took here, for the desk's estimate
+                drafts.took(record, step, seconds)
         elif outcome == 'failed':
             entry['failed'] = entry.get('failed', 0) + 1
         return entry
@@ -1435,9 +1503,12 @@ class Engine(Reviewing):
         tried and why a Google Doc could not be made. Call it holding `files`."""
         problems = self.copies.make(root)[1]
         session, tried = workspace.load(root), {}
+        # On the desk a copy is tried only of what is Ready or sent: a draft the desk accepted
+        # is tried once the person marks it ready.
+        copyable = drafts.copied(root, session, record) if drafts.on_desk(record) else None
         for entry in self._wanted(root, record):
             approved = (session['artifacts'].get(entry['artifact']) or {}).get('approved')
-            if approved:
+            if approved and (copyable is None or entry['artifact'] in copyable):
                 tried[entry['artifact']] = approved['sha256']
         # What Google was last found to hold is kept until the Doc is brought in. A push
         # refused because the Doc was changed there says so too.
@@ -1963,10 +2034,14 @@ class Engine(Reviewing):
                 'name': brand_default.get('id') or "the brand's default", 'shown': 'unrendered',
                 **{key: brand_default.get(key) for key in ('direction', 'house', 'layouts')}}
 
-    def _look_default(self, root: Path, step: pipeline.Step) -> None:
+    def _look_default(self, root: Path, step: pipeline.Step, by: str = 'review-policy') -> None:
         """A look gate the saved level does not stop at: the look the person picked in the
-        combined direction review, in their words; else the brand's default, saying why."""
+        combined direction review, in their words; else the brand's default, saying why.
+        `by` the desk, the brand's default is the look chosen at the start, and the receipt
+        is the desk's."""
         level = self._level(step)
+        desk = by == 'desk'
+        receipt = drafts.receipt if desk else review_policy.receipt
         with self.files:
             record = self._load(root)
             picked = (self._decided(record, level).get('look') or {}).get('picked')
@@ -1982,10 +2057,9 @@ class Engine(Reviewing):
             if shown.get('failed'):
                 words = deck_flow.UNRENDERED_WORDS.format(why=shown['failed'],
                                                           name="the brand's default")
-                self._choose_look(root, level, pipeline.DEFAULT_LOOK, words, 'review-policy')
+                self._choose_look(root, level, pipeline.DEFAULT_LOOK, words, by)
                 record = self._load(root)
-                review_policy.receipt(record, step.id, {'look': pipeline.DEFAULT_LOOK},
-                                      home.now(), note=words)
+                receipt(record, step.id, {'look': pipeline.DEFAULT_LOOK}, home.now(), note=words)
                 self._store(root, record)
                 return self._commit(root, "use the brand's default look for "
                                           f'{workspace.label(step.artifact)}: its looks could '
@@ -2001,14 +2075,15 @@ class Engine(Reviewing):
                            looks[0] if looks else None)
             choice = default['id'] if default else pipeline.DEFAULT_LOOK
             name = default['name'] if default else "the brand's default"
-            if not self._choose_look(root, level, choice, deck_flow.DEFAULT_WORDS.format(
-                    name=name), 'review-policy'):
+            words = (drafts.LOOK if desk else deck_flow.DEFAULT_WORDS).format(name=name)
+            if not self._choose_look(root, level, choice, words, by):
                 return self._commit(root, 'draw the looks again: what the deck says changed')
             record = self._load(root)
-            review_policy.receipt(record, step.id, {'look': choice}, home.now())
+            receipt(record, step.id, {'look': choice}, home.now(), note=words if desk else None)
             self._store(root, record)
-            self._commit(root, f"use the brand's default look for "
-                               f'{workspace.label(step.artifact)}, under the saved review level')
+            it = workspace.label(step.artifact)
+            self._commit(root, f'continue the look of {it} on the desk' if desk else
+                         f"use the brand's default look for {it}, under the saved review level")
 
     def look(self, path, level: str | None, choice: str, words: str | None = None) -> dict:
         """Record the look a person chose for a deck from the brand's samples, with their
@@ -2344,7 +2419,7 @@ class Engine(Reviewing):
             recorded = pipeline.recorded(root, level)
         # A tool that places a recorded icon by its asset ID has its composers place it so.
         by_asset = recorded is not None and self._has('compose-icon-assets')
-        words = [f"{'Continued under the saved review level' if approved.get('by') == 'review-policy' else 'Approved on the page'}, {approved['at']}."]
+        words = [f"{CONTINUED.get(approved.get('by'), 'Approved on the page')}, {approved['at']}."]
         words += [approved['note']] if approved.get('note') else []
         try:
             listed = home.read_json(work / mine.built['brand']['told'] / 'layouts.json', {})
@@ -3694,6 +3769,184 @@ class Engine(Reviewing):
             self.share_soon()
         self.wake(path)
 
+    def _on_desk(self, path) -> tuple[Path, dict]:
+        """A desk training's folder and run record, refused for a training not on the desk.
+        Call it holding `files`."""
+        root = self._held(path)
+        record = self._load(root)
+        if not drafts.on_desk(record):
+            raise WorkspaceError(drafts.NOT_ON_DESK)
+        return root, record
+
+    def update(self, path, name, scope=None) -> dict:
+        """Update a held material from what it is built from now: an update is asked for in
+        the run, which leaves its steps in the survey again, and the run carries on. In this
+        version the material is made again whole, through its own steps, as an out-of-date
+        one is on a saved run; the update closes when it lands. Refused while another change
+        is being made, for a material that is not held, while an input of its own is, and for
+        one no step of its own makes again (a scenario the person wrote, the research plan and
+        the research), which is only kept: its update would never close."""
+        if scope is not None:
+            raise WorkspaceError(drafts.NO_SCOPE)
+        with self.files:
+            root, record = self._on_desk(path)
+            if drafts.busy(record):
+                raise WorkspaceError(drafts.BUSY)
+            session = workspace.load(root)
+            if not isinstance(name, str) or name not in drafts.held(root, session, record):
+                raise WorkspaceError(drafts.UP_TO_DATE)
+            if workspace.split(name)[0] in drafts.NEVER_REMADE \
+                    or name in self._survey_files(root, record).own:
+                raise WorkspaceError(drafts.NOT_REMADE.format(
+                    it=workspace.sentence(workspace.label(name))))
+            state = workspace.statuses(root, session)
+            for upstream in workspace.artifact(root, session, name)['upstream']:
+                if state.get(upstream) == 'stale':
+                    raise WorkspaceError(f'Update or keep {workspace.label(upstream)} first.')
+            changed = drafts.input_of(root, session, name)
+            record.setdefault('drafts', {}).setdefault('updates', {})[name] = {
+                'at': home.now(), 'by': 'page', 'scope': scope}
+            base, level = workspace.split(name)
+            for step in ([workspace.qualify(step, level) for step in pipeline.DECK_STEPS]
+                         if base == 'deck' else [name]):
+                self._fresh(record, step)   # tried from the start again
+            self._store(root, record)
+            source = ' and '.join(f'the {drafts.what(key)}' for key in changed)
+            self._commit(root, f'update {workspace.label(name)} from '
+                               f'{source or "what it is built from"}')
+        self.carry_on(root)
+        return self.view(root)
+
+    def keep(self, path, name, reason=None, seen=None) -> dict:
+        """Keep a held material as it is, as the person asked on the desk: what it is built
+        from becomes what is there now, and nothing is made again. A material being updated
+        is left to its update."""
+        with self.files:
+            root, record = self._on_desk(path)
+            if not isinstance(name, str):
+                raise WorkspaceError(drafts.UP_TO_DATE)
+            if name in drafts.updates(record):
+                raise WorkspaceError(drafts.BUSY)
+            workspace.keep_as_is(root, name, reason=reason, by='page', seen=seen)
+            self._commit(root, f'keep {workspace.label(name)} as it is')
+        self.carry_on(root)
+        return self.view(root)
+
+    def _mark(self, root: Path, record: dict, name, seen) -> None:
+        """Mark one material ready: the person's approval, by the page, of the version they
+        were shown. Refused for a held material, a deck with something that needs them, and
+        in the core's own words for anything else, a changed version among them. Call it
+        holding `files`."""
+        if not isinstance(name, str):
+            raise WorkspaceError(drafts.UP_TO_DATE)
+        state = self._settled(root, record, name)
+        if workspace.split(name)[0] == 'deck' and name in state \
+                and drafts.needs_you(root, self._survey_files(root, record), name):
+            raise WorkspaceError(drafts.NEEDS_YOU.format(it=workspace.label(name)))
+        # Never approved unseen: without the version the person saw, the core refuses it as
+        # one that has changed since it was opened.
+        workspace.decide(root, name, 'approve', by='page',
+                         seen=seen if isinstance(seen, str) else '')
+
+    @staticmethod
+    def _settled(root: Path, record: dict, name: str) -> dict:
+        """Refuse a desk change to a material being updated or held, saying what to settle
+        first, as its card says. Returns the training's statuses."""
+        if name in drafts.updates(record):
+            raise WorkspaceError(drafts.BUSY)
+        session = workspace.load(root)
+        state = workspace.statuses(root, session)
+        if state.get(name) == 'stale':
+            raise WorkspaceError(drafts.held_first(
+                root, session, drafts.held(root, session, record, state), name, state))
+        return state
+
+    def _ready_again(self, root: Path) -> None:
+        """A training whose index was written is to write it again once everything is Ready,
+        so that it says what was marked. Call it holding `files`."""
+        if workspace.load(root)['stage'] == 'done':
+            workspace.checkpoint(root, stage='package')
+
+    def mark_ready(self, path, name, seen) -> dict:
+        """Mark one material ready on the desk, as the person asked: their approval of the
+        version they were shown (`seen`, its hash). The desk's acceptance never is. Refused
+        for a held material ("Update it or keep it as it is first."), a deck with something
+        that needs the person, and when the version has changed since it was opened."""
+        with self.files:
+            root, record = self._on_desk(path)
+            self._mark(root, record, name, seen)
+            self._ready_again(root)
+            self._remember_decision(root, self._load(root), workspace.label(name), 'approve')
+            self._commit(root, f'mark {workspace.label(name)} ready')
+        self.carry_on(root)
+        return self.view(root)
+
+    def mark_level_ready(self, path, level, seen) -> dict:
+        """Mark every card of one level ready, in `drafts.ORDER`, each with the version the
+        person was shown (`seen`, by name). It stops at the first that cannot be, saying why,
+        and commits once. Returns {'marked': [names], 'stopped': {'name', 'said'} or None}."""
+        marked, stopped = [], None
+        with self.files:
+            root = self._on_desk(path)[0]
+            session = workspace.load(root)
+            if session['levels'] and level is None:
+                raise WorkspaceError('Choose a level.')
+            if session['levels'] and level not in session['levels'] \
+                    or not session['levels'] and level is not None:
+                raise WorkspaceError(f'This training has no level {level}.')
+            seen = seen if isinstance(seen, dict) else {}
+            for name in drafts.level_ready(root, session, level):
+                try:
+                    # A card the person was not shown is not marked: its version is unknown.
+                    self._mark(root, self._load(root), name, seen.get(name) or '')
+                except WorkspaceError as refusal:
+                    stopped = {'name': name, 'said': str(refusal)}
+                    break
+                marked.append(name)
+            if marked:
+                which = f'level {level}' if level else 'every material'
+                self._ready_again(root)
+                self._remember_decision(root, self._load(root), which, 'approve')
+                self._commit(root, f'mark {which} ready')
+        if marked:
+            self.carry_on(root)
+        return {'marked': marked, 'stopped': stopped}
+
+    def send_copy(self, path, name) -> dict:
+        """Send one material to its copies at once, as the person asked on its card, Ready
+        or a draft: its Google Doc (and any other copy it keeps) is made or brought up to
+        date, and from then on it is kept so. Returns what `copies.make` made and, for a
+        Google Doc that could not be, why."""
+        with self.files:
+            root, record = self._on_desk(path)
+            if not isinstance(name, str) or not any(
+                    entry['artifact'] == name for entry in self._wanted(root, record)):
+                raise WorkspaceError(drafts.NO_COPY.format(
+                    it=workspace.label(name) if isinstance(name, str) else 'it'))
+            # Nothing is sent of a material held, being updated or not written yet.
+            if self._settled(root, record, name).get(name) not in ('draft', 'approved'):
+                raise WorkspaceError(drafts.UNWRITTEN.format(
+                    it=workspace.sentence(workspace.label(name))))
+            sent = record.setdefault('drafts', {}).setdefault('send', [])
+            if name not in sent:
+                sent.append(name)
+            self._store(root, record)
+            made, problems = self.copies.make(root, only=name)
+            kept = record.setdefault('copies', {})
+            kept.setdefault('problems', {}).pop(name, None)
+            if problems.get(name):
+                kept['problems'][name] = problems[name]
+            if problems.get(name) == CHANGED_THERE:
+                kept.setdefault('remote', {})[name] = 'both changed'
+            approved = (workspace.load(root)['artifacts'].get(name) or {}).get('approved')
+            if approved:
+                kept.setdefault('tried', {})[name] = approved['sha256']
+            self._store(root, record)
+            self._commit(root, f'send {workspace.label(name)} to its copies, as asked on '
+                               'the desk')
+        self.carry_on(root)
+        return {'made': made, 'problems': dict(problems or {})}
+
     def act(self, path, action: str) -> dict:
         """Pause, resume, stop or try again, as the person asks."""
         root = self._held(path)
@@ -3880,6 +4133,10 @@ class Engine(Reviewing):
             given['later'] = [entry for entry in later if entry.get('name') != name]
             said = f'{name} is taken back: it was added after the research'
         else:
+            # A desk training's research is settled once its documents are all added: a
+            # source is added there from the desk's Sources.
+            if drafts.on_desk(record):
+                raise WorkspaceError(SETTLED)
             run = self._run(root)
             if run.workers or run.busy:
                 raise WorkspaceError(WORKING)
@@ -4084,7 +4341,10 @@ class Engine(Reviewing):
             self._store(root, record)
             copies = self._wanted(root, record)
             found = self._survey(root, record, copies)
-            if found.next.kind == 'done':  # the index lists the copies, so it is written again
+            # The index lists the copies, so it is written again; on the desk only once it is
+            # due, when every material is Ready.
+            if found.next.kind == 'done' and (not drafts.on_desk(record) or any(
+                    step.id == 'package' for step in found.steps)):
                 report = self.index.write(root, copies)
                 workspace.checkpoint(root, next_step=pipeline.finished_says(report, found))
             self._commit(root, 'make the copies again, as asked on the page')
@@ -4427,9 +4687,11 @@ class Engine(Reviewing):
             else:
                 status = 'to-do'
             # A gate a grave finding holds is not called automatic: it stops for the person.
-            automatic = step.kind == 'gate' and review_policy.automatic(
-                record, 'training', step.id,
-                holding=pipeline.holding(root, found, step) if root is not None else ())
+            # A desk run has no review level, so none of its gates is asked about.
+            automatic = step.kind == 'gate' and not drafts.on_desk(record) \
+                and review_policy.automatic(
+                    record, 'training', step.id,
+                    holding=pipeline.holding(root, found, step) if root is not None else ())
             listed.append({
                 'id': step.id, 'label': (step.label.replace('Your review of ', 'Continue ') + ' automatically'
                                          if automatic else pipeline.FROM_FORM if step.id == 'research-plan'
@@ -4646,7 +4908,10 @@ class Engine(Reviewing):
             'clash': root.name in self._clash,
             'model': record.get('model'), 'effort': record.get('effort'),
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
-            'review_level': review_policy.level(record),
+            # A desk run opens on the desk; a saved run keeps its own screens.
+            'flow': drafts.FLOW if drafts.on_desk(record) else None,
+            # A desk run has none: a run without one reads as Step by step everywhere else.
+            'review_level': None if drafts.on_desk(record) else review_policy.level(record),
             'review': self._review_view(root, record, found),
             'steps': self._steps(record, found, state, root),
             'workers': self._workers(run),

@@ -1,9 +1,11 @@
 """Workspace behaviour. Tests named row_NN cover the state-transition matrix in the plan (A7)."""
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import unittest
+from pathlib import Path
 from unittest import mock
 
 import helpers
@@ -1637,3 +1639,261 @@ class DownstreamTests(LevelCase):
             self.write(workspace.artifact(self.root, session, name)['file'], '# Synthetic document\n')
         found = workspace.downstream(self.root, workspace.load(self.root), 'research')
         self.assertEqual(found, ['blueprint@101', 'document@101', 'brief@101', 'blueprint@301', 'document@301', 'brief@301'])
+
+
+class DeskCase(TrainingCase):
+    """A training on the desk, decided on the page, initialised."""
+
+    def setUp(self):
+        super().setUp()
+        workspace.init(self.root, 'Topic', approval='page', flow='desk')
+
+    def page(self, *names: str) -> None:
+        """Build each named artifact and mark it ready on the page, in order."""
+        for name in names:
+            self.build(name)
+            workspace.approve(self.root, name, by='page')
+
+    def saved(self) -> Path:
+        """Another folder, holding a training made without the desk."""
+        other = self.root.parent / 'saved'
+        other.mkdir()
+        workspace.init(other, 'Saved')
+        return other
+
+    def person(self) -> dict:
+        return workspace.person_statuses(self.root, workspace.load(self.root))
+
+
+class DeskWorkspaceTests(DeskCase):
+    def test_a_desk_session_records_its_flow(self):
+        self.assertEqual(workspace.load(self.root)['flow'], 'desk')
+        self.assertTrue(workspace.on_desk(workspace.load(self.root)))
+        other = self.root.parent / 'other'
+        other.mkdir()
+        with self.assertRaisesRegex(WorkspaceError, '^Choose a listed flow.$'):
+            workspace.init(other, 'Other', flow='other')
+        self.assertFalse((other / '.training-studio').exists())
+        session = workspace.load(self.saved())
+        self.assertNotIn('flow', session)
+        self.assertFalse(workspace.on_desk(session))
+
+    def test_row_139_a_desk_acceptance_is_not_the_person_s(self):
+        self.page('intake', 'research-plan', 'research')
+        self.build('blueprint')
+        workspace.accept_desk(self.root, 'blueprint')
+        self.assertEqual(self.state()['blueprint'], 'approved')
+        self.assertEqual(self.person()['blueprint'], 'draft')
+        self.assertEqual(self.person()['intake'], 'approved')
+        session = workspace.load(self.root)
+        self.assertEqual(session['artifacts']['blueprint']['approved']['by'], 'desk')
+        event = session['events'][-1]
+        self.assertEqual((event['event'], event['artifact'], event['by']),
+                         ('continued-on-the-desk', 'blueprint', 'desk'))
+        self.assertEqual(session['stage'], 'document')
+        with self.assertRaisesRegex(WorkspaceError, '^This training is not on the desk.$'):
+            workspace.accept_desk(self.saved(), 'blueprint')
+
+    def test_a_desk_acceptance_refuses_intake_and_a_changed_file(self):
+        self.build('intake')
+        with self.assertRaises(WorkspaceError):
+            workspace.accept_desk(self.root, 'intake')
+        workspace.approve(self.root, 'intake', by='page')
+        self.page('research-plan', 'research')
+        self.build('blueprint')
+        self.write('blueprint.md', helpers.CONTENT['blueprint'] + 'edited\n')
+        with self.assertRaisesRegex(WorkspaceError, '^This document changed after its checks. '
+                                    'Review it before continuing.$'):
+            workspace.accept_desk(self.root, 'blueprint')
+        self.assertEqual(self.state()['blueprint'], 'draft')
+
+    def test_a_desk_ready_mark_reads_as_the_person_s(self):
+        self.page('intake', 'research-plan', 'research')
+        self.build('blueprint')
+        workspace.accept_desk(self.root, 'blueprint')
+        session = workspace.load(self.root)
+        session['desk_ready'] = {
+            'blueprint': session['artifacts']['blueprint']['approved']['sha256']}
+        workspace.store(self.root, session)
+        self.assertEqual(self.person()['blueprint'], 'approved')
+
+    def test_a_saved_training_s_person_statuses_are_its_statuses(self):
+        other = self.saved()
+        session = workspace.load(other)
+        self.assertEqual(workspace.person_statuses(other, session),
+                         workspace.statuses(other, session))
+
+    def test_a_save_records_how_it_was_made(self):
+        self.build('intake', 'research-plan', 'research', 'blueprint')
+        source = self.write('incoming/document.md', '# Rewritten\n')
+        workspace.save(self.root, 'document', source=source, edit=True, via='rewrite',
+                       session_token='ab12')
+        event = [event for event in workspace.load(self.root)['events']
+                 if event['event'] == 'save'][-1]
+        self.assertEqual((event['artifact'], event['via'], event['session']),
+                         ('document', 'rewrite', 'ab12'))
+        before = (self.root / 'document.md').read_bytes()
+        record = workspace.session_path(self.root).read_bytes()
+        other = self.write('incoming/typed.md', '# Typed\n')
+        with self.assertRaisesRegex(WorkspaceError, '^Choose a listed kind of change.$'):
+            workspace.save(self.root, 'document', source=other, edit=True, via='typed')
+        self.assertEqual((self.root / 'document.md').read_bytes(), before)
+        self.assertEqual(workspace.session_path(self.root).read_bytes(), record)
+
+    def test_a_save_without_via_logs_as_before(self):
+        self.build('intake')
+        event = workspace.load(self.root)['events'][-1]
+        self.assertEqual(event['event'], 'save')
+        self.assertNotIn('via', event)
+        self.assertNotIn('session', event)
+
+    def test_row_146_keep_as_it_is_takes_the_new_inputs(self):
+        import checks
+        self.page(*CHAIN)
+        self.write('blueprint.md', helpers.CONTENT['blueprint'] + 'edited\n')
+        self.assertEqual(self.state()['document'], 'stale')
+        outcome = workspace.keep_as_is(self.root, 'document')
+        self.assertEqual(outcome, {'artifact': 'document', 'status': 'approved'})
+        self.assertEqual(self.person()['document'], 'approved')
+        session = workspace.load(self.root)
+        decision = session['decisions'][-1]
+        self.assertEqual((decision['artifact'], decision['decision'], decision['reason'],
+                          decision['by']),
+                         ('document', 'kept-as-is', 'Kept on the desk.', 'page'))
+        self.assertEqual(decision['to'],
+                         {'blueprint': workspace.sha256_file(self.root / 'blueprint.md')})
+        self.assertEqual(session['artifacts']['document']['built_from'], decision['to'])
+        self.assertEqual(session['events'][-1]['event'], 'kept-as-is')
+        artifacts = [{'name': name, 'stage': workspace.artifact(self.root, session, name)['stage'],
+                      'status': status} for name, status in self.state().items()]
+        found = checks.readiness(artifacts, {}, [], [], {}, [], decisions=session['decisions'])
+        self.assertIn('document was kept as it was after its inputs changed: Kept on the desk.',
+                      found['limitations'])
+
+    def test_keeping_a_desk_accepted_material_accepts_it_on_the_desk(self):
+        self.page('intake', 'research-plan', 'research', 'blueprint')
+        self.build('document')
+        workspace.accept_desk(self.root, 'document')
+        self.write('blueprint.md', helpers.CONTENT['blueprint'] + 'edited\n')
+        workspace.approve(self.root, 'blueprint', by='page')
+        self.assertEqual(self.state()['document'], 'stale')
+        workspace.keep_as_is(self.root, 'document', reason='Only a heading moved.')
+        session = workspace.load(self.root)
+        self.assertEqual(session['artifacts']['document']['approved']['by'], 'desk')
+        self.assertEqual(session['decisions'][-1]['reason'], 'Only a heading moved.')
+        self.assertEqual((self.state()['document'], self.person()['document']),
+                         ('approved', 'draft'))
+
+    def test_keep_as_it_is_waits_for_a_held_input(self):
+        self.page(*CHAIN)
+        self.write('.harness-research/research-report.md', 'research v2\n')
+        self.assertEqual(self.state()['blueprint'], 'stale')
+        self.assertEqual(workspace.label('blueprint'), 'the blueprint')
+        with self.assertRaisesRegex(WorkspaceError, '^Update or keep the blueprint first.$'):
+            workspace.keep_as_is(self.root, 'document')
+        self.assertEqual(workspace.load(self.root)['decisions'], [])
+
+    def test_keep_as_it_is_refuses_an_older_view(self):
+        self.page(*CHAIN)
+        self.write('blueprint.md', helpers.CONTENT['blueprint'] + 'edited\n')
+        with self.assertRaisesRegex(WorkspaceError, 'has changed since it was opened. '
+                                    'Read the new version before deciding.$'):
+            workspace.keep_as_is(self.root, 'document', seen='0' * 64)
+        self.assertEqual(self.state()['document'], 'stale')
+        workspace.keep_as_is(self.root, 'document',
+                             seen=workspace.sha256_file(self.root / 'document.md'))
+        self.assertEqual(self.state()['document'], 'approved')
+
+    def test_keep_as_it_is_is_only_on_the_desk(self):
+        with self.assertRaisesRegex(WorkspaceError, '^This training is not on the desk.$'):
+            workspace.keep_as_is(self.saved(), 'document')
+
+    def test_keep_as_it_is_refuses_what_is_up_to_date(self):
+        self.page(*CHAIN)
+        before = workspace.session_path(self.root).read_bytes()
+        with self.assertRaisesRegex(WorkspaceError, '^This is up to date.$'):
+            workspace.keep_as_is(self.root, 'document')
+        self.assertEqual(workspace.session_path(self.root).read_bytes(), before)
+        self.assertEqual(workspace.load(self.root)['decisions'], [])
+
+    def test_keep_as_it_is_says_plainly_there_is_nothing_to_keep(self):
+        self.page('intake', 'research-plan', 'research', 'blueprint')
+        for name, said in (('document', 'The learner guide'),
+                           ('scenario:extra', 'The practice scenario "extra"')):
+            with self.subTest(name=name), self.assertRaisesRegex(
+                    WorkspaceError, f'^{said} has nothing to keep yet.$'):
+                workspace.keep_as_is(self.root, name)
+
+    def test_keeping_on_the_desk_moves_the_stage_on(self):
+        self.page('intake', 'research-plan', 'research', 'blueprint')
+        self.build('document')
+        self.write('blueprint.md', helpers.CONTENT['blueprint'] + 'edited\n')
+        workspace.approve(self.root, 'blueprint', by='page')
+        workspace.checkpoint(self.root, stage='document')
+        self.assertEqual((self.state()['document'], workspace.load(self.root)['stage']),
+                         ('stale', 'document'))
+        workspace.keep_as_is(self.root, 'document')
+        self.assertEqual(workspace.load(self.root)['artifacts']['document']['approved']['by'],
+                         'desk')
+        self.assertNotEqual(workspace.load(self.root)['stage'], 'document',
+                            'kept on the desk, the stage moves on as accept_desk does')
+
+
+BLUEPRINT = (helpers.EXAMPLES / 'blueprint.md').read_text(encoding='utf-8')
+MAIN_LINE = BLUEPRINT.splitlines()[32]
+OTHER_LINE = '- exec-cost: roleplay. Objectives: O1. A finance lead who asks what a restart costs.'
+
+
+class PracticePlanTests(DeskCase):
+    """A desk run's scenario is made from its line in the blueprint's practice plan."""
+
+    def plan(self, root: Path, main: str = MAIN_LINE, other: str = OTHER_LINE) -> None:
+        text = BLUEPRINT.replace(MAIN_LINE, f'{main}\n{other}')
+        (root / 'blueprint.md').write_text(text, encoding='utf-8')
+
+    def walk(self, root: Path) -> list[str]:
+        """Save the main scenario under the plan, then change another scenario's line, then
+        the main one's objectives; the scenario's status after each."""
+        self.plan(root)
+        (root / 'scenario.md').write_text('# Scenario: main\n', encoding='utf-8')
+        workspace.save(root, 'scenario:main')
+        seen = [workspace.statuses(root, workspace.load(root))['scenario:main']]
+        self.plan(root, other=OTHER_LINE.replace('Objectives: O1.', 'Objectives: O1, O2.'))
+        seen.append(workspace.statuses(root, workspace.load(root))['scenario:main'])
+        self.plan(root, main=MAIN_LINE.replace('O1, O2, O3', 'O1, O2'))
+        seen.append(workspace.statuses(root, workspace.load(root))['scenario:main'])
+        return seen
+
+    def test_row_158_a_desk_scenario_knows_its_practice_plan(self):
+        session = workspace.load(self.root)
+        self.assertIs(session['practice_inputs'], True)
+        self.assertEqual(workspace.artifact(self.root, session, 'scenario:main')['extras'],
+                         ('practice',))
+        self.assertEqual(self.walk(self.root), ['draft', 'draft', 'stale'])
+        built = workspace.load(self.root)['artifacts']['scenario:main']['built_from']
+        self.assertEqual(built, {'practice': hashlib.sha256(MAIN_LINE.encode()).hexdigest()})
+        self.assertEqual(workspace.input_label('practice'), 'the practice plan')
+
+    def test_a_saved_training_s_scenario_has_no_inputs(self):
+        other = self.saved()
+        session = workspace.load(other)
+        self.assertNotIn('practice_inputs', session)
+        self.assertEqual(workspace.artifact(other, session, 'scenario:main')['extras'], ())
+        self.assertEqual(self.walk(other), ['draft', 'draft', 'draft'])
+        self.assertEqual(workspace.load(other)['artifacts']['scenario:main']['built_from'], {})
+
+    def test_a_scenario_with_no_line_in_the_plan_is_made_from_none(self):
+        self.plan(self.root)
+        self.write('scenarios/unplanned.md', '# Scenario: unplanned\n')
+        session = workspace.load(self.root)
+        self.assertEqual(workspace.inputs(self.root, session, 'scenario:unplanned'),
+                         {'practice': 'none'})
+
+    def test_the_practice_line_is_found_by_its_id(self):
+        self.assertTrue(MAIN_LINE.startswith('- main: roleplay.'))
+        self.assertEqual(workspace.practice_line(BLUEPRINT, 'main'), MAIN_LINE)
+        self.assertIsNone(workspace.practice_line(BLUEPRINT, 'other'))
+        self.assertIsNone(workspace.practice_line(BLUEPRINT.replace('## Practice plan',
+                                                                    '## Other plan'), 'main'))
+        indented = BLUEPRINT.replace(MAIN_LINE, f'  {MAIN_LINE}  ')
+        self.assertEqual(workspace.practice_line(indented, 'main'), MAIN_LINE)

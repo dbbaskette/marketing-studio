@@ -6,7 +6,7 @@ import home
 import workspace
 from workspace import WorkspaceError
 from studio_core import deck_direction, research_view, review_policy
-from runner import pipeline, deck, worker_tools
+from runner import pipeline, deck, drafts, worker_tools
 
 LAYOUT = 2
 DIRECTION_PREPARED = ('research-plan', 'research', 'blueprint', 'document')
@@ -213,9 +213,12 @@ class Reviewing:
             self._store(root, record)
             self._commit(root, f'continue {workspace.label(step.artifact)} under the saved review level')
 
-    def _policy_outline(self, root, found):
+    def _policy_outline(self, root, found, by='review-policy'):
+        """Keep what a deck says without the person: under the saved review level, or `by`
+        the desk, each with its own receipt."""
         if found.next.kind != 'outline':
             return
+        desk = by == 'desk'
         with self.files:
             record = self._load(root)
             level = self._level(found.next.step)
@@ -224,14 +227,22 @@ class Reviewing:
             asked = waiting.get('design')
             if asked:
                 self._answer(root, level, asked, 'approve',
-                             'Continue under the user-selected review level.', 'the deck direction')
-            approved = {'sha256': waiting['sha256'], 'by': 'review-policy', 'at': home.now()}
+                             'Continue on the desk.' if desk
+                             else 'Continue under the user-selected review level.',
+                             'the deck direction')
+            approved = {'sha256': waiting['sha256'], 'by': by, 'at': home.now()}
             if asked:
                 approved['design'] = {'sha256': asked['sha256'], 'revision': asked['revision']}
             kept.update(approved=approved, waiting=None)
-            review_policy.receipt(record, found.next.step.id, approved, home.now())
+            (drafts.receipt if desk else review_policy.receipt)(
+                record, found.next.step.id, approved, home.now())
             self._store(root, record)
-            self._commit(root, 'continue the deck direction under the saved review level')
+            self._commit(root, f'continue {pipeline.subject(found.next.step)} on the desk'
+                         if desk else 'continue the deck direction under the saved review level')
+
+    def _desk_outline(self, root, found):
+        """Keep what a deck says on a desk run's way through, with the desk's receipt."""
+        self._policy_outline(root, found, by='desk')
 
     def _review_sample(self, root, found, step):
         """Draw one sample slide for the combined direction review. A sample that cannot

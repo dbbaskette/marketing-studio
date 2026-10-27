@@ -28,7 +28,11 @@ What a caller needs to know
 - A stage the person left out, or that could not be made, has no steps. Something made
   from a version of its inputs that has since changed is made again, and comes back to
   its gate: a blueprint, a guide, a brief or a Yoodli scenario. Nothing is ever accepted
-  as it is here.
+  as it is here. On the desk it is held instead (`drafts.held`): its steps are left out
+  until the person updates it or keeps it as it is, and an update made is closed in the
+  run passed in, which the caller stores. On the desk the index is not due until every
+  material is Ready (`drafts.ready`), and a copy is made only of what is Ready or was sent
+  to its copies (`drafts.copied`).
 - A practice scenario is drafted only when the blueprint's practice plan names it and it
   has no file. A file the person wrote is taken in as it is. Only a request from them has
   a worker lay it out, in their own words.
@@ -73,7 +77,7 @@ import sync_guidance
 import workspace
 from workspace import WorkspaceError
 
-from runner import briefs, deck, gitstate, settings
+from runner import briefs, deck, drafts, gitstate, settings
 from runner import slides as slides_tool
 
 ATTEMPTS = 3            # tries at one step: the first, and two more with the reason added
@@ -95,6 +99,7 @@ SOURCES = {'public-web': 'Public web', 'supplied-only': 'Your documents only',
 WEB_ONLY = {'documents': False, 'sites': [], 'web': True}
 SITES_LINE = 'Sites: '      # in intake.md, under Source scope: the sites research keeps to
 NO_DECK = 'No deck was chosen when this training was started.'
+NOT_CHOSEN = 'Not selected in the new training form.'   # a material the start left out
 DECK_LEFT = ('Everything but the slide deck is made. A deck cannot be made on this computer '
              'yet: {why} Put that right and check this computer again, or leave the deck out.')
 DECK_AGAIN = ('Everything but the slide deck is settled. The deck is not approved as it '
@@ -624,6 +629,12 @@ def check_form(sent: dict, brands=None) -> dict:
             raise WorkspaceError('Choose where this training stops before using it for new '
                                  'work.')
         form['review_default'] = True
+    # `flow: 'desk'` starts the training on the desk, with no review level. Left out, it
+    # starts as every training did before the desk.
+    if sent.get('flow') is not None:
+        if sent['flow'] not in workspace.FLOWS:
+            raise WorkspaceError(workspace.NO_FLOW)
+        form['flow'] = sent['flow']
     return form
 
 
@@ -684,13 +695,13 @@ def create(space: gitstate.Workspace, form: dict) -> Path:
                        form['deck_target'], form['brand'], form['yoodli'], form['copies'],
                        delivery=form.get('delivery') or 'live',
                        walkthrough=bool(form.get('walkthrough')),
-                       approval='page')
+                       approval='page', flow=form.get('flow'))
         sync_guidance.adopt(root)
         if form['deck_target'] is None:
             workspace.skip(root, 'deck', reason=NO_DECK, by='page')
         for stage in MATERIALS:
             if stage not in form.get('materials', MATERIALS):
-                workspace.skip(root, stage, reason='Not selected in the new training form.',
+                workspace.skip(root, stage, reason=NOT_CHOSEN,
                                by='page')
         workspace.write_atomic(root / 'intake.md', intake_text(form).encode('utf-8'))
         workspace.save(root, 'intake', built=True)
@@ -910,6 +921,8 @@ class _Seen:
     tried: dict             # each of those, with the approved version copies were tried for
     supplied: bool          # the person's documents are all added, and here if needed
     decks: dict = field(default_factory=dict)   # each level's deck, when one is made here
+    # On the desk, what a copy is made of now (`drafts.copied`); None: whatever is approved.
+    copyable: frozenset | None = None
 
 
 def _taken_in(seen: _Seen, name: str) -> bool:
@@ -946,7 +959,9 @@ def _done(step: Step, seen: _Seen) -> bool:
     if step.kind == 'gate':
         return made == 'approved'
     if step.id.startswith('copies:'):
-        return made == 'approved' and _copied(seen, step.artifact)
+        # On the desk a draft has no copy to make until it is Ready or sent to its copies.
+        waits = seen.copyable is not None and step.artifact not in seen.copyable
+        return made == 'approved' and (waits or _copied(seen, step.artifact))
     if step.stage == 'research':
         if state['research'] == 'approved' and 'research' not in asked:
             return True
@@ -1239,14 +1254,27 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     listed = steps(session['levels'], wanted(session), named, kept, bool(given),
                    own - asked.keys(), own & asked.keys(), drawn,
                    bool(run.get('research_contract')))
+    # On the desk, what a change reaches is held, not remade: its steps, gates and copies are
+    # left out until the person updates it or keeps it as it is. An update made closes here.
+    if drafts.on_desk(run):
+        drafts.close_updates(root, session, run, state)
+        holding = drafts.held(root, session, run, state)
+        listed = tuple(step for step in listed if step.artifact not in holding)
     decks = {level: stands(root, session, state, asked, run, level)
              for level in session['levels'] or [None]} if drawn else {}
     seen = _Seen(root, session, state, asked, found, own, kept,
-                 (run.get('copies') or {}).get('tried') or {}, True, decks)
+                 (run.get('copies') or {}).get('tried') or {}, True, decks,
+                 drafts.copied(root, session, run) if drafts.on_desk(run) else None)
     needed = any(not _done(step, seen) for step in listed if step.id in RESEARCHED)
     seen = replace(seen, supplied=_supplied(root, given, supplied, needed))
     done = frozenset(step.id for step in listed if _done(step, seen))
-    if review_policy.level(run) != 'step_by_step':
+    # On the desk the index is not due until every material is Ready: what the desk accepted
+    # on its way through is not. Then it is written with no stop.
+    if drafts.on_desk(run) and not (all(step.id in done for step in listed
+                                         if step.id != 'package') and drafts.ready(root)):
+        listed = tuple(step for step in listed if step.id != 'package')
+    # A desk run has no review screens, even one opened on the desk with its saved level.
+    if review_policy.level(run) != 'step_by_step' and not drafts.on_desk(run):
         from runner import reviews
         listed, done = reviews.group(root, session, run, listed, done)
     first = next((step for step in listed if step.id not in done), None)

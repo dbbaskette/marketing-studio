@@ -26,13 +26,15 @@ from urllib.parse import urlencode
 
 import helpers
 from runner_support import (CHOSEN, FORM, NO_BRAND_SKILL, SCENARIO, Brand, Slides, StudioCase,
-                            asks, fails, left)
+                            TeamCase, asks, fails, left)
 
 import computer
 import desk
 import home
 import workspace
-from runner import agents, gitstate, page, pipeline, settings, setup, studios_config
+from runner import agents, drafts, gitstate, page, pipeline, settings, setup, studios_config
+from runner import engine as engines
+from studio_core import step_times
 from workspace import WorkspaceError
 
 VERSION = (helpers.SKILL / 'VERSION').read_text().strip()
@@ -48,7 +50,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
          '/api/note', '/api/review-level', '/api/research-site')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'ahead', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
-            'finished', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
+            'finished', 'flow', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'research_from', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
 STEP_KEYS = ['attempts', 'dollars', 'error', 'id', 'kind', 'label', 'seconds', 'status']
@@ -2765,3 +2767,315 @@ class DecisionMessageTests(PageCase):
         self.assertIsNone(self.get('run', path=path)['decided'])
         record = self.engine._load(root)
         self.assertEqual(record['last_decision']['label'], 'the learner guide')
+
+
+FORBIDDEN = ('artifact', 'stale', 'lineage', 'your review')
+CARD_KEYS = ['actions', 'checks', 'held', 'kind', 'label', 'level', 'name', 'needs', 'says',
+             'seen', 'state']
+
+
+def hashed(root: Path, name: str) -> str | None:
+    """The hash of a material's file as it is on disk now."""
+    session = workspace.load(root)
+    return workspace.sha256_file(root / workspace.artifact(root, session, name)['file'])
+
+
+class DeskPageTests(PageCase):
+    """The desk's view and its decisions on the runner's page: GET /api/drafts and the
+    POSTs under /api/drafts/. A desk training refuses the review routes, and a saved one
+    refuses the desk's. Tests named row_159 cover that row of the state-transition matrix
+    in docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
+
+    def setUp(self):
+        super().setUp()
+        self.slides, self.brand = Slides(), Brand()
+        settings.save(replace(settings.load(), previews='drive'))
+
+    def desk(self, **changes) -> str:
+        return self.started(**{'flow': 'desk', **changes})
+
+    @staticmethod
+    def said(view: dict) -> list[str]:
+        """Every sentence the desk's view says, to look for words it must never use."""
+        return [*(card['says'] for card in view['cards']), *view['needs'],
+                view['progress']['line'], view['progress']['doing']]
+
+    def test_row_159_desk_and_review_routes_refuse_each_other(self):
+        path = self.desk(materials=['document', 'brief'])
+        root = Path(path)
+        saved = self.started(title='Saved restarts')
+        before, commits = self.on_disk(), self.log()
+        name = 'blueprint'
+        for target, sent in (
+                ('decide', {'artifact': name, 'decision': 'approve',
+                            'seen': hashed(root, name)}),
+                ('review', {'expected': 'x', 'decision': 'approve'}),
+                ('outline', {'decision': 'approve'}),
+                ('look', {'choice': 'first'})):
+            with self.subTest(route=target):
+                said = self.post(target, {'path': path, **sent}, 409)
+                self.assertEqual(said['error'], drafts.ON_DESK)
+        said = self.get('gate', 409, path=path, artifact=name)
+        self.assertEqual(said['error'], drafts.ON_DESK)
+        self.assertEqual(self.get('drafts', 409, path=saved)['error'], drafts.NOT_ON_DESK)
+        for route, sent in (('ready', {'name': 'research-plan', 'seen': 'x'}),
+                            ('level-ready', {'level': '', 'seen': {}}),
+                            ('update', {'name': 'research-plan'}),
+                            ('keep', {'name': 'research-plan', 'reason': 'Fine.',
+                                      'seen': 'x'}),
+                            ('send', {'name': 'research-plan'})):
+            with self.subTest(route=route):
+                said = self.post(f'drafts/{route}', {'path': saved, **sent}, 409)
+                self.assertEqual(said['error'], drafts.NOT_ON_DESK)
+        self.assertEqual((self.on_disk(), self.log()), (before, commits),
+                         'nothing was changed or committed')
+        # Each still answers what is its own as it always did.
+        self.assertTrue(self.get('gate', path=saved, artifact='research-plan')['waiting'])
+        self.assertEqual(sorted(self.get('drafts', path=path)),
+                         ['cards', 'flow', 'job', 'levels', 'needs', 'progress', 'sources',
+                          'team', 'title'])
+
+    def test_reading_the_desk_changes_nothing(self):
+        path = self.desk(levels=['101'], materials=['document', 'brief'])
+        root = Path(path)
+        saved = (root / '.training-studio' / 'run.json', workspace.session_path(root))
+        before = [file.read_bytes() for file in saved]
+        head = self.git('rev-parse', 'HEAD').strip()
+        for _ in range(2):
+            self.assertEqual(self.get('drafts', path=path)['flow'], 'desk')
+        self.assertEqual([file.read_bytes() for file in saved], before)
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), head)
+
+    def test_a_desk_training_takes_no_document_after_its_research(self):
+        sent = base64.b64encode(b'Capacity holds only when more than one instance is '
+                                b'running.\n').decode('ascii')
+        path = self.desk(source_scope='supplied-only', materials=['document'])
+        self.post('documents', {'path': path, 'action': 'add', 'name': 'handbook.txt',
+                                'content': sent})
+        self.post('documents', {'path': path, 'action': 'done'})
+        commits = self.log()
+        said = self.post('documents', {'path': path, 'action': 'add', 'name': 'later.txt',
+                                       'content': sent}, 409)
+        self.assertEqual(said['error'], engines.SETTLED)
+        self.assertEqual(self.log(), commits)
+
+    def test_the_desk_view_lists_each_level_s_cards_in_order(self):
+        path = self.desk(levels=['101', '201'], deck_target='pptx', brand=CHOSEN,
+                         walkthrough=False)
+        root = Path(path)
+        view = self.get('drafts', path=path)
+        self.assertEqual((view['flow'], view['title'], view['levels']),
+                         ('desk', 'Rolling restarts', ['101', '201']))
+        first = [card for card in view['cards'] if card['level'] == '101']
+        self.assertEqual([card['name'] for card in first],
+                         ['blueprint@101', 'document@101', 'brief@101', 'deck@101',
+                          'scenario:main@101'])
+        self.assertEqual([card['kind'] for card in first],
+                         ['blueprint', 'document', 'brief', 'deck', 'scenario'])
+        for card in view['cards']:
+            with self.subTest(card=card['name']):
+                self.assertEqual(sorted(card), CARD_KEYS)
+                self.assertEqual(card['seen'], hashed(root, card['name']))
+                self.assertEqual((card['state'], card['held'], card['needs']),
+                                 ('draft', False, []))
+                self.assertEqual(card['actions'], ['ready', 'download'])
+                self.assertEqual(card['label'], workspace.label(card['name']))
+        for line in self.said(view):
+            for word in FORBIDDEN:
+                self.assertNotIn(word, line.lower())
+        self.assertEqual(view['progress']['running'], False)
+        self.assertEqual((view['progress']['line'], view['progress']['minutes']), ('', None))
+        self.assertEqual(view['needs'], [], 'a draft never needs the person')
+        self.assertTrue(view['team']['ours'])
+        self.assertEqual(sorted(view['sources']), ['account', 'documents', 'plan'])
+        self.assertEqual(len(view['sources']['plan']), 4)
+        self.assertIsNone(view['job'])
+        # Each deck's whole time is kept here, for the next start's estimate.
+        self.assertEqual(len(json.loads(drafts.times().read_text(encoding='utf-8'))['deck']),
+                         2)
+        # The desk's list says each material is a draft, not approved.
+        item = self.get('training', path=path)
+        files = {file['artifact']: file for file in item['view']['files']}
+        self.assertEqual((files['document@101']['status'], files['document@101']['words']),
+                         ('draft', 'not marked ready yet'))
+
+    def test_a_card_is_marked_ready_on_the_page(self):
+        path = self.desk(levels=['101'], materials=['document', 'brief'])
+        root = Path(path)
+        name = 'document@101'
+        view = self.post('drafts/ready', {'path': path, 'name': name,
+                                          'seen': hashed(root, name)})
+        card = next(card for card in view['cards'] if card['name'] == name)
+        self.assertEqual((card['state'], card['actions']), ('ready', ['download']))
+        said = self.post('drafts/ready', {'path': path, 'name': 'brief@101', 'seen': 'x'}, 409)
+        self.assertTrue(said['error'].endswith('has changed since it was opened. Read the new '
+                                               'version before deciding.'))
+        marked = self.post('drafts/level-ready', {
+            'path': path, 'level': '101',
+            'seen': {card['name']: card['seen'] for card in view['cards']}})
+        self.assertEqual((marked['marked'], marked['stopped']),
+                         (['blueprint@101', 'brief@101'], None))
+        self.assertEqual({card['state'] for card in marked['cards']}, {'ready'})
+
+    def test_a_held_card_offers_update_and_keep(self):
+        path = self.desk(levels=['101'], materials=['document', 'brief'])
+        root = Path(path)
+        plan = root / '101' / 'blueprint.md'
+        typed = self.base / 'blueprint.md'
+        typed.write_text(plan.read_text(encoding='utf-8') + '\nOne line more.\n',
+                         encoding='utf-8')
+        workspace.save(root, 'blueprint@101', source=typed, edit=True, via='save')
+        workspace.accept_desk(root, 'blueprint@101')
+        view = self.get('drafts', path=path)
+        cards = {card['name']: card for card in view['cards']}
+        guide = cards['document@101']
+        self.assertEqual((guide['state'], guide['held'], guide['says'], guide['actions']),
+                         ('held', True, 'Built from an earlier plan.',
+                          ['update', 'keep', 'download']))
+        self.assertEqual(view['needs'], ['the level 101 learner guide', 'the level 101 brief'])
+        kept = self.post('drafts/keep', {'path': path, 'name': 'document@101',
+                                         'reason': 'It still reads right.',
+                                         'seen': guide['seen']})
+        guide = next(card for card in kept['cards'] if card['name'] == 'document@101')
+        self.assertEqual((guide['state'], guide['held']), ('draft', False))
+
+    def test_progress_says_nothing_is_needed(self):
+        root = self.space.training(workspace.slugify(FORM['title']))
+        seen = []
+
+        def writing(tools, job):
+            seen.append(self.get('drafts', path=str(root)))
+            return self.workers.document(tools, job)
+
+        self.workers.then('document', writing)
+        self.desk(levels=['101'], materials=['document', 'brief'])
+        progress = seen[0]['progress']
+        self.assertTrue(progress['running'])
+        self.assertTrue(progress['line'].startswith(
+            'Nothing needed from you. Each material opens here as it is ready, in about'),
+            progress)
+        self.assertEqual(progress['line'], 'Nothing needed from you. Each material opens '
+                         f"here as it is ready, in about {progress['minutes']} minutes.")
+        self.assertIsInstance(progress['minutes'], int)
+        self.assertEqual(progress['started_at'], self.record(root)['started_at'])
+        self.assertTrue(progress['doing'])
+        cards = {card['name']: card for card in seen[0]['cards']}
+        self.assertEqual((cards['document@101']['state'], cards['document@101']['seen'],
+                          cards['document@101']['actions']), ('writing', None, []))
+        self.assertEqual(cards['blueprint@101']['state'], 'draft')
+        for line in self.said(seen[0]):
+            for word in FORBIDDEN:
+                self.assertNotIn(word, line.lower())
+        self.assertEqual(self.get('drafts', path=str(root))['progress']['line'], '')
+
+    def test_the_start_s_minutes_use_this_computer_s_times(self):
+        self.assertEqual(drafts.GUESSES, {'research': 6, 'blueprint': 1, 'document': 3,
+                                          'brief': 2, 'scenario': 1, 'yoodli': 1})
+        root = Path(self.desk(levels=['101'], materials=['document', 'brief'],
+                              source_scope='supplied-only'))
+        record = self.engine._load(root)
+
+        def minutes() -> int:
+            return drafts.start_minutes(root, record, self.engine._survey(root, record))
+
+        self.assertEqual(minutes(), 6 + 1 + 3 + 2)
+        for _ in range(3):
+            step_times.note(drafts.Times(), drafts.times(), 'document', 120)
+        self.assertEqual(drafts.times(), home.data_root() / 'draft-step-times.json')
+        self.assertEqual(minutes(), 6 + 1 + 2 + 2)
+
+    def test_a_deck_s_guess_is_its_slides(self):
+        root = Path(self.desk(levels=['101'], materials=['document'], deck_target='pptx',
+                              brand=CHOSEN, walkthrough=False, source_scope='supplied-only'))
+        record = self.engine._load(root)
+        found = self.engine._survey(root, record)
+        self.assertEqual(drafts.start_minutes(root, record, found),
+                         round(6 + 1 + 3 + 8 * 1.25))
+
+    def test_a_desk_run_keeps_how_long_its_steps_took_here(self):
+        self.started(title='Saved restarts', levels=['101'])
+        self.assertFalse(drafts.times().exists(), 'a saved training keeps no times')
+        self.desk(levels=['101'], materials=['document', 'brief'])
+        kept = json.loads(drafts.times().read_text(encoding='utf-8'))
+        self.assertEqual(sorted(kept), ['blueprint', 'brief', 'document', 'research'])
+
+    def test_what_keeps_a_ready_training_from_its_index_is_named(self):
+        path = self.desk(levels=['101'], materials=['brief'])
+        root = Path(path)
+        # The brief typed over and accepted on the desk: its check fails.
+        typed = self.base / 'brief.md'
+        typed.write_text('# Brief\n\nNot a brief yet.\n', encoding='utf-8')
+        workspace.save(root, 'brief@101', source=typed, edit=True, via='save')
+        workspace.accept_desk(root, 'brief@101')
+        view = self.get('drafts', path=path)
+        brief = next(card for card in view['cards'] if card['name'] == 'brief@101')
+        self.assertTrue(brief['checks']['problems'])
+        self.assertEqual(view['needs'], [])
+        marked = self.post('drafts/level-ready', {
+            'path': path, 'level': '101',
+            'seen': {card['name']: card['seen'] for card in view['cards']}})
+        self.assertIsNone(marked['stopped'])
+        self.assertFalse((Path(path) / pipeline.INDEX).is_file())
+        self.assertEqual({card['state'] for card in marked['cards']}, {'ready'})
+        # Nothing is a draft, and still no index: why is said.
+        self.assertEqual(marked['needs'], ['A check failed: brief.sections@101'])
+        for line in marked['needs']:
+            for word in FORBIDDEN:
+                self.assertNotIn(word, line.lower())
+
+
+class DeskTeamTests(TeamCase):
+    """A teammate reads the desk of a training someone else runs, and changes nothing."""
+
+    PORT = 8765
+
+    def ask(self, person, endpoint: str, sent=None, expect: int = 200, **params):
+        made = getattr(person, 'page', None)
+        if made is None:
+            made = person.page = page.RunnerPage(self.PORT, person.engine)
+        headers = Message()
+        headers['Host'] = f'127.0.0.1:{self.PORT}'
+        headers[desk.TOKEN_HEADER] = made.token
+        target = f'/api/{endpoint}' + (f'?{urlencode(params)}' if params else '')
+        body = None
+        if sent is not None:
+            headers['Origin'] = f'http://127.0.0.1:{self.PORT}'
+            headers['Content-Type'] = 'application/json'
+            body = json.dumps(sent).encode()
+        with self.be(person):
+            try:
+                status, _, data = made.answer(target, headers, 'POST' if body else 'GET', body)
+                reply = json.loads(data)
+            except desk.Refusal as refusal:
+                status, reply = int(refusal.status), {'error': str(refusal)}
+            except WorkspaceError as refusal:
+                status, reply = 409, {'error': str(refusal)}
+        self.assertEqual(int(status), expect, reply)
+        return reply
+
+    def test_a_teammate_reads_the_desk(self):
+        with self.be(self.alex):
+            root = self.start(flow='desk', levels=['101'], materials=['document'])
+            self.engine.share()
+        self.as_(self.blake, self.blake.engine.fetch)
+        theirs = self.theirs(self.blake, root)
+        view = self.ask(self.blake, 'drafts', path=str(theirs))
+        self.assertFalse(view['team']['ours'])
+        self.assertTrue(view['cards'])
+        for card in view['cards']:
+            with self.subTest(card=card['name']):
+                self.assertEqual(card['actions'], ['download'])
+        with self.be(self.blake), self.assertRaises(engines.Elsewhere) as caught:
+            self.blake.engine.hold(theirs)
+        name = 'document@101'
+        for route, sent in (('ready', {'name': name, 'seen': hashed(theirs, name)}),
+                            ('level-ready', {'level': '101', 'seen': {}}),
+                            ('update', {'name': name}),
+                            ('keep', {'name': name, 'reason': 'Fine.', 'seen': 'x'}),
+                            ('send', {'name': name})):
+            with self.subTest(route=route):
+                said = self.ask(self.blake, f'drafts/{route}', {'path': str(theirs), **sent},
+                                409)
+                self.assertEqual(said['error'], str(caught.exception))
+        self.assertEqual(workspace.person_statuses(theirs, workspace.load(theirs))[name],
+                         'draft')
