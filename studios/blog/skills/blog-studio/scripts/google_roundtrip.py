@@ -289,6 +289,11 @@ def capture(client, file_id, tab_id, output, include_review=False):
         else:
             markdown = client.export(file_id, 'md')
             projection = EXPORT_PROJECTION
+        # Images past what a blog's shared files can hold stay in the Doc, never failing a read.
+        from google_suggestions import fit_images
+
+        text = markdown.decode('utf-8', 'replace') if isinstance(markdown, bytes) else markdown
+        markdown = fit_images(text)[0].encode()
     word = client.export(file_id, 'docx')
     after_doc = inline_read(client, file_id)
     after = client.metadata(file_id)

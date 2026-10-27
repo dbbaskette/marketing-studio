@@ -50,7 +50,9 @@ function sDeskThumbsFor(view,text){
     row.append(sAdd(sNode('figure','desk-image'),img,sNode('figcaption','quiet',image.label)));
   }
   // Named in the text, kept nowhere: said in its place, so the reference can be fixed or cut.
-  for(const label of lost)row.append(sAdd(sNode('figure','desk-image desk-image-missing'),sNode('span','desk-thumb-missing','Image missing'),sNode('figcaption','quiet',label)));
+  // One too large for the blog's shared files stays in the Google Doc, shown as kept there.
+  const kept=(view.kept_images||[]).map(deskImageLabel);
+  for(const label of lost)row.append(sAdd(sNode('figure','desk-image desk-image-missing'),sNode('span','desk-thumb-missing',kept.includes(deskImageLabel(label))?'Image kept in the Google Doc':'Image missing'),sNode('figcaption','quiet',label)));
   return row;
 }
 // Read the images not kept yet, once, then fill the thumbnails waiting for them.
@@ -67,11 +69,15 @@ async function sDeskImagesLoad(held){
 // The Markdown as DRAFT.md keeps it: the text, then each image it refers to. An image whose
 // data cannot be read is left out and named, never stopping Copy or Download.
 async function sDeskMarkdown(held){
-  const view=held.view,images=view.images||[],missing=[...(view.missing_images||[])];if(!images.length)return {markdown:view.markdown,missing};
+  const kept=(held.view.kept_images||[]).map(deskImageLabel);
+  const view=held.view,images=view.images||[],missing=(view.missing_images||[]).filter(label=>!kept.includes(deskImageLabel(label)));if(!images.length)return {markdown:view.markdown,missing};
   await sDeskImagesLoad(held);
   const lines=[];for(const image of images){const data=deskImageData()[image.key];if(data)lines.push('['+image.label+']: <'+data+'>'+(image.title?' '+image.title:''));else missing.push(image.label);}
   return {markdown:lines.length?view.markdown.replace(/\n$/,'')+'\n\n'+lines.join('\n\n')+'\n':view.markdown,missing};
 }
+// Images kept in the Google Doc, said once: they show as placeholders and Copy and Download
+// leave them out, their placeholder in their place.
+function sDeskKeptLine(view){const count=(view.kept_images||[]).length;if(!count)return null;const line=sNode('p','quiet desk-kept-images',count===1?'1 image is large, so it stays in the Google Doc and shows here as a placeholder.':count+' images are large, so they stay in the Google Doc and show here as placeholders.');return line;}
 function deskWithout(done,missing){return missing.length?done+' without '+missing.join(', ')+(missing.length===1?': its image could not be read.':': their images could not be read.'):done+'.';}
 
 // A new blog: 1. the kind of post, 2. sources and settings, 3. what the person brings (a
@@ -514,6 +520,7 @@ function sDeskAside(held){
   if(view.style_name)sources.append(sNode('p','quiet','Kind of post: '+view.style_name));
   if(view.tone)sources.append(sNode('p','quiet','Tone: '+view.tone));
   aside.append(sources);
+  const kept=sDeskKeptLine(view);if(kept)sources.append(kept);
   // Other people's suggestions pending in the Google Doc, each where it sits: decided there.
   const doc=view.doc_suggestions||{count:0,marks:[]};
   if(doc.count){
@@ -996,6 +1003,7 @@ function sReviewHead(held,state){
     sAdd(head,sAdd(sNode('div','card review-tally'),count,sAdd(sNode('div','bar'),all,none)),filter,flagged,overlap);
   }else if(state.any&&!state.working)head.append(sReviewDone(held,state));
   if(state.doc.count)head.append(sDocPendingLine(state.doc.count));
+  const kept=sDeskKeptLine(held.view);if(kept)head.append(kept);
   return sAdd(head,sReviewQuick(held,state));
 }
 // Before the first check: Check spelling and grammar, and whether to suggest more

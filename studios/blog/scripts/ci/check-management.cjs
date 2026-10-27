@@ -4240,6 +4240,10 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
   assert.ok(descendants(panel()).some(n=>n.textContent==='Comment on “Event logs”: Make “Event logs” bold.'));
   assert.equal(f.run("sDeskGoogleSaid({mode:'comments',count:3,suggestions:2,comments:1})"),'3 changes go to the Google Doc as comments: it cannot take suggestions, so its owner makes each change by hand.','comments fallback says comments');
   assert.equal(f.run("sDeskGoogleSaid({count:1,suggestions:1,comments:0,later:2})"),'1 suggestion goes to the Google Doc. Its owner accepts or rejects each suggestion. 2 notes go with the next send (nearby paragraphs already have changes).','a note with no free paragraph goes next time');
+  assert.equal(f.run("sDeskKeptLine({kept_images:['image2','image3']}).textContent"),'2 images are large, so they stay in the Google Doc and show here as placeholders.','images kept in the Doc are said once');
+  assert.equal(f.run("sDeskKeptLine({kept_images:[]})"),null);
+  const thumbs=f.run("sDeskThumbsFor({images:[],missing_images:['image2'],kept_images:['image2']},'![Image kept in the Google Doc][image2]')");
+  assert.ok(descendants(thumbs).some(n=>n.textContent==='Image kept in the Google Doc'),'a kept image shows as kept in the Doc, not missing');
   assert.equal(f.run("sDeskGoogleSaid({count:3,suggestions:1,comments:2,doc_overlap:2})"),'1 suggestion and 2 comments go to the Google Doc. Its owner accepts or rejects each suggestion. 2 of these change words a Doc suggestion also changes, so they go as comments; the Doc’s suggestion stays for its owner.','the plan says which change words a Doc suggestion changes');
   assert.ok(descendants(panel()).some(n=>n.textContent==='1 suggestion and 1 comment go to the Google Doc. Its owner accepts or rejects each suggestion. 2 changes were sent before.'));
   assert.ok(descendants(panel()).some(n=>n.textContent==='Every desk change goes to the Google Doc: words and paragraphs as suggestions its owner accepts or rejects, and a link’s address, formatting or an image as a comment.'));
