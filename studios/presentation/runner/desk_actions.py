@@ -23,7 +23,8 @@ import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError, write_atomic
 
-from runner import briefs, decks, desk, gitstate, stages
+from runner import briefs, decks, desk, documents, gitstate, marks, stages
+from studio_core import research_view
 from studio_core.drafting import prompts
 from runner.jobs import gate_state, sha256_of
 from runner.steps import build, intake, words
@@ -33,6 +34,12 @@ from runner.steps import outline as outlines
 # isort: on
 
 NO_PICK = 'The look is not waiting to be picked now.'
+NO_RESEARCH = 'This deck has no research. Add a source, and its words jobs read it.'
+RESEARCH_BUSY = 'The deck is being redrawn now. Change the research when that ends.'
+LEFT_OUT_ALREADY = 'Those findings are left out already.'
+PASTED = 'Pasted text'
+SOURCES_TOLD = ('The person\'s own sources are in your input "sources". Add only what they, '
+                'the slide or the outline support.')
 EDITS = Path('work') / 'desk' / 'edits'   # words saved while a chain ran, until they land
 AGAIN = 3   # chains one rest on the desk may run for notes that came while it was put together
 # Selected changes: the plan and the shared copy as they were before the change under way,
@@ -169,7 +176,28 @@ class DeskActions:
                 'reviewed': desk.reviewed(state),
                 # Your own deck: its words kept exactly, or its speaker notes kept as they are.
                 'level': desk.level(record), 'words_locked': desk.words_locked(record),
-                'notes_locked': desk.OWN_NOTES if desk.selected(record) else None}
+                'notes_locked': desk.OWN_NOTES if desk.selected(record) else None,
+                'sources': documents.listed(root),
+                **self._desk_research_view(root, record)}
+
+    @staticmethod
+    def _desk_research(record: dict) -> bool:
+        return 'gate:research' in {step.name for step in stages.steps(record)}
+
+    def _desk_research_view(self, root, record: dict) -> dict:
+        """The Research panel: the findings and gaps of the research, what researching
+        again costs, and what leaving findings out costs. Nothing where the deck has no
+        research."""
+        if not self._desk_research(record):
+            return {'research': None, 'research_items': [], 'research_price': None,
+                    'leave_out_price': None}
+        questions = [{'id': ident, 'question': text}
+                     for ident, text in self._questions(root).items()]
+        return {'research': research_view.account(root / 'research', questions)
+                if record.get('research_contract') else None,
+                'research_items': self._findings_shown(root, record),
+                'research_price': self._research_price(root, record)['words'],
+                'leave_out_price': self._leave_out_price(record)['words']}
 
     def _desk_held(self, path):
         """The deck, held for a change on the desk: refused when this computer may not
@@ -671,6 +699,9 @@ class DeskActions:
             if error:
                 told.append(f'An earlier try at this job did not work: {error}\n'
                             'Take care not to end the same way.')
+            read = self._desk_sources(root) if job['action'] == 'expand' else ''
+            if read:
+                told.append(SOURCES_TOLD)
             told.append('Hand back the replacement for the passage with submit_artifact under '
                         'the name "words".')
             single = field == 'title' or isinstance(field, tuple)   # a run is one line
@@ -678,7 +709,8 @@ class DeskActions:
                         task='\n\n'.join(told), profile='write', name='words',
                         guard=(f"slide:{job['slide']}", job['guard']),
                         prepared={'inputs': {'slide': json.dumps(
-                            slide, ensure_ascii=False, indent=2)}, 'ask': False,
+                            slide, ensure_ascii=False, indent=2),
+                            **({'sources': read} if read else {})}, 'ask': False,
                             'artifacts': {'words': {'kind': 'words', 'text': passage,
                                                     'single': single}}})
 
@@ -714,6 +746,12 @@ class DeskActions:
                     record['desk_jobs'] = []
                     self._store(root, record)
                     self._commit(root, 'the change to the words is done')
+
+    @staticmethod
+    def _desk_sources(root) -> str:
+        """The person's readable sources as one input, each under its title: '' for none."""
+        return '\n\n'.join(f"# {one['title']}\n\n{one['text'].strip()}"
+                           for one in documents.sources(root)[1])
 
     def desk_notes(self, path, number, text, seen, session=None) -> dict:
         """A slide's speaker notes, saved as its words are, with no composer."""
@@ -1206,6 +1244,78 @@ class DeskActions:
         build.write_state(root, state)
         self._store(root, record)
         self._commit(root, 'draw the notes that came while the slides were drawn')
+
+    # --- sources and research ------------------------------------------------------------------
+
+    def desk_source(self, path, name, data=None, text=None, title=None) -> dict:
+        """Add a source to the deck: a file, or text the person pasted. It is listed under
+        Sources and read by the words jobs, the speaker-notes proposals and the outline when
+        it is written again. Nothing is drawn and research does not run: Research again
+        does, when asked."""
+        root = self._desk_held(path)
+        if text is not None:
+            documents.add_text(root, PASTED if title is None else title, text)
+        else:
+            documents.add(root, name, data, title)
+        return self.view(root)
+
+    def desk_research_again(self, path, expected) -> dict:
+        """Research again with the sources as they are now: gate:research is reopened as a
+        request for changes would reopen it, bringing the evidence up to date, and the
+        outline, the look samples and the deck are made again after it. Bound to the deck on
+        screen, and priced on the desk (`research_view.price`) before it is asked."""
+        root, space, by = self._desk_change(path)
+        with self.files:
+            record, state = self._load(root), build.read_state(root)
+            if not self._desk_research(record):
+                raise WorkspaceError(NO_RESEARCH)
+            if not expected or desk.on_screen(root, record, state) != expected:
+                raise WorkspaceError(desk.CHANGED)
+            if decks.delivered(root) is None and not desk.resting(record):
+                raise WorkspaceError(RESEARCH_BUSY)
+            record, also = self._desk_resting(root, record, space, 'Research again.')
+            record, note, more = self._apply_marks(root, record, 'gate:research',
+                                                   {'refresh': True}, None)
+            gated = record['gates'].get('gate:research') or {}
+            record['gates']['gate:research'] = {**gated, 'state': 'changes', 'note': note,
+                                                'at': home.now(), 'by': by,
+                                                'round': int(gated.get('round') or 1), **more}
+            record = stages.reopen(record, 'gate:research')
+            for step in self._reopened(record, 'gate:research'):
+                self._fresh(record, step)
+            self._store(root, record)
+            self._commit(root, 'ask to research again on the desk', also)
+        self._desk_shared()
+        self.wake(root)
+        return self.view(root)
+
+    def desk_leave_out(self, path, ids) -> dict:
+        """Leave research findings out: the outline and the look samples are made again
+        without them, and the research is not run again (`_leave_out`, priced by
+        `_leave_out_price`). `ids` are every finding left out, so an empty list brings back
+        the ones left out before."""
+        root, space, by = self._desk_change(path)
+        with self.files:
+            record = self._load(root)
+            if not self._desk_research(record):
+                raise WorkspaceError(NO_RESEARCH)
+            if decks.delivered(root) is None and not desk.resting(record):
+                raise WorkspaceError(RESEARCH_BUSY)
+            marked = marks.check('gate:research', 'changes', {'left_out': ids},
+                                 self._marked_ids(root, 'gate:research', {}))
+            if marked['left_out'] == list((record.get('research') or {}).get('left_out') or ()):
+                raise WorkspaceError(LEFT_OUT_ALREADY)
+            record, also = self._desk_resting(root, record, space, 'Leave findings out.')
+            self._leave_out(root, record, marked['left_out'], home.now(), by)
+            record = self._load(root)
+            # The outline's stop is met on the desk again, with the outline drafted anew.
+            record['gates']['gate:outline'] = {
+                **(record['gates'].get('gate:outline') or {}), 'state': 'absent'}
+            self._store(root, record)
+            self._commit(root, 'leave research findings out on the desk', also)
+        self._desk_shared()
+        self.wake(root)
+        return self.view(root)
 
     # --- the look -----------------------------------------------------------------------------
 

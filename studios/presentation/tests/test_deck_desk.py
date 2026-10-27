@@ -1049,5 +1049,114 @@ class DeskTeamFixTests(DeskCase, runner_support.TeamCase):
         self.assertEqual([item['status'] for item in notes], ['done'])
 
 
+class SourceTests(DeskCase):
+    """Add a source on the desk, and the Research panel: findings, gaps and Leave out, and
+    Research again, each priced before it runs."""
+
+    def deck(self, **changes) -> Path:
+        root = self.start_desk(look='default', **changes)
+        self.on_desk(root)
+        return root
+
+    def test_a_source_added_on_the_desk_starts_no_job(self):
+        root = self.deck()
+        jobs, log = len(self.workers.jobs), self.log()
+        shown = self.engine.desk_source(root, 'notes.md', b'# Batches\n\nTwo at a time.\n')
+        self.assertEqual(len(self.workers.jobs), jobs)
+        self.assertEqual([entry['title'] for entry in shown['desk']['sources']], ['notes'])
+        self.engine.desk_source(root, None, text='Health checks gate each batch.',
+                                title='Pasted notes')
+        listed = self.desk_view(root)['sources']
+        self.assertEqual([entry['title'] for entry in listed], ['notes', 'Pasted notes'])
+        self.assertEqual(len(self.workers.jobs), jobs)
+        self.assertEqual(self.log(), log)
+        self.on_desk(root)
+
+    def test_a_source_is_refused_as_documents_refuse_it(self):
+        root = self.deck()
+        self.engine.desk_source(root, 'notes.md', b'Two at a time.')
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_source(root, 'notes.md', b'Two at a time.')
+        self.assertIn('was already added', str(caught.exception))
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_source(root, None, text='   ', title='Empty')
+        self.assertIn('holds no text', str(caught.exception))
+        self.assertEqual(len(self.desk_view(root)['sources']), 1)
+
+    def test_a_gated_deck_adds_no_source_on_the_desk(self):
+        root = self.gated()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_source(root, 'notes.md', b'Two at a time.')
+        self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
+
+    def test_research_again_is_priced_before_it_runs(self):
+        from studio_core import research_view
+        root = self.deck(research=True)
+        shown = self.desk_view(root)
+        said = research_view.price({}, drafted=False)['words']
+        self.assertEqual(shown['research_price'].split(':')[0], said.split(':')[0])
+        self.assertIn('Then it makes again: the outline, the look samples and the deck.',
+                      shown['research_price'])
+        self.assertEqual([item['id'] for item in shown['research_items']],
+                         list(self.engine._questions(root)))
+
+    def test_research_again_reads_the_sources_again_and_comes_back_to_the_desk(self):
+        root = self.deck(research=True)
+        asked = len(self.workers.of('question'))
+        self.engine.desk_research_again(root, self.desk_view(root)['expected'])
+        self.assertGreater(len(self.workers.of('question')), asked)
+        record = self.record(root)
+        self.assertTrue(record['gates']['gate:research'].get('refresh'))
+        self.assertEqual(record['gates']['gate:research']['by'], 'desk')
+        self.on_desk(root)
+
+    def test_research_again_against_another_deck_is_refused(self):
+        root = self.deck(research=True)
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_research_again(root, 'x')
+        self.assertEqual(str(caught.exception), desk.CHANGED)
+
+    def test_leaving_a_finding_out_redraws_the_outline_and_looks_without_research(self):
+        root = self.deck(research=True)
+        shown = self.desk_view(root)
+        self.assertEqual(shown['leave_out_price'], 'Leaving findings out redraws the outline '
+                         'and the look samples without researching again.')
+        first = shown['research_items'][0]['id']
+        jobs = len(self.workers.jobs)
+        self.engine.desk_leave_out(root, [first])
+        again = [kind for kind, _, _ in self.workers.jobs[jobs:]]
+        self.assertNotIn('question', again)
+        self.assertNotIn('research-plan', again)
+        self.assertEqual(again.count('outline'), 1)
+        self.assertEqual(self.record(root)['research']['left_out'], [first])
+        self.on_desk(root)
+
+    def test_every_finding_cannot_be_left_out(self):
+        root = self.deck(research=True)
+        every = [item['id'] for item in self.desk_view(root)['research_items']]
+        with self.assertRaises(WorkspaceError):
+            self.engine.desk_leave_out(root, every)
+
+    def test_a_words_job_reads_the_added_source(self):
+        root = self.deck()
+        self.engine.desk_source(root, None, text='Each batch waits for its health checks.',
+                                title='Runbook')
+        read = []
+
+        def reading(tools, job):
+            read.append(tools.read_input('sources')[1])
+            return self.workers.words(tools, job)
+
+        self.workers.then('words', reading)
+        text = json.loads((root / 'outline.json').read_text())['slides'][2]['points'][0]['text']
+        start = text.index('the load')
+        self.engine.desk_selection(root, 3, ('points', 0, 'text'), start,
+                                   start + len('the load'), 'expand', None,
+                                   self.desk_view(root)['seen'])
+        self.assertEqual(len(read), 1)
+        self.assertIn('Each batch waits for its health checks.', read[0])
+        self.assertIn('Runbook', read[0])
+
+
 if __name__ == '__main__':
     unittest.main()
