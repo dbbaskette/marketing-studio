@@ -29,10 +29,10 @@ import secrets
 import tempfile
 from pathlib import Path
 
-import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError, write_atomic
 
+import runner  # noqa: F401  puts the core on the import path
 from runner.steps import build
 
 FIELDS = ('title', 'subtitle', 'detail', 'caveat', 'source', 'notes')
