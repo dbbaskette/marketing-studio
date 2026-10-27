@@ -1202,6 +1202,29 @@ class FinishingPageTests(DeskPageCase):
         self.assertEqual(self.posts(result), [], 'opening a tool that proposes nothing posts '
                          'nothing')
 
+    def test_finishing_and_the_aside_sit_beside_the_slides(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'snapshot': 'desk'}, {'click': 'Finishing'}, {'snapshot': 'panel'}, {'poll': True},
+            {'snapshot': 'polled'}, {'click': 'Outline'}, {'snapshot': 'outline'},
+            {'click': 'Close'}, {'snapshot': 'closed'}])
+        shots = result['snapshots']
+        # The slides in a column, and beside it the aside, or Finishing while it is open.
+        self.assertEqual(shots['desk']['desks'], [{'classes': ['desk-layout'],
+                                                   'children': [['desk-column'], ['desk-aside']]}])
+        for name in ('panel', 'polled'):
+            self.assertEqual(shots[name]['desks'], [{
+                'classes': ['desk-layout', 'desk-finishing'],
+                'children': [['desk-column'], ['desk-finish']]}], name)
+            lines = shots[name]['text'].split('\n')
+            self.assertLess(lines.index('Section 2'), lines.index('Sources'), name)
+            self.assertLess(lines.index('Sources'), lines.index('Finishing'), name)
+        # The Outline tab has no aside: the column alone, until Finishing opens beside it.
+        self.assertEqual(shots['outline']['desks'][0]['children'],
+                         [['desk-column'], ['desk-finish']])
+        self.assertEqual(shots['closed']['desks'], [])
+
     def test_apply_on_a_finding_shows_the_redraw_price_first(self):
         path = self.desk_deck()
         with mock.patch.object(self.brand, 'audit', return_value=BLOCKED):
@@ -1211,7 +1234,7 @@ class FinishingPageTests(DeskPageCase):
         self.assertTrue(item['price'])
         result = self.open_deck(path, checked, [
             {'click': 'Finishing'}, {'click': 'Brand check'}, {'snapshot': 'brand'},
-            {'click': 'Apply'}, {'snapshot': 'priced'}, {'click': 'Redraw slide 3'}],
+            {'click': 'Apply'}, {'snapshot': 'priced'}, {'click': 'Apply and redraw slide 3'}],
             **{'POST /api/desk-apply': [ok(checked)]})
         shots = result['snapshots']
         self.assertIn('Text runs off the slide.', shots['brand']['text'])
@@ -1221,7 +1244,7 @@ class FinishingPageTests(DeskPageCase):
         self.assertEqual(brand_lines[brand_lines.index(noted) + 1], 'Apply')
         # Apply says what it redraws first, beside the button that sends it.
         self.assertEqual(priced[priced.index(noted) + 1:priced.index(noted) + 4],
-                         [item['price'], 'Redraw slide 3', 'Cancel'])
+                         [item['price'], 'Apply and redraw slide 3', 'Cancel'])
         self.assertEqual(shots['priced']['posts'], 0, 'nothing is sent before the price')
         self.assertEqual(self.posts(result), [('/api/desk-apply', {
             'path': path, 'set': brand['job'], 'ids': [{'id': item['id']}],

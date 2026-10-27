@@ -635,15 +635,29 @@
       found.revision ? ['revision', [found.revision], () => make('p', 'quiet', found.revision)]
         : null,
       ['head', [tab, own], () => headPart(tab, own)],
-      finish ? ['finishing', finishKey(run), () => finishPart(run)] : null,
       can && tab === 'slides' && !found.words_locked ? ['selection-bar', [path],
         () => selectionBar()] : null,
-      ...(tab === 'outline' ? outlineParts(run, can, working)
-        : slideParts(run, can, working)),
-      !read && tab === 'slides' && !own ? ['aside', asideKey(run), () => asidePart(run)]
-        : null,
+      layoutPart(run, tab, own, can, working, finish, fresh),
     ], fresh);
     h.tidyPictures();
+  }
+
+  // The slides, or the Outline tab, in a column, and beside it on a wide screen the aside
+  // with Sources and Research, or Finishing while it is open (the aside then ends the
+  // column). Each part in them is drawn again only when what it shows changed, as every part
+  // of the page is.
+  function layoutPart(run, tab, own, can, working, finish, fresh) {
+    const read = h.theirs(run);
+    const column = tab === 'outline' ? outlineParts(run, can, working)
+      : slideParts(run, can, working);
+    const aside = !read && tab === 'slides' && !own ? ['aside', asideKey(run),
+      () => asidePart(run)] : null;
+    const side = finish ? ['finishing', finishKey(run), () => finishPart(run)] : aside;
+    if (finish && aside) column.push(aside);
+    return ['desk-layout', [Boolean(side), Boolean(finish)],
+      () => make('div', side ? 'desk-layout' + (finish ? ' desk-finishing' : '') : ''),
+      (node) => h.fit(node, [['desk-column', [], () => make('div', 'desk-column'),
+        (inner) => h.fit(inner, column, fresh)], side], fresh)];
   }
 
   // Whether Deliver can be pressed now: the deck rests on the desk, drawn here, with no change
@@ -1186,7 +1200,7 @@
     const confirming = held.confirm[path] === set.job + '\n' + item.id;
     if (confirming) {
       // What applying it redraws, said before it is sent.
-      const go = h.capsule('Redraw slide ' + item.number, '', () => apply(run, set,
+      const go = h.capsule('Apply and redraw slide ' + item.number, '', () => apply(run, set,
         { id: item.id }, go, 'Slide ' + item.number + ' is being redrawn with the note. Every '
         + 'other part of the deck stays exactly as it is.'), 'desk-apply-go ' + item.id);
       go.disabled = !can || Boolean(found.working);
