@@ -7,36 +7,14 @@ const DESK_SOURCES={save:'Before your edit',rewrite:'Before a rewrite','revise-a
 const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-copyedit':'Copy editing the draft','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback','finish-voice':'Rewriting the draft in a voice guide'};
 // A start's steps, as the progress screen names them.
 const DESK_STEPS={research:'Researching',outline:'Outlining',draft:'Drafting'};
-const DESK_SAVE_WAIT=1000,DESK_POLL=3000,DESK_DIFF_LIMIT=4000;
+const DESK_SAVE_WAIT=Drafting.SAVE_WAIT,DESK_POLL=Drafting.POLL,DESK_DIFF_LIMIT=Drafting.DIFF_LIMIT;
 
-// Words compared by a longest common subsequence, after the words both texts start and end
-// with are set aside; a comparison over about four million word pairs is shown side by side.
-function deskWords(text){return String(text||'').split(/\s+/).filter(Boolean);}
-function diffWords(before,after){
-  const a=deskWords(before),b=deskWords(after);
-  if(a.length>DESK_DIFF_LIMIT||b.length>DESK_DIFF_LIMIT)return null;
-  let head=0;while(head<a.length&&head<b.length&&a[head]===b[head])head++;
-  let tail=0;while(tail<a.length-head&&tail<b.length-head&&a[a.length-1-tail]===b[b.length-1-tail])tail++;
-  const x=a.slice(head,a.length-tail),y=b.slice(head,b.length-tail);
-  if(x.length*y.length>DESK_DIFF_LIMIT*1000)return null;
-  const cols=y.length+1,table=new Uint16Array((x.length+1)*cols);
-  for(let i=x.length-1;i>=0;i--)for(let j=y.length-1;j>=0;j--)table[i*cols+j]=x[i]===y[j]?table[(i+1)*cols+j+1]+1:Math.max(table[(i+1)*cols+j],table[i*cols+j+1]);
-  const out=[],push=(op,word)=>{const last=out[out.length-1];if(last&&last.op===op)last.text+=' '+word;else out.push({op,text:word});};
-  for(const word of a.slice(0,head))push('same',word);
-  let i=0,j=0;
-  while(i<x.length&&j<y.length){if(x[i]===y[j]){push('same',x[i]);i++;j++;}else if(table[(i+1)*cols+j]>=table[i*cols+j+1]){push('removed',x[i]);i++;}else{push('added',y[j]);j++;}}
-  while(i<x.length)push('removed',x[i++]);while(j<y.length)push('added',y[j++]);
-  for(const word of a.slice(a.length-tail))push('same',word);
-  return out;
-}
-function deskCompare(before,after){
-  const found=diffWords(before,after),box=sNode('div','paper desk-compare');
-  if(!found){box.append(sAdd(sNode('div','desk-side'),sNode('h3','sheet-part','Before'),sNode('p','desk-plain',before)),sAdd(sNode('div','desk-side'),sNode('h3','sheet-part','Now'),sNode('p','desk-plain',after)));return box;}
-  const text=sNode('p','desk-plain');text.setAttribute('aria-label','Changes from this version to the current text');
-  found.forEach((piece,index)=>{if(index)text.append(document.createTextNode(' '));text.append(sNode(piece.op==='same'?'span':piece.op==='added'?'ins':'del',piece.op==='same'?'':piece.op==='added'?'diff-add':'diff-remove',piece.text));});
-  return sAdd(box,text);
-}
-function deskAge(at){const then=Date.parse(at||'');if(!then)return '';const minutes=Math.round((Date.now()-then)/60000);if(minutes<1)return 'just now';if(minutes<60)return minutes+(minutes===1?' minute ago':' minutes ago');const hours=Math.round(minutes/60);if(hours<24)return hours+(hours===1?' hour ago':' hours ago');const days=Math.round(hours/24);return days+(days===1?' day ago':' days ago');}
+// The word comparison, History's compare and a version's age are the shared desk kit's
+// (ui-kit/drafting.js).
+function deskWords(text){return Drafting.words(text);}
+function diffWords(before,after){return Drafting.diffWords(before,after);}
+function deskCompare(before,after){return DESK_KIT.compare(before,after);}
+function deskAge(at){return Drafting.age(at);}
 function deskPartName(view,part){if(part==='title')return 'the title';if(part==='opening')return 'the opening';if(part==='sections')return 'every section';const found=(view.sections||[]).find(section=>section.id===part);return found?'“'+deskHeading(found.heading)+'”':'a section';}
 function deskTextOf(view,part){if(part==='title'||part==='opening')return view[part]||'';return (view.sections||[]).find(section=>section.id===part)?.text||'';}
 
@@ -916,19 +894,7 @@ function sDeskProposals(held,key,set){
   return out.filter(Boolean);
 }
 // Before and after side by side: struck words only before, marked words only after.
-function deskSides(before,after){
-  const found=diffWords(before,after),box=sNode('div','desk-sides');
-  const side=(title,words)=>sAdd(sNode('div','paper desk-side'),sNode('h4','sheet-part',title),words);
-  const was=sNode('p','desk-plain'),now=sNode('p','desk-plain');
-  if(!found){was.textContent=before;now.textContent=after;}
-  else{let a=0,b=0;for(const piece of found){
-    if(piece.op!=='added'){if(a++)was.append(document.createTextNode(' '));was.append(piece.op==='removed'?sNode('del','diff-remove',piece.text):sNode('span','',piece.text));}
-    if(piece.op!=='removed'){if(b++)now.append(document.createTextNode(' '));now.append(piece.op==='added'?sNode('ins','diff-add',piece.text):sNode('span','',piece.text));}
-  }}
-  if(!String(before).trim())was.textContent='(Nothing yet)';
-  if(!String(after).trim())now.textContent='(Removed)';
-  return sAdd(box,side('Before',was),side('After',now));
-}
+function deskSides(before,after){return DESK_KIT.sides(before,after);}
 function sDeskProposal(held,set,item,key){
   const f=held.finish,card=sNode('section','card desk-proposal');card.dataset.item=item.id;
   const head=sAdd(sNode('div','desk-part-head'),sNode('h3','row-title',key==='headline'?'Alternative':'In '+deskPartName(held.view,item.part)));
@@ -1600,4 +1566,21 @@ function sDeskSheetClosed(){const held=studio.desk;if(!held?.panelUnder)return;h
 // Turning a phone or resizing the window across a layout redraws the desk in the new one.
 function sDeskLayout(){return sNarrow()?'phone':sDeskFloating()?'drawer':'wide';}
 function sDeskResized(){const held=studio.desk;if(!held||!sDeskCurrent(held)||held.layout===sDeskLayout())return;if(held.mode==='review'){if(!held.review?.editing){held.layout=sDeskLayout();sDeskReview(held);}return;}if(!held.cards&&held.tab!=='outline')return;held.layout=sDeskLayout();held.panelUnder=!!studio.sheet&&!!held.finish&&sDeskFloating();sDeskRender(held);}  // A sheet open across the change stays on top.
+// The shared desk kit (ui-kit/drafting.js), bound to Blog Studio's controls, requests, words,
+// parts and Finishing tools. Each member names Blog's function when it is called, so the kit
+// can be built here, before anything runs, and a check that swaps a global still reaches it.
+const DESK_KIT=Drafting.kit({
+  ui:{button:(...x)=>sButton(...x),card:(...x)=>sCard(...x),pickCard:(...x)=>sPickCard(...x),choice:(...x)=>sChoice(...x),disclosure:(...x)=>disclosure(...x),bead:(...x)=>sBead(...x),openSheet:(...x)=>sOpenSheet(...x),closeSheet:()=>sCloseSheet(),toast:(...x)=>sToast(...x),notice:(...x)=>notice(...x),busy:(...x)=>busy(...x),narrow:()=>sNarrow(),field:(...x)=>sField(...x)},
+  api:(route,data)=>api(route,data),
+  routes:{view:'desk',save:'desk-save',versions:'desk-versions',restore:'desk-restore',note:'desk-note',revise:'desk-revise',selection:'desk-selection',stop:'desk-stop',retry:'desk-retry',finish:'desk-finish',apply:'desk-apply',skip:'desk-skip',proofread:'desk-proofread'},
+  share:id=>fetch('/api/desk-share',{method:'POST',keepalive:true,headers:{'X-Blog-Studio-Token':token,'Content-Type':'application/json'},body:JSON.stringify({id})}),
+  canEdit:held=>sDeskCan(held),
+  current:held=>sDeskCurrent(held),
+  page:()=>$('studio-page'),
+  hooks:{render:held=>sDeskRender(held),refresh:(held,before)=>sDeskRefresh(held,before),reload:held=>{held.pending={};held.stale=false;held.saved='';return sDesk(held.id);},beforeJob:held=>sDeskOutlineFlush(held)},
+  parts:{title:(view,part)=>part==='title'?'Title':part==='opening'?'Opening':deskHeading(((view.sections||[]).find(row=>row.id===part)||{}).heading),textOf:(view,part)=>deskTextOf(view,part),nameOf:(view,part)=>deskPartName(view,part),single:part=>part==='title',noted:(view,part)=>(view.sections||[]).some(row=>row.id===part)},
+  words:()=>({thing:'draft',sources:DESK_SOURCES,doing:DESK_DOING,steps:DESK_STEPS,named:['desk-section','desk-selection'],ready:tab=>tab==='outline'?'The outline is ready. Shape it here, then write the draft.':'The draft is ready. Edit it here.'}),
+  tools:()=>DESK_TOOLS,
+  progress:{stopped:held=>sDeskStopped(held)},
+});
 if(typeof window.addEventListener==='function')window.addEventListener('resize',()=>{if(typeof clearTimeout==='function')clearTimeout(window.deskResize);window.deskResize=setTimeout(sDeskResized,150);});
