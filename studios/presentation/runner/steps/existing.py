@@ -502,6 +502,19 @@ def _desk_made(root: Path) -> str:
     return '\n'.join(lines)
 
 
+def _desk_notes(run: dict) -> str:
+    """The notes a person made on the desk's slides that were planned, or are planned now,
+    one a line by slide, oldest first: a later plan is made with every one of them."""
+    if run.get('flow') != 'desk':
+        return ''
+    lines = []
+    for item in run.get('desk_notes') or ():
+        if isinstance(item, dict) and type(item.get('number')) is int \
+                and item.get('status') in ('drawing', 'done') and item.get('note'):
+            lines.append(f"- Slide {item['number']}: {item['note']}")
+    return '\n'.join(lines)
+
+
 def patch_work(root, run: dict, request: dict | None, error: str | None) -> Work:
     """The job of planning the changes the person named, on the slides they named."""
     root = Path(root)
@@ -514,10 +527,14 @@ def patch_work(root, run: dict, request: dict | None, error: str | None) -> Work
              'Your inputs: Inventory, Selected changes.']
     if request and request.get('note'):
         lines.append(f"The person added:\n\n{request['note']}")
+    noted = _desk_notes(run)
+    if noted:
+        lines.append('Every note the person made on the desk, by slide. Plan the changes each '
+                     'asks for:\n\n' + noted)
     made = _desk_made(root)
     if made:
-        lines.append('The person also changed these words themselves. They are kept as they '
-                     'are, unless your plan changes the same object:\n\n' + made)
+        lines.append('The person also changed these words themselves. They stay as they are: '
+                     'plan no change to those runs.\n\n' + made)
     if error:
         lines.append(f'An earlier try at this job did not work: {error}\n'
                      'Take care not to end the same way.')
@@ -647,6 +664,11 @@ def _shots(folder: Path) -> dict:
         return found
     except (OSError, ValueError, KeyError, TypeError):
         return {}
+
+
+def pictured(folder) -> dict:
+    """The pictures a shots.json in `folder` names, by slide number: {number: path}."""
+    return _shots(Path(folder))
 
 
 def pairs(root, run: dict) -> list[dict]:

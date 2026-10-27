@@ -1123,7 +1123,8 @@
   function unfitPart(run, one) {
     const unfit = one.unfit;
     const path = h.view.path;
-    const redraw = h.capsule('Redraw with these words', '', () => act('desk-redraw-words',
+    const own = Array.isArray(one.objects);
+    const redraw =h.capsule('Redraw with these words', '', () => act('desk-redraw-words',
       { path, number: one.number, field: unfit.field, text: unfit.text,
         expected: run.desk.expected }, redraw, 'Slide ' + one.number + ' is being redrawn with '
         + 'your words.'), 'desk-redraw-words ' + one.number);
@@ -1140,7 +1141,9 @@
         : h.add(make('p', ''), make('strong', '', 'Your words: '), '“' + String(unfit.text || '')
           + '”'),
       h.list(unfit.lines).length ? h.bullets(h.list(unfit.lines).map(String)) : null,
-      bar(redraw, discard), one.price ? make('p', 'quiet', one.price) : null);
+      // Your own deck's words are not redrawn: a change its copy could not take is let go.
+      own ? bar(discard) : bar(redraw, discard),
+      one.price && !own ? make('p', 'quiet', one.price) : null);
   }
 
   // --- History ------------------------------------------------------------------------------

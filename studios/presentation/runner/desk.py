@@ -86,6 +86,11 @@ PATCH_BUSY = ('Your last change to your deck is still being made. Change it agai
               'done.')
 WHOLE_SELECTED = ('Selected changes changes only the slides you name. Note a slide, or start '
                   'again at Redesign, keep content.')
+OWN_REDRAW = ("Your own deck's words are changed in their boxes on the card: there is nothing "
+              'to redraw.')
+OWN_RESTORE = ('Selected changes keeps no earlier versions of a slide: change its words in their '
+               'boxes instead.')
+PATCH_HERE = 'Draw it here first.'
 PLANNING = 'Planning the changes to your deck again, with your note'
 PATCHING = 'Making the changes to a copy of your deck, picturing and checking it'
 
@@ -155,9 +160,13 @@ def on_screen(root, run: dict, state: dict) -> str | None:
     round's, or at Selected changes the patched copy's, once it is made here."""
     if not selected(run):
         return last_round(state).get('deck') if state.get('rounds') else None
-    from runner.jobs import sha256_of
     kept = state.get('deck')
-    return sha256_of(Path(root) / kept) if kept else None
+    if not kept or not (Path(root) / kept).is_file():
+        return None
+    if state.get('deckSha256'):
+        return state['deckSha256']   # kept when the copy was made
+    from runner.jobs import sha256_of
+    return sha256_of(Path(root) / kept)
 
 
 def arrived(run: dict) -> bool:
@@ -219,10 +228,14 @@ def working(root, run: dict, state: dict | None = None) -> dict | None:
         return None   # a pause for the person, such as the look: not desk work
     state = state if state is not None else build.read_state(root)
     if selected(run):
-        # Nothing is drawn: the plan is made again with a note, or the copy is patched.
+        # Nothing is drawn: the plan is made again with a note, or the copy is patched. A
+        # change that stopped or failed can still be given up with Stop.
         if run.get('halted'):
+            if run['halted'].get('state') in ('stopped', 'failed'):
+                return {'what': HALTED, 'done': 0, 'total': 0, 'halted': True}
             return None
-        return {'what': PLANNING if nxt.name == 'patch' else PATCHING, 'done': 0, 'total': 0}
+        what = {'patch': PLANNING, 'build-render': PATCHING}.get(nxt.name, nxt.doing)
+        return {'what': what, 'done': 0, 'total': 0}
     if not state.get('start'):
         return None   # no drawing here: nothing is drawn until Draw it here
     asked = list(((state.get('asked') or {}).get('sections')) or ())
@@ -855,7 +868,7 @@ def originals(root, run: dict) -> set:
     from runner.steps import existing
     if level(run) not in existing.PAIRED:
         return set()
-    return {number for number in existing._shots(Path(root) / existing.ORIGINAL_SHOTS)
+    return {number for number in existing.pictured(Path(root) / existing.ORIGINAL_SHOTS)
             if type(number) is int}
 
 
@@ -863,6 +876,23 @@ def originals(root, run: dict) -> set:
 
 PATCH_SAYS = ('Plans the changes again with your note, then makes them to a copy of your deck '
               'and pictures it. Your deck itself is never changed.')
+
+
+DRAW_HERE_PATCH = ('Plans the changes to your deck on this computer, makes them to a copy and '
+                   'pictures it.')
+PATCH_REFUSED = ('This change could not be made to the copy of your deck, so the copy is as it '
+                 'was before it.')
+
+
+def draw_here_price(run: dict) -> str:
+    """What drawing a Selected changes deck here costs: its plan, and the copy made and
+    pictured, as they last took."""
+    planned = _last_try(run, 'patch', kept=True)
+    if planned is None:
+        return DRAW_HERE_PATCH + NO_RECORD
+    tried = [planned, *filter(None, (_last_try(run, 'build-render'),))]
+    seconds = round(sum(float(attempt.get('seconds') or 0) for attempt in tried), 1)
+    return DRAW_HERE_PATCH + LAST_TOOK.format(cost=stops.cost(seconds, planned.get('dollars')))
 
 
 def patch_price(run: dict) -> str:
@@ -884,10 +914,11 @@ def _selected_cards(root, run: dict, state: dict) -> dict:
     from runner.steps import outline as outlines
     root = Path(root)
     inventory = outlines.inventory_of(root) or {}
-    after = set(existing._shots(root / existing.AFTER_SHOTS))
+    after = set(existing.pictured(root / existing.AFTER_SHOTS))
     before = originals(root, run)
     plan = words.plan_of(root)
     kept, numbers = notes(run), []
+    unfit = (run.get('desk') or {}).get('unfit') or {}
     priced = patch_price(run)
     slides = []
     for slide in inventory.get('slides') or ():
@@ -907,15 +938,18 @@ def _selected_cards(root, run: dict, state: dict) -> dict:
             'audit': audit_lines(state, number) if number in after else [],
             'note': _patch_note_shown(noted),
             'busy': bool(noted and noted.get('status') in OPEN),
-            'unfit': None, 'price': priced})
-    drawn = bool(state.get('deck')) and (root / state['deck']).is_file()
+            'unfit': {**unfit[f'slide-{number}'], 'says': PATCH_REFUSED}
+            if f'slide-{number}' in unfit else None, 'price': priced})
+    drawn = bool(state.get('deck')) and (root / state['deck']).is_file() \
+        and (root / existing.PATCH).is_file()
     return {'sections': [{'id': None, 'lead': False, 'number': None, 'slides': slides}],
             'expected': on_screen(root, run, state) if drawn else None, 'drawn_here': drawn}
 
 
 PATCH_NOTE_SAYS = {'drawing': 'Planning the changes to this slide again, with your note…',
                    'done': 'Changed on the copy with your note: “{note}”',
-                   'set aside': 'Not changed: you stopped the change.'}
+                   'set aside': 'Not changed: you stopped the change.',
+                   'refused': PATCH_REFUSED + ' {lines}'}
 
 
 def _patch_note_shown(item: dict | None) -> dict | None:
@@ -924,8 +958,11 @@ def _patch_note_shown(item: dict | None) -> dict | None:
     shown = _note_shown(item)
     if shown is None:
         return None
-    said = PATCH_NOTE_SAYS.get(item.get('status'))
-    return {**shown, **({'says': said.format(note=item.get('note'))} if said else {})}
+    refused = item.get('status') == 'set aside' and item.get('aside') == 'refused'
+    said = PATCH_NOTE_SAYS.get('refused' if refused else item.get('status'))
+    lines = ' '.join(str(line) for line in item.get('lines') or ())
+    return {**shown, **({'says': said.format(note=item.get('note'), lines=lines).strip()}
+                        if said else {})}
 
 
 def _note_shown(item: dict | None) -> dict | None:

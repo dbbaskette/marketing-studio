@@ -1078,6 +1078,23 @@ class ExistingDeskTests(DeskPageCase):
                               if card['number'] == 2)['objects'][1]['runs'],
                          ['Ship fast ', 'in minutes.'])
 
+    def test_a_change_your_deck_could_not_take_offers_only_discard(self):
+        path, view = self.existing('selected')
+        view = copy.deepcopy(view)
+        card = next(card for card in cards_of(view['desk']) if card['number'] == 2)
+        refused = ('This change could not be made to the copy of your deck, so the copy is as '
+                   'it was before it.')
+        card['unfit'] = {'number': 2, 'field': ['object', '3', 0], 'text': 'Ship fast',
+                         'lines': ['slide 2, object 3: geometry-style-or-relationships-changed.'],
+                         'says': refused}
+        result = self.open_deck(path, view, [{'snapshot': 'desk'}, {'click': 'Discard'}],
+                                **{'POST /api/desk-discard': [ok(self.run_of(path))]})
+        shot = result['snapshots']['desk']
+        self.assertIn(refused, shot['text'])
+        self.assertEqual(shot['fields']['Text box 2, part 1 of slide 2'], 'Ship fast')
+        self.assertNotIn('Redraw with these words', shot['buttons'])
+        self.assertEqual(self.posts(result), [('/api/desk-discard', {'path': path, 'number': 2})])
+
     def test_no_word_a_person_should_not_read_on_an_existing_deck(self):
         for level in ('brand-only', 'selected'):
             path, view = self.existing(level)

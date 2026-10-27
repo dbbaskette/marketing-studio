@@ -21,7 +21,7 @@ from pathlib import Path
 # isort: off
 import runner  # noqa: F401  puts the core on the import path
 import home
-from workspace import WorkspaceError
+from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, decks, desk, gitstate, stages
 from studio_core.drafting import prompts
@@ -35,6 +35,11 @@ from runner.steps import outline as outlines
 NO_PICK = 'The look is not waiting to be picked now.'
 EDITS = Path('work') / 'desk' / 'edits'   # words saved while a chain ran, until they land
 AGAIN = 3   # chains one rest on the desk may run for notes that came while it was put together
+# Selected changes: the plan and the shared copy as they were before the change under way,
+# and that change, put back if the copy cannot be made; and the mark that this computer was
+# asked to draw the deck here. Both are this computer's only.
+BEFORE = Path('work') / 'desk' / 'patch-before.json'
+DRAW_HERE = Path('work') / 'desk' / 'draw-here'
 
 
 class DeskActions:
@@ -95,7 +100,7 @@ class DeskActions:
                          else 'the deck is back on the desk')
             return
         state = build.read_state(root)
-        known ={entry['id'] for entry in (state.get('start') or {}).get('sections') or ()}
+        known = {entry['id'] for entry in (state.get('start') or {}).get('sections') or ()}
         left = [item for item in desk.opened(record) if item.get('section') in known]
         for item in desk.opened(record):
             if item.get('section') not in known:
@@ -153,7 +158,8 @@ class DeskActions:
                 'outline': self._desk_outline_view(root, record),
                 **({} if shown['drawn_here'] else {
                     'no_drawing': desk.NO_DRAWING,
-                    'draw_here_price': desk.deck_price(self._last_build(record))}),
+                    'draw_here_price': desk.draw_here_price(record) if desk.selected(record)
+                    else desk.deck_price(self._last_build(record))}),
                 'delivered': decks.delivered(root),
                 'revision': desk.DELIVERED_AGAIN.format(
                     revision=len(record['revisions']), next=len(record['revisions']) + 1)
@@ -245,13 +251,12 @@ class DeskActions:
             'slides') or () if isinstance(slide, dict)}
         if type(number) is not int or number not in have:
             raise WorkspaceError(f'The deck has no slide {number}.')
-        delivered = decks.delivered(root) is not None
-        if not delivered and (not desk.resting(record) or desk.opened(record)):
-            raise WorkspaceError(desk.PATCH_BUSY)
+        delivered = self._desk_patch_ready(root, record)
         said = f'Slide {number}: {note}'
-        record.setdefault('desk_notes', []).append(
-            desk.note_of(f'slide-{number}', number, None, note, home.now(), by,
-                         status='drawing'))
+        item = desk.note_of(f'slide-{number}', number, None, note, home.now(), by,
+                            status='drawing')
+        record.setdefault('desk_notes', []).append(item)
+        self._desk_patch_keep(root, {'kind': 'note', 'number': number, 'id': item['id']})
         named = record.setdefault('desk_patch_slides', [])
         if number not in named:
             named.append(number)
@@ -312,7 +317,8 @@ class DeskActions:
         # for it and tidies up.
         # A redraw that failed is given up the same way.
         again = (record.get('halted') or {}).get('state') in ('stopped', 'failed') and (
-            desk.opened(record) or (build.read_state(root).get('asked') or {}).get('sections'))
+            desk.opened(record) or (build.read_state(root).get('asked') or {}).get('sections')
+            or desk.selected(record))
         if not again and desk.working(root, record) is None:
             raise WorkspaceError(desk.NOTHING_TO_STOP)
         if not again:
@@ -339,7 +345,12 @@ class DeskActions:
             record['desk'].pop('chain', None)
             what = 'stop the whole-deck note' if whole else 'stop the redraw'
             if desk.selected(record):
-                # The plan made before the note is kept: the copy is made again from it.
+                # The plan made before the change is put back: the copy is made again from it.
+                kept = home.read_json(root / BEFORE, None)
+                if isinstance(kept, dict) and (kept.get('change') or {}).get('kind') == 'note':
+                    kept['change'] = {}   # the note is set aside as stopped, above
+                    home.write_json(root / BEFORE, kept)
+                record = self._desk_patch_back(root, record, [])
                 self._desk_repatch(root, record)
                 what = 'stop the change to your deck'
             self._store(root, record)
@@ -445,17 +456,73 @@ class DeskActions:
         record['gates']['gate:build'] = {**gate, 'state': 'absent', 'by': 'desk', 'note': None,
                                          'slides': None, 'at': home.now()}
 
+    def _desk_patch_ready(self, root, record: dict) -> bool:
+        """Refuse a change to a Selected changes deck that cannot be made now: while the last
+        change is being made, and on a computer that has not made the deck's plan. Returns
+        whether the deck is delivered."""
+        from runner.steps import existing
+        delivered = decks.delivered(root) is not None
+        if not delivered and (not desk.resting(record) or desk.opened(record)):
+            raise WorkspaceError(desk.PATCH_BUSY)
+        if not (Path(root) / existing.PATCH).is_file():
+            raise WorkspaceError(desk.NO_DRAWING + ' ' + desk.PATCH_HERE)
+        return delivered
+
+    @staticmethod
+    def _desk_patch_keep(root, change: dict) -> None:
+        """Keep the plan and the desk's shared copy as they are, before `change` is made, so
+        they can be put back if the copy cannot be made with it."""
+        from runner.steps import existing
+        root = Path(root)
+
+        def text(file):
+            return file.read_text(encoding='utf-8') if file.is_file() else None
+        home.write_json(root / BEFORE, {'plan': text(root / existing.PATCH),
+                                        'shared': text(root / words.SHARED_OPS),
+                                        'change': change})
+
+    @staticmethod
+    def _desk_patch_back(root, record: dict, lines) -> dict:
+        """Put the plan and the shared copy back as they were before the change under way,
+        which the copy could not take: a typed change stays on its card, with what was said
+        of it, as words that do not fit do; a note is set aside, saying why. Call it holding
+        `files`. Returns the run."""
+        from runner.steps import existing
+        root = Path(root)
+        kept = home.read_json(root / BEFORE, None)
+        if not isinstance(kept, dict):
+            return record
+        for file, key in ((root / existing.PATCH, 'plan'), (root / words.SHARED_OPS, 'shared')):
+            if isinstance(kept.get(key), str):
+                write_atomic(file, kept[key])   # byte for byte as it was
+            else:
+                file.unlink(missing_ok=True)
+        change = kept.get('change') or {}
+        lines = [str(line) for line in lines]
+        if change.get('kind') == 'words':
+            record.setdefault('desk', {}).setdefault('unfit', {})[
+                f"slide-{change['number']}"] = {
+                'number': change['number'], 'field': change['field'], 'text': change['text'],
+                'lines': lines, 'at': home.now()}
+        for item in desk.notes(record):
+            if change.get('kind') == 'note' and item.get('id') == change.get('id'):
+                item.update(status='set aside', aside='refused', lines=lines)
+        (root / BEFORE).unlink(missing_ok=True)
+        return record
+
     def _desk_patch(self, root, record: dict, number, found: dict, text: str, space,
                     source: str = 'save') -> tuple:
         """One run of one object of a Selected changes deck given new words: one operation
         of the deck's plan, and the copy made again from the whole plan, pictured and checked,
         with no plan job. Your own deck is never changed. Call it holding `files`. Returns the
         run, what the commit says and what else it lists."""
-        delivered = decks.delivered(root) is not None
-        if not delivered and (not desk.resting(record) or desk.opened(record)):
-            raise WorkspaceError(desk.PATCH_BUSY)
+        delivered = self._desk_patch_ready(root, record)
         op = words.plan_op(outlines.inventory_of(root) or {}, number, found['object'],
                            found['run'], text)
+        record['desk'].get('unfit', {}).pop(found['slide'], None)
+        self._desk_patch_keep(root, {'kind': 'words', 'number': number,
+                                     'field': ['object', found['object'], found['run']],
+                                     'text': text.strip()})
         also = ()
         if delivered:
             record = delivering.again(root, record, self.slides(), 'Change the words.', space,
@@ -745,10 +812,12 @@ class DeskActions:
         """Redraw with these words: the words that did not fit are saved to the outline,
         and the slide's section is redrawn to fit them, priced as its slide note is."""
         restoring = field == 'restore'
-        field = 'title' if restoring else words.field_of(field)
         root, space, by = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
+            if desk.selected(record):
+                raise WorkspaceError(desk.OWN_REDRAW)
+            field = 'title' if restoring else words.field_of(field)
             desk.refuse_words(record, field)
             if not expected or desk.on_screen(root, record, state) != expected:
                 raise WorkspaceError(desk.CHANGED)
@@ -803,6 +872,8 @@ class DeskActions:
         root, space, _ = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
+            if desk.selected(record):
+                raise WorkspaceError(desk.OWN_RESTORE)
             kept = desk.versions_of(root, slide)
             if stamp is not None:
                 # A version is named by its own stamp: a version kept since the page read
@@ -867,7 +938,8 @@ class DeskActions:
         root = self._desk_held(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
-            ident = desk.slide_of(state, number) if state.get('rounds') else None
+            ident = f'slide-{number}' if desk.selected(record) \
+                else desk.slide_of(state, number) if state.get('rounds') else None
             if ident and ident in (record.get('desk') or {}).get('unfit', {}):
                 record['desk']['unfit'].pop(ident)
                 self._store(root, record)
@@ -883,6 +955,13 @@ class DeskActions:
         root, _, _ = self._desk_change(path)
         with self.files:
             record = self._load(root)
+            if desk.selected(record):
+                record = self._desk_draw_patch_here(root, record)
+                self._store(root, record)
+                self._commit(root, 'make the plan and the copy of your deck on this computer')
+                self._desk_shared()
+                self.wake(root)
+                return self.view(root)
             if build.read_state(root).get('start'):
                 raise WorkspaceError('This deck is drawn on this computer already.')
             names = [step.name for step in stages.steps(record)]
@@ -900,6 +979,25 @@ class DeskActions:
         self._desk_shared()
         self.wake(root)
         return self.view(root)
+
+    @staticmethod
+    def _desk_draw_patch_here(root, record: dict) -> dict:
+        """A Selected changes deck made on this computer, which has neither its plan nor its
+        copy: the plan job runs here, with every note made on the desk and the words typed
+        there, and the copy is made from it. Call it holding `files`. Returns the run."""
+        from runner.steps import existing
+        root = Path(root)
+        if (root / existing.PATCH).is_file() and (root / existing.PATCHED).is_file():
+            raise WorkspaceError('This deck is drawn on this computer already.')
+        for name in ('patch', 'build-render'):
+            record['steps'][name] = {**(record['steps'].get(name) or {}), 'done': False,
+                                     'failed': 0}
+        if gate_state(record, 'gate:build') == 'waiting' or decks.delivered(root) is None:
+            record['gates']['gate:build'] = {**(record['gates'].get('gate:build') or {}),
+                                             'state': 'absent', 'note': None}
+        (root / DRAW_HERE).parent.mkdir(parents=True, exist_ok=True)
+        (root / DRAW_HERE).write_text('asked\n', encoding='utf-8')
+        return record
 
     def _desk_shared(self) -> None:
         """Share what a desk action did, where the workspace shares after each decision."""

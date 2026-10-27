@@ -403,22 +403,27 @@ def add_op(root, op: dict) -> dict:
     return _op_on(plan_of(root), op['slide'], op['object'])
 
 
-def with_shared_ops(root) -> None:
-    """After a plan job, put back the desk's own changes the new plan does not make: the
-    plan's operation on an object wins, and that object's change made on the desk is let go,
-    in the shared copy too."""
+def with_shared_ops(root, before: list | None = None, slide=None) -> None:
+    """After a plan job on a desk deck, make the plan it handed back whole again. A plan made
+    for a note on one `slide` changes that slide only: for every other slide the plan before
+    it (`before`, its operations) is kept. Then the words the person typed on the desk are
+    put back over it, run by run, as `add_op` puts them: the plan's changes to the other runs
+    of an object stay, and nothing typed is let go. The shared copy is not changed."""
     from runner.steps import existing
     root = Path(root)
-    shared = home.read_json(root / SHARED_OPS, None)
     found = home.read_json(root / existing.PATCH, None)
-    if not isinstance(shared, dict) or not isinstance(found, dict):
+    if not isinstance(found, dict):
         return
     planned = [one for one in found.get('operations') or () if isinstance(one, dict)]
-    left = [op for op in shared.get('operations') or () if isinstance(op, dict)
-            and _op_on(planned, op.get('slide'), op.get('object')) is None]
-    write_atomic(root / existing.PATCH, json.dumps(
-        {**found, 'operations': [*planned, *left]}, indent=2, ensure_ascii=False) + '\n')
-    home.write_json(root / SHARED_OPS, {**shared, 'operations': left})
+    if slide is not None and before is not None:
+        planned = [*(op for op in before if isinstance(op, dict) and op.get('slide') != slide),
+                   *(op for op in planned if op.get('slide') == slide)]
+    plan = {**found, 'operations': planned}
+    shared = home.read_json(root / SHARED_OPS, None)
+    for op in (shared.get('operations') if isinstance(shared, dict) else None) or ():
+        if isinstance(op, dict) and op.get('slide') is not None and op.get('object') is not None:
+            plan = _merged(plan, op)
+    write_atomic(root / existing.PATCH, json.dumps(plan, indent=2, ensure_ascii=False) + '\n')
 
 
 def _applied(runs: list[str], op: dict | None) -> list[str]:

@@ -554,6 +554,7 @@ class ChainEditTests(DeskCase):
 
     def test_words_are_refused_while_the_deck_is_being_delivered(self):
         from unittest import mock
+
         from runner import desk
         root = self.deck()
         with mock.patch.object(self.engine, 'wake'):
@@ -718,14 +719,162 @@ class SelectedTests(DeskCase):
         self.assertIn('Slide 1: Make the subtitle a question.', again[0].task)
         self.assertIn('The person also changed these words themselves', again[0].task)
         self.on_desk(root)
-        # The plan made again keeps what was typed on the desk, and the plan's own words for
-        # the slide it names; the first plan's change to slide 2 is not in the new one.
+        # The plan made again for slide 1 changes slide 1 only: the earlier plan's change to
+        # slide 2 is kept, and so is what was typed there.
         self.assertEqual(self.shown(root, 1, '3'), ['Who runs a deck like this?'])
-        self.assertEqual(self.shown(root, 2, '3'), ['Ship fast ', 'in minutes, not weeks.'])
+        self.assertEqual(self.shown(root, 2, '3'), ['Ship fast ', 'in minutes.'])
         card = next(card for card in self.desk_view(root)['sections'][0]['slides']
                     if card['number'] == 1)
         self.assertEqual(card['note']['status'], 'done')
         self.assertTrue(self.desk_view(root)['deliverable'])
+
+    def test_a_typed_word_stays_when_its_object_is_planned_again(self):
+        root = self.deck()
+        self.engine.desk_words(root, 2, ['object', '3', 0], 'Ship fast', self.seen(root),
+                               self.SESSION)
+        self.workers.then('patch', planned(2, '3', [(0, 'Ship apps '), (1, 'in seconds.')]))
+        jobs = len(self.workers.of('patch'))
+        self.engine.desk_note(root, 2, 'Say how fast in seconds.',
+                              self.desk_view(root)['expected'])
+        (job,) = self.workers.of('patch')[jobs:]
+        self.assertIn('They stay as they are', job.task)
+        self.on_desk(root)
+        # The plan's new words for run 1, and the words typed into run 0.
+        self.assertEqual(self.shown(root, 2, '3'), ['Ship fast ', 'in seconds.'])
+        shared = json.loads((root / words.SHARED_OPS).read_text())['operations']
+        self.assertEqual([op['runs'] for op in shared], [[{'index': 0, 'text': 'Ship fast '}]])
+
+    def test_an_earlier_note_s_change_stays_when_a_later_note_is_planned(self):
+        root = self.deck()
+        self.workers.then('patch', planned(1, '3', [(0, 'Who runs a deck like this?')]))
+        self.engine.desk_note(root, 1, 'Make the subtitle a question.',
+                              self.desk_view(root)['expected'])
+        self.on_desk(root)
+        self.workers.then('patch', planned(3, '2', [(0, 'More, if you ask')]))
+        jobs = len(self.workers.of('patch'))
+        self.engine.desk_note(root, 3, 'Name it for the questions.',
+                              self.desk_view(root)['expected'])
+        (job,) = self.workers.of('patch')[jobs:]
+        # Every note made on the desk is handed to the plan, by its slide.
+        self.assertIn('Slide 1: Make the subtitle a question.', job.task)
+        self.assertIn('Slide 3: Name it for the questions.', job.task)
+        self.on_desk(root)
+        self.assertEqual(self.shown(root, 1, '3'), ['Who runs a deck like this?'])
+        self.assertEqual(self.shown(root, 2, '3'), ['Ship apps ', 'in minutes.'])
+        self.assertEqual(self.shown(root, 3, '2'), ['More, if you ask'])
+
+    def refusing(self, failure: dict):
+        """pptx compare refusing the next copy it is shown with `failure`, then as it is."""
+        from unittest import mock
+        real, refused = self.slides.pptx_compare, []
+
+        def comparing(before, after, allow):
+            if not refused:
+                refused.append(True)
+                return {'preserved': False, 'failures': [failure], 'changedParts': []}
+            return real(before, after, allow)
+        return mock.patch.object(self.slides, 'pptx_compare', comparing)
+
+    def test_a_change_the_compare_refuses_is_put_back_and_kept_on_its_card(self):
+        from runner.steps import existing
+        root = self.deck()
+        plan = (root / existing.PATCH).read_bytes()
+        shared = (root / words.SHARED_OPS).read_bytes() \
+            if (root / words.SHARED_OPS).exists() else None
+        with self.refusing({'slide': '257', 'object': '3',
+                            'code': 'geometry-style-or-relationships-changed'}):
+            self.engine.desk_words(root, 2, ['object', '3', 0], 'Ship fast', self.seen(root),
+                                   self.SESSION)
+        self.on_desk(root)
+        self.assertIsNone(self.record(root).get('halted'))
+        self.assertEqual((root / existing.PATCH).read_bytes(), plan)
+        self.assertEqual((root / words.SHARED_OPS).read_bytes()
+                         if (root / words.SHARED_OPS).exists() else None, shared)
+        self.assertEqual(self.shown(root, 2, '3'), ['Ship apps ', 'in minutes.'])
+        shown = self.desk_view(root)
+        card = next(card for card in shown['sections'][0]['slides'] if card['number'] == 2)
+        self.assertEqual((card['unfit']['text'], card['unfit']['field']),
+                         ('Ship fast', ['object', '3', 0]))
+        self.assertEqual(card['unfit']['says'], desk.PATCH_REFUSED)
+        self.assertTrue(card['unfit']['lines'])
+        self.assertTrue(shown['deliverable'])
+        self.engine.desk_discard(root, 2)
+        card = next(card for card in self.desk_view(root)['sections'][0]['slides']
+                    if card['number'] == 2)
+        self.assertIsNone(card['unfit'])
+
+    def test_a_note_whose_copy_is_refused_is_set_aside_with_the_plan_put_back(self):
+        from runner.steps import existing
+        root = self.deck()
+        plan = (root / existing.PATCH).read_bytes()
+        self.workers.then('patch', planned(1, '3', [(0, 'Who runs a deck like this?')]))
+        with self.refusing({'slide': '256', 'object': '3', 'code': 'alt-changed'}):
+            self.engine.desk_note(root, 1, 'Make the subtitle a question.',
+                                  self.desk_view(root)['expected'])
+        self.on_desk(root)
+        self.assertEqual((root / existing.PATCH).read_bytes(), plan)
+        card = next(card for card in self.desk_view(root)['sections'][0]['slides']
+                    if card['number'] == 1)
+        self.assertEqual(card['note']['status'], 'set aside')
+        self.assertTrue(card['note']['says'].startswith(desk.PATCH_REFUSED))
+        self.assertTrue(self.desk_view(root)['deliverable'])
+
+    def test_a_copy_that_cannot_be_made_again_stops_and_stop_puts_it_back(self):
+        root = self.deck()
+        self.slides.run.fails['review'] = 'LibreOffice could not open the deck'
+        self.engine.desk_words(root, 2, ['object', '3', 0], 'Ship fast', self.seen(root),
+                               self.SESSION)
+        self.assertEqual(self.record(root)['halted']['state'], 'failed')
+        working = self.desk_view(root)['working']
+        self.assertTrue(working and working['halted'], working)
+        self.slides.run.fails.pop('review')
+        self.engine.desk_stop(root)
+        self.on_desk(root)
+        self.assertEqual(self.shown(root, 2, '3'), ['Ship apps ', 'in minutes.'])
+        self.assertTrue(self.desk_view(root)['deliverable'])
+
+    def test_without_the_plan_here_it_is_drawn_here_only_when_asked(self):
+        import shutil
+        root = self.deck()
+        self.engine.desk_words(root, 2, ['object', '3', 0], 'Ship fast', self.seen(root),
+                               self.SESSION)
+        self.on_desk(root)
+        shutil.rmtree(root / 'work')   # as on a computer that took the deck over
+        jobs = len(self.workers.of('patch'))
+        self.engine.wake(root)
+        self.assertEqual(len(self.workers.of('patch')), jobs)
+        shown = self.desk_view(root)
+        self.assertFalse(shown['drawn_here'])
+        self.assertTrue(shown['draw_here_price'].startswith(desk.DRAW_HERE_PATCH))
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_words(root, 2, ['object', '3', 1], 'in seconds.',
+                                   self.seen(root), self.SESSION)
+        self.assertEqual(str(caught.exception), desk.NO_DRAWING + ' Draw it here first.')
+        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
+        self.engine.desk_draw_here(root)
+        self.assertEqual(len(self.workers.of('patch')), jobs + 1)
+        self.on_desk(root)
+        self.assertTrue(self.desk_view(root)['drawn_here'])
+        self.assertEqual(self.shown(root, 2, '3'), ['Ship fast ', 'in minutes.'])
+
+    def test_delivering_is_not_said_as_making_the_copy(self):
+        from runner import stages
+        root = self.deck()
+        record = self.record(root)
+        record['gates']['gate:build']['state'] = 'approved'
+        self.assertEqual(desk.working(root, record)['what'], stages.BY_NAME['deliver'].doing)
+        record['steps']['build-render']['done'] = False
+        self.assertEqual(desk.working(root, record)['what'], desk.PATCHING)
+
+    def test_words_redrawn_or_restored_are_refused_on_your_own_deck(self):
+        root = self.deck()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_redraw_words(root, 2, ['object', '3', 0], 'Ship fast',
+                                          self.desk_view(root)['expected'])
+        self.assertEqual(str(caught.exception), desk.OWN_REDRAW)
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_restore(root, 'slide-02-read', 0, self.seen(root))
+        self.assertEqual(str(caught.exception), desk.OWN_RESTORE)
 
     def test_a_selection_inside_one_run_is_one_operation(self):
         root = self.deck()
