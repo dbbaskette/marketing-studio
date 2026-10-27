@@ -148,7 +148,7 @@ from runner.jobs import (FED, KEPT_SO_FAR, NEXT_NOTE, Gone as _Gone, Halted as _
                          last_error, spent, text_of, tries, sha256_of)
 from runner.desk_actions import DeskActions
 from runner.research_steps import FROM_FORM, PLAN, PLAN_MD, REPORT, REVIEW, Researching
-from runner.steps import build, deliver as delivering, existing, intake
+from runner.steps import build, deliver as delivering, existing, intake, words
 from runner.steps import look as looks
 from runner.steps import outline as outlines
 
@@ -1679,12 +1679,16 @@ class Engine(Jobs, Researching, DeskActions):
 
     def _patch(self, root: Path, run: _Run, step: stages.Step) -> None:
         self._contract(root)
+
+        def keep(record, handed):
+            existing.keep_patch(root, self._text(handed, existing.NAME))
+            if decks.on_desk(record):
+                words.with_shared_ops(root)   # the words changed on the desk stay changed
+
         self._agent(root, run, step,
                     lambda record, request, error: existing.patch_work(root, record, request,
                                                                        error),
-                    lambda record, handed: existing.keep_patch(
-                        root, self._text(handed, existing.NAME)),
-                    'keep the plan of the changes you asked for')
+                    keep, 'keep the plan of the changes you asked for')
 
     def _draw(self, root: Path, run: _Run, step: stages.Step, how: str) -> None:
         """One try at each section still to draw, side by side. Their previews are still

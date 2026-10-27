@@ -607,5 +607,178 @@ class ChainEditTests(DeskCase):
         self.assertEqual((outline['title'], outline['notes']), (SLIDE['title'], SLIDE['notes']))
 
 
+def planned(number: int, object_id: str, runs: list, read: list | None = None):
+    """A scripted plan job for a Selected changes deck: one operation, on the runs given.
+    What it read of the deck's inventory is added to `read`."""
+    def act(tools, job):
+        if read is not None:
+            read.append(tools.read_input('Inventory')[1])
+        spec = tools.job['artifacts']['patch']
+        plan = {'sourceSha256': spec['sha256'], 'operations': [
+            {'slide': number, 'object': object_id,
+             'expectedHash': spec['objects'][f'{number}:{object_id}'],
+             'runs': [{'index': index, 'text': text} for index, text in runs]}]}
+        made = tools.submit_artifact('patch', json.dumps(plan))
+        assert made[0], made[1]
+    return act
+
+
+class SelectedTests(DeskCase):
+    """Selected changes on the desk: your own deck's words changed only through `pptx patch`
+    to a copy, and `pptx compare`. The stand-in reads the deck given as three slides: a cover
+    (its title, object 2, and its subtitle, object 3, each one run), slide 2 with its title
+    (object 2) and words in two runs (object 3, "Ship apps " and "in minutes, not weeks."),
+    and a hidden slide 3. The person named slide 2."""
+
+    SESSION = 'f' * 16
+
+    def deck(self) -> Path:
+        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
+        root = self.existing_deck('automatic', 'selected', flow='desk',
+                                  selected='Shorten the words on slide 2')
+        self.on_desk(root)
+        return root
+
+    def seen(self, root: Path) -> int:
+        return self.desk_view(root)['seen']
+
+    def shown(self, root: Path, number: int, object_id: str) -> list:
+        """An object's runs in the patched copy, as the slides tool reads it."""
+        from runner.steps import existing
+        found = self.slides.pptx_inspect(root / existing.PATCHED)
+        slide = next(one for one in found['slides'] if one['number'] == number)
+        return next(one for one in slide['objects'] if one['id'] == object_id)['runs']
+
+    def plan(self, root: Path) -> list:
+        from runner.steps import existing
+        return json.loads((root / existing.PATCH).read_text())['operations']
+
+    def test_a_typed_edit_is_one_patch_operation_and_no_job(self):
+        from unittest import mock
+
+        from runner.steps import existing
+        root = self.deck()
+        jobs, allowed = len(self.workers.of('patch')), []
+        real = self.slides.pptx_compare
+
+        def comparing(before, after, allow):
+            allowed.append(json.loads(Path(allow).read_text()))
+            return real(before, after, allow)
+
+        with mock.patch.object(self.slides, 'pptx_compare', comparing):
+            self.engine.desk_words(root, 2, ['object', '3', 0], 'Ship fast', self.seen(root),
+                                   self.SESSION)
+        self.assertEqual(len(self.workers.of('patch')), jobs)
+        self.on_desk(root)
+        # The plan's own change to the second run is kept beside the typed one.
+        self.assertEqual(self.shown(root, 2, '3'), ['Ship fast ', 'in minutes.'])
+        self.assertEqual(allowed, [[{'slide': '257', 'object': '3', 'fields': ['text']}]])
+        (op,) = self.plan(root)
+        self.assertEqual(op['runs'], [{'index': 0, 'text': 'Ship fast '},
+                                      {'index': 1, 'text': 'in minutes.'}])
+        shared = json.loads((root / words.SHARED_OPS).read_text())
+        self.assertEqual(shared['operations'], [{
+            'slide': 2, 'object': '3', 'expectedHash': op['expectedHash'],
+            'runs': [{'index': 0, 'text': 'Ship fast '}]}])
+        tracked = self.git('ls-files', root.relative_to(self.space.repo).as_posix())
+        self.assertIn('desk/patch-ops.json', tracked)
+        card = next(card for card in self.desk_view(root)['sections'][0]['slides']
+                    if card['number'] == 2)
+        self.assertEqual(card['objects'][1]['runs'], ['Ship fast ', 'in minutes.'])
+        self.assertEqual(self.desk_view(root)['expected'],
+                         self.engines.sha256_of(root / existing.PATCHED))
+
+    def test_a_second_edit_to_the_same_object_replaces_the_first(self):
+        root = self.deck()
+        self.engine.desk_words(root, 1, ['object', '3', None], 'A deck to start from',
+                               self.seen(root), self.SESSION)
+        self.engine.desk_words(root, 1, ['object', '3', None], 'A deck to keep',
+                               self.seen(root), self.SESSION)
+        self.on_desk(root)
+        ops = [op for op in self.plan(root) if op['slide'] == 1]
+        self.assertEqual([op.get('text') for op in ops], ['A deck to keep'])
+        shared = json.loads((root / words.SHARED_OPS).read_text())['operations']
+        self.assertEqual([op.get('text') for op in shared], ['A deck to keep'])
+        self.assertEqual(self.shown(root, 1, '3'), ['A deck to keep'])
+
+    def test_a_note_on_an_unnamed_slide_runs_the_plan_with_it(self):
+        root = self.deck()
+        self.engine.desk_words(root, 2, ['object', '3', 0], 'Ship fast', self.seen(root),
+                               self.SESSION)
+        jobs, read = len(self.workers.of('patch')), []
+        self.workers.then('patch', planned(1, '3', [(0, 'Who runs a deck like this?')], read))
+        self.engine.desk_note(root, 1, 'Make the subtitle a question.',
+                              self.desk_view(root)['expected'])
+        again = self.workers.of('patch')[jobs:]
+        self.assertEqual(len(again), 1)
+        self.assertEqual(self.record(root)['desk_patch_slides'], [1])
+        spec = self.workers.jobs[-1][2]['artifacts']['patch']
+        self.assertEqual(spec['named'], [2, 1])
+        self.assertIn('## Slide 1:', read[0])
+        self.assertIn('Slide 1: Make the subtitle a question.', again[0].task)
+        self.assertIn('The person also changed these words themselves', again[0].task)
+        self.on_desk(root)
+        # The plan made again keeps what was typed on the desk, and the plan's own words for
+        # the slide it names; the first plan's change to slide 2 is not in the new one.
+        self.assertEqual(self.shown(root, 1, '3'), ['Who runs a deck like this?'])
+        self.assertEqual(self.shown(root, 2, '3'), ['Ship fast ', 'in minutes, not weeks.'])
+        card = next(card for card in self.desk_view(root)['sections'][0]['slides']
+                    if card['number'] == 1)
+        self.assertEqual(card['note']['status'], 'done')
+        self.assertTrue(self.desk_view(root)['deliverable'])
+
+    def test_a_selection_inside_one_run_is_one_operation(self):
+        root = self.deck()
+        jobs = len(self.workers.of('patch'))
+        text = 'in minutes.'
+        start = text.index('minutes')
+        self.engine.desk_selection(root, 2, ['object', '3', 1], start, start + len('minutes'),
+                                   'rephrase', None, self.seen(root))
+        (job,) = self.workers.of('words')
+        self.assertIn('minutes', job.task)
+        self.assertEqual(len(self.workers.of('patch')), jobs)
+        self.on_desk(root)
+        self.assertEqual(self.shown(root, 2, '3'), ['Ship apps ', 'in minutes (fresh).'])
+        (op,) = self.plan(root)
+        self.assertEqual(op['runs'], [{'index': 1, 'text': 'in minutes (fresh).'}])
+
+    def test_speaker_notes_are_refused_on_your_own_deck(self):
+        root = self.deck()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_notes(root, 2, 'Two minutes.', self.seen(root), self.SESSION)
+        self.assertEqual(str(caught.exception), desk.OWN_NOTES)
+
+    def test_the_original_is_never_changed(self):
+        import hashlib
+
+        from runner.steps import existing
+        root = self.deck()
+        before = hashlib.sha256((root / existing.SOURCE).read_bytes()).hexdigest()
+        self.engine.desk_words(root, 2, ['object', '2', None], 'Run it fast', self.seen(root),
+                               self.SESSION)
+        self.workers.then('patch', planned(1, '3', [(0, 'Who runs a deck like this?')]))
+        self.engine.desk_note(root, 1, 'Make the subtitle a question.',
+                              self.desk_view(root)['expected'])
+        self.on_desk(root)
+        self.assertEqual(hashlib.sha256((root / existing.SOURCE).read_bytes()).hexdigest(),
+                         before)
+        shown = self.view(root)['desk']
+        self.engine.desk_deliver(root, shown['expected'], shown['blockers_seen'])
+        self.assertEqual(hashlib.sha256((root / existing.SOURCE).read_bytes()).hexdigest(),
+                         before)
+        self.assertIsNotNone(json.loads((root / 'deliver.json').read_text())['url'])
+
+    def test_a_gated_selected_deck_keeps_its_plan_as_its_worker_wrote_it(self):
+        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
+        root = self.existing_deck('automatic', 'selected',
+                                  selected='Shorten the words on slide 2')
+        self.assertEqual(self.waiting(root), 'gate:build')
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_words(root, 2, ['object', '3', 0], 'Ship fast', 1, self.SESSION)
+        self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
+        self.assertFalse((root / words.SHARED_OPS).exists())
+        self.assertEqual(self.plan(root)[0]['runs'], [{'index': 1, 'text': 'in minutes.'}])
+
+
 if __name__ == '__main__':
     unittest.main()

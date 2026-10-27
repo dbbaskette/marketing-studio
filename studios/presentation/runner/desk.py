@@ -78,6 +78,12 @@ SECTION_SIZE = 4   # content slides one section holds at most, as the slides too
 NOTHING_TO_STOP = 'Nothing is being redrawn now, so there is nothing to stop.'
 NOT_ENDED = ('It was stopped, but something it started has not ended yet. Try Stop again in '
              'a moment.')
+OWN_NOTES = ('Speaker notes in your own deck are kept as they are. Selected changes changes '
+             'only the text on the slides.')
+PATCH_BUSY = ('Your last change to your deck is still being made. Change it again when that is '
+              'done.')
+WHOLE_SELECTED = ('Selected changes changes only the slides you name. Note a slide, or start '
+                  'again at Redesign, keep content.')
 PLANNING = 'Planning the changes to your deck again, with your note'
 PATCHING = 'Making the changes to a copy of your deck, picturing and checking it'
 

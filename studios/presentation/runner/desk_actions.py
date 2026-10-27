@@ -85,8 +85,17 @@ class DeskActions:
         the deck was put together, and any its chain did not draw, are drawn now, in one more
         chain, before it rests. Call it holding `files`, from `_gate`."""
         first = desk.arrive(record)
+        if desk.selected(record):
+            # Nothing is drawn: a note on a slide was planned and made with the copy now.
+            for item in desk.opened(record):
+                item.update(status='done', done_at=home.now())
+            record['desk'].pop('chain', None)
+            self._store(root, record)
+            self._commit(root, 'the deck is on the desk' if first
+                         else 'the deck is back on the desk')
+            return
         state = build.read_state(root)
-        known = {entry['id'] for entry in (state.get('start') or {}).get('sections') or ()}
+        known ={entry['id'] for entry in (state.get('start') or {}).get('sections') or ()}
         left = [item for item in desk.opened(record) if item.get('section') in known]
         for item in desk.opened(record):
             if item.get('section') not in known:
@@ -208,17 +217,52 @@ class DeskActions:
                 raise WorkspaceError(desk.NOT_YET)
             if not expected or desk.on_screen(root, record, state) != expected:
                 raise WorkspaceError(desk.CHANGED)
-            item = desk.add_note(record, state, number, note, home.now(), by)
-            desk.keep_slide(root, item['slide'], 'note')
-            record, also, now = self._desk_ask(root, record, state, [item['section']], note,
-                                               space)
-            if now and desk.arrived(record):
-                record['desk']['chain'] = {'kind': desk.SLIDE_NOTE, 'at': home.now()}
+            if desk.selected(record):
+                record, also = self._desk_patch_note(root, record, number, note, by, space)
+                what = f'ask to change slide {number} of your deck'
+            else:
+                item = desk.add_note(record, state, number, note, home.now(), by)
+                desk.keep_slide(root, item['slide'], 'note')
+                record, also, now = self._desk_ask(root, record, state, [item['section']],
+                                                   note, space)
+                if now and desk.arrived(record):
+                    record['desk']['chain'] = {'kind': desk.SLIDE_NOTE, 'at': home.now()}
+                what = f'ask to redraw slide {number}'
             self._store(root, record)
-            self._commit(root, f'ask to redraw slide {number}', also)
+            self._commit(root, what, also)
         self._desk_shared()
         self.wake(root)
         return self.view(root)
+
+    def _desk_patch_note(self, root, record: dict, number, note: str, by, space) -> tuple:
+        """A note on a slide of a Selected changes deck: the slide joins the slides the plan
+        may change (`desk_patch_slides`), and the plan is made again with the note, then the
+        copy. Call it holding `files`. Returns the run, and what else the commit lists."""
+        have = {slide.get('number') for slide in (outlines.inventory_of(root) or {}).get(
+            'slides') or () if isinstance(slide, dict)}
+        if type(number) is not int or number not in have:
+            raise WorkspaceError(f'The deck has no slide {number}.')
+        delivered = decks.delivered(root) is not None
+        if not delivered and (not desk.resting(record) or desk.opened(record)):
+            raise WorkspaceError(desk.PATCH_BUSY)
+        said = f'Slide {number}: {note}'
+        record.setdefault('desk_notes', []).append(
+            desk.note_of(None, number, None, note, home.now(), by, status='drawing'))
+        named = record.setdefault('desk_patch_slides', [])
+        if number not in named:
+            named.append(number)
+        also = ()
+        if delivered:
+            record = delivering.again(root, record, self.slides(), said, space, sections=[])
+            also = self._listed(space)
+        else:
+            gate = record['gates'].get('gate:build') or {}
+            record['gates']['gate:build'] = {**gate, 'state': 'changes', 'by': 'desk',
+                                             'note': said, 'slides': None, 'at': home.now()}
+            record = stages.reopen(record, 'gate:build')
+        for step in self._reopened(record, 'gate:build'):
+            self._fresh(record, step)
+        return record, also
 
     def desk_deck_note(self, path, note, expected) -> dict:
         """A note for the whole deck: every section is redrawn with it, three at a time, and
@@ -229,6 +273,8 @@ class DeskActions:
         root, space, by = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
+            if desk.selected(record):
+                raise WorkspaceError(desk.WHOLE_SELECTED)
             if not desk.arrived(record):
                 raise WorkspaceError(desk.NOT_YET)
             if not expected or desk.on_screen(root, record, state) != expected:
@@ -296,14 +342,32 @@ class DeskActions:
 
     # --- words -------------------------------------------------------------------------------
 
+    @staticmethod
+    def _desk_field(record: dict, field):
+        """A field of a slide's words, as the desk deck names it: one of the outline's, or
+        on a Selected changes deck ('object', object_id, run_index), one run of one object of
+        your own deck, whose speaker notes are kept as they are."""
+        if desk.selected(record):
+            if field == 'notes':
+                raise WorkspaceError(desk.OWN_NOTES)
+            return ('object', *words.object_field(field))
+        return words.field_of(field)
+
     def _desk_words_of(self, root, record: dict, state: dict, number, field) -> dict:
         """The slide a word edit names, as the desk reads it: its ID, its section (None for
-        a lead slide) and its words in the outline now. Refused while its section is redrawn."""
+        a lead slide) and its words in the outline now. Refused while its section is redrawn.
+        On a Selected changes deck it is the run's words as the plan makes them, the object
+        and the run."""
         if not desk.arrived(record):
             raise WorkspaceError(desk.NOT_YET)
         if gate_state(record, 'gate:build') == 'approved' and decks.delivered(root) is None:
             # Deliver was pressed: words saved now would miss the deck it sends.
             raise WorkspaceError(desk.DELIVERING)
+        if desk.selected(record):
+            old = words.run_text(outlines.inventory_of(root) or {}, words.plan_of(root),
+                                 number, field[1], field[2])
+            return {'slide': f'slide-{number}', 'section': None, 'old': old.strip(),
+                    'saved': old.strip(), 'object': field[1], 'run': field[2]}
         section = desk.section_of(state, number)
         ident = desk.slide_of(state, number)
         if section is None and isinstance(field, tuple):
@@ -335,24 +399,59 @@ class DeskActions:
         """A slide's words typed on its card, against the slide's revision the form saw.
         Where they still fit the slide as it is drawn, they are saved to the outline and put
         into the drawing with no composer, and the deck is put together again; where they do
-        not, nothing is saved, and the card keeps them with what the slides tool said."""
-        field = words.field_of(field)
+        not, nothing is saved, and the card keeps them with what the slides tool said. On a
+        Selected changes deck they are one operation of the plan, made to a copy."""
         if not isinstance(text, str):
             raise WorkspaceError('The words are text.')
         root, space, _ = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
+            field = self._desk_field(record, field)
             found = self._desk_words_of(root, record, state, number, field)
             desk.check_seen(record, seen, found['slide'])
             if found['saved'] == text.strip():
                 return self.view(root)
-            record, what, also = self._desk_save(root, record, state, number, field, text,
-                                                 session, space, found)
+            if desk.selected(record):
+                record, what, also = self._desk_patch(root, record, number, found, text, space)
+            else:
+                record, what, also = self._desk_save(root, record, state, number, field, text,
+                                                     session, space, found)
             self._store(root, record)
             self._commit(root, what, also)
         self._desk_shared()
         self.wake(root)
         return self.view(root)
+
+    def _desk_patch(self, root, record: dict, number, found: dict, text: str, space,
+                    source: str = 'save') -> tuple:
+        """One run of one object of a Selected changes deck given new words: one operation
+        of the deck's plan, and the copy made again from the whole plan, pictured and checked,
+        with no plan job. Your own deck is never changed. Call it holding `files`. Returns the
+        run, what the commit says and what else it lists."""
+        delivered = decks.delivered(root) is not None
+        if not delivered and (not desk.resting(record) or desk.opened(record)):
+            raise WorkspaceError(desk.PATCH_BUSY)
+        op = words.plan_op(outlines.inventory_of(root) or {}, number, found['object'],
+                           found['run'], text)
+        also = ()
+        if delivered:
+            record = delivering.again(root, record, self.slides(), 'Change the words.', space,
+                                      sections=[])
+            also = self._listed(space)
+        words.add_op(root, op)
+        desk.advance(record, found['slide'])
+        versions = record.setdefault('build_feedback_revisions', {})
+        versions[f"slide:{found['slide']}"] = versions.get(f"slide:{found['slide']}", 0) + 1
+        # The plan is kept: only the copy is made again from it.
+        steps = record.setdefault('steps', {})
+        steps['patch'] = {**(steps.get('patch') or {}), 'done': True}
+        steps['build-render'] = {**(steps.get('build-render') or {}), 'done': False}
+        self._fresh(record, 'build-render')
+        gate = record['gates'].get('gate:build') or {}
+        record['gates']['gate:build'] = {**gate, 'state': 'absent', 'by': 'desk', 'note': None,
+                                         'slides': None, 'at': home.now()}
+        said = 'from a selection' if source == 'selection' else 'on the desk'
+        return record, f'change the words of slide {number} of your deck {said}', also
 
     def _desk_save(self, root, record: dict, state: dict, number, field, text, session, space,
                    found: dict, source: str = 'save') -> tuple:
@@ -415,7 +514,6 @@ class DeskActions:
         """Rephrase, Shorten, Expand, Fix or Ask… on a passage of one slide's words: a small
         words job rewrites it, and its words are saved as typed words are. One change to a
         deck at a time."""
-        field = words.field_of(field)
         if action not in (*prompts.ACTIONS, 'ask'):
             raise WorkspaceError('Choose Rephrase, Shorten, Expand, Fix or Ask.')
         instruction = self._note(instruction) if action == 'ask' else None
@@ -426,6 +524,7 @@ class DeskActions:
             record, state = self._load(root), build.read_state(root)
             if record.get('desk_jobs'):
                 raise WorkspaceError(desk.ONE_CHANGE)
+            field = self._desk_field(record, field)
             found = self._desk_words_of(root, record, state, number, field)
             desk.check_seen(record, seen, found['slide'])
             text = found['saved']
@@ -453,21 +552,32 @@ class DeskActions:
         from runner.steps import Work
         record = self._load(root)
         job = record['desk_jobs'][0]
-        field = words.field_of(job['field'])
+        field = self._desk_field(record, job['field'])
+        own = desk.selected(record)
+        named = 'words of one part of the slide' if own else words.field_words(field)
         step = stages.Step('desk-words', 'build', 'agent', 'Change the words',
                            'Changing the words of a slide')
 
         def make(record, request, error):
-            outline = desk._outline(root)
-            slide = next((one for one in build.slides_of(outline)
-                          if one.get('id') == job['slide']), {})
+            if own:
+                # Your own deck's slide: its title and the words of each of its parts.
+                shown = next((one for one in (outlines.inventory_of(root) or {}).get('slides')
+                              or () if one.get('number') == job['number']), {})
+                slide = {'title': shown.get('title'), 'parts': [
+                    ''.join(item['runs']) for item in words.objects_now(
+                        shown, words.plan_of(root))]}
+            else:
+                outline = desk._outline(root)
+                drawn = next((one for one in build.slides_of(outline)
+                              if one.get('id') == job['slide']), {})
+                slide = {key: drawn.get(key) for key in (*words.FIELDS, 'points')}
             text = job['basis']
             passage = text[job['start']:job['end']]
             line = prompts.ASK if job['action'] == 'ask' else prompts.ACTIONS[job['action']]
             told = [f"Change the words of slide {job['number']} of "
                     f"\"{record.get('title') or 'the deck'}\": one passage of its "
-                    f'{words.field_words(field)}.' + prompts.passage_task(line).rstrip(),
-                    f'The whole {words.field_words(field)}:\n\n{text}',
+                    f'{named}.' + prompts.passage_task(line).rstrip(),
+                    f'The whole {named}:\n\n{text}',
                     f'The passage:\n\n{passage}',
                     ('The slide\'s other words are in your input "slide". Keep the passage '
                      'about as long as the slide has room for: the words must still fit it.')]
@@ -479,13 +589,12 @@ class DeskActions:
                             'Take care not to end the same way.')
             told.append('Hand back the replacement for the passage with submit_artifact under '
                         'the name "words".')
-            single = field == 'title' or isinstance(field, tuple)
+            single = field == 'title' or isinstance(field, tuple)   # a run is one line
             return Work(guidance=briefs.guidance('words') + '\n\n' + prompts.edit_rule('slide'),
                         task='\n\n'.join(told), profile='write', name='words',
                         guard=(f"slide:{job['slide']}", job['guard']),
                         prepared={'inputs': {'slide': json.dumps(
-                            {key: slide.get(key) for key in (*words.FIELDS, 'points')},
-                            ensure_ascii=False, indent=2)}, 'ask': False,
+                            slide, ensure_ascii=False, indent=2)}, 'ask': False,
                             'artifacts': {'words': {'kind': 'words', 'text': passage,
                                                     'single': single}}})
 
@@ -497,8 +606,12 @@ class DeskActions:
                 found = self._desk_words_of(root, record, state, job['number'], field)
                 if found['saved'] != job['basis']:
                     return   # the words changed since: the job's are not kept
-                record, _, _ = self._desk_save(root, record, state, job['number'], field, text,
-                                               None, self.space(), found, 'selection')
+                if own:
+                    record, _, _ = self._desk_patch(root, record, job['number'], found, text,
+                                                    self.space(), 'selection')
+                else:
+                    record, _, _ = self._desk_save(root, record, state, job['number'], field,
+                                                   text, None, self.space(), found, 'selection')
             except WorkspaceError as refusal:
                 # Kept on the card, as words that do not fit are: the deck carries on.
                 record['desk'].setdefault('unfit', {})[job['slide']] = {
