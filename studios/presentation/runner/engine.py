@@ -146,9 +146,10 @@ from runner import slides as slides_tool
 from runner.jobs import (FED, KEPT_SO_FAR, NEXT_NOTE, Gone as _Gone, Halted as _Halted, Jobs,
                          Run as _Run, Slots as _Slots, attempts, first, gate_state,
                          last_error, spent, text_of, tries, sha256_of)
+from runner import desk_actions
 from runner.desk_actions import DeskActions
 from runner.research_steps import FROM_FORM, PLAN, PLAN_MD, REPORT, REVIEW, Researching
-from runner.steps import build, deliver as delivering, existing, intake
+from runner.steps import build, deliver as delivering, existing, intake, words
 from runner.steps import look as looks
 from runner.steps import outline as outlines
 
@@ -1005,8 +1006,10 @@ class Engine(Jobs, Researching, DeskActions):
                 if step is None:
                     return
                 if step.name in BUILT and step.name != 'build-start' and decks.on_desk(record) \
-                        and not build.read_state(root).get('start'):
+                        and not desk.selected(record) and not build.read_state(root).get('start'):
                     return   # no drawing of this desk deck here: drawn only when asked
+                if self._patched_elsewhere(root, record, step.name):
+                    return   # its plan was made on another computer: made here when asked
                 if step.kind == 'gate' and decks.on_desk(record):
                     # A desk deck's stops are met on the desk: those it continues past, and
                     # the look when the start chose to pick it, and the desk itself.
@@ -1052,6 +1055,14 @@ class Engine(Jobs, Researching, DeskActions):
                 self._slots.give_back()
             run.queued = run.busy = False
 
+    @staticmethod
+    def _patched_elsewhere(root: Path, record: dict, step: str) -> bool:
+        """Whether a Selected changes desk deck's plan was made on another computer and not
+        here: its plan and its copy are made here only when asked (desk_draw_here)."""
+        return step in ('patch', 'build-render') and decks.on_desk(record) \
+            and desk.selected(record) and desk._last_try(record, 'patch', kept=True) is not None \
+            and not (root / existing.PATCH).is_file() and not (root / desk_actions.DRAW_HERE).is_file()
+
     def _settle(self, root: Path, record: dict) -> bool:
         """Do again the steps whose work this computer lacks. What a deck is made from
         (sources/) and what its steps make on the way (work/) stay on the computer that
@@ -1083,7 +1094,8 @@ class Engine(Jobs, Researching, DeskActions):
         if gate_state(record, 'gate:look') != 'approved' and did('look-preview') \
                 and not (root / looks.SAMPLE).is_file() and looks.shown_looks(root) is None:
             again.append('look-preview')
-        if did('patch') and (lacks or not (root / existing.PATCH).is_file()):
+        # A desk deck's plan is made here only when asked (desk_draw_here).
+        if did('patch') and not desk_deck and (lacks or not (root / existing.PATCH).is_file()):
             again += ['patch', 'build-render']
         if desk_deck and not build.read_state(root).get('start') and desk.opened(record) \
                 and any(did(name) for name in BUILT):
@@ -1620,8 +1632,26 @@ class Engine(Jobs, Researching, DeskActions):
             skill = self._skill()
         except WorkspaceError:
             skill = None
-        build.render(root, self._load(root), self.slides(), brand=skill,  # work/ only
-                     renderer=how)
+        record = self._load(root)
+        own = decks.on_desk(record) and desk.selected(record)
+        try:
+            build.render(root, record, self.slides(), brand=skill, renderer=how)  # work/ only
+        except WorkspaceError as refusal:
+            # A change the copy of your own deck cannot take is put back, kept on its card,
+            # and the copy made again as it was.
+            if not own or not (root / desk_actions.BEFORE).is_file():
+                raise
+            with self.files:
+                record = self._desk_patch_back(root, self._load(root), [str(refusal)])
+                self._store(root, record)
+                self._commit(root, 'put back the change the copy of your deck could not take')
+            build.render(root, self._load(root), self.slides(), brand=skill, renderer=how)
+        if own:
+            (root / desk_actions.BEFORE).unlink(missing_ok=True)
+            (root / desk_actions.DRAW_HERE).unlink(missing_ok=True)
+            state = build.read_state(root)
+            state['deckSha256'] = sha256_of(root / state['deck'])   # the copy on screen
+            build.write_state(root, state)
         with self.files:
             self._done(root, step, clock, 'render the deck to deliver')
 
@@ -1679,12 +1709,25 @@ class Engine(Jobs, Researching, DeskActions):
 
     def _patch(self, root: Path, run: _Run, step: stages.Step) -> None:
         self._contract(root)
+
+        def keep(record, handed):
+            existing.keep_patch(root, self._text(handed, existing.NAME))
+            if decks.on_desk(record):
+                # A note's plan changes its own slide only, and the words typed on the desk
+                # stay as they were typed.
+                kept = home.read_json(root / desk_actions.BEFORE, None) or {}
+                change = kept.get('change') or {}
+                try:
+                    before = json.loads(kept.get('plan') or '{}').get('operations') or []
+                except (ValueError, AttributeError):
+                    before = []
+                words.with_shared_ops(
+                    root, before, change.get('number') if change.get('kind') == 'note' else None)
+
         self._agent(root, run, step,
                     lambda record, request, error: existing.patch_work(root, record, request,
                                                                        error),
-                    lambda record, handed: existing.keep_patch(
-                        root, self._text(handed, existing.NAME)),
-                    'keep the plan of the changes you asked for')
+                    keep, 'keep the plan of the changes you asked for')
 
     def _draw(self, root: Path, run: _Run, step: stages.Step, how: str) -> None:
         """One try at each section still to draw, side by side. Their previews are still
@@ -2716,7 +2759,8 @@ class Engine(Jobs, Researching, DeskActions):
         if nxt.kind == 'gate' and gate_state(record, nxt.name) == 'waiting':
             return 'waiting', f'{nxt.doing}.'
         if decks.on_desk(record) and nxt.name in BUILT and nxt.name != 'build-start' \
-                and not build.read_state(root).get('start'):
+                and not desk.selected(record) and not build.read_state(root).get('start') \
+                or self._patched_elsewhere(root, record, nxt.name):
             return 'waiting', desk.NO_DRAWING + ' Draw it here to carry on.'
         if run.queued:
             ahead = self._slots.ahead(run) or 0

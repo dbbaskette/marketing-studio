@@ -45,6 +45,9 @@ NOT_FOUND = 'The old words were not found once on the drawn slide.'
 NO_FIELD = 'Choose the title, subtitle, detail, a point, the caveat, the source or the notes.'
 TOO_LONG = 2000   # characters in one field's words
 NOTES_LONG = 4000  # characters in a slide's speaker notes
+SHARED_OPS = Path('desk') / 'patch-ops.json'   # the desk's changes to your own deck, shared
+NO_OBJECT = 'Choose the words of one part of the slide.'
+MANY_RUNS = 'These words are in several parts on the slide: change one part at a time.'
 
 
 def field_of(field):
@@ -273,3 +276,163 @@ def retold(root, whole: dict, knows=frozenset()) -> None:
     home.write_json(folder / 'given' / 'outline.json', whole)
     if (folder / build.TOOL_OUTLINE).is_file():
         home.write_json(folder / build.TOOL_OUTLINE, build.for_tool(whole, knows))
+
+
+# --- Selected changes: the words of your own deck, changed only through its plan ------------
+
+def plan_of(root) -> list[dict]:
+    """The operations of the plan the copy of the deck given is made from: work/patch.json,
+    else the desk's shared copy of the operations made on the desk."""
+    from runner.steps import existing
+    root = Path(root)
+    found = home.read_json(root / existing.PATCH, None)
+    if not isinstance(found, dict):
+        found = home.read_json(root / SHARED_OPS, None)
+    listed = found.get('operations') if isinstance(found, dict) else None
+    return [op for op in listed or () if isinstance(op, dict)]
+
+
+def objects_now(slide: dict, plan: list[dict]) -> list[dict]:
+    """The objects of one slide of the inventory that hold words, each with its runs as the
+    plan makes them: {'id', 'type', 'runs', 'changed'}."""
+    made = []
+    for item in slide.get('objects') or ():
+        runs = item.get('runs') if isinstance(item, dict) else None
+        if not isinstance(runs, list) or not runs:
+            continue
+        was = [str(one) for one in runs]
+        now = _applied(was, _op_on(plan, slide.get('number'), item.get('id')))
+        made.append({'id': str(item.get('id')), 'type': item.get('type'), 'runs': now,
+                     'changed': now != was})
+    return made
+
+
+def _op_on(plan: list[dict], number, object_id) -> dict | None:
+    return next((op for op in plan if op.get('slide') == number
+                 and str(op.get('object')) == str(object_id)), None)
+
+
+def object_field(field) -> tuple[str, int | None]:
+    """A field of a Selected changes deck's card: ['object', object_id, run_index], where
+    run_index is None for an object whose words are one run. Returns (object_id, run_index);
+    refused otherwise."""
+    if isinstance(field, (list, tuple)) and len(field) == 3 and field[0] == 'object' \
+            and isinstance(field[1], str) and field[1] \
+            and (field[2] is None or (type(field[2]) is int and field[2] >= 0)):
+        return field[1], field[2]
+    raise WorkspaceError(NO_OBJECT)
+
+
+def _object_of(inventory: dict, number, object_id) -> dict:
+    slide = next((one for one in inventory.get('slides') or ()
+                  if isinstance(one, dict) and one.get('number') == number), None)
+    if slide is None:
+        raise WorkspaceError(f'The deck has no slide {number}.')
+    found = next((item for item in slide.get('objects') or () if isinstance(item, dict)
+                  and str(item.get('id')) == str(object_id)), None)
+    if found is None or not isinstance(found.get('runs'), list) or not found['runs']:
+        raise WorkspaceError(f'Slide {number} has no such words.')
+    return found
+
+
+def run_text(inventory: dict, plan: list[dict], number, object_id, run_index) -> str:
+    """The words of one run of one object, or of a one-run object, as the plan makes them."""
+    found = _object_of(inventory, number, object_id)
+    runs = _applied([str(one) for one in found['runs']], _op_on(plan, number, object_id))
+    if run_index is None:
+        if len(runs) != 1:
+            raise WorkspaceError(MANY_RUNS)
+        return runs[0]
+    if run_index >= len(runs):
+        raise WorkspaceError(f'Slide {number} has no such words.')
+    return runs[run_index]
+
+
+def plan_op(inventory: dict, number, object_id, run_index, text: str) -> dict:
+    """One operation of the plan for `pptx patch`: one run of one top-level object of slide
+    `number` given new words, {'slide', 'object', 'expectedHash', 'runs': [{'index', 'text'}]},
+    or for an object whose words are one run (`run_index` None), {..., 'text'}. The hash is the
+    object's in the inventory of the deck given, which the plan is always made to. The spaces
+    the run began and ended with are kept, so runs that read as one stay apart."""
+    found = _object_of(inventory, number, object_id)
+    if not isinstance(text, str) or len(text) > TOO_LONG:
+        raise WorkspaceError(f'Keep the words to {TOO_LONG:,} characters.')
+    runs = [str(one) for one in found['runs']]
+    if run_index is None and len(runs) != 1:
+        raise WorkspaceError(MANY_RUNS)
+    if run_index is not None and run_index >= len(runs):
+        raise WorkspaceError(f'Slide {number} has no such words.')
+    was = runs[run_index or 0]
+    lead, tail = was[:len(was) - len(was.lstrip())], was[len(was.rstrip()):]
+    said = text.strip()
+    new = lead + said + tail if said else ''
+    op = {'slide': number, 'object': str(found['id']), 'expectedHash': found.get('contentHash')}
+    if run_index is None:
+        return {**op, 'text': new}
+    return {**op, 'runs': [{'index': run_index, 'text': new}]}
+
+
+def _merged(plan: dict, op: dict) -> dict:
+    """The plan with `op` in it: an earlier operation on the same object is replaced, except
+    that its runs the new one does not change are kept."""
+    operations = [one for one in plan.get('operations') or () if isinstance(one, dict)]
+    earlier = _op_on(operations, op['slide'], op['object'])
+    if earlier is not None and 'runs' in earlier and 'runs' in op:
+        given = {one['index']: one for one in op['runs']}
+        op = {**op, 'runs': sorted([*(one for one in earlier['runs']
+                                      if one.get('index') not in given), *given.values()],
+                                   key=lambda one: one['index'])}
+    kept = [one for one in operations if one is not earlier]
+    return {**plan, 'operations': [*kept, op]}
+
+
+def add_op(root, op: dict) -> dict:
+    """Add one operation to the deck's plan (work/patch.json), replacing any earlier one on the
+    same object, and to the desk's shared copy of what was changed on the desk
+    (desk/patch-ops.json), so another computer can make the plan again. Nothing else in the
+    plan changes. Returns the operation as the plan holds it."""
+    from runner.steps import existing, outline
+    root = Path(root)
+    sha = (outline.inventory_of(root) or {}).get('sha256')
+    for file in (root / existing.PATCH, root / SHARED_OPS):
+        found = home.read_json(file, None)
+        plan = found if isinstance(found, dict) else {'sourceSha256': sha, 'operations': []}
+        plan = _merged({**plan, 'sourceSha256': sha}, op)
+        file.parent.mkdir(parents=True, exist_ok=True)
+        home.write_json(file, plan)
+    return _op_on(plan_of(root), op['slide'], op['object'])
+
+
+def with_shared_ops(root, before: list | None = None, slide=None) -> None:
+    """After a plan job on a desk deck, make the plan it handed back whole again. A plan made
+    for a note on one `slide` changes that slide only: for every other slide the plan before
+    it (`before`, its operations) is kept. Then the words the person typed on the desk are
+    put back over it, run by run, as `add_op` puts them: the plan's changes to the other runs
+    of an object stay, and nothing typed is let go. The shared copy is not changed."""
+    from runner.steps import existing
+    root = Path(root)
+    found = home.read_json(root / existing.PATCH, None)
+    if not isinstance(found, dict):
+        return
+    planned = [one for one in found.get('operations') or () if isinstance(one, dict)]
+    if slide is not None and before is not None:
+        planned = [*(op for op in before if isinstance(op, dict) and op.get('slide') != slide),
+                   *(op for op in planned if op.get('slide') == slide)]
+    plan = {**found, 'operations': planned}
+    shared = home.read_json(root / SHARED_OPS, None)
+    for op in (shared.get('operations') if isinstance(shared, dict) else None) or ():
+        if isinstance(op, dict) and op.get('slide') is not None and op.get('object') is not None:
+            plan = _merged(plan, op)
+    write_atomic(root / existing.PATCH, json.dumps(plan, indent=2, ensure_ascii=False) + '\n')
+
+
+def _applied(runs: list[str], op: dict | None) -> list[str]:
+    """An object's runs with one operation of the plan made to them."""
+    now = list(runs)
+    if op is not None and isinstance(op.get('text'), str):
+        return [op['text']]
+    for edit in (op or {}).get('runs') or ():
+        if isinstance(edit, dict) and type(edit.get('index')) is int \
+                and 0 <= edit['index'] < len(now) and isinstance(edit.get('text'), str):
+            now[edit['index']] = edit['text']
+    return now

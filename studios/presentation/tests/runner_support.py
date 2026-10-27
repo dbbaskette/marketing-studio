@@ -836,6 +836,24 @@ class Workers:
         self._ok(tools.submit_assessment(json.dumps(found), '[]'))
 
 
+def read_word_for_word(case):
+    """An outline job for a case's workers: an existing deck's inventory read word for word,
+    as test_flow_routes reads one; any other outline drafted as the workers draft it."""
+    from test_flow_routes import read_in
+
+    from runner.steps import outline as outlines
+
+    def extract(tools, job):
+        if tools.job['artifacts']['outline'].get('rules'):
+            found = next(Path(case.space.repo).rglob(Path(outlines.INVENTORY).name))
+            said = read_in(json.loads(found.read_text(encoding='utf-8')))
+            case.workers.outline_said = said
+            case.workers._ok(tools.submit_outline(json.dumps(said)))
+        else:
+            case.workers.outline(tools, job)
+    return extract
+
+
 class StudioCase(unittest.TestCase):
     """A person with a data folder and a git identity of their own, a workspace, scripted
     workers, a pretend web and the stand-ins for the slides tool, a brand skill and
@@ -951,18 +969,9 @@ class StudioCase(unittest.TestCase):
         """An existing deck started at `level` under the review level `review`, read word
         for word by the extract worker, as test_flow_routes reads one."""
         from unittest import mock
-        from runner.steps import outline as outlines
-        from test_flow_routes import DECK, read_in
 
-        def extract(tools, job):
-            if tools.job['artifacts']['outline'].get('rules'):
-                found = next(Path(self.space.repo).rglob(Path(outlines.INVENTORY).name))
-                said = read_in(json.loads(found.read_text(encoding='utf-8')))
-                self.workers.outline_said = said
-                self.workers._ok(tools.submit_outline(json.dumps(said)))
-            else:
-                self.workers.outline(tools, job)
-        self.workers.queued['outline'] = [extract] * 4
+        from test_flow_routes import DECK
+        self.workers.queued['outline'] = [read_word_for_word(self)] * 4
         with mock.patch('studio_core.review_policy.capture',
                         return_value={'schema': 1, 'level': review}):
             return self.start(route='existing', level=level, title='Old deck',

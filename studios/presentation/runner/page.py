@@ -93,7 +93,8 @@ What a caller needs to know
     `/api/desk-words` {"path", "number", "field", "text", "seen", "session"?} and
     `/api/desk-notes` {"path", "number", "text", "seen", "session"?} save typed words with no
     composer where they fit (`field` is "title", "subtitle", "detail", "caveat", "source" or
-    ["points", index, "label"|"text"]; `seen` is the view's `desk.seen`);
+    ["points", index, "label"|"text"], and on a Selected changes deck ["object", object ID,
+    run index or null]; `seen` is the view's `desk.seen`);
     `/api/desk-selection` {"path", "number", "field", "start", "end", "action",
     "instruction"?, "seen"} has a words job rewrite a passage (rephrase, shorten, expand, fix
     or ask); `/api/desk-redraw-words` {"path", "number", "field", "text", "expected"} saves

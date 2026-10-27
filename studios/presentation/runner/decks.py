@@ -255,14 +255,16 @@ def _desk_form(sent: dict, checked: dict) -> None:
         return
     if flow not in FLOWS:
         raise WorkspaceError('A deck is started on the desk, or without a flow.')
-    if checked['route'] == 'existing':
-        raise WorkspaceError('An existing deck is started with its own form, not on the desk.')
     look = sent.get('look')
     look = 'pick' if look in (None, '') else look
     if look not in LOOKS:
         raise WorkspaceError(WRONG_LOOK)
-    checked.update(flow=flow, look=look, initial_review='user-first',
-                   initial_review_source='desk')
+    checked.update(flow=flow, look=look)
+    checked.pop('initial_review', None)
+    checked.pop('initial_review_source', None)
+    if checked.get('level') != 'selected':
+        # Selected changes builds nothing: it patches a copy, so there is no deck check.
+        checked.update(initial_review='user-first', initial_review_source='desk')
     reading = sent.get('reading')
     if reading not in (None, ''):
         if checked['route'] != 'document' or reading not in READINGS:

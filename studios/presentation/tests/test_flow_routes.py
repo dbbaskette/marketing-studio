@@ -304,14 +304,16 @@ class DeskRouteTests(RouteCase):
                                         'look': gate['offered']['looks'][0]['id']})
             else:
                 self.assertEqual(gate['name'], 'gate:build', view['sentence'])
-                shown = view['desk']
+                shown = self.at_desk = view['desk']
                 did.append('deliver')
                 self.post('desk-deliver', {'path': path, 'expected': shown['expected'],
                                            **({'blockers_seen': shown['blockers_seen']}
                                               if shown['blockers'] else {})})
         self.fail('The deck never finished')
 
-    def finished(self, path: str, did: list[str]) -> dict:
+    def finished(self, path: str, did: list[str], sheet: bool = True) -> dict:
+        """`sheet` is False for a deck pictured by the slides tool's review of a whole file
+        (Selected changes), as RouteCase.delivered says."""
         root = Path(path)
         record = self.record(root)
         person = self.gitstate.identity(self.space.repo)
@@ -330,7 +332,8 @@ class DeskRouteTests(RouteCase):
         self.assertTrue(delivered['url'].startswith('https://'), delivered)
         relative = root.relative_to(self.space.repo).as_posix()
         tracked = self.git('ls-files', relative).splitlines()
-        self.assertIn(f'{relative}/{build.SHEET}', tracked)
+        if sheet:
+            self.assertIn(f'{relative}/{build.SHEET}', tracked)
         self.assertEqual([name for name in tracked
                           if name.startswith((f'{relative}/sources/', f'{relative}/work/'))], [])
         self.assertEqual(self.git('status', '--porcelain'), '')
@@ -377,6 +380,73 @@ class DeskRouteTests(RouteCase):
         self.assertEqual(did, ['deliver'])
         record = self.finished(path, did)
         self.assertEqual(record['gates']['gate:look']['by'], 'desk')
+
+
+class DeskExistingRouteTests(RouteCase):
+    """An existing deck started from the desk's start, at each of its five levels, through
+    the page's own addresses to its first delivery. The only decisions that are the person's
+    are the look, at Redesign and Full rework where the start chose to pick it, and Deliver.
+    Each card shows the slide as it was in the deck given, at every level whose slides are the
+    deck's own (existing.PAIRED), and the original is never changed."""
+
+    review_level = 'automatic'   # a desk deck never reads it
+
+    def setUp(self):
+        super().setUp()
+        self.brand.run.offers_looks = True
+        self.brand.run.guides = True
+
+    def through(self, level: str, look: str = 'pick', **more) -> dict:
+        from runner.steps import existing
+        path = self.existing(level, flow='desk', look=look, **more)
+        did = DeskRouteTests.to_delivery(self, path)
+        picks = level in ('redesign', 'rework') and look == 'pick'
+        self.assertEqual(did, ['look', 'deliver'] if picks else ['deliver'])
+        record = DeskRouteTests.finished(self, path, did, sheet=level != 'selected')
+        self.assertEqual(record['gates']['gate:classify']['by'], 'desk')
+        cards = [card for part in self.at_desk['sections'] for card in part['slides']]
+        self.assertTrue(cards)
+        for card in cards:
+            if level in existing.PAIRED:
+                self.assertEqual(card['before'], {'kind': 'original', 'ref': card['number']},
+                                 card)
+                self.assertTrue(self.engine.picture(path, 'original', card['number'])
+                                .startswith(b'\x89PNG'))
+            else:
+                self.assertIsNone(card['before'], card)
+        original = Path(path) / 'sources' / 'original.pptx'
+        self.assertEqual(original.read_bytes(), DECK)
+        return record
+
+    def test_brand_only(self):
+        self.through('brand-only')
+
+    def test_polish(self):
+        self.through('polish')
+
+    def test_redesign(self):
+        self.through('redesign')
+
+    def test_rework(self):
+        # The brand's default look, chosen at the start: no pause at all.
+        record = self.through('rework', look='default')
+        self.assertEqual(record['gates']['gate:look']['by'], 'desk')
+        self.assertEqual(record['gates']['gate:outline']['by'], 'desk')
+
+    def test_selected(self):
+        def patch(tools, job):
+            spec = tools.job['artifacts']['patch']
+            key, digest = next((key, digest) for key, digest in spec['objects'].items()
+                               if key.startswith('2:') and key != '2:2')
+            plan = {'sourceSha256': spec['sha256'], 'operations': [
+                {'slide': 2, 'object': key.partition(':')[2], 'expectedHash': digest,
+                 'runs': [{'index': 1, 'text': 'in minutes.'}]}]}
+            self.workers._ok(tools.submit_artifact('patch', json.dumps(plan)))
+
+        self.workers.then('patch', patch)
+        record = self.through('selected', selected='Shorten the words on slide 2')
+        self.assertEqual(len(self.workers.of('patch')), 1)
+        self.assertNotIn('initial_review', record['form'])
 
 
 class BalancedScratchRouteTests(ScratchRouteTests):
