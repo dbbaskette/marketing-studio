@@ -190,6 +190,51 @@ class SharedLookTests(unittest.TestCase):
         self.assertTrue(tags)
         self.assertEqual([tag for tag in tags if missing_classes(tag, (('dialog',),))], [])
 
+    def test_the_desk_draws_from_ui_kit(self):
+        # The desk's parts are drawn by ui-kit/drafting.js, so their styles are the kit's too,
+        # last in it, after the fallbacks, where they sat when Blog Studio's stylesheet drew
+        # them. Blog Studio's stylesheet keeps only Review mode's placements of desk parts.
+        desk = ('.desk-layout', '.desk-column', '.desk-aside', '.desk-part-head', '.desk-text',
+                '.desk-note', '.desk-note-text', '.desk-working', '.desk-working-note',
+                '.desk-problem', '.desk-stale', '.desk-save-state', '.desk-selection',
+                '.desk-versions', '.desk-version', '.desk-compare-area', '.desk-compare',
+                '.desk-plain', '.desk-steps', '.desk-clock', '.desk-finishing', '.desk-finish',
+                '.desk-finish-head', '.desk-finish-title', '.desk-finish-body',
+                '.desk-finish-sheet', '.desk-finish-tools', '.desk-proposal', '.desk-sides',
+                '.desk-side', '.desk-quote', '.desk-edit', '.desk-comments', '.desk-comment',
+                '.diff-add', '.diff-remove')
+        placements = {'.review-checking>.desk-working-note', '.review-fix>.desk-sides',
+                      '.review-quick-list .desk-quote'}
+
+        def named(css):
+            found = {}
+            for listed, block in rules(css):
+                for one in split_top(listed, ','):
+                    one = ' '.join(one.split())
+                    for name in re.findall(r'\.([A-Za-z0-9_-]+)', one):
+                        found.setdefault('.' + name, []).append((one, block))
+            return found
+
+        kit = KIT.read_text()
+        drawn = named(kit)
+        self.assertEqual([name for name in desk if name not in drawn], [], 'ui-kit/style.css')
+        start = kit.index('/* --- the desk (drafting.js)')
+        self.assertGreater(start, kit.index('/* --- fallbacks'))
+        self.assertNotIn('/* ---', kit[start + 1:], 'the desk is the last section of the kit')
+        blog = named(PAGE_STYLES[1].read_text())
+        left = sorted({one for name in desk for one, _ in blog.get(name, [])} - placements)
+        self.assertEqual(left, [], 'blog.css still draws these desk parts')
+        for name in desk:
+            for one, block in blog.get(name, []):
+                with self.subTest(placement=one):
+                    self.assertEqual([p for p in properties(block) if not LAYOUT.fullmatch(p)], [])
+        # The desk parts only Blog Studio has stay in its stylesheet. So does the aside's gap
+        # list, which Blog Studio's own tests read there (test_blog_runner).
+        for name in ('.desk-angles', '.desk-angle', '.desk-angle-picked', '.desk-outline-part',
+                     '.desk-images', '.desk-thumb', '.desk-fold', '.gap-items'):
+            self.assertIn(name, blog)
+            self.assertNotIn(name, drawn)
+
     def test_a_choice_set_straight_in_a_card_fits_it_at_phone_width(self):
         # Training Studio's "Where this training stops" puts its three levels straight in a
         # card; at 390px they spilled 24px past the screen. They now fit as a field's do.
