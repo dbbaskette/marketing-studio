@@ -24,6 +24,15 @@ class DraftingPageTests(unittest.TestCase):
     def test_lazy_on_the_page_kit(self):
         self.group('lazy')
 
+    def test_autosave_on_the_page_kit(self):
+        self.group('autosave')
+
+    def test_history_on_the_page_kit(self):
+        self.group('history')
+
+    def test_selection_on_the_page_kit(self):
+        self.group('selection')
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -1,8 +1,9 @@
 // The writing desk: one page per blog with a card for each part, notes that rewrite a
-// section, selection edits and quiet version history. Built with runner.js's helpers; every
-// text from the draft is set with textContent.
+// section, selection edits and quiet version history. Built with runner.js's helpers and the
+// shared desk kit (ui-kit/drafting.js, bound to Blog Studio as DESK_KIT at the end of this
+// file); every text from the draft is set with textContent.
 'use strict';
-const DESK_SELECTION=[['rephrase','Rephrase'],['shorten','Shorten'],['expand','Expand'],['fix','Fix']];
+const DESK_SELECTION=Drafting.SELECTION;
 const DESK_SOURCES={save:'Before your edit',rewrite:'Before a rewrite','revise-all':'Before a whole-draft revision',selection:'Before a selection edit','first-pass':'Before the first pass',finishing:'Before a finishing change',restore:'Before a restore',draft:'Before the draft was written',chat:'Before an edit in chat',google:'Before Google’s accepted text'};
 const DESK_DOING={'desk-section':'Rewriting','desk-revise-all':'Revising the whole draft','desk-selection':'Editing a passage','desk-first-pass':'Working on the first pass','desk-outline':'Outlining','desk-draft':'Writing the draft','desk-research':'Researching','finish-copyedit':'Copy editing the draft','finish-humanize':'Finding sentences to humanize','finish-facts':'Checking facts against your sources','finish-headline':'Suggesting headlines and openings','finish-feedback':'Reading the draft for feedback','finish-voice':'Rewriting the draft in a voice guide'};
 // A start's steps, as the progress screen names them.
@@ -586,44 +587,18 @@ function sDeskAside(held){
 }
 
 // Saving as you type: one second after the last keystroke, against the revision last seen.
-function sDeskTyped(held,part,text){
-  held.pending[part]={text,timer:held.pending[part]?.timer};
-  if(held.pending[part].timer&&typeof clearTimeout==='function')clearTimeout(held.pending[part].timer);
-  held.pending[part].timer=setTimeout(()=>sDeskSave(held,part),DESK_SAVE_WAIT);
-  if(held.status)held.status.textContent='Saving…';
-}
-async function sDeskSave(held,part){
-  if(!held.pending[part]||held.stale)return;
-  while(held.saving)await held.saving;  // One save at a time, each against the latest revision.
-  const pending=held.pending[part];if(!pending||held.stale)return;
-  const text=pending.text;
-  held.saving=(async()=>{try{
-    const view=await api('desk-save',{id:held.id,seen:held.view.revision,part,text,session:held.session});
-    if(held.pending[part]?.text===text)delete held.pending[part];
-    const before=held.view;held.view=view;held.saved='Saved.';
-    if(held.status&&!held.stale)held.status.textContent='Saved.';
-    sDeskCounts(held);
-    // An image pasted as data is kept beside the text: its card shows the reference instead.
-    if(/data:image\//i.test(text)&&!held.pending[part]&&held.cards?.[part]&&sDeskCurrent(held)){const card=sDeskPart(held,part);held.cards[part].replaceWith(card);held.cards[part]=card;await sDeskImagesLoad(held);}
-    // A job starting or ending, or sections added, removed or moved elsewhere, is drawn.
-    const order=found=>(found?.sections||[]).map(section=>section.id).join(',');
-    if((!!before.working!==!!view.working||order(before)!==order(view))&&sDeskCurrent(held))sDeskRefresh(held,before);
-  }catch(error){
-    if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}
-    else if(held.status)held.status.textContent=error.message+' Your text is kept here.';
-  }finally{held.saving=null;}})();
-  await held.saving;
-  if(held.pending[part]&&held.pending[part].text!==text&&!held.stale)return sDeskSave(held,part);
-}
-async function sDeskFlush(held){if(held.review?.editing?.dirty)await sReviewSave(held);for(const part of Object.keys(held.pending)){if(held.pending[part]?.timer&&typeof clearTimeout==='function')clearTimeout(held.pending[part].timer);await sDeskSave(held,part);}}
-function sDeskCounts(held){for(const card of $('studio-page').querySelectorAll('.desk-part')){const count=(held.view.versions||{})[card.dataset.part]||0,button=card.querySelectorAll('button')[0];if(button&&/^History/.test(button.textContent)){button.textContent=count?'History ('+count+')':'History';button.disabled=!count;}}}
-function sDeskStale(held){
-  if(!held.status)return;held.status.className='desk-save-state decision-notice desk-stale';held.status.replaceChildren(sNode('span','','This draft changed in another window or job. Reload to see the latest; your unsaved text is shown until you do. '),sButton('Reload',async()=>{held.pending={};held.stale=false;held.saved='';await sDesk(held.id);},'filled'));
-}
+function sDeskTyped(held,part,text){return DESK_KIT.typed(held,part,text);}
+function sDeskSave(held,part){return DESK_KIT.save(held,part);}
+// After a save: an image pasted as data is kept beside the text, so its card shows the reference instead.
+async function sDeskSaved(held,part,text){if(/data:image\//i.test(text)&&!held.pending[part]&&held.cards?.[part]&&sDeskCurrent(held)){const card=sDeskPart(held,part);held.cards[part].replaceWith(card);held.cards[part]=card;await sDeskImagesLoad(held);}}
+// Review mode's paragraph editor saves first, then every part typing left waiting.
+function sDeskFlush(held){return DESK_KIT.flush(held);}
+function sDeskCounts(held){return DESK_KIT.counts(held);}
+function sDeskStale(held){return DESK_KIT.stale(held);}
 
 // Leaving the desk, or hiding its tab, shares the edits typing kept on this computer.
 // keepalive lets the request finish while the tab goes away.
-async function sDeskShare(held){if(!held)return;try{await sDeskFlush(held);await fetch('/api/desk-share',{method:'POST',keepalive:true,headers:{'X-Blog-Studio-Token':token,'Content-Type':'application/json'},body:JSON.stringify({id:held.id})});}catch(_){/* Shared with the next change instead. */}}
+function sDeskShare(held){return DESK_KIT.share(held);}
 
 // Notes and selection edits start a job; the desk follows it until it ends.
 async function sDeskJob(held,button,route,data,done){
@@ -647,44 +622,14 @@ function sDeskWatch(held){
 }
 
 // A small bar for the selected passage: Rephrase, Shorten, Expand, Fix and Ask….
-function sDeskSelected(held,part,input){
-  // The selection without the spaces around it, and where it starts in the saved text (the
-  // server keeps a part without its leading spaces), so a repeated word is the one chosen.
-  const value=input.value;let start=input.selectionStart,end=input.selectionEnd;
-  if(typeof start!=='number'||typeof end!=='number')start=end=0;
-  while(start<end&&/\s/.test(value[start]))start++;while(end>start&&/\s/.test(value[end-1]))end--;
-  const text=value.slice(start,end),lead=value.length-value.replace(/^\s+/,'').length;
-  if(!text||held.view.working||!sDeskCan(held)){if(held.bar&&!held.asking)held.bar.hidden=true;return;}
-  held.selection={part,text,start:start-lead};held.asking=false;sDeskBarContent(held);held.bar.hidden=false;
-}
-function sDeskSelectionBar(held){const bar=sNode('div','desk-selection glass');bar.setAttribute('role','toolbar');bar.setAttribute('aria-label','Change the selected text');bar.hidden=true;held.bar=bar;sDeskBarContent(held);return bar;}
-function sDeskBarContent(held){
-  const bar=held.bar;if(!bar)return;
-  const run=(action,instruction='')=>async button=>{const chosen=held.selection;if(!chosen)return;await sDeskJob(held,button,'desk-selection',{part:chosen.part,text:chosen.text,start:chosen.start,action,...(action==='ask'?{instruction}:{})},()=>{held.selection=null;held.asking=false;});};
-  if(held.asking){
-    const box=sNode('input','input');box.type='text';box.maxLength=2000;box.placeholder='What should change?';box.setAttribute('aria-label','What should change in the selected text?');
-    bar.replaceChildren(box,sButton('Go',async button=>{const instruction=box.value.trim();if(!instruction){notice('Say what to do with the passage.',true);return;}await run('ask',instruction)(button);},'filled'),sButton('Cancel',()=>{held.asking=false;bar.hidden=true;}));
-    return;
-  }
-  bar.replaceChildren(...DESK_SELECTION.map(([action,label])=>sButton(label,run(action))),sButton('Ask…',()=>{held.asking=true;sDeskBarContent(held);}));
-}
+function sDeskSelected(held,part,input){return DESK_KIT.selected(held,part,input);}
+function sDeskSelectionBar(held){return DESK_KIT.selectionBar(held);}
+function sDeskBarContent(held){return DESK_KIT.barContent(held);}
 
 // History: each kept version with its words compared to the current text, and Restore.
 // A version from before a first pass divided the draft brings the draft back as it was.
 function deskVersionNote(version){const added=(version.divided||[]).length;return added?'Restoring this also takes out the '+added+(added===1?' section':' sections')+' the first pass added. They can be brought back on the Outline tab.':'';}
-async function sDeskHistory(held,part){
-  await sDeskFlush(held);
-  const found=await api('desk-versions?'+new URLSearchParams({id:held.id,part}));
-  const current=deskTextOf(held.view,part),list=sNode('div','desk-versions'),compare=sNode('div','desk-compare-area');
-  found.versions.forEach((version,index)=>{
-    const row=sAdd(sNode('div','desk-version'),sAdd(sNode('div','row-text'),sNode('h3','row-title',DESK_SOURCES[version.source]||'Earlier text'),sNode('p','quiet',[deskAge(version.at),version.words+(version.words===1?' word':' words')].filter(Boolean).join(' · ')),deskVersionNote(version)?sNode('p','quiet',deskVersionNote(version)):null));
-    const restore=sButton('Restore',async button=>{await busy(button,'Restoring…',async()=>{try{held.view=await api('desk-restore',{id:held.id,seen:held.view.revision,part,index});delete held.pending[part];sCloseSheet();sToast('Restored. The text it replaced is in History.');sDeskRender(held);}catch(error){if(/changed since/.test(error.message)){sCloseSheet();held.stale=true;sDeskStale(held);}else notice(error.message,true);}});});
-    restore.disabled=!sDeskCan(held)||!!held.view.working;
-    row.append(sAdd(sNode('div','bar'),sButton('Compare',()=>{compare.replaceChildren(sNode('h3','sheet-part','This version compared with now'),sNode('p','quiet','Struck words are in this version only; marked words were added since.'),deskCompare(version.text,current));}),restore));
-    list.append(row);
-  });
-  sOpenSheet('History of '+deskPartName(held.view,part),found.versions.length?list:sNode('p','','Nothing kept yet.'),compare);
-}
+function sDeskHistory(held,part){return DESK_KIT.history(held,part);}
 
 // Make a Google Doc: a private Doc of the draft, made once and linked to this blog. The desk
 // then sends its later wording to it as suggestions, from Before publishing.
@@ -1577,7 +1522,7 @@ const DESK_KIT=Drafting.kit({
   canEdit:held=>sDeskCan(held),
   current:held=>sDeskCurrent(held),
   page:()=>$('studio-page'),
-  hooks:{render:held=>sDeskRender(held),refresh:(held,before)=>sDeskRefresh(held,before),reload:held=>{held.pending={};held.stale=false;held.saved='';return sDesk(held.id);},beforeJob:held=>sDeskOutlineFlush(held)},
+  hooks:{render:held=>sDeskRender(held),refresh:(held,before)=>sDeskRefresh(held,before),reload:held=>{held.pending={};held.stale=false;held.saved='';return sDesk(held.id);},beforeJob:held=>sDeskOutlineFlush(held),beforeFlush:held=>held.review?.editing?.dirty?sReviewSave(held):undefined,saved:(held,part,text)=>sDeskSaved(held,part,text),versionNote:version=>deskVersionNote(version),job:(...x)=>sDeskJob(...x)},
   parts:{title:(view,part)=>part==='title'?'Title':part==='opening'?'Opening':deskHeading(((view.sections||[]).find(row=>row.id===part)||{}).heading),textOf:(view,part)=>deskTextOf(view,part),nameOf:(view,part)=>deskPartName(view,part),single:part=>part==='title',noted:(view,part)=>(view.sections||[]).some(row=>row.id===part)},
   words:()=>({thing:'draft',sources:DESK_SOURCES,doing:DESK_DOING,steps:DESK_STEPS,named:['desk-section','desk-selection'],ready:tab=>tab==='outline'?'The outline is ready. Shape it here, then write the draft.':'The draft is ready. Edit it here.'}),
   tools:()=>DESK_TOOLS,

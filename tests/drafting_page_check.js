@@ -168,6 +168,133 @@ const groups = {
     // Building the kit reads nothing of the adapter, so a studio may pass members it defines later.
     Drafting.kit(new Proxy({}, { get() { throw new Error('read'); } }));
   },
+  async autosave() {
+    let answer = data => view({ revision: 4 });
+    const { a, said, page } = studio({ 'piece-save': data => answer(data) });
+    const kit = Drafting.kit(a), held = desk(kit);
+    page.append(held.status);
+    kit.typed(held, 'opening', 'A new lead.');
+    assert.equal(held.status.textContent, 'Saving…');
+    same(waiting(), [1000]);
+    await tick();
+    same(said.requests, [{ route: 'piece-save', data: { id: 'p1', seen: 3, part: 'opening', text: 'A new lead.', session: 'a'.repeat(16) } }]);
+    assert.equal(held.status.textContent, 'Saved.');
+    assert.equal(held.view.revision, 4);
+    assert.equal(held.pending.opening, undefined);
+    same(said.saved, [['opening', 'A new lead.']]);
+    // A second edit while a save is under way is sent after it, against the revision it saw.
+    let release; answer = () => new Promise(done => { release = () => done(view({ revision: 5 })); });
+    said.requests.length = 0;
+    kit.typed(held, 'opening', 'One.'); await tick();
+    kit.typed(held, 'opening', 'Two.'); await tick();
+    assert.equal(said.requests.length, 1);
+    answer = () => view({ revision: 6 });
+    release(); await settle(); await settle();
+    same(said.requests.map(r => [r.data.text, r.data.seen]), [['One.', 4], ['Two.', 5]]);
+    // A refusal because the draft changed elsewhere shows the banner with Reload.
+    answer = () => new Error('This draft changed since you opened it. Reload to see the latest.');
+    kit.typed(held, 'opening', 'Three.'); await tick();
+    assert.equal(held.stale, true);
+    assert.equal(held.status.className, 'desk-save-state decision-notice desk-stale');
+    assert.equal(held.status.children[0].textContent, 'This piece changed in another window or job. Reload to see the latest; your unsaved text is shown until you do. ');
+    await button(held.status, 'Reload').fire('click');
+    assert.equal(said.reloads, 1);
+    // Any other refusal keeps the text and says why.
+    const other = desk(kit); page.append(other.status);
+    answer = () => new Error('The disk is full.');
+    kit.typed(other, 'opening', 'Four.'); await tick();
+    assert.equal(other.status.textContent, 'The disk is full. Your text is kept here.');
+    // Flush sends what waits, after the studio's own step; History counts follow the view.
+    const third = desk(kit); answer = () => view({ revision: 4, versions: { opening: 2 } });
+    kit.typed(third, 'opening', 'Five.'); said.requests.length = 0;
+    const card = Drafting.make('section', 'card desk-part'); card.dataset.part = 'opening';
+    card.append(a.ui.button('History', () => {})); page.append(card);
+    await kit.flush(third);
+    assert.equal(said.flushed, 1);
+    same(said.requests.map(r => r.data.text), ['Five.']);
+    assert.equal(button(card, 'History (2)').disabled, false);
+    // Leaving shares what was typed: flushed first, then the studio's keepalive request.
+    said.requests.length = 0; kit.typed(third, 'title', 'Name.');
+    await kit.share(third);
+    same(said.requests.map(r => r.route), ['piece-save', 'share']);
+    await kit.share(null);
+  },
+  async history() {
+    const versions = [{ source: 'save', at: new Date().toISOString(), words: 3, text: 'one two three' }, { source: 'rewrite', at: '', words: 1, text: 'one', divided: ['x'] }, { source: 'odd', words: 2, text: 'a b' }];
+    let restore = () => view({ revision: 4 });
+    const { a, said } = studio({ 'piece-versions': { versions }, 'piece-restore': data => restore(data) });
+    const kit = Drafting.kit(a), held = desk(kit);
+    await kit.history(held, 'title');
+    same(said.requests[0], { route: 'piece-versions?id=p1&part=title' });
+    const sheet = said.sheets.at(-1);
+    assert.equal(sheet.title, 'History of the name');
+    const rows = sheet.sheet.querySelectorAll('.desk-version');
+    same(rows.map(row => row.querySelector('h3.row-title').textContent), ['Before your edit', 'Before a rewrite', 'Earlier text']);
+    same(rows.map(row => row.querySelectorAll('p.quiet')[0].textContent), ['just now · 3 words', '1 word', '2 words']);
+    assert.equal(rows[1].querySelectorAll('p.quiet')[1].textContent, 'A note on 1');
+    await button(rows[0], 'Compare').fire('click');
+    const area = sheet.sheet.querySelector('.desk-compare-area');
+    assert.equal(area.children[0].textContent, 'This version compared with now');
+    assert.equal(area.children[1].textContent, 'Struck words are in this version only; marked words were added since.');
+    assert.ok(area.querySelector('.desk-compare'));
+    await button(rows[1], 'Restore').fire('click'); await settle();
+    same(said.requests.at(-1), { route: 'piece-restore', data: { id: 'p1', seen: 3, part: 'title', index: 1 } });
+    same(said.toasts, ['Restored. The text it replaced is in History.']);
+    assert.equal(sheet.open, false); assert.equal(said.renders, 1);
+    restore = () => new Error('This draft changed since you opened it. Reload to see the latest.');
+    await kit.history(held, 'title');
+    await button(said.sheets.at(-1).sheet.querySelectorAll('.desk-version')[0], 'Restore').fire('click'); await settle();
+    assert.equal(said.sheets.at(-1).open, false); assert.equal(held.stale, true);
+    assert.equal(held.status.className, 'desk-save-state decision-notice desk-stale');
+    // Nothing kept yet, and Restore off while a job works or when the person may not edit.
+    const { a: b, said: told } = studio({ 'piece-versions': { versions: [] } });
+    const empty = Drafting.kit(b), none = desk(empty);
+    await empty.history(none, 'opening');
+    assert.equal(told.sheets[0].sheet.children[1].textContent, 'Nothing kept yet.');
+    const { a: c, said: locked } = studio({ 'piece-versions': { versions } }); c.editable = false;
+    const read = Drafting.kit(c), only = desk(read);
+    await read.history(only, 'title');
+    assert.equal(button(locked.sheets[0].sheet, 'Restore').disabled, true);
+  },
+  async selection() {
+    const { a, said } = studio({ 'piece-selection': () => view() });
+    const kit = Drafting.kit(a), held = desk(kit);
+    const bar = kit.selectionBar(held);
+    assert.equal(bar.className, 'desk-selection glass');
+    assert.equal(bar.getAttribute('role'), 'toolbar');
+    assert.equal(bar.getAttribute('aria-label'), 'Change the selected text');
+    assert.equal(bar.hidden, true);
+    const input = Drafting.make('textarea', 'input'); input.value = '  one two  '; input.selectionStart = 0; input.selectionEnd = 11;
+    kit.selected(held, 's1', input);
+    same(held.selection, { part: 's1', text: 'one two', start: 0 });
+    assert.equal(bar.hidden, false);
+    same(bar.children.map(n => n.textContent), ['Rephrase', 'Shorten', 'Expand', 'Fix', 'Ask…']);
+    await button(bar, 'Shorten').fire('click');
+    same(said.jobs.at(-1), ['piece-selection', { part: 's1', text: 'one two', start: 0, action: 'shorten' }]);
+    assert.equal(held.selection, null);
+    kit.selected(held, 's1', input);
+    await button(bar, 'Ask…').fire('click');
+    same(bar.children.map(n => n.tagName + ':' + n.textContent), ['input:', 'button:Go', 'button:Cancel']);
+    const box = bar.children[0];
+    assert.equal(box.placeholder, 'What should change?');
+    assert.equal(box.getAttribute('aria-label'), 'What should change in the selected text?');
+    assert.equal(box.maxLength, 2000);
+    await button(bar, 'Go').fire('click');
+    same(said.notices, [['Say what to do with the passage.', true]]);
+    box.value = ' Say it plainly. ';
+    await button(bar, 'Go').fire('click');
+    same(said.jobs.at(-1), ['piece-selection', { part: 's1', text: 'one two', start: 0, action: 'ask', instruction: 'Say it plainly.' }]);
+    kit.selected(held, 's1', input); await button(bar, 'Ask…').fire('click'); await button(bar, 'Cancel').fire('click');
+    assert.equal(bar.hidden, true);
+    // A selection inside a part with leading spaces starts where the saved text does.
+    const later = Drafting.make('textarea', 'input'); later.value = '  one two one'; later.selectionStart = 10; later.selectionEnd = 13;
+    kit.selected(held, 's1', later);
+    same(held.selection, { part: 's1', text: 'one', start: 8 });
+    // Nothing selected, a job under way, or a desk this computer may not change: no bar.
+    later.selectionEnd = 10; kit.selected(held, 's1', later); assert.equal(bar.hidden, true);
+    held.view.working = { id: 'j' }; later.selectionEnd = 13; kit.selected(held, 's1', later); assert.equal(bar.hidden, true);
+    held.view.working = null; a.editable = false; kit.selected(held, 's1', later); assert.equal(bar.hidden, true);
+  },
 };
 
 // A desk's view with two sections, and the screen state a studio keeps for it.
