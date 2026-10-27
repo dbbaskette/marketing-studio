@@ -339,8 +339,8 @@ class SpeakerNotesTests(FinishCase):
         problems = finishing.check_speaker_notes(json.dumps([
             {'slide': LONG_OUTLINE['slides'][1]['id'], 'notes': 'x' * 4001}]),
             {'slides': [LONG_OUTLINE['slides'][1]['id']]})[0]
-        self.assertEqual(problems, [f"Keep the notes of {LONG_OUTLINE['slides'][1]['id']} to "
-                                    '4,000 characters.'])
+        ident = LONG_OUTLINE['slides'][1]['id']
+        self.assertEqual(problems, [f'Keep the notes of {ident} to 4,000 characters.'])
         self.assertIs(worker_tools.validator('speaker-notes'), finishing.check_speaker_notes)
 
     def test_the_job_reads_the_outline_and_the_sources(self):

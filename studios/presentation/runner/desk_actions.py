@@ -1469,10 +1469,10 @@ class DeskActions:
             slides = finishing.notes_slides(outline)
             minutes = (record.get('form') or {}).get('minutes')
             read = self._desk_sources(root)
-            told = [f"Propose speaker notes for every slide of \"{record.get('title') or 'the deck'}"
-                    '": what the speaker says while the slide is shown. Your input "slides" has '
-                    "each slide's ID, its words and its notes now; your input \"outline\" is the "
-                    'whole outline.',
+            title = record.get('title') or 'the deck'
+            told = [(f'Propose speaker notes for every slide of "{title}": what the speaker '
+                     'says while the slide is shown. Your input "slides" has each slide\'s ID, '
+                     'its words and its notes now; your input "outline" is the whole outline.'),
                     (f'The talk is given {minutes} minutes. Notes are said at about '
                      f'{finishing.WPM} words a minute, so share the minutes among the slides.'
                      if minutes else f'Notes are said at about {finishing.WPM} words a minute.')]

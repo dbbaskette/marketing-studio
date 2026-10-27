@@ -7,10 +7,12 @@ Each view the page reads is what the runner's page answers for a real desk deck 
 tests' stand-ins, changed only where a test says so. Nothing starts an agent, looks at the real
 computer or touches the network.
 """
+import base64
 import copy
 import json
 import unittest
 from datetime import UTC, datetime
+from unittest import mock
 
 import runner_support
 import test_desk
@@ -1103,6 +1105,186 @@ class ExistingDeskTests(DeskPageCase):
                 said = result['snapshots']['desk']['text']
                 self.assertIsNone(FORBIDDEN_WORDS.search(said))
                 self.assertNotIn(view['desk']['expected'], said)
+
+
+BLOCKED = {'status': 'BLOCKED', 'warnings': [],
+           'blockers': [{'slide': 3, 'says': 'Text runs off the slide.', 'code': 'OUT_OF_BOUNDS'}]}
+
+
+class FinishingPageTests(DeskPageCase):
+    """Task 4.6: Sources and Research in the desk's aside, and Finishing as a panel."""
+
+    def research_deck(self) -> str:
+        return self.desk_deck(research=True)
+
+    def test_add_a_source_is_an_aside_with_a_file_and_pasted_text(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        self.assertEqual(view['desk']['sources'], [])
+        result = self.open_deck(path, view, [
+            {'snapshot': 'desk'},
+            {'attach': 'A file', 'files': [{'name': 'runbook.md',
+                                            'text': '# Runbook\n\nTwo batches at a time.\n'}]},
+            {'polls': 1},
+            {'click': 'Add the pasted text'}, {'snapshot': 'empty'},
+            {'fill': 'Or paste its text', 'value': 'Health checks gate each batch.'},
+            {'fill': 'Its title', 'value': 'Pasted notes'},
+            {'click': 'Add the pasted text'}],
+            **{'POST /api/desk-source': [ok(view), ok(view)]})
+        shot = result['snapshots']['desk']
+        lines = shot['text'].split('\n')
+        # The aside comes after the slides, under its own heading.
+        self.assertLess(lines.index('Section 2'), lines.index('Sources'))
+        self.assertIn('Add a source', lines)
+        for label in ('A file', 'Or paste its text', 'Its title'):
+            self.assertIn(label, shot['fields'])
+        self.assertIn('No sources yet.', shot['text'])
+        self.assertNotIn('Research again', shot['buttons'], 'a deck with no research')
+        self.assertIn('Paste the text of the source first.', result['snapshots']['empty']['text'])
+        (file_address, sent_file), (text_address, sent_text) = self.posts(result)
+        self.assertEqual((file_address, text_address), ('/api/desk-source', '/api/desk-source'))
+        self.assertEqual((sent_file['path'], sent_file['name']), (path, 'runbook.md'))
+        self.assertEqual(base64.b64decode(sent_file['content']),
+                         b'# Runbook\n\nTwo batches at a time.\n')
+        self.assertEqual(sent_text, {'path': path, 'text': 'Health checks gate each batch.',
+                                     'title': 'Pasted notes'})
+        # What the page sends is what the server takes, and nothing is drawn.
+        jobs = len(self.workers.jobs)
+        self.post('desk-source', sent_file)
+        added = self.post('desk-source', sent_text)
+        self.assertEqual([one['title'] for one in added['desk']['sources']],
+                         ['runbook', 'Pasted notes'])
+        self.assertEqual(len(self.workers.jobs), jobs)
+        shot = self.open_deck(path, added, [{'snapshot': 'listed'}])['snapshots']['listed']
+        self.assertIn('Pasted notes', shot['text'].split('\n'))
+
+    def test_research_again_says_its_price_before_it_posts(self):
+        path = self.research_deck()
+        view = self.run_of(path)
+        desk = view['desk']
+        self.assertTrue(desk['research_price'])
+        first = desk['research_items'][0]
+        result = self.open_deck(path, view, [
+            {'snapshot': 'research'}, {'tick': 'Leave out ' + first['title']},
+            {'click': 'Leave out the ticked findings'}, {'click': 'Research again'}],
+            **{'POST /api/desk-leave-out': [ok(view)],
+               'POST /api/desk-research-again': [ok(view)]})
+        shot = result['snapshots']['research']
+        lines = shot['text'].split('\n')
+        self.assertEqual(lines[lines.index('Research again') + 1], desk['research_price'])
+        self.assertEqual(lines[lines.index('Leave out the ticked findings') + 1],
+                         desk['leave_out_price'])
+        self.assertIn('Leave out the ticked findings', shot['off'], 'nothing is ticked yet')
+        self.assertEqual(self.posts(result), [
+            ('/api/desk-leave-out', {'path': path, 'ids': [first['id']]}),
+            ('/api/desk-research-again', {'path': path, 'expected': desk['expected']})])
+        # What the page sends is what the server takes.
+        again = self.post('desk-research-again', {'path': path, 'expected': desk['expected']})
+        self.assertIsNotNone(again['desk'])
+
+    def test_finishing_opens_as_a_panel_with_four_tools(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'snapshot': 'desk'}, {'click': 'Finishing'}, {'snapshot': 'panel'},
+            {'click': 'Rehearse'}, {'snapshot': 'rehearse'}, {'click': 'All tools'},
+            {'click': 'Close'}, {'snapshot': 'closed'}])
+        shots = result['snapshots']
+        self.assertNotIn('All tools', shots['desk']['buttons'])
+        panel = shots['panel']
+        for tool in ('Brand check', 'Review the deck', 'Speaker notes', 'Rehearse'):
+            self.assertTrue(any(name.startswith(tool) for name in panel['buttons']), tool)
+        self.assertIn('Finishing', panel['headings'])
+        self.assertEqual(panel['filled'], ['Deliver'])
+        self.assertEqual(panel['toolbar'][0]['name'], 'Deliver')
+        self.assertIn(view['desk']['rehearse']['says'], shots['rehearse']['text'])
+        self.assertNotIn('Rehearse', shots['closed']['headings'])
+        self.assertEqual(self.posts(result), [], 'opening a tool that proposes nothing posts '
+                         'nothing')
+
+    def test_apply_on_a_finding_shows_the_redraw_price_first(self):
+        path = self.desk_deck()
+        with mock.patch.object(self.brand, 'audit', return_value=BLOCKED):
+            checked = self.post('desk-finish', {'path': path, 'tool': 'brand', 'again': True})
+        brand = checked['desk']['finishing']['brand']
+        (item,) = brand['items']
+        self.assertTrue(item['price'])
+        result = self.open_deck(path, checked, [
+            {'click': 'Finishing'}, {'click': 'Brand check'}, {'snapshot': 'brand'},
+            {'click': 'Apply'}, {'snapshot': 'priced'}, {'click': 'Redraw slide 3'}],
+            **{'POST /api/desk-apply': [ok(checked)]})
+        shots = result['snapshots']
+        self.assertIn('Text runs off the slide.', shots['brand']['text'])
+        self.assertIn('Blocks delivery', shots['brand']['text'])
+        noted = f"Its note: “{item['after']}”"
+        brand_lines, priced = shots['brand']['text'].split('\n'), shots['priced']['text'].split('\n')
+        self.assertEqual(brand_lines[brand_lines.index(noted) + 1], 'Apply')
+        # Apply says what it redraws first, beside the button that sends it.
+        self.assertEqual(priced[priced.index(noted) + 1:priced.index(noted) + 4],
+                         [item['price'], 'Redraw slide 3', 'Cancel'])
+        self.assertEqual(shots['priced']['posts'], 0, 'nothing is sent before the price')
+        self.assertEqual(self.posts(result), [('/api/desk-apply', {
+            'path': path, 'set': brand['job'], 'ids': [{'id': item['id']}],
+            'seen': checked['desk']['seen']})])
+        # What the page sends is what the server takes: slide 3's section is redrawn.
+        drawn = len(self.workers.of('section'))
+        done = self.post('desk-apply', self.posts(result)[0][1])
+        self.assertEqual(done['finished'], {'applied': 1, 'left': []})
+        self.assertEqual(len(self.workers.of('section')), drawn + 1)
+
+    def test_rehearse_shows_the_long_slides(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        long = copy.deepcopy(view)
+        long['desk']['rehearse'] = {
+            'slides': [{'number': 4, 'minutes': 11}, {'number': 5, 'minutes': 1}],
+            'total': 27, 'long': [4],
+            'says': "Slide 4's notes take about 11 minutes; the deck's notes take about 27 of "
+                    'your 25 minutes.'}
+        result = self.open_deck(path, long, [{'click': 'Finishing'}, {'click': 'Rehearse'},
+                                             {'snapshot': 'rehearse'}])
+        text = result['snapshots']['rehearse']['text']
+        self.assertIn(long['desk']['rehearse']['says'], text)
+        self.assertIn('The slides that run long', text)
+        self.assertIn('Slide 4: about 11 minutes', text)
+        self.assertNotIn('Slide 5: about', text)
+        self.assertEqual(self.posts(result), [])
+
+    def test_speaker_notes_show_the_old_and_new_and_apply_with_no_redraw(self):
+        path = self.desk_deck()
+        proposed = self.post('desk-finish', {'path': path, 'tool': 'notes'})
+        proposed = self.run_of(path)
+        kept = proposed['desk']['finishing']['notes']
+        first = kept['items'][0]
+        result = self.open_deck(path, proposed, [
+            {'click': 'Finishing'}, {'click': 'Speaker notes'}, {'snapshot': 'notes'},
+            {'click': 'Apply'}],
+            **{'POST /api/desk-apply': [ok(proposed)]})
+        shot = result['snapshots']['notes']
+        self.assertIn(proposed['desk']['finish_prices']['notes'], shot['text'])
+        self.assertIn('Before', shot['text'].split('\n'))
+        self.assertIn(first['after'], shot['text'])
+        self.assertEqual(self.posts(result), [('/api/desk-apply', {
+            'path': path, 'set': kept['job'], 'ids': [{'id': first['id']}],
+            'seen': proposed['desk']['seen']})])
+        drawn = len(self.workers.of('section'))
+        self.post('desk-apply', self.posts(result)[0][1])
+        self.assertEqual(len(self.workers.of('section')), drawn)
+
+    def test_no_word_a_person_should_not_read_in_finishing(self):
+        path = self.research_deck()
+        with mock.patch.object(self.brand, 'audit', return_value=BLOCKED):
+            checked = self.post('desk-finish', {'path': path, 'tool': 'brand', 'again': True})
+        result = self.open_deck(path, checked, [
+            {'snapshot': 'aside'}, {'click': 'Finishing'}, {'snapshot': 'tools'},
+            {'click': 'Brand check'}, {'snapshot': 'brand'}, {'click': 'All tools'},
+            {'click': 'Review the deck'}, {'snapshot': 'review'}])
+        for name, shot in result['snapshots'].items():
+            with self.subTest(name):
+                said = shot['text'] + shot['sheet']
+                self.assertIsNone(FORBIDDEN_WORDS.search(said))
+                self.assertNotIn(checked['desk']['expected'][:12], said)
+                self.assertNotIn(checked['desk']['finishing']['brand']['job'][:12], said)
 
 
 if __name__ == '__main__':

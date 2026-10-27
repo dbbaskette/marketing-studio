@@ -7435,7 +7435,7 @@ function deskParts() {
     findingItems, routeWords, nameOf, googleReady, createStep, chooseRoute, paintNew,
     paintAgents, readAgents, readModels, researchFromField, researchSummary, researchFromOf,
     brandFields, brandsFound, agentFields, modelFields, draftModelWords, limitsSays,
-    sourceFields, formOf, missingIn, startDeck, deliveryOf,
+    sourceFields, formOf, missingIn, startDeck, deliveryOf, base64Of,
     words: { OUTPUTS, OUTPUT_SAYS, DELIVERIES, AGENT_NAMES, NOT_CONNECTED, ROUTES, KINDS,
       LEVELS, STEERED },
   };

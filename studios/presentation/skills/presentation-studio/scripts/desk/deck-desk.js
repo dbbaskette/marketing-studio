@@ -61,6 +61,24 @@
     'set aside': 'Not redrawn: you stopped the whole-deck note.',
   };
 
+  // Sources, research and Finishing.
+  const SOURCE_TYPES = '.txt,.md,.html,.htm,.docx,.pdf';
+  const SOURCES_SAY = 'The words jobs and the speaker notes read your sources, and so does the '
+    + 'outline when it is written again. Adding one runs no research: Research again does, '
+    + 'when you ask.';
+  const NO_TEXT = 'Paste the text of the source first.';
+  const FINISH_TOOLS = [
+    ['brand', 'Brand check', 'What the brand’s check says of each slide, what blocks '
+      + 'delivery first. Check it again in seconds.'],
+    ['review', 'Review the deck', 'A reviewer looks at every slide. What it finds comes back '
+      + 'here, slide by slide.'],
+    ['notes', 'Speaker notes', 'Notes proposed for every slide. Applying them redraws nothing.'],
+    ['rehearse', 'Rehearse', 'How long your speaker notes take to say, against your minutes.'],
+  ];
+  const BRAND_SAYS = 'The last render’s brand check, slide by slide, what blocks delivery '
+    + 'first. Apply redraws a slide’s section with the check’s words as its note.';
+  const KIND_TAGS = { blocker: 'Blocks delivery', warning: 'Warning' };
+
   // The page's parts, from app.js, and the shared desk kit's progress words.
   let h = null;
   let kit = null;
@@ -69,7 +87,25 @@
   const held = { notes: {}, deck: {}, previews: {}, looks: {}, outlines: {}, tabs: {},
     // Typed words not saved yet, by deck, slide and field; the words selected now; the
     // History sheet's slide and what it read.
-    edits: {}, selection: null, history: null };
+    edits: {}, selection: null, history: null,
+    // A source being added, the findings ticked to leave out, and Finishing: the panel's
+    // state as the shared kit holds it, the proposal whose price is shown before it is
+    // applied, and the words of a proposal being edited.
+    sources: {}, leave: {}, finish: {}, confirm: {}, editing: {} };
+
+  // The shared kit's Finishing panel, bound to this page: its shell and its list of tools
+  // are the kit's, and each tool's view is the deck's own (`finishView`).
+  const FINISHING = {
+    ui: {
+      button: (label, action) => h.capsule(label, 'quiet', () => action()),
+      pickCard: (title, says, action) => h.pickCard(title, says, false, action,
+        'desk-finish ' + title),
+      narrow: () => false,
+    },
+    hooks: { render: () => h.paintDeck(false) },
+    tools: () => FINISH_TOOLS.map(([key, name, says]) => ({ key, name, says,
+      open: (state) => openTool(state, key), view: () => finishView(key) })),
+  };
   // This page's editing session: the saves made in it keep one version of a slide.
   const SESSION = Array.from({ length: 16 },
     () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
@@ -77,7 +113,7 @@
 
   function init(parts) {
     h = parts;
-    kit = typeof Drafting === 'undefined' ? null : Drafting.kit({});
+    kit = typeof Drafting === 'undefined' ? null : Drafting.kit(FINISHING);
   }
 
   function opens(run) {
@@ -585,9 +621,10 @@
     const own = found.level === 'selected';
     const tab = !own && held.tabs[path] === 'outline' ? 'outline' : 'slides';
     const can = !read && found.drawn_here;
+    const finish = can && !own && kit && finishing();
     h.placeParts({ title, above: above(run), back: true, actions: deskActions(run, lead),
       mark: ['desk', title, run.state, lead, read, run.driver, working, found.drawn_here,
-        Boolean(found.delivered), found.expected, h.view.downloading] }, [
+        Boolean(found.delivered), found.expected, h.view.downloading, finish] }, [
       ...interruptions(run, lead, title),
       pause ? ['look-pause', [run.gate, lead], () => lookPause(run, lead === 'look')] : null,
       working ? ['working', [found.working, read], () => workingPart(run)] : null,
@@ -598,10 +635,13 @@
       found.revision ? ['revision', [found.revision], () => make('p', 'quiet', found.revision)]
         : null,
       ['head', [tab, own], () => headPart(tab, own)],
+      finish ? ['finishing', finishKey(run), () => finishPart(run)] : null,
       can && tab === 'slides' && !found.words_locked ? ['selection-bar', [path],
         () => selectionBar()] : null,
       ...(tab === 'outline' ? outlineParts(run, can, working)
         : slideParts(run, can, working)),
+      !read && tab === 'slides' && !own ? ['aside', asideKey(run), () => asidePart(run)]
+        : null,
     ], fresh);
     h.tidyPictures();
   }
@@ -624,7 +664,12 @@
     }
     const download = found.drawn_here ? h.capsule(h.view.downloading ? 'Downloading…'
       : 'Download', '', () => h.downloadDeck(run, download), 'download') : null;
-    return [deliver, download, moreFor(run)];
+    // Finishing opens as a panel beside the slides: the brand check, the review, speaker
+    // notes and rehearse.
+    const finish = found.drawn_here && kit && found.level !== 'selected'
+      ? h.capsule(finishing() ? 'Close Finishing' : 'Finishing', '', toggleFinishing,
+        'desk-finishing') : null;
+    return [deliver, download, finish, moreFor(run)];
   }
 
   // The redraw under way, said above the desk, with Stop.
@@ -861,6 +906,338 @@
     input.disabled = Boolean(one.busy);
     go.disabled = Boolean(one.busy);
     return [box, bar(go), one.price ? make('p', 'quiet', one.price) : null];
+  }
+
+  // --- the desk's aside: Sources and Research --------------------------------------------------
+  // A source is a file or pasted text, kept with the deck and read by the words jobs, the
+  // speaker notes and the outline when it is written again; adding one runs nothing. The
+  // research's findings may be left out, and the research run again, each at its price,
+  // said before it is asked.
+
+  function asideKey(run) {
+    const found = run.desk;
+    return [found.sources, found.research, found.research_items, found.research_price,
+      found.leave_out_price, Boolean(found.working), found.expected];
+  }
+
+  function asidePart(run) {
+    const node = make('aside', 'desk-aside');
+    node.setAttribute('aria-label', 'Sources and research');
+    return h.add(node, sourcesCard(run), run.desk.research_price ? researchCard(run) : null);
+  }
+
+  function sourcesCard(run) {
+    const path = h.view.path;
+    const kept = held.sources[path] || (held.sources[path] = { text: '', title: '' });
+    const listed = h.list(run.desk.sources);
+    const problem = make('p', 'problem');
+    problem.id = 'desk-source-problem';
+    problem.hidden = true;
+    const go = h.capsule('Add the pasted text', '', async () => {
+      if (!kept.text.trim()) {
+        h.refuse('desk-source-text', NO_TEXT);
+        return;
+      }
+      const done = await act('desk-source', { path, text: kept.text,
+        title: kept.title.trim() || 'Pasted text' }, go, 'The source is added. Research runs '
+        + 'again only when you ask.', problem);
+      if (done) Object.assign(kept, { text: '', title: '' });
+    }, 'desk-source-add');
+    const node = h.card('Sources');
+    return h.add(node, make('p', 'quiet', SOURCES_SAY),
+      listed.length ? h.bullets(listed.map((one) => (one.title || one.name)
+        + (one.readable ? '' : ': ' + (one.problem || 'it has no text that can be read.'))))
+        : make('p', 'quiet', 'No sources yet.'),
+      h.add(make('p'), make('strong', '', 'Add a source')),
+      h.field('desk-source-file', 'A file', {}, 'file', { accept: SOURCE_TYPES,
+        hint: 'Text, Markdown, a web page, a Word document or a PDF, up to 8 MB.',
+        picked: (input) => addFile(input, problem) }),
+      h.field('desk-source-text', 'Or paste its text', kept, 'text', { long: true, rows: 4,
+        limit: 1000000 }),
+      h.field('desk-source-title', 'Its title', kept, 'title', {}),
+      bar(go), problem);
+  }
+
+  async function addFile(input, problem) {
+    const file = Array.from(input.files || [])[0];
+    if (!file) return;
+    if (file.size > 8000000) {
+      h.say(problem, file.name + ' is larger than 8 MB. Add a shorter version of it.');
+      return;
+    }
+    let content;
+    try {
+      content = await h.base64Of(file);
+    } catch (failure) {
+      h.say(problem, file.name + ' could not be read. ' + failure.message);
+      return;
+    }
+    await act('desk-source', { path: h.view.path, name: file.name, content }, null,
+      file.name + ' is added. Research runs again only when you ask.', problem);
+  }
+
+  function researchCard(run) {
+    const found = run.desk;
+    const path = h.view.path;
+    const working = Boolean(found.working);
+    const items = h.list(found.research_items);
+    const before = items.filter((item) => item.left_out).map((item) => item.id);
+    const ticked = held.leave[path] || (held.leave[path] = new Set(before));
+    const same = () => before.length === ticked.size && before.every((id) => ticked.has(id));
+    const node = h.card('Research');
+    const account = found.research;
+    if (account) {
+      h.add(node, make('p', 'quiet', account.read || ''),
+        account.check ? make('p', 'quiet', account.check.said || '') : null);
+    }
+    const list = make('ul', 'plain');
+    for (const item of items) {
+      const tick = StudioLists.tick({ id: 'desk-leave-' + item.id, label: 'Leave out '
+        + (item.title || item.id), on: ticked.has(item.id), flip: (on) => {
+        if (on) ticked.add(item.id);
+        else ticked.delete(item.id);
+        leave.disabled = working || same();
+      } });
+      h.add(list, h.add(make('li'), tick, item.headline ? make('p', '', item.headline) : null,
+        item.unknown ? make('p', 'quiet', 'Not known: ' + item.unknown) : null));
+    }
+    const leave = h.capsule('Leave out the ticked findings', '', () => act('desk-leave-out',
+      { path, ids: [...ticked] }, leave, 'The outline and the look samples are being made '
+      + 'again without them.'), 'desk-leave-out');
+    leave.disabled = working || same();
+    const again = h.capsule('Research again', '', () => act('desk-research-again',
+      { path, expected: found.expected }, again, 'The research runs again with your sources '
+      + 'as they are now.'), 'desk-research-again');
+    again.disabled = working || !found.expected;
+    const gaps = account ? h.list(account.gaps) : [];
+    return h.add(node, items.length ? list : make('p', 'quiet', 'No findings yet.'),
+      gaps.length ? h.add(make('div'), h.add(make('p'), make('strong', '',
+        'What it could not find')), h.bullets(gaps)) : null,
+      bar(leave), make('p', 'quiet', found.leave_out_price || ''),
+      bar(again), make('p', 'quiet', found.research_price || ''));
+  }
+
+  // --- Finishing: the shared kit's panel, with the deck's four tools -----------------------------
+  // Each tool proposes, and nothing changes until Apply. A finding of the brand check or of
+  // the review is applied as a note on its slide, and Apply says what that redraws before it
+  // is sent; speaker notes are applied as typed notes are, with no redraw.
+
+  function finishState(path) {
+    if (held.finish[path]) return held.finish[path];
+    const state = { view: null, finish: null };
+    // The page's own parts place the panel: where the kit would put a new panel in its place
+    // (All tools), the page draws the desk again, and the panel with it.
+    const placed = { replaceWith: () => h.paintDeck(false) };
+    Object.defineProperty(state, 'panel', { get: () => placed, set: () => {} });
+    held.finish[path] = state;
+    return state;
+  }
+
+  function finishing() {
+    return Boolean((held.finish[h.view.path] || {}).finish);
+  }
+
+  function toggleFinishing() {
+    const state = finishState(h.view.path);
+    if (state.finish) kit.finishClose(state);
+    else kit.finishOpen(state);
+  }
+
+  function openTool(state, key) {
+    state.finish.tool = key;
+    h.paintDeck(false);
+    const run = h.view.run;
+    // The brand check's proposals are made from the last render's check as it is opened.
+    if (key === 'brand' && run && run.desk && !run.desk.brand_current && !h.theirs(run)) {
+      act('desk-finish', { path: h.view.path, tool: 'brand' }, null, '');
+    }
+  }
+
+  function finishKey(run) {
+    const found = run.desk;
+    const path = h.view.path;
+    const state = finishState(path);
+    return [state.finish && state.finish.tool, found.finishing, found.brand_check,
+      found.brand_current, found.finish_prices, found.rehearse, found.reviewing,
+      found.reviewed, found.working, found.seen, found.expected, held.confirm[path] || '',
+      Object.keys(held.editing).filter((key) => key.startsWith(path + '\n'))];
+  }
+
+  function finishPart(run) {
+    const state = finishState(h.view.path);
+    state.view = { finishing: run.desk.finishing || {}, working: null };
+    return kit.panel(state);
+  }
+
+  function finishView(key) {
+    const run = h.view.run;
+    const found = run.desk;
+    const path = h.view.path;
+    const set = (found.finishing || {})[key];
+    const working = Boolean(found.working);
+    const parts = [];
+    if (key === 'brand') {
+      const again = h.capsule('Check again', '', () => act('desk-finish', { path, tool: 'brand',
+        again: true }, again, 'Checked again.'), 'desk-check-again');
+      again.disabled = working;
+      parts.push(make('p', 'quiet', BRAND_SAYS), bar(again));
+      if (set && found.brand_current) parts.push(...proposalCards(run, key, set));
+      else parts.push(brandLines(found.brand_check));
+    } else if (key === 'review') {
+      const go = h.capsule('Review the deck', '', () => act('desk-finish', { path,
+        tool: 'review', expected: found.expected }, go, 'The deck is being reviewed. What it '
+        + 'finds comes back here, slide by slide.'), 'desk-review');
+      go.disabled = working || found.reviewing || found.reviewed || !found.expected;
+      parts.push(bar(go), make('p', 'quiet', (found.finish_prices || {}).review || ''));
+      if (found.reviewing) {
+        parts.push(h.add(make('p', 'desk-working-note'), h.state('current',
+          'Reviewing the deck…')));
+      } else if (found.reviewed) {
+        parts.push(make('p', 'quiet', 'The deck was reviewed as it is drawn now.'));
+      }
+      if (set) parts.push(...proposalCards(run, key, set));
+    } else if (key === 'notes') {
+      const go = h.capsule('Propose speaker notes', '', () => act('desk-finish', { path,
+        tool: 'notes' }, go, 'Speaker notes are being proposed for every slide.'), 'desk-notes');
+      go.disabled = working || Boolean(found.notes_locked);
+      parts.push(bar(go), make('p', 'quiet', found.notes_locked
+        || (found.finish_prices || {}).notes || ''));
+      if (set) parts.push(...proposalCards(run, key, set));
+    } else {
+      parts.push(...rehearsed(found.rehearse || {}));
+    }
+    return parts;
+  }
+
+  function brandLines(listed) {
+    const lines = h.list(listed);
+    if (!lines.length) return make('p', '', 'The brand check found nothing on any slide.');
+    return h.bullets(lines.map((one) => (typeof one.number === 'number' ? 'Slide '
+      + one.number + ': ' : '') + one.says + (one.kind === 'blocker' ? ' It blocks delivery.'
+      : '')));
+  }
+
+  function minutesOf(value) {
+    const whole = value > 0 ? Math.max(1, Math.round(value)) : 0;
+    return whole + (whole === 1 ? ' minute' : ' minutes');
+  }
+
+  // How long the speaker notes take to say, counted on the runner, with the slides that run
+  // long named.
+  function rehearsed(said) {
+    const long = h.list(said.long);
+    const minutes = new Map(h.list(said.slides).map((one) => [one.number, one.minutes]));
+    return [make('p', '', said.says || ''),
+      long.length ? h.add(make('div'), make('h3', 'sheet-part', 'The slides that run long'),
+        h.bullets(long.map((number) => 'Slide ' + number + ': about '
+          + minutesOf(minutes.get(number) || 0)))) : null,
+      make('p', 'quiet', 'Counted here, at 150 words a minute. Nothing is sent to an '
+        + 'assistant.')].filter(Boolean);
+  }
+
+  function proposalCards(run, key, set) {
+    const items = h.list(set.items);
+    const open = items.filter((item) => item.state === 'open').length;
+    const out = [make('p', 'quiet', h.count(items.length, 'proposal', 'proposals') + ' · '
+      + open + ' to review.')];
+    if (!items.length) {
+      out.push(make('p', '', key === 'notes' ? 'Every slide’s notes are good as they are.'
+        : key === 'review' ? 'The review found nothing to change.'
+          : 'The brand check found nothing on any slide.'));
+    }
+    for (const item of items) out.push(proposalCard(run, key, set, item));
+    return out;
+  }
+
+  function proposalCard(run, key, set, item) {
+    const path = h.view.path;
+    const found = run.desk;
+    const can = !h.theirs(run);
+    const node = make('section', 'card desk-proposal');
+    node.dataset.item = item.id;
+    const slide = typeof item.number === 'number' ? 'Slide ' + item.number : 'The whole deck';
+    const tag = key === 'brand' ? KIND_TAGS[item.kind] : key === 'review' && item.severity
+      ? h.capital(item.severity) : '';
+    h.add(node, h.add(make('div', 'desk-part-head'), make('h4', 'row-title', slide),
+      tag ? make('span', 'tag', tag) : null));
+    const editKey = path + '\n' + set.job + '\n' + item.id;
+    const editing = held.editing[editKey];
+    if (key === 'notes') {
+      h.add(node, kit.sides(item.before || '', editing !== undefined ? editing : item.after));
+    } else {
+      h.add(node, make('p', '', key === 'brand' ? item.says : item.note),
+        item.fix ? make('p', 'quiet', 'Suggested: ' + item.fix) : null,
+        'after' in item ? make('p', 'quiet', 'Its note: “' + item.after + '”') : null);
+    }
+    if (item.state !== 'open') {
+      return h.add(node, make('p', 'quiet', item.state === 'applied' ? (key === 'notes'
+        ? 'Applied. The earlier notes are in History.'
+        : 'Applied: its slide is redrawn with this note.') : 'Skipped.'));
+    }
+    const skip = h.capsule('Skip', 'quiet', () => act('desk-skip', { path, set: set.job,
+      ids: [item.id] }, skip, 'Skipped. Nothing changed.'), 'desk-skip ' + item.id);
+    skip.disabled = !can;
+    if ('comment' in item) return h.add(node, bar(skip));
+    if (!item.present) {
+      return h.add(node, make('p', 'quiet', key === 'notes' ? 'The notes of this slide changed '
+        + 'since these were proposed, so they no longer fit.' : 'This slide is no longer in the '
+        + 'deck as it is drawn, so this no longer fits.'), bar(skip));
+    }
+    const confirming = held.confirm[path] === set.job + '\n' + item.id;
+    if (confirming) {
+      // What applying it redraws, said before it is sent.
+      const go = h.capsule('Redraw slide ' + item.number, '', () => apply(run, set,
+        { id: item.id }, go, 'Slide ' + item.number + ' is being redrawn with the note. Every '
+        + 'other part of the deck stays exactly as it is.'), 'desk-apply-go ' + item.id);
+      go.disabled = !can || Boolean(found.working);
+      const back = h.capsule('Cancel', 'quiet', () => {
+        delete held.confirm[path];
+        h.paintDeck(false);
+      }, 'desk-apply-cancel ' + item.id);
+      return h.add(node, make('p', '', item.price || 'This redraws its slide’s section.'),
+        bar(go, back));
+    }
+    if (editing !== undefined) {
+      const id = 'desk-edit-' + item.id;
+      const kept = { text: editing };
+      const box = h.field(id, 'Your notes for slide ' + item.number, kept, 'text',
+        { long: true, rows: 4, limit: 4000, typed: () => { held.editing[editKey] = kept.text; } });
+      const use = h.capsule('Apply these notes', '', () => apply(run, set,
+        { id: item.id, after: held.editing[editKey] }, use, 'The notes of slide ' + item.number
+        + ' are saved. Nothing is redrawn.'), 'desk-apply-own ' + item.id);
+      use.disabled = !can;
+      const back = h.capsule('Cancel', 'quiet', () => {
+        delete held.editing[editKey];
+        h.paintDeck(false);
+      }, 'desk-edit-cancel ' + item.id);
+      return h.add(node, box, bar(use, back));
+    }
+    const applyNow = h.capsule('Apply', '', () => {
+      if (key === 'notes') {
+        apply(run, set, { id: item.id }, applyNow, 'The notes of slide ' + item.number
+          + ' are saved. Nothing is redrawn.');
+        return;
+      }
+      held.confirm[path] = set.job + '\n' + item.id;
+      h.paintDeck(false);
+    }, 'desk-apply ' + item.id);
+    applyNow.disabled = !can || (key !== 'notes' && Boolean(found.working));
+    const edit = key === 'notes' ? h.capsule('Edit', 'quiet', () => {
+      held.editing[editKey] = item.after;
+      h.paintDeck(false);
+    }, 'desk-edit ' + item.id) : null;
+    if (edit) edit.disabled = !can;
+    return h.add(node, bar(applyNow, edit, skip));
+  }
+
+  async function apply(run, set, entry, pressed, done) {
+    const path = h.view.path;
+    const found = await act('desk-apply', { path, set: set.job, ids: [entry],
+      seen: run.desk.seen }, pressed, done);
+    if (!found) return;
+    delete held.confirm[path];
+    delete held.editing[path + '\n' + set.job + '\n' + entry.id];
+    h.paintDeck(false);
   }
 
   // --- a slide's words on its card --------------------------------------------------------

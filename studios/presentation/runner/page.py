@@ -101,7 +101,16 @@ What a caller needs to know
     words that did not fit and redraws the slide's section; `/api/desk-discard` {"path",
     "number"} lets them go; and `/api/desk-restore` {"path", "slide", "index", "seen"} brings a
     kept version back. `GET /api/desk-versions?path=&slide=` answers {"versions"}, newest
-    first.
+    first. Sources, research and Finishing: `/api/desk-source` {"path", "name", "content"}
+    adds a file (`content` in base64; it alone may carry up to SOURCE_LIMIT bytes, and only
+    with the key) or {"path", "text", "title"} pasted text, and starts nothing;
+    `/api/desk-research-again` {"path", "expected"} researches again with the sources as
+    they are; `/api/desk-leave-out` {"path", "ids"} leaves those findings out;
+    `/api/desk-finish` {"path", "tool", "expected"?, "again"?} runs one of Finishing's tools
+    (brand, review, notes or rehearse; `again` checks the brand again); and
+    `/api/desk-apply` {"path", "set", "ids", "seen"} and `/api/desk-skip` {"path", "set",
+    "ids"} apply or skip proposals of one set, by their IDs (or {"id", "after"} with the
+    person's own words). Both answer the view with `finished`, what was done.
     `/api/desk-outline-price` (GET ?path=, or POST {"path", "slides"} with the unsaved
     slides) answers {"says", "sections"}: what saving them redraws. `expected` is the view's
     `desk.expected` (the deck on screen) or `desk.outline.expected` (the outline read). A
@@ -161,9 +170,16 @@ DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
         '/api/desk-redraw-words': ('desk_redraw_words', ('number', 'field', 'text',
                                                          'expected')),
         '/api/desk-discard': ('desk_discard', ('number',)),
-        '/api/desk-restore': ('desk_restore', ('slide', 'index', 'seen', 'stamp?'))}
+        '/api/desk-restore': ('desk_restore', ('slide', 'index', 'seen', 'stamp?')),
+        '/api/desk-research-again': ('desk_research_again', ('expected',)),
+        '/api/desk-leave-out': ('desk_leave_out', ('ids',)),
+        '/api/desk-finish': ('desk_finish', ('tool', 'expected?', 'again?')),
+        '/api/desk-apply': ('desk_apply', ('set', 'ids', 'seen')),
+        '/api/desk-skip': ('desk_skip', ('set', 'ids'))}
+SOURCE = '/api/desk-source'   # a source added on the desk: a file in base64, or pasted text
+SOURCE_LIMIT = 12_000_000     # bytes: a document of up to 8 MB, in base64, with its name
 # What a desk change takes as it is sent, not as text.
-RAW = ('slides', 'field')
+RAW = ('slides', 'field', 'ids', 'again')
 WHOLE = ('seen', 'start', 'end', 'index')   # whole numbers, from zero
 WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
@@ -171,7 +187,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/deci
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
           '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
           '/api/note', '/api/review-level', '/api/research-site', '/api/picture',
-          '/api/picture-remove', '/api/desk-outline-price', *DESK)
+          '/api/picture-remove', '/api/desk-outline-price', SOURCE, *DESK)
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
 DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
@@ -360,12 +376,13 @@ class RunnerPage(server.Page):
         """A deck's form may carry its uploads whole, to its own address, from whoever holds
         the key. Anyone else's request there is held to the usual limit, so it is refused
         unread."""
-        if target.partition('?')[0] in (DECKS, PICTURE):
+        address = target.partition('?')[0]
+        if address in (DECKS, PICTURE, SOURCE):
             try:
                 self.check_token(headers)
             except server.Refusal:
                 return super().body_limit(target, headers)
-            return DECKS_LIMIT if target.partition('?')[0] == DECKS else PICTURE_LIMIT
+            return {DECKS: DECKS_LIMIT, PICTURE: PICTURE_LIMIT, SOURCE: SOURCE_LIMIT}[address]
         return super().body_limit(target, headers)
 
     # --- changes -------------------------------------------------------------------------
@@ -411,6 +428,8 @@ class RunnerPage(server.Page):
             return server.as_json(HTTPStatus.OK, self.answered(sent))
         if path in DESK:
             return server.as_json(HTTPStatus.OK, self.desk_change(path, sent))
+        if path == SOURCE:
+            return server.as_json(HTTPStatus.OK, self.source_given(sent))
         if path == '/api/desk-outline-price':
             deck = self.deck(server.text(sent, 'path'))
             return server.as_json(HTTPStatus.OK, self.desk(
@@ -521,6 +540,30 @@ class RunnerPage(server.Page):
             server.text(sent, 'alt', needed=False) or '',
             server.text(sent, 'source', needed=False) or '',
             server.text(sent, 'expected', needed=False))
+
+    def source_given(self, sent: dict) -> dict:
+        """A source the person adds on the desk: {"path", "name", "content"} with the file in
+        base64, or {"path", "text", "title"} with text they pasted."""
+        deck = self.deck(server.text(sent, 'path'))
+        if sent.get('content') is None:
+            text = sent.get('text')
+            if not isinstance(text, str) or len(text) > SOURCE_LIMIT:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Paste the text of the source, or '
+                                     'choose its file.')
+            title = server.text(sent, 'title', needed=False)
+            return self.desk(lambda: self.engine.desk_source(deck, None, text=text,
+                                                             title=title))
+        data = sent.get('content')
+        try:
+            if not isinstance(data, str) or not data:
+                raise ValueError
+            given = base64.b64decode(data, validate=True)
+        except (binascii.Error, ValueError):
+            raise server.Refusal(HTTPStatus.BAD_REQUEST, 'The file did not arrive whole. '
+                                 'Choose it again.')
+        return self.desk(lambda: self.engine.desk_source(
+            deck, server.text(sent, 'name'), given, title=server.text(sent, 'title',
+                                                                       needed=False)))
 
     def act(self, sent: dict) -> dict:
         path, action = server.text(sent, 'path'), server.text(sent, 'action')
