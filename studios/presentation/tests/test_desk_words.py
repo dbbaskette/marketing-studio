@@ -742,6 +742,35 @@ class SelectedTests(DeskCase):
         (op,) = self.plan(root)
         self.assertEqual(op['runs'], [{'index': 1, 'text': 'in minutes (fresh).'}])
 
+    def test_stop_keeps_the_plan_made_before_the_note(self):
+        import threading
+        import time
+        root = self.deck()
+        stopped = []
+
+        def stopping(tools, job):
+            thread = threading.Thread(target=lambda: stopped.append(self.engine.desk_stop(root)))
+            thread.start()
+            for _ in range(300):
+                if (self.engine._load(root).get('halted') or {}).get('state') == 'stopped':
+                    break
+                time.sleep(0.05)
+            stopped.append(thread)
+
+        self.workers.then('patch', stopping)
+        jobs = len(self.workers.of('patch'))
+        self.engine.desk_note(root, 1, 'Make the subtitle a question.',
+                              self.desk_view(root)['expected'])
+        stopped[0].join(30)
+        self.on_desk(root)
+        self.assertEqual(len(self.workers.of('patch')), jobs + 1)
+        self.assertEqual(self.shown(root, 2, '3'), ['Ship apps ', 'in minutes.'])
+        card = next(card for card in self.desk_view(root)['sections'][0]['slides']
+                    if card['number'] == 1)
+        self.assertEqual((card['note']['status'], card['note']['says']),
+                         ('set aside', desk.PATCH_NOTE_SAYS['set aside']))
+        self.assertTrue(self.desk_view(root)['deliverable'])
+
     def test_speaker_notes_are_refused_on_your_own_deck(self):
         root = self.deck()
         with self.assertRaises(WorkspaceError) as caught:

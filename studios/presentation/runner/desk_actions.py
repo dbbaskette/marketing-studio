@@ -160,7 +160,10 @@ class DeskActions:
                 if record.get('revisions') and decks.delivered(root) is None else None,
                 'deck_price': desk.deck_price(self._last_build(record)),
                 'blockers': desk.blockers(state), 'blockers_seen': desk.blockers_seen(state),
-                'reviewed': desk.reviewed(state)}
+                'reviewed': desk.reviewed(state),
+                # Your own deck: its words kept exactly, or its speaker notes kept as they are.
+                'level': desk.level(record), 'words_locked': desk.words_locked(record),
+                'notes_locked': desk.OWN_NOTES if desk.selected(record) else None}
 
     def _desk_held(self, path):
         """The deck, held for a change on the desk: refused when this computer may not
@@ -247,7 +250,8 @@ class DeskActions:
             raise WorkspaceError(desk.PATCH_BUSY)
         said = f'Slide {number}: {note}'
         record.setdefault('desk_notes', []).append(
-            desk.note_of(None, number, None, note, home.now(), by, status='drawing'))
+            desk.note_of(f'slide-{number}', number, None, note, home.now(), by,
+                         status='drawing'))
         named = record.setdefault('desk_patch_slides', [])
         if number not in named:
             named.append(number)
@@ -333,8 +337,13 @@ class DeskActions:
                     whole = whole or not item.get('slide')
             record['halted'] = None
             record['desk'].pop('chain', None)
+            what = 'stop the whole-deck note' if whole else 'stop the redraw'
+            if desk.selected(record):
+                # The plan made before the note is kept: the copy is made again from it.
+                self._desk_repatch(root, record)
+                what = 'stop the change to your deck'
             self._store(root, record)
-            self._commit(root, 'stop the whole-deck note' if whole else 'stop the redraw')
+            self._commit(root, what)
         run.stop.clear()
         self._desk_shared()
         self.wake(root)
@@ -423,6 +432,19 @@ class DeskActions:
         self.wake(root)
         return self.view(root)
 
+    def _desk_repatch(self, root, record: dict) -> None:
+        """Keep a Selected changes deck's plan as it is, and have the copy made again from it,
+        pictured and checked, with no plan job: gate:build waits again once it is."""
+        from runner.steps import existing
+        steps = record.setdefault('steps', {})
+        steps['patch'] = {**(steps.get('patch') or {}),
+                          'done': (Path(root) / existing.PATCH).is_file()}
+        steps['build-render'] = {**(steps.get('build-render') or {}), 'done': False}
+        self._fresh(record, 'build-render')
+        gate = record['gates'].get('gate:build') or {}
+        record['gates']['gate:build'] = {**gate, 'state': 'absent', 'by': 'desk', 'note': None,
+                                         'slides': None, 'at': home.now()}
+
     def _desk_patch(self, root, record: dict, number, found: dict, text: str, space,
                     source: str = 'save') -> tuple:
         """One run of one object of a Selected changes deck given new words: one operation
@@ -443,14 +465,7 @@ class DeskActions:
         desk.advance(record, found['slide'])
         versions = record.setdefault('build_feedback_revisions', {})
         versions[f"slide:{found['slide']}"] = versions.get(f"slide:{found['slide']}", 0) + 1
-        # The plan is kept: only the copy is made again from it.
-        steps = record.setdefault('steps', {})
-        steps['patch'] = {**(steps.get('patch') or {}), 'done': True}
-        steps['build-render'] = {**(steps.get('build-render') or {}), 'done': False}
-        self._fresh(record, 'build-render')
-        gate = record['gates'].get('gate:build') or {}
-        record['gates']['gate:build'] = {**gate, 'state': 'absent', 'by': 'desk', 'note': None,
-                                         'slides': None, 'at': home.now()}
+        self._desk_repatch(root, record)
         said = 'from a selection' if source == 'selection' else 'on the desk'
         return record, f'change the words of slide {number} of your deck {said}', also
 

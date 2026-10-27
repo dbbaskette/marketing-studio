@@ -979,5 +979,114 @@ class WordsTests(DeskPageCase):
                 self.assertNotIn('abcdef1234567890', said)
 
 
+STRICT_WORDS = ("This deck keeps your own deck's words exactly. Change them in your deck, or "
+                'start again at Redesign, keep content.')
+OWN_NOTES = ('Speaker notes in your own deck are kept as they are. Selected changes changes '
+             'only the text on the slides.')
+
+
+class ExistingDeskTests(DeskPageCase):
+    """Task 3.4: an existing deck on the desk. Its cards show each slide as it was in your
+    deck beside the slide now; at Brand only and Polish the words are read, not edited, with
+    the reason; at Selected changes the words of each part of your own slide are the boxes,
+    and there is no speaker notes box."""
+
+    def existing(self, level: str, **more) -> tuple[str, dict]:
+        self.workers.queued['outline'] = [runner_support.read_word_for_word(self)]
+        if level == 'selected':
+            self.workers.then('patch', plan_on(2))
+            more.setdefault('selected', 'Shorten the words on slide 2')
+        path = self.started(route='existing', level=level, title='Old deck', flow='desk',
+                            look='default', source={'kind': 'upload', 'name': 'old.pptx'},
+                            uploads={'old.pptx': test_desk.DECK}, **more)
+        view = self.run_of(path)
+        self.assertEqual(view['gate']['name'], 'gate:build', view['sentence'])
+        return path, view
+
+    def test_an_existing_deck_s_cards_show_before_and_after(self):
+        path, view = self.existing('polish')
+        card = next(card for card in cards_of(view['desk']) if card['number'] == 2)
+        self.assertEqual(card['before'], {'kind': 'original', 'ref': 2})
+        result = self.open_deck(path, view, [
+            {'snapshot': 'desk'}, {'see': 'Slide 2 as it was in your deck'},
+            {'see': 'Slide 2'}, {'snapshot': 'seen'}])
+        shot = result['snapshots']['desk']
+        lines = shot['text'].split('\n')
+        self.assertIn('Before', lines)
+        self.assertIn('After', lines)
+        self.assertIn('Slide 2 as it was in your deck. ', shot['text'])
+        kinds = sorted(picture['of'].split('kind=')[1].split('&')[0]
+                       for picture in result['snapshots']['seen']['pictures'])
+        self.assertIn('original', kinds)
+        self.assertIn('build', kinds)
+        # Before comes first, then the slide now.
+        text = shot['text']
+        self.assertLess(text.index('Before'), text.index('After'))
+
+    def test_brand_only_cards_show_words_read_only_with_the_reason(self):
+        path, view = self.existing('brand-only')
+        self.assertEqual(view['desk']['words_locked'], STRICT_WORDS)
+        result = self.open_deck(path, view, [
+            {'snapshot': 'desk'},
+            {'fill': 'Speaker notes for slide 2', 'value': 'Two minutes.'}, {'timer': 'flush'}],
+            **{'POST /api/desk-notes': [ok(view)]})
+        shot = result['snapshots']['desk']
+        self.assertIn(STRICT_WORDS, shot['text'])
+        boxes = list(shot['fields'])
+        self.assertFalse([label for label in boxes if label.startswith(('Title', 'Point',
+                                                                        'Subtitle'))], boxes)
+        self.assertIn('Speaker notes for slide 2', boxes)
+        card = next(card for card in cards_of(view['desk']) if card['number'] == 2)
+        self.assertIn(card['words']['title'], shot['text'])
+        self.assertEqual([address for address, _ in self.posts(result)], ['/api/desk-notes'])
+        # A note on the slide still redraws it.
+        self.assertIn('Redraw slide 2', shot['buttons'])
+
+    def test_selected_changes_hide_the_notes_box_with_the_reason(self):
+        path, view = self.existing('selected')
+        self.assertEqual(view['desk']['notes_locked'], OWN_NOTES)
+        card = next(card for card in cards_of(view['desk']) if card['number'] == 2)
+        self.assertEqual(card['objects'][1]['runs'], ['Ship apps ', 'in minutes.'])
+        result = self.open_deck(path, view, [
+            {'snapshot': 'desk'},
+            {'fill': 'Text box 2, part 1 of slide 2', 'value': 'Ship fast'},
+            {'timer': 'flush'}], **{'POST /api/desk-words': [ok(view)]})
+        shot = result['snapshots']['desk']
+        self.assertIn(OWN_NOTES, shot['text'])
+        self.assertFalse([label for label in shot['fields'] if 'Speaker notes' in label])
+        self.assertEqual(shot['fields']['Text box 2, part 2 of slide 2'], 'in minutes.')
+        first = next(card for card in cards_of(view['desk']) if card['number'] == 1)
+        self.assertEqual(shot['fields']['Text box 1 of slide 1'],
+                         first['objects'][0]['runs'][0])
+        # Your own deck has no sections and no whole-deck note; its slides take a note.
+        self.assertFalse([heading for heading in shot['headings']
+                          if heading.startswith('Section')])
+        self.assertNotIn('Redraw every section', shot['buttons'])
+        self.assertNotIn('History of slide 2', shot['buttons'])
+        # A note plans the slide's changes again: nothing of your own deck is redrawn.
+        self.assertIn('Change slide 2', shot['buttons'])
+        self.assertFalse([name for name in shot['buttons'] if name.startswith('Redraw')])
+        self.assertNotIn('Outline', shot['buttons'])
+        self.assertIn('Before', shot['text'].split('\n'))
+        (address, body), = self.posts(result)
+        self.assertEqual(address, '/api/desk-words')
+        self.assertEqual((body['number'], body['field'], body['text']),
+                         (2, ['object', '3', 0], 'Ship fast'))
+        # What the page sends is what the server takes.
+        after = self.post('desk-words', body)
+        self.assertEqual(next(card for card in cards_of(after['desk'])
+                              if card['number'] == 2)['objects'][1]['runs'],
+                         ['Ship fast ', 'in minutes.'])
+
+    def test_no_word_a_person_should_not_read_on_an_existing_deck(self):
+        for level in ('brand-only', 'selected'):
+            path, view = self.existing(level)
+            result = self.open_deck(path, view, [{'snapshot': 'desk'}])
+            with self.subTest(level):
+                said = result['snapshots']['desk']['text']
+                self.assertIsNone(FORBIDDEN_WORDS.search(said))
+                self.assertNotIn(view['desk']['expected'], said)
+
+
 if __name__ == '__main__':
     unittest.main()

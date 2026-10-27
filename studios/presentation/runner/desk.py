@@ -905,12 +905,27 @@ def _selected_cards(root, run: dict, state: dict) -> dict:
             'objects': words.objects_now(slide, plan),
             'notes': '', 'findings': [],
             'audit': audit_lines(state, number) if number in after else [],
-            'note': _note_shown(noted),
+            'note': _patch_note_shown(noted),
             'busy': bool(noted and noted.get('status') in OPEN),
             'unfit': None, 'price': priced})
     drawn = bool(state.get('deck')) and (root / state['deck']).is_file()
     return {'sections': [{'id': None, 'lead': False, 'number': None, 'slides': slides}],
             'expected': on_screen(root, run, state) if drawn else None, 'drawn_here': drawn}
+
+
+PATCH_NOTE_SAYS = {'drawing': 'Planning the changes to this slide again, with your note…',
+                   'done': 'Changed on the copy with your note: “{note}”',
+                   'set aside': 'Not changed: you stopped the change.'}
+
+
+def _patch_note_shown(item: dict | None) -> dict | None:
+    """A note on a slide of your own deck, as its card says it: it is planned and made on the
+    copy, never redrawn."""
+    shown = _note_shown(item)
+    if shown is None:
+        return None
+    said = PATCH_NOTE_SAYS.get(item.get('status'))
+    return {**shown, **({'says': said.format(note=item.get('note'))} if said else {})}
 
 
 def _note_shown(item: dict | None) -> dict | None:

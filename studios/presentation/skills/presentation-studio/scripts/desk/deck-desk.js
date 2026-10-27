@@ -34,6 +34,8 @@
   const LOOK_PAUSE = 'One thing needs you: pick the look. The deck is drawn in it.';
   const DESK_LEDE = 'A card for each slide. A note on a slide redraws only its section; '
     + 'Deliver sends the deck.';
+  const OWN_LEDE = 'A card for each slide of your deck. Change its words here, or note a slide '
+    + 'to plan its changes again: only a copy is changed, and Deliver sends it.';
   // A slide's words, each a box on its card, in the order the slide reads: the field the
   // runner names it by, and what its box is called.
   const WORD_FIELDS = [['title', 'Title'], ['subtitle', 'Subtitle'], ['detail', 'Detail'],
@@ -580,7 +582,8 @@
       : run.problem && run.problem.action ? 'problem' : pause ? 'look'
         : found.delivered || found.deliverable === false ? '' : 'deliver';
     h.view.lead = lead;
-    const tab = held.tabs[path] === 'outline' ? 'outline' : 'slides';
+    const own = found.level === 'selected';
+    const tab = !own && held.tabs[path] === 'outline' ? 'outline' : 'slides';
     const can = !read && found.drawn_here;
     h.placeParts({ title, above: above(run), back: true, actions: deskActions(run, lead),
       mark: ['desk', title, run.state, lead, read, run.driver, working, found.drawn_here,
@@ -594,8 +597,9 @@
         : null,
       found.revision ? ['revision', [found.revision], () => make('p', 'quiet', found.revision)]
         : null,
-      ['head', [tab], () => headPart(tab)],
-      can && tab === 'slides' ? ['selection-bar', [path], () => selectionBar()] : null,
+      ['head', [tab, own], () => headPart(tab, own)],
+      can && tab === 'slides' && !found.words_locked ? ['selection-bar', [path],
+        () => selectionBar()] : null,
       ...(tab === 'outline' ? outlineParts(run, can, working)
         : slideParts(run, can, working)),
     ], fresh);
@@ -658,8 +662,10 @@
     return node;
   }
 
-  // The one sentence of the desk, and its two tabs.
-  function headPart(tab) {
+  // The one sentence of the desk, and its two tabs. Your own deck at Selected changes has no
+  // outline: its slides are the deck's.
+  function headPart(tab, own) {
+    if (own) return h.pageHead(OWN_LEDE, []);
     const tabs = h.segmented('The desk', ['Slides', 'Outline'], tab === 'outline' ? 1 : 0,
       (index) => {
         held.tabs[h.view.path] = index ? 'outline' : 'slides';
@@ -673,8 +679,9 @@
 
   function slideParts(run, can, working) {
     const found = run.desk;
+    // Selected changes changes only the slides you name: there is no whole-deck note.
     return [
-      can ? ['whole', [found.expected, found.deck_price, working],
+      can && found.level !== 'selected' ? ['whole', [found.expected, found.deck_price, working],
         () => wholePart(run, working)] : null,
       ...h.list(found.sections).map((part, index) => ['section ' + index,
         [part, found.expected, can, working], () => sectionPart(run, part, can)]),
@@ -704,7 +711,7 @@
 
   function sectionPart(run, part, can) {
     const node = make('section', 'deck-desk-section');
-    if (!part.lead) {
+    if (!part.lead && part.number) {
       const heading = make('h2', 'deck-desk-section-title', 'Section ' + part.number);
       heading.id = 'desk-section-' + part.number;
       node.setAttribute('aria-labelledby', heading.id);
@@ -717,33 +724,76 @@
   function slideCard(run, one, can) {
     const kind = one.lead && one.kind ? ' · ' + h.capital(h.spoken(one.kind)) : '';
     const words = one.words || {};
+    const found = run.desk;
+    // A slide of your own deck at Selected changes: its words are those of each part of it.
+    const own = Array.isArray(one.objects);
     const node = make('section', 'card shine deck-desk-slide' + (one.busy ? ' desk-working'
       : ''));
     const editing = can && !h.theirs(run);
-    const history = editing ? h.capsule('History', 'quiet', () => openHistory(run, one),
+    const history = editing && !own ? h.capsule('History', 'quiet', () => openHistory(run, one),
       'desk-history ' + one.number) : null;
     if (history) history.setAttribute('aria-label', 'History of slide ' + one.number);
     const saved = make('p', 'quiet desk-save-state');
     saved.id = 'desk-saved-' + one.number;
     saved.setAttribute('role', 'status');
-    h.add(node, make('h3', 'card-title', 'Slide ' + one.number + kind),
-      h.add(make('div', 'deck-desk-picture'), one.image ? h.picture(one.image,
-        h.slideName({ number: one.number, title: words.title }), run.desk.expected)
-        : make('p', 'quiet', 'There is no picture of this slide on this computer yet.')),
-      editing ? wordBoxes(one) : wordsPart(words),
-      editing ? notesBox(one)
-        : one.notes ? h.add(make('p', 'quiet'), make('strong', '', 'Speaker notes: '), one.notes)
-          : null,
+    // At Brand only and Polish the slide keeps your own deck's words: they are read here.
+    const locked = !own && found.words_locked;
+    h.add(node, make('h3', 'card-title', 'Slide ' + one.number + kind
+      + (one.hidden ? ' · Hidden' : '')),
+      picturesPart(run, one),
+      own ? (editing ? objectBoxes(one) : objectWords(one))
+        : editing && !locked ? wordBoxes(one) : wordsPart(words),
+      locked ? make('p', 'quiet', found.words_locked) : null,
+      own ? make('p', 'quiet', found.notes_locked || '')
+        : editing ? notesBox(one)
+          : one.notes ? h.add(make('p', 'quiet'), make('strong', '', 'Speaker notes: '),
+            one.notes) : null,
       editing ? saved : null,
       editing && one.unfit ? unfitPart(run, one) : null,
       history ? bar(history) : null,
       h.list(one.findings).length ? h.findingItems(one.findings) : null,
       h.list(one.audit).length ? auditPart(one.audit) : null,
-      one.busy ? h.add(make('p', 'desk-working-note'), h.state('current', 'Redrawing…'))
-        : null,
+      one.busy && !own ? h.add(make('p', 'desk-working-note'), h.state('current',
+        'Redrawing…')) : null,
       one.note ? noteSaid(one.note) : null);
     if (!one.lead && can) h.add(node, ...noteBox(run, one));
     return node;
+  }
+
+  // The slide's picture now and, for an existing deck, the slide as it was in your deck
+  // before it, each said in words.
+  function picturesPart(run, one) {
+    const words = one.words || {};
+    const now = one.image ? h.picture(one.image, h.slideName({ number: one.number,
+      title: words.title }), run.desk.expected)
+      : make('p', 'quiet', 'There is no picture of this slide on this computer yet.');
+    if (!one.before) return h.add(make('div', 'deck-desk-picture'), now);
+    return h.add(make('div', 'pair deck-desk-pair'),
+      h.add(make('div', 'deck-desk-picture'), make('p', 'quiet', 'Before'),
+        h.picture(one.before, 'Slide ' + one.number + ' as it was in your deck', 'original')),
+      h.add(make('div', 'deck-desk-picture'), make('p', 'quiet', 'After'), now));
+  }
+
+  // The words of each part of a slide of your own deck: a box for each run of words the part
+  // has, named by the part and, where it has more than one, the run. A run of spaces only is
+  // not a box.
+  function objectBoxes(one) {
+    const node = make('div', 'fields deck-desk-words');
+    h.list(one.objects).forEach((part, at) => {
+      const runs = h.list(part.runs).map(String);
+      runs.forEach((text, index) => {
+        if (!text.trim()) return;
+        const single = runs.length === 1;
+        h.add(node, wordBox(one, ['object', part.id, single ? null : index], 'Text box '
+          + (at + 1) + (single ? '' : ', part ' + (index + 1)), text.trim(), text.length > 80));
+      });
+    });
+    return node;
+  }
+
+  function objectWords(one) {
+    return h.add(make('div', 'deck-desk-words'), ...h.list(one.objects).map((part) => make('p',
+      '', h.list(part.runs).join(''))));
   }
 
   // A slide's words, as the outline has them. They are read here, and edited on the Outline
@@ -790,7 +840,10 @@
     const id = 'desk-note-' + one.number;
     const box = noteField(id, 'How should this slide change?', kept, 'Slide ' + one.number);
     const input = box.querySelector('textarea');
-    const go = h.capsule('Redraw slide ' + one.number, '', async () => {
+    // On your own deck at Selected changes, a note plans the slide's changes again: nothing
+    // is redrawn.
+    const own = Array.isArray(one.objects);
+    const go = h.capsule((own ? 'Change slide ' : 'Redraw slide ') + one.number, '', async () => {
       const note = kept.note.trim();
       if (!note) {
         h.refuse(id, NO_NOTE);
@@ -798,12 +851,13 @@
         return;
       }
       const done = await act('desk-note', { path, number: one.number, note,
-        expected: run.desk.expected }, go, 'Slide ' + one.number + ' is being redrawn. Every '
-        + 'other part of the deck stays exactly as it is.', h.byId(id + '-problem'));
+        expected: run.desk.expected }, go, own ? 'The changes to slide ' + one.number + ' are '
+        + 'being planned again with your note.' : 'Slide ' + one.number + ' is being redrawn. '
+        + 'Every other part of the deck stays exactly as it is.', h.byId(id + '-problem'));
       if (!done) return;
       kept.note = '';
       input.value = '';
-    }, 'desk-redraw ' + one.number);
+    }, (own ? 'desk-change ' : 'desk-redraw ') + one.number);
     input.disabled = Boolean(one.busy);
     go.disabled = Boolean(one.busy);
     return [box, bar(go), one.price ? make('p', 'quiet', one.price) : null];
