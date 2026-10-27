@@ -1,4 +1,5 @@
 """Workspace behaviour. Tests named row_NN cover the state-transition matrix in the plan (A7)."""
+import hashlib
 import json
 import os
 import subprocess
@@ -1806,3 +1807,63 @@ class DeskWorkspaceTests(DeskCase):
     def test_keep_as_it_is_is_only_on_the_desk(self):
         with self.assertRaisesRegex(WorkspaceError, '^This training is not on the desk.$'):
             workspace.keep_as_is(self.saved(), 'document')
+
+
+BLUEPRINT = (helpers.EXAMPLES / 'blueprint.md').read_text(encoding='utf-8')
+MAIN_LINE = BLUEPRINT.splitlines()[32]
+OTHER_LINE = '- exec-cost: roleplay. Objectives: O1. A finance lead who asks what a restart costs.'
+
+
+class PracticePlanTests(DeskCase):
+    """A desk run's scenario is made from its line in the blueprint's practice plan."""
+
+    def plan(self, root: Path, main: str = MAIN_LINE, other: str = OTHER_LINE) -> None:
+        text = BLUEPRINT.replace(MAIN_LINE, f'{main}\n{other}')
+        (root / 'blueprint.md').write_text(text, encoding='utf-8')
+
+    def walk(self, root: Path) -> list[str]:
+        """Save the main scenario under the plan, then change another scenario's line, then
+        the main one's objectives; the scenario's status after each."""
+        self.plan(root)
+        (root / 'scenario.md').write_text('# Scenario: main\n', encoding='utf-8')
+        workspace.save(root, 'scenario:main')
+        seen = [workspace.statuses(root, workspace.load(root))['scenario:main']]
+        self.plan(root, other=OTHER_LINE.replace('Objectives: O1.', 'Objectives: O1, O2.'))
+        seen.append(workspace.statuses(root, workspace.load(root))['scenario:main'])
+        self.plan(root, main=MAIN_LINE.replace('O1, O2, O3', 'O1, O2'))
+        seen.append(workspace.statuses(root, workspace.load(root))['scenario:main'])
+        return seen
+
+    def test_row_158_a_desk_scenario_knows_its_practice_plan(self):
+        session = workspace.load(self.root)
+        self.assertIs(session['practice_inputs'], True)
+        self.assertEqual(workspace.artifact(self.root, session, 'scenario:main')['extras'],
+                         ('practice',))
+        self.assertEqual(self.walk(self.root), ['draft', 'draft', 'stale'])
+        built = workspace.load(self.root)['artifacts']['scenario:main']['built_from']
+        self.assertEqual(built, {'practice': hashlib.sha256(MAIN_LINE.encode()).hexdigest()})
+        self.assertEqual(workspace.input_label('practice'), 'the practice plan')
+
+    def test_a_saved_training_s_scenario_has_no_inputs(self):
+        other = self.saved()
+        session = workspace.load(other)
+        self.assertNotIn('practice_inputs', session)
+        self.assertEqual(workspace.artifact(other, session, 'scenario:main')['extras'], ())
+        self.assertEqual(self.walk(other), ['draft', 'draft', 'draft'])
+        self.assertEqual(workspace.load(other)['artifacts']['scenario:main']['built_from'], {})
+
+    def test_a_scenario_with_no_line_in_the_plan_is_made_from_none(self):
+        self.plan(self.root)
+        self.write('scenarios/unplanned.md', '# Scenario: unplanned\n')
+        session = workspace.load(self.root)
+        self.assertEqual(workspace.inputs(self.root, session, 'scenario:unplanned'),
+                         {'practice': 'none'})
+
+    def test_the_practice_line_is_found_by_its_id(self):
+        self.assertTrue(MAIN_LINE.startswith('- main: roleplay.'))
+        self.assertEqual(workspace.practice_line(BLUEPRINT, 'main'), MAIN_LINE)
+        self.assertIsNone(workspace.practice_line(BLUEPRINT, 'other'))
+        self.assertIsNone(workspace.practice_line(BLUEPRINT.replace('## Practice plan',
+                                                                    '## Other plan'), 'main'))
+        indented = BLUEPRINT.replace(MAIN_LINE, f'  {MAIN_LINE}  ')
+        self.assertEqual(workspace.practice_line(indented, 'main'), MAIN_LINE)

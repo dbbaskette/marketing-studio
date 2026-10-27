@@ -333,6 +333,9 @@ def init(root: Path, title: str, levels=(), brief_kind: str = 'product',
     }
     if flow is not None:
         session['flow'] = flow
+        # A scenario is made from its line in the practice plan. Only a training started on
+        # the desk says so: one opened on the desk later was never built that way.
+        session['practice_inputs'] = True
     log(session, 'init')
     with locked(root):
         store(root, session)
@@ -414,7 +417,8 @@ def artifact(root: Path, session: dict, name: str) -> dict:
     kind, _, ident = base.partition(':')
     if kind == 'scenario' and SCENARIO_ID.match(ident):
         return {'file': scenario_file(root, level, ident), 'upstream': (),
-                'stage': 'scenario', 'extras': ()}
+                'stage': 'scenario',
+                'extras': ('practice',) if session.get('practice_inputs') else ()}
     if kind == 'yoodli' and SCENARIO_ID.match(ident):
         return {'file': f'{folder}yoodli/{ident}.md',
                 'upstream': (same('blueprint'), same('brief'), same(f'scenario:{ident}')),
@@ -489,6 +493,18 @@ def profile_for(root: Path) -> Path:
     return pinned if pinned and pinned.is_file() else PROFILE
 
 
+def practice_line(text: str, ident: str) -> str | None:
+    """A scenario's line in a blueprint's practice plan, `- <ident>: …`, trimmed; None when the
+    plan has no line for it."""
+    section = None
+    for line in (text or '').splitlines():
+        if line.startswith('## '):
+            section = line[3:].strip().lower()
+        elif section == 'practice plan' and line.strip().startswith(f'- {ident}:'):
+            return line.strip()
+    return None
+
+
 def inputs(root: Path, session: dict, name: str) -> dict:
     """What an artifact is built from: upstream content, and the settings that affect it."""
     spec = artifact(root, session, name)
@@ -501,6 +517,12 @@ def inputs(root: Path, session: dict, name: str) -> dict:
     for extra in spec['extras']:
         if extra == 'profile':
             found[extra] = sha256_file(profile_for(root))
+        elif extra == 'practice':
+            base, level = split(name)
+            blueprint = root / artifact(root, session, qualify('blueprint', level))['file']
+            text = blueprint.read_text(encoding='utf-8') if blueprint.is_file() else ''
+            line = practice_line(text, base.partition(':')[2])
+            found[extra] = 'none' if line is None else hashlib.sha256(line.encode()).hexdigest()
         else:
             found[extra] = session['settings'][extra.partition(':')[2]]
     return found
@@ -843,6 +865,8 @@ def input_label(key: str) -> str:
     """One of the things an artifact is built from, in plain words: "the blueprint"."""
     if key.startswith('setting:'):
         return f"the {key.partition(':')[2].replace('_', ' ')} setting"
+    if key == 'practice':
+        return 'the practice plan'
     return 'the Yoodli profile' if key == 'profile' else label(key)
 
 
