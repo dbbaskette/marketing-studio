@@ -4906,6 +4906,8 @@ class Engine(Reviewing):
             'clash': root.name in self._clash,
             'model': record.get('model'), 'effort': record.get('effort'),
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
+            # A desk run opens on the desk; a saved run keeps its own screens.
+            'flow': drafts.FLOW if drafts.on_desk(record) else None,
             # A desk run has none: a run without one reads as Step by step everywhere else.
             'review_level': None if drafts.on_desk(record) else review_policy.level(record),
             'review': self._review_view(root, record, found),

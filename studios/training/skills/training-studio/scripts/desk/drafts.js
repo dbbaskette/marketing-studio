@@ -54,40 +54,49 @@ function deskHeld(path) {
   return DESK.held[path];
 }
 
-// A training started on the desk. The runner gives such a run no review level (its engine
-// view says `review_level: None` on the desk); every saved run has one.
+// A training started on the desk: the runner's view of its run says so in `flow`.
 function onTheDesk(run) {
-  return Boolean(run) && run.review_level === null;
+  return Boolean(run) && run.flow === 'desk';
 }
 
 // --- the shared kit, bound to this page -------------------------------------------------
-// The kit names each item by one id; here an id is the training's folder and, for a card,
-// the material's name. Its requests are translated to the {path, name} the runner takes.
+// The kit names each item by one id: here the JSON of [the training's folder, the material's
+// name or null]. Its requests are translated to the {path, name} the runner takes, with
+// every other field the kit sent, from a query or a body alike.
 
-function deskId(path, name) {
-  return JSON.stringify([path, name || null]);
-}
+const NO_ID = 'The desk asked about something it does not name.';
 
 function deskItem(id) {
+  let found = null;
   try {
-    const [path, name] = JSON.parse(id);
-    return name ? { path, name } : { path };
+    found = JSON.parse(id);
   } catch (failure) {
-    return { path: view.path };
+    found = null;
   }
+  if (!Array.isArray(found) || typeof found[0] !== 'string' || !found[0]
+      || (found[1] !== null && typeof found[1] !== 'string')) {
+    throw new Error(NO_ID);
+  }
+  return found[1] ? { path: found[0], name: found[1] } : { path: found[0] };
 }
 
 function deskApi(route, data) {
   const [endpoint, query] = String(route).split('?');
   if (!data) {
-    const id = new URLSearchParams(query || '').get('id');
-    return ask(endpoint, id ? deskItem(id) : { path: view.path });
+    const asked = Object.fromEntries(new URLSearchParams(query || ''));
+    const { id, ...rest } = asked;
+    return ask(endpoint, { ...rest, ...deskItem(id) });
   }
   const { id, ...rest } = data;
   return send(endpoint, { ...deskItem(id), ...rest });
 }
 
-const deskKit = typeof Drafting === 'undefined' ? null : Drafting.kit({
+// The shared kit is loaded before this script; without it there is no desk to draw.
+if (typeof Drafting === 'undefined') {
+  throw new Error('Training Studio’s desk needs drafting.js, loaded before drafts.js.');
+}
+
+const deskKit = Drafting.kit({
   ui: {
     button: (label, action, kind) => {
       const node = capsule(label, kind === 'filled' ? 'filled' : 'quiet', () => action(node));
@@ -103,13 +112,13 @@ const deskKit = typeof Drafting === 'undefined' ? null : Drafting.kit({
       }, key),
     disclosure: (label, ...nodes) => add(make('details', 'card-part'), make('summary', '', label),
       ...nodes),
-    bead,
+    bead: (kind) => bead(kind),
     openSheet: (title, ...nodes) => {
       DESK.kitSheet = [sheetTitle(title), ...nodes];
       openSheet('desk-kit', '')();
     },
-    closeSheet,
-    toast,
+    closeSheet: () => closeSheet(),
+    toast: (text) => toast(text),
     notice: (text) => {
       deskHeld(view.path).said = text;
       paintDesk(false);
@@ -125,7 +134,7 @@ const deskKit = typeof Drafting === 'undefined' ? null : Drafting.kit({
         control.textContent = was;
       }
     },
-    narrow,
+    narrow: () => narrow(),
   },
   api: deskApi,
   routes: DESK_ROUTES,
@@ -319,7 +328,14 @@ async function allAdded(path) {
   try {
     await send('documents', { path, action: 'done' });
   } catch (failure) {
-    held.unsent = { files: [], why: failure.message };
+    // With no answer, saying it again is all there is to do. A refusal is the runner's own
+    // sentence, said on the desk, whose documents card then shows what is added.
+    if (failure.kind === 'stopped') {
+      held.unsent = { files: [], why: failure.message };
+    } else {
+      held.unsent = null;
+      held.said = failure.message;
+    }
     return false;
   }
   held.unsent = null;
@@ -376,7 +392,6 @@ async function startOnDesk(pressed) {
   const added = files.length ? await addHeld(started.path, files, byId('new-status')) : true;
   if (view.draft === draft) view.draft = null;
   view.sheet = '';
-  view.promised = { path: started.path, gates: Number(started.gates) || 0 };
   if (turn !== view.turn) {
     drawSheet();
     refresh();
@@ -542,7 +557,7 @@ function progressPart(found, held, lead) {
   const line = make('p', '', progress.line);
   line.setAttribute('role', 'status');
   return callout('', line, progress.doing ? make('p', 'row-says', progress.doing) : null,
-    progress.started_at && deskKit ? make('p', 'quiet desk-clock', deskKit.clock(progress))
+    progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
       : null);
 }
 

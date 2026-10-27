@@ -2716,6 +2716,9 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             'GET /api/training': [self.detail('working', '')], 'GET /api/run': [run]}),
             [{'click': 'Open Rolling restarts'}, {'snapshot': 'working'}])
         self.assertIn('You approved the learner guide at', result['snapshots']['working']['text'])
+        # A saved run's cost card: nothing reported yet is not an agent that never says.
+        self.assertIn('Nothing has been reported yet.', result['snapshots']['working']['text'])
+        self.assertIn('It stops and asks you at $20.00.', result['snapshots']['working']['text'])
 
     def test_grouped_build_controls_say_when_the_final_review_waits(self):
         self.started()
@@ -3075,6 +3078,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'click': 'Step by step'}, {'snapshot': 'refused'}])
         shots = result['snapshots']
         self.assertIn('Where new work stops', shots['settings']['text'])
+        # Training Studio's own trainings start on the desk: the level is not chosen at a start.
+        self.assertIn('Training Studio starts each training on its desk, where nothing stops: '
+                      'you mark each material ready.', shots['settings']['text'])
+        self.assertNotIn('A start form can choose', shots['settings']['text'])
         self.assertIn('Balanced', shots['settings']['pressed'])
         sent = [body for address, body in self.posts(result) if address == '/api/review-level']
         self.assertEqual(sent, [{'level': 'automatic', 'seen': 'balanced'},
@@ -4387,6 +4394,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         shots = result['snapshots']
         self.assertEqual(shots['home']['filled'], ['New training'])
         self.assertIn('Start your first training', shots['home']['text'])
+        self.assertIn('puts each on its desk for you to edit and mark ready', shots['home']['text'])
+        self.assertNotIn('stops where its review level says', shots['home']['text'])
 
         # One sheet over Home, in numbered steps; its one filled button starts the training.
         one = shots['one']
@@ -6896,9 +6905,9 @@ def a_desk(*cards, levels=('101', '201'), running: bool = True, needs=(), ours: 
 
 
 def a_desk_run(state: str = 'working', sentence: str = 'Researching.', **more) -> dict:
-    """A run started on the desk: the runner gives it no review level."""
+    """A run started on the desk: the runner says so in its `flow`."""
     run = a_run(state, sentence, **more)
-    run['body']['review_level'] = None
+    run['body']['flow'] = 'desk'
     return run
 
 
@@ -7016,6 +7025,25 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                          [('add', 'runbook.md'), ('add', 'notes.docx'),
                           ('add', 'notes.docx'), ('done', None)])
 
+    def test_a_refused_all_of_them_is_said_and_the_documents_card_comes_back(self):
+        said = 'Add at least one document that can be read first, or let research use the web.'
+        unread = a_document('notes.docx', 5, 'It is not a document this can read.')
+        answers = self.start_answers(ok({}), {'status': 400, 'body': {'error': said}})
+        answers['GET /api/run'] = [a_desk_run('waiting', 'Waiting for your documents.',
+                                              documents=supplied(unread))]
+        result = self.run_page(answers, self.start_steps(
+            {'attach': 'Add documents', 'files': self.FILES[1:]}, {'click': 'Start'},
+            {'snapshot': 'refused'}))
+        shot = result['snapshots']['refused']
+        self.assertIn(said, shot['text'])
+        self.assertNotIn('did not reach Training Studio', shot['text'])
+        # The run's own documents card is back, to remove it or add another.
+        self.assertIn('Add your documents', shot['parts'])
+        self.assertIn('Remove notes.docx', shot['buttons'])
+        self.assertEqual(shot['filled'], ['That is all of them'])
+        self.assertEqual([body.get('action') for _, body in self.posts(result)[1:]],
+                         ['add', 'done'])
+
     def test_the_desk_opens_with_progress_and_cards(self):
         result = self.open_desk(self.on_desk(a_desk()), [
             {'snapshot': 'desk'}, {'click': '201'}, {'snapshot': 'other'}])
@@ -7077,7 +7105,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         cards = [a_card(f'{base}@101', actions=('download',)) for base, _ in DESK_KINDS]
         run = a_team_run('elsewhere', 'Run by Pat.', a_driver('Pat', False, hours=2), False,
                          last_shared=last_shared('Shared the plan.', hours=2))
-        run['body']['review_level'] = None
+        run['body']['flow'] = 'desk'
         result = self.open_desk(self.on_desk(a_desk(*cards, levels=('101',), ours=False),
                                              run), [{'snapshot': 'theirs'}])
         shot = result['snapshots']['theirs']
@@ -7099,6 +7127,54 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('Plan', sources['parts'])
         # Every control is the browser's own: the harness refuses a click on anything else.
         self.assertEqual(result['strayListeners'], [])
+
+
+@unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
+class DeskKitAdapterTests(unittest.TestCase):
+    """drafts.js hands the shared kit's requests to the runner: the kit names an item by one
+    id, and the runner takes {path, name} with every other field the kit sent."""
+
+    def requests(self, calls: list) -> dict:
+        kit = PAGE / 'drafting.js'
+        script = (PAGE / 'drafts.js').read_text(encoding='utf-8')
+        code = (
+            "const vm = require('vm'); const fs = require('fs'); const made = [];\n"
+            "const context = vm.createContext({ console, URLSearchParams,\n"
+            "  view: { path: '/somewhere/else' },\n"
+            "  ask: (endpoint, params) => made.push(['GET', endpoint, params]),\n"
+            "  send: (endpoint, body) => made.push(['POST', endpoint, body]) });\n"
+            f"vm.runInContext(fs.readFileSync({json.dumps(str(kit))}, 'utf8'), context);\n"
+            f"vm.runInContext({json.dumps(script)}, context);\n"
+            "const failed = [];\n"
+            f"for (const call of {json.dumps(calls)}) {{\n"
+            "  try { vm.runInContext(call, context); } catch (error) { failed.push(error.message); }\n"
+            "}\n"
+            "process.stdout.write(JSON.stringify({ made, failed }));")
+        done = subprocess.run([NODE, '-e', code], capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout)
+
+    def test_every_field_the_kit_sends_reaches_the_runner(self):
+        one = json.dumps(['/trainings/rolling-restarts', 'document@101'])
+        whole = json.dumps(['/trainings/rolling-restarts', None])
+        found = self.requests([
+            f"deskApi('drafts/versions?id=' + encodeURIComponent({json.dumps(one)}) + '&part=p1')",
+            f"deskApi('drafts?id=' + encodeURIComponent({json.dumps(whole)}))",
+            f"deskApi('drafts/save', {{ id: {json.dumps(one)}, seen: 'r2', part: 'p1', "
+            "text: 'New words.', session: 's1' })"])
+        self.assertEqual(found['failed'], [])
+        place = '/trainings/rolling-restarts'
+        self.assertEqual(found['made'], [
+            ['GET', 'drafts/versions', {'path': place, 'name': 'document@101', 'part': 'p1'}],
+            ['GET', 'drafts', {'path': place}],
+            ['POST', 'drafts/save', {'path': place, 'name': 'document@101', 'seen': 'r2',
+                                     'part': 'p1', 'text': 'New words.', 'session': 's1'}]])
+
+    def test_an_id_that_names_nothing_is_refused_not_read_as_the_whole_training(self):
+        found = self.requests(["deskApi('drafts/versions?id=not-an-id&part=p1')",
+                               "deskApi('drafts/save', { id: '[]', part: 'p1' })"])
+        self.assertEqual(found['made'], [])
+        self.assertEqual(len(found['failed']), 2)
 
 
 # What a team adds, written out field for field from the appendix of the milestone 5
@@ -9325,8 +9401,6 @@ class TrainingNamesTests(unittest.TestCase):
                     'one decision.', 'Use the brand’s default look',
                     'a fixed estimate per slide, not this computer', 'Reference brief',
                     'Yoodli scenarios', 'Not ready to use yet', 'Leave the deck out',
-                    'Review the first drafts comes after research, the blueprint and the '
-                    "learner guide of ' + levels + '. Briefs are written after it.",
                     'stops where its review level says, for your decision.',
                     'A training brought in runs Step by step.',
                     'A copy that is out of date must be sent again before the training is '
@@ -9341,37 +9415,6 @@ class TrainingNamesTests(unittest.TestCase):
                          ('Research plan', 'Index'))
         import workspace
         self.assertEqual(workspace.AHEAD['yoodli'], 'Write {the} Yoodli scenarios')
-
-
-@unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')
-class ReviewSaysTests(unittest.TestCase):
-    """The review level card says what the level does for this training's own plan."""
-
-    def says(self, level: str, planned: bool, deck: bool) -> str:
-        script = (Path(__file__).resolve().parents[1] / 'skills' / 'training-studio' /
-                  'scripts' / 'desk' / 'app.js').read_text(encoding='utf-8')
-        start = script.index('function reviewSays(')
-        end = script.index('\n}\n', start) + 3
-        code = script[start:end] + (f'\nprocess.stdout.write(reviewSays({json.dumps(level)}, '
-                                    f'{json.dumps(planned)}, {json.dumps(deck)}));')
-        done = subprocess.run([NODE, '-e', code], capture_output=True, text=True, timeout=30)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        return done.stdout
-
-    def test_balanced_and_automatic_follow_the_plan_and_the_deck(self):
-        self.assertEqual(self.says('balanced', True, True),
-                         'Stops to read the research plan, then the first drafts of every '
-                         'level together, then each drawn deck, then the finished materials '
-                         'together.')
-        self.assertEqual(self.says('balanced', False, False),
-                         'Stops for the first drafts of every level together, then the '
-                         'finished materials together.')
-        self.assertEqual(self.says('automatic', True, True),
-                         'Stops for each drawn deck and the finished materials. It costs more '
-                         'before you first see anything, and the spending limit still holds.')
-        self.assertEqual(self.says('automatic', True, False),
-                         'Stops for the finished materials. It costs more before you first see '
-                         'anything, and the spending limit still holds.')
 
 
 if __name__ == '__main__':

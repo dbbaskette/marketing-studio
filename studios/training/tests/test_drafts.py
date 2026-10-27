@@ -66,6 +66,7 @@ class DeskStartTests(DeckCase):
         self.assertNotIn('review_policy', session)
         self.assertEqual(session['artifacts']['intake']['approved']['by'], 'page')
         self.assertIsNone(self.view(root)['review_level'], 'a desk run has no review level')
+        self.assertEqual(self.view(root)['flow'], 'desk', 'the page opens it on the desk')
         # The documents come first: nothing is researched from part of them.
         self.assertEqual(self.workers.jobs, [])
         self.assertFalse([name for name in record['steps'] if name.startswith('research')])
@@ -149,6 +150,7 @@ class DeskStartTests(DeckCase):
         self.to_gate(root, 'research-plan')
         self.assertEqual(self.state(root), 'waiting')
         self.assertEqual(self.view(root)['review_level'], 'step_by_step')
+        self.assertIsNone(self.view(root)['flow'], 'a saved run keeps its own screens')
         self.assertFalse(self.record(root).get('review_events'))
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
