@@ -5,6 +5,35 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Review suggestions stay independent.** Accepting a fix no longer throws away a
+  Humanize rewrite of the same sentence, nor the other way round. Accepting a suggestion
+  changes another only where it changed that one's words. One with the accepted words
+  inside its own takes them in, its marks updated in place: accept "Agentic AI" →
+  "agentic AI" and the rewrite of that sentence starts from "agentic AI", keeping its own
+  wording where it had already reworded them. Its alternatives take the change too, and
+  it says which suggestion it took in. A fix under an accepted rewrite stays when the
+  rewrite kept its words. A suggestion no longer fits only when its words are really gone
+  or now appear more than once; it then says "No longer fits: its words were changed by
+  suggestion #N", and suggestions keep their numbers while you review. **Accept all**
+  applies what is shown and not flagged, from both tools, in reading order, each against
+  the text the ones before it left. It no longer leaves out a rewrite over a waiting fix.
+  A flagged or hidden suggestion stays unless its words were changed, and one that a
+  change it took in made flagged waits for you. Its message counts what was accepted,
+  updated and no longer fits. For maintainers: `desk_finish.apply` no longer retires by
+  overlap (`_retire`, `_flagged_spans`, `_covers` and the `OVERLAP` refusal are gone). Picks
+  land one by one in reading order (`_reading`). After each, `_reconcile` checks every other
+  open item from the waiting Copy edit and Humanize sets against the part. It finds the
+  one changed stretch (`_changed`). An item with that stretch inside its `before` gets the
+  new text there, and its `after`, each alternative's `after` and a pick's own wording
+  take the change where a token alignment finds the earlier words unchanged in place, or
+  where the accepted item's `before` occurs once as whole words (`_carried`); its flags
+  are read again. An item retires, with `reason` and `retired_by: {job, id}`, only when
+  its `before` is not in the text once as whole words (`_whole`). A carried item records
+  `carried: [{job, id}]`, all kept in the ignored proposal sets. `desk-apply` items may
+  name another waiting sentence set with `job`. `all: true` leaves out a pick that is
+  flagged now, and `finished` adds `carried` and `retired` counts when there are any.
+  Review mode sends Accept all as one request, keeps numbers per pair of sets
+  (`numbers`), and shows `carriedBy` and `byNumber`.
 - **Every desk change goes to the Google Doc.** **Send accepted changes to Google Doc** and
   **Send to Google Doc** no longer leave changed paragraphs on the desk. Each separate
   change in a paragraph is its own suggestion, so only the changed words are struck
@@ -42,10 +71,8 @@ changes for authors first, then what changes for maintainers.
   meanwhile. In Review mode every suggestion is labelled **Spelling**, **Grammar**,
   **Punctuation**, **Consistency**, **Wording** or **Sounds human**, both tools read together in order
   under one count, and **Show: All · Fixes · Sounds human** narrows them. A wording fix may
-  offer up to three alternatives to pick from before **Accept**. Accepting a suggestion
-  retires the others, from either tool, that covered the same words, so two never both
-  land; **Accept all** applies the fixes first, still leaves flagged ones from both, and
-  never applies a rewrite over a fix still waiting for you.
+  offer up to three alternatives to pick from before **Accept**, and **Accept all** still
+  leaves flagged ones from both (see **Review suggestions stay independent** above).
   Quick check's findings are listed at the top with **Fix** and **Dismiss**, and **Check
   again** reruns both. A save that finds sections reordered elsewhere now shows the new
   order. For maintainers: `desk-create` takes `humanize: "light" | "medium" | "strong" |
@@ -57,9 +84,7 @@ changes for authors first, then what changes for maintainers.
   carries `review: {humanize, problem}`. Copy edit items carry `kind` (spelling, grammar,
   punctuation, consistency or wording, else grammar) and, for wording, up to three
   `alternatives` `[{after, flag}]`; `desk-apply` takes `{id, alternative}` items and
-  `all: true` for Accept all, which leaves out a pick covering an open flagged Copy edit or
-  Humanize item. Apply leaves out a pick that overlaps one applied in the same call, or one
-  already retired, and marks overlapping open Copy edit and Humanize items `retired`. A Copy
+  `all: true` for Accept all, and leaves out a pick already retired. A Copy
   edit that fails at model routing or is interrupted (`tool_jobs.recover`) still queues its
   Humanize, once.
 - **Workflow fixes on the writing desk.** A teammate can take over a desk blog (**Take

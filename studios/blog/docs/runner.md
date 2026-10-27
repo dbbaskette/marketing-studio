@@ -128,18 +128,30 @@ deciding on each fix, with the full desk one click away.
   **Accept** applies the one picked. Each alternative is checked like any suggestion, and
   one that changes a fact, code or shape is marked **Check this**. Click the paragraph to
   write your own instead.
-- **Suggestions that cover the same words** are listed under their part rather than marked
-  over each other. Accepting one retires the others that covered any of its words, from
-  either tool: they say they no longer fit, and two that start at the same place never both
-  apply.
+- **Suggestions stay independent.** Ones that cover the same words are listed under their
+  part rather than marked over each other, and accepting one changes another only where it
+  changed that one's words, from either tool:
+  - One whose words it did not touch stays as it is and moves with the text.
+  - One with the accepted words inside its own takes them in, and its marks update in place:
+    accept "Agentic AI" → "agentic AI", and the Humanize rewrite of that sentence now starts
+    from "agentic AI", with its own wording fixed too where it kept the old casing. Where the
+    rewrite had already reworded those words, its wording stays as it was. Its alternatives take the change
+    too, and it is checked again for a changed fact, code or shape. It says which
+    suggestion it took in.
+  - Accept a Humanize rewrite over a waiting fix and the fix stays if the rewrite kept the
+    words it fixes. It no longer fits only when its words are really gone, or now appear
+    more than once: it then says "No longer fits: its words were changed by suggestion #N".
+    Suggestions keep their numbers while you review, so the number still names the one you
+    accepted.
 - **Accept all** and **Reject all** sit at the top with the count left to review, for both
   tools, and act on what is shown. A suggestion that changes a fact, code or the shape of a
-  part is flagged, and **Accept all** leaves it for you to check. Accept all applies the
-  fixes first, then the human-sounding suggestions that still fit. It never applies one
-  over a fix still waiting for you (flagged, or hidden by **Show**): that one is left for
-  you too, so a flagged fix is never retired without your say. With **Show: Fixes**, the
-  fixes go ahead over any hidden rewrite of the same words, which then no longer fits
-  (the message says how many); a flagged rewrite still waits for you.
+  part is flagged, and **Accept all** leaves it for you to check, as it does one that a
+  change it took in made flagged. Accept all applies the rest in reading order, each
+  against the text the ones before it left: one that took in an earlier one's words goes
+  ahead with them, and one whose words an earlier one changed no longer fits and is left
+  out. Suggestions hidden by **Show** are never accepted; like flagged ones, they stay
+  unless their words were changed. The message counts what was accepted, what was updated
+  and what no longer fits.
 - **With human-sounding wording on, Quick check's findings** (dashes, words that often
   read as machine-written, repetition) are a short folded list at the top, labelled
   **Sounds human (quick check)** and read from the latest text with no assistant. **Fix**
