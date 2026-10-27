@@ -326,6 +326,8 @@ class PendingSendTests(PendingDocCase):
         self.client.decide(accept_ids=self.ours())
         lines = self.accepted()
         self.assertIn('An opening paragraph about ports.', lines)
+        # A paragraph with a line break is one paragraph: the change lands in it exactly.
+        self.assertIn('First line\x0bline two of one paragraph.', lines)
         self.assertEqual([line.count('￼') for line in lines], objects, 'images untouched')
         self.assertIn('We keep the plan simple and clear.', lines, 'theirs rejected, the base kept')
         self.assertIn('The end.', lines)

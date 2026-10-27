@@ -2247,13 +2247,23 @@ def google_changes(baseline, body, title=None):
     # Paragraphs, without the blank lines between them, so the diff aligns on text. An image's
     # data (a reference definition) is compared by its label, not as a paragraph.
     def split(text):
-        lines, images = [], {}
+        lines, images, joined = [], {}, False
         for line in text.splitlines():
             label = DEFINITION.match(line)
             if label:
                 images[label.group(1)] = line.strip()
+                joined = False
             elif line.strip():
-                lines.append(line)
+                if joined and lines and not LINE_MARK.match(line):
+                    # A line break inside a paragraph (two spaces at a line's end), as the Doc
+                    # holds it: one paragraph, its break the Doc's own. A list item or heading
+                    # on the next line is a paragraph of its own.
+                    lines[-1] = lines[-1].rstrip() + '\x0b' + line.lstrip()
+                else:
+                    lines.append(line)
+                joined = line.endswith('  ') and not line.strip().startswith('|')
+            else:
+                joined = False
         return lines, images
 
     before, old_images = split(baseline)
