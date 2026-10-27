@@ -964,7 +964,7 @@ function sDeskProposal(held,set,item,key){
 // whose words it changed.
 function deskFinishedSaid(done){
   const carried=done?.carried||0,retired=done?.retired||0;
-  return (carried?' '+carried+(carried===1?' other suggestion was updated with the accepted words.':' other suggestions were updated with the accepted words.'):'')+(retired?' '+retired+(retired===1?' suggestion no longer fits: its words were changed.':' suggestions no longer fit: their words were changed.'):'');
+  return (carried?' '+carried+(carried===1?' other suggestion was updated to fit.':' other suggestions were updated to fit.'):'')+(retired?' '+retired+(retired===1?' suggestion no longer fits: its words were changed.':' suggestions no longer fit: their words were changed.'):'');
 }
 // Why a retired suggestion no longer fits: the suggestion that changed its words, by number
 // when Review mode still shows it.
@@ -1425,7 +1425,7 @@ function sReviewFixes(held,items,loose){
     if(item.flag)said.append(sNode('span','tag','Check this'));
     row.append(said);
     if(item.flag)row.append(sNode('p','quiet',item.flag));
-    if(item.carriedBy?.length){const known=item.carriedBy.filter(Boolean);row.append(sNode('p','quiet review-carried',known.length?'Updated with accepted suggestion '+known.map(n=>'#'+n).join(', ')+'.':'Updated with an accepted suggestion.'));}
+    if(item.carriedBy?.length){const known=item.carriedBy.filter(Boolean);row.append(sNode('p','quiet review-carried',known.length?'Updated to fit accepted suggestion '+known.map(n=>'#'+n).join(', ')+'.':'Updated to fit an accepted suggestion.'));}
     if(item.alternatives?.length)row.append(sReviewChoices(held,item));
     if(loose)row.append(deskSides(item.before,item.after));
     const accept=sButton('Accept',button=>sReviewAccept(held,item,button));accept.disabled=!editable;accept.setAttribute('aria-label','Accept '+what+item.number);
