@@ -14,6 +14,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
+import json
 import secrets
 from pathlib import Path
 
@@ -22,7 +23,8 @@ import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError
 
-from runner import decks, desk, gitstate, stages
+from runner import briefs, decks, desk, gitstate, stages
+from studio_core.drafting import prompts
 from runner.jobs import gate_state, sha256_of
 from runner.steps import build, intake, words
 from runner.steps import deliver as delivering
@@ -316,55 +318,165 @@ class DeskActions:
         with self.files:
             record, state = self._load(root), build.read_state(root)
             found = self._desk_words_of(root, record, state, number, field)
-            ident, section = found['slide'], found['section']
-            desk.check_seen(record, seen, ident)
+            desk.check_seen(record, seen, found['slide'])
             if found['old'] == text.strip():
                 return self.view(root)
-            edited = words.retext(found['outline'], ident, field, text)
-            # The outline's own check first: nothing is saved when it refuses.
-            outlines.checked_edits(root, record, edited['slides'], self.slides(),
-                                   self._contract(root))
-            whole = words.with_words(words.given(root), edited, ident)
-            try:
-                if section is None:
-                    file = words.lead_file(root, state, ident)
-                    patched = words.patch_section(home.read_json(file, {}), ident, field,
-                                                  found['old'], text)
-                    lines = words.lead_fits(patched, state['start']['brand'], self.slides())
-                else:
-                    drawn = home.read_json(root / state['sections'][section]['file'], {})
-                    patched = words.patch_section(drawn, ident, field, found['old'], text)
-                    lines = words.fits(root, record, section, patched, self.slides(), whole)
-            except WorkspaceError as refusal:
-                lines = [str(refusal)]
-            if lines:
-                record['desk'].setdefault('unfit', {})[ident] = {
-                    'number': number, 'field': list(field) if isinstance(field, tuple)
-                    else field, 'text': text.strip(), 'lines': lines, 'at': home.now()}
-                self._store(root, record)
-                self._commit(root, f'keep the new words of slide {number}, which do not fit')
-                return self.view(root)
-            desk.advance(record, ident)
-            record['desk'].get('unfit', {}).pop(ident, None)
-            edit = {'slide': ident, 'number': number, 'section': section,
-                    'field': list(field) if isinstance(field, tuple) else field,
-                    'text': text.strip(), 'old': found['old'], 'session': session}
-            also = ()
-            if decks.delivered(root) is not None or desk.resting(record):
-                record, also = self._desk_land(root, record, edit, patched, space)
-                what = f'change the words of slide {number} on the desk'
-            else:
-                # The chain under way puts the deck together: the words land between its
-                # steps, and join its next pass.
-                held = secrets.token_hex(6)
-                home.write_json(root / EDITS / f'{held}.json', {**edit, 'patched': patched})
-                record['desk'].setdefault('edits', []).append(held)
-                what = f'keep the new words of slide {number} for the next pass'
+            record, what, also = self._desk_save(root, record, state, number, field, text,
+                                                 session, space, found)
             self._store(root, record)
             self._commit(root, what, also)
         self._desk_shared()
         self.wake(root)
         return self.view(root)
+
+    def _desk_save(self, root, record: dict, state: dict, number, field, text, session, space,
+                   found: dict, source: str = 'save') -> tuple:
+        """Save one slide's words, checked: where they fit they land now (the deck rests or
+        is delivered) or between the steps of the chain under way; where they do not, the
+        card keeps them. Call it holding `files`. Returns the run, what the commit says and
+        what else it lists."""
+        ident, section = found['slide'], found['section']
+        edited = words.retext(found['outline'], ident, field, text)
+        # The outline's own check first: nothing is saved when it refuses.
+        outlines.checked_edits(root, record, edited['slides'], self.slides(),
+                               self._contract(root))
+        whole = words.with_words(words.given(root), edited, ident)
+        try:
+            if section is None:
+                file = words.lead_file(root, state, ident)
+                patched = words.patch_section(home.read_json(file, {}), ident, field,
+                                              found['old'], text)
+                lines = words.lead_fits(patched, state['start']['brand'], self.slides())
+            else:
+                drawn = home.read_json(root / state['sections'][section]['file'], {})
+                patched = words.patch_section(drawn, ident, field, found['old'], text)
+                lines = words.fits(root, record, section, patched, self.slides(), whole)
+        except WorkspaceError as refusal:
+            lines = [str(refusal)]
+        if lines:
+            record['desk'].setdefault('unfit', {})[ident] = {
+                'number': number, 'field': list(field) if isinstance(field, tuple)
+                else field, 'text': text.strip(), 'lines': lines, 'at': home.now()}
+            return record, f'keep the new words of slide {number}, which do not fit', ()
+        desk.advance(record, ident)
+        versions = record.setdefault('build_feedback_revisions', {})
+        versions[f'slide:{ident}'] = versions.get(f'slide:{ident}', 0) + 1
+        record['desk'].get('unfit', {}).pop(ident, None)
+        edit = {'slide': ident, 'number': number, 'section': section,
+                'field': list(field) if isinstance(field, tuple) else field,
+                'text': text.strip(), 'old': found['old'], 'session': session}
+        also = ()
+        if decks.delivered(root) is not None or desk.resting(record):
+            record, also = self._desk_land(root, record, edit, patched, space)
+            what = f'change the words of slide {number} on the desk'
+        else:
+            # The chain under way puts the deck together: the words land between its
+            # steps, and join its next pass.
+            held = secrets.token_hex(6)
+            home.write_json(root / EDITS / f'{held}.json', {**edit, 'patched': patched})
+            record['desk'].setdefault('edits', []).append(held)
+            what = f'keep the new words of slide {number} for the next pass'
+        return record, what, also
+
+    def desk_selection(self, path, number, field, start, end, action, instruction,
+                       seen) -> dict:
+        """Rephrase, Shorten, Expand, Fix or Ask… on a passage of one slide's words: a small
+        words job rewrites it, and its words are saved as typed words are. One change to a
+        deck at a time."""
+        field = words.field_of(field)
+        if action not in (*prompts.ACTIONS, 'ask'):
+            raise WorkspaceError('Choose Rephrase, Shorten, Expand, Fix or Ask.')
+        instruction = self._note(instruction) if action == 'ask' else None
+        if action == 'ask' and not instruction:
+            raise WorkspaceError('Say what to do with the words.')
+        root, _, by = self._desk_change(path)
+        with self.files:
+            record, state = self._load(root), build.read_state(root)
+            if record.get('desk_jobs'):
+                raise WorkspaceError(desk.ONE_CHANGE)
+            found = self._desk_words_of(root, record, state, number, field)
+            desk.check_seen(record, seen, found['slide'])
+            text = found['old']
+            if type(start) is not int or type(end) is not int \
+                    or not 0 <= start < end <= len(text):
+                raise WorkspaceError('Select some of the words first.')
+            versions = record.get('build_feedback_revisions') or {}
+            record['desk_jobs'] = [{
+                'id': secrets.token_hex(6), 'kind': 'words', 'slide': found['slide'],
+                'number': number, 'field': list(field) if isinstance(field, tuple) else field,
+                'start': start, 'end': end, 'action': action, 'instruction': instruction,
+                'basis': text, 'by': by, 'at': home.now(),
+                'guard': versions.get(f"slide:{found['slide']}", 0)}]
+            self._store(root, record)
+            self._commit(root, f'ask to change the words of slide {number}')
+        self._desk_shared()
+        self.wake(root)
+        return self.view(root)
+
+    def _desk_job(self, root, run) -> None:
+        """The words job the deck waits on: its result replaces the passage, and the field
+        is saved as typed words are, while the field is as the job saw it."""
+        from runner.steps import Work
+        record = self._load(root)
+        job = record['desk_jobs'][0]
+        field = words.field_of(job['field'])
+        step = stages.Step('desk-words', 'build', 'agent', 'Change the words',
+                           'Changing the words of a slide')
+
+        def make(record, request, error):
+            outline = desk._outline(root)
+            slide = next((one for one in build.slides_of(outline)
+                          if one.get('id') == job['slide']), {})
+            text = job['basis']
+            passage = text[job['start']:job['end']]
+            line = prompts.ASK if job['action'] == 'ask' else prompts.ACTIONS[job['action']]
+            told = [f"Change the words of slide {job['number']} of "
+                    f"\"{record.get('title') or 'the deck'}\": one passage of its "
+                    f'{words.field_words(field)}.' + prompts.passage_task(line).rstrip(),
+                    f'The whole {words.field_words(field)}:\n\n{text}',
+                    f'The passage:\n\n{passage}',
+                    ('The slide\'s other words are in your input "slide". Keep the passage '
+                     'about as long as the slide has room for: the words must still fit it.')]
+            if job['action'] == 'ask':
+                told.append(prompts.request('INSTRUCTION', job['instruction'],
+                                            prompts.ONLY_PASSAGE, 'Presentation Studio'))
+            if error:
+                told.append(f'An earlier try at this job did not work: {error}\n'
+                            'Take care not to end the same way.')
+            told.append('Hand back the replacement for the passage with submit_artifact under '
+                        'the name "words".')
+            single = field == 'title' or isinstance(field, tuple)
+            return Work(guidance=briefs.guidance('words') + '\n\n' + prompts.edit_rule('slide'),
+                        task='\n\n'.join(told), profile='write', name='words',
+                        guard=(f"slide:{job['slide']}", job['guard']),
+                        prepared={'inputs': {'slide': json.dumps(
+                            {key: slide.get(key) for key in (*words.FIELDS, 'points')},
+                            ensure_ascii=False, indent=2)}, 'ask': False,
+                            'artifacts': {'words': {'kind': 'words', 'text': passage,
+                                                    'single': single}}})
+
+        def keep(record, handed):
+            state = build.read_state(root)
+            found = self._desk_words_of(root, record, state, job['number'], field)
+            if found['old'] != job['basis']:
+                return   # the words changed since: the job's are not kept
+            text = (job['basis'][:job['start']] + self._text(handed, 'words').strip()
+                    + job['basis'][job['end']:])
+            record, _, _ = self._desk_save(root, record, state, job['number'], field, text,
+                                           None, self.space(), found, 'selection')
+            record['desk_jobs'] = []
+            self._store(root, record)
+
+        try:
+            self._agent(root, run, step, make, keep, 'change the words of a slide',
+                        name=f"desk-words:{job['slide']}", label='Change the words')
+        finally:
+            with self.files:
+                record = self._load(root)
+                if not record.get('halted') and record.get('desk_jobs'):
+                    record['desk_jobs'] = []
+                    self._store(root, record)
+                    self._commit(root, 'the change to the words is done')
 
     def desk_notes(self, path, number, text, seen, session=None) -> dict:
         """A slide's speaker notes, saved as its words are, with no composer."""

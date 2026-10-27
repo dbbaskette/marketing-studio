@@ -465,6 +465,7 @@ def deck_price(last: dict) -> str:
 
 WORDS = ('title', 'subtitle', 'detail', 'points', 'caveat', 'source')
 UNFIT = 'These words do not fit the slide as it is drawn.'
+ONE_CHANGE = 'A change is already being made to this deck. Wait or stop it.'
 NO_POINTS = 'A cover, section or closing slide has no points to change.'
 REDRAW_WORDS = 'Fit the new words of slide {number}.'
 WORDS_BUSY = 'The deck is being redrawn now. Redraw with these words when that ends.'

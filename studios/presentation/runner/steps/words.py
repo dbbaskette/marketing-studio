@@ -57,6 +57,30 @@ def field_of(field):
     raise WorkspaceError(NO_FIELD)
 
 
+def field_words(field) -> str:
+    """A field as a sentence names it: 'title', 'first point's text'."""
+    field = field_of(field)
+    if isinstance(field, tuple):
+        return f"point {field[1] + 1}'s {field[2]}"
+    return {'notes': 'speaker notes'}.get(field, field)
+
+
+def check_words(text: str, spec: dict):
+    """A words job's result: the replacement for one passage, one string of at most
+    TOO_LONG characters, on one line for a title or a point. Returns problems, the checks
+    that ran, warnings and the text to keep."""
+    from runner import worker_tools
+    problems = []
+    kept = (text or '').strip()
+    if not kept:
+        problems.append('Hand back the words that replace the passage.')
+    if len(kept) > TOO_LONG:
+        problems.append(f'Keep the words to {TOO_LONG:,} characters.')
+    if spec.get('single') and '\n' in kept:
+        problems.append('These words are on one line: a title or a point has no line breaks.')
+    return problems, [worker_tools.result('words.text', problems)], [], kept
+
+
 def text_of(slide: dict, field) -> str:
     """A slide's words in one field, '' where it has none."""
     field = field_of(field)
@@ -174,6 +198,14 @@ def with_words(whole: dict, outline: dict, slide_id: str) -> dict:
             made['slides'][at] = {**kept, **{key: now[key] for key in (*FIELDS, 'points')
                                              if key in now}}
     return made
+
+
+def _register() -> None:
+    from runner import worker_tools
+    worker_tools.register('words', check_words, extension='.txt')
+
+
+_register()
 
 
 def lead_file(root, state: dict, slide_id: str) -> Path | None:

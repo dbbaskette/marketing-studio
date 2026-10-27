@@ -998,6 +998,9 @@ class Engine(Jobs, Researching, DeskActions):
                 if decks.on_desk(record) and (record.get('desk') or {}).get('edits'):
                     self._desk_land_queued(root)   # words saved while the chain ran
                     continue
+                if decks.on_desk(record) and record.get('desk_jobs'):
+                    self._desk_job(root, run)      # a words job, before the next step
+                    continue
                 step = first(record)
                 if step is None:
                     return

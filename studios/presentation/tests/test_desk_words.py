@@ -11,6 +11,7 @@ from pathlib import Path
 from runner_support import LONG_OUTLINE, DeskCase
 from workspace import WorkspaceError
 
+from runner import desk
 from runner.steps import build, words
 
 SLIDE = LONG_OUTLINE['slides'][2]           # slide 3, in section 1
@@ -241,6 +242,89 @@ class TypedWordsTests(DeskCase):
         with self.assertRaises(WorkspaceError) as caught:
             self.engine.desk_words(root, 3, 'title', 'Batches restart in turn', 1, self.SESSION)
         self.assertEqual(str(caught.exception), desk.NOT_ON_DESK)
+
+
+class SelectionTests(DeskCase):
+    """Rephrase, Shorten, Expand, Fix or Ask… on a selection of a slide's words: a small
+    words job rewrites the passage, and its words are saved as a typed edit is."""
+
+    POINT = ('points', 0, 'text')     # slide 3's first point: 'The others carry the load.'
+
+    def deck(self) -> Path:
+        root = self.start_desk(look='default')
+        self.on_desk(root)
+        return root
+
+    def seen(self, root: Path) -> int:
+        return self.desk_view(root)['seen']
+
+    def point(self, root: Path) -> str:
+        return json.loads((root / 'outline.json').read_text())['slides'][2]['points'][0]['text']
+
+    def select(self, root: Path, words_of: str, action: str = 'rephrase', instruction=None):
+        text = self.point(root)
+        start = text.index(words_of)
+        return self.engine.desk_selection(root, 3, self.POINT, start, start + len(words_of),
+                                          action, instruction, self.seen(root))
+
+    def test_rephrase_replaces_only_the_selected_passage(self):
+        root = self.deck()
+        self.select(root, 'the load')
+        self.assertEqual(self.point(root), 'The others carry the load (fresh).')
+        (job,) = self.workers.of('words')
+        self.assertIn('the load', job.task)
+        self.assertIn('The others carry the load.', job.task)
+        self.on_desk(root)
+        self.assertEqual(self.record(root).get('desk_jobs') or [], [])
+
+    def test_a_result_after_the_field_changed_is_not_kept(self):
+        root = self.deck()
+
+        def typing(tools, job):
+            self.engine.desk_words(root, 3, self.POINT, 'The rest carry the load.',
+                                   self.seen(root), 'd' * 16)
+            return self.workers.words(tools, job)
+
+        self.workers.then('words', typing)
+        self.select(root, 'the load')
+        self.assertEqual(self.point(root), 'The rest carry the load.')
+        tries = [attempt['outcome'] for name, entry in self.record(root)['steps'].items()
+                 if name.startswith('desk-words') for attempt in entry['tries']]
+        self.assertEqual(tries, ['superseded'])
+
+    def test_a_selection_that_no_longer_fits_offers_the_redraw(self):
+        root = self.deck()
+        before = (root / 'outline.json').read_bytes()
+        self.slides.run.fails['compose compile'] = TOO_LONG
+        self.select(root, 'the load', 'expand')
+        self.slides.run.fails.pop('compose compile')
+        card = next(card for part in self.desk_view(root)['sections'] for card in part['slides']
+                    if card['number'] == 3)
+        self.assertEqual(card['unfit']['text'], 'The others carry the load (fresh).')
+        self.assertEqual((root / 'outline.json').read_bytes(), before)
+
+    def test_one_change_at_a_time(self):
+        root = self.deck()
+        queued = []
+
+        def again(tools, job):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.select(root, 'carry')
+            queued.append(str(caught.exception))
+            return self.workers.words(tools, job)
+
+        self.workers.then('words', again)
+        self.select(root, 'the load')
+        self.assertEqual(queued, [desk.ONE_CHANGE])
+
+    def test_the_words_job_has_its_brief(self):
+        from runner import briefs
+        root = self.deck()
+        self.select(root, 'the load', 'ask', 'Say it as a promise.')
+        (job,) = self.workers.of('words')
+        guidance = self.workers.jobs[-1][1].guidance
+        self.assertTrue(guidance.startswith(briefs.read('words').splitlines()[0]), guidance[:80])
+        self.assertIn('Say it as a promise.', job.task)
 
 
 if __name__ == '__main__':
