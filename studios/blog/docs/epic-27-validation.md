@@ -1,3 +1,5 @@
+A record of a check made on 2026-10-03; it describes the studio as it was then.
+
 # Epic 27 implementation and validation
 
 Runtime 1.7.0 implements the five author-workflow slices in epic #27. This record

@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "source": "https://github.com/dbbaskette/training-studio",
+  "note": "The source repository is retired. Training Studio now lives in studios/training of Marketing Studio.",
   "files": [
     {
       "path": "skills/presentation-studio/scripts/home.py",

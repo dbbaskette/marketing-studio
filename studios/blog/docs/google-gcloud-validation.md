@@ -1,3 +1,5 @@
+A record of a check made on 2026-10-02; it describes the studio as it was then.
+
 # Google gcloud adapter validation — 2026-10-02
 
 Implemented the gcloud user-login/Drive API pattern from the installed Tanzu brand
