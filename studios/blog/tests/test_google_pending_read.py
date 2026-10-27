@@ -629,6 +629,14 @@ class LargeImageTests(unittest.TestCase):
         self.assertIn('![Image kept in the Google Doc][image2]', fitted)
         self.assertEqual(gs.fit_images(fitted, room=600), (fitted, 0), 'the same every read')
 
+    def test_a_small_image_after_a_large_one_still_comes_in(self):
+        big, small = 'data:image/png;base64,' + 'A' * 900, 'data:image/png;base64,' + 'B' * 100
+        text = '![][image1]\n\n![][image2]\n\n[image1]: <' + big + '>\n\n[image2]: <' + small + '>'
+        fitted, kept = gs.fit_images(text, room=600)
+        self.assertEqual(kept, 1)
+        self.assertIn('![Image kept in the Google Doc][image1]', fitted)
+        self.assertIn('[image2]: <' + small + '>', fitted)
+
     def test_a_doc_over_the_room_reads_on_both_paths_and_fits_the_hub(self):
         from hub_store import MAX_TEXT
         import desk_jobs

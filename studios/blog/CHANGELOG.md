@@ -8,7 +8,7 @@ changes for authors first, then what changes for maintainers.
 - **A Google Doc with large images reads, its large images kept in the Doc.** Reading a Doc
   whose images came to more than a blog's shared files hold stopped with "This Doc, with its
   images, comes to more than a blog keeps (1 MiB)". Now its images come in, in document
-  order, while their data fits about 600 KiB; each after that stays in the Google Doc and
+  order, while their data fits about 600 KiB; one too large for the room left stays in the Google Doc and
   shows on the desk as "Image kept in the Google Doc", with one line saying how many. This
   holds for a Doc read with or without pending suggestions; a kept image is never seen as
   changed on a send or a later read, and Copy and Download leave it out. For maintainers:

@@ -535,10 +535,11 @@ _REFERRED = re.compile(r'!\[([^\[\]\n]*)\]\[(image[0-9]+)\]')
 
 
 def fit_images(markdown, room=IMAGE_ROOM):
-    """A Doc's Markdown with its images' data kept in document order while it fits `room`;
-    each image after that is a reference with no data, `![Image kept in the Google Doc][…]`,
-    its image staying in the Doc. Returns (markdown, how many stayed in the Doc). The same
-    images always fit the same way, whichever way the Doc was read."""
+    """A Doc's Markdown with its images' data kept, in document order, while each fits
+    `room`; an image too large for the room left is a reference with no data,
+    `![Image kept in the Google Doc][…]`, its image staying in the Doc. Returns (markdown,
+    how many stayed in the Doc). The same images always fit the same way, whichever way
+    the Doc was read."""
     defined = {match[1]: match[2] for match in _DEFINED.finditer(markdown)}
     order = []
     for match in _REFERRED.finditer(markdown):
@@ -546,10 +547,11 @@ def fit_images(markdown, room=IMAGE_ROOM):
             order.append(match[2])
     order += [label for label in defined if label not in order]
     used, kept = 0, []
-    for label in order:
-        used += len(defined[label])
-        if used > room or kept:
+    for label in order:  # An image too large for what is left stays in the Doc; a later,
+        if used + len(defined[label]) > room:  # smaller one may still fit.
             kept.append(label)
+        else:
+            used += len(defined[label])
     if not kept:
         return markdown, 0
     gone, ending = set(kept), '\n' if markdown.endswith('\n') else ''

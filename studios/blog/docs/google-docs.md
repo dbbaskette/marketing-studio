@@ -22,8 +22,8 @@ Anything else the reader cannot take, such as an equation, is named in a plain m
 replace it in the Doc and read it again.
 
 A blog's shared files hold at most 1 MiB of text each, and its draft carries its images as
-text. So a Doc's images come in, in order, while their data fits about 600 KiB; every image
-after that stays in the Google Doc and shows on the desk as a placeholder, "Image kept in the
+text. So a Doc's images come in, in order, while their data fits about 600 KiB; an image too
+large for the room left stays in the Google Doc and shows on the desk as a placeholder, "Image kept in the
 Google Doc", with a line saying how many. A read never fails because of image size. A kept
 image is never seen as changed or removed when you send or read again; delete its
 placeholder on the desk and it is treated as any image removed. Copy and Download leave
