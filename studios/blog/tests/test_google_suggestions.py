@@ -504,16 +504,25 @@ class SuggestionsTests(unittest.TestCase):
         self.assertEqual(result['status'], 'verified-pending')
         self.assertTrue(result['accepted_text_unchanged'])
         self.assertIn('teammate-1', json.dumps(self.client.native_read('fixture-doc', inline=True)))
-        # Only the paragraph that already carries a pending suggestion is refused.
+        # In the paragraph with their suggestion, words beside it may change; their own
+        # suggested words never are.
+        gs.plan(
+            self.client,
+            self.root,
+            self.aid,
+            'draft',
+            [self.findings()[1]],
+            self.root / 'beside.json',
+        )
+        blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
+        theirs = dict(
+            self.findings()[1],
+            before='very slow',
+            after='slow',
+            start_index=blocks[2]['startIndex'] + rt.utf16('😀 This isn’t '),
+        )
         with self.assertRaisesRegex(gd.GoogleError, 'pending suggestion'):
-            gs.plan(
-                self.client,
-                self.root,
-                self.aid,
-                'draft',
-                [self.findings()[1]],
-                self.root / 'blocked.json',
-            )
+            gs.plan(self.client, self.root, self.aid, 'draft', [theirs], self.root / 'blocked.json')
         # If the edited paragraph does not read back as proposed, verification fails closed.
         blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
         blocks[1]['paragraph']['elements'] = [
@@ -919,7 +928,7 @@ class SuggestionsTests(unittest.TestCase):
         self.assertGreater(result['summary']['pending_suggestions'], 0)
         self.assertEqual([call.args[1] for call in self.client.export.call_args_list], ['docx'])
 
-    def test_unsupported_structure_uses_google_export_only_when_nothing_is_pending(self):
+    def test_googles_export_stands_in_only_when_nothing_is_pending(self):
         blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
         blocks.append(
             {
@@ -939,10 +948,13 @@ class SuggestionsTests(unittest.TestCase):
         self.assertIn(
             'document.md', gw.formatted_snapshot(out, obs, (out / 'document.md').read_text())
         )
+        # With a teammate's suggestion pending, Google's export would show it: Blog Studio reads
+        # the Doc without it itself, its table and all.
         add_teammate_suggestion(self.client)
-        with self.assertRaisesRegex(gd.GoogleError, 'Suggestions are pending'):
-            rt.capture(self.client, 'fixture-doc', 't.0', self.root / 'table-pending')
-        self.assertFalse((self.root / 'table-pending').exists())
+        rt.capture(self.client, 'fixture-doc', 't.0', self.root / 'table-pending')
+        obs = json.loads((self.root / 'table-pending' / 'observation.json').read_text())
+        self.assertEqual(obs['projection'], rt.OBJECTS_PROJECTION)
+        self.assertNotIn('very', (self.root / 'table-pending' / 'document.md').read_text())
 
     def test_capture_and_status_need_no_comment_readback_for_a_teammates_suggestion(self):
         from test_google_review_comments import CommentProvider

@@ -168,7 +168,9 @@ function sDeskPolish(held){
   sAdd(form,...sDeskDraftIn(held),first,tone,facts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),['saved','upload'].includes(held.source)?null:instead);
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
-    await busy(go,reading?'Reading…':'Starting…',async()=>{try{if(reading)await sDeskReadGoogle(held);else await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
+    // A read that fails again says so as a new answer, so pressing the button visibly reads.
+    const failed=problem.textContent;problem.textContent='';
+    await busy(go,reading?'Reading…':'Starting…',async()=>{try{if(reading)await sDeskReadGoogle(held);else await sDeskGo(held);}catch(error){problem.textContent=(reading&&failed?'Read again, and still: ':'')+error.message+(reading?' Your link is kept here; change the Doc or try again.':' Your choices are kept here.');}});
   });
   sPage(sNode('p','lede','Bring your draft and choose what happens first. No kind of post needed.'),form);
 }
@@ -512,6 +514,16 @@ function sDeskAside(held){
   if(view.style_name)sources.append(sNode('p','quiet','Kind of post: '+view.style_name));
   if(view.tone)sources.append(sNode('p','quiet','Tone: '+view.tone));
   aside.append(sources);
+  // Other people's suggestions pending in the Google Doc, each where it sits: decided there.
+  const doc=view.doc_suggestions||{count:0,marks:[]};
+  if(doc.count){
+    const card=sCard('Suggested in the Doc',sDocPendingLine(doc.count));card.className+=' doc-pending-card';
+    const list=sNode('ul','rows doc-suggestions');
+    for(const mark of doc.marks){const text=deskTextOf(view,mark.part),before=text.slice(Math.max(0,mark.at-24),mark.at).replace(/^\S*\s/,'…'),after=text.slice(mark.at+mark.length,mark.at+mark.length+24).replace(/\s\S*$/,'…');list.append(sAdd(sNode('li','row'),document.createTextNode(before),sDocMark(text,mark),document.createTextNode(after)));}
+    if(doc.marks.length)card.append(list);
+    if(doc.marks.length<doc.count)card.append(sNode('p','quiet',(doc.count-doc.marks.length===1?'1 is':(doc.count-doc.marks.length)+' are')+' on words the desk has changed since, so not marked here.'));
+    aside.append(card);
+  }
   const gaps=view.gaps||[];
   const list=sNode('ul','gap-items');for(const gap of gaps)list.append(sNode('li','',gap));
   aside.append(sAdd(sNode('section','paper aside-part'),sNode('h2','aside-title','Needs you before publishing'),gaps.length?list:sNode('p','quiet','Nothing yet. What a rewrite cannot support from your sources is listed here, never in the text.')));
@@ -767,6 +779,7 @@ function sDeskGoogleSaid(plan){
   else if(n)said+=' Its owner accepts or rejects each suggestion.';
   if(plan.waiting)said+=' '+plan.waiting+(plan.waiting===1?' change waits':' changes wait')+' for the Doc’s owner to decide the earlier suggestion in its paragraph, and '+(plan.waiting===1?'goes':'go')+' next time.';
   if(plan.sent_before)said+=' '+plan.sent_before+(plan.sent_before===1?' change was':' changes were')+' sent before.';
+  if(plan.doc_overlap)said+=' '+plan.doc_overlap+' of these '+(plan.doc_overlap===1?'changes':'change')+' words a Doc suggestion also changes, so '+(plan.doc_overlap===1?'it goes':'they go')+' as '+(plan.doc_overlap===1?'a comment':'comments')+'; the Doc’s suggestion stays for its owner.';
   if(plan.later)said+=' '+plan.later+(plan.later===1?' note goes':' notes go')+' with the next send (nearby paragraphs already have changes).';
   if(plan.left)said+=' '+plan.left+(plan.left===1?' change':' changes')+' could not be placed in the Doc: pull the latest Doc and check again.';
   return said;
@@ -831,6 +844,29 @@ function sReviewPick(item){return {id:item.id,...(Number.isInteger(item.picked)?
 function sDeskModeUrl(held){const review=held.mode==='review';if(studio.screen!=='desk'||(studio.stage==='review')===review)return;studio.stage=review?'review':null;history.replaceState(null,'',location.pathname+'?'+new URLSearchParams({screen:'desk',id:held.id,...(review?{stage:'review'}:{})}));}
 // Markdown as plain reading: bold, emphasis, code and link words shown, list marks as bullets,
 // image references left to their thumbnails. `lineStart` says whether the text starts a line.
+// Other people's suggestions pending in the blog's Google Doc: shown where they sit, never
+// ours to accept or reject, and never counted or numbered with our fixes.
+const DOC_OVERLAP='A Doc suggestion also changes these words; accepting this makes it moot.';
+const DOC_NOTE='Suggested in the Doc. Decide it in Google Docs.';
+function sDocPendingLine(count){const line=sNode('p','quiet doc-pending',(count===1?'1 suggestion is':count+' suggestions are')+' pending in the Google Doc. Decide them there; nothing to do here.');line.dataset.doc='count';return line;}
+function sDocMark(text,mark){
+  const node=sNode('span','doc-suggestion');node.title=DOC_NOTE;node.tabIndex=0;node.dataset.doc=mark.id||'';node.setAttribute('aria-label',DOC_NOTE);
+  const removed=text.slice(mark.at,mark.at+mark.length);
+  if(removed)node.append(sNode('del','doc-removed',removed));
+  if(mark.inserted)node.append(sNode('ins','doc-inserted',mark.inserted));
+  return node;
+}
+function sDocInline(view,part,text,from,to){
+  const out=[],marks=(view.doc_suggestions?.marks||[]).filter(mark=>mark.part===part&&mark.at>=from&&mark.at+mark.length<=to).sort((a,b)=>a.at-b.at);
+  let at=from;
+  for(const mark of marks){
+    if(mark.at<at)continue;
+    if(mark.at>at)out.push(...reviewInline(text.slice(at,mark.at),at===0||text[at-1]==='\n'));
+    out.push(sDocMark(text,mark));at=mark.at+mark.length;
+  }
+  if(to>at)out.push(...reviewInline(text.slice(at,to),at===0||text[at-1]==='\n'));
+  return out;
+}
 function reviewInline(text,lineStart=true){
   const out=[];
   String(text).split('\n').forEach((line,index)=>{
@@ -887,6 +923,10 @@ function sReviewState(held){
     pending.push({...row,at,base:item.after,baseFlag:item.flag||'',...(alternative?{picked:pick,after:alternative.after,flag:alternative.flag||''}:{})});
   }
   pending.sort((a,b)=>parts.indexOf(a.part)-parts.indexOf(b.part)||a.at-b.at||REVIEW_TOOLS.indexOf(a.tool)-REVIEW_TOOLS.indexOf(b.tool));
+  // Words a suggestion still pending in the Google Doc also changes: allowed, and said, and
+  // Accept all leaves it for you. The Doc's own suggestions are never numbered or counted.
+  const doc=view.doc_suggestions||{count:0,marks:[]};
+  for(const item of pending)if(doc.marks.some(mark=>mark.part===item.part&&mark.at<=item.at+item.before.length&&mark.at+mark.length>=item.at))item.docFlag=DOC_OVERLAP;
   // A set that is no longer shown takes its numbers with it; a set that lands later (Humanize
   // after Copy edit's fixes) is numbered after the ones already shown, which keep theirs.
   const shownSets=new Set(sets.map(([tool,set])=>tool+':'+set.job+':'));
@@ -908,7 +948,7 @@ function sReviewState(held){
   }
   if(human&&!working&&view.review?.problem)failed.push(['humanize',view.review.problem]);
   const all=sets.flatMap(([,set])=>set.items);
-  return {sets,working,human,parts,pending,shown,filter,fits,gone,ready:shown.filter(item=>!item.flag),flagged:shown.filter(item=>item.flag),failed,any:sets.length>0,total:all.length,applied:all.filter(item=>item.state==='applied').length};
+  return {sets,working,human,parts,pending,shown,filter,fits,gone,doc,ready:shown.filter(item=>!item.flag&&!item.docFlag),flagged:shown.filter(item=>item.flag),overlapping:shown.filter(item=>item.docFlag&&!item.flag),failed,any:sets.length>0,total:all.length,applied:all.filter(item=>item.state==='applied').length};
 }
 // Drawn again only when what it shows changes, so a poll never swaps a button being pressed.
 function sReviewToolbar(held,state,force=false){
@@ -952,8 +992,10 @@ function sReviewHead(held,state){
     const both=state.pending.some(item=>item.tool==='humanize')&&state.pending.some(item=>item.tool!=='humanize');
     const filter=state.human&&(both||state.filter!=='all')?sReviewFilter(held):null;
     const flagged=state.flagged.length?sNode('p','quiet',state.flagged.length===1?'1 '+noun[0]+' changes a fact, code or the shape of a part, so Accept all leaves it for you to check.':state.flagged.length+' '+noun[1]+' change a fact, code or the shape of a part, so Accept all leaves them for you to check.'):null;
-    sAdd(head,sAdd(sNode('div','card review-tally'),count,sAdd(sNode('div','bar'),all,none)),filter,flagged);
+    const overlap=state.overlapping.length?sNode('p','quiet',state.overlapping.length===1?'1 '+noun[0]+' changes words a Doc suggestion also changes, so Accept all leaves it for you.':state.overlapping.length+' '+noun[1]+' change words a Doc suggestion also changes, so Accept all leaves them for you.'):null;
+    sAdd(head,sAdd(sNode('div','card review-tally'),count,sAdd(sNode('div','bar'),all,none)),filter,flagged,overlap);
   }else if(state.any&&!state.working)head.append(sReviewDone(held,state));
+  if(state.doc.count)head.append(sDocPendingLine(state.doc.count));
   return sAdd(head,sReviewQuick(held,state));
 }
 // Before the first check: Check spelling and grammar, and whether to suggest more
@@ -1009,7 +1051,7 @@ function sReviewLede(state){
   if(state.any&&!state.pending.length&&!state.failed.length)return (state.human?'Every suggestion is reviewed.':'Every fix is reviewed.')+' Click any paragraph to keep editing, or Check again for the latest text.';
   return state.human?'Each suggestion is marked in your text, labelled as a fix or as more human-sounding wording: struck words go, highlighted words come in. Accept or reject each one, or click a paragraph to edit it yourself. Nothing changes until you accept.':'Each fix is marked in your text: struck words go, highlighted words come in. Accept or reject each one, or click a paragraph to edit it yourself. Nothing changes until you accept.';
 }
-function sReviewHeadKey(held,state){const g=held.review?.google,proof=sReviewFindings(held,state);return JSON.stringify([state.working?.id||null,state.working?.kind||null,state.failed,state.sets.map(([tool,set])=>[tool,set.job,set.items.length]),state.applied,state.pending.map(item=>[item.key,item.flag]),state.filter,state.human,sReviewFree(held),!!held.view.working,sDeskCan(held),!!held.view.google_suggestions,held.view.google?.url||'',g?[!!g.plan,!!g.sent,g.problem]:null,proof?[proof.findings.map(found=>found.key),proof.revision===held.view.revision]:null]);}
+function sReviewHeadKey(held,state){const g=held.review?.google,proof=sReviewFindings(held,state);return JSON.stringify([state.doc?.count||0,state.overlapping?.length||0,state.working?.id||null,state.working?.kind||null,state.failed,state.sets.map(([tool,set])=>[tool,set.job,set.items.length]),state.applied,state.pending.map(item=>[item.key,item.flag]),state.filter,state.human,sReviewFree(held),!!held.view.working,sDeskCan(held),!!held.view.google_suggestions,held.view.google?.url||'',g?[!!g.plan,!!g.sent,g.problem]:null,proof?[proof.findings.map(found=>found.key),proof.revision===held.view.revision]:null]);}
 function sReviewHeadShow(held){if(!held.review?.head)return;sReviewHeadReplace(held,sReviewState(held));}
 // The head drawn again with focus where it was: each control that can hold it is marked with
 // data-focus, and the same control in the new head takes it back. A Quick check finding that
@@ -1033,7 +1075,7 @@ function sReviewPaper(held,state){
   for(const part of state.parts){const box=sReviewPart(held,part,state);if(box){held.review.parts[part]=box;paper.append(box);}}
   return paper;
 }
-function sReviewKey(held,part,state){const editing=held.review.editing;return JSON.stringify([deskTextOf(held.view,part),!!state.working,sReviewFree(held),state.shown.filter(item=>item.part===part).map(item=>[item.key,item.number,item.at,item.before,item.after,item.flag,item.note,item.picked??null,item.carriedBy||null]),state.gone.filter(item=>item.part===part).map(item=>[item.key,item.state,item.byNumber??null]),editing&&editing.part===part?editing.start:null,(held.view.sections||[]).find(section=>section.id===part)?.heading||'']);}
+function sReviewKey(held,part,state){const editing=held.review.editing;return JSON.stringify([deskTextOf(held.view,part),(state.doc?.marks||[]).filter(mark=>mark.part===part),state.pending.filter(item=>item.part===part&&item.docFlag).map(item=>item.key),!!state.working,sReviewFree(held),state.shown.filter(item=>item.part===part).map(item=>[item.key,item.number,item.at,item.before,item.after,item.flag,item.note,item.picked??null,item.carriedBy||null]),state.gone.filter(item=>item.part===part).map(item=>[item.key,item.state,item.byNumber??null]),editing&&editing.part===part?editing.start:null,(held.view.sections||[]).find(section=>section.id===part)?.heading||'']);}
 function sReviewPart(held,part,state){
   const view=held.view,text=deskTextOf(view,part),section=(view.sections||[]).find(row=>row.id===part);
   const marks=state.shown.filter(item=>item.part===part),gone=state.gone.filter(item=>item.part===part);
@@ -1064,7 +1106,7 @@ function sReviewBlock(held,part,block,marks){
     const shown=sNode(part==='title'?'h2':'p',part==='title'?'review-title review-text':'review-text');
     let at=block.start;const text=deskTextOf(view,part);
     for(const item of marks){
-      if(item.at>at)shown.append(...reviewInline(text.slice(at,item.at),at===0||text[at-1]==='\n'));
+      if(item.at>at)shown.append(...sDocInline(view,part,text,at,item.at));
       const mark=sNode('span','review-mark'+(item.tool==='humanize'?' review-human':'')+(item.flag?' review-flagged':''));mark.dataset.item=item.id;mark.dataset.tool=item.tool;mark.title=reviewLabel(item);
       const found=diffWords(item.before,item.after);
       if(!found)mark.append(sNode('del','review-old',item.before),document.createTextNode(' '),sNode('ins','review-new',item.after));
@@ -1072,7 +1114,7 @@ function sReviewBlock(held,part,block,marks){
       mark.append(sNode('sup','review-num',String(item.number)));
       shown.append(mark);at=item.at+item.before.length;
     }
-    if(at<block.end)shown.append(...reviewInline(text.slice(at,block.end),at===0||text[at-1]==='\n'));
+    if(at<block.end)shown.append(...sDocInline(view,part,text,at,block.end));
     if(!block.text)shown.append(sNode('span','quiet',part==='title'?'No title yet':'Nothing written yet'));
     if(sDeskCan(held)){shown.tabIndex=0;shown.title='Click to edit';shown.addEventListener('click',()=>sReviewEdit(held,part,block));shown.addEventListener('keydown',event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault?.();sReviewEdit(held,part,block);}});}
     wrap.append(shown);
@@ -1087,11 +1129,12 @@ function sReviewFixes(held,items,loose){
   const editable=sDeskCan(held)&&sReviewFree(held);
   for(const item of items){
     const human=item.tool==='humanize',what=human?'suggestion ':'fix ';
-    const row=sNode('li','review-fix'+(human?' review-human':'')+(item.flag?' review-flagged':''));row.dataset.item=item.id;row.dataset.tool=item.tool;
+    const row=sNode('li','review-fix'+(human?' review-human':'')+(item.flag||item.docFlag?' review-flagged':''));row.dataset.item=item.id;row.dataset.tool=item.tool;
     const said=sAdd(sNode('div','review-why'),sNode('span','review-num',String(item.number)),sNode('span','tag review-kind'+(human?' review-kind-human':''),reviewLabel(item)),sNode('span','',item.note||(human?'Reads as machine-written.':'A fix.')));
     if(item.flag)said.append(sNode('span','tag','Check this'));
     row.append(said);
     if(item.flag)row.append(sNode('p','quiet',item.flag));
+    if(item.docFlag){if(!item.flag)said.append(sNode('span','tag doc-tag','Doc suggestion'));row.append(sNode('p','quiet doc-overlap',item.docFlag));}
     if(item.carriedBy?.length){const known=item.carriedBy.filter(Boolean);row.append(sNode('p','quiet review-carried',known.length?'Updated to fit accepted suggestion '+known.map(n=>'#'+n).join(', ')+'.':'Updated to fit an accepted suggestion.'));}
     if(item.alternatives?.length)row.append(sReviewChoices(held,item));
     if(loose)row.append(deskSides(item.before,item.after));
