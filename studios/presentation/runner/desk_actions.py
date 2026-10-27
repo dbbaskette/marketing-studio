@@ -377,8 +377,11 @@ class DeskActions:
         return self.view(root)
 
     def desk_outline_price(self, path, edited) -> dict:
-        """What saving these unsaved slides would redraw, said before Save: {'says'}."""
+        """What saving these unsaved slides would redraw, said before Save: {'says',
+        'sections'}. None is the outline as it is saved."""
         root = self._desk_held(path)
+        if edited is None:
+            edited = build.slides_of(desk._outline(root))
         if not isinstance(edited, list) or not all(isinstance(one, dict) for one in edited):
             raise WorkspaceError('The slides are a list, each one an object.')
         record = self._load(root)

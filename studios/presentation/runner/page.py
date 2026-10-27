@@ -80,6 +80,21 @@ What a caller needs to know
     `release` is not the one shown in `upkeep.versions.brand`.
   - `/api/computer` {}: look at this computer again, and at the skills, and wake the decks
     that were waiting on what was missing.
+  - The desk, for a deck started from the desk's start (`engine.desk_*`), each answering the
+    deck's view: `/api/desk-note` {"path", "number", "note", "expected"} redraws one slide's
+    section with the note; `/api/desk-deck-note` {"path", "note", "expected"} every section;
+    `/api/desk-stop` {"path"} stops that redraw and keeps what was redrawn;
+    `/api/desk-deliver` {"path", "expected", "blockers_seen"?} delivers the deck on screen;
+    `/api/desk-draw-here` {"path"} draws a deck this computer has no drawing of;
+    `/api/desk-outline` {"path", "slides", "expected"} saves the Outline tab;
+    `/api/desk-reread` {"path", "kind"} reads the document the other way; `/api/desk-look`
+    {"path", "look", "note"?} picks the look at the deck's one pause; and
+    `/api/desk-look-again` {"path"} draws the looks again for another pick.
+    `/api/desk-outline-price` (GET ?path=, or POST {"path", "slides"} with the unsaved
+    slides) answers {"says", "sections"}: what saving them redraws. `expected` is the view's
+    `desk.expected` (the deck on screen) or `desk.outline.expected` (the outline read). A
+    refusal is 400 with its sentence; a deck someone else drives is 409. A deck that is not on
+    the desk is refused with `desk.NOT_ON_DESK`.
 - A refusal is {"error": "<a sentence>"}. Something sent in the wrong shape is 400; a deck
   that is not one of this workspace's is 404; something that cannot be done as things
   stand, such as a change to a deck someone else drives, is 409.
@@ -115,14 +130,25 @@ modules.bind(globals(), _shared, _shared.NAMES)
 
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
-         '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard')
+         '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
+         '/api/desk-outline-price')
+# The desk's changes: each is an engine method by the same name, with what it is sent.
+DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
+        '/api/desk-deck-note': ('desk_deck_note', ('note', 'expected')),
+        '/api/desk-stop': ('desk_stop', ()),
+        '/api/desk-deliver': ('desk_deliver', ('expected', 'blockers_seen?')),
+        '/api/desk-draw-here': ('desk_draw_here', ()),
+        '/api/desk-outline': ('desk_outline', ('slides', 'expected')),
+        '/api/desk-reread': ('desk_reread', ('kind',)),
+        '/api/desk-look': ('desk_look', ('look', 'note?')),
+        '/api/desk-look-again': ('desk_look_again', ())}
 WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
           '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
           '/api/note', '/api/review-level', '/api/research-site', '/api/picture',
-          '/api/picture-remove')
+          '/api/picture-remove', '/api/desk-outline-price', *DESK)
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
 DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
@@ -181,6 +207,10 @@ class RunnerPage(server.Page):
                 self.deck(one('path')), None, one('expected'))))
         if path == '/api/file':
             return server.as_json(HTTPStatus.OK, self.file(one('path'), one('name')))
+        if path == '/api/desk-outline-price':
+            path = self.deck(one('path'))
+            return server.as_json(HTTPStatus.OK, self.desk(
+                lambda: self.engine.desk_outline_price(path, None)))
         if path == '/api/status':
             return server.as_json(HTTPStatus.OK, self.engine.standing())
         if path == '/api/published':
@@ -352,6 +382,12 @@ class RunnerPage(server.Page):
                 server.text(sent, 'expected', needed=False)))
         if path == '/api/answer':
             return server.as_json(HTTPStatus.OK, self.answered(sent))
+        if path in DESK:
+            return server.as_json(HTTPStatus.OK, self.desk_change(path, sent))
+        if path == '/api/desk-outline-price':
+            deck = self.deck(server.text(sent, 'path'))
+            return server.as_json(HTTPStatus.OK, self.desk(
+                lambda: self.engine.desk_outline_price(deck, sent.get('slides'))))
         if path == '/api/note':
             return server.as_json(HTTPStatus.OK, self.engine.note(
                 self.deck(server.text(sent, 'path')), server.text(sent, 'text'),
@@ -494,6 +530,35 @@ class RunnerPage(server.Page):
             raise server.Refusal(HTTPStatus.BAD_REQUEST, engines.NO_NOTE)
         return self.engine.decide(self.deck(path), gate, decision, note, extra,
                                   server.text(sent, 'expected', False))
+
+    def desk(self, action):
+        """A desk call: what it refuses is 400 with its sentence, except a deck someone else
+        drives, which is 409 as it is everywhere."""
+        try:
+            return action()
+        except engines.Elsewhere:
+            raise
+        except WorkspaceError as refusal:
+            raise server.Refusal(HTTPStatus.BAD_REQUEST, str(refusal))
+
+    def desk_change(self, path: str, sent: dict) -> dict:
+        """One of the desk's changes, with what it takes beside the deck's path."""
+        name, takes = DESK[path]
+        deck = self.deck(server.text(sent, 'path'))
+        given = []
+        for key in takes:
+            optional = key.endswith('?')
+            key = key.rstrip('?')
+            if key in ('number',):
+                value = sent.get(key)
+                if type(value) is not int or value < 1:
+                    raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Name the slide by its number.')
+            elif key == 'slides':
+                value = sent.get(key)
+            else:
+                value = server.text(sent, key, not optional)
+            given.append(value)
+        return self.desk(lambda: getattr(self.engine, name)(deck, *given))
 
     def answered(self, sent: dict) -> dict:
         path, ident = server.text(sent, 'path'), server.text(sent, 'id')
