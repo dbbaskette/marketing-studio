@@ -628,8 +628,11 @@ function enter(held) {
   form.dispatch('submit', event);
 }
 
+// A control by its name. What is inert, behind an open sheet, cannot be reached, so a name
+// shared with something behind the sheet is the sheet's.
 function control(label) {
-  const all = document.body.querySelectorAll('button, summary, a').filter(visible);
+  const all = document.body.querySelectorAll('button, summary, a')
+    .filter((node) => visible(node) && !node.behind);
   const exact = all.filter((node) => name(node) === label);
   const found = exact.length ? exact : all.filter((node) => name(node).startsWith(label));
   if (!found.length) throw new Error('Nothing on the page is named "' + label + '".');
@@ -695,8 +698,9 @@ async function app(file) {
     Notification,
     location: { hash: plan.hash === undefined ? '#token=the-test-key' : plan.hash,
       reload() { report.reloads += 1; } },
+    // A plan with {state} opens the page as a reload does, at the screen that state names.
     history: {
-      state: null,
+      state: plan.state || null,
       earlier: [],
       pushState(state) {
         this.earlier.push(this.state);

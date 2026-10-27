@@ -140,3 +140,14 @@
   filter: grayscale(1);
   transition: opacity 0.2s ease;
 }
+
+/* The new-deck sheet's options: a plain disclosure, its summary as tall as any control. */
+.new-options > summary {
+  display: list-item;
+  min-height: 2.75rem;
+  padding-block: 0.65rem;
+}
+
+.new-options > * + * {
+  margin-top: 0.6rem;
+}

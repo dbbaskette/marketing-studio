@@ -128,11 +128,11 @@ const LEVELS = [
   ['rework', 'Full rework', 'It may tighten, split, merge or reorder content, then redesign.'],
   ['selected', 'Selected changes', 'Say which slides and what to fix.'],
 ];
-// Each route's steps, by name. The last is where it starts.
+// Each route's steps after How it begins, by name, as the new-deck sheet numbers them.
 const NEW_STEPS = {
-  scratch: ['What it is about', 'How it looks, and starting it'],
-  document: ['Your document', 'What it is about', 'How it looks, and starting it'],
-  existing: ['Your deck and what changes', 'What it is about', 'How it looks, and starting it'],
+  scratch: ['What it is about', 'How it looks', 'Where it stops'],
+  document: ['Your document', 'What it is about', 'How it looks', 'Where it stops'],
+  existing: ['Your deck and what changes', 'What it is about', 'How it looks', 'Where it stops'],
 };
 const DOCUMENT_TYPES = ['.txt', '.md', '.html', '.htm', '.docx', '.pdf'];
 const DOCUMENT_BYTES = 8000000;      // the largest document the runner reads
@@ -1006,7 +1006,9 @@ function swap(update) {
 }
 
 function open(next) {
-  view.screen = unset() ? 'setup' : next.screen || 'home';
+  // The new-deck form is a sheet over Home: a screen that names it opens Home with it.
+  const making = next.screen === 'new';
+  view.screen = unset() ? 'setup' : making ? 'home' : next.screen || 'home';
   view.path = next.path || null;
   view.sheet = '';
   view.drawn = '';
@@ -1028,6 +1030,10 @@ function open(next) {
   }
   drawSheet();
   swap(() => draw(true));
+  if (making && view.screen === 'home') {
+    if (view.setup) openNew();
+    else view.wantsNew = true;
+  }
 }
 
 // The toolbar: where you are, the way back, and the main thing to do here.
@@ -1194,7 +1200,6 @@ function draw(fresh) {
       [make('p', 'quiet', 'Reading your decks.')], fresh);
     return undefined;
   }
-  if (view.screen === 'new') return drawNew(fresh);
   view.drawn = signature();
   if (view.screen === 'decks') return drawDecks(fresh);
   if (view.screen === 'status') return drawStatus(fresh);
@@ -1241,6 +1246,7 @@ function closeSheet() {
   view.bulk = null;
   drawSheet();
   if (view.screen === 'deck' && view.run) paintDeck(false);
+  else if (['home', 'decks'].includes(view.screen) && view.decks) draw(false);
   if (!focusKey(opener)) byId('title').focus({ preventScroll: true });
 }
 
@@ -1335,7 +1341,7 @@ function drawSheet() {
   const holder = byId('sheet');
   const shown = Boolean(view.sheet && (view.run || ['companions', 'upgrade', 'brand', 'bring']
     .includes(view.sheet) || (view.sheet === 'delete' && view.doomed)
-    || (view.sheet === 'bulk-delete' && view.bulk)));
+    || (view.sheet === 'bulk-delete' && view.bulk) || (view.sheet === 'new' && view.draft)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
   byId('actions').hidden = Boolean(shown);
@@ -1349,6 +1355,7 @@ function drawSheet() {
   let body;
   if (view.sheet === 'delete') body = deleteSheet();
   else if (view.sheet === 'bulk-delete') body = bulkDeleteSheet();
+  else if (view.sheet === 'new') body = newSheet();
   else if (view.sheet === 'companions') body = updateSheet();
   else if (view.sheet === 'upgrade') body = upgradeSheet();
   else if (view.sheet === 'brand') body = brandSheet();
@@ -1401,16 +1408,34 @@ function newButton(kind) {
   return capsule('New deck', kind, () => openNew(), 'new');
 }
 
-// The new-deck form, at a route when one is given: that route's first step.
+// The new-deck sheet, over Home or Decks, at a route when one is given. Elsewhere it opens
+// over Home. A draft is kept for the session: Cancel puts the sheet away and keeps it.
 function openNew(route) {
-  if (!view.draft) view.draft = newDraft();
-  if (route && view.draft.route !== route) {
-    view.draft.route = route;
-    view.draft.step = 0;
-    view.draft.research = false;
-    view.draft.looks = null;
+  if (!['home', 'decks'].includes(view.screen)) {
+    show('new');
+    if (route) chooseRoute(route);
+    return;
   }
-  show('new');
+  if (!view.draft) view.draft = newDraft();
+  if (route) chooseRoute(route);
+  view.sheet = 'new';
+  view.opener = 'new';
+  drawSheet();
+  draw(false);
+  paintAgents();
+  if (view.draft.route) {
+    readAgents();
+    readModels(view.draft.agent);
+  }
+  byId('sheet').focus();
+}
+
+function chooseRoute(route) {
+  if (!view.draft) view.draft = newDraft();
+  if (view.draft.route === route) return;
+  view.draft.route = route;
+  view.draft.research = false;
+  view.draft.looks = null;
 }
 
 // Ways to start a deck, after the decks in hand: the three routes, each opening the form.
@@ -1481,7 +1506,7 @@ function invitation() {
     make('p', '', 'Start from scratch, from a document, or from a deck you already have. '
       + 'Presentation Studio researches, outlines, designs and builds it on its own, and '
       + 'stops where its review level says, for your decision.'),
-    add(make('div', 'bar'), newButton('filled')),
+    add(make('div', 'bar'), newButton(view.sheet ? '' : 'filled')),
     make('p', 'quiet', 'It takes two or three short steps, and this page tells you each time '
       + 'it needs you.'));
 }
@@ -1524,7 +1549,8 @@ function drawHome(fresh) {
   const parts = [['greeting', [said], () => make('p', 'large-title', said)],
     ['head', [], () => pageHead(HOME_LEDE)]];
   if (!every().length) {
-    parts.push(['invite', [], invitation], ['updates', [upkeepOf()], updatesCard]);
+    parts.push(['invite', [Boolean(view.sheet)], invitation],
+      ['updates', [upkeepOf()], updatesCard]);
   } else {
     parts.push(
       rows('Needs you', list(found.needs), 'needs', 'card-needs'),
@@ -1626,7 +1652,7 @@ function drawDecks(fresh) {
   const parts = [['head', [], () => pageHead('Every deck in this workspace, to find, open or '
     + 'delete.')]];
   if (!all.length) {
-    parts.push(['invite', [], invitation]);
+    parts.push(['invite', [Boolean(view.sheet)], invitation]);
   } else {
     parts.push(['filters', [held.text, held.stands, held.began, held.open], decksFilters]);
     parts.push(['bar', [[...ticked], offered], () => StudioLists.selectionBar({
@@ -1654,6 +1680,7 @@ function drawDecks(fresh) {
 async function openBring() {
   view.knownDecks = null;
   view.bringProblem = '';
+  view.bringPick = '';
   openSheet('bring', 'bring')();
   try {
     const found = await ask('known-decks');
@@ -1665,26 +1692,44 @@ async function openBring() {
 function bringSheet() {
   const problem = problemLine();
   say(problem, view.bringProblem || '');
-  const body = add(make('div', 'note'), make('p', '',
-    'Copy a deck made through the conversation workflow into this workspace and resume it. '
-    + 'Its original folder stays unchanged. Only decks remembered on this computer are listed.'));
-  if (!view.knownDecks) add(body, make('p', '', 'Looking for remembered decks…'));
-  else if (!view.knownDecks.length) add(body, make('p', '', 'No decks outside this workspace are remembered yet.'));
+  const picks = make('div', 'pick-cards');
+  picks.setAttribute('role', 'group');
+  picks.setAttribute('aria-label', 'Remembered decks');
   for (const deck of view.knownDecks || []) {
-    add(body, capsule('Bring in “' + deck.title + '”', '', async (event) => {
-      const pressed = event.currentTarget;
-      if (view.bringing) return;
-      view.bringing = true; pressed.disabled = true;
-      try {
-        const made = await send('bring', {path: deck.path});
-        closeSheet(); show('deck', {path: made.path});
-        toast('Deck copied into this workspace.');
-      } catch (failure) { say(problem, failure.message); }
-      finally { view.bringing = false; pressed.disabled = false; }
+    add(picks, pickCard(deck.title, deck.path, view.bringPick === deck.path, () => {
+      view.bringPick = deck.path;
+      drawSheet();
+      focusKey('bring ' + deck.path);
     }, 'bring ' + deck.path));
   }
-  return [sheetTitle('Bring in a deck'), add(body, problem,
-    capsule('Cancel', 'quiet', closeSheet, 'cancel'))];
+  const chosen = (view.knownDecks || []).find((deck) => deck.path === view.bringPick);
+  const go = capsule('Bring it in', chosen ? 'filled' : '', async () => {
+    if (view.bringing || !chosen) return;
+    view.bringing = true;
+    go.disabled = true;
+    try {
+      const made = await send('bring', { path: chosen.path });
+      closeSheet();
+      show('deck', { path: made.path });
+      toast('Deck copied into this workspace.');
+    } catch (failure) {
+      say(problem, failure.message);
+      go.disabled = false;
+    } finally {
+      view.bringing = false;
+    }
+  }, 'bring-go');
+  go.disabled = !chosen;
+  const found = !view.knownDecks ? make('p', '', 'Looking for remembered decks…')
+    : !view.knownDecks.length ? make('p', '', 'No decks outside this workspace are remembered '
+      + 'yet.') : picks;
+  return [sheetTitle('Bring in a deck'), add(make('div', 'note create-flow'),
+    make('p', '', 'Copy a deck made through the conversation workflow into this workspace and '
+      + 'resume it. Its original folder stays unchanged. Only decks remembered on this computer '
+      + 'are listed.'),
+    createStep(1, 'Choose the deck', found), problem,
+    add(make('div', 'bar create-foot'), view.knownDecks && view.knownDecks.length ? go : null,
+      capsule('Cancel', 'quiet', closeSheet, 'cancel')))];
 }
 
 // --- status -----------------------------------------------------------------------
@@ -2821,21 +2866,26 @@ function sourceKind(draft) {
   return (kinds[draft.source] || kinds[0] || [''])[0];
 }
 
-// The three ways to begin, as cards. Choosing one opens its first step.
+// A numbered step of a sheet that makes something: "2. What it is about", then its parts.
+function createStep(number, title, ...nodes) {
+  return add(make('section', 'create-step'), make('h3', 'sheet-part', number + '. ' + title),
+    ...nodes);
+}
+
+// The three ways to begin, as cards. Choosing one draws that route's steps under it.
 function routeStep() {
   const node = make('div', 'pick-cards');
   node.setAttribute('role', 'group');
   node.setAttribute('aria-label', 'How the deck begins');
   for (const [route, title, says] of ROUTES) {
     add(node, pickCard(title, says, view.draft.route === route, () => {
-      view.draft.route = route;
-      view.draft.step = 0;
-      view.draft.research = false;
-      view.draft.looks = null;
-      paintNew(true);
+      chooseRoute(route);
+      paintNew(false);
+      readAgents();
+      readModels(view.draft.agent);
     }, 'route ' + route));
   }
-  return [make('p', 'lede', 'How does this deck begin?'), node];
+  return { title: 'How it begins', nodes: [node] };
 }
 
 // Why a file cannot be used, or nothing when it can.
@@ -2950,9 +3000,9 @@ function paintChosenLater(node) {
 }
 
 function documentStep(draft) {
-  return [add(card('Your document'), make('p', '', 'A script, notes, a write-up or a '
+  return { title: 'Your document', nodes: [make('p', '', 'A script, notes, a write-up or a '
     + 'transcript. It is read first, to tell a finished script from material to build from.'),
-  ...sourceFields(draft))];
+  ...sourceFields(draft)] };
 }
 
 // How much of an existing deck changes, as five cards with what each does.
@@ -2963,11 +3013,8 @@ function levelCards(draft) {
   for (const [level, title, says] of LEVELS) {
     add(node, pickCard(title, says, draft.level === level, () => {
       draft.level = level;
-      say(byId('new-level-problem'), '');
-      for (const other of node.querySelectorAll('.pick-card')) {
-        other.setAttribute('aria-pressed', String(other.dataset.key === 'level ' + level));
-      }
-      byId('new-selected-part').hidden = level !== 'selected';
+      // Where it stops, and the options, follow how much changes: the sheet is drawn again.
+      paintNew(false);
     }, 'level ' + level));
   }
   const selected = add(make('div', ''), field('new-selected', 'Which slides, and what to fix',
@@ -2980,9 +3027,9 @@ function levelCards(draft) {
 }
 
 function deckStep(draft) {
-  return [add(card('Your deck'), make('p', '', 'The original is never changed: what you get '
-    + 'is always a new copy.'), ...sourceFields(draft)),
-  add(card('What changes'), ...levelCards(draft))];
+  return { title: 'Your deck and what changes', nodes: [make('p', '', 'The original is never '
+    + 'changed: what you get is always a new copy.'), ...sourceFields(draft),
+  ...levelCards(draft)] };
 }
 
 // The level a deck stops at: the one its form chose, else the shared level the form read.
@@ -3044,7 +3091,7 @@ function whereItStops(draft) {
   // Where its research may look, with the sites named.
   const looks = draft.research && draft.route !== 'existing'
     ? researchSummary(researchFromOf(draft)) : '';
-  return add(card('Where this deck stops'),
+  return { title: 'Where it stops', nodes: [
     choice('Review level', LEVELS_SHOWN.map((one) => REVIEW_WORDS[one]),
       LEVELS_SHOWN.indexOf(levelOf(draft)), (index) => {
         draft.review_level = LEVELS_SHOWN[index];
@@ -3054,7 +3101,7 @@ function whereItStops(draft) {
     looks ? make('p', 'quiet research-line', looks + '.') : null,
     add(make('div', 'field'), chip('Use this for new work in every studio',
       draft.review_default, (on) => { draft.review_default = on; }, 'review-default'),
-    make('p', 'quiet field-hint', 'Saved when the deck starts.')));
+    make('p', 'quiet field-hint', 'Saved when the deck starts.'))] };
 }
 
 // Settings: where new work stops in every studio, saved at once. A refusal, such as a level
@@ -3180,23 +3227,22 @@ function researchFromField(draft) {
     paintNew(false);
   };
   const chosen = looks.sites.filter((one) => one.on).length;
-  const row = add(make('div', 'chips'),
-    draft.route === 'document' ? chip('your documents', looks.documents, flip('documents'),
-      'research-documents') : null,
-    chip('your sites' + (looks.sites.length ? ' (' + chosen + ')' : ''), looks.sitesOn,
-      flip('sitesOn'), 'research-sites'),
-    chip('the public web', looks.web, flip('web'), 'research-web'));
-  row.setAttribute('role', 'group');
-  row.setAttribute('aria-label', 'Research from');
+  const tick = (id, label, on, flipped) => StudioLists.tick({ id, label, on, flip: flipped });
+  const row = add(make('fieldset', 'research-choices'), make('legend', 'field-label',
+    'Research from'),
+  draft.route === 'document' ? tick('research-documents', 'your documents', looks.documents,
+    flip('documents')) : null,
+  tick('research-sites', 'your sites' + (looks.sites.length ? ' (' + chosen + ')' : ''),
+    looks.sitesOn, flip('sitesOn')),
+  tick('research-web', 'the public web', looks.web, flip('web')));
   let sites = null;
   if (looks.sitesOn) {
-    const list = add(make('div', 'chips'), ...looks.sites.map((one, index) => chip(
-      String(one.url), one.on, (on) => {
+    const list = add(make('fieldset', 'site-choices'), make('legend', 'offscreen',
+      'Your sites for this deck'), ...looks.sites.map((one, index) => tick(
+      'research-site-' + index, String(one.url), one.on, (on) => {
         one.on = on;
         paintNew(false);
-      }, 'research-site ' + index)));
-    list.setAttribute('role', 'group');
-    list.setAttribute('aria-label', 'Your sites for this deck');
+      })));
     const adding = field('research-site', 'Add a site for this piece of work', looks, 'adding',
       { hint: 'An https address, such as docs.example.com/guide: pages are saved only from '
         + 'under it. It is for this deck only; your shared list is changed in Shared '
@@ -3214,8 +3260,7 @@ function researchFromField(draft) {
   }
   const from = researchFromOf(draft);
   const summary = researchSummary(from);
-  return add(make('div', 'field'), make('p', 'field-label', 'Research from'), row, sites,
-    alertLine('research-from-problem'),
+  return add(make('div', 'field'), row, sites, alertLine('research-from-problem'),
     make('p', 'quiet field-hint', summary ? summary + '.' : RESEARCH_EMPTY),
     from.documents && !from.sites.length && !from.web ? make('p', 'quiet field-hint',
       'With your documents only, nothing about them is searched for on the public web.')
@@ -3230,7 +3275,7 @@ function aboutStep(draft) {
       draft.research = on;
       paintNew(false);
     }, 'research') : null;
-  return [add(card('About it'),
+  return { title: 'What it is about', nodes: [
     field('new-title', 'A short title', draft, 'title',
       { limit: 120, hint: 'What it is called in every list, for example “Rolling restarts”.' }),
     field('new-audience', 'Who is it for?', draft, 'audience', { long: true, limit: 2000,
@@ -3249,20 +3294,17 @@ function aboutStep(draft) {
         + 'build from. ' : '') + RESEARCH_SAYS[levelOf(draft)])) : null,
     research && draft.research ? researchFromField(draft) : null,
     research && draft.research ? field('research-questions', 'What should the research answer? (optional)',
-      draft, 'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' }) : null)];
+      draft, 'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' }) : null] };
 }
 
-function startStep(draft) {
-  const drafted = make('p', '');
-  const told = () => {
-    drafted.textContent = 'It is drafted by ' + AGENT_NAMES[draft.agent]
-      + draftModelWords(draft) + '.';
-  };
+// How it looks: the brand and its variant, then the options, closed, with one line that says
+// what they are until they are opened.
+function lookStep(draft, told) {
   const limits = (view.setup && view.setup.limits) || {};
-  // The options are defaults until they are opened: one line says what they are.
-  const options = make('details', 'card');
+  const options = make('details', 'new-options');
   options.dataset.key = 'new-options';
-  const summary = make('summary', 'card-title', 'Options');
+  const summary = make('summary', '', 'Options');
+  summary.dataset.key = 'new-options';
   const said = make('p', 'quiet', [OUTPUTS[draft.output][1], AGENT_NAMES[draft.agent]
     + draftModelWords(draft), limitsSays(limits) || 'no limits'].join(' · '));
   add(options, summary, said,
@@ -3281,58 +3323,65 @@ function startStep(draft) {
       + 'Settings.'),
     OUTPUTS[draft.output][0] === 'google' && !googleReady() ? make('p', '', NOT_CONNECTED)
       : null);
-  return [add(card('How it looks'), brandFields(draft, 'new')), options, whereItStops(draft),
-  add(callout('', make('h2', 'aside-title', 'What happens when you start')),
-    make('p', '', 'It starts at once and works on its own. At each stop you see what is '
-      + 'made so far.'),
-    drafted, make('p', 'quiet', 'This page tells you each time. In between, you can close '
-      + 'it.'))];
+  return { title: 'How it looks', nodes: [brandFields(draft, 'new'), options] };
 }
 
-function paintNew(fresh) {
+// The new-deck sheet: How it begins, then the route's steps, numbered, then what happens when
+// it starts, and Start the deck with Cancel. A deck from scratch has no source step, so the
+// numbers close up.
+function newSheet() {
   const draft = view.draft;
-  view.drawn = 'new';
-  const problem = alertLine('new-problem');
-  if (!draft.route) {
-    place({ title: 'New deck', back: true }, [add(make('div', 'narrow'), ...routeStep())],
-      fresh);
-    return;
-  }
-  const steps = stepsOf(draft);
-  const builders = { scratch: [aboutStep, startStep],
-    document: [documentStep, aboutStep, startStep],
-    existing: [deckStep, aboutStep, startStep] }[draft.route];
-  const last = draft.step === steps.length - 1;
-  const go = submitButton(last ? 'Start the deck' : 'Continue', 'continue');
-  const earlier = capsule(draft.step ? 'Back a step' : 'Another way to begin', 'quiet', () => {
-    if (draft.step) draft.step -= 1;
-    else draft.route = null;
-    paintNew(true);
-  }, 'earlier');
-  // Each step is a form, so Enter in a box goes on as the filled button does.
-  const body = add(pageForm(() => (last ? startDeck(go) : nextStep())),
-    ...builders[draft.step](draft),
-    add(make('div', 'form-foot'), problem, add(make('div', 'bar'), earlier, go)));
-  const route = ROUTES.find((one) => one[0] === draft.route);
-  place({ title: steps[draft.step], name: 'New deck', back: true,
-    above: [make('span', '', route[1] + ' · Step ' + (draft.step + 1) + ' of '
-      + steps.length)] }, [body], fresh);
-  if (last) paintAgents();
+  const go = submitButton('Start the deck', 'continue');
+  const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
+  const drafted = make('span', '');
+  const told = () => {
+    drafted.textContent = 'It is drafted by ' + AGENT_NAMES[draft.agent]
+      + draftModelWords(draft) + '.';
+  };
+  told();
+  const form = make('form', 'create-flow');
+  form.noValidate = true;
+  // Enter in a box starts the deck, as the filled button does: every step is checked first.
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    startDeck(go);
+  });
+  let number = 0;
+  const step = (built) => {
+    number += 1;
+    return createStep(number, built.title, ...built.nodes);
+  };
+  add(form, step(routeStep()));
+  const builders = { scratch: [aboutStep, lookStep, whereItStops],
+    document: [documentStep, aboutStep, lookStep, whereItStops],
+    existing: [deckStep, aboutStep, lookStep, whereItStops] }[draft.route] || [];
+  for (const builder of builders) add(form, step(builder(draft, told)));
+  add(form, draft.route ? add(make('p', 'quiet'), 'It starts at once and works on its own. At '
+    + 'each stop you see what is made so far. ', drafted, ' This page tells you each time. In '
+    + 'between, you can close it.') : null, alertLine('new-problem'),
+  add(make('div', 'bar create-foot'), draft.route ? go : null, cancel));
+  return [add(make('div', 'sheet-heading'), sheetTitle('New deck')), form];
 }
 
-function drawNew(fresh) {
-  if (!fresh && view.drawn === 'new') return;
-  if (!view.draft) view.draft = newDraft();
-  paintNew(true);
-  if (view.draft.route && view.draft.step === stepsOf(view.draft).length - 1) {
-    readAgents();
-    readModels(view.draft.agent);
+// The sheet drawn again in place: what had the focus has it again, and what was open stays
+// open.
+function paintNew(fresh) {
+  if (view.sheet !== 'new' || !view.draft) return;
+  const holder = byId('sheet');
+  const active = document.activeElement;
+  const focused = !fresh && active && active.dataset ? active.dataset.key : '';
+  const opened = Array.from(holder.querySelectorAll('details')).filter((node) => node.open)
+    .map((node) => node.dataset.key);
+  drawSheet();
+  for (const node of holder.querySelectorAll('details')) {
+    if (opened.includes(node.dataset.key)) node.open = true;
   }
+  paintAgents();
+  if (!focused || !focusKey(focused)) holder.focus();
 }
 
-// What is missing on the step on the screen, said beside each box. True when nothing is.
-function stepReady(draft) {
-  const name = stepsOf(draft)[draft.step];
+// What is missing in one step, said beside each box: the boxes, by key, that need an answer.
+function missingIn(draft, name) {
   const missing = [];
   const need = (id, wanted, text) => {
     if (refuse(id, wanted ? '' : text).getAttribute('aria-invalid')) missing.push(id);
@@ -3368,20 +3417,20 @@ function stepReady(draft) {
       if (why) missing.push(draft.route === 'document' ? 'research-documents' : 'research-sites');
     }
   }
-  say(byId('new-problem'), missing.length ? 'Something above is missing.' : '');
-  if (missing.length && !focusKey(missing[0])) byId(missing[0]).focus();
-  return !missing.length;
+  return missing;
 }
 
-function nextStep() {
-  const draft = view.draft;
-  if (!stepReady(draft)) return;
-  draft.step += 1;
-  paintNew(true);
-  if (draft.step === stepsOf(draft).length - 1) {
-    readAgents();
-    readModels(draft.agent);
-  }
+// True when the step has everything it needs.
+function stepReady(draft, name) {
+  return !missingIn(draft, name).length;
+}
+
+// Every step is checked before anything is sent; the first answer missing has the focus.
+function sheetReady(draft) {
+  const missing = stepsOf(draft).flatMap((name) => missingIn(draft, name));
+  say(byId('new-problem'), missing.length ? 'Something above is missing.' : '');
+  if (missing.length && !focusKey(missing[0]) && byId(missing[0])) byId(missing[0]).focus();
+  return !missing.length;
 }
 
 // The form as the runner reads it, and what was uploaded with it.
@@ -3424,6 +3473,7 @@ async function startDeck(pressed) {
   const draft = view.draft;
   if (draft.starting) return;
   const problem = byId('new-problem');
+  if (!sheetReady(draft)) return;
   if (!draft.brand && brandsFound().length) {
     say(problem, 'Choose the brand the deck is made in.');
     return;
@@ -3444,6 +3494,8 @@ async function startDeck(pressed) {
     return;
   }
   view.draft = null;
+  view.sheet = '';
+  drawSheet();
   toast('Started. It is working on its own now.');
   show('deck', { path: started.path }, true);
   refresh();
@@ -7304,7 +7356,7 @@ function took(found) {
 function typing() {
   const active = document.activeElement;
   return Boolean(active && (active.tagName === 'TEXTAREA' || active.tagName === 'INPUT')
-    && active.value && main().contains(active) && active.id !== 'decks-search');
+    && active.value && main().contains(active) && active.id !== 'decks-text');
 }
 
 // A deck that is working is read more often, while its own screen is open.
@@ -7364,6 +7416,10 @@ async function catchUp() {
     const [found, listing] = await Promise.all([setup ? ask('setup') : null, ask('decks')]);
     if (setup) tookSetup(found);
     took(listing);
+    if (view.wantsNew && view.setup && !unset()) {
+      view.wantsNew = false;
+      if (view.screen === 'home') openNew();
+    }
     await Promise.all([
       view.computer === undefined
         ? ask('computer').then((seen) => { view.computer = seen.computer; }) : null,
@@ -7379,7 +7435,7 @@ async function catchUp() {
       show('setup', null, true);
     } else if (['deck', 'published'].includes(view.screen)) {
       await draw(false);
-    } else if (view.screen === 'setup' || view.screen === 'new') {
+    } else if (view.screen === 'setup') {
       // A form is drawn once and never again under the person filling it in.
       if (!view.drawn) draw(true);
     } else if (!view.busy && !view.checking && !view.notifying && !view.turningLook

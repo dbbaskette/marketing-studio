@@ -5,12 +5,15 @@ Every journey here is held to the layout rules on every snapshot (`run_page` wit
 toolbar whose one filled action comes first with the rest quiet. Nothing starts an agent,
 looks at the real computer or touches the network.
 """
+import base64
 import unittest
 from urllib.parse import urlencode
 
 import test_desk
 import test_runner_page
-from test_desk import ok
+from test_desk import DECK, ok
+
+NOT_THERE = {'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]}
 
 
 @unittest.skipUnless(test_desk.NODE, 'Node is needed to run the page scripts without a browser')
@@ -94,8 +97,8 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         result = self.run_page(self.answers(), [
             {'click': 'Start from a document'}, {'snapshot': 'document'}])
         shot = result['snapshots']['document']
-        self.assertTrue('Your document' in shot['parts'] or shot['heading'] == 'Your document',
-                        shot['parts'])
+        self.assertIn('2. Your document', shot['parts'])
+        self.assertEqual(shot['heading'], 'Home')
 
     def test_status_shows_the_check_first(self):
         result = self.run_page(self.answers(**{'POST /api/computer': [ok(self.get('computer'))]}),
@@ -309,6 +312,130 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertIn('Search', shot['fields'])
         for title in ('Waiting deck', 'Document deck', 'Capacity planning', 'Rollback drill'):
             self.assertIn('Delete ' + title, shot['buttons'])
+
+
+    # --- the new-deck sheet, Bring in a deck, and the research choice ---------------
+
+    def test_new_deck_is_one_sheet_in_numbered_steps(self):
+        result = self.run_page(self.answers(), [
+            {'click': 'New deck'}, {'snapshot': 'routes'},
+            {'click': 'Start from a document'}, {'snapshot': 'document'}])
+        shots = result['snapshots']
+        self.assertEqual(shots['routes']['heading'], 'Home')
+        self.assertIn('1. How it begins', shots['routes']['sheet'])
+        sheet = shots['document']['sheet']
+        steps = ['1. How it begins', '2. Your document', '3. What it is about',
+                 '4. How it looks', '5. Where it stops']
+        self.assertEqual([step for step in steps if step in sheet], steps)
+        self.assertEqual(sorted(steps, key=sheet.index), steps)
+        self.assertTrue(sheet.rstrip().endswith('Start the deck\nCancel'), sheet[-200:])
+        self.assertEqual(shots['document']['filled'], ['Start the deck'])
+        self.assertEqual(shots['document']['heading'], 'Home')
+
+    def test_an_idea_has_no_source_step_and_the_numbers_close_up(self):
+        result = self.run_page(self.answers(), [
+            {'click': 'New deck'}, {'click': 'Start from scratch'}, {'snapshot': 'idea'}])
+        sheet = result['snapshots']['idea']['sheet']
+        for step in ('2. What it is about', '3. How it looks', '4. Where it stops'):
+            self.assertIn(step, sheet)
+        self.assertNotIn('5. ', sheet)
+
+    def test_start_checks_every_step_and_focuses_the_first_gap(self):
+        result = self.run_page(self.answers(), [
+            {'click': 'New deck'}, {'click': 'Start from a document'},
+            {'click': 'Start the deck'}, {'snapshot': 'missing'}])
+        missing = result['snapshots']['missing']
+        self.assertEqual(missing['posts'], 0)
+        self.assertIn('Something above is missing.', missing['sheet'])
+        self.assertIn('Choose the file first.', missing['sheet'])
+        self.assertIn('Give it a title first.', missing['sheet'])
+        self.assertEqual(missing['focus'], 'new-file')
+
+    def test_the_sheet_sends_what_the_wizard_sent(self):
+        answers = self.answers(**{'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
+                                  **NOT_THERE})
+        result = self.run_page(answers, [
+            {'click': 'New deck'}, {'click': 'Redesign an existing deck'},
+            {'attach': 'The deck, as a .pptx',
+             'files': [{'name': 'old.pptx', 'bytes': DECK.decode('latin-1')}]},
+            {'click': 'Selected changes'}, {'click': 'Polish'},
+            {'fill': 'A short title', 'value': 'Old deck'}, {'click': 'Start the deck'}])
+        (address, body), = self.posts(result)
+        self.assertEqual(address, '/api/decks')
+        form = body['form']
+        self.assertEqual((form['route'], form['level'], form['source'], form['title']),
+                         ('existing', 'polish', {'kind': 'upload', 'name': 'old.pptx'},
+                          'Old deck'))
+        self.assertEqual(base64.b64decode(body['uploads']['old.pptx']), DECK)
+        self.assertEqual(self.run_of(self.post('decks', body)['path'])['gate']['name'],
+                         'gate:classify')
+
+    def test_cancel_keeps_the_draft_for_the_session(self):
+        result = self.run_page(self.answers(), [
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Kept for later'}, {'click': 'Cancel'},
+            {'snapshot': 'closed'}, {'click': 'New deck'}, {'snapshot': 'again'}])
+        shots = result['snapshots']
+        self.assertEqual(shots['closed']['sheet'], '')
+        self.assertEqual(shots['again']['fields']['A short title'], 'Kept for later')
+        self.assertEqual(result['requests'][-1]['method'], 'GET')
+        self.assertEqual(self.posts(result), [])
+
+    def test_screen_new_still_opens_the_form(self):
+        result = self.run_page(self.answers(), [{'snapshot': 'opened'}],
+                               state={'screen': 'new', 'path': None})
+        opened = result['snapshots']['opened']
+        self.assertEqual(opened['heading'], 'Home')
+        self.assertIn('1. How it begins', opened['sheet'])
+
+    def test_research_from_is_ticks(self):
+        sites = ['blog.example.com/platform', 'docs.example.com']
+        answers = self.answers(**{'GET /api/setup': [self.setup_with(research_sites=sites)],
+                                  'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
+                                  **NOT_THERE})
+        result = self.run_page(answers, [
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Synthetic deck'},
+            {'click': 'Research first'}, {'snapshot': 'research'},
+            {'tick': 'your sites'}, {'snapshot': 'sites'},
+            {'tick': 'the public web'}, {'snapshot': 'off'}, {'click': 'Start the deck'}])
+        shots = result['snapshots']
+        self.assertEqual(shots['research']['ticked'], ['the public web'])
+        self.assertIn('Research from', shots['research']['sheet'])
+        self.assertEqual(shots['sites']['ticked'], ['your sites (2)', 'the public web', *sites])
+        self.assertEqual(shots['off']['ticked'], ['your sites (2)', *sites])
+        (_, body), = self.posts(result)
+        self.assertEqual(body['form']['research_from'],
+                         {'documents': False, 'sites': sites, 'web': False})
+
+    def test_bring_in_a_deck_picks_then_brings(self):
+        known = [{'title': 'Old deck', 'path': '/old/a'}, {'title': 'Other deck', 'path': '/old/b'}]
+        self.started(title='Waiting deck')
+        answers = self.answers(**{'GET /api/known-decks': [ok({'decks': known})],
+                                  'POST /api/bring': [ok({'path': '/nowhere'})], **NOT_THERE})
+        result = self.run_page(answers, [
+            {'click': 'Decks'}, {'click': 'Bring in a deck'}, {'snapshot': 'picks'},
+            {'click': 'Other deck'}, {'snapshot': 'picked'}, {'click': 'Bring it in'}])
+        shots = result['snapshots']
+        sheet = shots['picks']['sheet']
+        self.assertIn('1. Choose the deck', sheet)
+        self.assertTrue(sheet.rstrip().endswith('Bring it in\nCancel'), sheet[-120:])
+        self.assertEqual(shots['picks']['posts'], 0)
+        self.assertIn('Bring it in', shots['picks']['off'])
+        self.assertEqual(shots['picked']['filled'], ['Bring it in'])
+        self.assertEqual(shots['picked']['posts'], 0)
+        self.assertEqual(self.posts(result), [('/api/bring', {'path': '/old/b'})])
+
+    def test_back_a_step_and_another_way_to_begin_are_gone(self):
+        result = self.run_page(self.answers(), [
+            {'click': 'New deck'}, {'snapshot': 'routes'}, {'click': 'Start from a document'},
+            {'snapshot': 'document'}])
+        for shot in result['snapshots'].values():
+            for gone in ('Back a step', 'Another way to begin', 'Continue'):
+                self.assertNotIn(gone, shot['buttons'])
+        sheet = result['snapshots']['document']['sheet']
+        self.assertLess(sheet.index('1. How it begins'), sheet.index('Start from scratch'))
+        self.assertLess(sheet.index('Redesign an existing deck'), sheet.index('2. Your document'))
 
 
 if __name__ == '__main__':
