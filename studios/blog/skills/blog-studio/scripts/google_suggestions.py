@@ -405,21 +405,28 @@ def locate(document_value, finding, selected_tabs):
     return result
 
 
-def trimmed(before, after):
+def trimmed(before, after, was=None, now=None):
     """How many characters a replacement shares with its quote at the start and at the end,
     each cut back so no word is split: only the words between are deleted and inserted, so a
-    suggestion shows just what changes."""
+    suggestion shows just what changes. With looks for each character of the quote (`was`)
+    and of the replacement (`now`), a character is shared only in the same look, so a word
+    that is to look otherwise is deleted and inserted in its new look."""
 
     def splits(text, at):
         return 0 < at < len(text) and text[at - 1].isalnum() and text[at].isalnum()
 
+    def same(i, j):
+        return before[i] == after[j] and (was is None or now is None or was[i] == now[j])
+
     start = 0
-    while start < min(len(before), len(after)) and before[start] == after[start]:
+    while start < min(len(before), len(after)) and same(start, start):
         start += 1
     while start and (splits(before, start) or splits(after, start)):
         start -= 1
     end = 0
-    while end < min(len(before), len(after)) - start and before[-end - 1] == after[-end - 1]:
+    while end < min(len(before), len(after)) - start and same(
+        len(before) - end - 1, len(after) - end - 1
+    ):
         end += 1
     while end and (splits(before, len(before) - end) or splits(after, len(after) - end)):
         end -= 1
@@ -432,6 +439,36 @@ def trimmed(before, after):
     return start, end
 
 
+def _each(runs, length, what):
+    """Each character's look from [[length, look]] runs, checked to cover `length`."""
+    if (
+        not isinstance(runs, list)
+        or any(
+            not isinstance(run, list)
+            or len(run) != 2
+            or type(run[0]) is not int
+            or run[0] < 1
+            or not isinstance(run[1], dict)
+            or set(run[1]) - set(LOOKS)
+            or not isinstance(run[1].get('link') or '', str)
+            for run in runs
+        )
+        or sum(run[0] for run in runs) != length
+    ):
+        raise GoogleError('Give each run of ' + what + ' its length and look.')
+    return [look for size, look in runs for _ in range(size)]
+
+
+def trimmed_finding(finding):
+    """trimmed() for a finding, with its looks when it carries them (`was` over its quote,
+    `styles` over its replacement)."""
+    was = now = None
+    if finding.get('styles') is not None and finding.get('was') is not None:
+        now = _each(finding['styles'], len(finding['after']), 'a replacement')
+        was = _each(finding['was'], len(finding['before']), 'a quote')
+    return trimmed(finding['before'], finding['after'], was, now)
+
+
 def insertions(findings):
     """(tab, UTF-16 index, UTF-16 length) of the text each suggested edit inserts. Suggested
     deletions stay inline, so text is inserted after the words it replaces, at the quote's end
@@ -440,7 +477,7 @@ def insertions(findings):
     for f in findings:
         if f.get('kind') != 'edit' or not f.get('after'):
             continue
-        start, end = trimmed(f['before'], f['after'])
+        start, end = trimmed_finding(f)
         text = f['after'][start : len(f['after']) - end]
         if text:
             at = f['start_index'] + rt.utf16(f['before'][: len(f['before']) - end])
@@ -458,22 +495,7 @@ def _looks(finding, keep_start, keep_end):
     if found is None:
         return None
     after = finding['after']
-    if (
-        not isinstance(found, list)
-        or any(
-            not isinstance(run, list)
-            or len(run) != 2
-            or type(run[0]) is not int
-            or run[0] < 1
-            or not isinstance(run[1], dict)
-            or set(run[1]) - set(LOOKS)
-            or not isinstance(run[1].get('link') or '', str)
-            for run in found
-        )
-        or sum(run[0] for run in found) != len(after)
-    ):
-        raise GoogleError('Give each run of a replacement its length and look.')
-    each = [look for length, look in found for _ in range(length)]
+    each = _each(found, len(after), 'a replacement')
     pieces = []
     for at in range(keep_start, len(after) - keep_end):
         if pieces and pieces[-1][1] == each[at]:
@@ -546,7 +568,7 @@ def validate(document_value, findings, selected_tabs):
     for f in findings:
         if (
             not isinstance(f, dict)
-            or set(f) - required - {'after', 'minor', 'remove', 'styles'}
+            or set(f) - required - {'after', 'minor', 'remove', 'styles', 'was'}
             or required - set(f)
         ):
             raise GoogleError(
@@ -638,7 +660,7 @@ def validate(document_value, findings, selected_tabs):
         occupied[tab].append((f['start_index'], end))
         style, cut, inserted, joined, runs = None, None, '', False, []
         if f['kind'] == 'edit':
-            keep_start, keep_end = trimmed(f['before'], f['after'])
+            keep_start, keep_end = trimmed_finding(f)
             da, db = a + keep_start, b - keep_end
             inserted = f['after'][keep_start : len(f['after']) - keep_end]
             styles = [

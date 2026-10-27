@@ -1480,8 +1480,9 @@ def _tokens(chars):
 def _runs(old, new):
     """The separate changed runs between two paragraphs' shown text, word by word, as
     [old start, old end, new start, new end]. Runs a few words apart merge into one where the
-    Doc's words between share one style, but a new paragraph stays a change of its own. The
-    desk's formatting plays no part, so a word made bold later leaves the changes as sent."""
+    Doc's words between share one style, but a new paragraph stays a change of its own. Words
+    are matched by their text, so a word made bold later, on its own, leaves the changes as
+    sent; a word matched beside a change in another style joins the change."""
     import difflib
 
     old_text, old_tokens = _tokens(old)
@@ -1493,13 +1494,53 @@ def _runs(old, new):
         at = spans[low][0] if low < len(spans) else length
         return at, at
 
-    runs = []
+    # Equal stretches token by token, so only the words beside a change can join it.
+    ops = []
     for tag, a, b, c, d in difflib.SequenceMatcher(
         None,
         [old_text[x:y] for x, y in old_tokens],
         [new_text[x:y] for x, y in new_tokens],
         autojunk=False,
     ).get_opcodes():
+        if tag == 'equal':
+            ops += [['equal', a + i, a + i + 1, c + i, c + i + 1] for i in range(b - a)]
+        else:
+            ops.append([tag, a, b, c, d])
+
+    def restyled(op):
+        _, a, b, c, d = op
+        return any(
+            old[x][1] != new[y][1]
+            for (oa, ob), (na, nb) in zip(old_tokens[a:b], new_tokens[c:d], strict=True)
+            for x, y in zip(range(oa, ob), range(na, nb), strict=True)
+            if not old_text[x].isspace()
+        )
+
+    def blank(op):
+        return not old_text[old_tokens[op[1]][0] : old_tokens[op[1]][1]].strip()
+
+    # Words matched beside a change but in another style (a new paragraph's "line" matched to
+    # a bold "line") belong to the change: its words come in in the desk's look. Words that
+    # only changed style, with no change beside them, stay a note.
+    changed = True
+    while changed:
+        changed = False
+        for at, op in enumerate(ops):
+            if op[0] != 'equal':
+                continue
+            beside = [ops[other] for other in (at - 1, at + 1) if 0 <= other < len(ops)]
+            if any(o[0] != 'equal' for o in beside) and (
+                restyled(op) or (blank(op) and any(o[0] == 'equal' and restyled(o) for o in beside))
+            ):
+                op[0], changed = 'replace', True
+    merged = []
+    for op in ops:
+        if merged and op[0] != 'equal' and merged[-1][0] != 'equal':
+            merged[-1][2], merged[-1][4] = op[2], op[4]
+        else:
+            merged.append(op)
+    runs = []
+    for tag, a, b, c, d in merged:
         if tag == 'equal':
             continue
         run = [*bounds(old_tokens, a, b, len(old_text)), *bounds(new_tokens, c, d, len(new_text))]
@@ -1680,12 +1721,16 @@ def _stretched(space, following):
     return bool((space[5] and space[5] != following[5]) or (space[0] and not following[0]))
 
 
+def _look(style):
+    """A desk character's look as Google's suggestion sets it."""
+    return {'bold': style[0], 'italic': style[1], 'underline': style[3], 'link': style[5]}
+
+
 def _runs_of(looks):
-    """A replacement's looks as Google's suggestion takes them: [[length, {bold, italic,
-    underline, link}]]."""
+    """Looks as Google's suggestion takes them: [[length, {bold, italic, underline, link}]]."""
     runs = []
     for look in looks:
-        found = {'bold': look[0], 'italic': look[1], 'underline': look[3], 'link': look[5]}
+        found = _look(look)
         if runs and runs[-1][1] == found:
             runs[-1][0] += 1
         else:
@@ -1703,7 +1748,12 @@ def _simulated(old, edits):
     out, at = [], 0
     for number, (start, end, before, after, looks) in enumerate(edits):
         out += [(old[i][0], old[i][1], ('old', i)) for i in range(at, start)]
-        keep_start, keep_end = google_suggestions.trimmed(before, after)
+        keep_start, keep_end = google_suggestions.trimmed(
+            before,
+            after,
+            [_look(st) for _, st in old[start:end]],
+            [_look(st) for st in looks],
+        )
         a, b = start + keep_start, end - keep_end
         style = old[a][1] if a < b else old[max(start, a - 1)][1]
         if (
@@ -1889,6 +1939,7 @@ def _paragraph_change(old_line, new_lines):
             if '\n' in after
             else 'Wording changed on the writing desk.',
             'styles': _runs_of(looks),
+            'was': _runs_of([st for _, st in old['chars'][start:end]]),
         }
         for start, end, before, after, looks in edits
     ]
@@ -2232,7 +2283,7 @@ def google_changes(baseline, body, title=None):
             if change.get('remove'):
                 item['remove'] = True
             elif kind == 'edit' and change['after']:
-                item['styles'] = change['styles']
+                item['styles'], item['was'] = change['styles'], change['was']
             found.append(item)
             paragraphs[item['id']] = {
                 'paragraph': studio.digest(old.encode()),

@@ -2815,6 +2815,21 @@ class GooglePendingTests(GoogleSendAllTests):
         self.assertEqual(len(notes), 2)
         self.assertEqual(len({p['id'] for p in notes}), 2)
 
+    def test_words_matched_to_others_in_another_look_come_in_in_the_desks(self):
+        # The new first line shares words with the bold lead line it joins: they come in as
+        # the desk has them, plain, with nothing left to fix by hand.
+        self.edit(
+            [
+                ('**Plans for', 'An opening line.\n\n**Plans for'),
+                ('Most early', 'Most very early'),
+            ]
+        )
+        plan = self.send()
+        self.assertFalse([p for p in plan['proposals'] if p['kind'] == 'comment'])
+        doc = [[(c, style) for c, style in chars if c != '\n'] for _, chars in self.accepted()]
+        self.assertEqual({style for _, style in doc[0]}, {(False, False, None)})
+        self.assertEqual(''.join(c for c, _ in doc[0]), 'An opening line.')
+
     def test_copies_are_counted_in_the_text_the_doc_had(self):
         # A pending suggestion adds a copy of "Keep it short." in the last paragraph; the desk
         # then rewords the second copy, which must be the one changed.
