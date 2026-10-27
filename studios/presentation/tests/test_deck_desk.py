@@ -891,12 +891,20 @@ class ReviewFixTests(DeskCase):
         self.deck()
         self.assertEqual(said, [desk.NOT_YET])
 
-    def test_an_existing_deck_is_not_started_on_the_desk_yet(self):
+    def test_an_existing_deck_is_started_on_the_desk_with_its_level(self):
         from runner import decks
+        given = {**runner_support.FORM, 'route': 'existing',
+                 'source': {'kind': 'upload', 'name': 'old.pptx'}, 'flow': 'desk'}
+        polish = decks.check_form({**given, 'level': 'polish'}, None)
+        self.assertEqual((polish['flow'], polish['level'], polish['initial_review']),
+                         ('desk', 'polish', 'user-first'))
+        # Selected changes builds nothing, so it has no first draft before a deck check.
+        selected = decks.check_form({**given, 'level': 'selected', 'selected': 'Slide 2.'},
+                                    None)
+        self.assertEqual(selected['flow'], 'desk')
+        self.assertNotIn('initial_review', selected)
         with self.assertRaises(WorkspaceError):
-            decks.check_form({**runner_support.FORM, 'route': 'existing', 'level': 'polish',
-                              'source': {'kind': 'upload', 'name': 'old.pptx'},
-                              'flow': 'desk'}, None)
+            decks.check_form({**given, 'level': 'polish', 'research': True}, None)
 
     def test_a_web_plan_from_the_form_searches_with_its_questions(self):
         from runner import research_steps
