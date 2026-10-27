@@ -7460,7 +7460,8 @@ function deskParts() {
     // server names it by, and `mark` changes when a newer one is drawn.
     picture: (image, alt, mark) => pictureAt(pictureOf(view.path, image), alt, mark),
     pictureAt, pictureOf, sheetTitle, openSheet, closeSheet, drawSheet, paintDeck, steer,
-    askDelete, downloadDeck, theirs, theirsPart, noticePart, problemPart, questionPart,
+    askDelete, downloadDeck, deliverToGoogle, theirs, theirsPart, noticePart, problemPart,
+    questionPart,
     findingItems, routeWords, nameOf, googleReady, createStep, chooseRoute, paintNew,
     paintAgents, readAgents, readModels, researchFromField, researchSummary, researchFromOf,
     brandFields, brandsFound, agentFields, modelFields, draftModelWords, limitsSays,

@@ -1313,9 +1313,11 @@ class FinishingPageTests(DeskPageCase):
 class OpenOnDeskPageTests(DeskPageCase):
     """Task 5.1: a saved deck, delivered the gated way, opens on the desk from its screen."""
 
-    def test_a_delivered_deck_offers_open_on_the_desk(self):
-        path = self.started()
-        for _ in range(12):   # approved stop by stop, with the first look, and delivered
+    def delivered(self, **changes) -> str:
+        """A deck started the gated way, approved stop by stop with the first look, and
+        delivered."""
+        path = self.started(**changes)
+        for _ in range(12):
             gate = self.run_of(path)['gate']
             if gate is None:
                 break
@@ -1323,6 +1325,20 @@ class OpenOnDeskPageTests(DeskPageCase):
             picked = {'extra': {'look': offered['looks'][0]['id']}} \
                 if offered and not offered['chosen'] else {}
             self.decided(path, gate['name'], **picked)
+        return path
+
+    def test_an_opened_powerpoint_delivery_still_goes_to_google_slides(self):
+        path = self.delivered(output='pptx')
+        opened = self.post('desk-open', {'path': path})
+        self.assertTrue(opened['deliver']['to_google'])
+        result = self.open_deck(path, opened, [
+            {'snapshot': 'desk'}, {'click': 'Send to Google Slides'}],
+            **{'POST /api/deliver': [ok(opened)]})
+        self.assertIn('Send to Google Slides', result['snapshots']['desk']['buttons'])
+        self.assertEqual(self.posts(result), [('/api/deliver', {'path': path})])
+
+    def test_a_delivered_deck_offers_open_on_the_desk(self):
+        path = self.delivered()
         view = self.run_of(path)
         self.assertIsNone(view['desk'])
         opened = self.post('desk-open', {'path': path})
