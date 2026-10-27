@@ -262,6 +262,16 @@ changes for authors first, then what changes for maintainers.
   `library_add.py`; `curate` takes `author`, recorded as a curation override;
   `library-selection` accepts up to 500 items for learning. The layout rules are in
   `docs/design/golden-gate.md`.
+- **For maintainers: the desk's parts are shared.** Nothing changes for authors. The
+  desk's text-keeping rules moved to the monorepo's `core/studio_core/drafting/` (with
+  `text_checks.py` and `step_times.py` beside it), its page parts to `ui-kit/drafting.js`
+  and its styles to `ui-kit/style.css`; `desk.py`, `desk_jobs.py`, `desk_finish.py` and
+  `desk.js` keep every name they had and call them. `references/modules/desk-edit.md` is
+  now `studio_core.drafting.prompts.edit_rule('blog draft')`, word for word, and
+  `scripts/text_checks.py` keeps its command line over the shared checks. A desk job
+  whose rewrite changes a number, a link, a quotation, a name, code or its part's shape
+  still lands, and now keeps `checks: {part: what to check}`, which the desk view's job
+  rows carry.
 
 ## 4.7.0 — 2026-10-23
 

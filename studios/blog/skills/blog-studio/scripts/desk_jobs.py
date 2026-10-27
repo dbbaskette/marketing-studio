@@ -22,6 +22,8 @@ import desk
 import desk_images
 import studio
 import tool_jobs
+from studio_core import step_times
+from studio_core.drafting import basis, prompts
 
 KINDS = (
     'desk-section',
@@ -47,29 +49,16 @@ FINISH = (
     'finish-feedback',
     'finish-voice',
 )
-ACTIVE = ('queued', 'working')
-ACTIONS = {
-    'rephrase': 'Rewrite the passage in fresh words with the same meaning.',
-    'shorten': 'Tighten the passage; use noticeably fewer words.',
-    'expand': 'Develop the passage further with one concrete detail, example or consequence '
-    'from the sources.',
-    'fix': 'Fix grammar, clarity and flow only.',
-}
+# The basis rule and the words a desk job is asked with are the shared desk's
+# (studio_core.drafting.basis and prompts).
+ACTIVE = basis.ACTIVE
+ACTIONS = prompts.ACTIONS
 WRITE_AGAIN = (
     'Write this section again from its heading, its brief, the sections before it and the '
     'sources. Keep the kind of post and the tone. Return only the section text.'
 )
-WHOLE = (
-    'Revise every section in sections for this pass, with the full draft as context. Return '
-    'JSON in content: a list of {"id": ..., "text": ...} for every section in sections, in '
-    'order, ids unchanged, each text without its heading. Return a section the pass does not '
-    'touch exactly as it was.'
-)
-REVISE_ONE = (
-    'The author left a note for the whole draft. The draft is revised one section at a time, '
-    'in order: revise part.text, this section only, for the note. The whole draft is in '
-    "sections for context; return only this section's text, without its heading."
-)
+WHOLE = prompts.WHOLE
+REVISE_ONE = prompts.REVISE_ONE
 FIRST_PASS_LIMIT = 180_000  # The whole draft as JSON must come back in one result.
 OPENING = (
     'The opening, the text before the first section, is the item in sections with id '
@@ -93,8 +82,8 @@ RESHAPE = (
     'support.'
 )
 RETURN = blog_runner.WRITING_NOTES  # Evidence and gaps in notes, never in the prose.
-STALE = 'The draft changed while this was being written. Run it again.'
-GAPS = 50
+STALE = basis.stale()
+GAPS = basis.GAPS
 
 
 def _guide(name):
@@ -221,13 +210,8 @@ def _chain_note(root, job, applied=False, problem=None, ended=False):
     studio.write_json(_chain_path(root, meta['chain']), record)
 
 
-def unsettled(job):
-    """A ready result not yet landed in the draft: still the blog's job under way."""
-    return job.get('status') == 'ready' and not job.get('settled_at')
-
-
-def busy(job):
-    return job.get('status') in ACTIVE or unsettled(job)
+unsettled = basis.unsettled
+busy = basis.busy
 
 
 def _busy(root, ident):
@@ -235,19 +219,13 @@ def _busy(root, ident):
         raise ValueError('A desk job is already working on this blog. Wait or stop it.')
 
 
-def fingerprint(value):
-    return studio.digest(json.dumps(value, sort_keys=True, ensure_ascii=False).encode())
-
-
-def _sections_basis(draft):
-    return fingerprint([[section['id'], section['text']] for section in draft['sections']])
+fingerprint = basis.fingerprint
+_sections_basis = basis.sections_basis
 
 
 def _pass_basis(draft):
     """What a first pass was asked about: the opening and every section."""
-    return fingerprint(
-        [['opening', draft['opening']]] + [[s['id'], s['text']] for s in draft['sections']]
-    )
+    return basis.pass_basis(draft, desk.CODEC)
 
 
 def _opening_part(draft):
@@ -303,15 +281,7 @@ def _context(root, draft, length=False):
 
 def _request(label, text, scope):
     """The author's words as an instruction from the author, not as document data."""
-    return (
-        '\n\nAUTHOR’S '
-        + label
-        + ', from the author through Blog Studio. '
-        + scope
-        + '\n"""\n'
-        + text
-        + '\n"""'
-    )
+    return prompts.request(label, text, scope, 'Blog Studio')
 
 
 def _create(root, ident, kind, payload, guidance, meta):
@@ -363,7 +333,7 @@ def section(root, ident, seen, part, note):
     }
     edit = bool(note and found['text'])
     if edit:
-        rule = _guide('desk-edit.md')
+        rule = prompts.edit_rule('blog draft')
     else:
         # Written from its brief: the desk's writing rule, then the article guide.
         rule = _guide('desk-write.md') + '\n\n' + WRITE_AGAIN
@@ -379,9 +349,7 @@ def section(root, ident, seen, part, note):
         guidance += _request(
             'NOTE FOR THIS SECTION',
             note,
-            'Apply it as a surgical edit of part.text and change nothing it does not require.'
-            if edit
-            else 'Follow it as you write the section.',
+            prompts.SURGICAL if edit else prompts.FOLLOW,
         )
     return _queue(
         root,
@@ -419,27 +387,19 @@ def selection(root, ident, seen, part, text, action, instruction='', start=None)
     if action == 'ask':
         if not instruction:
             raise ValueError('Say what to do with the passage.')
-        line = 'Do what the author asks below with the passage.'
+        line = prompts.ASK
     else:
         line = ACTIONS[action]
     extra, shared = _context(root, draft)
     payload = {'passage': text[:12_000], 'around': whole[:20_000], 'action': line, **extra}
-    guidance = (
-        _guide('desk-edit.md')
-        + '\n\nAct on the passage only: '
-        + line
-        + ' Return only the replacement for passage in content; around is its context and '
-        'is not returned.\n\n' + shared + '\n' + RETURN
-    )
+    guidance = prompts.edit_rule('blog draft') + prompts.passage_task(line) + shared + '\n' + RETURN
     if action == 'ask':
-        guidance += _request(
-            'INSTRUCTION FOR THE PASSAGE', instruction, 'Apply it to the passage only.'
-        )
+        guidance += _request('INSTRUCTION FOR THE PASSAGE', instruction, prompts.ONLY_PASSAGE)
     elif instruction:  # Fix from a proofread finding: the finding, as the author chose it.
         guidance += _request(
             'PROOFREAD FINDING TO FIX',
             instruction,
-            'Fix this in the passage as well, and change nothing else.',
+            prompts.ALSO_FIX,
         )
     return _queue(
         root,
@@ -477,11 +437,13 @@ def _revise_one(root, ident, draft, section, note, chain, order):
     """Queue the whole-draft note's job for one section, with the whole draft as context."""
     extra, shared = _context(root, draft)
     payload = {**_whole_payload(draft, extra, note), 'part': section}
-    guidance = _guide('desk-edit.md') + '\n\n' + REVISE_ONE + '\n\n' + shared + '\n' + RETURN
+    guidance = (
+        prompts.edit_rule('blog draft') + '\n\n' + REVISE_ONE + '\n\n' + shared + '\n' + RETURN
+    )
     guidance += _request(
         'NOTE FOR THE WHOLE DRAFT',
         note,
-        'Apply it to part.text as a surgical edit and change nothing it does not require.',
+        prompts.SURGICAL_PART,
     )
     meta = {
         'part': section['id'],
@@ -1325,7 +1287,7 @@ def retry(root, ident, seconds=None, skip_research=False):
         tool_jobs.write(root, saved)
 
 
-TIMES = 20  # step durations kept per step, for the estimate
+TIMES = step_times.TIMES  # step durations kept per step, for the estimate
 
 
 def _times_path(root):
@@ -1336,41 +1298,22 @@ def _step_key(step, length):
     return 'draft:' + (length or 'style') if step == 'draft' else step
 
 
-def _seconds(job):
-    from datetime import datetime
-
-    try:
-        return (
-            datetime.fromisoformat(job['finished_at']) - datetime.fromisoformat(job['started_at'])
-        ).total_seconds()
-    except (KeyError, TypeError, ValueError):
-        return None
+_seconds = step_times.seconds
 
 
 def _note_time(root, key, seconds):
     """Keep how long a step took on this computer; best effort."""
-    try:
-        found = studio.read_json(_times_path(root)) if _times_path(root).is_file() else {}
-        found = found if isinstance(found, dict) else {}
-        kept = [value for value in found.get(key, []) if isinstance(value, (int, float))]
-        found[key] = (kept + [round(seconds, 1)])[-TIMES:]
-        studio.write_json(_times_path(root), found)
-    except (ValueError, OSError):
-        pass
+    step_times.note(desk.BlogStore(root), _times_path(root), key, seconds)
 
 
 def expected_minutes(root, step, length):
     """How long a step usually takes: the median of its recent runs here, else a guess."""
-    import statistics
-
-    try:
-        found = studio.read_json(_times_path(root)) if _times_path(root).is_file() else {}
-        recent = [v for v in found.get(_step_key(step, length), []) if isinstance(v, (int, float))]
-    except (ValueError, OSError, AttributeError):
-        recent = []
-    if recent:
-        return max(1, statistics.median(recent) / 60)
-    return desk.estimate([step], length)
+    return step_times.expected(
+        desk.BlogStore(root),
+        _times_path(root),
+        _step_key(step, length),
+        lambda: desk.estimate([step], length),
+    )
 
 
 def _advance(root, job):
@@ -1402,23 +1345,11 @@ def _advance(root, job):
 
 def _timing(root, ident, start, job):
     """About how many minutes are left, and whether the step under way has overrun."""
-    from datetime import datetime, timezone
-
     if start.get('ended_at') or not start.get('step'):
         return {'minutes_left': 0, 'over': False}
     length = desk.read(root, ident).get('length')
     steps = start['steps'][start['steps'].index(start['step']) :]
-    now_expected = expected_minutes(root, steps[0], length)
-    later = sum(expected_minutes(root, step, length) for step in steps[1:])
-    began = (job or {}).get('started_at') or (job or {}).get('created_at')
-    try:
-        spent = (datetime.now(timezone.utc) - datetime.fromisoformat(began)).total_seconds() / 60
-    except (TypeError, ValueError):
-        spent = 0
-    return {
-        'minutes_left': max(1, round(max(0, now_expected - spent) + later)),
-        'over': bool(job and job.get('busy') and spent > now_expected),
-    }
+    return step_times.left([expected_minutes(root, step, length) for step in steps], job)
 
 
 def _start_view(root, ident, rows):
@@ -1617,7 +1548,7 @@ def first_pass(root, ident, seen, choice):
 
     extra, shared = _context(root, draft, length=choice == 'reshape')
     rule = (
-        TIGHTEN + ' ' + desk_check('copyedit') + '\n\n' + _guide('desk-edit.md')
+        TIGHTEN + ' ' + desk_check('copyedit') + '\n\n' + prompts.edit_rule('blog draft')
         if choice == 'tighten'
         else RESHAPE
     )
@@ -1646,55 +1577,18 @@ def first_pass(root, ident, seen, choice):
 
 
 def _merge_gaps(draft, result):
-    found = result.get('gaps')
-    if not isinstance(found, list):
-        return
-    gaps = list(draft.get('gaps') or [])
-    for gap in found:
-        if isinstance(gap, str) and gap.strip() and gap.strip()[:1000] not in gaps:
-            gaps.append(gap.strip()[:1000])
-    draft['gaps'] = gaps[-GAPS:]
+    basis.merge_gaps(draft, result)
 
 
-def _clean(text, heading=None):
-    """The returned writing without a repeated heading or wrapping blank lines."""
-    text = text.replace('\r\n', '\n').strip()
-    if heading is not None:
-        first, _, rest = text.partition('\n')
-        if re.fullmatch(r'#{1,6}\s+' + re.escape(heading) + r'\s*', first.strip()):
-            text = rest.strip()
-    return text
-
-
-def _opening_text(text):
-    """A returned opening without a leading # title line: the title is its own part."""
-    text = _clean(text)
-    first, _, rest = text.partition('\n')
-    return rest.strip() if desk.TITLE.fullmatch(first.strip()) else text
-
-
-def _landed(draft, before, text):
-    """A returned text as it lands: each token for image data kept as text (in code, say)
-    put back as that data, and refused when one was lost or changed (desk_images.restored);
-    any image data in it moved to the draft's images under labels of its own; and the image
-    references `before` had kept: one left out goes back where it was, one changed or made
-    up is taken out (desk_images.kept)."""
-    text = desk_images.restored(before, text)
-    own = set()
-    text, draft['images'] = desk_images.take(
-        text, draft.get('images'), rename=True, previous=before, touched=own
-    )
-    return desk_images.kept(before, text, draft['images'], own)
+_clean = basis.clean
+_opening_text = basis.opening_text
+_landed = desk._landed  # A returned text as it lands, its images kept (desk_images).
 
 
 def _no_heading(text, deepest=2):
     """A result that would add a section is refused readably; the person adds sections.
     `deepest` is the draft's `desk.limit`."""
-    mark = desk.heading_in(text, deepest)
-    if mark:
-        raise ValueError(
-            'The rewrite added a ' + mark + ' section heading, so it was not applied. Run it again.'
-        )
+    basis.no_heading(text, desk.CODEC, deepest)
 
 
 def _no_headings(draft):
@@ -1705,37 +1599,27 @@ def _no_headings(draft):
     return 'Add no ' + mark + ' or ## heading anywhere: the sections stay as they are.'
 
 
-def _section_texts(content):
-    """[{id, text}] from a whole-draft result, refused readably when malformed."""
-    text = content.strip()
-    fenced = re.fullmatch(r'```(?:json)?\s*\n(.*)\n```', text, re.S)
-    if fenced:
-        text = fenced.group(1)
-    try:
-        found = json.loads(text)
-    except ValueError:
-        raise ValueError(
-            'The result was not the list of sections asked for. Run it again.'
-        ) from None
-    if (
-        not isinstance(found, list)
-        or len(found) > 500
-        or any(
-            not isinstance(item, dict)
-            or not isinstance(item.get('id'), str)
-            or not isinstance(item.get('text'), str)
-            for item in found
-        )
-    ):
-        raise ValueError('The result was not the list of sections asked for. Run it again.')
-    return found
+_section_texts = basis.section_texts
+
+
+def _put(draft, part, text):
+    """A part's text set as it landed (desk._write tidies it when the draft is written)."""
+    section = desk.CODEC.section(draft, part)
+    if section is None:
+        draft[part] = text
+    else:
+        section['text'] = text
 
 
 def _apply(root, ident, draft, job):
+    """Land a ready result through the shared basis rule (studio_core.drafting.basis): only
+    while its part is unchanged, with the text it replaces kept as a version first. Each
+    part whose rewrite changes a fact or its structure is noted in the job's `checks`; the
+    rewrite lands either way."""
     meta, result = job['metadata']['desk'], job.get('result') or {}
     content = result.get('content')
     if not isinstance(content, str) or not content.strip():
-        raise ValueError('The result was empty. Run it again.')
+        raise ValueError(basis.EMPTY_RESULT)
     kind = job['kind']
     if kind in FINISH:
         import desk_finish
@@ -1748,112 +1632,54 @@ def _apply(root, ident, draft, job):
         return _apply_outline(root, ident, draft, job, result)
     if kind == 'desk-draft':
         return _apply_draft(root, ident, draft, job, result)
-    if kind in ('desk-section', 'desk-revise-all'):
-        part = meta['part']
-        if part == 'opening' and kind == 'desk-revise-all':
-            if fingerprint(draft['opening']) != meta.get('basis'):
-                raise ValueError(STALE)
-            text = _landed(draft, draft['opening'], _opening_text(content))
-            _no_heading(text, desk.limit(draft))
-            desk.checked_text(part, text, desk.limit(draft))
-            desk.keep(root, ident, part, draft['opening'], 'revise-all')
-            draft['opening'] = text
-            _merge_gaps(draft, result)
-            return desk._write(root, ident, draft, [part])
-        try:
-            section = desk._part(draft, part)
-        except ValueError:
-            raise ValueError(STALE) from None
-        if fingerprint(section['text']) != meta.get('basis'):
-            raise ValueError(STALE)
-        text = _landed(draft, section['text'], _clean(content, section['heading']))
-        _no_heading(text, desk.limit(draft))
-        desk.checked_text(part, text, desk.limit(draft))
-        desk.keep(
-            root,
-            ident,
-            part,
-            section['text'],
-            'rewrite' if kind == 'desk-section' else 'revise-all',
-        )
-        section['text'] = text
-        _merge_gaps(draft, result)
-        return desk._write(root, ident, draft, [part])
-    if kind == 'desk-selection':
-        part, passage, start = meta['part'], meta.get('selection') or '', meta.get('start')
-        try:
-            whole = desk.text_of(draft, part)
-        except ValueError:
-            raise ValueError(STALE) from None
-        unchanged = fingerprint(whole) == meta.get('basis')
-        if not passage:
-            raise ValueError(STALE)
-        if unchanged and type(start) is int and whole[start : start + len(passage)] == passage:
-            at = start
-        elif whole.count(passage) == 1:
-            at = whole.index(passage)
+    if kind in ('desk-section', 'desk-revise-all', 'desk-selection'):
+        if kind == 'desk-selection':
+            part, before, text, flag = basis.land_selection(draft, meta, content, desk.CODEC)
+            source = 'selection'
         else:
-            raise ValueError(
-                'The selected passage changed while this was being written. Select it again.'
-            )
-        # The passage's own spaces and line breaks stay around its replacement.
-        lead = passage[: len(passage) - len(passage.lstrip())]
-        trail = passage[len(passage.rstrip()) :]
-        replacement = _clean(content)
-        if part == 'title':
-            replacement = ' '.join(replacement.split())
-        updated = whole[:at] + lead + replacement + trail + whole[at + len(passage) :]
-        if part != 'title':
-            updated = _landed(draft, whole, updated)
-        _no_heading(replacement, desk.limit(draft))
-        desk.checked_text(part, updated, desk.limit(draft))
-        desk.keep(root, ident, part, whole, 'selection')
-        desk._set(draft, part, updated)
+            part, before, text, flag = basis.land_part(draft, meta, content, desk.CODEC)
+            source = 'rewrite' if kind == 'desk-section' else 'revise-all'
+        desk.keep(root, ident, part, before, source)
+        if kind == 'desk-selection':
+            desk._set(draft, part, text)
+        else:
+            _put(draft, part, text)
         _merge_gaps(draft, result)
-        return desk._write(root, ident, draft, [part])
+        written = desk._write(root, ident, draft, [part])
+        _checked(job, {part: flag})
+        return written
     # The first pass: the opening and every section as they were asked about, and every
-    # returned id known.
-    if _pass_basis(draft) != meta.get('basis'):
-        raise ValueError(STALE)
-    found = _section_texts(content)
+    # returned id known. Reshaping a draft with no headings may divide it into sections.
     sections = {section['id']: section for section in draft['sections']}
-    ids = [item['id'] for item in found]
-    # The opening counts only when it was sent: an empty one was not.
-    known = set(sections) | ({'opening'} if draft['opening'].strip() else set())
-    if len(set(ids)) != len(ids) or any(name not in known for name in ids):
-        raise ValueError('The result named sections this draft does not have. Run it again.')
-    changes, added = {}, []
-    for item in found:
-        if item['id'] == 'opening':
-            before, text = draft['opening'], _opening_text(item['text'])
-        else:
-            section = sections[item['id']]
-            before, text = section['text'], _clean(item['text'], section['heading'])
-        if not text or text == before:
-            continue
-        text = _landed(draft, before, text)
-        if text == before:
-            continue
-        if item['id'] == 'opening' and meta.get('action') == 'reshape' and not sections:
-            # Reshaping a draft with no headings may divide it into sections.
-            text, added = _divided(text)
-        else:
-            _no_heading(text, desk.limit(draft))
-        desk.checked_text(item['id'], text, desk.limit({'sections': added or draft['sections']}))
-        changes[item['id']] = text
-    for part, text in changes.items():
+
+    def divide(part, text):
+        if part == 'opening' and meta.get('action') == 'reshape' and not sections:
+            return _divided(text)
+        return None
+
+    changes, added = basis.land_sections(draft, meta, content, desk.CODEC, divide)
+    for part, (before, text, _) in changes.items():
         if part == 'opening':
             # A division is undone as a whole: restoring this version takes out the sections
             # it added (desk.restore).
             divided = {'divided': [s['id'] for s in added]} if added else None
-            desk.keep(root, ident, part, draft['opening'], 'first-pass', extra=divided)
+            desk.keep(root, ident, part, before, 'first-pass', extra=divided)
             draft['opening'] = text
         else:
-            desk.keep(root, ident, part, sections[part]['text'], 'first-pass')
+            desk.keep(root, ident, part, before, 'first-pass')
             sections[part]['text'] = text
     draft['sections'] = draft['sections'] + added
     _merge_gaps(draft, result)
-    return desk._write(root, ident, draft, list(changes) + [s['id'] for s in added])
+    written = desk._write(root, ident, draft, list(changes) + [s['id'] for s in added])
+    _checked(job, {part: flag for part, (_, _, flag) in changes.items()})
+    return written
+
+
+def _checked(job, flags):
+    """Keep each part's fact or structure check on the job, for the desk view to carry."""
+    flags = {part: flag for part, flag in flags.items() if flag}
+    if flags:
+        job['checks'] = flags
 
 
 def _divided(text):
@@ -1878,18 +1704,7 @@ def _settle(root, job):
         draft = desk.read(root, ident)
     except ValueError:
         return None
-    try:
-        _apply(root, ident, draft, job)
-        job.update(applied=True, error='')
-    except ValueError as error:
-        job.update(applied=False, error=str(error)[:1000])
-    except Exception as error:  # noqa: BLE001 - e.g. a full disk: said, never stuck.
-        job.update(
-            applied=False,
-            error=('This result could not be saved: ' + str(error))[:1000]
-            + ' Nothing was changed; run it again.',
-        )
-    job['settled_at'] = studio.now()
+    basis.settle(job, lambda: _apply(root, ident, draft, job), studio.now)
     tool_jobs.write(root, job)
     if job['kind'] == 'desk-revise-all':
         _chain_note(root, job, applied=job['applied'], problem=job['error'] or None)
@@ -1999,6 +1814,8 @@ def _row(job):
         'note': (job.get('payload') or {}).get('note') or '',
         'applied': job.get('applied'),
         'error': job.get('error') or '',
+        # A rewrite that changed a fact or its part's structure: {part: what to check}.
+        'checks': job.get('checks') or {},
         'created_at': job.get('created_at'),
         'started_at': job.get('started_at'),
         'finished_at': job.get('finished_at'),

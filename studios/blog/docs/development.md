@@ -21,6 +21,19 @@ The main README is for authors. This page collects repository and maintenance de
 - `skills/blog-writing-toolkit/`: the original module collection, kept for
   provenance.
 
+The writing desk's text-keeping rules are shared with the other studios, in the
+monorepo's `core/studio_core/drafting/` (parts and their Markdown reading, the
+per-part check, versions, removed sections, the basis rule, prompts, guards,
+proposals and the Quick check), `core/studio_core/text_checks.py` and
+`core/studio_core/step_times.py`, reached through `scripts/studio_core`. Blog
+Studio's `desk.py`, `desk_jobs.py` and `desk_finish.py` pass them its store
+(`desk.BlogStore`) and codec (`desk.CODEC`, which keeps images beside the text)
+and keep every name they had; the job queue, kinds, writing context, Google and
+Repurpose stay here. `scripts/text_checks.py` keeps the command line. The page's
+desk parts are `ui-kit/drafting.js` (linked as `assets/management/drafting.js`,
+loaded before `desk.js`), and the desk's styles are in `ui-kit/style.css`; Review
+mode, the start, images and the publish view stay in `desk.js`.
+
 To try the skill from a checkout, open this repository in your AI tool and ask
 it to use `skills/blog-studio/SKILL.md`, or install the checkout into a
 disposable home:

@@ -9,6 +9,7 @@
 | Dependency pins | `pins/companions.json` | Each studio uses its applicable companions |
 | Bundle traversal and staging | `core/studio_core/packaging.py`, `bundles.py` | Product inventory rules and native smoke checks |
 | Runner modules both deck studios use | `core/studio_core/shared_runner/` | Each studio's pipeline, engine, jobs and the parts that differ |
+| Desk parts | `core/studio_core/drafting/`, `text_checks.py`, `step_times.py`, `ui-kit/drafting.js` | Job queues, kinds and writing context; each desk's own screens |
 | Blog Studio's Git, sharing, brand, engine, research and job workflows; each deck studio's pipeline, engine and jobs | Native studio directories | Preserved; drifted implementations are not combined in this migration |
 
 The compatibility module loader creates isolated product contexts from one source
