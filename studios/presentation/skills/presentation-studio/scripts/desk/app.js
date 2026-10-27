@@ -3691,8 +3691,12 @@ function tickNow(run) {
 }
 
 function deckIntro(run) {
-  const node = add(make('div', 'intro'), nowLine(run), state(...deckStanding(run)),
-    make('p', 'lede run-says', run.sentence));
+  // Offered only when it would be done: the last step is this deck's and not shared yet.
+  const undo = !theirs(run) && run.state !== 'working' && run.undo
+    ? capsule('Undo the last step', 'quiet', openSheet('undo', 'undo'), 'undo') : null;
+  const node = add(make('div', 'intro'),
+    pageHead(make('p', 'lede run-says', run.sentence), [undo]), nowLine(run),
+    state(...deckStanding(run)));
   const stands = theirs(run) ? '' : run.state;
   if (queued(run) && stands) add(node, make('p', '', queueSays(run.queue)));
   if (stands === 'working') {
@@ -4158,14 +4162,14 @@ function classifyPanel(gate, readonly) {
   const verdict = KINDS[gate.verdict] ? gate.verdict : 'material';
   const other = verdict === 'spec' ? 'material' : 'spec';
   const held = chosenFor(gate);
-  add(node, make('p', 'lede', 'It reads as ' + KINDS[verdict] + '.'),
+  add(node, make('p', 'row-title', 'It reads as ' + KINDS[verdict] + '.'),
     gate.reason ? make('p', '', gate.reason) : null,
     gate.slides ? make('p', 'quiet', 'Slides it lays out: ' + gate.slides) : null,
     gate.corrected ? make('p', 'quiet', 'You corrected this before.') : null,
     make('p', 'quiet', KIND_SAYS[verdict]));
   const documents = list(gate.documents);
   if (documents.length) {
-    add(node, make('h3', 'row-title', 'Read from'), bullets(documents.map((one) => (one.title
+    add(node, make('p', 'row-title', 'Read from'), bullets(documents.map((one) => (one.title
       || one.name) + (one.readable === false ? ' (it could not be read)' : ''))));
   }
   if (!readonly) {
@@ -4281,10 +4285,10 @@ function researchPanel(gate, readonly, direction = false) {
   if (gate.research) {
     const found = gate.research;
     add(node, documentPart('The research brief', found.brief),
-      make('h3', 'row-title', 'What the independent check said'),
+      make('p', 'row-title', 'What the independent check said'),
       make('p', '', found.check.said), found.check.note ? make('p', '', found.check.note) : null,
       ...list(found.check.unread).map((one) => make('p', '', (one.title || one.source) + ': ' + one.access_error)),
-      make('h3', 'row-title', 'What the research could not settle'),
+      make('p', 'row-title', 'What the research could not settle'),
       list(found.gaps).length ? bullets(found.gaps) : make('p', 'quiet', 'No gaps were named.'),
       ...list(found.sources.partial).map((one) => make('p', '', one.title + ': ' + one.note)),
       make('p', 'quiet', found.read),
@@ -4325,14 +4329,14 @@ function paintFindings(gate, holder, readonly) {
     const cards = (ids) => ids.map((id) => list(gate.items).find((one) => one.id === id)).filter(Boolean)
       .map((item) => findingCard(gate, item, readonly, false));
     const parts = [];
-    if (list(found.questions).length) parts.push(make('h3', 'row-title', 'Your questions'));
+    if (list(found.questions).length) parts.push(make('p', 'row-title', 'Your questions'));
     for (const question of list(found.questions)) {
-      parts.push(make('h4', 'row-title', question.question));
+      parts.push(make('p', 'row-title', question.question));
       parts.push(list(question.findings).length
         ? add(make('ul', 'plain review-list'), ...cards(question.findings))
         : make('p', 'quiet', 'The research did not answer this.'));
     }
-    if (list(found.unplanned).length) parts.push(make('h3', 'row-title', 'Also found'),
+    if (list(found.unplanned).length) parts.push(make('p', 'row-title', 'Also found'),
       add(make('ul', 'plain review-list'), ...cards(found.unplanned)));
     holder.replaceChildren(...parts);
     return;
@@ -4344,7 +4348,7 @@ function paintFindings(gate, holder, readonly) {
   for (const [heading, folded] of [['Look at these first', false], ['Answered', true]]) {
     const shown = items.filter((item) => (item.status === 'supported') === folded);
     if (!shown.length) continue;
-    parts.push(make('h3', 'row-title', heading), add(make('ul', 'plain review-list'),
+    parts.push(make('p', 'row-title', heading), add(make('ul', 'plain review-list'),
       ...shown.map((item) => findingCard(gate, item, readonly, folded))));
   }
   holder.replaceChildren(...parts);
@@ -4643,7 +4647,12 @@ function pictureParts(gate, one, title) {
       { limit: 300, hint: 'Your own photograph, or who it belongs to and that you may use it.' }),
     make('p', 'quiet', 'Pictures you give a slide stay on this computer, with the deck’s other '
       + 'build files: teammates get the finished deck.'),
-    problem, add(make('div', 'bar'), send_)));
+    problem, add(make('div', 'bar'), send_, capsule('Cancel', 'quiet', () => {
+      held.picturing = null;
+      held.picture = null;
+      paintOutline(gate, byId('outline-list'), byId('outline-said'));
+      focusKey('slide-picture ' + one.id);
+    }, 'picture-cancel ' + one.id))));
   return found;
 }
 
@@ -4720,34 +4729,58 @@ function sayingLine(gate, readonly) {
     + 'the slides that changed are drawn again.'));
 }
 
+// Asking for the research again from the direction review: a form of its own, with Cancel.
+function researchRequestCard(gate) {
+  const held = chosenFor(gate);
+  const form = make('form', 'note');
+  form.noValidate = true;
+  const label = make('label', 'field-label', 'What should change in the research?');
+  label.htmlFor = 'direction-research-text';
+  const request = make('textarea', 'input');
+  request.id = 'direction-research-text';
+  request.dataset.key = 'direction-research-text';
+  request.rows = 3;
+  request.maxLength = 4000;
+  request.value = held.researchAsk || '';
+  request.addEventListener('input', () => { held.researchAsk = request.value; });
+  const problem = alertLine('direction-research-problem');
+  const submit = submitButton('Research again', 'direction-research');
+  submit.className = 'button button-quiet';
+  const cancel = capsule('Cancel', 'quiet', () => {
+    request.value = '';
+    held.researchAsk = '';
+    say(problem, '');
+    request.focus();
+  }, 'direction-research-cancel');
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    decide('changes', request.value, problem, submit, { direction_target: 'gate:research' });
+  });
+  return add(card('Ask for changes to the research'), add(form, label, request,
+    gate.research.research_price ? make('p', 'quiet', gate.research.research_price.words) : null,
+    problem, add(make('div', 'bar'), submit, cancel)));
+}
+
 function outlinePanel(gate, readonly) {
   const node = card(gate.look ? 'Review the direction' : 'The outline');
   add(node, sayingLine(gate, readonly), classifyLine(gate, readonly));
+  // The research and the look are read with the outline: cards of their own beside it.
+  const beside = [];
   if (gate.research?.text) {
     const research = { ...gate.research, name: 'gate:research', round: gate.round, direction: true };
-    add(node, researchPanel(research, readonly, true),
-      gate.leave_out_price ? make('p', 'quiet', gate.leave_out_price.words) : null);
+    beside.push(add(researchPanel(research, readonly, true),
+      gate.leave_out_price ? make('p', 'quiet', gate.leave_out_price.words) : null));
   }
   if (gate.look) {
-    add(node, lookPanel(gate.look, readonly || !gate.look.offered, chosenFor(gate),
-      gate.look.offered ? gate : null));
-  }
-  if (gate.look && !readonly) {
-    add(node, capsule('Choose another brand', '', openSheet('rebrand', 'direction-brand'), 'direction-brand'));
-    if (gate.research?.text) {
-      const form = make('form', 'note');
-      const request = make('textarea'); request.maxLength = 4000;
-      request.setAttribute('aria-label', 'What should change in the research?');
-      const problem = problemLine();
-      const submit = submitButton('Research again', 'direction-research');
-      submit.className = 'button button-quiet';
-      form.addEventListener('submit', event => { event.preventDefault(); decide('changes', request.value, problem, submit, {direction_target: 'gate:research'}); });
-      add(form, request, gate.research.research_price ? make('p', 'quiet', gate.research.research_price.words) : null, problem, submit);
-      const detail = add(make('details'), make('summary', '', 'Ask for changes to the research'), form);
-      detail.dataset.key = 'direction-research-request';
-      add(node, detail);
+    const look = lookPanel(gate.look, readonly || !gate.look.offered, chosenFor(gate),
+      gate.look.offered ? gate : null);
+    if (!readonly) {
+      add(look, add(make('div', 'bar'), capsule('Choose another brand', '',
+        openSheet('rebrand', 'direction-brand'), 'direction-brand')));
     }
+    beside.push(look);
   }
+  if (gate.look && !readonly && gate.research?.text) beside.push(researchRequestCard(gate));
   const slides = list(gate.slides);
   if (gate.expected) add(node, storyboardPanel(gate, readonly));
   add(node, make('p', '', count(slides.length, 'slide', 'slides') + ', each with its title '
@@ -4804,7 +4837,8 @@ function outlinePanel(gate, readonly) {
   }
   if (!slides.length) add(node, documentPart('The outline', gate.text));
   if (!readonly) add(node, reviewBar(gate));
-  return add(node, ...gateSaid(gate));
+  add(node, ...gateSaid(gate));
+  return beside.length ? add(make('div', 'stack gate-cards'), node, ...beside) : node;
 }
 
 function storyboardPanel(gate, readonly) {
@@ -4893,7 +4927,7 @@ function lookPanel(gate, readonly, held, review) {
   if (gate.offered) return looksPanel(gate, readonly, held || chosenFor(gate), review);
   const node = card('The brand');
   const made = gate.made_in || 'your brand';
-  add(node, make('p', 'lede', 'Made in ' + made + '.'),
+  add(node, make('p', 'row-title', 'Made in ' + made + '.'),
     make('p', '', readonly ? 'Its cover, drawn in that brand.' : 'This is your cover, drawn '
       + 'in that brand, so you can see it is the one you meant. If it is not, choose another '
       + 'brand.'),
@@ -4914,7 +4948,7 @@ function looksPanel(gate, readonly, held, review) {
   if (gate.again && !held.look) held.look = gate.again.choice || '';
   const made = gate.made_in || 'your brand';
   const node = card('Choose the look');
-  add(node, make('p', 'lede', 'Made in ' + made + '.'),
+  add(node, make('p', 'row-title', 'Made in ' + made + '.'),
     make('p', '', 'The brand drew one slide of your outline in each of its looks. The look '
       + 'you choose sets the colours, what each colour means and how cards are drawn on every '
       + 'slide.'));
@@ -4974,7 +5008,7 @@ function findingItems(findings) {
 // The brand's own check of the deck: its word, and each error and warning in its words.
 function auditPart(gate) {
   const audit = gate.audit;
-  const node = add(make('div', 'audit'), make('h3', 'row-title', 'The brand’s own check'));
+  const node = add(make('div', 'audit'), make('p', 'row-title', 'The brand’s own check'));
   if (!audit) {
     return add(node, make('p', 'quiet', gate.auditNote || 'It has not been run on this '
       + 'deck.'));
@@ -5011,6 +5045,7 @@ function progressFeedback(one) {
   const form = make('form', 'note');
   const problem = problemLine();
   const submit = submitButton(held.sending ? 'Saving feedback…' : 'Ask for changes to this slide', 'feedback ' + one.ref);
+  if (view.lead) submit.className = 'button';
   submit.disabled = Boolean(held.sending);
   add(form, field('feedback-note-' + one.ref, 'What should change on slide ' + one.number + '?',
     held, 'note', {long: true, limit: 4000}), make('p', 'quiet',
@@ -5041,10 +5076,10 @@ function troubleshootingDetails(run) {
   if (!receipts.length && !timing) return null;
   const node = add(make('details', 'card'), make('summary', '', 'Details for troubleshooting'));
   node.dataset.key = 'troubleshooting';
-  if (receipts.length) add(node, make('h3', 'row-title', 'Recent model jobs'), bullets(receipts.map(job =>
+  if (receipts.length) add(node, make('p', 'row-title', 'Recent model jobs'), bullets(receipts.map(job =>
     `${spoken(job.purpose)} · ${capital(job.profile)} · ${job.model || 'assistant default'}${job.effort ? ' · ' + job.effort : ''}`
     + (job.reason ? ' · ' + job.reason : '') + '. Reported actual model: ' + (job.actual_model || 'not reported') + '.')));
-  if (timing) add(node, make('h3', 'row-title', 'Preview timing'),
+  if (timing) add(node, make('p', 'row-title', 'Preview timing'),
     bullets(Object.entries(timing).map(([name, at]) => spoken(name.replaceAll('_', ' ')) + ': ' + at)));
   return node;
 }
@@ -5066,10 +5101,10 @@ function savedDetails(run) {
     add(node, go);
   }
 
-  if (list(run.build_feedback).length) add(node, make('h3', 'row-title', 'Saved slide feedback'),
+  if (list(run.build_feedback).length) add(node, make('p', 'row-title', 'Saved slide feedback'),
     bullets(run.build_feedback.map(item => 'Slide ' + item.number + ': ' + item.note)));
   const used = list(run.note && run.note.used);
-  if (used.length) add(node, make('h3', 'row-title', 'Notes for the next step'),
+  if (used.length) add(node, make('p', 'row-title', 'Notes for the next step'),
     bullets(used.map(item => item.text + ' Went with: ' + stepLabel(run, item.step) + '.')));
   return add(node, problem, holder);
 }
@@ -5275,7 +5310,7 @@ function deliverPart(run) {
         one.url ? add(make('p', ''), outLink(one.url, 'Open revision ' + one.revision
           + ' in Google Slides')) : null)));
     }
-    add(node, make('h3', 'row-title', 'Every revision'), items);
+    add(node, make('p', 'row-title', 'Every revision'), items);
   }
   if (run.contactSheet) {
     add(node, add(make('div', 'thumb'), pictureAt(pictureOf(view.path,
@@ -5358,7 +5393,7 @@ async function downloadDeck(run, pressed) {
 function workerItem(worker) {
   const lines = list(worker.lines);
   const item = add(make('li', 'worker'), add(make('div', 'computer-top'),
-    make('h3', 'row-title', worker.label),
+    make('p', 'row-title', worker.label),
     add(make('span', 'quiet'), 'Started ', when(worker.started_at))));
   if (!lines.length) return add(item, make('p', 'quiet', 'Just starting.'));
   add(item, make('p', 'worker-now', lines[lines.length - 1]));
@@ -5609,6 +5644,12 @@ function reviewBar(gate) {
   tally.id = 'review-tally';
   tally.setAttribute('role', 'status');
   add(node, tally, alertLine('review-problem'));
+  if (narrow() && !view.sheet) {
+    const send = capsule(reviewOf(gate).label, view.lead === 'approve' ? 'filled' : '',
+      () => sendReview(view.run.gate, send, byId('gate-problem')), 'approve');
+    send.id = 'review-send';
+    add(node, add(make('div', 'bar'), send));
+  }
   paintReviewBar(gate, node);
   return node;
 }
@@ -5622,8 +5663,13 @@ function paintReviewBar(gate, node) {
   // nothing it counts.
   if (tally.textContent !== made.tally) tally.textContent = made.tally;
   // What was refused before is not what the marks say now. The one button that sends the
-  // marks is the toolbar's, which says what it will do with them.
+  // marks says what it will do with them: the toolbar's, or on a phone this bar's.
   say(problem, made.blocked || '');
+  const send = node.querySelector('#review-send');
+  if (send) {
+    if (send.textContent !== made.label) send.textContent = made.label;
+    send.disabled = Boolean(made.blocked);
+  }
 }
 
 // A mark changed: the tally, this button and the toolbar's say so at once.
@@ -5686,7 +5732,7 @@ function paintAdded(gate, node) {
   }, 'add-question');
   go.disabled = full;
   if (full) go.setAttribute('aria-describedby', 'added-question-hint');
-  node.replaceChildren(...(held.added.length ? [make('h3', 'row-title', 'Questions you added'),
+  node.replaceChildren(...(held.added.length ? [make('p', 'row-title', 'Questions you added'),
     items] : []), box, add(make('div', 'bar'), go));
 }
 
@@ -5905,7 +5951,10 @@ function deckActions(run, lead) {
     const brand = run.gate.name === 'gate:look';
     // An existing deck's slides are read by code that takes no note: nothing to ask it.
     const read = run.gate.name === 'gate:classify' && run.gate.kind === 'deck';
-    actions.push(approve, read ? null : capsule(brand ? 'Choose another brand'
+    // On a phone a stop reviewed item by item is sent from its review bar, under the thumb
+    // and above the tab bar, where the marks are counted.
+    const barred = REVIEWED.includes(run.gate.name) && narrow();
+    actions.push(barred ? null : approve, read ? null : capsule(brand ? 'Choose another brand'
       : 'Ask for changes', '', openSheet(brand ? 'rebrand' : 'changes', 'changes'),
     'changes'));
   }
@@ -5915,10 +5964,6 @@ function deckActions(run, lead) {
   for (let at = actions.length - 1; at >= 0; at -= 1) if (!actions[at]) actions.splice(at, 1);
   if (['paused', 'stopped'].includes(run.state) && !offered) {
     press('Resume', lead === 'resume' ? 'filled' : '', 'resume');
-  }
-  // Offered only when it would be done: the last step is this deck's and not shared yet.
-  if (run.state !== 'working' && run.undo) {
-    actions.push(capsule('Undo the last step', 'quiet', openSheet('undo', 'undo'), 'undo'));
   }
   return actions;
 }
@@ -5940,6 +5985,7 @@ function paintDeck(fresh) {
   const above = [make('span', '', [route, runs].filter(Boolean).join(' · '))];
   const published = view.issued && view.issued.path === view.path ? view.issued : null;
   const gate = run.gate;
+  view.lead = lead;
   placeParts({ title, above, back: true, actions: deckActions(run, lead),
     mark: [title, route, run.state, lead, gate && [gate.name, gate.round, chosenFor(gate).wrong],
       read, driver,
@@ -5947,10 +5993,8 @@ function paintDeck(fresh) {
       gate && REVIEWED.includes(gate.name) && !read
         ? [reviewOf(gate).label, reviewOf(gate).blocked] : ''] }, [
     ['intro', [run.state, run.sentence, run.queue, view.steered, read, Boolean(run.problem),
-      run.timeline, run.workers, run.spent, run.build_progress && run.build_progress.slides],
-    () => deckIntro(run)],
-    noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
-    ['timeline', [run.timeline, gate && gate.name, run.ahead], () => timelinePart(run)],
+      run.timeline, run.workers, run.spent, run.build_progress && run.build_progress.slides,
+      run.undo], () => deckIntro(run)],
     read && (driver || !finished) ? ['theirs', [driver, lead, run.taken, run.notice,
       run.last_shared, run.kept, title], () => theirsPart(run, lead === 'take')] : null,
     !read && run.notice ? ['notice', [run.notice, run.clash, run.kept],
@@ -5962,12 +6006,14 @@ function paintDeck(fresh) {
       () => questionPart(run, title)] : null,
     gate ? ['gate-line', [gate.name, gate.label, read, driver, googleReady()],
       () => gateLine(run)] : null,
-    gate ? ['gate', [gate, read], () => gatePanel(run)] : null,
-    run.deliver ? ['deliver', [run.deliver, run.contactSheet, read, view.downloading],
-      () => deliverPart(run)] : null,
+    gate ? ['gate', [gate, read, narrow() ? lead : ''], () => gatePanel(run)] : null,
+    noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
     run.build_progress ? ['build-progress', run.build_progress,
       () => buildProgressCard(run.build_progress)] : null,
     list(run.workers).length ? ['workers', run.workers, () => workersCard(run)] : null,
+    ['timeline', [run.timeline, gate && gate.name, run.ahead], () => timelinePart(run)],
+    run.deliver ? ['deliver', [run.deliver, run.contactSheet, read, view.downloading],
+      () => deliverPart(run)] : null,
     finished && (!read || !driver) ? ['publish', [published, teamSpace()],
       () => publishCard(run, published)] : null,
     read && !driver && finished ? ['free', [title], () => finishedFreePart()] : null,

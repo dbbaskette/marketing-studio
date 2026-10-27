@@ -608,7 +608,7 @@ class ScreenTests(ScriptedPage, PageCase):
             path = self.started(research=True)
         record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
         self.engine._store(Path(path), record)
-        result = self.deck_screen(path, [{'click': 'Ask for changes to the research'}, {'snapshot': 'research'}])
+        result = self.deck_screen(path, [{'snapshot': 'research'}])
         self.assertIn('Asking for changes runs the research again', result['snapshots']['research']['text'])
 
     def test_the_start_step_says_where_it_stops_and_folds_the_options(self):
@@ -1216,8 +1216,10 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.deck_screen(path, [{'snapshot': 'phone'}], narrow=True)
         phone = result['snapshots']['phone']
         self.assertEqual(phone['filled'], ['Approve'])
-        # No More menu: the one decision first, filled, and the rest quiet beside it.
-        self.assertEqual(phone['toolbar'][0]['name'], 'Approve')
+        # No More menu: the rest wrap in the toolbar, and a stop reviewed item by item is
+        # sent from its review bar, above the tab bar.
+        self.assertNotIn('Approve', [control['name'] for control in phone['toolbar']])
+        self.assertIn('Ask for changes', [control['name'] for control in phone['toolbar']])
         self.assertIn('Ask for changes', phone['buttons'])
         self.assertIn('Undo the last step', phone['buttons'])
         self.assertNotIn('More', phone['buttons'])

@@ -428,8 +428,9 @@ function layout() {
       .flatMap((part) => part.querySelectorAll('.lede').filter(visible))
       .map((node) => node.textContent.trim()),
     cardHeadings: cards.map((card) => [...new Set(card.all()
+      // A document's own headings (markdown.js's .md) are what it says, not the card's.
       .filter((node) => HEADINGS.includes(node.tagName) && visible(node)
-        && !inside(node, card, 'card'))
+        && !inside(node, card, 'card') && !inside(node, card, 'md'))
       .map((node) => node.tagName.toLowerCase()))].sort()),
     nested: cards.filter((card) => inside(card, main, 'card')).length,
     parts: document.body.querySelectorAll('.card-title, .sheet-part, .selection-count')
