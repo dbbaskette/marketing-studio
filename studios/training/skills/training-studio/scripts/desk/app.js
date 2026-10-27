@@ -437,7 +437,7 @@ const view = {
   // What each list is filtered by, whether a phone's filters are open, and what is ticked on
   // a list, by list. Ticks stay through filter changes. The trainings a sheet deletes
   // together, and what the runner said deleting each would do.
-  filters: {}, filtersOpen: false, ticked: {}, doomedMany: null, leavingMany: null,
+  filters: {}, filtersOpen: {}, ticked: {}, doomedMany: null, leavingMany: null,
   // The picture a deck waits for that the picture sheet is adding.
   picture: null,
   // The refresh in hand, and whether another was asked for while it was. What the list said
@@ -1277,7 +1277,8 @@ function place(spec, nodes, fresh) {
   }
   if (fresh) {
     window.scrollTo(0, 0);
-    byId('title').focus({ preventScroll: true });
+    // A sheet opened on this screen keeps the focus: it is the only thing that can be reached.
+    if (!view.sheet) byId('title').focus({ preventScroll: true });
     return;
   }
   if (focused) focusKey(focused);
@@ -1360,7 +1361,7 @@ function openSheet(kind, opener) {
     view.sheet = kind;
     view.opener = opener;
     // The screen under the sheet gives up its filled button while the sheet holds one.
-    repaintUnder();
+    repaintUnder(true);
     drawSheet();
     const field = byId('note-text');
     (field || byId('sheet')).focus();
@@ -1385,7 +1386,8 @@ function closeSheet() {
 
 // The screen under a sheet, drawn again as a sheet opens or is put away: while one is open
 // it holds the one filled button, so the screen under it gives its own up.
-function repaintUnder() {
+function repaintUnder(opening) {
+  if (opening && (view.gate || outlined() || view.screen === 'training')) return;
   if (view.gate) paintGate(false);
   else if (view.screen === 'run' && view.run) paintRun(false);
   else if (outlined()) paintOutline(false);
@@ -1926,20 +1928,27 @@ function trainingCard(training) {
       go, deleteButton(training)));
 }
 
+// What is typed in a list's search box is kept as it is typed, and applied on Search.
+function keepTyped(row, held) {
+  const box = row.querySelector('input');
+  if (box) box.addEventListener('input', () => { held.draft = box.value; });
+  return row;
+}
+
 function trainingFilters() {
   const held = filtersOf('trainings', { text: '', stands: '' });
   // Teammates' trainings and ones that cannot be read are offered only where there are any.
   const offered = STANDS.filter(([value]) => (value !== 'teammates' || teamSpace()
     || teammates().length) && (value !== 'unreadable'
     || view.listing.some((training) => training.error)) || value === held.stands);
-  return window.StudioLists.filterRow({ key: 'trainings',
-    search: { id: 'text', label: 'Search', value: held.text,
-      hint: 'By its title, what it says or who runs it' },
+  return keepTyped(window.StudioLists.filterRow({ key: 'trainings',
+    search: { id: 'text', label: 'Search', value: held.draft === undefined ? held.text
+      : held.draft, hint: 'By its title, what it says or who runs it' },
     choices: [{ id: 'stands', label: 'Where it stands', options: offered, value: held.stands }],
-    open: view.filtersOpen,
+    open: Boolean(view.filtersOpen.trainings),
     changed: (name, value) => { held[name] = value; draw(false); },
-    searched: (text) => { held.text = text; draw(false); },
-    toggled: (open) => { view.filtersOpen = open; } });
+    searched: (text) => { held.text = text; held.draft = text; draw(false); },
+    toggled: (open) => { view.filtersOpen.trainings = open; } }), held);
 }
 
 function drawTrainings(fresh) {
@@ -1958,7 +1967,8 @@ function drawTrainings(fresh) {
     const tickable = view.runner ? shown.filter(mayDelete).map((training) => training.path) : [];
     const picked = [...ticked];
     parts.push(['head', [said], () => pageHead(said)],
-      ['filters', [held, view.filtersOpen], trainingFilters],
+      ['filters', [held.text, held.stands, Boolean(view.filtersOpen.trainings)],
+        trainingFilters],
       ['selection', [picked, tickable], () => window.StudioLists.selectionBar({
         ticked, shown: tickable, noun: ['training', 'trainings'], key: 'trainings-selection',
         actions: [{ label: 'Delete ' + count(ticked.size, 'training', 'trainings'),
@@ -2693,7 +2703,7 @@ function gateActions(found) {
     : found.status === 'stale' && offers.includes('rebuild') ? 'rebuild' : '';
   const actions = [];
   if (found.combined) {
-    actions.push(capsule('Request changes in the ' + found.combined.name, 'filled',
+    actions.push(capsule('Request changes in the ' + found.combined.name, lead ? '' : 'filled',
       () => show('run', { path: found.path }), 'combined'));
   }
   if (offers.includes('revise')) {
@@ -5170,7 +5180,7 @@ function placeParts(spec, parts, fresh) {
   }
   if (fresh) {
     window.scrollTo(0, 0);
-    byId('title').focus({ preventScroll: true });
+    if (!view.sheet) byId('title').focus({ preventScroll: true });
   } else if (focused && !document.body.contains(active) && !focusKey(focused)) {
     byId('title').focus({ preventScroll: true });
   }
@@ -7799,7 +7809,8 @@ async function askBulkDelete() {
       said = { may: false, why: failure.message };
     }
     if (turn !== view.turn || view.sheet !== 'bulk-delete' || view.doomedMany !== doomed) return;
-    found.push({ ...one, may: Boolean(said.may), why: said.why || '' });
+    found.push({ ...one, may: Boolean(said.may), why: said.why || '',
+      stops: Boolean(said.stops), share: said.share || '', drive: list(said.drive) });
   }
   view.leavingMany = found;
   drawSheet();
@@ -7818,14 +7829,25 @@ function bulkDeleteSheet() {
   const items = make('ul', 'reasons');
   for (const one of found) {
     items.append(make('li', '', one.title + ': ' + (one.may
-      ? 'its folder and what only this computer kept for it.'
+      ? ['its folder and what only this computer kept for it.',
+        DELETE_SHARED[one.share] || ''].filter(Boolean).join(' ')
       : (one.why || 'It cannot be deleted from here.') + ' It stays.')));
   }
+  // What one training's sheet warns of, said once for all of them.
+  const working = going.filter((one) => one.stops).map((one) => one.title);
+  const stops = working.length === 1 ? working[0] + ' is working now. Deleting it stops it '
+    + 'first, and ends everything it is running.' : working.length ? series(working)
+    + ' are working now. Deleting them stops them first, and ends everything they are '
+    + 'running.' : '';
+  const drive = going.flatMap((one) => one.drive);
   const problem = problemLine();
   const confirm = going.length ? capsule('Delete ' + count(going.length, 'training',
     'trainings'), 'danger', () => settleBulkDelete(going, confirm), 'send') : null;
-  return [head, items, make('p', 'quiet', DELETE_UNDO), problem,
-    add(make('div', 'bar'), confirm, cancel)];
+  return [head, stops ? state('late', stops) : null, items,
+    drive.length ? make('p', '', DELETE_DRIVE) : null,
+    drive.length ? add(make('ul', 'plain'), ...drive.map(driveItem)) : null,
+    make('p', 'quiet', DELETE_UNDO), problem,
+    add(make('div', 'bar'), confirm, cancel)].filter(Boolean);
 }
 
 // Delete each in turn, with the same request one training's sheet sends. A refusal does not
@@ -7833,13 +7855,25 @@ function bulkDeleteSheet() {
 async function settleBulkDelete(going, pressed) {
   if (view.busy) return;
   const turn = view.turn;
+  const doomed = view.doomedMany;
   view.busy = true;
+  for (const node of byId('sheet').querySelectorAll('button')) node.disabled = true;
   pressed.disabled = true;
   const stayed = [];
+  const notices = [];
   let deleted = 0;
   for (const one of going) {
+    if (view.sheet !== 'bulk-delete' || view.doomedMany !== doomed) {
+      view.busy = false;
+      toast('Stopped after deleting ' + deleted + ' of ' + count(going.length, 'training',
+        'trainings') + '. The rest are as they were.');
+      if (turn === view.turn) draw(false);
+      refresh();
+      return;
+    }
     try {
-      await send('delete', { path: one.path, title: one.title });
+      const said = await send('delete', { path: one.path, title: one.title });
+      if (said && said.notice && !notices.includes(said.notice)) notices.push(said.notice);
       deleted += 1;
       view.listing = list(view.listing).filter((training) => training.path !== one.path);
       tickedOf('trainings').delete(one.path);
@@ -7853,7 +7887,7 @@ async function settleBulkDelete(going, pressed) {
   view.doomedMany = null;
   view.leavingMany = null;
   toast(['Deleted ' + deleted + ' of ' + count(going.length, 'training', 'trainings') + '.',
-    ...stayed].join(' '));
+    ...notices, ...stayed].join(' '));
   drawSheet();
   draw(false);
   if (!focusKey('bulk-delete')) byId('title').focus({ preventScroll: true });
@@ -8765,17 +8799,18 @@ function publishedRow(found) {
 function publishedFilters(found) {
   const held = filtersOf('published', { text: '', ready: '', by: '' });
   const names = [...new Set(found.map((entry) => entry.by).filter(Boolean))].sort();
-  return window.StudioLists.filterRow({ key: 'published',
-    search: { id: 'text', label: 'Search', value: held.text, hint: 'By its title or who '
-      + 'published it' },
+  return keepTyped(window.StudioLists.filterRow({ key: 'published',
+    search: { id: 'text', label: 'Search', value: held.draft === undefined ? held.text
+      : held.draft, hint: 'By its title or who published it' },
     choices: [{ id: 'ready', label: 'Ready to use', value: held.ready,
       options: [['', 'Any'], ['ready', 'Ready to use'], ['not-ready', 'Not ready to use']] }],
-    more: [{ id: 'by', label: 'Published by', value: held.by,
-      options: [['', 'Anyone'], ...names.map((who) => [who, who])] }],
-    open: view.filtersOpen,
+    // Published by is offered only where there is someone to choose.
+    more: names.length ? [{ id: 'by', label: 'Published by', value: held.by,
+      options: [['', 'Anyone'], ...names.map((who) => [who, who])] }] : [],
+    open: Boolean(view.filtersOpen.published),
     changed: (key, value) => { held[key] = value; paintPublished(false); },
-    searched: (text) => { held.text = text; paintPublished(false); },
-    toggled: (open) => { view.filtersOpen = open; } });
+    searched: (text) => { held.text = text; held.draft = text; paintPublished(false); },
+    toggled: (open) => { view.filtersOpen.published = open; } }), held);
 }
 
 function paintPublished(fresh) {
