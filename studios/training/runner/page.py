@@ -162,8 +162,6 @@ from __future__ import annotations
 import base64
 import binascii
 import re
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from urllib.parse import urlencode
 from pathlib import Path
@@ -177,6 +175,10 @@ from studio_core import research_sites
 
 from runner import engine as engines
 from runner import gitstate, pipeline, setup
+
+from studio_core import modules
+from studio_core.shared_runner import page as _shared
+modules.bind(globals(), _shared, _shared.NAMES)
 
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket')
@@ -193,7 +195,6 @@ KINDS = {
     '.json': 'application/json; charset=utf-8',
 }
 NAMED = re.compile(r'[^A-Za-z0-9._-]+')
-PNG = 'image/png'
 DOCUMENTS = '/api/documents'
 ASSET = '/api/asset'
 DOCUMENT_LIMIT = 12_000_000     # bytes: one document of the largest size, in base64
@@ -228,10 +229,6 @@ class RunnerPage(desk.Page):
     reads = (*desk.READS, *READS)
     writes = (*desk.WRITES, *WRITES)
     framed = ('/api/deck-draft',)   # a deck's wireframe draft, opened by its frame
-
-    def __init__(self, port: int, engine: engines.Engine):
-        super().__init__(port)
-        self.engine = engine
 
     # --- reads ---------------------------------------------------------------------------
 
@@ -400,16 +397,6 @@ class RunnerPage(desk.Page):
                 return super().body_limit(target, headers)
             return DOCUMENT_LIMIT
         return super().body_limit(target, headers)
-
-    def agents(self) -> list[dict]:
-        """Each agent: installed, signed in and reachable now. Looked at when asked, both
-        at once, and each look is reused for a minute."""
-        names = list(self.engine.adapters)
-        with ThreadPoolExecutor(max_workers=len(names) or 1) as pool:
-            found = list(pool.map(self.engine.ready, names))
-        return [{'agent': name, 'installed': ready.installed, 'signed_in': ready.signed_in,
-                 'reachable': ready.reachable, 'version': ready.version,
-                 'problem': ready.problem} for name, ready in zip(names, found)]
 
     def driving(self, path: str) -> str:
         """A training this computer knows, once a run drives it. Any other folder, such as
@@ -756,7 +743,6 @@ class RunnerPage(desk.Page):
         self.run(path)
         return self.engine.answer(path, ident, answer)
 
-
     def supplied(self, sent: dict) -> dict:
         """Add one of the person's documents, remove one, or hear that they are all added."""
         path, action = desk.text(sent, 'path'), desk.text(sent, 'action')
@@ -800,27 +786,11 @@ class RunnerPage(desk.Page):
         return self.engine.copies_again(path)
 
 
+modules.bind(globals(), _shared, methods={'RunnerPage': _shared.METHODS['RunnerPage']})
+
+
 class Studio(desk.Desk):
     """The runner's server: the desk's, with a page that also answers for the runner."""
 
-    def __init__(self, engine: engines.Engine, port: int = 0, token: str | None = None):
-        super().__init__(port, page=lambda chosen: RunnerPage(chosen, engine))
-        self.engine = engine
-        if token:   # a runner opened again in its own place keeps the key its page holds
-            self.page.token = self.token = token
 
-    def serve(self) -> None:
-        self.engine.serving()
-        super().serve()
-
-    def leave(self, after: float = 0.5) -> None:
-        """Stop serving shortly, once what is being answered has gone out."""
-        threading.Timer(after, self.server.shutdown).start()
-
-    def start(self) -> None:
-        self.engine.serving()
-        super().start()
-
-    def stop(self) -> None:
-        super().stop()
-        self.engine.close()
+modules.bind(globals(), _shared, methods={'Studio': _shared.METHODS['Studio']})

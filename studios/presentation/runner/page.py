@@ -95,8 +95,6 @@ from __future__ import annotations
 import base64
 import binascii
 import re
-import threading
-from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from pathlib import Path
 
@@ -108,6 +106,10 @@ from workspace import WorkspaceError
 from runner import decks, gitstate, marks, settings, setup
 from runner import engine as engines
 
+from studio_core import modules
+from studio_core.shared_runner import page as _shared
+modules.bind(globals(), _shared, _shared.NAMES)
+
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
          '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard')
@@ -118,7 +120,6 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/deci
           '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
           '/api/note', '/api/review-level', '/api/research-site', '/api/picture',
           '/api/picture-remove')
-PNG = 'image/png'
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
 DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
@@ -147,10 +148,6 @@ class RunnerPage(server.Page):
     reads = (*server.READS, *READS)
     writes = (*server.WRITES, *WRITES)
     framed = (DRAFT,)   # opened by the storyboard's frame, with a ticket
-
-    def __init__(self, port: int, engine: engines.Engine):
-        super().__init__(port)
-        self.engine = engine
 
     # --- reads ---------------------------------------------------------------------------
 
@@ -271,16 +268,6 @@ class RunnerPage(server.Page):
         truncated = file.stat().st_size > len(data)
         return {'name': name, 'size': file.stat().st_size,
                 'text': data.decode('utf-8', 'replace'), 'truncated': truncated}
-
-    def agents(self) -> list[dict]:
-        """Each agent: installed, signed in and reachable now. Looked at when asked, both
-        at once, and each look is reused for a minute."""
-        names = list(self.engine.adapters)
-        with ThreadPoolExecutor(max_workers=len(names) or 1) as pool:
-            found = list(pool.map(self.engine.ready, names))
-        return [{'agent': name, 'installed': ready.installed, 'signed_in': ready.signed_in,
-                 'reachable': ready.reachable, 'version': ready.version,
-                 'problem': ready.problem} for name, ready in zip(names, found)]
 
     def uses_google(self) -> bool:
         """Whether a new deck is made in Google Slides, or a deck here was."""
@@ -530,27 +517,11 @@ class RunnerPage(server.Page):
         return self.engine.bring(path)
 
 
+modules.bind(globals(), _shared, methods={'RunnerPage': _shared.METHODS['RunnerPage']})
+
+
 class Studio(server.Desk):
     """The runner's server: the page, answering for the engine."""
 
-    def __init__(self, engine: engines.Engine, port: int = 0, token: str | None = None):
-        super().__init__(port, page=lambda chosen: RunnerPage(chosen, engine))
-        self.engine = engine
-        if token:   # a runner opened again in its own place keeps the key its page holds
-            self.page.token = self.token = token
 
-    def serve(self) -> None:
-        self.engine.serving()
-        super().serve()
-
-    def leave(self, after: float = 0.5) -> None:
-        """Stop serving shortly, once what is being answered has gone out."""
-        threading.Timer(after, self.server.shutdown).start()
-
-    def start(self) -> None:
-        self.engine.serving()
-        super().start()
-
-    def stop(self) -> None:
-        super().stop()
-        self.engine.close()
+modules.bind(globals(), _shared, methods={'Studio': _shared.METHODS['Studio']})

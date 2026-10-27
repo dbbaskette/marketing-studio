@@ -74,12 +74,12 @@
       "path": "runner/gitstate.py",
       "from": "runner/gitstate.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/gitstate.py`. adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): when to share is read from and written to the studios config, not the workspace record"
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/gitstate.py`. The port: adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): when to share is read from and written to the studios config, not the workspace record"
     },
     {
       "path": "runner/team.py",
       "from": "runner/team.py",
-      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/team.py`. tag is <folder>/<deck>/r<N>; copies kept",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/team.py`. The port: tag is <folder>/<deck>/r<N>; copies kept",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
@@ -115,7 +115,7 @@
       "path": "runner/brand.py",
       "from": "runner/brand.py",
       "revision": "0881ce768039ebeb9e1fa39b89cedf792bf5d40e",
-      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/brand.py`. a brand skill's version, from PR #66; without contracts(), which belongs to the move to harness-slides 0.14.1"
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/brand.py`. The port: a brand skill's version, from PR #66; without contracts(), which belongs to the move to harness-slides 0.14.1"
     },
     {
       "path": "runner/research.py",
@@ -126,7 +126,7 @@
     {
       "path": "runner/documents.py",
       "from": "runner/documents.py",
-      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/documents.py`. a deck folder (run.json); add_text and text_of added",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/documents.py`. The port: a deck folder (run.json); add_text and text_of added",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
@@ -285,7 +285,7 @@
       "path": "runner/page.py",
       "from": "runner/page.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "rewritten for decks: one view, one decision address, the start form with base64 uploads, slide pictures, the download and whitelisted files; desk lists, gates, documents, copies, outline, assets and adopt removed; /api/brand and /api/brand/install follow runner/page.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66); adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): POST /api/shared"
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/page.py`; the rest is this studio's. The port: rewritten for decks: one view, one decision address, the start form with base64 uploads, slide pictures, the download and whitelisted files; desk lists, gates, documents, copies, outline, assets and adopt removed; /api/brand and /api/brand/install follow runner/page.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66); adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): POST /api/shared"
     },
     {
       "path": "runner/setup.py",
