@@ -2252,6 +2252,40 @@ class GooglePairingTests(unittest.TestCase):
         )
         self.assertEqual((free, waiting, unplaced), ([], 0, 1))
 
+    def test_a_comment_standing_for_several_changes_carries_each_ones_marker(self):
+        free, waiting, unplaced, found = self.guard(
+            ['Run setup first.', 'Then we run setup on every machine again later.'],
+            'Run setup first.\n\nThen we run setup on every machine again.\n',
+            'Run setup first.\n\nNow we run setup on every machine today.\n',
+        )
+        self.assertEqual((free, waiting, unplaced), ([('comment', 'Run setup first.')], 0, 0))
+        changes, _, _ = desk_finish.google_changes(
+            'Run setup first.\n\nThen we run setup on every machine again.\n',
+            'Run setup first.\n\nNow we run setup on every machine today.\n',
+        )
+        self.assertEqual(len(changes), 2)
+        for change in changes:
+            self.assertIn('[Blog Studio ' + change['id'] + ']', found[0]['reason'])
+
+    def test_a_comments_id_does_not_change_with_its_wording(self):
+        from unittest.mock import patch
+
+        case = ('Keep it short.\n', 'Keep it **short**.\n')
+        first = desk_finish.google_changes(*case)[0][0]['id']
+        with patch.object(desk_finish, '_restyle', return_value='Embolden “short”.'):
+            again = desk_finish.google_changes(*case)[0]
+        self.assertEqual((again[0]['id'], again[0]['reason']), (first, 'Embolden “short”.'))
+
+    def test_inserted_words_never_start_with_the_space_already_there(self):
+        for after in ('Second new item here.', 'Second 😀 item here.'):
+            with self.subTest(after=after):
+                (found,), _, _ = desk_finish.google_changes('Second item here.\n', after + '\n')
+                import google_suggestions
+
+                keep, end = google_suggestions.trimmed(found['before'], found['after'])
+                inserted = found['after'][keep : len(found['after']) - end]
+                self.assertFalse(inserted[0].isspace(), inserted)
+
     def test_each_change_lands_in_the_paragraph_it_is_meant_for(self):
         free, waiting, unplaced, _ = self.guard(
             ['Keep it short.', 'Middle.', 'Keep it short.'],
@@ -2316,6 +2350,10 @@ class DeskGoogleTests(unittest.TestCase):
     def test_nothing_changed_is_said(self):
         with self.assertRaisesRegex(ValueError, 'Nothing new to send'):
             self.act('google-plan', mode='auto')
+        # Once the Doc's name is known, nothing changed is said without reading Google.
+        self.client.native_read = None
+        with self.assertRaisesRegex(ValueError, 'Nothing new to send'):
+            self.act('google-plan', mode='auto')
 
     def test_a_second_batch_sends_only_what_is_new(self):
         text = self.made['sections'][0]['text']
@@ -2361,7 +2399,7 @@ class DeskGoogleTests(unittest.TestCase):
         self.act('google-send', plan=first['plan'], confirmed=True)
         desk.save(self.root, self.ident, 2, self.part, text.replace('slow', 'very late'))
         with self.assertRaisesRegex(
-            ValueError, 'waits for the Doc’s owner to decide the earlier suggestion'
+            ValueError, 'waits? for the Doc’s owner to decide the earlier suggestion'
         ):
             self.act('google-plan', mode='auto')
         # The Doc's owner rejects it: the paragraph is free again and the new wording goes.
@@ -2478,8 +2516,7 @@ class GoogleSendAllTests(unittest.TestCase):
         self.root = self.base / 'workspace'
         studio.initialize(self.root)
         self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
-        self.client = fixtures.ReviewProvider()
-        self.client.doc = harbour_doc()
+        self.client = self.provider(fixtures)
         capture = self.base / 'capture'
         rt.capture(self.client, 'fixture-doc', 't.0', capture)
         observation = capture / 'observation.json'
@@ -2505,6 +2542,11 @@ class GoogleSendAllTests(unittest.TestCase):
         held = studio._HELD.set(True)
         self.addCleanup(studio._HELD.reset, held)
         self.ident = desk.create(self.root, {'article': ident})['id']
+
+    def provider(self, fixtures):
+        client = fixtures.ReviewProvider()
+        client.doc = harbour_doc()
+        return client
 
     def act(self, action, **data):
         from unittest.mock import patch
@@ -2568,12 +2610,20 @@ class GoogleSendAllTests(unittest.TestCase):
             {
                 'Event logs': 'Make “Event logs” bold.',
                 'setup guide': 'Link changed: “setup guide” now points to https://example.com/new.',
+                # The new paragraph's link is a comment of its own, on a paragraph with no
+                # suggestion, never riding on the suggestion that brings the words in.
+                'Key Data Patterns': 'In the paragraph “Read the setup guide first.”: Link '
+                '“link” to https://example.com/added.',
             },
         )
-        added = next(p for p in plan['proposals'] if '\n' in p.get('after', ''))
-        self.assertIn('Link “link” to https://example.com/added.', added['reason'])
         repeated = next(p for p in plan['proposals'] if p['before'] == 'short')
-        self.assertEqual((repeated['context'], repeated['occurrence']), ('Keep it short.', 2))
+        # Placed on the second copy, by the Doc's own indexes.
+        copies = [
+            block['startIndex']
+            for block in self.client.doc['tabs'][0]['documentTab']['body']['content']
+            if rt.paragraph_text(block.get('paragraph', {})) == 'Keep it short.\n'
+        ]
+        self.assertEqual(repeated['start_index'], copies[1] + len('Keep it '))
         self.assertEqual(self.client.writes, 0, 'nothing is sent until Send')
         self.assertNotEqual(self.doc_text(), self.desk_text())
         result = self.act('google-send', plan=plan['plan'], confirmed=True)
@@ -2612,6 +2662,128 @@ class GoogleSendAllTests(unittest.TestCase):
             ],
         )
         self.assertEqual((plan['suggestions'], plan['comments']), (0, 1))
+
+
+class GooglePendingTests(GoogleSendAllTests):
+    """Sends again while earlier suggestions wait for the Doc's owner, on a closer model of
+    Google's suggest mode: a suggested break splits its paragraph, and inserted text takes
+    its left neighbour's style until it is set."""
+
+    def provider(self, fixtures):
+        import google_model
+
+        return google_model.Model(harbour_doc())
+
+    def send(self):
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            self.act('google-send', plan=plan['plan'], confirmed=True)['status'], 'verified-pending'
+        )
+        return plan
+
+    def accepted(self):
+        import google_model
+
+        self.client.decide()
+        return google_model.styled_paragraphs(self.client.native_read('x', accepted_preview=True))
+
+    def test_a_note_after_a_suggestion_sent_before_still_goes(self):
+        self.edit([('keep improving', 'improve over time')])
+        self.send()
+        self.edit([('improve over time', '**improve** over time')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['kind'], p['reason']) for p in plan['proposals']],
+            [
+                (
+                    'comment',
+                    'In the paragraph “Most early Machine Learning (ML) projects stalled. To move Agentic Search past…”: Make “improve” bold.',
+                )
+            ],
+        )
+        self.assertEqual(plan['sent_before'], 1)
+        draft = desk.read(self.root, self.ident)
+        desk.save(self.root, self.ident, draft['revision'], 'title', 'Harbour, renamed')
+        plan = self.act('google-plan', mode='auto')
+        self.assertIn(
+            'Suggested title: “Harbour, renamed”.', [p['reason'] for p in plan['proposals']]
+        )
+
+    def test_copies_are_counted_in_the_text_the_doc_had(self):
+        # A pending suggestion adds a copy of "Keep it short." in the last paragraph; the desk
+        # then rewords the second copy, which must be the one changed.
+        self.edit(
+            [
+                ('Keep it short.\n\nA paragraph', 'Keep it very short.\n\nA paragraph'),
+                ('The end.', 'The end. Keep it short.'),
+            ]
+        )
+        self.send()
+        self.edit([('away.\n\nKeep it short.', 'away.\n\nKeep it brief.')])
+        plan = self.send()
+        self.assertEqual(
+            [(p['before'], p['after']) for p in plan['proposals']], [('short', 'brief')]
+        )
+        texts = [''.join(c for c, _ in chars).strip() for _, chars in self.accepted()]
+        self.assertEqual(texts, self.desk_text())
+
+    def test_a_change_to_a_suggestion_still_waiting_waits_and_is_never_undone(self):
+        self.edit([('keep improving.', 'keep improving fast.')])
+        self.send()
+        writes = self.client.writes
+        for changes in (
+            [('improving fast.', 'improving slowly.')],
+            [('improving slowly.', 'improving.')],
+        ):
+            self.edit(changes)
+            with self.assertRaisesRegex(ValueError, 'waits? for the Doc’s owner to decide'):
+                self.act('google-plan', mode='auto')
+        self.assertEqual(self.client.writes, writes, 'nothing is sent around a waiting suggestion')
+
+    def test_a_new_paragraph_takes_the_kind_and_style_of_the_paragraph_it_joins(self):
+        self.edit(
+            [
+                ('This is where', 'A plain new paragraph.\n\nThis is where'),
+                ('act alone. Event logs', 'act alone.\n\nEvent logs'),
+            ]
+        )
+        plan = self.send()
+        self.assertFalse(
+            [p for p in plan['proposals'] if p['kind'] == 'comment'], 'nothing to fix by hand'
+        )
+        found = [
+            (
+                kind,
+                ''.join(c for c, _ in chars).strip(),
+                {style for c, style in chars if not c.isspace()},
+            )
+            for kind, chars in self.accepted()
+        ]
+        self.assertIn(('text', 'A plain new paragraph.', {(False, False, None)}), found)
+        self.assertIn(('text', 'Event logs track every step.', {(False, False, None)}), found)
+        self.assertEqual([text for _, text, _ in found], self.desk_text())
+
+    def test_a_wrong_style_landing_in_a_split_is_noticed(self):
+        original = self.client.native_review_update
+
+        def bold(file_id, revision, requests):
+            landed = []
+            for request in requests:
+                if 'updateTextStyle' in request:
+                    request = {
+                        'updateTextStyle': {
+                            **request['updateTextStyle'],
+                            'textStyle': {'bold': True},
+                        }
+                    }
+                landed.append(request)
+            return original(file_id, revision, landed)
+
+        self.client.native_review_update = bold
+        self.edit([('The end.', 'The end.\n\nA new last paragraph.')])
+        plan = self.act('google-plan', mode='auto')
+        result = self.act('google-send', plan=plan['plan'], confirmed=True)
+        self.assertEqual(result['status'], 'needs-reconciliation')
 
 
 class ImageFinishingTests(DeskCase):
