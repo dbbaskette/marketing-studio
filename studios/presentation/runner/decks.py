@@ -38,6 +38,18 @@ RUN = 'run.json'            # what marks a deck's folder
 DELIVER = 'deliver.json'    # written when the deck is delivered
 SCHEMA = 1
 SOURCES = {'document': ('upload', 'paste', 'google'), 'existing': ('upload', 'google')}
+FLOWS = ('desk',)               # a deck started from the desk's start; none is the gated flow
+LOOKS = ('pick', 'default')     # the start's look: picked once the samples are drawn, or not
+READINGS = ('spec', 'material')  # how the start said a document is read, where it said
+WRONG_LOOK = ('Choose to pick the look when the samples are drawn, or to use the brand’s '
+              'default look.')
+WRONG_READING = 'Only a document is read as a script for the slides or as material.'
+
+
+def on_desk(run: dict) -> bool:
+    """Whether a deck is on the desk: started from the desk's start (or opened there once it
+    was delivered). Every other deck keeps the gated flow and its screens."""
+    return isinstance(run, dict) and run.get('flow') == 'desk'
 
 
 def user_first(run: dict) -> bool:
@@ -227,7 +239,33 @@ def check_form(sent: dict, brands: list | None) -> dict:
             checked['selected'] = selected
     if route in SOURCES:
         checked['source'] = _source(sent, route)
+    _desk_form(sent, checked)
     return checked
+
+
+def _desk_form(sent: dict, checked: dict) -> None:
+    """What the desk's start adds to the form: its flow, the look it chose and, for a
+    document, how the start said to read it. A desk deck is always built as a first draft:
+    the deck check runs only when the person asks for it, so a desk form's own choice of
+    that is not read."""
+    flow = sent.get('flow')
+    if flow in (None, ''):
+        if sent.get('look') not in (None, '') or sent.get('reading') not in (None, ''):
+            raise WorkspaceError('The look and the reading are chosen on the desk’s start.')
+        return
+    if flow not in FLOWS:
+        raise WorkspaceError('A deck is started on the desk, or without a flow.')
+    look = sent.get('look')
+    look = 'pick' if look in (None, '') else look
+    if look not in LOOKS:
+        raise WorkspaceError(WRONG_LOOK)
+    checked.update(flow=flow, look=look, initial_review='user-first',
+                   initial_review_source='desk')
+    reading = sent.get('reading')
+    if reading not in (None, ''):
+        if checked['route'] != 'document' or reading not in READINGS:
+            raise WorkspaceError(WRONG_READING)
+        checked['reading'] = reading
 
 
 def review_choice(sent: dict) -> tuple:
@@ -279,10 +317,13 @@ def write_run(root: Path, run: dict) -> None:
 
 
 def _new_run(ident: str, form: dict) -> dict:
-    return {'schema': SCHEMA, 'id': ident, 'title': form['title'], 'route': form['route'],
+    made = {'schema': SCHEMA, 'id': ident, 'title': form['title'], 'route': form['route'],
             'form': form, 'created': home.now(), 'driver': None, 'gates': {}, 'steps': {},
             'classified': None, 'look': None, 'revisions': [], 'halted': None,
             'agent': None, 'model': None, 'level_of_effort': None, 'limits': {}}
+    if form.get('flow'):
+        made['flow'] = form['flow']
+    return made
 
 
 # --- the files -----------------------------------------------------------------------------
