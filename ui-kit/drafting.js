@@ -42,6 +42,29 @@ const Drafting = (() => {
   }
   function age(at) { const then = Date.parse(at || ''); if (!then) return ''; const minutes = Math.round((Date.now() - then) / 60000); if (minutes < 1) return 'just now'; if (minutes < 60) return minutes + (minutes === 1 ? ' minute ago' : ' minutes ago'); const hours = Math.round(minutes / 60); if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago'); const days = Math.round(hours / 24); return days + (days === 1 ? ' day ago' : ' days ago'); }
 
+  // The adapter a studio passes to kit():
+  //   ui        button(label, action, kind), card(title, ...nodes), pickCard(title, says,
+  //             action), choice(label, options, held, key, changed), disclosure(label,
+  //             ...nodes), bead(state), openSheet(title, ...nodes), closeSheet(), toast(text),
+  //             notice(text, isError), busy(control, label, action), narrow()
+  //   api(route, data)  the page's request; throws Error(message) when refused
+  //   routes    route names: view, save, versions, restore, note, revise, selection, stop,
+  //             retry, finish, apply, skip, proofread
+  //   share(id)         the keepalive request when the person leaves
+  //   canEdit(held), current(held), page()
+  //   hooks     render(held), refresh(held, before), reload(held), beforeJob(held); and, when
+  //             the studio has them: beforeFlush(held), saved(held, part, text),
+  //             versionNote(version), extra(held, part), left(held, part, card),
+  //             started(held, view), landed(held, job)
+  //   parts     title(view, part), textOf(view, part), nameOf(view, part), single(part),
+  //             noted(view, part)
+  //   words()   {thing, sources, doing, steps, named, withOpening, ready(tab)}
+  //   tools()   the Finishing tools, in panel order (see the Finishing parts below)
+  //   progress  stopped(held), show(held)
+  // `held` is the studio's screen state for one item, with the field names Blog Studio's desk
+  // uses: view, pending, status, stale, saving, saved, session, bar, selection, asking, notes,
+  // wholeNote, wholeGo, finish, panel, panelKey, panelStale, panelUnder, cards, wholeCard, tab
+  // ('draft' shows the part cards), watching, startWatching and dismissed.
   function kit(a) {
     const k = {};
 
