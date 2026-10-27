@@ -124,6 +124,10 @@ class Workspace:
     def root(self) -> Path:
         return self.repo / self.folder
 
+    def item(self, ident: str) -> Path:
+        """The folder of one training in the workspace."""
+        return self.root / ident
+
     def training(self, ident: str) -> Path:
         return self.root / ident
 

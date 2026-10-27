@@ -126,6 +126,10 @@ class Workspace:
     def root(self) -> Path:
         return self.repo / self.folder
 
+    def item(self, ident: str) -> Path:
+        """The folder of one deck in the workspace."""
+        return self.root / ident
+
     def deck(self, ident: str) -> Path:
         return self.root / ident
 

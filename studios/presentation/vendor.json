@@ -79,7 +79,7 @@
     {
       "path": "runner/team.py",
       "from": "runner/team.py",
-      "note": "tag is <folder>/<deck>/r<N>; copies kept",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/team.py`. tag is <folder>/<deck>/r<N>; copies kept",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
