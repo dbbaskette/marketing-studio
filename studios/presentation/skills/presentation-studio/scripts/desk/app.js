@@ -1373,6 +1373,7 @@ function drawSheet() {
   else if (view.sheet === 'rebrand') body = rebrandSheet();
   else if (view.sheet === 'reclassify') body = reclassifySheet();
   else if (view.sheet === 'desk-deliver') body = window.deckDesk.deliverSheet();
+  else if (view.sheet === 'desk-history') body = window.deckDesk.historySheet();
   else body = undoSheet();
   holder.replaceChildren(...body);
 }

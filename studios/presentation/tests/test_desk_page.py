@@ -386,19 +386,23 @@ class DeskTests(DeskPageCase):
         noted = next(one for one in cards_of(done['desk']) if one['number'] == 3)
         self.assertEqual(noted['note']['status'], 'done')
 
-    def test_the_first_pull_request_says_where_words_change(self):
+    def test_the_outline_tab_line_is_gone_once_words_are_edited_here(self):
         path = self.desk_deck()
         view = self.run_of(path)
         shot = self.open_deck(path, view, [{'snapshot': 'desk'}])['snapshots']['desk']
         content = [card for card in cards_of(view['desk']) if not card['lead']]
-        self.assertEqual(shot['text'].count(WORDS_LINE), len(content))
+        self.assertNotIn('To change its words, edit them on the Outline tab.', shot['text'])
+        self.assertNotIn(WORDS_LINE, shot['text'])
+        # The price still comes straight under the note's button.
         lines = shot['text'].split('\n')
-        self.assertEqual(lines[lines.index(WORDS_LINE) - 1],
-                         content[0]['price'], 'the price comes first, under the button')
-        # The words and the speaker notes are shown, and are not boxes to type in.
-        self.assertIn(content[0]['words']['title'], shot['text'])
-        self.assertIn(content[0]['notes'], shot['text'])
-        self.assertNotIn('Title of slide 2', shot['fields'])
+        self.assertEqual(lines[lines.index(f"Redraw slide {content[0]['number']}") + 1],
+                         content[0]['price'])
+        # The words and the speaker notes are boxes on the card now.
+        number = content[0]['number']
+        self.assertEqual(shot['fields'][f'Title of slide {number}'],
+                         content[0]['words']['title'])
+        self.assertEqual(shot['fields'][f'Speaker notes for slide {number}'],
+                         content[0]['notes'])
 
     def test_a_redraw_in_progress_offers_stop(self):
         path = self.desk_deck()
@@ -663,6 +667,267 @@ class SecondReviewTests(DeskPageCase):
         self.assertIn('The deck is being redrawn now. Save the outline when that ends.',
                       shot['text'])
         self.assertEqual(self.posts(result), [])
+
+
+SESSION_SHAPE = r'^[0-9a-f]{16}$'
+
+
+class WordsTests(DeskPageCase):
+    """Task 2.5: a slide's words, its speaker notes and its History, on its card."""
+
+    def card(self, view: dict, number: int) -> dict:
+        return next(card for card in cards_of(view['desk']) if card['number'] == number)
+
+    def test_typing_saves_a_second_after_the_last_key(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'fill': 'Title of slide 3', 'value': 'Batches restart in turn'},
+            {'snapshot': 'typed'}, {'timer': 'flush'}, {'snapshot': 'saved'}],
+            **{'POST /api/desk-words': [ok(view)]})
+        self.assertEqual(result['snapshots']['typed']['posts'], 0, 'nothing is sent while typing')
+        (address, body), = self.posts(result)
+        self.assertEqual(address, '/api/desk-words')
+        self.assertRegex(body.pop('session'), SESSION_SHAPE)
+        self.assertEqual(body, {'path': path, 'number': 3, 'field': 'title',
+                                'text': 'Batches restart in turn',
+                                'seen': view['desk']['seen']})
+        self.assertIn('Saved.', result['snapshots']['saved']['text'])
+        # What the page sends is what the server takes.
+        after = self.post('desk-words', {**body, 'session': 'a' * 16})
+        self.assertEqual(self.card(after, 3)['words']['title'], 'Batches restart in turn')
+
+    def test_a_point_saves_by_its_place_in_the_slide(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'fill': 'Point 2 text of slide 3', 'value': 'Requests are dropped.'},
+            {'timer': 'flush'}], **{'POST /api/desk-words': [ok(view)]})
+        (_, body), = self.posts(result)
+        self.assertEqual((body['field'], body['text']), (['points', 1, 'text'],
+                                                          'Requests are dropped.'))
+
+    def test_an_old_form_is_said_on_its_card_and_keeps_the_words(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        refused = {'status': 400, 'body': {'error': 'This slide changed since you opened '
+                                                    'it. Reload to see the latest.'}}
+        result = self.open_deck(path, view, [
+            {'fill': 'Title of slide 3', 'value': 'Batches restart in turn'},
+            {'timer': 'flush'}, {'snapshot': 'refused'}],
+            **{'POST /api/desk-words': [refused]})
+        shot = result['snapshots']['refused']
+        self.assertIn('This slide changed since you opened it.', shot['text'])
+        self.assertEqual(shot['fields']['Title of slide 3'], 'Batches restart in turn')
+
+    def test_speaker_notes_are_their_own_box(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'snapshot': 'desk'},
+            {'fill': 'Speaker notes for slide 3', 'value': 'Say why one instance drops.'},
+            {'timer': 'flush'}], **{'POST /api/desk-notes': [ok(view)]})
+        shot = result['snapshots']['desk']
+        # Its own box, labelled "Speaker notes", and the slide named for a screen reader.
+        self.assertIn('Speaker notes for slide 3', shot['text'].split('\n'))
+        self.assertEqual(shot['fields']['Speaker notes for slide 3'], self.card(view, 3)['notes'])
+        self.assertNotIn('Speaker notes: ', shot['text'])
+        (address, body), = self.posts(result)
+        self.assertEqual(address, '/api/desk-notes')
+        self.assertRegex(body.pop('session'), SESSION_SHAPE)
+        self.assertEqual(body, {'path': path, 'number': 3, 'text': 'Say why one instance drops.',
+                                'seen': view['desk']['seen']})
+        after = self.post('desk-notes', {**body, 'session': 'b' * 16})
+        self.assertEqual(self.card(after, 3)['notes'], 'Say why one instance drops.')
+
+    def test_selecting_words_shows_the_shared_selection_bar(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        title = self.card(view, 3)['words']['title']
+        start = title.index('more than one')
+        result = self.open_deck(path, view, [
+            {'snapshot': 'none'},
+            {'select': 'Title of slide 3', 'start': start, 'end': start + len('more than one')},
+            {'snapshot': 'selected'}, {'click': 'Shorten'}],
+            **{'POST /api/desk-selection': [ok(view)]})
+        shots = result['snapshots']
+        self.assertNotIn('Rephrase', shots['none']['buttons'])
+        selected = shots['selected']
+        for action in ('Rephrase', 'Shorten', 'Expand', 'Fix', 'Ask…'):
+            self.assertIn(action, selected['buttons'])
+        self.assertLessEqual(len(selected['filled']), 1)
+        self.assertEqual(self.posts(result), [('/api/desk-selection', {
+            'path': path, 'number': 3, 'field': 'title', 'start': start,
+            'end': start + len('more than one'), 'action': 'shorten',
+            'seen': view['desk']['seen'], 'passage': 'more than one'})])
+
+    def test_ask_asks_what_should_change_first(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'select': 'Title of slide 3', 'start': 0, 'end': 8}, {'click': 'Ask…'},
+            {'click': 'Go'}, {'snapshot': 'empty'},
+            {'fill': 'What should change in the selected words?', 'value': 'Say it plainly.'},
+            {'click': 'Go'}], **{'POST /api/desk-selection': [ok(view)]})
+        self.assertIn('Say what should change in the words first.',
+                      result['snapshots']['empty']['text'])
+        (_, body), = self.posts(result)
+        self.assertEqual((body['action'], body['instruction'], body['start'], body['end']),
+                         ('ask', 'Say it plainly.', 0, 8))
+
+    def test_an_unfit_edit_offers_redraw_with_the_price_or_discard(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        unfit = copy.deepcopy(view)
+        card = self.card(unfit, 3)
+        card['unfit'] = {'number': 3, 'field': 'title', 'text': 'A much longer title',
+                         'lines': ['when-capacity-holds: the title runs off the slide.'],
+                         'at': '2026-10-27T09:00:00Z',
+                         'says': 'These words do not fit the slide as it is drawn.'}
+        result = self.open_deck(path, unfit, [
+            {'snapshot': 'unfit'}, {'click': 'Redraw with these words'}, {'click': 'Discard'}],
+            **{'POST /api/desk-redraw-words': [ok(unfit)], 'POST /api/desk-discard': [ok(view)]})
+        shot = result['snapshots']['unfit']
+        lines = shot['text'].split('\n')
+        for said in ('These words do not fit the slide as it is drawn.',
+                     'when-capacity-holds: the title runs off the slide.'):
+            self.assertIn(said, shot['text'])
+        self.assertIn('A much longer title', shot['text'] + json.dumps(shot['fields']))
+        self.assertEqual(lines[lines.index('Redraw with these words') + 2], card['price'])
+        self.assertIn('Discard', shot['buttons'])
+        self.assertEqual(self.posts(result), [
+            ('/api/desk-redraw-words', {'path': path, 'number': 3, 'field': 'title',
+                                        'text': 'A much longer title',
+                                        'expected': view['desk']['expected']}),
+            ('/api/desk-discard', {'path': path, 'number': 3})])
+
+    def test_history_compares_words_and_pictures(self):
+        path = self.desk_deck()
+        first = self.run_of(path)
+        card = self.card(first, 3)
+        self.post('desk-words', {'path': path, 'number': 3, 'field': 'title',
+                                 'text': 'Batches restart in turn', 'seen': first['desk']['seen'],
+                                 'session': 'c' * 16})
+        view = self.run_of(path)
+        found = self.get('desk-versions', path=path, slide=card['id'])
+        self.assertEqual(found['versions'][0]['source'], 'save')
+        self.assertTrue(found['versions'][0]['picture'])
+        result = self.open_deck(path, view, [
+            {'click': 'History of slide 3'}, {'snapshot': 'history'}, {'click': 'Restore'}],
+            **{'GET /api/desk-versions': [ok(found)], 'POST /api/desk-restore': [ok(view)]})
+        shot = result['snapshots']['history']
+        sheet = shot['sheet']
+        self.assertIn('History of slide 3', sheet)
+        self.assertIn('Before words you typed', sheet)
+        # The words then, compared with the words now.
+        self.assertIn(card['words']['title'].split()[0], sheet)
+        self.assertIn('Batches restart in turn', sheet)
+        kinds = sorted(picture['of'].split('kind=')[1].split('&')[0]
+                       for picture in shot['pictures'])
+        self.assertIn('version', kinds)
+        self.assertIn('build', kinds)
+        self.assertEqual(self.posts(result), [('/api/desk-restore', {
+            'path': path, 'slide': card['id'], 'index': 0, 'seen': view['desk']['seen'],
+            'stamp': found['versions'][0]['stamp']})])
+        asked = [request['address'] for request in result['requests']
+                 if request['address'].startswith('/api/desk-versions')]
+        self.assertTrue(asked)
+        # What the page sends is what the server takes.
+        after = self.post('desk-restore', self.posts(result)[0][1])
+        self.assertEqual(self.card(after, 3)['words']['title'], card['words']['title'])
+
+    def test_restore_is_bound_to_the_version_by_its_stamp(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        card = self.card(view, 3)
+        older = {'at': '2026-10-27T08:00:00Z', 'source': 'save', 'stamp': 'b' * 16,
+                 'words': {**card['words'], 'title': 'An older title', 'notes': card['notes']},
+                 'picture': None}
+        newer = {**older, 'at': '2026-10-27T09:00:00Z', 'stamp': 'a' * 16,
+                 'words': {**older['words'], 'title': 'A newer title'}}
+        result = self.open_deck(path, view, [
+            {'click': 'History of slide 3'}, {'snapshot': 'history'},
+            {'click': 'Restore the version kept'}],
+            **{'GET /api/desk-versions': [ok({'versions': [newer, older]})],
+               'POST /api/desk-restore': [ok(view)]})
+        sheet = result['snapshots']['history']['sheet']
+        self.assertLess(sheet.index('A newer title'), sheet.index('An older title'))
+        self.assertEqual(self.posts(result), [('/api/desk-restore', {
+            'path': path, 'slide': card['id'], 'index': 0, 'seen': view['desk']['seen'],
+            'stamp': 'a' * 16})])
+
+    def test_words_typed_and_not_saved_offer_no_selection_bar(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'fill': 'Title of slide 3', 'value': 'Batches restart in turn'},
+            {'select': 'Title of slide 3', 'start': 0, 'end': 7}, {'snapshot': 'typed'}])
+        self.assertNotIn('Rephrase', result['snapshots']['typed']['buttons'])
+        unfit = copy.deepcopy(view)
+        self.card(unfit, 3)['unfit'] = {
+            'number': 3, 'field': 'title', 'text': 'A much longer title', 'lines': ['Too long.'],
+            'at': '2026-10-27T09:00:00Z', 'says': 'These words do not fit the slide as it is '
+                                                  'drawn.'}
+        result = self.open_deck(path, unfit, [
+            {'select': 'Title of slide 3', 'start': 0, 'end': 6}, {'snapshot': 'unfit'}])
+        self.assertNotIn('Rephrase', result['snapshots']['unfit']['buttons'])
+
+    def test_a_restore_that_does_not_fit_shows_the_version_and_redraws_it(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        unfit = copy.deepcopy(view)
+        card = self.card(unfit, 3)
+        kept = {**card['words'], 'title': 'An older, much longer title',
+                'caveat': 'An older caveat.', 'notes': 'Older notes.'}
+        card['unfit'] = {'number': 3, 'field': 'restore', 'text': '', 'words': kept,
+                         'lines': ['when-capacity-holds: the title runs off the slide.'],
+                         'at': '2026-10-27T09:00:00Z',
+                         'says': 'These words do not fit the slide as it is drawn.'}
+        result = self.open_deck(path, unfit, [
+            {'snapshot': 'unfit'}, {'click': 'Redraw with these words'}],
+            **{'POST /api/desk-redraw-words': [ok(view)]})
+        text = result['snapshots']['unfit']['text']
+        for said in ('These words do not fit the slide as it is drawn.',
+                     'An older, much longer title', 'An older caveat.', 'Older notes.',
+                     kept['points'][0]['text']):
+            self.assertIn(said, text)
+        self.assertNotIn('Your words: “”', text)
+        self.assertEqual(self.posts(result), [('/api/desk-redraw-words', {
+            'path': path, 'number': 3, 'field': 'restore', 'text': '',
+            'expected': view['desk']['expected']})])
+
+    def test_the_boxes_take_as_many_characters_as_the_runner(self):
+        path = self.desk_deck()
+        shot = self.open_deck(path, self.run_of(path), [{'snapshot': 'desk'}])['snapshots']['desk']
+        self.assertEqual(shot['limits']['Speaker notes for slide 3'], 4000)
+        self.assertEqual(shot['limits']['Title of slide 3'], 2000)
+        self.assertEqual(shot['limits']['Point 1 text of slide 3'], 2000)
+
+    def test_a_lead_slide_s_words_are_boxes_with_no_points(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        shot = self.open_deck(path, view, [{'snapshot': 'desk'}])['snapshots']['desk']
+        self.assertEqual(shot['fields']['Title of slide 1'], self.card(view, 1)['words']['title'])
+        self.assertFalse([label for label in shot['fields'] if label.startswith('Point')
+                          and label.endswith('of slide 1')])
+        self.assertNotIn('How should this slide change? Slide 1', shot['fields'])
+
+    def test_no_word_a_person_should_not_read_on_the_words(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        card = self.card(view, 3)
+        found = {'versions': [{'at': '2026-10-27T09:00:00Z', 'source': 'save',
+                               'words': {**card['words'], 'notes': card['notes']},
+                               'stamp': 'abcdef1234567890', 'picture': None}]}
+        result = self.open_deck(path, view, [
+            {'select': 'Title of slide 3', 'start': 0, 'end': 8}, {'snapshot': 'bar'},
+            {'click': 'History of slide 3'}, {'snapshot': 'history'}],
+            **{'GET /api/desk-versions': [ok(found)]})
+        for name, shot in result['snapshots'].items():
+            with self.subTest(name):
+                said = shot['text'] + shot['sheet']
+                self.assertIsNone(FORBIDDEN_WORDS.search(said))
+                self.assertNotIn('abcdef1234567890', said)
 
 
 if __name__ == '__main__':

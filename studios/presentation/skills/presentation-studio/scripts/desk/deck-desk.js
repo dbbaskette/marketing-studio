@@ -5,7 +5,8 @@
 // It draws with the page's own parts: app.js hands them to deckDesk.init once, before the
 // page begins, so nothing here is a second copy of how the page makes a box, a button or a
 // picture, or of how it talks to the server. The progress line is said in piece 3's words,
-// from the shared desk kit (ui-kit/drafting.js). Every value from the server is set as text.
+// from the shared desk kit (ui-kit/drafting.js), and so are the selection bar's actions and
+// History's word compare. Every value from the server is set as text.
 'use strict';
 
 (function () {
@@ -31,8 +32,18 @@
   const LOOK_PAUSE = 'One thing needs you: pick the look. The deck is drawn in it.';
   const DESK_LEDE = 'A card for each slide. A note on a slide redraws only its section; '
     + 'Deliver sends the deck.';
-  const WORDS_LINE = 'A note changes how the slide is drawn. To change its words, edit them on '
-    + 'the Outline tab.';
+  // A slide's words, each a box on its card, in the order the slide reads: the field the
+  // runner names it by, and what its box is called.
+  const WORD_FIELDS = [['title', 'Title'], ['subtitle', 'Subtitle'], ['detail', 'Detail'],
+    ['caveat', 'Caveat'], ['source', 'Source']];
+  const SAVE_WAIT = 1000;   // a typed edit is saved one second after the last key
+  // What each kept version of a slide's words was kept before.
+  const VERSION_SOURCES = {
+    save: 'Before words you typed', selection: 'Before a change to selected words',
+    note: 'Before a note redrew the slide', redraw: 'Before the slide was redrawn with new words',
+    restore: 'Before an earlier version was restored', outline: 'Before the outline was saved',
+    finishing: 'Before a change from Finishing', open: 'As it was when it came to the desk',
+  };
   const NO_NOTE = 'Say how the slide should change.';
   const NO_DECK_NOTE = 'Say how the whole deck should change.';
   const NOT_DELIVERABLE = 'The deck cannot be delivered yet: a change to it is still waiting '
@@ -51,7 +62,14 @@
   let kit = null;
   // What the person has typed or chosen and not sent: kept for each deck, so that a screen
   // drawn again, because the deck moved on, still has it.
-  const held = { notes: {}, deck: {}, previews: {}, looks: {}, outlines: {}, tabs: {} };
+  const held = { notes: {}, deck: {}, previews: {}, looks: {}, outlines: {}, tabs: {},
+    // Typed words not saved yet, by deck, slide and field; the words selected now; the
+    // History sheet's slide and what it read.
+    edits: {}, selection: null, history: null };
+  // This page's editing session: the saves made in it keep one version of a slide.
+  const SESSION = Array.from({ length: 16 },
+    () => '0123456789abcdef'[Math.floor(Math.random() * 16)]).join('');
+  let saving = null;
 
   function init(parts) {
     h = parts;
@@ -542,6 +560,7 @@
       found.revision ? ['revision', [found.revision], () => make('p', 'quiet', found.revision)]
         : null,
       ['head', [tab], () => headPart(tab)],
+      can && tab === 'slides' ? ['selection-bar', [path], () => selectionBar()] : null,
       ...(tab === 'outline' ? outlineParts(run, can, working)
         : slideParts(run, can, working)),
     ], fresh);
@@ -665,13 +684,24 @@
     const words = one.words || {};
     const node = make('section', 'card shine deck-desk-slide' + (one.busy ? ' desk-working'
       : ''));
+    const editing = can && !h.theirs(run);
+    const history = editing ? h.capsule('History', 'quiet', () => openHistory(run, one),
+      'desk-history ' + one.number) : null;
+    if (history) history.setAttribute('aria-label', 'History of slide ' + one.number);
+    const saved = make('p', 'quiet desk-save-state');
+    saved.id = 'desk-saved-' + one.number;
+    saved.setAttribute('role', 'status');
     h.add(node, make('h3', 'card-title', 'Slide ' + one.number + kind),
       h.add(make('div', 'deck-desk-picture'), one.image ? h.picture(one.image,
         h.slideName({ number: one.number, title: words.title }), run.desk.expected)
         : make('p', 'quiet', 'There is no picture of this slide on this computer yet.')),
-      wordsPart(words),
-      one.notes ? h.add(make('p', 'quiet'), make('strong', '', 'Speaker notes: '), one.notes)
-        : null,
+      editing ? wordBoxes(one) : wordsPart(words),
+      editing ? notesBox(one)
+        : one.notes ? h.add(make('p', 'quiet'), make('strong', '', 'Speaker notes: '), one.notes)
+          : null,
+      editing ? saved : null,
+      editing && one.unfit ? unfitPart(run, one) : null,
+      history ? bar(history) : null,
       h.list(one.findings).length ? h.findingItems(one.findings) : null,
       h.list(one.audit).length ? auditPart(one.audit) : null,
       one.busy ? h.add(make('p', 'desk-working-note'), h.state('current', 'Redrawing…'))
@@ -741,8 +771,361 @@
     }, 'desk-redraw ' + one.number);
     input.disabled = Boolean(one.busy);
     go.disabled = Boolean(one.busy);
-    return [box, bar(go), one.price ? make('p', 'quiet', one.price) : null,
-      make('p', 'quiet', WORDS_LINE)];
+    return [box, bar(go), one.price ? make('p', 'quiet', one.price) : null];
+  }
+
+  // --- a slide's words on its card --------------------------------------------------------
+  // Each word is a box that saves one second after the last key, against the desk's revision
+  // the page last read (`seen`) and with this page's editing session, so the saves of one
+  // sitting keep one version of the slide. A save from a form older than the slide is refused
+  // for that slide only, and the words typed stay in the box.
+
+  function fieldKey(field) {
+    return typeof field === 'string' ? field : field.join('.');
+  }
+
+  function editKey(path, number, field) {
+    return [path, number, fieldKey(field)].join('\n');
+  }
+
+  // The text a box shows: what was typed and not saved yet, else the words that did not fit
+  // (kept until they are redrawn or let go), else the slide's own.
+  function shownText(one, field, own) {
+    const typed = held.edits[editKey(h.view.path, one.number, field)];
+    if (typed) return typed.text;
+    if (one.unfit && fieldKey(one.unfit.field) === fieldKey(field)) return one.unfit.text;
+    return own || '';
+  }
+
+  // One box of a slide's words. `field` is what the runner names it by: 'title', or
+  // ['points', 1, 'text'] for the second point's words.
+  function wordBox(one, field, label, own, long) {
+    const id = 'desk-' + fieldKey(field).replace(/\./g, '-') + '-' + one.number;
+    const kept = { text: shownText(one, field, own) };
+    const node = h.field(id, label, kept, 'text', { long: Boolean(long), rows: 2, limit: 2000,
+      typed: () => typed(one.number, field, kept.text) });
+    node.querySelector('label').append(make('span', 'offscreen', ' of slide ' + one.number));
+    const input = node.querySelector(long ? 'textarea' : 'input');
+    input.readOnly = Boolean(one.busy);
+    if (field !== 'notes') {
+      for (const kind of ['select', 'mouseup', 'keyup']) {
+        input.addEventListener(kind, () => selected(one, field, input));
+      }
+    }
+    return node;
+  }
+
+  function wordBoxes(one) {
+    const words = one.words || {};
+    const node = make('div', 'fields deck-desk-words');
+    // A box for each word the slide has: a box added where the slide has none would be
+    // something the drawing has no place for.
+    const boxes = (fields) => {
+      for (const [field, label] of fields) {
+        const own = words[field];
+        if (!own && !(one.unfit && fieldKey(one.unfit.field) === field)) continue;
+        h.add(node, wordBox(one, field, label, own, field === 'detail'));
+      }
+    };
+    boxes(WORD_FIELDS.slice(0, 3));
+    // A lead slide has no points, caveat or source: no composer draws it.
+    if (one.lead) return node;
+    addPoints(node, one, words);
+    boxes(WORD_FIELDS.slice(3));
+    return node;
+  }
+
+  function addPoints(node, one, words) {
+    h.list(words.points).forEach((point, index) => {
+      if (!point) return;
+      if (point.label) {
+        h.add(node, wordBox(one, ['points', index, 'label'], 'Point ' + (index + 1) + ' label',
+          point.label));
+      }
+      if (point.text) {
+        h.add(node, wordBox(one, ['points', index, 'text'], 'Point ' + (index + 1) + ' text',
+          point.text, true));
+      }
+    });
+  }
+
+  // The speaker notes: their own box, saved as the words are, with no redraw.
+  function notesBox(one) {
+    const kept = { text: shownText(one, 'notes', one.notes) };
+    const id = 'desk-notes-' + one.number;
+    const node = h.field(id, 'Speaker notes', kept, 'text', { long: true, rows: 3,
+      limit: 4000, hint: 'What you say over this slide. Saving them redraws nothing.',
+      typed: () => typed(one.number, 'notes', kept.text) });
+    node.querySelector('label').append(make('span', 'offscreen', ' for slide ' + one.number));
+    node.querySelector('textarea').readOnly = Boolean(one.busy);
+    return node;
+  }
+
+  function saySaved(number, text, again) {
+    const node = h.byId('desk-saved-' + number);
+    if (!node) return;
+    node.replaceChildren(text);
+    if (again) h.add(node, ' ', again);
+  }
+
+  function typed(number, field, text) {
+    const path = h.view.path;
+    const key = editKey(path, number, field);
+    const edit = held.edits[key] || (held.edits[key] = { path, number, field });
+    edit.text = text;
+    if (edit.timer) window.clearTimeout(edit.timer);
+    // Named, so a test can say when the second has passed.
+    edit.timer = window.setTimeout(function flush() {
+      edit.timer = 0;
+      return save(key);
+    }, SAVE_WAIT);
+    saySaved(number, 'Saving…');
+  }
+
+  // One save at a time, each against the latest view; a newer edit of the same box is saved
+  // after it.
+  async function save(key) {
+    while (saving) await saving;
+    const edit = held.edits[key];
+    if (!edit || edit.sending) return;
+    const run = h.view.run;
+    if (!run || !run.desk || h.view.path !== edit.path) return;
+    const text = edit.text;
+    edit.sending = true;
+    const body = edit.field === 'notes'
+      ? { path: edit.path, number: edit.number, text, seen: run.desk.seen, session: SESSION }
+      : { path: edit.path, number: edit.number, field: edit.field, text, seen: run.desk.seen,
+        session: SESSION };
+    saving = (async () => {
+      try {
+        const found = await h.send(edit.field === 'notes' ? 'desk-notes' : 'desk-words', body);
+        if (held.edits[key] === edit && edit.text === text) delete held.edits[key];
+        if (h.view.screen === 'deck' && h.view.path === edit.path) {
+          h.view.run = found;
+          h.paintDeck(false);
+        }
+        saySaved(edit.number, 'Saved.');
+      } catch (failure) {
+        // The words typed stay in the box, and are sent again only when typed again.
+        const again = /changed since/.test(failure.message) ? h.capsule('Reload', 'quiet', () => {
+          delete held.edits[key];
+          h.refresh();
+        }, 'desk-reload ' + edit.number) : null;
+        saySaved(edit.number, failure.message + ' Your words are kept here.', again);
+      } finally {
+        edit.sending = false;
+      }
+    })();
+    try {
+      await saving;
+    } finally {
+      saving = null;
+    }
+    const later = held.edits[key];
+    if (later && later.text !== text && !later.timer) await save(key);
+  }
+
+  // Every edit typed and not saved yet, saved now: before History or Deliver reads the deck.
+  async function flushAll() {
+    for (const key of Object.keys(held.edits)) {
+      const edit = held.edits[key];
+      if (edit.path !== h.view.path) continue;
+      if (edit.timer) window.clearTimeout(edit.timer);
+      edit.timer = 0;
+      await save(key);
+    }
+  }
+
+  // --- the selection bar ------------------------------------------------------------------
+  // Words selected in a box offer piece 3's actions on them: Rephrase, Shorten, Expand, Fix
+  // and Ask…. One is a small words job on that passage, saved as typed words are.
+
+  function selectionBar() {
+    const node = make('div', 'desk-selection glass');
+    node.id = 'desk-selection';
+    node.setAttribute('role', 'toolbar');
+    node.setAttribute('aria-label', 'Change the selected words');
+    node.hidden = true;
+    return node;
+  }
+
+  function selected(one, field, input) {
+    const node = h.byId('desk-selection');
+    if (!node) return;
+    const value = input.value;
+    let start = input.selectionStart;
+    let end = input.selectionEnd;
+    if (typeof start !== 'number' || typeof end !== 'number') start = end = 0;
+    while (start < end && /\s/.test(value[start])) start += 1;
+    while (end > start && /\s/.test(value[end - 1])) end -= 1;
+    // The words are kept without the spaces they start with, so the place is counted there.
+    const lead = value.length - value.replace(/^\s+/, '').length;
+    // Only the saved words can be changed by a words job: not words typed and not saved yet,
+    // nor words kept because they did not fit.
+    const unsaved = Boolean(held.edits[editKey(h.view.path, one.number, field)])
+      || Boolean(one.unfit && fieldKey(one.unfit.field) === fieldKey(field));
+    if (start >= end || unsaved || one.busy || (h.view.run.desk && h.view.run.desk.working)) {
+      if (!(held.selection && held.selection.asking)) {
+        held.selection = null;
+        node.hidden = true;
+      }
+      return;
+    }
+    held.selection = { number: one.number, field, start: start - lead, end: end - lead,
+      passage: value.slice(start, end),
+      asking: false };
+    barContent();
+  }
+
+  function barContent() {
+    const node = h.byId('desk-selection');
+    const chosen = held.selection;
+    if (!node || !chosen) return;
+    const go = (action, instruction, pressed) => {
+      const run = h.view.run;
+      act('desk-selection', { path: h.view.path, number: chosen.number, field: chosen.field,
+        start: chosen.start, end: chosen.end, action,
+        ...(action === 'ask' ? { instruction } : {}), seen: run.desk.seen,
+        passage: chosen.passage }, pressed,
+      'The selected words are being changed.').then((found) => {
+        if (!found) return;
+        held.selection = null;
+        const bar = h.byId('desk-selection');
+        if (bar) bar.hidden = true;
+      });
+    };
+    if (chosen.asking) {
+      const kept = { instruction: '' };
+      const box = h.field('desk-ask', 'What should change in the selected words?', kept,
+        'instruction', { limit: 2000 });
+      const send = h.capsule('Go', '', () => {
+        const instruction = kept.instruction.trim();
+        if (!instruction) {
+          h.refuse('desk-ask', 'Say what should change in the words first.');
+          return;
+        }
+        go('ask', instruction, send);
+      }, 'desk-ask-go');
+      const cancel = h.capsule('Cancel', 'quiet', () => {
+        held.selection = null;
+        node.hidden = true;
+      }, 'desk-ask-cancel');
+      node.replaceChildren(box, send, cancel);
+      node.hidden = false;
+      return;
+    }
+    const actions = (typeof Drafting === 'undefined' ? [] : Drafting.SELECTION)
+      .map(([action, label]) => {
+        const pressed = h.capsule(label, '', () => go(action, '', pressed), 'desk-' + action);
+        return pressed;
+      });
+    node.replaceChildren(...actions, h.capsule('Ask…', '', () => {
+      chosen.asking = true;
+      barContent();
+      h.focusKey('desk-ask');
+    }, 'desk-ask'));
+    node.hidden = false;
+  }
+
+  // --- words that do not fit ----------------------------------------------------------------
+
+  // Words that do not fit the slide as it is drawn: nothing was saved. They are kept here,
+  // with what the slides tool said, until they are redrawn, at the slide's price, or let go.
+  function unfitPart(run, one) {
+    const unfit = one.unfit;
+    const path = h.view.path;
+    const redraw = h.capsule('Redraw with these words', '', () => act('desk-redraw-words',
+      { path, number: one.number, field: unfit.field, text: unfit.text,
+        expected: run.desk.expected }, redraw, 'Slide ' + one.number + ' is being redrawn with '
+        + 'your words.'), 'desk-redraw-words ' + one.number);
+    const discard = h.capsule('Discard', 'quiet', () => act('desk-discard',
+      { path, number: one.number }, discard, 'Your words are let go. The slide is as it was.'),
+    'desk-discard ' + one.number);
+    redraw.disabled = Boolean(run.desk.working);
+    // A restore that did not fit keeps every word of the version it brings back.
+    const restoring = unfit.field === 'restore';
+    return h.callout('late', make('p', '', unfit.says || ''),
+      restoring ? h.add(make('div', ''), make('p', '', 'The words of the version you restored:'),
+        ...wordsText(unfit.words).split('\n').filter(Boolean).map((line) => make('p', 'quiet',
+          line)))
+        : h.add(make('p', ''), make('strong', '', 'Your words: '), '“' + String(unfit.text || '')
+          + '”'),
+      h.list(unfit.lines).length ? h.bullets(h.list(unfit.lines).map(String)) : null,
+      bar(redraw, discard), one.price ? make('p', 'quiet', one.price) : null);
+  }
+
+  // --- History ------------------------------------------------------------------------------
+  // A slide's earlier words, newest first, each compared with its words now and, where this
+  // computer kept it, its picture then beside its picture now. Restore brings one back.
+
+  function wordsText(words) {
+    const found = words || {};
+    return [found.title, found.subtitle, found.detail,
+      ...h.list(found.points).filter(Boolean).map((point) => [point.label, point.text]
+        .filter(Boolean).join(': ')),
+      found.caveat, found.source, found.notes].filter(Boolean).join('\n');
+  }
+
+  async function openHistory(run, one) {
+    await flushAll();
+    const path = h.view.path;
+    held.history = { path, number: one.number, slide: one.id, versions: null, problem: '' };
+    h.openSheet('desk-history', 'desk-history ' + one.number)();
+    let found;
+    try {
+      found = await h.ask('desk-versions', { path, slide: one.id });
+    } catch (failure) {
+      if (held.history && held.history.slide === one.id) held.history.problem = failure.message;
+      found = null;
+    }
+    if (!held.history || held.history.slide !== one.id || h.view.sheet !== 'desk-history') return;
+    held.history.versions = found ? h.list(found.versions) : [];
+    h.drawSheet();
+  }
+
+  function historySheet() {
+    const shown = held.history || {};
+    const run = h.view.run;
+    const one = h.list(run.desk && run.desk.sections).flatMap((part) => h.list(part.slides))
+      .find((card) => card.id === shown.slide) || {};
+    const close = h.capsule('Close', 'quiet', h.closeSheet, 'cancel');
+    const head = h.add(make('div', 'sheet-heading'), h.sheetTitle('History of slide '
+      + (one.number || shown.number)), close);
+    if (shown.problem) return [head, make('p', 'problem', shown.problem)];
+    if (!shown.versions) return [head, make('p', 'quiet', 'Reading what was kept…')];
+    if (!shown.versions.length) return [head, make('p', '', 'Nothing kept yet. A version is kept '
+      + 'each time the slide’s words change.')];
+    const now = wordsText({ ...(one.words || {}), notes: one.notes });
+    const problem = h.problemLine();
+    const list = make('div', 'desk-versions');
+    shown.versions.forEach((version, index) => {
+      const when = typeof Drafting === 'undefined' ? '' : Drafting.age(version.at);
+      const restore = h.capsule('Restore', '', () => act('desk-restore', { path: shown.path,
+        slide: shown.slide, index, seen: run.desk.seen, stamp: version.stamp }, restore,
+      'Restored. The words it '
+        + 'replaced are in History.', problem).then((found) => {
+        if (!found) return;
+        h.view.sheet = '';
+        h.drawSheet();
+        h.paintDeck(false);
+      }), 'desk-restore ' + index);
+      restore.setAttribute('aria-label', 'Restore the version kept ' + (when || 'earlier'));
+      restore.disabled = Boolean(run.desk.working);
+      const pictures = version.picture ? h.add(make('div', 'pair'),
+        h.add(make('div', ''), make('p', 'quiet', 'Then'), h.pictureAt(h.pictureOf(shown.path,
+          version.picture), 'Slide ' + one.number + ' as it was', version.stamp, { first: true })),
+        one.image ? h.add(make('div', ''), make('p', 'quiet', 'Now'), h.pictureAt(h.pictureOf(
+          shown.path, one.image), 'Slide ' + one.number + ' now', run.desk.expected,
+        { first: true })) : null) : null;
+      h.add(list, h.add(make('section', 'deck-desk-version'),
+        h.add(make('div', 'desk-version'), h.add(make('div', 'row-text'),
+          make('p', 'row-title', VERSION_SOURCES[version.source] || 'Earlier words'),
+          when ? make('p', 'quiet', when) : null), bar(restore)),
+        make('p', 'quiet', 'Struck words are in this version only; marked words were added '
+          + 'since.'),
+        kit ? kit.compare(wordsText(version.words), now) : null, pictures));
+    });
+    return [head, problem, list];
   }
 
   // --- the Outline tab ----------------------------------------------------------------------
@@ -958,14 +1341,18 @@
 
   async function deliver(run, blockers, pressed, problem) {
     if (h.view.busy) return;
+    // The blockers are the ones this sheet listed, whatever the deck says since.
+    const seen = run.desk.blockers_seen;
+    await flushAll();
+    run = h.view.run || run;
     // The deck may have moved on since the sheet was opened: it is read as it is now.
-    if (!deliverableNow((h.view.run || run).desk || {})) {
+    if (!deliverableNow(run.desk || {})) {
       h.say(problem, NOT_DELIVERABLE);
       return;
     }
     const path = run.path || h.view.path;
     const body = { path, expected: run.desk.expected };
-    if (blockers.length) body.blockers_seen = run.desk.blockers_seen;
+    if (blockers.length) body.blockers_seen = seen;
     h.view.busy = true;
     pressed.disabled = true;
     h.say(problem, '');
@@ -990,7 +1377,7 @@
     h.refresh();
   }
 
-  window.deckDesk = { init, opens, start, progress, desk, deliverSheet };
+  window.deckDesk = { init, opens, start, progress, desk, deliverSheet, historySheet };
   // The page waits for this script before it begins; it begins now.
   if (typeof window.deckDeskWaits === 'function') window.deckDeskWaits();
 }());

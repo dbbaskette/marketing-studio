@@ -226,5 +226,6 @@ rerunning research. The full reviewed bundle stays intact.
   On the desk, the steps before your deck run as your start chose. Delivering is always yours.
 - **An assistant cannot touch your files.** Each one works in an empty folder outside your decks, with no shell and no file tools, only the runner's own tools. The runner checks what it hands back before anything is kept.
 - **Slides are made by harness-slides,** with your brand's exported contract. The studio never edits a slide file itself.
+  On the desk, a word or speaker-notes edit is put into the section's drawing as its composer handed it in, and kept only when harness-slides compiles it and every approved word is there; otherwise nothing is saved, and the slide can be redrawn with the new words.
 - **Your original is never changed.** An existing deck is read, and you always get a new copy.
 - **Everything is recorded.** Each step, decision and request for changes is a commit in the workspace.

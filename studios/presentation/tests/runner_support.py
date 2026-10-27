@@ -819,6 +819,10 @@ class Workers:
         self._ok(tools.preview_section(made))
         self._ok(tools.submit_section(made, 'Nothing: it read well at once.'))
 
+    def words(self, tools, job):
+        spec = tools.job['artifacts']['words']
+        self._ok(tools.submit_artifact('words', spec['text'] + ' (fresh)'))
+
     def review(self, tools, job):
         review = tools.job['review']
         listed = review['slides']

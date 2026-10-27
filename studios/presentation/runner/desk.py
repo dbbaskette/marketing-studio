@@ -22,14 +22,19 @@ What a caller needs to know
 """
 from __future__ import annotations
 
+import json
+import re
 import secrets
+import shutil
 from pathlib import Path
 
 # isort: off
 import runner  # noqa: F401  puts the core on the import path
 import home
 from studio_core import review_policy, step_times, stops
+from studio_core.drafting.parts import Codec
 from studio_core.drafting.store import Store
+from studio_core.drafting.versions import Versions
 from workspace import WorkspaceError
 
 from runner import decks, stages
@@ -155,6 +160,10 @@ def working(root, run: dict, state: dict | None = None) -> dict | None:
     """What desk work is under way, for the line above the desk: {'what', 'done', 'total'},
     or None while the deck rests, before it reaches the desk and once it stopped."""
     from runner.steps import build
+    jobs = run.get('desk_jobs') or []
+    if jobs and not run.get('halted'):
+        return {'what': f"Changing the words of slide {jobs[0].get('number')}", 'done': 0,
+                'total': 1}
     if not arrived(run) or resting(run) or decks.delivered(root):
         return None
     nxt = stages.survey(run).next
@@ -274,7 +283,8 @@ def deliverable(root, run: dict) -> bool:
     """Whether Deliver is offered now: the deck rests on the desk, nothing is halted, and no
     note waits to be drawn."""
     return resting(run) and not run.get('halted') and not opened(run) \
-        and decks.delivered(root) is None
+        and decks.delivered(root) is None and not run.get('desk_jobs') \
+        and not (run.get('desk') or {}).get('edits')
 
 
 def resting(run: dict) -> bool:
@@ -464,6 +474,14 @@ def deck_price(last: dict) -> str:
 # --- the desk's cards ---------------------------------------------------------------------
 
 WORDS = ('title', 'subtitle', 'detail', 'points', 'caveat', 'source')
+UNFIT = 'These words do not fit the slide as it is drawn.'
+ONE_CHANGE = 'A change is already being made to this deck. Wait or stop it.'
+SELECTION_CHANGED = 'The words changed since you selected them. Select them again.'
+DELIVERING = 'The deck is being delivered now. Change its words once it is delivered.'
+RESTORE_BUSY = 'The deck is being redrawn now. Bring the version back when that ends.'
+NO_POINTS = 'A cover, section or closing slide has no points to change.'
+REDRAW_WORDS = 'Fit the new words of slide {number}.'
+WORDS_BUSY = 'The deck is being redrawn now. Redraw with these words when that ends.'
 SET_ASIDE = 'Not redrawn: you stopped the whole-deck note.'
 REDRAWING = 'Redrawing…'
 
@@ -557,6 +575,175 @@ def _parts(root, state: dict, outline: dict) -> list[tuple[str | None, bool, lis
     return parts
 
 
+# --- History -------------------------------------------------------------------------------
+
+VERSION_SOURCES = ('save', 'selection', 'note', 'redraw', 'restore', 'outline', 'finishing',
+                   'open')
+PART = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]{4,40}$')   # the outline's slide ID rule
+STAMP = re.compile(r'^[0-9A-Za-z]{8,40}$')
+DRAWINGS = Path('work') / 'desk' / 'versions'   # each slide's drawings: this computer's only
+KEPT_WORDS = (*WORDS, 'notes')
+
+
+class DeckFolder(DeckStore):
+    """The deck's own desk folder, `desk/` beside run.json, which the team shares: the
+    versions of each slide's words are kept there. The deck's path is its ident."""
+
+    def folder(self, ident):
+        return Path(ident) / 'desk'
+
+
+SLIDES = Codec(fixed=(), single=(), part=PART, thing='deck', noun='slide')
+
+
+def versions() -> Versions:
+    return Versions(DeckFolder(), SLIDES, VERSION_SOURCES)
+
+
+def words_of(slide: dict) -> dict:
+    return {key: slide.get(key) for key in KEPT_WORDS}
+
+
+def with_slide_words(outline: dict, ident: str, kept: dict) -> dict:
+    """A new outline with one slide's words as `kept` has them; the rest of it as it is."""
+    made = json.loads(json.dumps(outline))
+    for slide in made.get('slides') or ():
+        if isinstance(slide, dict) and slide.get('id') == ident:
+            for key in KEPT_WORDS:
+                if kept.get(key) in (None, '', []):
+                    slide.pop(key, None)
+                else:
+                    slide[key] = kept[key]
+    return made
+
+
+def changed_fields(now: dict, kept: dict) -> list:
+    """The fields of a slide whose words differ: each field, and each point's label and
+    text where the points are as many."""
+    from runner.steps import words
+    found = [field for field in words.FIELDS
+             if words.text_of(now, field) != words.text_of(kept, field)]
+    old, new = now.get('points') or [], kept.get('points') or []
+    if len(old) != len(new):
+        from workspace import WorkspaceError as Refused
+        raise Refused('The slide has another number of points now.')
+    for at, (one, other) in enumerate(zip(old, new)):
+        for key in ('label', 'text'):
+            if (one.get(key) or '') != (other.get(key) or ''):
+                found.append(('points', at, key))
+    return found
+
+
+def _stamp(entry: dict) -> str:
+    return re.sub(r'[^0-9A-Za-z]', '', str(entry.get('at') or ''))
+
+
+def keep_slide(root, slide_id: str, source: str, session=None) -> None:
+    """Keep a slide's words as they are, before they change, in the deck's shared desk
+    folder (piece 3's version store); and, where this computer has it, the slide's drawing and
+    picture under work/, which is never shared. Saves of one editing session keep one."""
+    from runner.steps import build, words
+    root = Path(root)
+    slide = next((one for one in build.slides_of(_outline(root)) if one.get('id') == slide_id),
+                 None)
+    if slide is None or not PART.match(slide_id):
+        return
+    store = versions()
+    before = store.kept(str(root), slide_id)
+    store.keep(str(root), slide_id, json.dumps(words_of(slide), sort_keys=True,
+                                               ensure_ascii=False), source, session)
+    after = store.kept(str(root), slide_id)
+    if not after or (before and after[0] == before[0]):
+        return   # one editing session keeps one version
+    state = build.read_state(root)
+    if not state.get('rounds'):
+        return
+    section = next((entry['id'] for entry in (state.get('start') or {}).get('sections') or ()
+                    if slide_id in entry['slides']), None)
+    file = (root / state['sections'][section]['file']) if section in (state.get('sections') or {}) \
+        else words.lead_file(root, state, slide_id)
+    drawn = next((one for one in (home.read_json(file, {}) if file else {}).get('slides') or ()
+                  if isinstance(one, dict) and one.get('id') == slide_id), None)
+    if drawn is None:
+        return
+    folder = root / DRAWINGS / slide_id
+    folder.mkdir(parents=True, exist_ok=True)
+    stamp = _stamp(after[0])
+    home.write_json(folder / f'{stamp}.json', drawn)
+    number = next((one['number'] for one in last_round(state)['slides']
+                   if one['id'] == slide_id), None)
+    picture = build.shots(root) / f'{number}.png'
+    if number and picture.is_file():
+        shutil.copyfile(picture, folder / f'{stamp}.png')
+
+
+def version_drawing(root, slide_id: str, entry: dict) -> dict | None:
+    if not PART.match(slide_id):
+        return None
+    found = home.read_json(Path(root) / DRAWINGS / slide_id / f"{entry['stamp']}.json", None)
+    return found if isinstance(found, dict) else None
+
+
+def version_picture(root, ref) -> Path | None:
+    """The picture a version kept, by its ref '<slide>/<stamp>', and nothing else."""
+    if not isinstance(ref, str) or ref.count('/') != 1:
+        return None
+    slide_id, stamp = ref.split('/')
+    if not PART.match(slide_id) or not STAMP.match(stamp):
+        return None
+    return Path(root) / DRAWINGS / slide_id / f'{stamp}.png'
+
+
+def versions_of(root, slide_id) -> list[dict]:
+    """A slide's kept versions, newest first: {'at', 'source', 'words', 'stamp', 'picture'}."""
+    if not isinstance(slide_id, str) or not PART.match(slide_id):
+        raise WorkspaceError('Choose a slide of this deck.')
+    found = []
+    for entry in versions().kept(str(root), slide_id):
+        try:
+            kept = json.loads(entry['text'])
+        except ValueError:
+            continue
+        stamp = _stamp(entry)
+        pictured = (Path(root) / DRAWINGS / slide_id / f'{stamp}.png').is_file()
+        found.append({'at': entry.get('at'), 'source': entry.get('source'), 'words': kept,
+                      'stamp': stamp, 'picture': {'kind': 'version', 'ref': f'{slide_id}/{stamp}'}
+                      if pictured else None})
+    return found
+
+
+def with_drawing(section: dict, drawn: dict) -> dict:
+    """A drawn section (or a lead's file) with one slide's drawing put back."""
+    made = json.loads(json.dumps(section))
+    made['slides'] = [drawn if isinstance(one, dict) and one.get('id') == drawn.get('id')
+                      else one for one in made.get('slides') or ()]
+    return made
+
+
+def check_seen(run: dict, seen, part: str) -> None:
+    """Refuse a form older than the slide it changes: piece 3's per-part check, over the
+    desk's own revision and the revision each slide last changed at."""
+    from studio_core.drafting import record
+    held = run.get('desk') or {}
+    try:
+        record.checked({'revision': int(held.get('revision') or 1),
+                        'changed': held.get('changed') or {}}, seen, [part], 'deck')
+    except ValueError as refusal:
+        raise WorkspaceError(str(refusal)) from None
+
+
+def advance(run: dict, part: str) -> int:
+    """One revision on, with `part` changed at it. Returns the revision."""
+    held = run.setdefault('desk', {})
+    held['revision'] = int(held.get('revision') or 1) + 1
+    held.setdefault('changed', {})[part] = held['revision']
+    return held['revision']
+
+
+def revision(run: dict) -> int:
+    return int((run.get('desk') or {}).get('revision') or 1)
+
+
 def cards(root, run: dict, price=None) -> dict:
     """The desk's slide cards, under the sections the deck was split into, in deck order:
     {'sections': [{'id', 'lead', 'number', 'slides': [card]}], 'expected', 'drawn_here'}.
@@ -575,6 +762,7 @@ def cards(root, run: dict, price=None) -> dict:
         else {slide['id']: at for at, slide in enumerate(build.slides_of(outline), 1)}
     findings = build.ordered((last.get('review') or {}).get('findings')) if drawn else []
     kept = notes(run)
+    unfit = (run.get('desk') or {}).get('unfit') or {}
     sections, counted = [], 0
     for section, lead, ids in _parts(root, state, outline):
         counted += 0 if lead else 1
@@ -598,6 +786,7 @@ def cards(root, run: dict, price=None) -> dict:
                 'audit': audit_lines(state, number) if drawn and number else [],
                 'note': _note_shown(noted),
                 'busy': busy_now,
+                'unfit': {**unfit[ident], 'says': UNFIT} if ident in unfit else None,
                 'price': priced})
         sections.append({'id': section, 'lead': lead, 'number': None if lead else counted,
                          'slides': slides})

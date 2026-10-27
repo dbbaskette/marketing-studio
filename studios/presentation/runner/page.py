@@ -89,7 +89,18 @@ What a caller needs to know
     `/api/desk-outline` {"path", "slides", "expected"} saves the Outline tab;
     `/api/desk-reread` {"path", "kind"} reads the document the other way; `/api/desk-look`
     {"path", "look", "note"?} picks the look at the deck's one pause; and
-    `/api/desk-look-again` {"path"} draws the looks again for another pick.
+    `/api/desk-look-again` {"path"} draws the looks again for another pick. A slide's words:
+    `/api/desk-words` {"path", "number", "field", "text", "seen", "session"?} and
+    `/api/desk-notes` {"path", "number", "text", "seen", "session"?} save typed words with no
+    composer where they fit (`field` is "title", "subtitle", "detail", "caveat", "source" or
+    ["points", index, "label"|"text"]; `seen` is the view's `desk.seen`);
+    `/api/desk-selection` {"path", "number", "field", "start", "end", "action",
+    "instruction"?, "seen"} has a words job rewrite a passage (rephrase, shorten, expand, fix
+    or ask); `/api/desk-redraw-words` {"path", "number", "field", "text", "expected"} saves
+    words that did not fit and redraws the slide's section; `/api/desk-discard` {"path",
+    "number"} lets them go; and `/api/desk-restore` {"path", "slide", "index", "seen"} brings a
+    kept version back. `GET /api/desk-versions?path=&slide=` answers {"versions"}, newest
+    first.
     `/api/desk-outline-price` (GET ?path=, or POST {"path", "slides"} with the unsaved
     slides) answers {"says", "sections"}: what saving them redraws. `expected` is the view's
     `desk.expected` (the deck on screen) or `desk.outline.expected` (the outline read). A
@@ -131,7 +142,7 @@ modules.bind(globals(), _shared, _shared.NAMES)
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
          '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
-         '/api/desk-outline-price')
+         '/api/desk-outline-price', '/api/desk-versions')
 # The desk's changes: each is an engine method by the same name, with what it is sent.
 DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
         '/api/desk-deck-note': ('desk_deck_note', ('note', 'expected')),
@@ -141,7 +152,18 @@ DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
         '/api/desk-outline': ('desk_outline', ('slides', 'expected')),
         '/api/desk-reread': ('desk_reread', ('kind',)),
         '/api/desk-look': ('desk_look', ('look', 'note?')),
-        '/api/desk-look-again': ('desk_look_again', ())}
+        '/api/desk-look-again': ('desk_look_again', ()),
+        '/api/desk-words': ('desk_words', ('number', 'field', 'text', 'seen', 'session?')),
+        '/api/desk-notes': ('desk_notes', ('number', 'text', 'seen', 'session?')),
+        '/api/desk-selection': ('desk_selection', ('number', 'field', 'start', 'end', 'action',
+                                                   'instruction?', 'seen', 'passage?')),
+        '/api/desk-redraw-words': ('desk_redraw_words', ('number', 'field', 'text',
+                                                         'expected')),
+        '/api/desk-discard': ('desk_discard', ('number',)),
+        '/api/desk-restore': ('desk_restore', ('slide', 'index', 'seen', 'stamp?'))}
+# What a desk change takes as it is sent, not as text.
+RAW = ('slides', 'field')
+WHOLE = ('seen', 'start', 'end', 'index')   # whole numbers, from zero
 WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
@@ -207,6 +229,10 @@ class RunnerPage(server.Page):
                 self.deck(one('path')), None, one('expected'))))
         if path == '/api/file':
             return server.as_json(HTTPStatus.OK, self.file(one('path'), one('name')))
+        if path == '/api/desk-versions':
+            deck = self.deck(one('path'))
+            return server.as_json(HTTPStatus.OK, {'versions': self.desk(
+                lambda: self.engine.desk_versions(deck, one('slide')))})
         if path == '/api/desk-outline-price':
             path = self.deck(one('path'))
             return server.as_json(HTTPStatus.OK, self.desk(
@@ -553,8 +579,16 @@ class RunnerPage(server.Page):
                 value = sent.get(key)
                 if type(value) is not int or value < 1:
                     raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Name the slide by its number.')
-            elif key == 'slides':
+            elif key in RAW:
                 value = sent.get(key)
+            elif key in WHOLE:
+                value = sent.get(key)
+                if type(value) is not int or value < 0:
+                    raise server.Refusal(HTTPStatus.BAD_REQUEST, f'Give {key} as a whole number.')
+            elif key == 'text':
+                value = sent.get(key)
+                if not isinstance(value, str) or len(value) > server.NOTE_LIMIT:
+                    raise server.Refusal(HTTPStatus.BAD_REQUEST, 'Give text as text.')
             else:
                 value = server.text(sent, key, not optional)
             given.append(value)
