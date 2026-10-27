@@ -114,6 +114,9 @@ checked here before anything is kept. Each job has a folder that only the runner
 """
 from __future__ import annotations
 
+# ruff: noqa: F821  names bound from studio_core.shared_runner are unseen by a linter;
+# test_shared_runner_use checks the bound parts, and the suites call the rest.
+
 import argparse  # noqa: F401  read by the shared parts
 import base64  # noqa: F401  read by the shared parts
 import functools  # noqa: F401  read by the shared parts

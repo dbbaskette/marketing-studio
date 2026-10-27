@@ -5,6 +5,9 @@ PROBE and NOBODY stay in each studio: they are values with the product's name in
 """
 from __future__ import annotations
 
+# ruff: noqa: F821  these definitions read the names of the studio module they are
+# bound into; each studio's test_shared_runner_use checks every one resolves there.
+
 import re
 
 

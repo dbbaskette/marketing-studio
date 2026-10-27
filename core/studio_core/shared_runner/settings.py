@@ -5,6 +5,9 @@ into its own module with `studio_core.modules.bind`; they read that module's nam
 """
 from __future__ import annotations
 
+# ruff: noqa: F821  these definitions read the names of the studio module they are
+# bound into; each studio's test_shared_runner_use checks every one resolves there.
+
 import re
 from pathlib import Path
 
