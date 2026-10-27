@@ -273,9 +273,18 @@ def capture(client, file_id, tab_id, output, include_review=False):
         if pending:
             # Google's export would show the pending suggestions: Blog Studio reads the Doc
             # as it is without them itself, images and all.
-            from google_suggestions import image_data
+            from google_suggestions import image_data, images_in, image_order
 
-            markdown = accepted_markdown(accepted, images=image_data(client, accepted))
+            # The images as Google's own export has them, so a later read of the Doc, with or
+            # without suggestions, has the same image data; Google's image host otherwise.
+            images = image_data(client, accepted)
+            try:
+                exported = images_in(client.export(file_id, 'md').decode('utf-8', 'replace'))
+            except (GoogleError, AttributeError):
+                exported = []
+            if exported and len(exported) == len(image_order(accepted)) and all(exported):
+                images = exported
+            markdown = accepted_markdown(accepted, images=images)
             projection = OBJECTS_PROJECTION
         else:
             markdown = client.export(file_id, 'md')

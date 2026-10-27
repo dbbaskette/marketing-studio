@@ -3460,10 +3460,14 @@ class ImageFinishingTests(DeskCase):
         )
         self.assertEqual(left, 0)
         self.assertNotIn('data:image', json.dumps([found, paragraphs]))
-        # An image removed or replaced is made in the Doc by hand, never sent as words.
+        # An image removed is made in the Doc by hand, never sent as words; the same image's
+        # data read another way (Google's image host, or its export) is no change.
+        found, left, _ = desk_finish.google_changes(
+            baseline, baseline.replace(IMAGE_TWO, IMAGE_ONE)
+        )
+        self.assertEqual((found, left), ([], 0))
         for changed, said in (
             (baseline.replace('![][image2]\n\n', ''), 'The image here is removed'),
-            (baseline.replace(IMAGE_TWO, IMAGE_ONE), 'The image “image2” changed'),
         ):
             with self.subTest(said=said):
                 found, left, paragraphs = desk_finish.google_changes(baseline, changed)

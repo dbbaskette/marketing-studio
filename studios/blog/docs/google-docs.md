@@ -250,8 +250,8 @@ Doc as it was read:
 | A paragraph added, or split | A suggested line break and the new text, after the end of the paragraph before it. The new paragraph takes that paragraph's kind; a different kind (a heading, a list item) is said in a comment. |
 | A paragraph removed, or merged | A suggested deletion of its words and its break. Google cannot delete the break that ends a Doc, so the last paragraph is deleted with the break before it instead, where that paragraph has the same settings, which it keeps; otherwise an empty paragraph is left. Either way the comment says so. |
 | A link's address, bold, italic or code on words already in the Doc, a heading level | A comment on the words, such as "Link changed: “setup guide” now points to …" or "Make “Key Data Patterns” bold." A suggestion changes words, not the look of words it keeps, so that formatting is the Doc owner's to apply. |
-| An image, a table row, a paragraph with an image or a chip | A comment on the closest paragraph that can take one, or on plain words beside the image or chip, quoting the change. Google takes no suggestion in a paragraph that holds an image or a chip. |
-| Words in a paragraph where someone else's suggestion waits | A comment on that paragraph's plain words, quoting the change: theirs is never accepted, rejected or edited, and holds nothing else. |
+| An image or a table row | A comment on the closest paragraph that can take one, quoting the change. |
+| Words in a paragraph where someone else's suggestion waits, or beside an image or chip | A suggestion of ours, placed by the Doc's own indexes around their suggestion and the object; words their suggestion itself changes go as a comment on that paragraph's plain words. Theirs is never accepted, rejected or edited, and holds nothing else. |
 | A title other than the Doc's name | A comment: "Suggested title: …". The Doc's name is not body text. |
 
 The plan names how many suggestions and comments go, and nothing is sent until you

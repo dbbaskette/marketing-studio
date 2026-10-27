@@ -13,6 +13,7 @@ import desk_finish
 import google_drive
 import google_intake
 import google_model as gm
+import google_roundtrip as rt
 import google_suggestions as gs
 import studio
 
@@ -30,7 +31,7 @@ class LenientReadTests(unittest.TestCase):
             '![][image1]',
             'See the chart ![A trend chart][image2] for the trend.',
             '### **Key Patterns**',
-            'Read the [Harbour plan](<https://docs.google.com/document/d/plan>) with Ada Lovelace first.',
+            'Read the [Harbour plan](https://docs.google.com/document/d/plan) with Ada Lovelace first.',
             'Line one  \nline two of one paragraph.',
             'A page ends here.\n',
             'Tides vary[^1] by season.',
@@ -38,7 +39,7 @@ class LenientReadTests(unittest.TestCase):
         ):
             self.assertIn(expected, body)
         # The data comes last, as Google's export puts it; an image not read is named so.
-        self.assertTrue(body.endswith('[image1]: <data:image/png;base64,AAAA>\n'))
+        self.assertTrue(body.endswith('[image1]: <data:image/png;base64,AAAA>'))
         self.assertNotIn('[image2]:', body)
         missing = gm.objects_doc()
         del missing['tabs'][0]['documentTab']['inlineObjects']['kix.two']
@@ -81,6 +82,75 @@ class LenientReadTests(unittest.TestCase):
     def test_the_strict_reader_still_leaves_objects_to_googles_export(self):
         with self.assertRaises(google_drive.GoogleError):
             gs.accepted_markdown(gm.objects_doc())
+
+
+def small_doc(*lines):
+    """A synthetic Doc of plain paragraphs (runs of text and style)."""
+    import test_google_suggestions as fixtures
+
+    doc = fixtures.paragraph_doc(
+        *[(runs, {'namedStyleType': 'NORMAL_TEXT'}, bullet) for runs, bullet in lines]
+    )
+    doc['title'] = 'Post'
+    return doc
+
+
+class ExportDialectTests(unittest.TestCase):
+    """Read with suggestions pending, the Doc is the same Markdown Google's export writes, so
+    a later read either way sees no change Google did not make."""
+
+    LINK = {'link': {'url': 'https://example.com/guide'}}
+
+    def doc(self):
+        bullet = {'listId': 'l1'}
+        doc = small_doc(
+            ([('Read the ', {}), ('guide', self.LINK), (' first.\n', {})], None),
+            ([('One ', {}), ('bold', {'bold': True}), (' item.\n', {})], bullet),
+            ([('Two items.\n', {})], bullet),
+            ([('The end.\n', {})], None),
+        )
+        doc['tabs'][0]['documentTab']['lists'] = {
+            'l1': {'listProperties': {'nestingLevels': [{'glyphSymbol': '●'}]}}
+        }
+        return doc
+
+    # As Google's Markdown export writes this Doc.
+    EXPORT = (
+        'Read the [guide](https://example.com/guide) first.\n\n'
+        '* One **bold** item.  \n'
+        '* Two items.\n\n'
+        'The end.'
+    )
+
+    def test_the_reader_writes_the_exports_markdown(self):
+        self.assertEqual(gs.accepted_markdown(self.doc(), images=[]).decode(), self.EXPORT)
+
+    def test_a_blog_read_clean_then_with_suggestions_sees_no_change(self):
+        import google_workflow as gw
+
+        clean = gm.Model(self.doc(), self.EXPORT)
+        with tempfile.TemporaryDirectory() as folder:
+            rt.capture(clean, 'fixture-doc', 't.0', Path(folder) / 'clean')
+            first = (Path(folder) / 'clean' / 'document.md').read_text()
+            clean.teammate('really ', 'first.')
+            rt.capture(clean, 'fixture-doc', 't.0', Path(folder) / 'pending')
+            again = (Path(folder) / 'pending' / 'document.md').read_text()
+        self.assertEqual(again, first)
+        chunks = gw.text_chunks(first, first.replace('The end.', 'The finish.'), again)
+        self.assertFalse([c for c in chunks if c[0] == 'theirs' and c[1]])
+
+    def test_the_same_image_read_two_ways_is_no_change(self):
+        doc = gm.objects_doc()
+        one = gs.accepted_markdown(
+            doc, images=['data:image/png;base64,ONE', 'data:image/png;base64,TWO']
+        )
+        two = gs.accepted_markdown(
+            doc, images=['data:image/png;base64,AAA', 'data:image/png;base64,BBB']
+        )
+        found, left, _ = desk_finish.google_changes(
+            one.decode(), '# Harbour notes\n\n' + two.decode(), 'Harbour notes'
+        )
+        self.assertEqual((found, left), ([], 0))
 
 
 class PendingDocCase(unittest.TestCase):
@@ -287,6 +357,108 @@ class PendingReviewTests(PendingDocCase):
         self.assertNotIn('doc_suggestions', payload)
 
 
+class MarkPlacementTests(unittest.TestCase):
+    """A mark sits in its own paragraph at its place there, or not at all."""
+
+    def bench(self, doc, prepare):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name) / 'workspace'
+        studio.initialize(self.root)
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        self.client = gm.Model(doc)
+        prepare(self.client)
+        with patch.object(google_drive, 'Client', return_value=self.client):
+            found = google_intake.preview(self.root, {'url': URL})
+            made = google_intake.start(
+                self.root,
+                {
+                    'preview': found['preview'],
+                    'expected': found['expected'],
+                    'title': 'Post',
+                    'confirmed': True,
+                },
+            )
+        held = studio._HELD.set(True)
+        self.addCleanup(studio._HELD.reset, held)
+        self.ident = desk.create(self.root, {'article': made['id']})['id']
+
+    def marks(self):
+        import google_pending
+
+        draft = desk.read(self.root, self.ident)
+        return [
+            (m['part'], desk.text_of(draft, m['part'])[: m['at']], m['inserted'])
+            for m in google_pending.on_desk(self.root, self.ident, draft)
+        ]
+
+    def test_a_mark_never_moves_to_the_same_words_elsewhere(self):
+        self.bench(
+            small_doc(
+                ([('Earlier we study the core data model in detail, first.\n', {})], None),
+                ([('Today we study the core data model in detail, later.\n', {})], None),
+            ),
+            lambda m: m.teammate('shared ', 'data model in detail, first'),
+        )
+        marks = self.marks()
+        self.assertEqual(len(marks), 1)
+        self.assertEqual(marks[0][2], 'shared ')
+        self.assertTrue(marks[0][1].endswith('Earlier we study the core '), 'in its own paragraph')
+        draft = desk.read(self.root, self.ident)
+        text = desk.text_of(draft, 'opening').replace(
+            'the core data model in detail, first', 'the main data model in detail, first'
+        )
+        desk.save(self.root, self.ident, draft['revision'], 'opening', text)
+        self.assertEqual(self.marks(), [], 'its paragraph changed: not marked, never moved')
+
+    def test_a_mark_beside_a_link_or_bold_is_placed_in_the_markdown(self):
+        link = {'link': {'url': 'https://example.com/patterns'}}
+        self.bench(
+            small_doc(
+                (
+                    [('We rely on proven ', {}), ('data patterns', link), (' that work.\n', {})],
+                    None,
+                ),
+                ([('Utilize', {'bold': True}), (' the logs.\n', {})], None),
+            ),
+            lambda m: (
+                m.teammate('very ', 'proven'),
+                m.teammate('', 'Utilize', ident='t2', delete='Utilize'),
+            ),
+        )
+        draft = desk.read(self.root, self.ident)
+        import google_pending
+
+        placed = google_pending.on_desk(self.root, self.ident, draft)
+        self.assertEqual(len(placed), 2, 'both marked')
+        text = desk.text_of(draft, placed[0]['part'])
+        self.assertTrue(text[: placed[0]['at']].endswith('We rely on '))
+        removed = placed[1]
+        self.assertEqual(
+            desk.text_of(draft, removed['part'])[removed['at'] : removed['at'] + removed['length']],
+            'Utilize',
+        )
+
+
+class OwnSuggestionsTests(PendingDocCase):
+    """Only our waiting edits are ours: a note of ours holds nothing and hides nothing."""
+
+    def test_a_note_of_ours_neither_holds_nor_hides_a_teammates_suggestion(self):
+        self.start()
+        import google_pending
+
+        draft = desk.read(self.root, self.ident)
+        desk.save(self.root, self.ident, draft['revision'], 'title', 'Harbour notes, renamed')
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual([p['kind'] for p in plan['proposals']], ['comment'])
+        self.act('google-send', plan=plan['plan'], confirmed=True)
+        self.client.teammate('very ', 'opening paragraph', ident='teammate-3')
+        self.edit([('The end.', 'The finish.')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(plan['waiting'], 0)
+        self.assertIn('teammate-3', [e['id'] for e in google_pending.read(self.root, self.ident)])
+
+
 class PendingSendTests(PendingDocCase):
     """Our changes beside theirs land exactly, or go as comments, and theirs stay theirs."""
 
@@ -350,6 +522,18 @@ class PendingSendTests(PendingDocCase):
         self.assertIn('An opening paragraph about ports.', lines)
         self.assertIn('We keep the plan quite clear.', lines)
         self.assertIn('Truly The end.', lines)
+
+    def test_a_change_at_their_insertion_point_goes_and_is_counted(self):
+        self.edit([('The end.', 'An end.')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['kind'], p['before'], p['after']) for p in plan['proposals']],
+            [('edit', 'The', 'An')],
+        )
+        self.assertEqual(plan['doc_overlap'], 1, 'it sits where their insertion goes')
+        self.assertEqual(
+            self.act('google-send', plan=plan['plan'], confirmed=True)['status'], 'verified-pending'
+        )
 
     def test_a_teammates_suggestion_alone_holds_nothing(self):
         self.edit([('The end.', 'The finish.')])

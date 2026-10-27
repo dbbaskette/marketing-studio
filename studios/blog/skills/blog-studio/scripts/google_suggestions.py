@@ -191,7 +191,7 @@ def run_features(style):
     )
 
 
-def render_run(plain, features):
+def render_run(plain, features, export=False):
     bold, italic, strike, underline, script, code, url = features
     # Markdown delimiters cannot include leading/trailing whitespace.
     leading = plain[: len(plain) - len(plain.lstrip())]
@@ -215,7 +215,9 @@ def render_run(plain, features):
     if script:
         text = '<' + script + '>' + text + '</' + script + '>'
     if url:
-        text = '[' + text + '](<' + url + '>)'
+        # Google's export writes a plain address; one with spaces or brackets is enclosed.
+        plain_url = export and not any(c in url for c in ' ()<>')
+        text = '[' + text + '](' + (url if plain_url else '<' + url + '>') + ')'
     return leading + text + trailing
 
 
@@ -328,9 +330,9 @@ def render_paragraph(paragraph, objects=None):
             props = value.get('richLinkProperties') or {}
             title, uri = str(props.get('title') or ''), str(props.get('uri') or '')
             if uri.startswith(('https://', 'http://')) and not any(
-                c.isspace() or c in '<>' for c in uri
+                c.isspace() or c in '<>()' for c in uri
             ):
-                add('[' + escape(title or uri) + '](<' + uri + '>)', None)
+                add('[' + escape(title or uri) + '](' + uri + ')', None)
             else:
                 add(escape(title or uri), None)
         elif kind == 'person':
@@ -345,7 +347,8 @@ def render_paragraph(paragraph, objects=None):
         else:
             raise _unreadable(kind)
     pieces = [
-        render_run(text, features) if features is not None else text for text, features in merged
+        render_run(text, features, lenient) if features is not None else text
+        for text, features in merged
     ]
     line = ''.join(pieces).rstrip('\n')
     # A line break inside a paragraph (Shift+Enter) is a Markdown line break, as Google's
@@ -402,7 +405,7 @@ def accepted_markdown(value, images=None):
         raise GoogleError(
             'Review pull needs a scoped native conversion for headers, footers or footnotes.'
         )
-    output = []
+    output, listed = [], []
     counters = {}
     widths = {}
     for block in native.get('body', {}).get('content', []):
@@ -410,6 +413,7 @@ def accepted_markdown(value, images=None):
             continue
         if objects is not None and 'table' in block:
             output.append(_table(block['table'], objects))
+            listed.append(False)
             continue
         if objects is not None and 'tableOfContents' in block:
             continue  # Made by Google from the headings, which are read as they are.
@@ -429,8 +433,9 @@ def accepted_markdown(value, images=None):
             line = '#' * level + ' ' + line
         bullet = paragraph.get('bullet')
         if bullet and not rule:
-            line = list_prefix(native, bullet, counters, widths) + line
+            line = list_prefix(native, bullet, counters, widths, objects is not None) + line
         output.append(line)
+        listed.append(bool(bullet and not rule))
     if objects is not None:
         for number, footnote_id in enumerate(objects.footnotes, 1):
             found = (native.get('footnotes') or {}).get(footnote_id) or {}
@@ -440,8 +445,25 @@ def accepted_markdown(value, images=None):
                 if 'paragraph' in block
             ).strip()
             output.append('[^' + str(number) + ']: ' + (words or ' '))
+            listed.append(False)
         output += objects.definitions
-    result = '\n\n'.join(line for line in output if line.strip()).rstrip() + '\n'
+        listed += [False] * len(objects.definitions)
+    result = ''
+    if objects is None:
+        result = '\n\n'.join(line for line in output if line.strip())
+    else:
+        # As Google's export writes them: list items one per line, each but the last ending in
+        # a line break (two spaces); everything else a paragraph of its own.
+        last = None
+        for line, item in zip(output, listed, strict=True):
+            if not line.strip():
+                continue
+            if last is not None:
+                result += '  \n' if last and item else '\n\n'
+            result += line
+            last = item
+    # Google's export ends without a final line break.
+    result = result.rstrip() + ('' if objects is not None else '\n')
     if not result.strip():
         raise GoogleError('No accepted body text to pull.')
     return result.encode()
@@ -482,6 +504,25 @@ def image_data(client, value):
     return found
 
 
+def image_order(value):
+    """The inline object ids of a Doc view's body, in document order."""
+    found = []
+
+    def walk(item):
+        if isinstance(item, dict):
+            if 'inlineObjectElement' in item:
+                found.append(item['inlineObjectElement'].get('inlineObjectId'))
+            for child in item.values():
+                walk(child)
+        elif isinstance(item, list):
+            for child in item:
+                walk(child)
+
+    for tab in rt.tabs(value):
+        walk(tab.get('documentTab', {}).get('body', {}))
+    return found
+
+
 def images_in(markdown):
     """The image data a lenient read defined, by number: [data URI or None]."""
     found = {}
@@ -490,7 +531,7 @@ def images_in(markdown):
     return [found.get(number) for number in range(1, max(found, default=0) + 1)]
 
 
-def list_prefix(native, bullet, counters, widths):
+def list_prefix(native, bullet, counters, widths, export=False):
     """Bullet or running number for a list paragraph, indented under its parent item."""
     list_id = bullet.get('listId')
     depth = bullet.get('nestingLevel', 0)
@@ -513,9 +554,12 @@ def list_prefix(native, bullet, counters, widths):
         counters[(list_id, depth)] = number
         mark = str(number) + '. '
     else:
-        mark = '- '
+        mark = '* ' if export else '- '
     widths[(list_id, depth)] = len(mark)
-    indent = sum(widths.get((list_id, parent), 2) for parent in range(depth))
+    # Google's export indents each level four spaces.
+    indent = (
+        4 * depth if export else sum(widths.get((list_id, parent), 2) for parent in range(depth))
+    )
     return ' ' * indent + mark
 
 

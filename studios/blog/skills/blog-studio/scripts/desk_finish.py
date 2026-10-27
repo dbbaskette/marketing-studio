@@ -2311,15 +2311,9 @@ def google_changes(baseline, body, title=None):
 
     if title_note:
         note(0, ('title', title_note[0]), title_note[1])
-    for label, line in old_images.items():
-        if new_images.get(label, line) != line:
-            where = next((k for k, l in enumerate(before) if '][' + label + ']' in l), 0)
-            note(
-                where,
-                ('image', label, studio.digest(new_images.get(label, '').encode())[:16]),
-                'The image ' + _quoted(label, 40) + ' changed on the writing desk; '
-                'replace it in the Doc by hand.',
-            )
+    # An image the desk takes in gets a label of its own, so data that differs under the same
+    # label is the same image read another way (Google's image host or its export), not a
+    # change; an image removed or added shows by its reference.
     for k, old_line in enumerate(before):
         lines = [after[j] for j in becomes.get(k, [])]
         if lines == [old_line]:

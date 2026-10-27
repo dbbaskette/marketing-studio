@@ -11,9 +11,12 @@ changes for authors first, then what changes for maintainers.
   without the suggestions, with its images and their data (as Google's export writes them),
   smart chips, line breaks, footnotes and tables; page breaks, headers and footers are left
   out. An image Google does not send stays a visible placeholder, and anything else is named
-  plainly. Reading again after a failure says so as a new answer. On such a Doc a desk
-  change in a paragraph with an image, a chip or someone else's suggestion goes as a comment
-  on that paragraph's plain words, and a teammate's suggestion holds nothing. For
+  plainly, and the text is the very Markdown Google's export writes (links, lists, image
+  data), so a later read either way sees no change Google did not make. Reading again
+  after a failure says so as a new answer. On such a Doc a desk change beside an image, a
+  chip or someone else's suggestion goes as a suggestion placed by the Doc's own indexes;
+  only words their suggestion changes go as a comment, and a teammate's suggestion holds
+  nothing. For
   maintainers: `google_suggestions.accepted_markdown(value, images=…)` reads every object
   (projection `blog-studio-objects/1`, re-read from the snapshot with the image data it
   kept), `google_drive.Client.image` fetches an image's `contentUri` from Google's image host
