@@ -17,6 +17,7 @@ What a caller needs to know
     briefs.guidance('patch')                     planning selected changes to a deck
     briefs.guidance('change-request')            reading a person's note at a gate
     briefs.guidance('words')                     changing a passage of a slide's words
+    briefs.guidance('speaker-notes')             proposing every slide's speaker notes
 
 - A brief says how to do a kind of job. What one job is about goes in the task: the name to
   hand a draft back under, the inputs' names, and on a second attempt what went wrong or
@@ -34,7 +35,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 KINDS = ('research-plan-queue', 'classify', 'research-plan', 'research-question', 'outline-brief', 'outline-material',
          'outline-spec', 'extract', 'restructure', 'section', 'section-repair',
-         'review', 'patch', 'change-request', 'words')
+         'review', 'patch', 'change-request', 'words', 'speaker-notes')
 LEVELS = ('brand-only', 'polish', 'redesign', 'rework')
 
 

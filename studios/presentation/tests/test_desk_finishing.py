@@ -261,5 +261,123 @@ class ReviewTests(FinishCase):
         self.assertEqual(self.waiting(root), 'gate:build')
 
 
+class SpeakerNotesTests(FinishCase):
+    """Task 4.4: speaker notes proposed by a job, applied through the notes edit."""
+
+    def propose(self, root: Path) -> dict:
+        self.engine.desk_finish(root, 'notes')
+        self.on_desk(root)
+        return self.finishing(root, 'notes')
+
+    def test_speaker_notes_are_proposed_per_slide(self):
+        root = self.deck()
+        before = (root / 'outline.json').read_bytes()
+        kept = self.propose(root)
+        self.assertEqual(len(self.workers.of('speaker-notes')), 1)
+        content = [(number, slide) for number, slide in enumerate(LONG_OUTLINE['slides'], 1)
+                   if slide.get('kind') not in build.LEADS]
+        self.assertEqual([(item['number'], item['part']) for item in kept['items']],
+                         [(number, slide['id']) for number, slide in content])
+        first = kept['items'][0]
+        self.assertEqual(first['before'], content[0][1].get('notes') or '')
+        self.assertEqual(first['after'], f"Say why {content[0][1]['id']} matters, then lead on.")
+        self.assertEqual((root / 'outline.json').read_bytes(), before)
+        self.assertEqual(self.desk_view(root)['finish_prices']['notes'].split('.')[0],
+                         finishing.NOTES_SAYS.split('.')[0])
+
+    def test_apply_writes_notes_with_no_section_job(self):
+        root = self.deck()
+        kept = self.propose(root)
+        drawn = self.sections()
+        first, second = kept['items'][:2]
+        self.engine.desk_apply(root, kept['job'], [first['id'], second['id']], self.seen(root))
+        self.on_desk(root)
+        self.assertEqual(self.sections(), drawn)
+        slides = {slide['id']: slide for slide in
+                  json.loads((root / 'outline.json').read_text())['slides']}
+        self.assertEqual(slides[first['part']]['notes'], first['after'])
+        self.assertEqual(slides[second['part']]['notes'], second['after'])
+        states = [item['state'] for item in self.finishing(root, 'notes')['items']]
+        self.assertEqual(states[:2], ['applied', 'applied'])
+        self.assertEqual(desk.versions_of(root, first['part'])[0]['source'], 'finishing')
+
+    def test_an_edited_proposal_writes_the_person_s_words(self):
+        root = self.deck()
+        kept = self.propose(root)
+        first = kept['items'][0]
+        self.engine.desk_apply(root, kept['job'], [{'id': first['id'], 'after': 'My own words.'}],
+                               self.seen(root))
+        self.on_desk(root)
+        slide = next(one for one in json.loads((root / 'outline.json').read_text())['slides']
+                     if one['id'] == first['part'])
+        self.assertEqual(slide['notes'], 'My own words.')
+
+    def test_notes_typed_since_are_not_overwritten(self):
+        root = self.deck()
+        kept = self.propose(root)
+        first = kept['items'][0]
+        self.engine.desk_notes(root, first['number'], 'Typed since.', self.seen(root), 'b' * 16)
+        self.on_desk(root)
+        self.assertFalse(self.finishing(root, 'notes')['items'][0]['present'])
+        with self.assertRaises(WorkspaceError):
+            self.engine.desk_apply(root, kept['job'], [first['id']], self.seen(root))
+
+    def test_a_proposal_naming_a_slide_the_deck_lacks_is_refused_by_the_check(self):
+        tools = []
+
+        def lacking(given, job):
+            made = [{'slide': 's9', 'notes': 'Notes for a slide that is not there.'}]
+            tools.append(given.submit_artifact('speaker-notes', json.dumps(made)))
+            return self.workers.speaker_notes(given, job)
+
+        self.workers.then('speaker-notes', lacking)
+        root = self.deck()
+        self.propose(root)
+        (said,) = tools
+        self.assertFalse(said[0])
+        self.assertIn('s9 is not a slide of this deck.', said[1])
+        problems = finishing.check_speaker_notes(json.dumps([
+            {'slide': LONG_OUTLINE['slides'][1]['id'], 'notes': 'x' * 4001}]),
+            {'slides': [LONG_OUTLINE['slides'][1]['id']]})[0]
+        self.assertEqual(problems, [f"Keep the notes of {LONG_OUTLINE['slides'][1]['id']} to "
+                                    '4,000 characters.'])
+        self.assertIs(worker_tools.validator('speaker-notes'), finishing.check_speaker_notes)
+
+    def test_the_job_reads_the_outline_and_the_sources(self):
+        root = self.deck()
+        self.engine.desk_source(root, None, text='Each batch waits for its health checks.',
+                                title='Runbook')
+        read = {}
+
+        def reading(tools, job):
+            for name in ('outline', 'sources', 'slides'):
+                read[name] = tools.read_input(name)[1]
+            return self.workers.speaker_notes(tools, job)
+
+        self.workers.then('speaker-notes', reading)
+        self.propose(root)
+        self.assertEqual(json.loads(read['outline'])['slides'][1]['id'],
+                         LONG_OUTLINE['slides'][1]['id'])
+        self.assertIn('Each batch waits for its health checks.', read['sources'])
+        self.assertEqual(len(json.loads(read['slides'])), len(LONG_OUTLINE['slides']))
+        job = self.workers.of('speaker-notes')[0]
+        self.assertTrue(self.workers.jobs[-1][1].guidance.startswith('# Proposing speaker notes'))
+        self.assertIn('20 minutes', job.task)
+
+    def test_one_change_at_a_time(self):
+        root = self.deck()
+        refused = []
+
+        def again(tools, job):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.desk_finish(root, 'notes')
+            refused.append(str(caught.exception))
+            return self.workers.speaker_notes(tools, job)
+
+        self.workers.then('speaker-notes', again)
+        self.propose(root)
+        self.assertEqual(refused, [desk.ONE_CHANGE])
+
+
 if __name__ == '__main__':
     unittest.main()
