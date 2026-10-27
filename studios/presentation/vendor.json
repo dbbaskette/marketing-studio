@@ -363,7 +363,8 @@
     {
       "path": "runner/brand_source.py",
       "from": "runner/brand_source.py",
-      "revision": "0881ce768039ebeb9e1fa39b89cedf792bf5d40e"
+      "revision": "0881ce768039ebeb9e1fa39b89cedf792bf5d40e",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/brand_source.py`."
     },
     {
       "path": "tests/test_runner_brand_source.py",

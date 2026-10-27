@@ -30,5 +30,5 @@ process holds one object per module and a patch on it reaches every caller.
 `WHOLE` and `PARTS` name the modules that live here, filled in as each one arrives.
 """
 
-WHOLE = ()
+WHOLE = ('brand_source',)
 PARTS = ()
