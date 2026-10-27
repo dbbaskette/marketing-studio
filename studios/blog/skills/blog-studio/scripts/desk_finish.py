@@ -1309,54 +1309,10 @@ def settle(root, ident, draft, job):
 # Before publishing: repurpose into new desk blogs, and send the desk's wording to the
 # blog's Google Doc as suggestions. The pre-publish check reads DRAFT.md, which every desk
 # write keeps in step.
-MARKS = frozenset('[]*`<>#')
 NO_DOC = (
     'This blog has no Google Doc to send suggestions to. A blog started from a Google Doc can '
     'send its desk changes back to that Doc.'
 )
-
-
-ESCAPED = re.compile(r'\\([\\`*_{}\[\]()#+\-.!<>|~])')
-VISIBLE = (
-    (re.compile(r'^\s{0,3}(?:#{1,6}\s+|>\s?|[-*+]\s+|\d{1,3}[.)]\s+)'), ''),  # line markers
-    (re.compile(r'!\[[^\]]*\]\([^)]*\)'), ''),  # images
-    (re.compile(r'!\[[^\]\n]*\]\[[^\]\n]*\]'), ''),  # images by reference, as Google exports
-    (re.compile(r'\[\^[^\]]+\]'), ''),  # footnote markers
-    (re.compile(r'\[([^\]]*)\]\([^)]*\)'), r'\1'),  # links show their text, not their target
-    (re.compile(r'<(https?://[^>\s]+)>'), r'\1'),
-    (re.compile(r'[*`]+'), ''),  # emphasis and code marks
-)
-
-
-def _visible(line):
-    """A Markdown line as the Doc's body paragraph shows it, or None for a line that is not
-    one (a table row, a fence, a footnote's own text)."""
-    bare = line.strip()
-    if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[[^\]]+\]:', bare):
-        return None  # Also a footnote's or a link's definition, such as an image's data.
-    # An escaped mark is the character itself, as Google's Markdown export writes it.
-    line = ESCAPED.sub(lambda found: '\x00' + str(ord(found.group(1))) + '\x00', line)
-    for pattern, replacement in VISIBLE:
-        line = pattern.sub(replacement, line)
-    return re.sub('\x00([0-9]+)\x00', lambda found: chr(int(found.group(1))), line)
-
-
-def _hidden_spans(line):
-    """Where a line holds what the Doc shows no text for: link targets and whole images."""
-    return [m.span(1) for m in re.finditer(r'\]\(([^)]*)\)', line)] + [
-        m.span()
-        for m in re.finditer(
-            r'!\[[^\]]*\]\([^)]*\)|!\[[^\]\n]*\]\[[^\]\n]*\]|<https?://[^>\s]+>', line
-        )
-    ]
-
-
-def _touches(spans, start, end):
-    return any(start < b and a < max(end, start + 1) for a, b in spans)
-
-
-def _shown(lines):
-    return [shown for shown in (_visible(line) for line in lines) if shown is not None]
 
 
 def _aligned(before, opcodes):
@@ -1385,109 +1341,774 @@ def _aligned(before, opcodes):
     return out
 
 
-def google_changes(baseline, body):
-    """The desk's wording changes against the Google Doc as quoted suggestions, how many
-    changed paragraphs cannot be one (added, removed, split or formatted), and the Doc
-    paragraph each suggestion is in with how many times the Doc should show what locates it.
-    A suggestion's id stays the same wherever its paragraph moves, so one sent before is known
-    again. Copies are counted in the text a reader of the Doc sees, as Google's own search
-    finds it: link targets, images, table rows and footnote markers are not part of it."""
+ESCAPED = re.compile(r'\\([\\`*_{}\[\]()#+\-.!<>|~])')
+LINE_MARK = re.compile(
+    r'\s{0,3}(?P<heading>#{1,6})\s+|\s{0,3}>\s?|\s*(?P<bullet>[-*+])\s+|\s*\d{1,3}[.)]\s+'
+)
+INLINE = re.compile(
+    r'(?P<image>!\[[^\]]*\]\([^)]*\)|!\[[^\]\n]*\]\[[^\]\n]*\])'  # images, also by reference
+    r'|(?P<note>\[\^[^\]]+\])'  # footnote markers
+    r'|\[(?P<text>[^\]]*)\]\((?P<url>[^)]*)\)'  # links show their text, not their target
+    r'|<(?P<auto>https?://[^>\s]+)>'
+    r'|(?P<tag></?(?:u|sup|sub)>)'
+    r'|(?P<marks>[*`]+)'  # emphasis and code marks
+)
+LITERAL = re.compile('(\x00[0-9]+\x00)')
+DEFINITION = re.compile(r'\s*\[([^\]^][^\]]*)\]:')
+TOKEN = re.compile(r"\w+(?:['’-]\w+)*|[^\S\n]+|.", re.S)
+WORD_TOKEN = re.compile(r'\w')
+NOTE_LIMIT = 1000  # characters in one suggestion's or comment's reason
+NOTE_BYTES = 1800  # and bytes, under Google's 2,048 for a comment with its marker
+# A character's style as the Doc shows it: bold, italic, code, underline, raised or lowered,
+# and the address it links to.
+PLAIN = (False, False, False, False, None, None)
+BREAK = ('\n', PLAIN)
+
+
+def _inline(text, state, link, chars, images):
+    """The characters a run of inline Markdown shows, each with its style."""
+    at = 0
+    for found in INLINE.finditer(text):
+        _literal(text[at : found.start()], state, link, chars)
+        at = found.end()
+        if found['image']:
+            images.append(found['image'])
+        elif found['url'] is not None:
+            target = found['url'].strip().split()[0] if found['url'].strip() else ''
+            _inline(found['text'], state, target.strip('<>'), chars, images)
+        elif found['auto']:
+            _literal(found['auto'], state, found['auto'], chars)
+        elif found['tag']:
+            name = found['tag'].strip('</>')
+            if name == 'u':
+                state['underline'] = not found['tag'].startswith('</')
+            else:
+                state['script'] = None if found['tag'].startswith('</') else name
+        elif found['marks']:
+            for run in re.findall(r'\*+|`+', found['marks']):
+                if run.startswith('`'):
+                    state['code'] = not state['code']
+                    continue
+                if len(run) % 2:
+                    state['italic'] = not state['italic']
+                if len(run) // 2 % 2:
+                    state['bold'] = not state['bold']
+    _literal(text[at:], state, link, chars)
+
+
+def _literal(text, state, link, chars):
+    style = (
+        state['bold'],
+        state['italic'],
+        state['code'],
+        state['underline'],
+        state['script'],
+        link or None,
+    )
+    for piece in LITERAL.split(text):
+        if LITERAL.fullmatch(piece):
+            chars.append((chr(int(piece[1:-1])), style))  # An escaped mark is the character.
+        else:
+            chars.extend((character, style) for character in piece)
+
+
+def _styled(line):
+    """A Markdown line as the Doc's body paragraph shows it: its kind of paragraph, each
+    character with its style (without the spaces around them), and its images. None for a
+    line that is not a paragraph (a table row, a fence, a footnote's or a link's definition,
+    such as an image's data)."""
+    bare = line.strip()
+    if bare.startswith('|') or bare.startswith(('```', '~~~')) or re.match(r'\[[^\]]+\]:', bare):
+        return None
+    # An escaped mark is the character itself, as Google's Markdown export writes it.
+    line = ESCAPED.sub(lambda found: '\x00' + str(ord(found.group(1))) + '\x00', line)
+    block, mark = 'text', LINE_MARK.match(line)
+    if mark:
+        if mark['heading']:
+            block = 'heading ' + str(len(mark['heading']))
+        elif mark['bullet']:
+            block = 'bullet'
+        elif '>' in mark.group():
+            block = 'quote'
+        else:
+            block = 'number'
+        line = line[mark.end() :]
+    chars, images = [], []
+    state = {'bold': False, 'italic': False, 'code': False, 'underline': False, 'script': None}
+    _inline(line, state, None, chars, images)
+    while chars and chars[0][0].isspace():
+        chars.pop(0)
+    while chars and chars[-1][0].isspace():
+        chars.pop()
+    return {'block': block, 'chars': chars, 'images': images}
+
+
+def _visible(line):
+    """A Markdown line's text as the Doc's body paragraph shows it, or None for a line that is
+    not one."""
+    found = _styled(line)
+    return None if found is None else ''.join(character for character, _ in found['chars'])
+
+
+def _count(text, needle):
+    """How many times `needle` occurs in `text`, overlapping ones too, as Google's search finds
+    them."""
+    found, at = 0, text.find(needle) if needle else -1
+    while at != -1:
+        found += 1
+        at = text.find(needle, at + 1)
+    return found
+
+
+def _uniform(chars, start, end):
+    return len({style for _, style in chars[start:end]}) <= 1
+
+
+def _tokens(chars):
+    """Words, runs of spaces, line breaks and single marks, each cut where the style changes."""
+    text = ''.join(character for character, _ in chars)
+    spans = []
+    for found in TOKEN.finditer(text):
+        start = found.start()
+        for at in range(found.start() + 1, found.end()):
+            if chars[at][1] != chars[at - 1][1]:
+                spans.append((start, at))
+                start = at
+        spans.append((start, found.end()))
+    return text, spans
+
+
+def _runs(old, new):
+    """The separate changed runs between two paragraphs' shown text, word by word, as
+    [old start, old end, new start, new end]. Runs a few words apart merge into one where the
+    words between share one style, but a new paragraph stays a change of its own."""
+    import difflib
+
+    old_text, old_tokens = _tokens(old)
+    new_text, new_tokens = _tokens(new)
+
+    def bounds(spans, low, high, length):
+        if high > low:
+            return spans[low][0], spans[high - 1][1]
+        at = spans[low][0] if low < len(spans) else length
+        return at, at
+
+    runs = []
+    for tag, a, b, c, d in difflib.SequenceMatcher(
+        None,
+        [old_text[x:y] for x, y in old_tokens],
+        [new_text[x:y] for x, y in new_tokens],
+        autojunk=False,
+    ).get_opcodes():
+        if tag == 'equal':
+            continue
+        run = [*bounds(old_tokens, a, b, len(old_text)), *bounds(new_tokens, c, d, len(new_text))]
+        if runs:
+            last = runs[-1]
+            between = old_text[last[1] : run[0]]
+            if (
+                len(re.findall(r'\w+', between)) <= 3
+                and len(between) <= 40
+                and '\n' not in ''.join(c for c, _ in new[last[2] : run[3]])
+                and _uniform(old, last[0], run[1])
+                and len({style for c, style in new[last[2] : run[3]] if not c.isspace()}) <= 1
+            ):
+                last[1], last[3] = run[1], run[3]
+                continue
+        runs.append(run)
+    return runs
+
+
+def _segments(chars, start, end):
+    """(start, end) of each stretch of one style between start and end."""
+    found, at = [], start
+    for position in range(start + 1, end):
+        if chars[position][1] != chars[position - 1][1]:
+            found.append((at, position))
+            at = position
+    if end > start:
+        found.append((at, end))
+    return found
+
+
+def _wanted(chars):
+    """The style a run of new text should have: that of its first visible character."""
+    return next((style for character, style in chars if not character.isspace()), None)
+
+
+def _edits(old, new):
+    """Minimal edits that turn one paragraph's shown text into the desk's, each as
+    [start, end, replacement] on the old text. An edit inserts text in one style only, the
+    style the Doc copies from the words it replaces or follows, so a run across a link or
+    formatting is cut where the style changes and its words go with the part in the style
+    they need; the other parts are deletions."""
+    edits = []
+    for start, end, low, high in _runs(old, new):
+        replacement = new[low:high]
+        if start == end or _uniform(old, start, end):
+            edits.append([start, end, replacement])
+            continue
+        parts = _segments(old, start, end)
+        want = _wanted(replacement)
+        pick = next(
+            (i for i, (a, b) in enumerate(parts) if old[a][1] == want),
+            next(
+                (i for i, (a, b) in enumerate(parts) if ''.join(c for c, _ in old[a:b]).strip()), 0
+            ),
+        )
+        a, b = parts[pick]
+        if start < a:
+            edits.append([start, a, []])
+        edits.append([a, b, replacement])
+        if b < end:
+            edits.append([b, end, []])
+    return edits
+
+
+def _anchored(old, edits):
+    """Each edit with whole words to locate it by: an insertion takes the word beside it, in
+    the style its text needs where either side has that style, and a change of spaces only
+    takes the word before it. [start, end, before, after] on the old text, or None when two
+    would cover the same words."""
+    text, tokens = _tokens(old)
+    taken = [(start, end) for start, end, _ in edits if end > start]
+
+    def free(a, b):
+        return not any(a < y and x < b for x, y in taken)
+
+    def side(at, previous):
+        """The word just before (or after) `at`, with the spaces between, or None."""
+        if previous:
+            near = [span for span in tokens if span[1] <= at]
+            if not near:
+                return None
+            a = near[-1][0]
+            if not text[a:at].strip() and len(near) > 1:
+                a = near[-2][0]
+            return (a, at) if text[a:at].strip() else None
+        near = [span for span in tokens if span[0] >= at]
+        if not near:
+            return None
+        b = near[0][1]
+        if not text[at:b].strip() and len(near) > 1:
+            b = near[1][1]
+        return (at, b) if text[at:b].strip() else None
+
+    out = []
+    for start, end, replacement in edits:
+        added = ''.join(c for c, _ in replacement)
+        if end > start and text[start:end].strip():
+            out.append([start, end, text[start:end], added])
+            continue
+        if start == end:
+            want = _wanted(replacement)
+            before, after = side(start, True), side(start, False)
+            order = [before, after]
+            if (
+                after
+                and want is not None
+                and old[after[0]][1] == want
+                and (before is None or old[before[1] - 1][1] != want)
+            ):
+                order = [after, before]
+        else:
+            order = [side(start, True), side(end, False)]
+        for span in order:
+            if span is None:
+                continue
+            a, b = min(span[0], start), max(span[1], end)
+            taken_now = [t for t in taken if t != (start, end)]
+            if any(a < y and x < b for x, y in taken_now):
+                continue
+            out.append([a, b, text[a:b], text[a:start] + added + text[end:b]])
+            taken = taken_now + [(a, b)]
+            break
+        else:
+            return None
+    return sorted(out)
+
+
+def _simulated(old, edits):
+    """The paragraph's characters and styles once every edit is accepted, as Google makes
+    them: kept words keep their style, and inserted text takes the style of the first word
+    it replaces, or of the word it follows. Each character says where it came from: ('old',
+    position) or ('edit', number)."""
+    import google_suggestions
+
+    out, at = [], 0
+    for number, (start, end, before, after) in enumerate(edits):
+        out += [(old[i][0], old[i][1], ('old', i)) for i in range(at, start)]
+        keep_start, keep_end = google_suggestions.trimmed(before, after)
+        a, b = start + keep_start, end - keep_end
+        style = old[a][1] if a < b else old[max(start, a - 1)][1]
+        out += [(old[i][0], old[i][1], ('old', i)) for i in range(start, a)]
+        out += [(c, style, ('edit', number)) for c in after[keep_start : len(after) - keep_end]]
+        out += [(old[i][0], old[i][1], ('old', i)) for i in range(b, end)]
+        at = end
+    return out + [(old[i][0], old[i][1], ('old', i)) for i in range(at, len(old))]
+
+
+def _quoted(text, limit=200):
+    text = ' '.join(text.split())
+    return '“' + (text if len(text) <= limit else text[: limit - 1].rstrip() + '…') + '”'
+
+
+def _restyle(words, have, want):
+    """What to change by hand so `words` look as they do on the desk."""
+    said = []
+    if have[5] != want[5]:
+        if want[5] and have[5]:
+            said.append('Link changed: ' + words + ' now points to ' + want[5] + '.')
+        elif want[5]:
+            said.append('Link ' + words + ' to ' + want[5] + '.')
+        else:
+            said.append('Remove the link from ' + words + '.')
+    names = (('bold', 0), ('italic', 1), ('code', 2), ('underlined', 3))
+    on = [name for name, at in names if want[at] and not have[at]]
+    off = [name for name, at in names if have[at] and not want[at]]
+    if want[4] != have[4]:
+        (on if want[4] else off).append(
+            {'sup': 'superscript', 'sub': 'subscript'}.get(want[4] or have[4], 'raised')
+        )
+    if on:
+        said.append('Make ' + words + ' ' + ' and '.join(on) + '.')
+    if off:
+        said.append('Make ' + words + ' not ' + ' or '.join(off) + '.')
+    return ' '.join(said)
+
+
+def _styles(simulated, new):
+    """[(new start, new end, note)] where the paragraph's words, once its edits are accepted,
+    look different from the desk: a link, its address or formatting."""
+    found, group = [], None
+    for at, ((character, have, _), (_, want)) in enumerate(zip(simulated, new, strict=True)):
+        if character.isspace():
+            continue
+        if have == want:
+            group = None
+            continue
+        if (
+            group
+            and group[2:] == [have, want]
+            and not ''.join(c for c, _, _ in simulated[group[1] : at]).strip()
+        ):
+            group[1] = at + 1
+            continue
+        group = [at, at + 1, have, want]
+        found.append(group)
+    return [
+        (start, end, _restyle(_quoted(''.join(c for c, _ in new[start:end]), 80), have, want))
+        for start, end, have, want in found
+    ]
+
+
+KINDS_SAID = {
+    'text': 'normal text',
+    'bullet': 'a bulleted list item',
+    'number': 'a numbered list item',
+    'quote': 'a quotation',
+}
+
+
+def _kind(block):
+    if block.startswith('heading'):
+        return 'a heading (level ' + block.split()[1] + ')'
+    return KINDS_SAID.get(block, 'normal text')
+
+
+def _note(reason, notes):
+    """A reason with notes added, kept under the length one Google comment allows."""
+    text = ' '.join([reason, *notes]).strip()
+    if len(text) <= NOTE_LIMIT and len(text.encode()) <= NOTE_BYTES:
+        return text
+    text = text[:NOTE_LIMIT]
+    while len(text.encode()) > NOTE_BYTES - 3 or len(text) > NOTE_LIMIT - 1:
+        text = text[:-1]
+    return text.rstrip() + '…'
+
+
+def _paragraph_change(old_line, new_lines):
+    """How one Doc paragraph becomes the desk's lines: (edits, comments, notes, flat), with
+    edits as {start, end, before, after, reason[, remove]} and comments as {start, end, notes}
+    on the paragraph's shown text, notes for the paragraph as a whole, and flat True when the
+    change cannot be made as edits and goes to the paragraph as one comment instead."""
+    old = _styled(old_line)
+    shown = ''.join(c for c, _ in old['chars'])
+    lines = [(line, _styled(line)) for line in new_lines]
+    texts = [(line, found) for line, found in lines if found is not None]
+    notes = [
+        'The desk adds '
+        + ('a table row' if line.strip().startswith('|') else 'a block')
+        + ' here: '
+        + _quoted(line)
+        + '. Add it in the Doc by hand.'
+        for line, found in lines
+        if found is None and not DEFINITION.match(line)
+    ]
+    if not texts:
+        reason = 'A paragraph removed on the writing desk.'
+        return (
+            [
+                {
+                    'start': 0,
+                    'end': len(shown),
+                    'before': shown,
+                    'after': '',
+                    'reason': reason,
+                    'remove': True,
+                }
+            ],
+            [],
+            notes,
+            False,
+        )
+    new = []
+    for number, (_, found) in enumerate(texts):
+        if number:
+            new.append(BREAK)
+        new += found['chars']
+    images = [image for _, found in texts for image in found['images']]
+    if images:
+        notes.append('The desk has an image in this paragraph; add it in the Doc by hand.')
+    for _, found in texts:
+        if found['block'] != old['block']:
+            words = ''.join(c for c, _ in found['chars'])
+            subject = 'this paragraph' if len(texts) == 1 else 'the paragraph ' + _quoted(words, 60)
+            notes.append('Make ' + subject + ' ' + _kind(found['block']) + '.')
+    if [c for c, _ in new] == [c for c, _ in old['chars']]:
+        edits = []
+    else:
+        edits = _anchored(old['chars'], _edits(old['chars'], new))
+        if edits is None:
+            return [], [], notes, True
+    simulated = _simulated(old['chars'], edits)
+    if ''.join(c for c, _, _ in simulated) != ''.join(c for c, _ in new):
+        return [], [], notes, True
+    found_edits = [
+        {'start': start, 'end': end, 'before': before, 'after': after, 'notes': []}
+        for start, end, before, after in edits
+    ]
+    comments = []
+    for low, high, said in _styles(simulated, new):
+        origins = [origin for _, _, origin in simulated[low:high]]
+        owner = next((origin[1] for origin in origins if origin[0] == 'edit'), None)
+        places = [origin[1] for origin in origins if origin[0] == 'old']
+        if owner is None and places:
+            start, end = min(places), max(places) + 1
+            owner = next(
+                (n for n, e in enumerate(found_edits) if start < e['end'] and e['start'] < end),
+                None,
+            )
+            if owner is None:
+                comments.append({'start': start, 'end': end, 'notes': [said]})
+                continue
+        if owner is None:
+            notes.append(said)
+            continue
+        found_edits[owner]['notes'].append(said)
+    for edit in found_edits:
+        reason = (
+            'A paragraph added or split on the writing desk.'
+            if '\n' in edit['after']
+            else 'Wording changed on the writing desk.'
+        )
+        edit['reason'] = _note(reason, edit.pop('notes'))
+    return found_edits, comments, notes, False
+
+
+def _by_hand(old_line, found, lines):
+    """A note for a change to a paragraph that cannot take a suggestion (it holds an image, or
+    is a table row), to make by hand."""
+    was = ''.join(c for c, _ in found['chars']) if found else old_line.strip()
+    had = found['images'] if found else []
+    now_found = [_styled(line) for line in lines]
+    now = ' / '.join(
+        ''.join(c for c, _ in item['chars']) if item else line.strip()
+        for line, item in zip(lines, now_found, strict=True)
+        if not item or item['chars']
+    )
+    if not found:
+        what = 'The table row ' + _quoted(was)
+    elif was:
+        what = 'The paragraph with an image, ' + _quoted(was) + ','
+    else:
+        what = 'The image here'
+    if not lines:
+        return what + ' is removed on the writing desk; remove it in the Doc by hand.'
+    images = [image for item in now_found if item for image in item['images']]
+    if had and images != had:
+        said = 'The image here changed on the writing desk; replace it in the Doc by hand.'
+        return said + (' Its words read ' + _quoted(now) + '.' if now and now != was else '')
+    return what + ' reads ' + _quoted(now) + ' on the writing desk; change it in the Doc by hand.'
+
+
+def _place(texts, k, shown, start, quoted):
+    """How a quote at `start` in paragraph `k`'s shown text is found in the Doc: its context,
+    occurrence, the text counted and how many times the Doc should show it. Copies are
+    counted in the paragraphs the Doc can take suggestions in."""
+    countable = [text for text in texts if text]
+    earlier = [text for text in texts[:k] if text]
+    copy = sum(_count(text, shown) for text in earlier)
+    copies = sum(_count(text, shown) for text in countable)
+    quotes = sum(_count(text, quoted) for text in countable)
+    if _count(shown, quoted) == 1 and (copies > 1 or quotes > 1):
+        return shown, copy + 1 if copies > 1 else None, shown, copies, copy
+    if quotes > 1:
+        within = sum(1 for at in range(start) if shown.startswith(quoted, at))
+        return (
+            None,
+            sum(_count(text, quoted) for text in earlier) + within + 1,
+            quoted,
+            quotes,
+            copy,
+        )
+    return None, None, quoted, quotes, copy
+
+
+def _anchorable(styled):
+    """Whether the Doc's paragraph can take a suggestion or comment: text, and no image."""
+    return bool(styled and not styled['images'] and styled['chars'])
+
+
+def _without_title(before, after, title):
+    """The desk's lines without its `# Title` line when the Doc has none (the Doc's name is
+    its title), and a note when the desk's title is not the Doc's name or first heading."""
+    if not after or not re.match(r'#\s', after[0]) or (before and re.match(r'#\s', before[0])):
+        return after, None
+    desk_title = _visible(after[0]) or ''
+
+    def same(value):
+        return ' '.join((value or '').split()).casefold() == ' '.join(desk_title.split()).casefold()
+
+    heading = next((line for line in before if re.match(r'\s{0,3}#{1,6}\s', line)), None)
+    shown = [_visible(line) for line in (before[:1] + ([heading] if heading else []))]
+    if title is None or same(title) or any(same(text) for text in shown):
+        return after[1:], None
+    return after[1:], 'Suggested title: ' + _quoted(desk_title) + '.'
+
+
+def _alike(old, new):
+    """How alike two lines are, by characters or word by word, whichever is closer: a short
+    line with a new link address and a long paragraph reworded in places both still pair."""
+    import difflib
+
+    return max(
+        difflib.SequenceMatcher(None, old, new).ratio(),
+        difflib.SequenceMatcher(None, old.split(), new.split(), autojunk=False).ratio(),
+    )
+
+
+def _attach(before, after, opcodes):
+    """For each Doc paragraph, the desk lines it becomes: {old index: [new indexes]}. A desk
+    line paired with a Doc paragraph replaces it; a desk line with none joins the paragraph
+    before it as a new paragraph after it (or the one after it, when the paragraph before
+    cannot take a suggestion or there is none). A Doc paragraph with no lines is removed."""
+
+    becomes = {}
+    anchorable = [_anchorable(_styled(line)) for line in before]
+    for tag, a, b, c, d in opcodes:
+        if tag == 'equal':
+            for i in range(b - a):
+                becomes.setdefault(a + i, []).append(c + i)
+            continue
+        olds, news = before[a:b], after[c:d]
+        pairs = []
+        if (
+            not a
+            and not c
+            and olds
+            and news
+            and re.match(r'#\s', olds[0])
+            and re.match(r'#\s', news[0])
+        ):
+            pairs.append((0, 0))  # The Doc's title paragraph and the desk's title.
+        if len(olds) * len(news) <= 40_000:
+            # Pair Doc paragraphs with desk lines, the closest pairs first, never two pairs that
+            # cross: a paragraph deleted next to an edited one is never rewritten into it.
+            ratios = sorted(
+                (
+                    (_alike(old, new), i, j)
+                    for i, old in enumerate(olds)
+                    for j, new in enumerate(news)
+                ),
+                key=lambda found: (-found[0], found[1], found[2]),
+            )
+            for ratio, i, j in ratios:
+                if ratio < 0.6:
+                    break
+                if all(i != pi and j != pj and (i < pi) == (j < pj) for pi, pj in pairs):
+                    pairs.append((i, j))
+        pairs.sort()
+        for i in range(len(olds)):
+            becomes.setdefault(a + i, [])
+        for i, j in pairs:
+            becomes[a + i].append(c + j)
+        paired = {j: i for i, j in pairs}
+        for j in range(len(news)):
+            if j in paired:
+                continue
+            earlier = [i for i, pj in pairs if pj < j]
+            later = [i for i, pj in pairs if pj > j]
+            behind = a + earlier[-1] if earlier else (a - 1 if a else None)
+            ahead = a + later[0] if later else (b if b < len(before) else None)
+            if behind is None or (
+                not anchorable[behind] and ahead is not None and anchorable[ahead]
+            ):
+                target = ahead if ahead is not None else behind
+            else:
+                target = behind
+            if target is None:
+                target = a  # A Doc of only removed paragraphs: the new lines replace the first.
+            becomes.setdefault(target, []).append(c + j)
+    return {k: sorted(v) for k, v in becomes.items()}
+
+
+def google_changes(baseline, body, title=None):
+    """Every desk change against the Google Doc, as quoted suggestions and comments, how many
+    could not be placed anywhere, and the Doc paragraph each one is in with how many times the
+    Doc should show what locates it.
+
+    Each changed paragraph's shown words are compared word by word, and each separate changed
+    run is its own suggestion. A paragraph added is inserted after the one before it, and one
+    removed is deleted with its break. What the Doc shows no words for (a link's address,
+    formatting, an image) is a comment on its words or paragraph, as is a change in a
+    paragraph that cannot take a suggestion. The desk's `# Title` line is not a change when
+    it is the Doc's name (`title`) or its first heading. A suggestion's id stays the same
+    wherever its paragraph moves, so one sent before is known again. Copies are counted in
+    the text a reader of the Doc sees, as Google's own search finds it."""
     import difflib
     import json
 
     import manuscript_editor
 
-    # Paragraphs, without the blank lines between them, so the diff aligns on text.
-    before = [line for line in baseline.splitlines() if line.strip()]
-    after = [line for line in body.splitlines() if line.strip()]
-    found, left, paragraphs = [], 0, {}
+    # Paragraphs, without the blank lines between them, so the diff aligns on text. An image's
+    # data (a reference definition) is compared by its label, not as a paragraph.
+    def split(text):
+        lines, images = [], {}
+        for line in text.splitlines():
+            label = DEFINITION.match(line)
+            if label:
+                images[label.group(1)] = line.strip()
+            elif line.strip():
+                lines.append(line)
+        return lines, images
+
+    before, old_images = split(baseline)
+    after, new_images = split(body)
+    after, title_note = _without_title(before, after, title)
+    styled = [_styled(line) for line in before]
+    texts = [
+        ''.join(c for c, _ in found['chars']) if _anchorable(found) else None for found in styled
+    ]
     opcodes = _aligned(
         before, difflib.SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
     )
-    for tag, a, b, c, d in opcodes:
-        if tag == 'equal':
+    becomes = _attach(before, after, opcodes)
+    edits, comments, notes = {}, {}, {}  # By Doc paragraph.
+
+    def note(k, text):
+        notes.setdefault(k, []).append(text)
+
+    if title_note:
+        note(0, title_note)
+    for label, line in old_images.items():
+        if new_images.get(label, line) != line:
+            where = next((k for k, l in enumerate(before) if '][' + label + ']' in l), 0)
+            note(
+                where,
+                'The image ' + _quoted(label, 40) + ' changed on the writing desk; '
+                'replace it in the Doc by hand.',
+            )
+    for k, old_line in enumerate(before):
+        lines = [after[j] for j in becomes.get(k, [])]
+        if lines == [old_line]:
             continue
-        olds, news = before[a:b], after[c:d]
-        if len(olds) * len(news) > 40_000:
-            left += max(len(olds), len(news))  # Too much moved at once to pair safely.
+        found = styled[k]
+        if not _anchorable(found):
+            # A paragraph with an image, a table row or no words takes no suggestion: the
+            # change goes to the closest paragraph that can take one.
+            note(k, _by_hand(old_line, found, lines))
             continue
-        # Pair Doc paragraphs with desk lines, the closest pairs first, never two pairs that
-        # cross: a paragraph deleted next to an edited one is never rewritten into it.
-        ratios = sorted(
-            (
-                (difflib.SequenceMatcher(None, old, new).ratio(), i, j)
-                for i, old in enumerate(olds)
-                for j, new in enumerate(news)
-            ),
-            key=lambda found: (-found[0], found[1], found[2]),
+        found_edits, found_comments, found_notes, flat = _paragraph_change(old_line, lines)
+        for text in found_notes:
+            note(k, text)
+        if flat:
+            now = ' / '.join(
+                text for text in (_visible(line) for line in lines) if text is not None
+            )
+            note(k, 'Change this paragraph by hand to read ' + _quoted(now, 400) + '.')
+            continue
+        edits[k] = found_edits
+        comments[k] = [
+            {'start': c['start'], 'end': c['end'], 'reason': _note('', c['notes'])}
+            for c in found_comments
+        ]
+    # Notes for a paragraph as a whole go with its first suggestion or comment, or as a comment
+    # on the closest paragraph that can take one, so nothing stays only on the desk.
+    left = 0
+    order = sorted(notes)
+    for k in order:
+        targets = sorted((m for m in range(len(before)) if texts[m]), key=lambda m: (abs(m - k), m))
+        if not targets:
+            left += len(notes[k])
+            continue
+        # Not a paragraph that is removed, while another can take the note.
+        m = next((m for m in targets if not (edits.get(m) or [{}])[0].get('remove')), targets[0])
+        if edits.get(m):
+            edits[m][0]['reason'] = _note(edits[m][0]['reason'], notes[k])
+        elif comments.get(m):
+            comments[m][0]['reason'] = _note(comments[m][0]['reason'], notes[k])
+        else:
+            comments[m] = [{'start': 0, 'end': len(texts[m]), 'reason': _note('', notes[k])}]
+    found, paragraphs = [], {}
+    for k in sorted(set(edits) | set(comments)):
+        old, shown = before[k], texts[k]
+        near = sorted((m for m in range(len(before)) if texts[m]), key=lambda m: (abs(m - k), m))
+        now = ' / '.join(
+            text for text in (_visible(after[j]) for j in becomes.get(k, [])) if text is not None
         )
-        pairs = []
-        for ratio, i, j in ratios:
-            if ratio < 0.6:
-                break
-            if all(i != pi and j != pj and (i < pi) == (j < pj) for pi, pj in pairs):
-                pairs.append((i, j))
-        pairs.sort()
-        left += max(len(olds), len(news)) - len(pairs)
-        for i, j in pairs:
-            old, new, at = olds[i], news[j], a + i
-            if old == new:
-                continue
-            # A link's address, an image or formatting changed only: the Doc shows no words
-            # for it, so it is made in the Doc by hand. Otherwise the change is found in the
-            # words the Doc shows, and every count is taken from those words.
-            shown, now = _visible(old), _visible(new)
-            raw_left, raw_tail = manuscript_editor.changed_bounds(old, new)
-            raw_quoted, raw_replacement = manuscript_editor.changed_span(old, new)
-            if (
-                shown is None
-                or now is None
-                or shown == now
-                or not now.strip()
-                or any(mark in raw_quoted + raw_replacement for mark in MARKS)
-                or _touches(_hidden_spans(old), raw_left, len(old) - raw_tail)
-                or _touches(_hidden_spans(new), raw_left, len(new) - raw_tail)
-            ):
-                left += 1  # A link or formatting change, made in the Doc by hand.
-                continue
-            start, _ = manuscript_editor.changed_bounds(shown, now)
-            quoted, replacement = manuscript_editor.changed_span(shown, now)
-            if not quoted.strip() or any(mark in quoted + replacement for mark in MARKS):
-                left += 1
-                continue
-            # Which copy this is of a paragraph the Doc repeats, so each copy is its own.
-            shown_before, shown_after = _shown(before[:at]), _shown(before[at:])
-            copy = sum(line.count(shown) for line in shown_before)
-            copies = copy + sum(line.count(shown) for line in shown_after)
-            quotes = sum(line.count(quoted) for line in shown_before + shown_after)
-            item = {
-                'id': 'desk-'
-                + studio.digest(json.dumps([old, quoted, replacement, copy]).encode())[:16],
-                'kind': 'edit',
-                'before': quoted,
-                'after': replacement,
-                'reason': 'Wording changed on the writing desk.',
-            }
-            occurrence, needle, matches = None, quoted, quotes
-            if shown.strip().count(quoted) == 1 and (copies > 1 or quotes > 1):
-                item['context'] = shown.strip()  # The paragraph, so the quote is found in it.
-                needle, matches = shown.strip(), copies
-                occurrence = copy + 1 if copies > 1 else None
-            elif quotes > 1:
-                occurrence = (
-                    sum(line.count(quoted) for line in shown_before)
-                    + shown[:start].count(quoted)
-                    + 1
+        seen = {}
+        items = [('edit', e) for e in edits.get(k, [])] + [
+            ('comment', c) for c in comments.get(k, [])
+        ]
+        for kind, change in sorted(items, key=lambda item: item[1]['start']):
+            quoted = change['before'] if kind == 'edit' else shown[change['start'] : change['end']]
+            context, occurrence, needle, matches, copy = _place(
+                texts, k, shown, change['start'], quoted
+            )
+            if kind == 'edit':
+                key = [old, quoted, change['after'], copy] + (
+                    ['remove'] if change.get('remove') else []
                 )
+            else:
+                key = [old, quoted, change['reason'], copy, 'comment']
+            seen[json.dumps(key)] = seen.get(json.dumps(key), 0) + 1
+            if seen[json.dumps(key)] > 1:
+                key.append(seen[json.dumps(key)])
+            item = {
+                'id': 'desk-' + studio.digest(json.dumps(key).encode())[:16],
+                'kind': kind,
+                'before': quoted,
+                'reason': change['reason'] or 'Changed on the writing desk.',
+            }
+            if kind == 'edit':
+                item['after'] = change['after']
+            if context:
+                item['context'] = context
             item = manuscript_editor.proposal(item)
             if occurrence:
                 item['occurrence'] = occurrence
+            if change.get('remove'):
+                item['remove'] = True
             found.append(item)
             paragraphs[item['id']] = {
                 'paragraph': studio.digest(old.encode()),
                 'needle': needle,
                 'matches': matches,
-                'text': shown.strip(),  # The paragraph the change is meant for, as shown.
+                'text': shown,  # The paragraph the change is meant for, as shown.
+                'near': [texts[m] for m in near[:8]],
+                'was': shown,
+                'now': now,
             }
     return found, left, paragraphs
 
@@ -1540,9 +2161,15 @@ def _google_expected(root, ident):
     return studio.digest(body + json.dumps(base, sort_keys=True).encode())
 
 
+def _counted(number, one, many):
+    return str(number) + ' ' + (one if number == 1 else many)
+
+
 def google_plan(root, ident, mode):
-    """Check the desk's latest wording against the Google Doc as suggestions; nothing is sent."""
+    """Check the desk's latest text against the Google Doc as suggestions and comments;
+    nothing is sent."""
     import google_drive as drive
+    import google_suggestions as suggestions
     from google_workflow import snapshot_path
 
     import manuscript_editor
@@ -1551,107 +2178,217 @@ def google_plan(root, ident, mode):
     if mode not in ('auto', 'native', 'comments'):
         raise ValueError('Choose suggestions, comments or suggestions with comments fallback.')
     baseline = snapshot_path(directory, base['transfer'], 'document').read_text()
-    proposals, left, paragraphs = google_changes(baseline, (directory / 'DRAFT.md').read_text())
-    # A suggestion sent before stays in the Doc for its owner and is not sent again.
+    client = drive.Client(drive.account_for(root))
+    # The Doc as it is now: its name is its title, and a suggestion still waiting for its owner
+    # holds its paragraph.
+    inline, _, _ = suggestions.read_for_review(client, base['document']['document_id'], mode)
+    proposals, left, paragraphs = google_changes(
+        baseline, (directory / 'DRAFT.md').read_text(), inline.get('title')
+    )
+    # A suggestion sent before stays in the Doc for its owner and is not sent again, whether
+    # this computer or another one sent it.
     record = _sent(root, ident)
     document = base['document'].get('document_id')
+    threads = ' '.join(
+        thread.get('headPost', {}).get('content', '') for thread in inline.get('comments', [])
+    )
     sent = {row.get('id') for row in record['sent']} | {
-        p['id'] for p in proposals if _delivered(root, document, p['id'])
+        p['id']
+        for p in proposals
+        if _delivered(root, document, p['id']) or '[Blog Studio ' + p['id'] + ']' in threads
     }
     before = sum(1 for p in proposals if p['id'] in sent)
     proposals = [p for p in proposals if p['id'] not in sent]
-    client = drive.Client(drive.account_for(root))
-    # A paragraph the Doc shows with a suggestion still waiting for its owner waits too; once
-    # the owner accepts or rejects it, the paragraph can take another.
-    waiting = unsure = 0
+    waiting, covers = 0, {}
     if proposals:
-        proposals, waiting, unsure = _not_pending(
-            client, base['document'], proposals, paragraphs, mode
+        proposals, waiting, unplaced, covers = _not_pending(
+            inline, base['document'], proposals, paragraphs
         )
-        left += unsure
+        left += unplaced
     if not proposals:
         said = []
         if before:
-            said.append(
-                str(before) + (' change was' if before == 1 else ' changes were') + ' sent before'
-            )
+            said.append(_counted(before, 'change was', 'changes were') + ' sent before')
         if waiting:
             said.append(
-                str(waiting)
-                + (' change is' if waiting == 1 else ' changes are')
-                + ' in a paragraph that still has a suggestion waiting for the Doc’s owner to '
-                'accept or reject'
+                _counted(waiting, 'change waits', 'changes wait')
+                + ' for the Doc’s owner to decide the earlier suggestion in '
+                + ('its paragraph' if waiting == 1 else 'their paragraphs')
             )
-        if unsure:
+        if left:
             said.append(
-                str(unsure)
-                + (' change' if unsure == 1 else ' changes')
-                + ' could not be placed in the Doc with certainty and '
-                + ('stays' if unsure == 1 else 'stay')
-                + ' on the desk'
+                _counted(left, 'change', 'changes')
+                + ' could not be placed in the Doc; pull the latest Doc and check again'
             )
-        if left - unsure:
-            said.append('paragraphs added, removed or formatted cannot be suggestions')
         raise ValueError(
             'Nothing new to send'
             + (
                 ': ' + '; '.join(said) + '.'
                 if said
-                else ': the desk’s wording matches the Google Doc.'
+                else ': the desk’s text matches the Google Doc.'
             )
         )
     if len(proposals) > 100:
-        raise ValueError(
-            'More than 100 wording changes to send at once. Send fewer, or share the draft.'
-        )
+        raise ValueError('More than 100 changes to send at once. Send fewer, or share the draft.')
     plan = manuscript_editor.google_plan(
         client, root, ident, proposals, mode, _google_expected(root, ident), base['document']['url']
     )
+    rows = [
+        {'id': name, 'paragraph': paragraphs[name]['paragraph']}
+        for p in proposals
+        for name in [p['id'], *covers.get(p['id'], [])]
+    ]
     record['plans'] = {
-        **{token: rows for token, rows in record['plans'].items() if token != plan['plan']},
-        plan['plan']: [
-            {'id': p['id'], 'paragraph': paragraphs[p['id']]['paragraph']} for p in proposals
-        ],
+        **{token: found for token, found in record['plans'].items() if token != plan['plan']},
+        plan['plan']: rows,
     }
     record['plans'] = dict(list(record['plans'].items())[-20:])
     studio.write_json(_sent_path(root, ident), record)
-    return {**plan, 'left': left, 'sent_before': before, 'waiting': waiting}
+    return {
+        **plan,
+        'suggestions': sum(1 for p in proposals if p['kind'] == 'edit'),
+        'comments': sum(1 for p in proposals if p['kind'] == 'comment'),
+        'left': left,
+        'sent_before': before,
+        'waiting': waiting,
+    }
 
 
-def _not_pending(client, document, proposals, expected, mode):
-    """The proposals that can go now, read from the Doc: how many wait for a pending
-    suggestion in their paragraph, and how many could land somewhere other than the paragraph
-    they are meant for (the Doc shows the quote a different number of times than the desk
-    counted, or it resolves to a paragraph with other words), which stay on the desk."""
+def _held(inline, tabs):
+    """The text, as it was, of each Doc paragraph with a suggestion waiting for its owner."""
+    import google_roundtrip as rt
+
+    held = set()
+    for (tab, _), paragraph in rt.paragraphs(inline).items():
+        if tab in tabs and rt.suggestions(paragraph):
+            runs = [element.get('textRun') or {} for element in paragraph.get('elements', [])]
+            text = ''.join(
+                run.get('content', '') for run in runs if not run.get('suggestedInsertionIds')
+            )
+            held.add(' '.join(text.split()))
+    return held
+
+
+def _where(inline, tabs, proposal, found):
+    """The Doc paragraph a proposal would land in, or None when the Doc does not show what
+    locates it as many times as the desk counted, or does not show it at all."""
     import google_roundtrip as rt
     import google_suggestions as suggestions
     from google_drive import GoogleError
 
-    inline, _, _ = suggestions.read_for_review(client, document['document_id'], mode)
-    free, waiting, unsure = [], 0, 0
+    if proposal.get('occurrence') or proposal.get('context'):
+        seen = suggestions.quote_positions(
+            inline, tabs, proposal['before'], proposal.get('context')
+        )
+        if len(seen) != found.get('matches'):
+            return None
+    try:
+        located = suggestions.locate(inline, proposal, tabs)
+        return rt.paragraph_at(inline, located['tab_id'], located['start_index'])
+    except GoogleError:
+        return None
+
+
+def _fits(inline, tabs, proposal):
+    """Whether Google takes this proposal where it is located: one it would refuse (a style
+    the Doc has and its Markdown does not show) goes as a comment instead."""
+    import google_suggestions as suggestions
+    from google_drive import GoogleError
+
+    try:
+        suggestions.validate(inline, [suggestions.locate(inline, proposal, tabs)], tabs)
+    except GoogleError:
+        return False
+    return True
+
+
+def _elsewhere(inline, tabs, group, found, used):
+    """One comment for the changes to one paragraph that cannot be placed with certainty, on
+    the closest paragraph the Doc shows once and nothing else in this plan uses, quoting the
+    paragraph as it was and as the desk has it. None when no paragraph fits."""
+    import google_roundtrip as rt
+    import google_suggestions as suggestions
+    import json
+
+    was, now = found.get('was') or '', found.get('now') or ''
+    reason = (
+        'This change could not be placed in the Doc with certainty, so it is here to make by '
+        'hand. The paragraph '
+        + _quoted(was, 300)
+        + ' '
+        + ('reads ' + _quoted(now, 300) if now else 'is removed')
+        + ' on the writing desk.'
+    )
+    notes = [p['reason'] for p in group if p['kind'] == 'comment']
+    for text in found.get('near') or []:
+        positions = suggestions.quote_positions(inline, tabs, text)
+        exact = []
+        for number, (tab, start) in enumerate(positions):
+            key, paragraph = rt.paragraph_at(inline, tab, start)
+            if ' '.join(rt.paragraph_text(paragraph).split()) == ' '.join(text.split()):
+                exact.append((number, key, paragraph))
+        if len(exact) != 1 or exact[0][1] in used or rt.suggestions(exact[0][2]):
+            continue
+        number, key, _ = exact[0]
+        comment = {
+            'id': 'desk-'
+            + studio.digest(json.dumps(['elsewhere'] + [p['id'] for p in group]).encode())[:16],
+            'kind': 'comment',
+            'before': text,
+            'reason': _note(reason, notes),
+        }
+        if len(positions) > 1:
+            comment['occurrence'] = number + 1
+        if _fits(inline, tabs, comment):
+            used.add(key)
+            return comment
+    return None
+
+
+def _not_pending(inline, document, proposals, expected):
+    """The proposals that can go now, read from the Doc: how many wait for a pending
+    suggestion in their paragraph, and how many could not be placed anywhere. A change that
+    could land somewhere other than the paragraph it is meant for (the Doc shows its quote a
+    different number of times than the desk counted, or it resolves to a paragraph with other
+    words) goes as a comment on the closest paragraph that is certain instead. Returns (free,
+    waiting, unplaced, covers): covers names the changes each such comment stands for."""
+    import json
+
+    import google_roundtrip as rt
+
+    tabs = document['tab_ids']
+    held = _held(inline, tabs)
+    free, waiting, moved, used = [], 0, {}, set()
     for proposal in proposals:
         found = expected.get(proposal['id']) or {}
-        if proposal.get('occurrence') or proposal.get('context'):
-            seen = suggestions.quote_positions(
-                inline, document['tab_ids'], proposal['before'], proposal.get('context')
-            )
-            if len(seen) != found.get('matches'):
-                unsure += 1
-                continue
-        try:
-            where = suggestions.locate(inline, proposal, document['tab_ids'])
-            _, paragraph = rt.paragraph_at(inline, where['tab_id'], where['start_index'])
-        except GoogleError:
-            free.append(proposal)  # Planning says plainly why it cannot be found.
-            continue
         meant = ' '.join((found.get('text') or '').split())
-        if rt.suggestions(paragraph):
+        where = _where(inline, tabs, proposal, found)
+        if where is not None and rt.suggestions(where[1]):
             waiting += 1
-        elif meant and ' '.join(rt.paragraph_text(paragraph).split()) != meant:
-            unsure += 1  # It would land in a paragraph with other words.
-        else:
-            free.append(proposal)
-    return free, waiting, unsure
+            continue
+        if (
+            where is None
+            or (meant and ' '.join(rt.paragraph_text(where[1]).split()) != meant)
+            or not _fits(inline, tabs, proposal)
+        ):
+            if meant in held:
+                waiting += 1  # Its paragraph holds an earlier suggestion; it goes next time.
+            else:
+                place = json.dumps([found.get('paragraph'), found.get('near')])
+                moved.setdefault(place, []).append(proposal)
+            continue
+        free.append(proposal)
+        used.add(where[0])
+    unplaced, covers = 0, {}
+    for group in moved.values():
+        comment = _elsewhere(inline, tabs, group, expected.get(group[0]['id']) or {}, used)
+        if comment is None:
+            unplaced += len(group)
+            continue
+        free.append(comment)
+        covers[comment['id']] = [p['id'] for p in group]
+        expected[comment['id']] = {'paragraph': expected[group[0]['id']]['paragraph']}
+    return free, waiting, unplaced, covers
 
 
 def google_send(root, ident, data):

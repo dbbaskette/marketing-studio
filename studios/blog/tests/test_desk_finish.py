@@ -2,7 +2,9 @@
 
 import isolation  # noqa: F401  (first: keeps every test off this computer's own settings)
 import json
+from pathlib import Path
 import secrets
+import tempfile
 import unittest
 
 import blog_runner
@@ -11,7 +13,7 @@ import desk_finish
 import desk_jobs
 import studio
 import tool_jobs
-from test_desk import DRAFT, GOOGLE, IMAGE_TWO, DeskCase
+from test_desk import DRAFT, GOOGLE, IMAGE_ONE, IMAGE_TWO, DeskCase
 from test_desk_team import TeamCase
 
 
@@ -1851,12 +1853,20 @@ class BeforePublishingTests(ToolCase):
             self.act('google-plan', mode='auto')
         self.assertFalse(desk_jobs.view(self.root, self.ident)['google_suggestions'])
 
-    def test_wording_changes_become_quoted_suggestions_and_the_rest_is_counted(self):
+    def test_every_change_becomes_a_suggestion_or_a_comment(self):
         baseline = '## Heading\n\nThe delay is long.\n\nKeep it.\n\nGone soon.\n'
         body = '# Title\n\n## Heading\n\nThe wait is long.\n\nKeep **it**.\n'
         found, left, _ = desk_finish.google_changes(baseline, body)
-        self.assertEqual([(f['before'], f['after']) for f in found], [('delay', 'wait')])
-        self.assertEqual(left, 3)  # The title line added, a formatting change, a paragraph cut.
+        self.assertEqual(
+            [(f['kind'], f['before'], f.get('after'), f.get('remove')) for f in found],
+            [
+                ('edit', 'delay', 'wait', None),
+                ('comment', 'it', None, None),  # Formatting the Doc shows no words for.
+                ('edit', 'Gone soon.', '', True),  # A paragraph cut, with its break.
+            ],
+        )
+        self.assertEqual(found[1]['reason'], 'Make “it” bold.')
+        self.assertEqual(left, 0, 'the desk’s title line is the Doc’s name, not a change')
 
 
 class ReviewFixTests(ToolCase):
@@ -2045,7 +2055,7 @@ class GooglePairingTests(unittest.TestCase):
 
     def changes(self, baseline, body):
         found, left, _ = desk_finish.google_changes(baseline, body)
-        return [(f['before'], f['after'], f.get('occurrence')) for f in found], left
+        return [(f['before'], f.get('after'), f.get('occurrence')) for f in found], left
 
     def test_a_deleted_paragraph_is_not_rewritten_into_its_edited_neighbour(self):
         self.assertEqual(
@@ -2053,7 +2063,7 @@ class GooglePairingTests(unittest.TestCase):
                 'We ship on Monday at noon.\n\nWe ship on Friday at noon.\n',
                 'We ship on Friday at nine.\n',
             ),
-            ([('noon', 'nine', None)], 1),
+            ([('We ship on Monday at noon.', '', None), ('noon', 'nine', None)], 0),
         )
         self.assertEqual(
             self.changes(
@@ -2061,7 +2071,13 @@ class GooglePairingTests(unittest.TestCase):
                 'Step two: install the checker on each machine.\n',
                 'Step two: install the reporter on each machine.\n',
             ),
-            ([('checker', 'reporter', None)], 1),
+            (
+                [
+                    ('Step one: install the parser on each machine.', '', None),
+                    ('checker', 'reporter', None),
+                ],
+                0,
+            ),
         )
 
     def test_pairs_never_cross(self):
@@ -2069,7 +2085,17 @@ class GooglePairingTests(unittest.TestCase):
             'Alpha one two three.\n\nBeta four five six.\n',
             'Beta four five seven.\n\nAlpha one two three.\n',
         )
-        self.assertEqual(left, 2)  # A move is not a wording change; it stays on the desk.
+        # A move is a paragraph added before the one it passes and the old one removed.
+        self.assertEqual(
+            (found, left),
+            (
+                [
+                    ('Alpha', 'Beta four five seven.\nAlpha', None),
+                    ('Beta four five six.', '', None),
+                ],
+                0,
+            ),
+        )
 
     def test_each_copy_of_a_repeated_paragraph_is_located_on_its_own(self):
         found, _, _ = desk_finish.google_changes(
@@ -2128,20 +2154,40 @@ class GooglePairingTests(unittest.TestCase):
             with self.subTest(edited=edited):
                 self.assertEqual(self.occurrence(baseline, '\n\n'.join(lines) + '\n'), (copy, 3))
 
-    def test_a_change_only_to_a_link_address_is_left_on_the_desk(self):
-        for baseline, body in (
+    def test_a_change_only_to_a_link_address_or_formatting_is_a_comment_on_its_words(self):
+        for baseline, body, words, said in (
             (
                 'See [docs](https://x.com/setup).\n\nRun setup first.\n',
                 'See [docs](https://x.com/install).\n\nRun setup first.\n',
+                'docs',
+                'Link changed: “docs” now points to https://x.com/install.',
             ),
             (
                 'Read [the setup guide](https://x.com/setup) before setup.\n',
                 'Read [the setup guide](https://x.com/install) before setup.\n',
+                'the setup guide',
+                'Link changed: “the setup guide” now points to https://x.com/install.',
             ),
-            ('Keep it short.\n', 'Keep it **short**.\n'),
+            ('Keep it short.\n', 'Keep it **short**.\n', 'short', 'Make “short” bold.'),
+            (
+                'Read [the guide](https://x.com/a) now.\n',
+                'Read the guide now.\n',
+                'the guide',
+                'Remove the link from “the guide”.',
+            ),
+            (
+                '### Heading\n\nText.\n',
+                'Heading\n\nText.\n',
+                'Heading',
+                'Make this paragraph normal text.',
+            ),
         ):
             with self.subTest(body=body):
-                self.assertEqual(self.changes(baseline, body), ([], 1))
+                found, left, _ = desk_finish.google_changes(baseline, body)
+                self.assertEqual(
+                    ([(f['kind'], f['before'], f['reason']) for f in found], left),
+                    ([('comment', words, said)], 0),
+                )
 
     def test_a_word_changed_beside_a_link_is_found_in_the_visible_text(self):
         found, left, expected = desk_finish.google_changes(
@@ -2159,54 +2205,54 @@ class GooglePairingTests(unittest.TestCase):
             desk_finish._visible('A \\*star\\* and snake\\_case.'), 'A *star* and snake_case.'
         )
 
-    def test_a_quote_found_in_another_paragraph_is_not_sent_even_with_equal_counts(self):
-        from unittest.mock import patch
+    def guard(self, doc_lines, baseline, body):
+        """What the placement guard sends to a Doc of these paragraphs."""
+        import test_google_suggestions as fixtures
 
-        import google_roundtrip
-        import google_suggestions
+        inline = fixtures.paragraph_doc(*[([(line + '\n', {})], {}, None) for line in doc_lines])
+        found, _, expected = desk_finish.google_changes(baseline, body)
+        document = {'document_id': 'fixture-doc', 'tab_ids': ['t.0']}
+        free, waiting, unplaced, _ = desk_finish._not_pending(inline, document, found, expected)
+        return [(f['kind'], f['before']) for f in free], waiting, unplaced, free
 
-        found, _, expected = desk_finish.google_changes(
+    def test_a_quote_found_in_another_paragraph_goes_as_a_comment_on_a_certain_one(self):
+        # The Doc's second paragraph has other words than the desk was made from: the change
+        # is not suggested there, but goes as a comment on the paragraph that is certain.
+        free, waiting, unplaced, found = self.guard(
+            ['Run setup first.', 'Then run setup again later.'],
             'Run setup first.\n\n**Then** run setup again.\n',
             'Run setup first.\n\n**Then** run install again.\n',
         )
-        document = {'document_id': 'd', 'tab_ids': ['t.0']}
-        other = {'elements': [{'textRun': {'content': 'Run setup first.\n'}}]}
-        with (
-            patch.object(google_suggestions, 'read_for_review', return_value=({}, {}, 'auto')),
-            patch.object(
-                google_suggestions, 'quote_positions', return_value=[('t.0', 1), ('t.0', 20)]
-            ),
-            patch.object(
-                google_suggestions, 'locate', return_value={'tab_id': 't.0', 'start_index': 1}
-            ),
-            patch.object(google_roundtrip, 'paragraph_at', return_value=(('t.0', 1), other)),
-        ):
-            free, waiting, unsure = desk_finish._not_pending(
-                object(), document, found, expected, 'auto'
-            )
-        self.assertEqual((free, waiting, unsure), ([], 0, 1))
+        self.assertEqual((free, waiting, unplaced), ([('comment', 'Run setup first.')], 0, 0))
+        self.assertIn('“Then run setup again.” reads “Then run install again.”', found[0]['reason'])
 
-    def test_a_quote_the_doc_shows_another_number_of_times_is_not_sent(self):
-        from unittest.mock import patch
-
-        import google_suggestions
-
-        found, _, expected = desk_finish.google_changes(
+    def test_a_quote_the_doc_shows_another_number_of_times_is_never_suggested(self):
+        free, waiting, unplaced, _ = self.guard(
+            ['Run setup first.', 'Then run setup again.', 'Then run setup again.'],
             'Run setup first.\n\n**Then** run setup again.\n',
             'Run setup first.\n\n**Then** run install again.\n',
         )
-        document = {'document_id': 'd', 'tab_ids': ['t.0']}
-        with (
-            patch.object(google_suggestions, 'read_for_review', return_value=({}, {}, 'auto')),
-            patch.object(google_suggestions, 'quote_positions', return_value=[('t.0', 1)] * 3),
-        ):
-            free, waiting, unsure = desk_finish._not_pending(
-                object(), document, found, expected, 'auto'
-            )
-        self.assertEqual((free, waiting, unsure), ([], 0, 1))
+        self.assertEqual((free, waiting, unplaced), ([('comment', 'Run setup first.')], 0, 0))
+        # With no paragraph the Doc shows once, nothing is placed, and it is counted.
+        free, waiting, unplaced, _ = self.guard(
+            ['Then run setup again.', 'Then run setup again.'],
+            'Then run setup again.\n',
+            'Then run install again.\n',
+        )
+        self.assertEqual((free, waiting, unplaced), ([], 0, 1))
+
+    def test_each_change_lands_in_the_paragraph_it_is_meant_for(self):
+        free, waiting, unplaced, _ = self.guard(
+            ['Keep it short.', 'Middle.', 'Keep it short.'],
+            'Keep it short.\n\nMiddle.\n\nKeep it short.\n',
+            'Keep it short.\n\nMiddle.\n\nKeep it brief.\n',
+        )
+        self.assertEqual((free, waiting, unplaced), ([('edit', 'short')], 0, 0))
 
 
 import google_drive  # noqa: E402
+import google_roundtrip as rt  # noqa: E402
+import google_workflow as gw  # noqa: E402
 import test_google_start  # noqa: E402
 
 
@@ -2222,6 +2268,8 @@ class DeskGoogleTests(unittest.TestCase):
         self.made = desk.create(self.root, {'article': ident})
         self.ident = self.made['id']
         self.part = self.made['sections'][0]['id']
+        # The Doc's name is its title, as when a blog starts from it.
+        self.client.doc['title'] = self.made['title']
 
     def act(self, action, **data):
         from unittest.mock import patch
@@ -2236,7 +2284,7 @@ class DeskGoogleTests(unittest.TestCase):
         plan = self.act('google-plan', mode='auto')
         self.assertEqual(plan['count'], 1)
         self.assertEqual([(p['before'], p['after']) for p in plan['proposals']], [('slow', 'late')])
-        self.assertEqual(plan['left'], 1)  # The title line the desk adds is not a suggestion.
+        self.assertEqual((plan['left'], plan['suggestions'], plan['comments']), (0, 1, 0))
         self.assertEqual(self.client.writes, 0)
         result = self.act('google-send', plan=plan['plan'], confirmed=True)
         self.assertEqual(result['status'], 'verified-pending')
@@ -2301,7 +2349,9 @@ class DeskGoogleTests(unittest.TestCase):
         first = self.act('google-plan', mode='auto')
         self.act('google-send', plan=first['plan'], confirmed=True)
         desk.save(self.root, self.ident, 2, self.part, text.replace('slow', 'very late'))
-        with self.assertRaisesRegex(ValueError, 'still has a suggestion waiting'):
+        with self.assertRaisesRegex(
+            ValueError, 'waits for the Doc’s owner to decide the earlier suggestion'
+        ):
             self.act('google-plan', mode='auto')
         # The Doc's owner rejects it: the paragraph is free again and the new wording goes.
         self.client.doc = unsent
@@ -2309,6 +2359,248 @@ class DeskGoogleTests(unittest.TestCase):
         self.assertEqual(
             [(p['before'], p['after']) for p in again['proposals']], [('slow', 'very late')]
         )
+
+
+def link(url):
+    return {'link': {'url': url}}
+
+
+def harbour_doc():
+    """A synthetic Doc shaped like a real one: no title line (its name is its title), a bold
+    lead line and a bold level-3 heading, links inside paragraphs, curly quotes and a
+    paragraph that repeats."""
+    import test_google_suggestions as fixtures
+
+    bold, normal, heading = (
+        {'bold': True},
+        {'namedStyleType': 'NORMAL_TEXT'},
+        {'namedStyleType': 'HEADING_3'},
+    )
+    doc = fixtures.paragraph_doc(
+        ([('Plans for the Harbour Data Service\n', bold)], normal, None),
+        (
+            [
+                (
+                    'Most early Machine Learning (ML) projects stalled. To move Agentic Search '
+                    'past basic demos, we rely on proven ',
+                    {},
+                ),
+                ('data patterns', link('https://example.com/patterns')),
+                (' that keep improving.\n', {}),
+            ],
+            normal,
+            None,
+        ),
+        ([('Key Data Patterns\n', bold)], heading, None),
+        (
+            [
+                ('This is where ', {}),
+                ('Harbour Flow', link('https://example.com/flow')),
+                (' comes in. Built on the open ', {}),
+                ('Stream Kit', link('https://example.com/kit')),
+                (' project, it runs batch tasks.\n', {}),
+            ],
+            normal,
+            None,
+        ),
+        (
+            [
+                (
+                    'It refers to systems, or ‘agents’, that act alone. Event logs track every step.\n',
+                    {},
+                )
+            ],
+            normal,
+            None,
+        ),
+        (
+            [
+                ('Read the ', {}),
+                ('setup guide', link('https://example.com/old')),
+                (' first.\n', {}),
+            ],
+            normal,
+            None,
+        ),
+        ([('Keep it short.\n', {})], normal, None),
+        ([('A paragraph that goes away.\n', {})], normal, None),
+        ([('Keep it short.\n', {})], normal, None),
+        ([('The end.\n', {})], normal, None),
+    )
+    doc['title'] = 'Plans for Harbour'
+    return doc
+
+
+# Every kind of desk change to the Doc above.
+HARBOUR_EDITS = (
+    ('Most early Machine Learning (ML)', 'Most early machine learning (ML)'),
+    ('move Agentic Search', 'move agentic search'),
+    ('that keep improving.', 'that improve over time.'),
+    (
+        'This is where [Harbour Flow](<https://example.com/flow>) comes in. Built on the open '
+        '[Stream Kit]',
+        '[Harbour Flow](<https://example.com/flow>) is built for this job. Based on the open '
+        '[Stream Toolkit]',
+    ),
+    ('‘agents’,', '“agents,”'),
+    ('Event logs', '**Event logs**'),
+    (
+        '(<https://example.com/old>) first.',
+        '(<https://example.com/new>) first.\n\nA new '
+        'paragraph with a [link](<https://example.com/added>) in it.',
+    ),
+    ('A paragraph that goes away.\n\n', ''),
+    ('Keep it short.\n\nThe end.', 'Keep it brief.\n\nThe end.'),
+)
+
+
+class GoogleSendAllTests(unittest.TestCase):
+    """Every desk change goes to the Google Doc, as a suggestion or a comment: none stays
+    only on the desk."""
+
+    def setUp(self):
+        import test_google_suggestions as fixtures
+
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.base = Path(self.temp.name)
+        self.root = self.base / 'workspace'
+        studio.initialize(self.root)
+        self.addCleanup(lambda: blog_runner.ENGINES.pop(str(self.root), None))
+        self.client = fixtures.ReviewProvider()
+        self.client.doc = harbour_doc()
+        capture = self.base / 'capture'
+        rt.capture(self.client, 'fixture-doc', 't.0', capture)
+        observation = capture / 'observation.json'
+        found = json.loads(observation.read_text())
+        found['structure_verified'] = True
+        observation.write_text(json.dumps(found))
+        words = [
+            '--root',
+            str(self.root),
+            'google',
+            'start',
+            '--title',
+            'Plans for Harbour',
+            '--observation',
+            str(observation),
+            '--file',
+            str(capture / 'document.md'),
+            '--snapshot',
+            str(capture),
+        ]
+        with studio.locked(self.root):
+            ident = gw.command(self.root, studio.parser().parse_args(words))['id']
+        held = studio._HELD.set(True)
+        self.addCleanup(studio._HELD.reset, held)
+        self.ident = desk.create(self.root, {'article': ident})['id']
+
+    def act(self, action, **data):
+        from unittest.mock import patch
+
+        with patch.object(google_drive, 'Client', return_value=self.client):
+            return desk.dispatch(self.root, action, {'id': self.ident, **data})
+
+    def edit(self, changes):
+        draft = desk.read(self.root, self.ident)
+        for part in ['opening'] + [section['id'] for section in draft['sections']]:
+            text = desk.text_of(draft, part)
+            changed = text
+            for old, new in changes:
+                changed = changed.replace(old, new)
+            if changed != text:
+                desk.save(self.root, self.ident, draft['revision'], part, changed)
+                draft = desk.read(self.root, self.ident)
+
+    def desk_text(self):
+        """The desk's paragraphs as the Doc shows them, without its title line."""
+        directory, _ = studio.item(self.root, 'articles', self.ident)
+        lines = [line for line in (directory / 'DRAFT.md').read_text().splitlines() if line.strip()]
+        return [desk_finish._visible(line) for line in lines[1:]]
+
+    def doc_text(self, accepted=True):
+        doc = self.client.native_read('fixture-doc', accepted_preview=accepted)
+        text = ''.join(
+            rt.paragraph_text(block['paragraph'])
+            for block in doc['tabs'][0]['documentTab']['body']['content']
+            if 'paragraph' in block
+        )
+        return text.splitlines()
+
+    def test_every_change_goes_to_the_doc_and_accepting_all_gives_the_desks_text(self):
+        self.edit(HARBOUR_EDITS)
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(plan['left'], 0, 'nothing stays only on the desk')
+        self.assertEqual(plan['waiting'], 0)
+        self.assertEqual(plan['count'], plan['suggestions'] + plan['comments'])
+        edits = [(p['before'], p['after']) for p in plan['proposals'] if p['kind'] == 'edit']
+        self.assertEqual(
+            edits,
+            [
+                ('Machine Learning', 'machine learning'),
+                ('Agentic Search', 'agentic search'),
+                ('keep improving', 'improve over time'),
+                ('This is where ', ''),
+                ('comes in. Built', 'is built for this job. Based'),
+                ('Kit', 'Toolkit'),
+                ('‘agents’,', '“agents,”'),
+                ('.', '.\nA new paragraph with a link in it.'),
+                ('A paragraph that goes away.', ''),
+                ('short', 'brief'),
+            ],
+        )
+        removed = [p for p in plan['proposals'] if p.get('remove')]
+        self.assertEqual([p['before'] for p in removed], ['A paragraph that goes away.'])
+        comments = {p['before']: p['reason'] for p in plan['proposals'] if p['kind'] == 'comment'}
+        self.assertEqual(
+            comments,
+            {
+                'Event logs': 'Make “Event logs” bold.',
+                'setup guide': 'Link changed: “setup guide” now points to https://example.com/new.',
+            },
+        )
+        added = next(p for p in plan['proposals'] if '\n' in p.get('after', ''))
+        self.assertIn('Link “link” to https://example.com/added.', added['reason'])
+        repeated = next(p for p in plan['proposals'] if p['before'] == 'short')
+        self.assertEqual((repeated['context'], repeated['occurrence']), ('Keep it short.', 2))
+        self.assertEqual(self.client.writes, 0, 'nothing is sent until Send')
+        self.assertNotEqual(self.doc_text(), self.desk_text())
+        result = self.act('google-send', plan=plan['plan'], confirmed=True)
+        self.assertEqual(result['status'], 'verified-pending')
+        self.assertTrue(all(comment['verified'] for comment in result['comments']))
+        self.assertEqual(self.doc_text(accepted=False)[-1], 'The end.')
+        self.assertEqual(self.doc_text(), self.desk_text(), 'accepting every suggestion')
+        # Nothing is sent twice.
+        with self.assertRaisesRegex(ValueError, str(plan['count']) + ' changes were sent before'):
+            self.act('google-plan', mode='auto')
+
+    def test_a_change_in_a_paragraph_with_a_pending_suggestion_goes_next_time(self):
+        self.edit(HARBOUR_EDITS[:1])
+        first = self.act('google-plan', mode='auto')
+        self.act('google-send', plan=first['plan'], confirmed=True)
+        self.edit([('we rely on', 'we count on')])
+        with self.assertRaisesRegex(
+            ValueError,
+            '1 change was sent before; 1 change waits for the Doc’s owner to decide the '
+            'earlier suggestion in its paragraph',
+        ):
+            self.act('google-plan', mode='auto')
+
+    def test_a_title_other_than_the_docs_name_goes_as_a_comment(self):
+        draft = desk.read(self.root, self.ident)
+        desk.save(self.root, self.ident, draft['revision'], 'title', 'Harbour plans, revised')
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['kind'], p['before'], p['reason']) for p in plan['proposals']],
+            [
+                (
+                    'comment',
+                    'Plans for the Harbour Data Service',
+                    'Suggested title: “Harbour plans, revised”.',
+                )
+            ],
+        )
+        self.assertEqual((plan['suggestions'], plan['comments']), (0, 1))
 
 
 class ImageFinishingTests(DeskCase):
@@ -2406,14 +2698,24 @@ class ImageFinishingTests(DeskCase):
         baseline = GOOGLE.replace('The end.', 'See ![][image1] here.\n\nThe end.')
         body = baseline.replace('More text after', 'More words after').replace('here.', 'there.')
         found, left, paragraphs = desk_finish.google_changes(baseline, body)
+        # A paragraph with an image cannot take a suggestion: its change is a comment beside it.
         self.assertEqual(
-            sorted((f['before'], f['after']) for f in found), [('here', 'there'), ('text', 'words')]
+            [(f['kind'], f['before'], f.get('after')) for f in found],
+            [('edit', 'text', 'words'), ('comment', 'The end.', None)],
         )
+        self.assertIn('“See here.”, reads “See there.”', found[1]['reason'])
         self.assertEqual(left, 0)
         self.assertNotIn('data:image', json.dumps([found, paragraphs]))
-        # An image moved or removed is made in the Doc by hand, never sent as words.
-        _, left = desk_finish.google_changes(baseline, baseline.replace('![][image2]\n\n', ''))[:2]
-        self.assertEqual(left, 1)
+        # An image removed or replaced is made in the Doc by hand, never sent as words.
+        for changed, said in (
+            (baseline.replace('![][image2]\n\n', ''), 'The image here is removed'),
+            (baseline.replace(IMAGE_TWO, IMAGE_ONE), 'The image “image2” changed'),
+        ):
+            with self.subTest(said=said):
+                found, left, paragraphs = desk_finish.google_changes(baseline, changed)
+                self.assertEqual(([f['kind'] for f in found], left), (['comment'], 0))
+                self.assertIn(said, found[0]['reason'])
+                self.assertNotIn('data:image', json.dumps([found, paragraphs]))
 
     def test_the_prepublish_check_reads_images_sensibly(self):
         import prepublish
