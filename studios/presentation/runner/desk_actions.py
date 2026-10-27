@@ -225,7 +225,7 @@ class DeskActions:
                 if record.get('research_contract') else None,
                 'research_items': self._findings_shown(root, record),
                 'research_price': self._research_price(root, record)['words'],
-                'leave_out_price': self._leave_out_price(record)['words']}
+                'leave_out_price': desk.leave_out_price(record)}
 
     def _desk_held(self, path):
         """The deck, held for a change on the desk: refused when this computer may not
@@ -1335,9 +1335,9 @@ class DeskActions:
 
     def desk_leave_out(self, path, ids) -> dict:
         """Leave research findings out: the outline and the look samples are made again
-        without them, and the research is not run again (`_leave_out`, priced by
-        `_leave_out_price`). `ids` are every finding left out, so an empty list brings back
-        the ones left out before."""
+        without them, the research is not run again (`_leave_out`), and the slides whose
+        outline changed are redrawn (priced by `desk.leave_out_price`). `ids` are every
+        finding left out, so an empty list brings back the ones left out before."""
         root, space, by = self._desk_change(path)
         with self.files:
             record = self._load(root)

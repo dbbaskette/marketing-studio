@@ -540,6 +540,32 @@ def outline_price(run: dict, state: dict, outline: dict, edited: list) -> dict:
     return {'sections': changed, 'says': says}
 
 
+LEAVE_OUT_SAYS = ('Leaving findings out redraws the outline and the look samples without '
+                  'researching again, and then redraws the slides whose outline changed.')
+LEAVE_OUT_TOOK = ' They last took {cost}.'
+
+
+def leave_out_price(run: dict) -> str:
+    """What leaving research findings out costs on the desk, said before it is asked: the
+    outline and the look samples are made again, and the sections whose slides changed are
+    redrawn, so it is priced from the last try at each of those here, with the last section
+    drawn and the deck put together and rendered."""
+    tried = [attempt for attempt in (_last_try(run, name) for name in (
+        'outline', 'look-preview', 'build-whole', 'build-render')) if attempt]
+    sections = sorted((attempt for name, entry in (run.get('steps') or {}).items()
+                       if name.startswith('build-sections:') and isinstance(entry, dict)
+                       for attempt in entry.get('tries') or ()
+                       if attempt.get('outcome') == 'kept'),
+                      key=lambda attempt: attempt.get('ended_at') or '')
+    if not tried or not sections:
+        return LEAVE_OUT_SAYS + NO_RECORD
+    tried.append(sections[-1])
+    seconds = round(sum(float(attempt.get('seconds') or 0) for attempt in tried), 1)
+    dollars = [attempt['dollars'] for attempt in tried if attempt.get('dollars') is not None]
+    return LEAVE_OUT_SAYS + LEAVE_OUT_TOOK.format(cost=stops.cost(
+        seconds, round(sum(dollars), 4) if dollars else None))
+
+
 def deck_price(last: dict) -> str:
     """What redrawing every section costs, from what the last whole build took
     (`Engine._last_build`)."""

@@ -1119,8 +1119,25 @@ class SourceTests(DeskCase):
     def test_leaving_a_finding_out_redraws_the_outline_and_looks_without_research(self):
         root = self.deck(research=True)
         shown = self.desk_view(root)
-        self.assertEqual(shown['leave_out_price'], 'Leaving findings out redraws the outline '
-                         'and the look samples without researching again.')
+        # What it redraws on the desk, and what that last took here: the outline, the look
+        # samples, the last section drawn, and the deck put together and rendered.
+        from studio_core import stops
+        record = self.record(root)
+        last = [entry['tries'][-1] for name, entry in record['steps'].items()
+                if name in ('outline', 'look-preview', 'build-whole', 'build-render')
+                and entry.get('tries')]
+        sections = sorted((attempt for name, entry in record['steps'].items()
+                           if name.startswith('build-sections:')
+                           for attempt in entry.get('tries') or ()
+                           if attempt.get('outcome') == 'kept'),
+                          key=lambda attempt: attempt.get('ended_at') or '')
+        last.append(sections[-1])
+        seconds = round(sum(float(attempt.get('seconds') or 0) for attempt in last), 1)
+        self.assertEqual(shown['leave_out_price'], desk.LEAVE_OUT_SAYS + desk.LEAVE_OUT_TOOK.format(
+            cost=stops.cost(seconds, None)))
+        self.assertEqual(desk.LEAVE_OUT_SAYS, 'Leaving findings out redraws the outline and the '
+                         'look samples without researching again, and then redraws the slides '
+                         'whose outline changed.')
         first = shown['research_items'][0]['id']
         jobs = len(self.workers.jobs)
         self.engine.desk_leave_out(root, [first])
