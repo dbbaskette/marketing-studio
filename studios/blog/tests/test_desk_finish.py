@@ -2709,6 +2709,17 @@ class GooglePendingTests(GoogleSendAllTests):
             'Suggested title: “Harbour, renamed”.', [p['reason'] for p in plan['proposals']]
         )
 
+    def test_formatting_added_later_leaves_the_change_sent_before_as_it_was(self):
+        self.edit([('The end.', 'The finish.')])
+        self.send()
+        self.edit([('The finish.', 'The **finish**.')])
+        plan = self.act('google-plan', mode='auto')
+        self.assertEqual(
+            [(p['kind'], p['reason']) for p in plan['proposals']],
+            [('comment', 'In the paragraph “The end.”: Make “finish” bold.')],
+        )
+        self.assertEqual((plan['sent_before'], plan['waiting']), (1, 0))
+
     def test_copies_are_counted_in_the_text_the_doc_had(self):
         # A pending suggestion adds a copy of "Keep it short." in the last paragraph; the desk
         # then rewords the second copy, which must be the one changed.

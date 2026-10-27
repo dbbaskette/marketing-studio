@@ -1921,7 +1921,14 @@ def _alike(old, new):
     does a paragraph that only gained words at its start or end."""
     import difflib
 
+    # The words as the Doc shows them too, so formatting added on the desk changes nothing.
+    shown_old, shown_new = _visible(old), _visible(new)
+    if shown_old is not None and shown_new is not None and (shown_old, shown_new) != (old, new):
+        score = _alike(shown_old, shown_new)
+    else:
+        score = 0
     score = max(
+        score,
         difflib.SequenceMatcher(None, old, new).ratio(),
         difflib.SequenceMatcher(None, old.split(), new.split(), autojunk=False).ratio(),
     )
