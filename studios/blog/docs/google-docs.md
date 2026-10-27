@@ -7,8 +7,9 @@ Your normal writing workflow needs no Google account or extra CLI.
 On the page, choose **New blog → A draft → Google Doc** to read an existing
 manuscript (every tab) onto the writing desk. Check the text before you start. The
 original Doc stays linked, and **Finishing → Before publishing → Send to Google Doc**
-sends your changes back as suggestions. Reading sends no Google edits, comments or
-sharing changes and starts no assistant job. See
+sends every change back: words and paragraphs as suggestions, and what the Doc shows no
+words for as comments (see [below](#send-desk-changes-to-the-doc)). Reading sends no
+Google edits, comments or sharing changes and starts no assistant job. See
 [the page workflow](runner.md#start-from-a-google-doc).
 
 | Ask Blog Studio | What happens |
@@ -216,6 +217,28 @@ Each linked blog’s generated GitHub page shows **Open working Google Doc** and
 last Google capture time. Draft and outline links are labeled separately. Google
 permissions are unchanged. The timestamp describes the saved capture, not a live
 freshness check.
+
+## Send desk changes to the Doc
+
+A desk blog started from a Google Doc sends every change back from Review mode (**Send
+accepted changes to Google Doc**) or Finishing (**Send to Google Doc**), compared with the
+Doc as it was read:
+
+| On the desk | In the Doc |
+| --- | --- |
+| Words changed | A suggested edit for each separate change in a paragraph, deleting and inserting only the changed words. Text inserted takes the style of the words it replaces or follows, so a change inside a link's text stays linked. |
+| A paragraph added, or split | A suggested line break and the new text, after the end of the paragraph before it. The new paragraph takes that paragraph's style; a different kind (a heading, a list item) is said in its comment. |
+| A paragraph removed, or merged | A suggested deletion of its words and its break. Google cannot delete the break of a Doc's last paragraph, so there an empty paragraph is left, and the comment says so. |
+| A link's address, bold, italic, code, a heading level | A comment on the words, such as "Link changed: “setup guide” now points to …" or "Make “Key Data Patterns” bold." The Docs suggestion API takes only one text style per insertion, so formatting is the Doc owner's to apply. |
+| An image, a table row, a paragraph with an image | A comment on the closest paragraph that can take one, quoting the change. Google takes no suggestion in a paragraph that holds an image. |
+| A title other than the Doc's name | A comment: "Suggested title: …". The Doc's name is not body text. |
+
+The plan names how many suggestions and comments go, and nothing is sent until you
+confirm. Each suggestion is placed by its paragraph's words and its place in that
+paragraph; one the Doc would place with any doubt goes as a comment on the closest
+paragraph the Doc shows once instead, quoting the paragraph before and after. A change
+already sent is not sent again, and a change in a paragraph with a suggestion still
+waiting for the Doc's owner goes next time.
 
 ## Send proofreading for team review
 

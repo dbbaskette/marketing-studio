@@ -155,11 +155,11 @@ deciding on each fix, with the full desk one click away.
   and grammar** offers the same choice; the choice is kept on this computer for **Check
   again**.
 - **When nothing is left to review**, a blog started from a Google Doc offers **Send
-  accepted changes to Google Doc**: the plan says how many wording changes go, as
-  suggestions for the Doc's owner, and nothing is sent until **Send**. It sends every
-  difference from the Google Doc as it was read: the fixes you accepted and any edits you
-  made, here or on the full desk. Rejected fixes are never sent. Other blogs offer
-  **Copy** and **Download**.
+  accepted changes to Google Doc**: the plan says how many suggestions and comments go,
+  and nothing is sent until **Send**. It sends every difference from the Google Doc as it
+  was read: the fixes you accepted and any edits you made, here or on the full desk.
+  Nothing stays only here; see [what a send makes](#what-a-send-to-the-google-doc-makes).
+  Rejected fixes are never sent. Other blogs offer **Copy** and **Download**.
 - **Open the full desk** shows the notes, the Outline tab and the whole Finishing panel;
   **Review fixes** there comes back. The address keeps Review mode (`stage=review`), so a
   reload stays in it.
@@ -273,6 +273,29 @@ start an assistant. Check the text shown, then **Start**. The Doc stays linked, 
 suggestions. A Doc that is already a blog here opens that blog instead of a second one.
 Images are left out of the text; inspect them in the original Doc. Pending suggestions
 stay in Google.
+
+### What a send to the Google Doc makes
+
+**Send accepted changes to Google Doc** (Review mode) and **Send to Google Doc**
+(Finishing) send every desk change. The plan says "N suggestions and M comments go to the
+Google Doc", lists each one, and sends nothing until you confirm.
+
+- **Wording** becomes suggestions the Doc's owner accepts or rejects: one for each separate
+  change in a paragraph, with changes a few words apart kept together, so only the changed
+  words are struck through. A change inside a link's text stays a link.
+- **A paragraph added** is a suggested insertion after the paragraph before it, **one
+  removed** a suggested deletion with its paragraph break, and a split or merged paragraph
+  a suggested line break.
+- **What the Doc shows no words for** becomes a comment on its words or paragraph: a link's
+  new address, bold or italic, a heading level, an image, or a table row.
+- **The title**: the desk's title is the Doc's name, so it is not a change. A different
+  title goes as a comment: "Suggested title: …".
+- A change that cannot be placed in the Doc with certainty, such as one in a paragraph the
+  Doc repeats differently than the desk does, goes as a comment on the closest paragraph
+  that is certain, quoting the paragraph as it was and as the desk has it.
+
+A change already sent is not sent again. A change in a paragraph that still has a
+suggestion waiting for the Doc's owner waits too, and goes next time.
 
 A blog edited in the manuscript editor (**Edit manuscript**) keeps its own Google tools:
 selected suggestions or comments are previewed and sent only when you confirm. Its

@@ -5,6 +5,28 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Every desk change goes to the Google Doc.** **Send accepted changes to Google Doc** and
+  **Send to Google Doc** no longer leave changed paragraphs on the desk. Each separate
+  change in a paragraph is its own suggestion, so only the changed words are struck
+  through, also beside or inside a link's text. A paragraph added is a suggested insertion
+  after the one before it, one removed a suggested deletion with its break, and a split a
+  suggested line break. A link's new address, bold or italic, a heading level, an image or
+  a table row is a comment on its words or the closest paragraph, and a change the Doc
+  could place with any doubt is a comment on the closest certain paragraph, quoting it
+  before and after. The desk's title line is no longer counted as a change when it is the
+  Doc's name; a different title is a comment. The plan says "N suggestions and M comments
+  go to the Google Doc", and a change in a paragraph still waiting on an earlier
+  suggestion goes next time. For maintainers: `desk_finish.google_changes(baseline, body,
+  title)` diffs each paired paragraph's shown text word by word (`_styled` reads each
+  character's style from the Markdown) and returns edits, comments and `remove` edits;
+  `desk-google-plan` reads the Doc first for its name and returns `suggestions`,
+  `comments`, `waiting` and `left`, and `_not_pending` turns a proposal it cannot place
+  into a comment on the closest paragraph the Doc shows once. In `google_suggestions`, an
+  edit deletes and inserts only what differs from its quote at whole-word boundaries
+  (`trimmed`), a replacement may hold line breaks, a finding may set `remove: true` to
+  delete its whole paragraph with the break where the next block is a paragraph, a pure
+  deletion may cross style boundaries, and a plan that splits or removes a paragraph is
+  verified by its paragraphs' text (`targets_show` reads on across a suggested break).
 - **Human-sounding suggestions, mixed into Check spelling and grammar.** Under **Check
   spelling and grammar**, tick **Also suggest more human-sounding wording** and choose
   **Light**, **Medium** or **Strong**: Humanize runs after Copy edit ("Looking for
