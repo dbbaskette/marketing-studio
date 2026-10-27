@@ -344,8 +344,18 @@ class Proposals:
         busy = working() if callable(working) else working
         if any(part in busy or ('sections' in busy and part not in codec.fixed) for part in parts):
             raise ValueError(WORKING)
-        single = len(chosen) == 1 and not every  # Accept all never refuses: it leaves out.
-        texts, applied, left = {}, [], gone
+        return self.act(ident, job, found, draft, picks, every, named, gone)
+
+    def act(self, ident, job, found, draft, picks, every, named, left=()):
+        """Land the checked picks, [(item, words to use)], on the item as read (`draft`),
+        and return {'applied', 'left'}. `found` is the set, `named` the ids chosen and `left`
+        those already left out (retired meanwhile). This is the text swap; a studio whose
+        proposals do something else (a deck's review finding becomes a note on its slide)
+        overrides it, and gets the request checked first by `apply`."""
+        codec, desk = self.codec, self.desk
+        parts = sorted({item['part'] for item, _ in picks})
+        single = len(named) == 1 and not every  # Accept all never refuses: it leaves out.
+        texts, applied, left = {}, [], list(left)
         # Where each applied suggestion sat in its part as it was, so two that cover the same
         # words never both land, and the others it covered are retired once it does.
         originals = {part: codec.text_of(draft, part) for part in parts}

@@ -163,6 +163,26 @@ class ApplyTests(ProposalCase):
         shown = fitted.summary('one', self.store.read('one'))
         self.assertEqual([i['present'] for i in shown['humanize']['items']], [False])
 
+    def test_a_studio_may_act_on_a_proposal_that_is_not_a_text_swap(self):
+        # A deck's review finding is applied as a note on its slide, not as a text change.
+        acted = []
+
+        class Notes(Proposals):
+            def act(self, ident, job, found, draft, picks, every, named, left=()):
+                acted.append((ident, job, [(item['id'], after) for item, after in picks]))
+                return {'applied': len(picks), 'left': []}
+
+        notes = Notes(self.store, self.desk, TOOLS)
+        notes.keep('one', JOB, 'finish-humanize', [self.swap('Nowhere at all', 'A note.')])
+        self.assertEqual(notes.apply('one', 1, JOB, [{'id': 'p1'}]), {'applied': 1, 'left': []})
+        self.assertEqual(acted, [('one', JOB, [('p1', 'A note.')])])
+        self.assertEqual(self.store.written, [])
+        # The request is still checked first: an outdated form never reaches `act`.
+        self.desk.save('one', 1, 'bbbbbbbb', 'Typed meanwhile.')
+        with self.assertRaisesRegex(ValueError, 'changed since you opened it'):
+            notes.apply('one', 1, JOB, [{'id': 'p1'}])
+        self.assertEqual(len(acted), 1)
+
     def test_skip_counts_only_what_was_open(self):
         self.offer([self.swap('Second text.', 'Two.'), self.swap('Second', 'X')])
         self.assertEqual(self.kept.skip('one', JOB, ['p1', 'p1']), {'skipped': 1})
