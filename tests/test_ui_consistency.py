@@ -401,7 +401,10 @@ class SharedLookTests(unittest.TestCase):
                     self.assertEqual({name: have.get(name) for name in want}, want)
         phone = kit['(max-width:52rem)']
         room = phone.get('.content:has(.selection-bar:not([hidden]))', {})
-        self.assertEqual(room.get('padding-bottom'), 'calc(12rem + env(safe-area-inset-bottom))')
+        # The 7rem a phone's page always leaves, and 12rem more for the bar, as Blog Studio had.
+        self.assertEqual(room.get('padding-bottom'), 'calc(19rem + env(safe-area-inset-bottom))')
+        self.assertEqual(phone['.content'].get('padding-bottom'),
+                         'calc(7rem + env(safe-area-inset-bottom))')
         tile = kit[''].get('.card[data-studio]>.studio-symbol', {})
         self.assertEqual(tile, {'background': 'var(--studio-wash)', 'color': 'var(--studio-color)',
                                 'box-shadow': 'none'})
@@ -421,7 +424,7 @@ class SharedLookTests(unittest.TestCase):
             with self.subTest(selector=selector):
                 self.assertGreaterEqual(rem(kit[''][selector]['min-height']), 2.75)
         for context in (PHONE, '(pointer:coarse)'):
-            for selector in ('.link', '.input[type="file"]::file-selector-button'):
+            for selector in ('.link', '.input[type="file"]::file-selector-button', '.check'):
                 with self.subTest(context=context, selector=selector):
                     self.assertEqual(kit[context][selector].get('min-height'), '2.75rem')
             self.assertEqual(kit[context]['.link'].get('display'), 'inline-flex')

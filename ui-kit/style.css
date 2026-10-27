@@ -2164,6 +2164,11 @@ p.fact > .bead {
   .input[type="file"]::file-selector-button {
     min-height: 2.75rem;
   }
+
+  /* A tick and its words are one target, as tall as any control. */
+  .check {
+    min-height: 2.75rem;
+  }
 }
 
 /* --- room for two columns ----------------------------------------------------------- */
@@ -2275,6 +2280,11 @@ p.fact > .bead {
   }
 
   .input[type="file"]::file-selector-button {
+    min-height: 2.75rem;
+  }
+
+  /* A tick and its words are one target, as tall as any control. */
+  .check {
     min-height: 2.75rem;
   }
 
@@ -2932,9 +2942,9 @@ a.button {
     white-space: normal;
   }
 
-  /* The page leaves room at its foot for the bar. */
+  /* The page leaves room at its foot for the bar: the 7rem it always leaves, and 12rem more. */
   .content:has(.selection-bar:not([hidden])) {
-    padding-bottom: calc(12rem + env(safe-area-inset-bottom));
+    padding-bottom: calc(19rem + env(safe-area-inset-bottom));
   }
 
   /* On a phone the search leads; the other filters open under Filters. */
