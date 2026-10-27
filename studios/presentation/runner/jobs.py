@@ -123,9 +123,9 @@ def done(record: dict, step: stages.Step) -> bool:
 
 def first(record: dict) -> stages.Step | None:
     """The first step of a deck that is not done: what comes next. None once the deck is
-    delivered. Rehearsing is never next."""
+    delivered."""
     return next((step for step in stages.steps(record)
-                 if step.name != 'rehearse' and not done(record, step)), None)
+                 if not done(record, step)), None)
 
 
 def gate_state(record: dict, gate: str) -> str | None:

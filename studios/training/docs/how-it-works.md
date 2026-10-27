@@ -1,6 +1,6 @@
 # How it works
 
-This page explains what Training Studio does behind the conversation. For the full specification, see the [design](superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md).
+This page explains what Training Studio does behind the conversation. [The runner](runner.md) describes a training made on the page as it is now. The first [design](superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md) is kept as history.
 
 ## The stages
 
@@ -21,7 +21,7 @@ At each gate you approve, ask for changes, have it rebuilt, or skip. With levels
 
 The blueprint is the hub. The document and brief are written from it, and the deck is built from the blueprint and the document. A Yoodli scenario is built from your scenario file, the brief and the blueprint.
 
-The legacy question queue is kept for a training begun before the synthesis research contract, so that it finishes as it began. It can go once no workspace holds such a run.
+A new training on a Harness Research without synthesis is refused at Start. The legacy question queue is kept for a training begun before the synthesis research contract, so that it finishes as it began. `studio saved-work` lists any that still need it.
 
 ## Where facts come from
 

@@ -492,7 +492,7 @@ class TeamTests(unittest.TestCase):
         )
         ident = saved['files'][0]['source']['id']
         with self.assertRaisesRegex(ValueError, 'already shared with your team'):
-            management.dispatch(self.root, 'source-keep', {'id': ident, 'keep': False})
+            management.source_keep(self.root, {'id': ident, 'keep': False})
         self.assertTrue(studio.inside(self.root, 'sources', ident).is_dir())
 
     def test_material_is_never_committed_or_pushed(self):

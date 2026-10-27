@@ -136,8 +136,8 @@ something grave.
 
 Presentation Studio's direction stop includes research, the editable outline
 with its wireframe draft, and the brand's rendered looks to pick from. A Blog Studio run
-includes research with the outline, and the writing, independent review and requested
-handoff at the final stop.
+started in chat includes research with the outline, and the writing, independent review
+and requested handoff at the final stop; a blog on the desk has no stops.
 Training Studio reads the research plan before any research is run, then groups
 all selected levels into one stop, **Review the first drafts**, with each deck's
 wireframe draft and the brand's looks to pick from, stops at each drawn deck, then

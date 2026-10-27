@@ -13,7 +13,6 @@ import json
 import re
 import secrets
 import socketserver
-import threading
 import time
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -27,7 +26,6 @@ import home
 import workspace
 from studio_core import research_view
 
-HOST = '127.0.0.1'
 TOKEN_HEADER = 'X-Training-Studio-Token'
 PAGE_DIR = Path(__file__).resolve().parent / 'desk'
 PAGE = {
@@ -36,14 +34,6 @@ PAGE = {
     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
     '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8'),
     '/style.css': ('style.css', 'text/css; charset=utf-8'),
-}
-JSON = 'application/json; charset=utf-8'
-SECURITY_HEADERS = {
-    'Content-Security-Policy': "default-src 'self'; img-src 'self' blob:",
-    'X-Content-Type-Options': 'nosniff',
-    'X-Frame-Options': 'DENY',
-    'Referrer-Policy': 'no-referrer',
-    'Cache-Control': 'no-store',
 }
 STATUSES = ('approved', 'draft', 'stale', 'not-started', 'skipped', 'unavailable')
 TEXT_SUFFIXES = ('.md', '.json')
@@ -88,12 +78,6 @@ SAID = {
     'skip': 'This stage is left out. You can bring it back from the training at any time.',
     'restore': 'This stage is back.',
 }
-
-
-
-
-
-
 
 
 def named(name: str) -> str:
@@ -617,20 +601,7 @@ def uses_google() -> bool:
 
 # --- the server -----------------------------------------------------------------
 
-
-
-def text(sent: dict, name: str, needed: bool = True) -> str | None:
-    """One field of a change, which must be text of a sensible length."""
-    value = sent.get(name)
-    if value is None and not needed:
-        return None
-    if not isinstance(value, str) or (needed and not value) or len(value) > NOTE_LIMIT:
-        raise Refusal(HTTPStatus.BAD_REQUEST, f'Give {name} as text.')
-    return value
-
-
-
-
+text = _security.text   # one field of a change, which must be text of a sensible length
 
 
 class Page(_security.Page):
@@ -702,41 +673,8 @@ class Page(_security.Page):
         return as_json(HTTPStatus.OK, {'computer': self.computer(look=True)})
 
 
-class Desk:
-    """The page's server. `start` serves on a thread, `serve` blocks, `stop` ends either.
-
-    `page` makes what answers: Page here, or a subclass of it given the port.
-    """
+class Desk(_security.Desk):
+    """The page's server: the shared one, serving this page by default."""
 
     def __init__(self, port: int = 0, page=Page):
-        self.server = Server((HOST, port), Handler)
-        self.server.desk = self
-        self.port = self.server.server_address[1]
-        self.page = page(self.port)
-        self.token, self.hosts, self.answer = self.page.token, self.page.hosts, self.page.answer
-        self._thread: threading.Thread | None = None
-
-    @property
-    def address(self) -> str:
-        """Where the page is, without its key."""
-        return f'http://{HOST}:{self.port}/'
-
-    @property
-    def url(self) -> str:
-        """The link for the user. The key rides in the fragment, which is never sent."""
-        return f'{self.address}#token={self.token}'
-
-    def serve(self) -> None:
-        self.server.serve_forever()
-
-    def start(self) -> None:
-        self._thread = threading.Thread(target=self.server.serve_forever, args=(0.05,),
-                                        daemon=True)
-        self._thread.start()
-
-    def stop(self) -> None:
-        if self._thread is not None:
-            self.server.shutdown()
-            self._thread.join()
-            self._thread = None
-        self.server.server_close()
+        super().__init__(port, page)

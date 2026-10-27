@@ -1,3 +1,5 @@
+A record of a check made on 2026-10-14; it describes the studio as it was then.
+
 # Startup and computer checks
 
 The startup experience follows Training Studio’s permanent shell command, Mac

@@ -30,7 +30,7 @@ SCRIPT = ('# Rolling restarts\n\n## A rolling restart replaces instances in batc
 def gates_of(record: dict) -> list[str]:
     """The gates a deck with this record puts to the person, in order."""
     return [step.name for step in stages.steps(record)
-            if step.kind == 'gate' and step.name != 'rehearse']
+            if step.kind == 'gate']
 
 
 def read_in(inventory: dict) -> dict:

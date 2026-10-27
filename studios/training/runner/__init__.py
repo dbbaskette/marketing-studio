@@ -1,28 +1,42 @@
 """The Studio Runner: a program that takes a training from a form to its index, stopping
 at every gate for a decision on the page, the slide deck included.
 
-    studio         the command line: `studio serve` and `studio status`
-    page           the runner's server: the desk's page, with the runner behind it
-    setup          this computer's set-up: the workspace, the agent and the limits
+Training Studio's own modules:
+
+    studio         the command line: `studio serve`, `studio status` and `studio saved-work`
     engine         walks each training's pipeline, hands jobs to workers, stops at gates
     pipeline       the training and research pipelines, and where a training is in them
-    settings       what this computer remembers: the default agent and the limits
-    agents         start Claude or Codex as a worker for one job, or script one for tests
-    worker_tools   the only tools a worker has, and the server that offers them to an agent
-    gitstate       the workspace: one folder inside a git repository, committed and shared
-    companion      finding a companion skill, and running any command so that Stop and a
-                   time limit end everything it started
-    research       the harness-research command line, called from Python
+    reviews        the combined reviews of a new run, and the gates an older run keeps
     briefs         what a worker is told for each kind of job
-    documents      the documents a person supplies for a training's research
     copies         the Google Docs and Word files a training asked for
     index          readiness, and README.md written from a training's record
     deck           the runner's own rules for a slide deck, and what its workers are told
-    slides         the slides tool's command line, called from Python
+    studios_config this studio's view of the shared studios config
+
+The shared runner's modules, used by Presentation Studio too. Each lives once in
+core/studio_core/shared_runner/. A whole module there is given to this studio by a facade
+of the same name here, which passes the product in:
+
+    agents         start Claude or Codex as a worker for one job, or script one for tests
     brand          a brand skill on this computer, called from Python
+    brand_source   the brand skill's own repository: its releases, and installing one
+    companion      finding a companion skill, and running any command so that Stop and a
+                   time limit end everything it started
+    documents      the documents a person supplies for a training's research
+    gitstate       the workspace: one folder inside a git repository, committed and shared
+    research       the harness-research command line, called from Python
     team           sharing a workspace: who drives a training, notifications, publishing
+
+A module whose common part lives there, and whose parts that differ live here, bound into
+this module with studio_core.modules.bind:
+
+    page           the runner's server: the desk's page, with the runner behind it
+    settings       what this computer remembers: the default agent and the limits
+    setup          this computer's set-up: the workspace, the agent and the limits
+    slides         the slides tool's command line, called from Python
     upkeep         whether Training Studio and its skills are in place and current, put
                    right where that is safe, and the companions brought when asked
+    worker_tools   the only tools a worker has, and the server that offers them to an agent
 
 Each module's own docstring says what a caller needs to know. Refusals meant for a person
 are raised as the core's WorkspaceError, with a sentence to show as it is.

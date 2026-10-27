@@ -328,5 +328,46 @@ class BringTests(TeamCase):
         self.assertIsNone(team.unacceptable(top / 'nested'))
 
 
+class TagShapeTests(TeamCase):
+    """The published tag and the notification variable are this studio's, before and after
+    team moved to the shared runner."""
+
+    def test_a_published_revision_keeps_its_tag_shape(self):
+        import json as _json
+        from test_runner_gitstate import git as _git
+        ws = gitstate.local(self.base / 'tag-shape')
+        self.write(ws, 'quarterly-review/run.json', '{}\n')
+        gitstate.commit(ws, 'Start it')
+        first = team.publish(ws, 'quarterly-review', 'Tag shape', True, 'Alex')
+        second = team.publish(ws, 'quarterly-review', 'Tag shape', False, 'Alex')
+        self.assertEqual((first['tag'], second['tag']), ('presentations/quarterly-review/r1', 'presentations/quarterly-review/r2'))
+        self.assertEqual(_git(ws.repo, 'tag', '--list').splitlines(), ['presentations/quarterly-review/r1', 'presentations/quarterly-review/r2'])
+        self.assertEqual(team.revisions(ws, 'quarterly-review'), 2)
+        latest = team.published(ws)
+        self.assertEqual([(entry['id'], entry['revision'], entry['ready']) for entry in latest],
+                         [('quarterly-review', 2, False)])
+        self.assertEqual(latest[0]['path'], str(ws.root / 'quarterly-review'))
+        # A tag written by plain git in the shape the code wrote before reads the same.
+        about = {'id': 'quarterly-review', 'title': 'Tag shape', 'revision': 3, 'ready': True,
+                  'at': '2026-10-01T00:00:00Z', 'by': 'Blake'}
+        _git(ws.repo, 'tag', '--annotate', '-m', 'Publish Tag shape, revision 3', '-m',
+             _json.dumps(about, sort_keys=True), 'presentations/quarterly-review/r3', 'HEAD')
+        self.assertEqual(team.revisions(ws, 'quarterly-review'), 3)
+        self.assertEqual([(entry['revision'], entry['by']) for entry in team.published(ws)],
+                         [(3, 'Blake')])
+
+    def test_notifications_use_this_studio_s_variable(self):
+        self.assertEqual(team.REPLACED, 'PRESENTATION_STUDIO_NOTIFY')
+        self.assertEqual(team.APP, 'Presentation Studio')
+
+    def test_team_is_one_module_object(self):
+        import sys
+        from runner import gitstate as fellow
+        from runner import team as again
+        self.assertIs(team.gitstate, fellow)
+        self.assertIs(sys.modules['runner.team'], team)
+        self.assertIs(again, team)
+
+
 if __name__ == '__main__':
     unittest.main()

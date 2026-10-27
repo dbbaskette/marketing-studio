@@ -376,6 +376,28 @@ class StatusTests(StudioCase):
                          (False, None, []))
 
 
+class SavedWorkTests(StudioCase):
+    def test_saved_work_prints_the_report_and_changes_nothing(self):
+        root = self.start()   # begun on the legacy queue, at its research plan
+        jobs = len(self.workers.jobs)
+        files = {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
+                 if path.is_file() and '.git' not in path.parts}
+        porcelain = self.git('status', '--porcelain')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(studio.main(['saved-work', '--folder', str(self.base / 'none')]), 0)
+        said = json.loads(out.getvalue())
+        self.assertEqual(out.getvalue(), json.dumps(said, indent=2, sort_keys=True) + '\n')
+        self.assertEqual(sorted(said), ['paths', 'unused'])
+        self.assertEqual([entry['path'] for entry in said['paths'][0]['needed_by']],
+                         [str(root)])
+        self.assertEqual(said['unused'], ['review-layout-1', 'old-harness-slides'])
+        self.assertEqual(len(self.workers.jobs), jobs, 'asking starts nothing')
+        self.assertEqual(self.git('status', '--porcelain'), porcelain)
+        self.assertEqual({path: path.read_bytes() for path in sorted(self.base.rglob('*'))
+                          if path.is_file() and '.git' not in path.parts}, files)
+
+
 class ProcessTests(StudioCase):
     """`studio serve` as a person starts it: a process of its own, on a local port."""
 

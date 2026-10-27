@@ -8860,6 +8860,24 @@ class AnnounceTests(unittest.TestCase):
             self.assertFalse(cmd_desk.announce(self.Server, False)['opened'])
 
 
+class SharedCoreTests(unittest.TestCase):
+    """The page's server and the command's helpers are the shared core's, not copies."""
+
+    def test_the_server_helpers_come_from_the_shared_core(self):
+        from studio_core import server
+        self.assertIs(desk.Desk.__mro__[1], desk._security.Desk)
+        self.assertIs(desk.text, desk._security.text)
+        for name in ('announce', 'show', 'port', 'interrupt', 'has_a_screen'):
+            with self.subTest(name):
+                self.assertIs(getattr(cmd_desk, name), getattr(server, name))
+        self.assertEqual(cmd_desk.NOT_A_PERSON, server.NOT_A_PERSON)
+        served = desk.Desk()
+        try:
+            self.assertIsInstance(served.page, desk.Page)
+        finally:
+            served.stop()
+
+
 class WireTests(DeskCase):
     """A decision sent over a real connection, as the browser sends one."""
 

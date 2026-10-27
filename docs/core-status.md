@@ -8,7 +8,8 @@
 | Shared stylesheet and Markdown renderer | `ui-kit/` | Product controllers and layout additions |
 | Dependency pins | `pins/companions.json` | Each studio uses its applicable companions |
 | Bundle traversal and staging | `core/studio_core/packaging.py`, `bundles.py` | Product inventory rules and native smoke checks |
-| Git, sharing, brand, engine, research, and job workflows | Native studio directories | Preserved; drifted implementations are not combined in this migration |
+| Runner modules both deck studios use | `core/studio_core/shared_runner/` | Each studio's pipeline, engine, jobs and the parts that differ |
+| Blog Studio's Git, sharing, brand, engine, research and job workflows; each deck studio's pipeline, engine and jobs | Native studio directories | Preserved; drifted implementations are not combined in this migration |
 
 The compatibility module loader creates isolated product contexts from one source
 file, retaining native constants and exception identities. Companion bindings

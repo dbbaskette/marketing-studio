@@ -950,5 +950,48 @@ class SyncTests(WorkspaceCase):
             self.assertNotIn(never, source.split('"""', 2)[2], never)
 
 
+class SavedFilesTests(WorkspaceCase):
+    """What a new workspace writes, byte for byte, as the code wrote it before gitstate moved
+    to the shared runner."""
+
+    README = (b'# Trainings\n'
+              b'\n'
+              b'This folder holds trainings made with Training Studio, one folder each. Each step that\n'
+              b'was kept and each decision a person made is a commit, so the history says what happened.\n'
+              b'\n'
+              b"- Open a training's folder to read its research, blueprint and other files.\n"
+              b'- `hub.json` tells Training Studio that this folder is its own. Leave it where it is.\n'
+              b"- Working files, saved sources and lock files stay on each person's computer. The ignore\n"
+              b'  file here keeps them out.\n'
+              b'\n'
+              b'Change a training through Training Studio, not by hand, so its record stays true.\n')
+    IGNORE = (b'# Kept on each computer and never shared. Written by Training Studio.\n'
+              b'work/\n'
+              b'sources/\n'
+              b'**/.harness-research/guidance/\n'
+              b'**/.harness-slides/guidance/\n'
+              b'*.lock\n'
+              b'**/.training-studio/lock\n')
+    HUB = ('{{\n  "branch": "main",\n  "folder": "trainings",\n  "minimum_runtime": "{version}",\n  "name": "mine",\n  "repository": null,\n  "schema": 1,\n  "tool": "training-studio"\n}}\n')
+
+    def test_a_new_workspace_s_files_are_as_before(self):
+        workspace = gitstate.local(self.base / 'mine')
+        self.assertEqual((workspace.root / 'README.md').read_bytes(), self.README)
+        self.assertEqual((workspace.root / '.gitignore').read_bytes(), self.IGNORE)
+        self.assertEqual((workspace.root / 'hub.json').read_text(encoding='utf-8'),
+                         self.HUB.format(version=gitstate.installed()))
+
+    def test_what_was_made_after_parting_is_known(self):
+        alex = self.join()
+        self.write(alex, 'shared-one/run.json', '{}\n')
+        gitstate.commit(alex, 'Shared one')
+        gitstate.sync(alex)
+        self.assertFalse(gitstate.made_apart(alex, 'shared-one/run.json'), 'both have it')
+        self.write(alex, 'mine-only/run.json', '{}\n')
+        gitstate.commit(alex, 'Mine only')
+        self.assertTrue(gitstate.made_apart(alex, 'mine-only/run.json'), 'made after parting')
+        self.assertTrue(gitstate.made_apart(alex, 'nowhere/run.json'), 'on neither side')
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -8,5 +8,5 @@
 - **`main` is live.** Guidance that needs a script change raises `minimum_runtime` in `guidance/manifest.json` and the `VERSION` together.
 - **No brand is named.** Presentation Studio is for any brand: the brand skill is the person's own. `tests/test_no_brand_named.py` enforces it.
 - **Research and slides are delegated.** Do not add research or slide-building logic here; they belong to `harness-research` and `harness-slides`.
-- **Ported files are recorded.** Every file taken from Training Studio is listed in `vendor.json` with the file it came from and the revision.
+- **Shared runner parts live in core.** A runner module both deck studios use lives in `core/studio_core/shared_runner/`, and `runner/<name>.py` passes the product in. Change it there, for both. A file still copied from Training Studio is listed in `vendor.json` with the file it came from and the revision.
 - **Person-facing sentences** never say "artifact", "stale" or "lineage".

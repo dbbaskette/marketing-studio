@@ -526,12 +526,6 @@ def guide(root, run: dict, brand_skill) -> dict:
     return kept
 
 
-def guided(root) -> dict:
-    """What is kept of the brand's slide guidance for this deck, or nothing."""
-    found = home.read_json(Path(root) / ENTRY, {})
-    return found if isinstance(found, dict) else {}
-
-
 def guided_reading(root) -> dict:
     """The slides tool's guidance as the brand returned it for this deck, {name: text}."""
     found = home.read_json(Path(root) / READING, {})

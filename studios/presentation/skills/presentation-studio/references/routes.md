@@ -4,8 +4,8 @@ Keep intake and form in `run.json`; sources stay in never-shared `sources/`. Res
 
 | Starting point | Work and checkpoints |
 | --- | --- |
-| An idea | Intake → optional research plan/findings → outline → brand → build → delivery |
-| A document | Classify as slide-by-slide spec or raw material → outline; optional research only for material → brand/build/delivery |
+| An idea | Intake → optional research plan/findings → outline → look → build → delivery |
+| A document | Classify as slide-by-slide spec or raw material → outline; optional research only for material → look/build/delivery |
 | An existing deck | Copy PPTX or Google Slides input, inventory and show original images → steps required by the selected [level](levels.md) → new delivery |
 
 Honor the requested review cadence. Show required checkpoints and wait; never invent approvals. Reuse unchanged decisions.
@@ -18,10 +18,10 @@ a worker. Document research defaults to supplied-only. Keep source words, eviden
 and caveats. Check `outline.json` against the brand contract, then run Harness Slides
 `outline draft` on that file. Show wireframes before construction; refresh after edits.
 
-## Brand and build
+## Look and build
 
-Reuse settled brand, direction and artwork. Confirm identity with the cover
-where needed. Sample only unresolved treatment; never impose one layout. Bind the same actual response to runner and engine records. Reopen material choices, not in-scope fitting repairs.
+Reuse settled brand, direction and artwork. At Look the person picks one of
+the brand's looks. Sample only unresolved treatment; never impose one layout. Bind the same actual response to runner and engine records. Reopen material choices, not in-scope fitting repairs.
 
 Compose each slide from its content. Build batches of up to three slides, inspect
 every changed native image before continuing, then complete whole-deck review and

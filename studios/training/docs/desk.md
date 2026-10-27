@@ -2,6 +2,15 @@
 
 Training Studio has a page that runs in your browser, on your own computer. It shows what needs you, where every training stands, and whether this computer is ready. If you choose, it is also the only place a stage can be approved.
 
+## Two ways it is served
+
+The same page is served two ways.
+
+- **From a conversation**, with `training desk`, as below. It does not start or run a training: your assistant does that, in the conversation. Settings holds notifications and where each training is decided.
+- **From the runner**, with `studio serve`, which "Open Training Studio" starts. There the page starts and runs trainings too: "New training", each run and its stops, your documents, the copies, the deck and working as a team, as [the runner](runner.md) describes. Settings holds more there: **Shared settings**, **Where new work stops**, **Workspace**, **Preview files in your Google Drive** when there are any, **Notifications**, **When this page is closed**, **Updates**, **Brand skill** and **Where each training is decided**.
+
+The rest of this page is about the page served from a conversation.
+
 ## Open it
 
 Run this in a terminal of your own:
@@ -65,7 +74,7 @@ Be clear about what this does. It stops an assistant that follows its instructio
 
 - **Trainings** shows every training on this computer as a card. Open one to see its files, what is in the way, its checks, what was left out, which objectives its scenarios exercise, its research and the guidance it is pinned to. From there you can open any file, bring back a stage that was left out, and copy a sentence that asks your assistant to resume.
 - **Status** shows everything at once: each training's stage, where it stands, how long since it changed and how many things are in its way. **Check this computer** looks for what a training needs: Claude Code and Codex, each installed, signed in where that can be asked, and reachable from the network you are on; Node; the two companion skills; and, as extras, the Google Cloud CLI and pandoc. Anything missing comes with how to put it right. The check asks each tool for its version, asks Codex whether it is signed in, and opens a connection to each service. It never starts an assistant.
-- **Settings** holds notifications and where each training is decided.
+- **Settings** holds notifications and where each training is decided. Served from the runner, it holds more; see [two ways it is served](#two-ways-it-is-served).
 
 The page keeps itself up to date. You do not need to reload it.
 
@@ -82,7 +91,7 @@ Yes. The page is local.
 
 ## What it does not do
 
-- **It does not start or run a training.** Your assistant does that, in a conversation.
+- **It does not start or run a training.** Your assistant does that, in a conversation. The same page served from the runner does both; see [the runner](runner.md).
 - **It shows the trainings this computer knows about.** A training is known once it has been created here, or once your assistant has read its status here.
 - **It runs only while its command runs.**
 

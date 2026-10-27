@@ -822,9 +822,7 @@ def source_keep(root, data, blog=None):
                 'It is already shared with your team; remove it from the library screen.'
             )
         if record.get('revision') != 1 or not uploaded_here(root, record['id']):
-            raise ValueError(
-                'Only a new file added on this computer’s start form can move out of the library.'
-            )
+            raise ValueError('Only a new file added on this computer can move out of the library.')
     target = (
         studio.inside(root, 'sources', record['id'])
         if keep
@@ -869,7 +867,6 @@ def upload(root, data, prepared=None):
         'content',
         'title',
         'purpose',
-        'as_blog',
         'author',
         'analyze',
         'files',
@@ -899,18 +896,10 @@ def upload(root, data, prepared=None):
     if 'files' in data:
         return upload_files(root, data, staging, ledger, fingerprint, prepared)
     checked = checked_upload(root, data)
-    text, status, title = checked['text'], checked['status'], checked['title']
+    text, status = checked['text'], checked['status']
     purpose = data.get('purpose', 'reference')
     if purpose not in studio.PURPOSES:
         raise ValueError('Choose a source purpose.')
-    if data.get('as_blog') and purpose == 'material':
-        raise ValueError(
-            'A file uploaded as material cannot start a blog. Upload it as a draft instead.'
-        )
-    if data.get('as_blog') and not (text and text.strip()):
-        raise ValueError(
-            'This file needs text extraction before it can become an editable blog. Upload it as a pending reference first.'
-        )
     if data.get('author'):
         studio.checked_author(data['author'])
     fields = (
@@ -921,7 +910,7 @@ def upload(root, data, prepared=None):
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'started'})
     # An unchecked "Summarize and tag" keeps this file's text away from the analysis CLI.
     # An example of the kind of post, or approved messaging, is a kept reference with its
-    # mark, as on the files screen.
+    # mark, as the desk start keeps one.
     source = save_upload(
         root,
         staging,
@@ -940,38 +929,11 @@ def upload(root, data, prepared=None):
         if status != 'ready'
         else 'Source saved; attach it only to the blogs that need it.',
     }
-    if data.get('as_blog'):
-        args = SimpleNamespace(
-            action='create',
-            title=title,
-            id=None,
-            mode='existing',
-            author=data.get('author'),
-            profile=None,
-            voice='preserve',
-            tone=None,
-            stop='review',
-            research='supplied-only',
-            audience=None,
-            blog_type=None,
-            review_folder=None,
-        )
-        article = studio.article_command(root, args)
-        directory, article = studio.item(root, 'articles', article['id'])
-        studio.save_artifact(directory, 'original', text, article, 'uploaded original')
-        studio.save_artifact(directory, 'draft', text, article, 'starting manuscript')
-        article['sources'] = [
-            {'source_id': source['id'], 'revision': source['revision'], 'purposes': ['manuscript']}
-        ]
-        studio.persist(directory, 'articles', article)
-        result['article'] = share(root, 'article', article)
     result['receipts'] = (
         [receipt(root, 'Uploaded reference', result['source'], 'source')]
         if purpose != 'material'
         else []
     )
-    if result.get('article'):
-        result['receipts'].append(receipt(root, 'Uploaded blog', result['article'], 'article'))
     studio.write_json(ledger, {'fingerprint': fingerprint, 'state': 'saved', 'result': result})
     return result
 
@@ -2023,8 +1985,6 @@ def _dispatch(root, route, data):
             return retry_receipt(root, adapter, data)
         if route == 'upload':
             return upload(root, data, prepared)
-        if route == 'source-keep':
-            return source_keep(root, data)
         if route == 'source-role':
             return source_role(root, data)
         if route == 'schedule':
@@ -2190,8 +2150,6 @@ def old_voice_tool(route, data):
             # A voice guide by hand has no voice samples; learned ones keep theirs unsent.
             or (action == 'profile-save' and bool(data.get('samples')))
         )
-    if route == 'run-create':
-        return bool(data.get('profile'))
     if route == 'upload':
         files = data.get('files') if isinstance(data.get('files'), list) else []
         # Voice samples, an author's background (their About text) and LinkedIn exports.
@@ -2343,7 +2301,7 @@ def dispatch(root, route, data):
                 root,
                 data.get('id')
                 if route.startswith(('run-', 'editor-', 'desk-'))
-                and route not in ('run-create', 'desk-create')
+                and route != 'desk-create'
                 or route in ('schedule', 'tool-action', 'blog-delete', 'google-open')
                 else None,
             )

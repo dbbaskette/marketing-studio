@@ -126,6 +126,16 @@ class CommandTests(unittest.TestCase):
                                             'limits': 'One page.', 'evidence': []})
         self.assertFalse(path.exists())
 
+    def test_a_finding_without_a_headline_is_recorded_without_the_key(self):
+        # harness-research refuses a null headline, so none is handed over without one.
+        for finding in ({'status': 'supported', 'summary': 'Said.', 'limits': '', 'evidence': []},
+                        {'status': 'supported', 'summary': 'Said.', 'limits': '', 'evidence': [],
+                         'headline': None}):
+            with self.subTest(finding=finding):
+                self.files.clear()
+                self.research.record(Path('/t/rolling'), 'run-1', 'instance-min', finding)
+                self.assertNotIn('headline', json.loads(self.files[0][1]))
+
     def test_a_refusal_carries_the_one_line_the_command_gave(self):
         self.answers = [(1, '', 'Unknown research question.\n'),
                         (1, '', '\n(node:1) Warning: something\nResearch storage is busy; retry '

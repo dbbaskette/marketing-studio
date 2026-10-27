@@ -73,6 +73,14 @@ class RunCommandTests(unittest.TestCase):
              'sys.stdout.flush()\nsys.stdout.buffer.write(b"\\xff\\r\\n")\nsys.exit(3)'],
             None, 20, 'The tool'), (3, 'ok\n�\n', 'no\n'))
 
+    def test_run_command_runs_with_this_process_s_environment_by_default(self):
+        with mock.patch.dict(os.environ, {'TRAINING_STUDIO_COMPANION_PIN': 'seen'}):
+            code, out, _ = companion.run_command(
+                [sys.executable, '-c',
+                 'import os\nprint(os.environ.get("TRAINING_STUDIO_COMPANION_PIN", "unset"))'],
+                None, 20, 'The tool')
+        self.assertEqual((code, out), (0, 'seen\n'))
+
     def test_a_child_left_holding_the_output_ends_with_the_command(self):
         started = time.monotonic()
         code, out, _ = companion.run_command(['sh', '-c', 'sleep 30 &\necho $!'], self.base,

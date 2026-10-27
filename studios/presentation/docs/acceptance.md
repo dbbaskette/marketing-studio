@@ -87,6 +87,8 @@ A deck made with `/presentation-studio` in Claude Code and in Codex: the route, 
 
 ## Recorded runs
 
+A record of a hand test of 0.1.0 on 2026-10-15; it describes the studio as it was then.
+
 ### 2026-10-15: install and the page, on a computer without LibreOffice, Poppler or Google
 
 A partial run. This computer has no LibreOffice, no Poppler and no Google Cloud CLI, and none was installed for it. Everything was done in a disposable home (`HOME=$(mktemp -d)`) and a workspace folder outside this repository, both removed afterwards; the runner was stopped and nothing was left running.

@@ -26,16 +26,16 @@ At Brand only and Polish a slide with no words of its own, such as a picture alo
 
 ## What you do at each step
 
-The page stops at each of these and waits for you. Which ones apply depends on how you started.
+Which of these a deck has depends on how you started. Where it stops depends on its review level, chosen for the deck under **Where this deck stops** on the form: at Step by step the page stops at each of these and waits for you; at Balanced and Automatic draft it stops only where the list says, and carries on by itself in between, recording that it did.
 
-1. **Check what you brought** (documents and existing decks). You see the verdict, or the original slides as pictures.
-2. **Research plan and research** (only if enabled). Choose where research may look, in any combination: **your documents** (a deck from a document, on by default), **your sites** (off until you tick them; the list of sites in Shared settings, which you can narrow or add to for one deck without changing the list) and **the public web** (on by default for a deck from an idea). Your sites are searched with your assistant's own web search tool. With your sites on and the public web off, research saves pages only from under your sites, and the research review says how many pages it could not save from elsewhere. Add up to eight optional questions on the form. Supplied-only synthesis writes its plan without a planning job. The research review shows the authored brief, independent check, gaps and source limitations, with findings under your questions. The report and evidence are a click away. Asking for changes reruns the whole investigation and is priced before sending. Under Balanced, leaving findings out redraws only the outline and looks.
-3. **Outline.** A title and what each slide must make clear, with its points and notes a click away. You can reorder, add and remove slides, and ask for changes to any one of them.
-4. **Look.** The brand draws one slide of your outline in each of its looks, side by side. Pick the one every slide is drawn in, and say why if you like; or choose another brand or variant and see its looks. If the looks cannot be rendered on this computer, try again, or carry on knowingly in the brand's default look: the deck is then marked as an unreviewed draft of its look. A brand skill too old to offer looks shows your cover in the brand instead.
-5. **Build.** The whole deck in a slide viewer, plus a contact sheet and notes from the brand check. Redesigns show before and after. Each slide has its own **Ask for changes**.
-6. **Deliver.** A Google Slides deck by default, or a PowerPoint file.
+1. **Check what you brought** (documents and existing decks). You see the verdict, or the original slides as pictures. Step by step stops here. Under Balanced the way a document was read is shown again at the direction review, where it can be put right.
+2. **Research plan and research** (only if enabled). Choose where research may look, in any combination: **your documents** (a deck from a document, on by default), **your sites** (off until you tick them; the list of sites in Shared settings, which you can narrow or add to for one deck without changing the list) and **the public web** (on by default for a deck from an idea). Your sites are searched with your assistant's own web search tool. With your sites on and the public web off, research saves pages only from under your sites, and the research review says how many pages it could not save from elsewhere. Add up to eight optional questions on the form. Supplied-only synthesis writes its plan without a planning job. The research review shows the authored brief, independent check, gaps and source limitations, with findings under your questions. The report and evidence are a click away. Asking for changes reruns the whole investigation and is priced before sending. Step by step stops at the plan and at the research. Under Balanced the research is shown in the direction review, where leaving findings out redraws only the outline and looks. Research needs Harness Research 1.0 or newer: on an older one, **Start the deck** refuses a deck with research on, with a sentence saying to update Harness Research.
+3. **Outline.** A title and what each slide must make clear, with its points and notes a click away. You can reorder, add and remove slides, and ask for changes to any one of them. Step by step stops here. Balanced stops here for the direction review: the research, the outline and the brand's looks together, where you pick the look. Automatic draft does not stop.
+4. **Look.** The brand draws one slide of your outline in each of its looks, side by side. Pick the one every slide is drawn in, and say why if you like; or choose another brand or variant and see its looks. If the looks cannot be rendered on this computer, try again, or carry on knowingly in the brand's default look: the deck is then marked as an unreviewed draft of its look. Step by step stops here. Balanced picks the look in the direction review, from the samples shown; edit the outline there and its looks are drawn again, for you to choose from before the build. A deck redesigned with its content kept has no outline, so under Balanced it stops here for its look. Automatic draft does not stop, and uses the brand's default look, saying so. A brand skill older than the version decks need stops a new deck before its brand is used, with a sentence saying to update it in Settings.
+5. **Build.** The whole deck in a slide viewer, plus a contact sheet and notes from the brand check. Redesigns show before and after. Each slide has its own **Ask for changes**. Every level stops here. While the deck is being built, **Slides taking shape** shows each slide's preview as it is drawn, marked **Unreviewed**: looking at them approves nothing, and the whole-deck review and your decision still follow. **Ask for changes to this slide** there sends a note to the part that draws it while the others keep working; a note that comes after that part is drawn is kept as the slide's mark at the deck review. Previews already drawn stay on this computer after an interrupted render or a reconnect, and a new attempt replaces the earlier one's.
+6. **Deliver.** Approving the deck delivers it: a Google Slides deck by default, or a PowerPoint file.
 
-Rehearsal is not part of a deck yet, so the page does not show it.
+**See the first draft before the deck is checked**, under Options on the form, builds and renders the deck without its check and repairs. It stops as **First draft, not checked**, where **Check the deck** runs them and **Use this first draft** takes it as it is. A deck delivered that way says **Delivered: first draft, not checked**.
 
 Your brand comes from your brand skill: the brands and variants it lists are the ones offered when you start a deck, and the first it lists is the default until you choose another. Presentation Studio names no brand of its own.
 
@@ -110,8 +110,9 @@ Keep your decks in your team's shared repository. They go in a `presentations/` 
 
 - One computer runs a deck at a time. Teammates' decks are read-only, and you can **take over** one or **hand over** your own.
 - Every decision you make is saved as a commit.
-- Google Slides links are saved with the deck.
+- Google Slides links are saved with the deck. A PowerPoint delivery is shared beside the deck as `deck.pptx`, so a teammate can download it too; one delivered before that stays on the computer that made it, and the page says so.
 - Uploaded files and slide pictures stay on your computer. Teammates see a small contact sheet.
+- The computer that delivered a deck can ask for changes to it directly; a teammate takes it first.
 
 [The runner](docs/runner.md) has the details, including what happens when two computers disagree.
 
@@ -142,23 +143,8 @@ If the file cannot be read, Presentation Studio works on its built-in defaults, 
 - [The runner](docs/runner.md): how the page and runner work, and working as a team.
 - [Development](docs/development.md): the repository, running the tests, and how to change Presentation Studio.
 - [Acceptance](docs/acceptance.md): what has been tried by hand.
-- [Design](docs/superpowers/specs/2026-10-14-presentation-studio-design.md): the full specification.
+- [Design](docs/superpowers/specs/2026-10-14-presentation-studio-design.md): the first design, kept as history; [the runner](docs/runner.md) says how it works now.
 
 ## Licence
 
 [MIT](LICENSE).
-
-### See slides while the deck is being built
-
-The deck page shows **Slides taking shape** as preview images become available.
-These pictures are marked **Unreviewed**. Inspecting them does not approve the deck;
-the whole-deck review and your final decision still apply. Available images remain
-on this computer after an interrupted render or reconnect. A new attempt replaces
-its earlier preview, and an older attempt cannot overwrite that one.
-
-Each section shows once its preview is finished, before the final review. Updating or
-installing a companion remains an explicit action. Comments during construction are
-tracked separately in
-[the live-preview issue](https://github.com/dbbaskette/marketing-studio/issues/15).
-
-The Balanced direction review requires a look from the samples shown. Editing the outline redraws those samples and asks you to choose again before the build. Delivered team decks stay their maker's to request changes; teammates still take them explicitly. A PowerPoint delivery is shared beside the deck as `deck.pptx`, so any teammate can download it, and can later be sent to Google Slides as a new revision from the page, without rebuilding.

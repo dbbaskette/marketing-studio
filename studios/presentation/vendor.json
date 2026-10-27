@@ -1,6 +1,7 @@
 {
   "schema": 1,
   "source": "https://github.com/dbbaskette/training-studio",
+  "note": "The source repository is retired. Training Studio now lives in studios/training of Marketing Studio.",
   "files": [
     {
       "path": "skills/presentation-studio/scripts/home.py",
@@ -35,13 +36,14 @@
     {
       "path": "runner/companion.py",
       "from": "runner/companion.py",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
+      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/companion.py`."
     },
     {
       "path": "runner/settings.py",
       "from": "runner/settings.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "brand_repository, brand_release, check_repository and check_release follow runner/settings.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66); brand and variant name no brand; adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): agent, model, effort, name, brand, variant, output, brand_repository and brand_release read from and saved to the studios config only (SHARED, from_shared, shared_now, seen, changes, save(shown) with the guard and STALE, own, forget_own)"
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/settings.py`; the rest is this studio's. The port: brand_repository, brand_release, check_repository and check_release follow runner/settings.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66); brand and variant name no brand; adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): agent, model, effort, name, brand, variant, output, brand_repository and brand_release read from and saved to the studios config only (SHARED, from_shared, shared_now, seen, changes, save(shown) with the guard and STALE, own, forget_own)"
     },
     {
       "path": "tests/helpers.py",
@@ -70,20 +72,15 @@
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
-      "path": "runner/claude-code-models.json",
-      "from": "runner/claude-code-models.json",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
-    },
-    {
       "path": "runner/gitstate.py",
       "from": "runner/gitstate.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): when to share is read from and written to the studios config, not the workspace record"
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/gitstate.py`. The port: adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): when to share is read from and written to the studios config, not the workspace record"
     },
     {
       "path": "runner/team.py",
       "from": "runner/team.py",
-      "note": "tag is <folder>/<deck>/r<N>; copies kept",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/team.py`. The port: tag is <folder>/<deck>/r<N>; copies kept",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
@@ -100,35 +97,37 @@
     {
       "path": "runner/agents.py",
       "from": "runner/agents.py",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
+      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/agents.py`."
     },
     {
       "path": "runner/worker_tools.py",
       "from": "runner/worker_tools.py",
-      "note": "training validators, design, assets and coverage removed; register() and outline rules added",
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/worker_tools.py`; the rest is this studio's. The port: training validators, design, assets and coverage removed; register() and outline rules added",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
       "path": "runner/slides.py",
       "from": "runner/slides.py",
-      "note": "pptx inspect/patch/compare, review --file, drive export and outline draft added",
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/slides.py`; the rest is this studio's. The port: pptx inspect/patch/compare, review --file, drive export and outline draft added",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
       "path": "runner/brand.py",
       "from": "runner/brand.py",
       "revision": "0881ce768039ebeb9e1fa39b89cedf792bf5d40e",
-      "note": "a brand skill's version, from PR #66; without contracts(), which belongs to the move to harness-slides 0.14.1"
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/brand.py`. The port: a brand skill's version, from PR #66; without contracts(), which belongs to the move to harness-slides 0.14.1"
     },
     {
       "path": "runner/research.py",
       "from": "runner/research.py",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
+      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/research.py`."
     },
     {
       "path": "runner/documents.py",
       "from": "runner/documents.py",
-      "note": "a deck folder (run.json); add_text and text_of added",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/documents.py`. The port: a deck folder (run.json); add_text and text_of added",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
@@ -287,19 +286,19 @@
       "path": "runner/page.py",
       "from": "runner/page.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "rewritten for decks: one view, one decision address, the start form with base64 uploads, slide pictures, the download and whitelisted files; desk lists, gates, documents, copies, outline, assets and adopt removed; /api/brand and /api/brand/install follow runner/page.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66); adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): POST /api/shared"
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/page.py`; the rest is this studio's. The port: rewritten for decks: one view, one decision address, the start form with base64 uploads, slide pictures, the download and whitelisted files; desk lists, gates, documents, copies, outline, assets and adopt removed; /api/brand and /api/brand/install follow runner/page.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66); adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): POST /api/shared"
     },
     {
       "path": "runner/setup.py",
       "from": "runner/setup.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "with defaults for a deck (person, brand, variant, output); the brand skill's repository (save_brand) and the studios config part follow runner/setup.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e; adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): no for_all_studios, share_all or base; team_moved, shared_notice, notice_read, shared_seen and migrate; name, brand, variant and output shared too"
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/setup.py`; the rest is this studio's. The port: with defaults for a deck (person, brand, variant, output); the brand skill's repository (save_brand) and the studios config part follow runner/setup.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e; adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): no for_all_studios, share_all or base; team_moved, shared_notice, notice_read, shared_seen and migrate; name, brand, variant and output shared too"
     },
     {
       "path": "runner/upkeep.py",
       "from": "runner/upkeep.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "companions looked at here (harness-slides, harness-research) against installer/companions.json; a missing pins file is no pins yet; the brand skill's row and install follow runner/upkeep.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66), reading each assistant's companions itself"
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/upkeep.py`; the rest is this studio's. The port: companions looked at here (harness-slides, harness-research) against installer/companions.json; a missing pins file is no pins yet; the brand skill's row and install follow runner/upkeep.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66), reading each assistant's companions itself"
     },
     {
       "path": "runner/studio.py",
@@ -368,7 +367,8 @@
     {
       "path": "runner/brand_source.py",
       "from": "runner/brand_source.py",
-      "revision": "0881ce768039ebeb9e1fa39b89cedf792bf5d40e"
+      "revision": "0881ce768039ebeb9e1fa39b89cedf792bf5d40e",
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/brand_source.py`."
     },
     {
       "path": "tests/test_runner_brand_source.py",

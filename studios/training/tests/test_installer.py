@@ -384,10 +384,14 @@ class RunnerTests(InstallerCase):
     def test_the_runner_is_installed_with_the_version_beside_the_helper(self):
         result = self.run_installer('install', '--yes')
         staged = self.root / 'versions' / result['version']
-        for name in ('studio.py', '__init__.py', 'engine.py', 'briefs',
-                     'claude-code-models.json'):
+        for name in ('studio.py', '__init__.py', 'engine.py', 'briefs'):
             self.assertTrue((staged / 'runner' / name).exists(), name)
         self.assertTrue((staged / 'scripts' / 'workspace.py').is_file())
+        # Claude Code's models are listed once, in the shared core the scripts carry.
+        self.assertFalse((staged / 'runner' / 'claude-code-models.json').exists())
+        self.assertTrue((staged / 'scripts' / 'studio_core' / 'claude-code-models.json')
+                        .is_file())
+        self.assertTrue((staged / 'scripts' / 'studio_core' / 'shared_runner' / '__init__.py').is_file())
         self.assertFalse(list((staged / 'runner').rglob('__pycache__')))
         self.assertEqual(result['runner']['installed'], True)
         state = json.loads((self.root / 'installation.json').read_text())

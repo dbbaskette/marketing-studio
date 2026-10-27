@@ -2871,10 +2871,6 @@ function deckStep(draft) {
   add(card('What changes'), ...levelCards(draft))];
 }
 
-function firstDraftChoice(draft) {
-  return Boolean(draft.firstDraft);
-}
-
 // The level a deck stops at: the one its form chose, else the shared level the form read.
 function levelOf(draft) {
   return draft.review_level || (view.setup && view.setup.review_level) || 'step_by_step';
@@ -2987,12 +2983,6 @@ function sharedSites() {
   return Array.isArray(listed) ? listed.filter((one) => typeof one === 'string') : [];
 }
 
-// A site as the page shows it and sends it: host/path, which the runner reads as https. No
-// whole address is written into the page.
-function siteShown(site) {
-  return String(site);
-}
-
 // The draft's choice, made the first time research is switched on: your documents for a
 // deck from a document, the public web for one from an idea. Your sites stay off until they
 // are ticked, with the shared list ready under them.
@@ -3019,7 +3009,7 @@ function researchSummary(from) {
   const found = [];
   if (from.documents) found.push('your documents');
   if (from.sites.length) {
-    const names = from.sites.map(siteShown);
+    const names = from.sites.map((site) => String(site));
     found.push(from.sites.length + ' of your sites (' + (names.length > SITES_SHOWN
       ? names.slice(0, SITES_SHOWN).join(', ') + ' and ' + (names.length - SITES_SHOWN) + ' more'
       : names.join(', ')) + ')');
@@ -3087,7 +3077,7 @@ function researchFromField(draft) {
   let sites = null;
   if (looks.sitesOn) {
     const list = add(make('div', 'chips'), ...looks.sites.map((one, index) => chip(
-      siteShown(one.url), one.on, (on) => {
+      String(one.url), one.on, (on) => {
         one.on = on;
         paintNew(false);
       }, 'research-site ' + index)));
@@ -3148,22 +3138,6 @@ function aboutStep(draft) {
       draft, 'researchQuestions', { long: true, rows: 4, hint: 'One question a line, at most 8.' }) : null)];
 }
 
-// The decisions a deck will ask for, in the order it asks.
-function asksFor(draft) {
-  const asks = [];
-  if (draft.route !== 'scratch') {
-    asks.push(draft.route === 'document' ? 'what kind of document it is' : 'the slides read '
-      + 'from your deck');
-  }
-  if (draft.research && draft.route !== 'existing') asks.push('the research plan',
-    'the research');
-  const level = draft.route === 'existing' ? draft.level : null;
-  if (!level || level === 'rework') asks.push('the outline');
-  if (!level || ['redesign', 'rework'].includes(level)) asks.push('the look, from the brand’s samples');
-  asks.push('the deck itself');
-  return asks;
-}
-
 function startStep(draft) {
   const drafted = make('p', '');
   const told = () => {
@@ -3184,7 +3158,7 @@ function startStep(draft) {
       }, 'new-output'),
     ...agentFields(draft, 'new', 'For this deck', told),
     ...(draft.level === 'selected' ? [] : [add(make('div', 'field'),
-      chip('See the first draft before the deck is checked', firstDraftChoice(draft), on => {
+      chip('See the first draft before the deck is checked', Boolean(draft.firstDraft), on => {
         draft.firstDraft = on; draft.firstDraftExplicit = true;
       }, 'first-draft'), make('p', 'quiet field-hint', 'It is still built and rendered. The '
         + 'check and its repairs run when you ask.'))]),
@@ -3653,7 +3627,6 @@ async function sendNote(run, box, problem, pressed) {
 // --- one deck: its stages ------------------------------------------------------------------
 
 // Each stage of the deck, as the steps it has say: done, the one it is at, still to come.
-// A saved deck's rehearse gate is never come to, so it is not shown.
 function stagesOf(run) {
   const rows = list(run.timeline);
   const found = [];
@@ -3695,8 +3668,7 @@ function timelinePart(run) {
     const item = make('li', 'bead-stage');
     item.dataset.state = found.waiting ? 'review' : found.at;
     add(item, bead(shape), make('span', 'bead-name', found.name),
-      make('span', found.at === 'later' ? 'bead-later' : 'offscreen',
-        (found.at === 'later' ? '' : ': ') + words));
+      make('span', 'offscreen', ': ' + words));
     row.append(item);
   }
   const told = stagesOf(run).find((found) => found.waiting)
@@ -3734,7 +3706,7 @@ function stepsCard(run) {
   const node = make('details', 'card shine steps');
   node.dataset.key = 'steps';
   const items = make('ol', 'rows');
-  for (const step of list(run.timeline)) if (step.name !== 'rehearse') items.append(stepItem(step));
+  for (const step of list(run.timeline)) items.append(stepItem(step));
   return add(node, make('summary', 'card-title', 'Every step'), items);
 }
 
@@ -3980,7 +3952,7 @@ function documentPart(label, text) {
   if (!String(text || '').trim()) {
     return add(node, make('p', 'quiet', 'Nothing has been written here yet.'));
   }
-  return add(node, window.TrainingStudioMarkdown.render(String(text), { files: false }));
+  return add(node, window.StudioMarkdown.render(String(text), { files: false }));
 }
 
 // What the worker said of its work, and what the person asked for last time round.
@@ -6994,8 +6966,6 @@ async function saveBrand(pressed) {
   view.savingBrand = false;
   if (view.screen === 'settings') draw(false);
 }
-
-// --- with a team: what is published ------------------------------------------------------
 
 // --- with a team: what is published ------------------------------------------------------
 // Each deck the workspace has published, at its latest revision.

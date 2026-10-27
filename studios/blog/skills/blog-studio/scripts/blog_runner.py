@@ -100,7 +100,6 @@ DEFAULTS = {
     # Where research looks for a new blog: your documents, your sites (the shared list) and
     # the public web. None ticked is no research.
     'research': {'documents': True, 'sites': False, 'web': False},
-    'stop': 'package',
     'tone': 'Clear, conversational and specific',
     'author': '',
 }
@@ -393,7 +392,7 @@ def research_default(value):
 
 
 def research_words():
-    """The sentences a start form says when its research choice is incomplete."""
+    """The sentences the desk start says when its research choice is incomplete."""
     return {
         'empty': research_sites.EMPTY,
         'no_documents': research_sites.NO_DOCUMENTS,
@@ -496,8 +495,6 @@ def settings(root, data=None):
         if data['engine'] not in ('codex', 'claude'):
             raise ValueError('Choose a listed assistant.')
         data['research'] = research_default(data['research'])
-        if data['stop'] not in ('outline', 'draft', 'review', 'package'):
-            raise ValueError('Choose a listed stop point.')
         if type(data['seconds']) is not int or not 30 <= data['seconds'] <= 3600:
             raise ValueError('Choose a step limit between 30 and 3600 seconds.')
         for key, maximum in (('tone', 2000), ('author', 200)):
@@ -1234,23 +1231,11 @@ def create(root, data, approval='conversation'):
         'point',
         'revision',
         'library',
-        'review_level',
-        'review_seen',
-        'review_default',
         'length',
         'research_from',
     }
     if set(data) - allowed:
         raise ValueError('Unknown new-blog field.')
-    # Where this blog stops: the level its form chose, else the shared one. The form's chip
-    # also makes it the level new work starts at in every studio, written when it starts.
-    chosen_level = data.get('review_level')
-    if chosen_level is not None:
-        review_policy.check({'level': chosen_level})
-    if data.get('review_default', False) not in (True, False):
-        raise ValueError('Say whether to use this level for new work: true or false.')
-    if data.get('review_default') and chosen_level is None:
-        raise ValueError('Choose where this blog stops before using it for new work.')
     mode = data.get('mode', 'write')
     if mode not in MODES:
         raise ValueError(
@@ -1487,8 +1472,8 @@ def create(root, data, approval='conversation'):
     ]
     import studios_config
 
-    # A shared file that cannot be read gives the built-in defaults, and never more autonomy
-    # than Step by step; the chip's write is refused by the file itself.
+    # Where this blog stops is the shared level. A shared file that cannot be read gives the
+    # built-in defaults, and never more autonomy than Step by step.
     shared, problem = studios_config.read()
     assistant = shared.get('assistant') or {}
     same_agent = assistant.get('agent') == engine
@@ -1496,11 +1481,7 @@ def create(root, data, approval='conversation'):
     if contract:
         run['research_contract'] = contract
     run['review_policy'] = (
-        {'schema': 1, 'level': chosen_level}
-        if chosen_level
-        else {'schema': 1, 'level': 'step_by_step'}
-        if problem
-        else review_policy.snapshot(shared)
+        {'schema': 1, 'level': 'step_by_step'} if problem else review_policy.snapshot(shared)
     )
     if review_policy.level(run) != 'step_by_step':
         run['schema'] = 2
@@ -1524,9 +1505,6 @@ def create(root, data, approval='conversation'):
     if selected_brand:
         run['brand'] = selected_brand
     inputs(root, record, run)  # Refuse unusable context before creating a partial blog.
-    if data.get('review_default'):
-        # Refused, with nothing made, when another studio changed the level the form read.
-        review_policy.change(studios_config.update, chosen_level, data.get('review_seen'))
     if style:
         record['style'] = studio.style_pin(root, style, record['style']['revision'])
     if not data.get('id'):
@@ -2840,8 +2818,8 @@ def default_voice(root):
     from hub_store import HubError
     from hub_workspace import active
 
-    # Whatever stops the read (a Team Hub not joined here, a damaged record), the wizard
-    # still opens: it just offers no default voice.
+    # Whatever stops the read (a Team Hub not joined here, a damaged record), the run options
+    # still answer: they just offer no default voice.
     if not studio.voices_on(root):
         return None  # No default voice is applied while the older voice tools are off.
     try:
@@ -3157,24 +3135,30 @@ def document(root, ident, stage):
     }
 
 
+# What the page asks of a guided run. Anything else is answered as an unknown route: a new
+# run starts in chat, with the CLI's `run create`.
+PAGE_ACTIONS = (
+    'adopt',
+    'apply-review',
+    'approve',
+    'changes',
+    'develop',
+    'handoff',
+    'note',
+    'pause',
+    'resume',
+    'retry',
+    'skip-research',
+    'start',
+    'stop',
+)
+
+
 def dispatch(root, action, data):
     """Called only by the authenticated page, under the ordinary desk mutation lock."""
+    if action not in PAGE_ACTIONS:
+        raise ValueError('Unknown management action.')
     runner = engine(root)
-    if action == 'create':
-        data = dict(data)
-        operation = data.pop('operation', '')
-        if not isinstance(operation, str) or not re.fullmatch('[a-f0-9]{32}', operation):
-            raise ValueError('A new blog needs its page operation ID. Reload and retry.')
-        path = studio.inside(root, '.blog-runs', 'creations', operation + '.json')
-        fingerprint = studio.digest(json.dumps(data, sort_keys=True).encode())
-        if path.exists():
-            prior = studio.read_json(path)
-            if prior['fingerprint'] != fingerprint:
-                raise ValueError('This creation request changed. Open a new form.')
-            return runner.describe(prior['id'])
-        found = create(root, data, approval='page')
-        studio.write_json(path, {'id': found['id'], 'fingerprint': fingerprint})
-        return runner.control(found['id'], 'resume')
     ident = data.get('id')
     if isinstance(ident, str):
         import desk

@@ -20,6 +20,7 @@ What a caller needs to know
     engine.publish(path); engine.published() # numbered revisions, as tags
     engine.leaving(path); engine.delete(path, title)
     engine.bring(folder)                     # copy a deck made elsewhere in, and run it
+    engine.saved_work(folders)               # which saved decks still need each older path
     engine.standing()                        # the status screen
     engine.serving(); engine.seen(); engine.tell()   # fetch and notify while serving
     engine.close()                           # end every worker; nothing half-made is kept
@@ -172,7 +173,7 @@ PICTURE_WORDS = 300         # characters of what a picture shows, and of where i
 SHEET = 'contact-sheet'
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
-# opened the same way; rehearse is never next.
+# opened the same way.
 RUN = {
     'intake-source': '_intake_source', 'classify': '_classify', 'inventory': '_inventory',
     'gate:classify': '_gate', 'research-plan': '_research_plan',
@@ -183,7 +184,7 @@ RUN = {
     'build-start': '_build_start', 'build-sections': '_build_sections',
     'build-whole': '_build_whole', 'build-review': '_build_review',
     'build-repair': '_build_repair', 'build-render': '_build_render', 'gate:build': '_gate',
-    'deliver': '_deliver', 'rehearse': None}
+    'deliver': '_deliver'}
 # What each gate decides on, as a commit and a sentence say it.
 WORDS = {'gate:classify': 'classification', 'gate:research-plan': 'research plan',
          'gate:research': 'research', 'gate:outline': 'outline', 'gate:look': 'look',
@@ -293,6 +294,11 @@ NO_BRAND = ("Your deck needs your brand from here on, and no brand skill is inst
             "computer: name the brand skill's repository in Settings and install it, then "
             'retry.')
 DRIVE_FILES = {'preview': 'Preview presentation', 'slides': 'Google Slides deck'}
+NO_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
+                'here cannot do it. Update Harness Research, then start again.')
+# True lets a new run start on the legacy question queue. Only the test suites that still
+# drive the queue through its stand-in set it; piece 7 removes it with the queue.
+LEGACY_RESEARCH = False
 
 
 # --- what a run record holds ----------------------------------------------------------------
@@ -752,6 +758,15 @@ class Engine(Jobs, Researching):
         if checked['route'] in ('existing', 'document') and source.get('kind') == 'google' \
                 and not self._google_ready():
             raise WorkspaceError(existing.NOT_READY)
+        # The research contract is taken before anything is written: research on a Harness
+        # Research that cannot synthesize is refused with nothing made.
+        try:
+            contract = research_contract.snapshot(self.research()) if checked.get('research') \
+                else None
+        except WorkspaceError:
+            contract = None
+        if checked.get('research') and contract is None and not LEGACY_RESEARCH:
+            raise WorkspaceError(NO_SYNTHESIS)
         if default:
             # Refused, with nothing made, when another studio changed the level the form read.
             import studios_config
@@ -774,11 +789,6 @@ class Engine(Jobs, Researching):
                               driver=team.claim(space),
                               limits={'step_seconds': chosen.step_seconds,
                                       'dollars': chosen.deck_dollars})
-                from studio_core import research_contract
-                try:
-                    contract = research_contract.snapshot(self.research()) if checked.get('research') else None
-                except WorkspaceError:
-                    contract = None
                 if contract:
                     record['research_contract'] = contract
                 if review_policy.level(record) != 'step_by_step':
@@ -3194,7 +3204,7 @@ class Engine(Jobs, Researching):
         every one of them reported its cost. None of it when one has never run here."""
         names = self._reopened(record, gate)
         again = [step for step in stages.steps(record) if step.name in names
-                 and step.kind != 'gate' and step.name != 'rehearse']
+                 and step.kind != 'gate']
         if not again:
             return None
         kept = record.get('steps') or {}
@@ -3226,7 +3236,7 @@ class Engine(Jobs, Researching):
         among them its own level always stops at (one a grave finding may still hold is not
         counted), and the seconds of every try with the dollars of its agent's jobs, said
         only when every one of them reported its cost."""
-        rows = [row for row in stages.timeline(record) if row['state'] not in ('done', 'later')]
+        rows = [row for row in stages.timeline(record) if row['state'] != 'done']
         gates = review_policy.ahead(record, 'presentation',
                                     [row['name'] for row in rows if row['name'].startswith('gate:')],
                                     run_gates=[step.name for step in stages.steps(record)])
@@ -3737,6 +3747,45 @@ class Engine(Jobs, Researching):
             home.remember(root, title)
         self.wake(root)
         return {'path': str(root), 'id': root.name}
+
+    # --- what saved decks still need ---------------------------------------------------------
+
+    def saved_work(self, folders=()) -> dict:
+        """Which saved decks still need each older path, as `saved_work.report` says: every
+        deck in the workspace and each of `folders` that holds one. Only read: no lock is
+        taken, nothing is written and nothing is asked online. A record that cannot be read
+        is passed over, as the runner passes it over."""
+        from studio_core import saved_work
+        found: dict[str, list[dict]] = {}
+        seen: set[Path] = set()
+        for root in [*self.every(), *(Path(folder) for folder in folders)]:
+            if root.resolve() in seen or not (root / decks.RUN).is_file():
+                continue
+            seen.add(root.resolve())
+            try:
+                run = decks.read_run(root)
+                survey = stages.survey(run)
+                listed = [step.name for step in stages.steps(run)]
+            except (OSError, ValueError, TypeError, AttributeError, KeyError):
+                continue
+            title = (run.get('form') or {}).get('title') or root.name
+            if 'research' in listed and not run.get('research_contract') \
+                    and 'research' not in survey.done:
+                found.setdefault('research-queue', []).append(saved_work.needs(
+                    root, title, 'Its research has not run, and it was started before '
+                    'Harness Research could synthesize.'))
+            if 'deliver' in survey.done:
+                continue
+            looked = looks.GATE in survey.done or survey.waiting == looks.GATE
+            if (root / looks.LOOK_MD).is_file() and not (root / looks.SHOWN).is_file():
+                why = 'It was drawn a cover to show its brand.'
+            elif (root / build.CONTRACT).is_file() and not looked:
+                why = 'It may need it: its brand was exported before it reached the look.'
+            else:
+                continue
+            found.setdefault('cover-sample', []).append(saved_work.needs(root, title, why))
+        return saved_work.report(('research-queue', 'cover-sample', 'old-harness-slides'),
+                                 found)
 
 
 # Which step's worker spoke last before each gate, for what the gate shows it said.

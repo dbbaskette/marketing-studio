@@ -873,6 +873,8 @@ class StudioCase(unittest.TestCase):
                                          'GIT_CONFIG_NOSYSTEM': '1'}),
             mock.patch.object(worker_tools, 'fetch_once', self.web.opener),
             mock.patch.object(worker_tools, 'resolve', self.web.resolver),
+            # The research stand-in is the legacy queue CLI.
+            mock.patch.object(engines, 'LEGACY_RESEARCH', True),
             # The engine and a worker's tools both find the slides tool and a brand skill
             # through these two, so no test can reach a real one.
             mock.patch.object(engines.slides_tool, 'Slides', self.the_slides),
@@ -1147,6 +1149,8 @@ def fake_studio() -> Fake:
     for patch in (
             mock.patch.object(worker_tools, 'fetch_once', web.opener),
             mock.patch.object(worker_tools, 'resolve', web.resolver),
+            # The research stand-in is the legacy queue CLI, as in StudioCase.
+            mock.patch.object(engines, 'LEGACY_RESEARCH', True),
             mock.patch.object(engines.slides_tool, 'Slides', lambda *a, **k: slides),
             mock.patch.object(engines.brand_skill, 'Brand', lambda *a, **k: brand),
             mock.patch.object(engines.agents, 'shared_temporary', lambda: []),

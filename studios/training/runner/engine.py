@@ -32,6 +32,7 @@ What a caller needs to know
     engine.leaving(path)                     # what deleting a training would do
     engine.delete(path, title)               # stop it, delete it, and share that
     engine.bring(folder)                     # copy a conversation's training in, and run it
+    engine.saved_work(folders)               # which saved trainings still need each older path
     engine.serving()                         # fetch on a timer, and notify, while serving
     engine.seen(); engine.tell()             # a page asked; notify if none has for a while
     engine.close()                           # end every worker; nothing half-made is kept
@@ -73,13 +74,16 @@ What a caller needs to know
   it began, whatever tool comes. `redesign` draws such a deck again from a design, when the
   person asks and never otherwise: what it was is kept as its history, and only that deck
   is made again.
-- What Harness Slides 0.14.1 lists beyond that is used where the tool lists it, and the
-  way before it where it does not: the tool's own check of what an approved design still
-  wants, icons named by their library IDs and placed by their asset IDs, a review's packets
-  in one call, its render through Drive, sources taken from the slide, intents compared
-  whatever their key order, and a reviewed deck put to the person in the tool's own design
-  session, whose rendered question the person's approval at gate 6 answers through
-  `deck_decided`, which only the page calls.
+- slides.MINIMUM is 0.16.0, the Harness Slides the installer pins: an older tool is
+  refused before any deck call. What the tool lists beyond NEEDED is used where it lists
+  it: the tool's own check of what an approved design still wants, icons named by their
+  library IDs and placed by their asset IDs, a review's packets in one call, its render
+  through Drive, sources taken from the slide, intents compared whatever their key order,
+  and a reviewed deck put to the person in the tool's own design session, whose rendered
+  question the person's approval at gate 6 answers through `deck_decided`, which only the
+  page calls. The way before each, for a tool that does not list it (Harness Slides 0.13.1
+  and 0.14.1 did not), is below that floor; the branches stay, unused by any saved deck,
+  until piece 7 of the cleanup removes them.
 - After the blueprints it goes one level at a time: the guide, the brief, each practice
   scenario, each Yoodli scenario, with the copies the training asked for made after each
   approval. A copy that cannot be made is noted with the reason and never holds it up.
@@ -328,6 +332,11 @@ STALE = {'review-stale', 'asset-hash-changed', 'asset-file-missing', 'input-miss
 # What a slides tool says of an asset an approved design names and that is not to hand.
 CANDIDATE = ('asset-unresolved', 'provider-missing', 'asset-conflict')
 ASSETS_WAIT = ('The deck is not drawn until what its approved design uses is to hand. {said}')
+NO_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
+                'here cannot do it. Update Harness Research, then start again.')
+# True lets a new run start on the legacy question queue. Only the test suites that still
+# drive the queue through its stand-in set it; piece 7 removes it with the queue.
+LEGACY_RESEARCH = False
 ASSETS_KEPT = ('What you approved the deck should say, and how it is drawn, is kept, and so is '
                'everything made before. Nothing needs approving again.')
 NOT_SUPPLIED = ('{asset} is not a picture the approved design of this deck asks you for. '
@@ -695,6 +704,12 @@ class Engine(Reviewing):
         copies = self._wanted(root, record) if copies is None else copies
         return pipeline.survey(root, record, copies, supplied, self._deck_here(root, record))
 
+    def _survey_files(self, root: Path, record: dict) -> pipeline.Survey:
+        """Where a training is, from its files alone: what this computer has for a deck is
+        not looked at, so no tool is run and nothing is asked online."""
+        supplied = self.documents.listed(root) if record.get('documents') else ()
+        return pipeline.survey(root, record, self._wanted(root, record), supplied, None)
+
     def _deck_here(self, root: Path, record: dict | None = None) -> dict | None:
         """What this computer has for a training's deck. Not looked at for a training
         that wants none. A training none of whose decks has begun has new decks, which
@@ -1006,6 +1021,14 @@ class Engine(Reviewing):
         ready = self.ready(agent)
         if not ready.ready:
             raise WorkspaceError(ready.problem)
+        # The research contract is taken before anything is written: a training on a Harness
+        # Research that cannot synthesize is refused with nothing made.
+        try:
+            contract = research_contract.snapshot(self.research())
+        except WorkspaceError:
+            contract = None
+        if contract is None and not LEGACY_RESEARCH:
+            raise WorkspaceError(NO_SYNTHESIS)
         with self.files:
             record = new_record(agent, model, chosen, form['source_scope'], effort,
                                 form.get('research_from'))
@@ -1028,10 +1051,6 @@ class Engine(Reviewing):
             try:
                 if review_policy.level(record) != 'step_by_step':
                     record['schema'] = 2
-                try:
-                    contract = research_contract.snapshot(self.research())
-                except WorkspaceError:
-                    contract = None
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
@@ -5224,6 +5243,55 @@ class Engine(Reviewing):
         record['driver'] = team.claim(space)
         self._tried(record, 'intake', home.now(), 0.0, 'kept')
         return record
+
+    # --- what saved trainings still need -----------------------------------------------
+
+    def saved_work(self, folders=()) -> dict:
+        """Which saved trainings still need each older path, as `saved_work.report` says:
+        every training in the workspace a run drives, each of `folders` that holds a run,
+        and the conversation trainings this computer remembers. Only read: no lock is
+        taken, nothing is written and nothing is asked online. A training whose files
+        cannot be read is passed over, as the runner passes it over."""
+        from studio_core import saved_work
+        found: dict[str, list[dict]] = {}
+        seen: set[Path] = set()
+        runs = [*self.trainings(), *(Path(folder) for folder in folders)]
+        for root in runs:
+            if root.resolve() in seen or not (root / RECORD).is_file():
+                continue
+            seen.add(root.resolve())
+            try:
+                record = self._load(root)
+                survey = self._survey_files(root, record)
+                done, title = survey.done, survey.session['title'] or root.name
+                level = review_policy.level(record)
+            except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError):
+                continue
+            if not record.get('research_contract') and 'research' not in done:
+                found.setdefault('research-queue', []).append(saved_work.needs(
+                    root, title, 'Its research has not run, and it was started before '
+                    'Harness Research could synthesize.'))
+            if 'review_layout' not in record and level != 'step_by_step' \
+                    and 'review:final' not in done:
+                found.setdefault('review-layout-1', []).append(saved_work.needs(
+                    root, title, 'It began before the current review layout, and its final '
+                    'review is still to come.'))
+        for entry in home.trainings():
+            root = Path(entry['path'])
+            if root.resolve() in seen or (root / RECORD).is_file():
+                continue
+            seen.add(root.resolve())
+            try:
+                session = workspace.load(root)
+                started = workspace.statuses(root, session).get('research', 'not-started')
+            except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError):
+                continue
+            if not session.get('research_contract') and started == 'not-started':
+                found.setdefault('research-queue', []).append(saved_work.needs(
+                    root, session['title'] or root.name,
+                    'A conversation training whose research has not started.'))
+        return saved_work.report(('research-queue', 'review-layout-1', 'old-harness-slides'),
+                                 found)
 
 
 def _assets_said(problem: dict, recorded: dict) -> str:

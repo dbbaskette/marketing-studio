@@ -171,9 +171,21 @@ class JobTests(JobCase):
         with self.assertRaisesRegex(WorkspaceError, 'a temporary folder other programs share'):
             agents.check_folder(self.job)
         for adapter in (Claude('true'), Codex('true')):
-            with self.assertRaisesRegex(WorkspaceError, 'Keep job folders under'):
+            with self.assertRaisesRegex(WorkspaceError, 'so no assistant may work there'):
                 adapter.run(self.a_job())
         self.assertFalse(self.job.exists())
+
+    def test_data_shared_names_this_studio_s_variable(self):
+        import home
+        shared = home.data_root().resolve().parent
+        with mock.patch.object(agents, 'shared_temporary', return_value=[shared]):
+            said = agents.data_shared()
+        self.assertIn('Training Studio', said)
+        self.assertIn('TRAINING_STUDIO_DATA', said)
+        self.assertIn('a temporary folder other programs share', said)
+        self.assertNotIn('Presentation Studio', said)
+        with mock.patch.object(agents, 'shared_temporary', return_value=[]):
+            self.assertIsNone(agents.data_shared())
 
     def test_staging_is_in_the_per_user_data_folder(self):
         import home
@@ -835,7 +847,10 @@ class ModelListTests(JobCase):
             'source': 'Anthropic model reference, cached 2026-10-06'})
 
     def test_the_list_of_claude_models_is_kept_as_data_with_its_source(self):
-        kept = json.loads((helpers.REPO / 'runner' / 'claude-code-models.json').read_text())
+        import studio_core
+        listed = Path(studio_core.__file__).resolve().with_name('claude-code-models.json')
+        self.assertEqual(settings.CLAUDE_MODELS, listed)
+        kept = json.loads(listed.read_text())
         self.assertEqual((kept['source'], kept['date']),
                          ('Anthropic model reference, cached 2026-10-06', '2026-10-06'))
         self.assertEqual(settings.claude_models()['models'], CLAUDE_LISTED)
@@ -843,7 +858,7 @@ class ModelListTests(JobCase):
         self.assertNotIn('mythos', json.dumps(kept).lower())
         # The runner's guide says how to bring the list up to date.
         guide = (helpers.REPO / 'docs' / 'runner.md').read_text()
-        for said in ('`runner/claude-code-models.json`', '`{"id", "label", "family", "levels"}`',
+        for said in ('`core/studio_core/claude-code-models.json`', '`{"id", "label", "family", "levels"}`',
                      '`{"id", "family", "alias"}`', 'Set `source` and `date`',
                      '"Opus 5.5 (claude-opus-5-5)"', 'Haiku 4.5, is offered none and given none'):
             self.assertIn(said, guide)
@@ -1054,6 +1069,52 @@ class ReachableTests(unittest.TestCase):
         self.assertEqual(found, 'the connection to service.example.com is being intercepted '
                          'on this network, or its certificate is not trusted here '
                          '(self-signed certificate in certificate chain)')
+
+
+class SavedSettingsTests(unittest.TestCase):
+    """runner.json, byte for byte, as the code wrote it before settings shared its parts."""
+
+    def test_runner_json_is_written_as_before(self):
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        base = Path(holder.name)
+        with mock.patch.dict(os.environ, {'TRAINING_STUDIO_DATA': str(base / 'data'),
+                                          'STUDIOS_CONFIG': str(base / 'studios-config.json')}):
+            settings.save(settings.Settings())
+            self.assertEqual(settings.path().read_bytes(),
+                             b'{\n  "look_for_updates": true,\n  "notify": false,\n'
+                             b'  "parallel": 2,\n  "schema": 1,\n  "step_seconds": 900,\n'
+                             b'  "training_dollars": 20.0\n}\n')
+            self.assertFalse((base / 'studios-config.json').exists())
+
+
+class NoticeFileTests(unittest.TestCase):
+    """The notice file moving to the studios config leaves, byte for byte, as the code wrote
+    it before setup shared its parts."""
+
+    def test_the_notice_file_is_written_as_before(self):
+        import os as _os
+        import tempfile as _tempfile
+        from pathlib import Path as _Path
+        from unittest import mock as _mock
+        from runner import settings as _settings, setup as _setup
+        holder = _tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        base = _Path(holder.name)
+        with _mock.patch.dict(_os.environ, {'TRAINING_STUDIO_DATA': str(base / 'data'), 'HOME': str(base),
+                                            'STUDIOS_CONFIG': str(base / 'studios-config.json')}):
+            (base / 'data').mkdir()
+            _settings.path().write_text('{"schema": 1, "agent": "codex"}\n')
+            (base / 'studios-config.json').write_text(
+                '{"schema": 1, "assistant": {"agent": "claude"}}\n')
+            self.assertEqual(_setup.migrate(), [])
+            self.assertEqual(_setup.notice_path().read_bytes(),
+                             b'{\n  "says": "Training Studio now keeps the values every studio shares '
+                             b'only in ~/studios-config.json, which said otherwise for the agent, '
+                             b'so what this computer had chosen for those is no longer used."\n}\n')
+            self.assertIn('Training Studio now keeps', _setup.notice())
+            _setup.notice_read()
+            self.assertIsNone(_setup.notice())
 
 
 if __name__ == '__main__':

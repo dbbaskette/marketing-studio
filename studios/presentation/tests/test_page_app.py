@@ -138,8 +138,16 @@ class MarkupTests(unittest.TestCase):
 
     def test_a_document_is_drawn_by_the_vendored_markdown_only(self):
         script = read('app.js')
-        self.assertIn('window.TrainingStudioMarkdown.render(', script)
+        self.assertIn('window.StudioMarkdown.render(', script)
         self.assertEqual(script.count('.render('), 1)
+
+    def test_the_page_reads_the_shared_renderer_by_its_own_name(self):
+        script = read('app.js')
+        self.assertIn('window.StudioMarkdown', script)
+        self.assertNotIn('TrainingStudioMarkdown', script)
+        renderer = read('markdown.js')
+        self.assertIn('window.StudioMarkdown = api', renderer)
+        self.assertNotIn('TrainingStudioMarkdown', renderer)
 
 
 class WordTests(unittest.TestCase):
@@ -151,7 +159,7 @@ class WordTests(unittest.TestCase):
     def test_a_deck_is_called_a_deck(self):
         for name in ('app.js', 'index.html'):
             with self.subTest(name):
-                text = read(name).replace('TrainingStudioMarkdown', '')
+                text = read(name)
                 self.assertNotRegex(text, TRAINING_WORDS)
                 self.assertNotIn('Training Studio', text)
         self.assertIn('<title>Presentation Studio</title>', read('index.html'))

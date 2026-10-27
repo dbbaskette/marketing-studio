@@ -1468,6 +1468,8 @@ class StudioCase(unittest.TestCase):
                                          'GIT_CONFIG_NOSYSTEM': '1'}),
             mock.patch.object(worker_tools, 'fetch_once', self.web.opener),
             mock.patch.object(worker_tools, 'resolve', self.web.resolver),
+            # The research stand-in is the legacy queue CLI.
+            mock.patch.object(engines, 'LEGACY_RESEARCH', True),
             # An engine made the ordinary way gets these too, so that no test can reach a
             # PDF reader, a converter or Google through the three real modules.
             mock.patch.multiple(engines, documents_kept=self.documents,

@@ -30,6 +30,12 @@ switches to that one screen. A file uploaded to the team library with **Then edi
 the desk** opens that screen with the file's text. A blog on the desk can get a Google Doc
 with **Make a Google Doc**: a private Doc of the draft in your Drive, to which later desk
 changes are sent as suggestions. Blogs open the relevant next step.
+
+## Blogs started before the desk
+
+These rules hold only for blogs started before the desk, in their step-by-step run and
+the manuscript editor. They are not rules for the desk.
+
 The editor has three explicit steps: Polish, Choose changes, Finish.
 Polish combines proofreading, copy editing and natural wording, without research.
 Fact checking, structure review and scoped revision remain available under other
