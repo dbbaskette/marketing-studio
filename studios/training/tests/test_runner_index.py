@@ -196,6 +196,19 @@ class FinishedTests(Indexed):
         self.assertIn('| The slide deck | — | left out | [its review](reviews/deck.md) |',
                       self.section('What is here'))
 
+    def test_a_material_kept_as_it_was_is_a_limitation_in_plain_words(self):
+        session = workspace.load(self.root)
+        session['decisions'].append({'at': '2030-01-02T03:04:05Z', 'artifact': 'document',
+                                     'decision': 'kept-as-is', 'reason': workspace.KEPT,
+                                     'by': 'page'})
+        workspace.store(self.root, session)
+        kept = ('The learner guide was kept as it was, after what it was built from changed: '
+                'Kept on the desk.')
+        self.assertEqual(index.readiness(self.root)['limitations'], [kept])
+        self.written()
+        self.assertIn(f'- {kept}', self.section('Open gaps and limitations'))
+        self.assertNotIn('inputs', self.page())
+
     def test_a_link_that_would_overwrite_another_file_is_refused(self):
         secret = self.root.parent / 'secret.txt'
         secret.write_text('Nothing to do with the training.\n')

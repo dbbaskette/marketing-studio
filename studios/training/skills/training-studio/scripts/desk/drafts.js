@@ -338,7 +338,9 @@ async function allAdded(path) {
     }
     return false;
   }
+  // Said, it carries on: what an earlier attempt was refused for is no longer so.
   held.unsent = null;
+  held.said = '';
   return true;
 }
 
@@ -554,8 +556,9 @@ function progressPart(found, held, lead) {
   if (held.unsent) return unsentPart(held, lead === 'unsent');
   const progress = found.progress || {};
   if (!progress.running) return null;
-  const line = make('p', '', progress.line);
-  line.setAttribute('role', 'status');
+  // The line is blank while something on the desk needs the person.
+  const line = progress.line ? make('p', '', progress.line) : null;
+  if (line) line.setAttribute('role', 'status');
   return callout('', line, progress.doing ? make('p', 'row-says', progress.doing) : null,
     progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
       : null);
@@ -720,8 +723,10 @@ async function deskDecide(route, sent, pressed) {
   } else if (answer && route === 'update') {
     toast('It is being made again from what it is built from now.');
   } else if (answer && route === 'send') {
-    toast(list(answer.problems).length ? list(answer.problems).join(' ')
-      : 'Sent to its copies.');
+    // What Google refused is said by material: {name: sentence}.
+    const problems = answer.problems && typeof answer.problems === 'object'
+      ? Object.values(answer.problems).filter(Boolean).map(String) : [];
+    toast(problems.length ? problems.join(' ') : 'Sent to its copies.');
   }
   if (pressed) pressed.disabled = false;
   if (view.sheet && DESK_SHEETS.includes(view.sheet)) drawSheet();

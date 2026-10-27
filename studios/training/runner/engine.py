@@ -3889,6 +3889,8 @@ class Engine(Reviewing):
         with self.files:
             root = self._on_desk(path)[0]
             session = workspace.load(root)
+            if session['levels'] and level is None:
+                raise WorkspaceError('Choose a level.')
             if session['levels'] and level not in session['levels'] \
                     or not session['levels'] and level is not None:
                 raise WorkspaceError(f'This training has no level {level}.')

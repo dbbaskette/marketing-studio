@@ -108,6 +108,9 @@ REWORDED = (
     _reword(r'(\S+) was accepted as it was after its inputs changed: (.*)',
             lambda m: f'{named(m[1])} was accepted as it was, after what it was built from '
                       f'changed: {m[2]}'),
+    _reword(r'(\S+) was kept as it was after its inputs changed: (.*)',
+            lambda m: f'{named(m[1])} was kept as it was, after what it was built from '
+                      f'changed: {m[2]}'),
     _reword(r'(\S+) has no export(.*)', lambda m: f'{named(m[1])} has no Word copy{m[2]}'),
     _reword(r'The export of (\S+) is out of date',
             lambda m: f'The Word copy of {workspace.label(m[1])} is out of date'),

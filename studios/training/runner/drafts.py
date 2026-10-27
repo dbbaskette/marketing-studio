@@ -509,9 +509,10 @@ def view(engine, root) -> dict:
         'flow': FLOW, 'title': session['title'], 'levels': [level or '' for level in levels],
         'progress': {'running': running, 'doing': doing,
                      'started_at': record.get('started_at'), 'minutes': minutes,
+                     # Said only while nothing on the desk needs the person.
                      'line': NOTHING_NEEDED.format(
                          n=minutes, minutes='minute' if minutes == 1 else 'minutes')
-                     if running else ''},
+                     if running and not needed else ''},
         'needs': needed, 'cards': cards,
         'sources': {'account': research_view.account(root / 'research', questions),
                     'plan': questions,

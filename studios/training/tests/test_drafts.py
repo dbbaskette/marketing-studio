@@ -322,6 +322,17 @@ class DeskHoldTests(DeckCase):
         self.assertEqual(self.says(root, 'deck@101'), 'Built from an earlier guide.')
         self.assertIsNone(self.says(root, 'document@101'))
 
+    def test_a_running_desk_that_needs_the_person_does_not_say_nothing_is_needed(self):
+        root = self.desk_deck()
+        self.guide_edit(root)
+        with mock.patch.object(self.engine, '_state',
+                               return_value=('working', 'Writing the practice scenario.')):
+            found = drafts.view(self.engine, root)
+        self.assertEqual(found['needs'], ['the level 101 slide deck'])
+        self.assertTrue(found['progress']['running'])
+        self.assertIsInstance(found['progress']['minutes'], int)
+        self.assertEqual(found['progress']['line'], '')
+
     def test_row_145_update_remakes_only_what_was_held(self):
         root = self.desk_deck()
         outlines, sections = self.drawn_count()
@@ -571,6 +582,15 @@ class DeskReadyTests(DeckCase):
             self.engine.mark_ready(root, 'intake', seen=self.seen(root, 'intake'))
         with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
             self.engine.mark_level_ready(root, '101', {})
+
+    def test_a_level_of_a_levelled_training_must_be_chosen(self):
+        root = self.desk()
+        commits = self.log()
+        with self.assertRaisesRegex(WorkspaceError, '^Choose a level.$'):
+            self.engine.mark_level_ready(root, None, {})
+        with self.assertRaisesRegex(WorkspaceError, '^This training has no level 999.$'):
+            self.engine.mark_level_ready(root, '999', {})
+        self.assertEqual(self.log(), commits)
 
     def test_row_148_a_level_is_marked_ready_in_order(self):
         root = self.begin(flow='desk', levels=['101'])

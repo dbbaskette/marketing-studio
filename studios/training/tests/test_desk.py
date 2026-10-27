@@ -1256,6 +1256,9 @@ class PlainWordsTests(PageCase):
                 ('brief was accepted as it was after its inputs changed: Fine',
                  'The brief was accepted as it was, after what it was built from changed: '
                  'Fine'),
+                ('document@101 was kept as it was after its inputs changed: Kept on the desk.',
+                 ('The level 101 learner guide was kept as it was, after what it was built '
+                  'from changed: Kept on the desk.')),
                 ('brief has no export, and the Yoodli scenario names it as the file to upload',
                  'The brief has no Word copy, and the Yoodli scenario names it as the file to '
                  'upload'),
@@ -7025,6 +7028,22 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                          [('add', 'runbook.md'), ('add', 'notes.docx'),
                           ('add', 'notes.docx'), ('done', None)])
 
+    def test_a_notice_on_the_desk_goes_once_all_of_them_is_said(self):
+        refused_add = {'status': 400, 'body': {'error': 'It could not be read.'}}
+        said = 'Settle what needs you on the level 101 blueprint before marking it ready.'
+        answers = self.start_answers(ok({}), refused_add, ok({}))
+        answers['POST /api/drafts/ready'] = [{'status': 409, 'body': {'error': said}}]
+        result = self.run_page(answers, self.start_steps(
+            {'attach': 'Add documents', 'files': self.FILES}, {'click': 'Start'},
+            {'click': 'Mark ready'}, {'snapshot': 'refused'},
+            {'click': 'Start without it'}, {'snapshot': 'after'}))
+        self.assertIn(said, result['snapshots']['refused']['text'])
+        self.assertEqual([body.get('action') for address, body in self.posts(result)
+                          if address == '/api/documents'], ['add', 'add', 'done'])
+        after = result['snapshots']['after']
+        self.assertIn('That is all of them. It carries on from here.', after['toasts'])
+        self.assertNotIn(said, after['text'])
+
     def test_a_refused_all_of_them_is_said_and_the_documents_card_comes_back(self):
         said = 'Add at least one document that can be read first, or let research use the web.'
         unread = a_document('notes.docx', 5, 'It is not a document this can read.')
@@ -7100,6 +7119,24 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         shot = result['snapshots']['stopped']
         self.assertIn(said, shot['text'])
         self.assertIn(said, [line.strip() for line in shot['text'].split('\n')])
+
+    def test_a_copy_google_refused_is_said_not_called_sent(self):
+        said = 'Google did not answer. Send it again in a few minutes.'
+        cards = [a_card(f'{base}@101', actions=('ready', 'send', 'download'))
+                 for base, _ in DESK_KINDS]
+        refused = a_desk(*cards, levels=('101',), made=[],
+                         problems={'blueprint@101': said})
+        sent = a_desk(*cards, levels=('101',), made=['blueprint@101'], problems={})
+        result = self.open_desk(self.on_desk(a_desk(*cards, levels=('101',)), **{
+            'POST /api/drafts/send': [refused, sent]}),
+            [{'click': 'Send to its copies'}, {'snapshot': 'refused'},
+             {'click': 'Send to its copies'}, {'snapshot': 'sent'}])
+        self.assertEqual(self.posts(result)[0], ('/api/drafts/send', {
+            'path': str(self.root), 'name': 'blueprint@101'}))
+        refused_toasts = result['snapshots']['refused']['toasts']
+        self.assertIn(said, refused_toasts)
+        self.assertNotIn('Sent to its copies.', refused_toasts)
+        self.assertIn('Sent to its copies.', result['snapshots']['sent']['toasts'])
 
     def test_a_teammate_s_desk_has_no_edit_controls(self):
         cards = [a_card(f'{base}@101', actions=('download',)) for base, _ in DESK_KINDS]

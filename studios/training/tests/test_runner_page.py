@@ -2835,6 +2835,17 @@ class DeskPageTests(PageCase):
                          ['cards', 'flow', 'job', 'levels', 'needs', 'progress', 'sources',
                           'team', 'title'])
 
+    def test_reading_the_desk_changes_nothing(self):
+        path = self.desk(levels=['101'], materials=['document', 'brief'])
+        root = Path(path)
+        saved = (root / '.training-studio' / 'run.json', workspace.session_path(root))
+        before = [file.read_bytes() for file in saved]
+        head = self.git('rev-parse', 'HEAD').strip()
+        for _ in range(2):
+            self.assertEqual(self.get('drafts', path=path)['flow'], 'desk')
+        self.assertEqual([file.read_bytes() for file in saved], before)
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), head)
+
     def test_a_desk_training_takes_no_document_after_its_research(self):
         sent = base64.b64encode(b'Capacity holds only when more than one instance is '
                                 b'running.\n').decode('ascii')
