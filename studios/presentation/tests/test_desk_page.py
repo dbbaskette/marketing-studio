@@ -8,6 +8,7 @@ tests' stand-ins, changed only where a test says so. Nothing starts an agent, lo
 computer or touches the network.
 """
 import unittest
+from datetime import UTC, datetime
 
 import runner_support
 import test_desk
@@ -213,6 +214,120 @@ class StartTests(DeskPageCase):
         (_, body), = self.posts(result)
         self.assertEqual((body['form']['route'], body['form']['level']), ('existing', 'polish'))
         self.assertNotIn('flow', body['form'])
+
+
+class ProgressTests(DeskPageCase):
+    """Task 1.13: before the desk, progress, with only the look pick to ask for."""
+
+    def working(self, path: str, **changes) -> dict:
+        """The desk deck as it is while its first steps run, before it reaches the desk."""
+        shown = self.run_of(path)
+        desk = {**shown['desk'], 'arrived': False, 'working': None,
+                'progress': {'minutes_left': None,
+                             'started_at': datetime.now(UTC).isoformat()}}
+        shown.update({'state': 'working', 'gate': None, 'sentence': 'Drafting the outline.',
+                      'desk': desk, 'question': None, 'problem': None, **changes})
+        return shown
+
+    def test_progress_says_nothing_is_needed_and_how_long(self):
+        path = self.desk_deck()
+        view = self.working(path)
+        result = self.open_deck(path, view, [{'snapshot': 'progress'}])
+        shot = result['snapshots']['progress']
+        lines = shot['text'].split('\n')
+        at = lines.index(NOTHING_NEEDED)
+        self.assertEqual(lines[at + 1], NO_RECORD)
+        self.assertEqual(shot['ledes'], [NOTHING_NEEDED])
+        self.assertIn('Drafting the outline.', shot['text'])
+        self.assertEqual(shot['filled'], [])
+        # A record of the steps here says how long, in piece 3's words.
+        timed = self.working(path)
+        timed['desk']['progress']['minutes_left'] = 4
+        shot = self.open_deck(path, timed, [{'snapshot': 'timed'}])['snapshots']['timed']
+        self.assertIn('Nothing needed from you. The deck opens here when it is ready, in about '
+                      '4 minutes.', shot['text'])
+        self.assertNotIn(NO_RECORD, shot['text'])
+
+    def test_the_look_pause_leads_the_screen(self):
+        path = self.started(flow='desk', look='pick')
+        view = self.run_of(path)
+        self.assertEqual(view['gate']['name'], 'gate:look')
+        self.assertFalse(view['desk']['arrived'])
+        looks = view['gate']['offered']['looks']
+        picked = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'snapshot': 'pause'}, {'click': looks[1]['name']},
+            {'click': 'Draw the deck in this look'}, {'snapshot': 'picked'}],
+            **{'POST /api/desk-look': [ok(picked)]})
+        pause = result['snapshots']['pause']
+        self.assertEqual(pause['parts'][0], 'Pick the look')
+        lines = pause['text'].split('\n')
+        self.assertEqual(lines[lines.index('Pick the look') + 1], LOOK_PAUSE)
+        self.assertEqual(pause['filled'], ['Draw the deck in this look'])
+        # The pick is the only thing asked: nothing else on the screen is a decision.
+        for gone in ('Approve', 'Ask for changes', 'Choose another brand', NOTHING_NEEDED):
+            self.assertNotIn(gone, pause['buttons'] + [pause['text']])
+        self.assertEqual(self.posts(result),
+                         [('/api/desk-look', {'path': path, 'look': looks[1]['id']})])
+        # What the page sends is what the server takes.
+        after = self.post('desk-look', {'path': path, 'look': looks[1]['id']})
+        self.assertEqual(after['gate']['name'], 'gate:build')
+
+    def test_a_look_pick_is_asked_for_before_it_is_sent(self):
+        path = self.started(flow='desk', look='pick')
+        result = self.open_deck(path, self.run_of(path), [
+            {'click': 'Draw the deck in this look'}, {'snapshot': 'unpicked'}])
+        self.assertIn('Pick a look first.', result['snapshots']['unpicked']['text'])
+        self.assertEqual(self.posts(result), [])
+
+    def test_a_question_and_a_problem_come_before_progress(self):
+        path = self.desk_deck()
+        view = self.working(path, question={'id': 'q1', 'from': 'The worker drafting the outline',
+                                            'text': 'Should rollback come first?'},
+                            problem={'state': 'failed', 'why': 'The outline step timed out.',
+                                     'action': 'more-time', 'seconds': 600})
+        result = self.open_deck(path, view, [{'snapshot': 'asked'}])
+        shot = result['snapshots']['asked']
+        text = shot['text']
+        asked = text.index('Should rollback come first?')
+        failed = text.index('The outline step timed out.')
+        self.assertLess(asked, failed)
+        self.assertLess(failed, text.index(NOTHING_NEEDED) if NOTHING_NEEDED in text
+                        else text.index('Drafting the outline.'))
+        self.assertEqual(shot['parts'][0], 'Needs you')
+        self.assertIn('Give it more time and try again', shot['buttons'])
+        self.assertEqual(shot['filled'], ['Send answer'])
+
+    def test_a_note_on_a_preview_is_one_note_box(self):
+        path = self.desk_deck()
+        progress = {'incomplete': False, 'slides': [
+            {'ref': 'a' * 32, 'number': 3, 'title': 'Capacity holds', 'part': 'section-1',
+             'revision': 'b' * 64}]}
+        view = self.working(path, build_progress=progress)
+        result = self.open_deck(path, view, [
+            {'snapshot': 'previews'},
+            {'fill': 'How should this slide change?', 'value': 'Fewer words.'},
+            {'click': 'Send note'}, {'snapshot': 'sent'}],
+            **{'POST /api/build-feedback': [ok(view)]})
+        shot = result['snapshots']['previews']
+        self.assertIn('Slides taking shape', shot['parts'])
+        self.assertIn('How should this slide change?', shot['text'])
+        self.assertIn('Send note', shot['buttons'])
+        for gone in ('Send slide feedback', 'Note for the next step',
+                     'Ask for changes to this slide'):
+            self.assertNotIn(gone, shot['text'])
+            self.assertNotIn(gone, shot['buttons'])
+        self.assertEqual(self.posts(result), [('/api/build-feedback', {
+            'path': path, 'ref': 'a' * 32, 'note': 'Fewer words.', 'number': 3})])
+
+    def test_a_gated_deck_keeps_its_own_screen(self):
+        path = self.started()
+        result = self.open_deck(path, self.run_of(path), [{'snapshot': 'gated'}])
+        shot = result['snapshots']['gated']
+        self.assertIsNone(self.run_of(path)['desk'])
+        self.assertEqual(shot['filled'], ['Approve'])
+        self.assertNotIn(NOTHING_NEEDED, shot['text'])
+        self.assertNotIn('Section 1', shot['headings'])
 
 
 if __name__ == '__main__':

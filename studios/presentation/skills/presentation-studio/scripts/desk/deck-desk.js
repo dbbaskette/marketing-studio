@@ -251,7 +251,259 @@
     return [form, uploads];
   }
 
-  window.deckDesk = { init, opens, start };
+  // --- what both screens share --------------------------------------------------------------
+
+  // A change sent from the desk. Its answer is the deck's view, drawn at once. A refusal is
+  // said beside what was pressed, or as a toast, and nothing changes.
+  async function act(route, body, pressed, done, problem) {
+    if (h.view.busy) return null;
+    const turn = h.view.turn;
+    const path = h.view.path;
+    h.view.busy = true;
+    if (pressed) pressed.disabled = true;
+    let found;
+    try {
+      found = await h.send(route, body);
+    } catch (failure) {
+      h.view.busy = false;
+      if (pressed) pressed.disabled = false;
+      if (problem) h.say(problem, failure.message + ' Nothing was changed.');
+      else h.toast(failure.message + ' Nothing was changed.');
+      return null;
+    }
+    h.view.busy = false;
+    if (done) h.toast(done);
+    if (turn === h.view.turn && h.view.screen === 'deck' && h.view.path === path) {
+      h.view.run = found;
+      h.paintDeck(false);
+    }
+    h.refresh();
+    return found;
+  }
+
+  // What comes before everything else: a teammate's hold, a question, a step that stopped
+  // (with Try again, Give it more time, or Resume at the spend limit) and a team notice.
+  function interruptions(run, lead, title) {
+    const read = h.theirs(run);
+    return [
+      read && (run.driver || run.state !== 'finished') ? ['theirs', [run.driver, run.taken,
+        run.notice, run.last_shared, run.kept, title], () => h.theirsPart(run, false)] : null,
+      run.question && !read ? ['question', [run.question, title],
+        () => h.questionPart(run, title)] : null,
+      run.problem ? ['problem', [run.problem, lead, read, run.build_sections],
+        () => h.problemPart(run, lead === 'problem')] : null,
+      !read && run.notice ? ['notice', [run.notice, run.clash, run.kept],
+        () => h.noticePart(run)] : null,
+    ];
+  }
+
+  function above(run) {
+    const route = h.routeWords(run);
+    const runs = h.theirs(run) ? (run.driver ? 'Run by ' + h.nameOf(run.driver)
+      : 'Nobody is running it') : run.driver ? 'Runs on this computer' : '';
+    return [make('span', '', [route, 'On the desk', runs].filter(Boolean).join(' · '))];
+  }
+
+  // Pause, Resume and Delete, under More. Stop on the desk is the redraw's own, on its line.
+  function moreFor(run) {
+    if (h.theirs(run)) return null;
+    const items = [];
+    const steer = (label, action) => {
+      const node = h.button(label, 'menu-item', () => h.steer(action, node), 'desk ' + action);
+      items.push(node);
+    };
+    if (run.state === 'working') steer('Pause', 'pause');
+    if (['paused', 'stopped'].includes(run.state) && !(run.problem && run.problem.action)) {
+      steer('Resume', 'resume');
+    }
+    items.push(h.button('Delete this deck', 'menu-item', h.askDelete('delete'), 'delete'));
+    return h.moreMenu('More', items, 'desk-more');
+  }
+
+  // --- progress: before the deck reaches the desk -------------------------------------------
+
+  function progress(run, fresh) {
+    const read = h.theirs(run);
+    const gate = run.gate;
+    const pause = !read && gate && gate.name === 'gate:look' && gate.offered
+      && !gate.offered.chosen;
+    const lead = h.view.sheet || read ? '' : run.question ? 'answer'
+      : run.problem && run.problem.action ? 'problem' : pause ? 'look'
+        : ['paused', 'stopped'].includes(run.state) ? 'resume' : '';
+    h.view.lead = lead;
+    const title = run.title || 'Untitled';
+    const desk = run.desk;
+    const previews = run.build_progress && h.list(run.build_progress.slides).length;
+    h.placeParts({ title, above: above(run), back: true, actions: progressActions(run, lead),
+      mark: ['progress', title, run.state, lead, read, run.driver, Boolean(run.question),
+        run.problem] }, [
+      ...interruptions(run, lead, title),
+      pause ? ['look-pause', [gate, lead], () => lookPause(run, lead === 'look')]
+        : ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
+          run.problem], () => progressPart(run)],
+      previews ? ['previews', [run.build_progress, read, run.mine],
+        () => previewsCard(run)] : null,
+    ], fresh);
+    h.tidyPictures();
+  }
+
+  // Pause and Stop while it works, Resume once it is paused or stopped, then More.
+  function progressActions(run, lead) {
+    if (h.theirs(run)) return [];
+    const actions = [];
+    const press = (label, kind, action) => {
+      const node = h.capsule(label, kind, () => h.steer(action, node), action);
+      actions.push(node);
+    };
+    if (run.state === 'working') press('Pause', '', 'pause');
+    if (['working', 'waiting', 'paused'].includes(run.state)) press('Stop', 'quiet', 'stop');
+    if (['paused', 'stopped'].includes(run.state) && !(run.problem && run.problem.action)) {
+      press('Resume', lead === 'resume' ? 'filled' : '', 'resume');
+    }
+    actions.push(h.moreMenu('More', [h.button('Delete this deck', 'menu-item',
+      h.askDelete('delete'), 'delete')], 'desk-more'));
+    return actions;
+  }
+
+  // The progress line: nothing is needed, and about how long, in piece 3's words; then the
+  // step it is at, in words, and how long it has taken.
+  function progressPart(run) {
+    const found = run.desk.progress || {};
+    const node = make('div', 'intro');
+    const asked = Boolean(run.question || (run.problem && run.problem.action));
+    if (run.state === 'working' && !asked) {
+      const left = found.minutes_left;
+      const timed = typeof left === 'number' && left > 0;
+      const lede = make('p', 'lede', timed && kit ? kit.estimate({ minutes_left: left },
+        'The deck') : NOTHING_NEEDED);
+      lede.setAttribute('role', 'status');
+      h.add(node, lede, timed ? null : make('p', 'quiet', NO_RECORD));
+    } else if (run.state === 'paused') {
+      h.add(node, make('p', 'lede', 'Paused. Nothing more is started until you resume it. '
+        + 'Everything made so far is kept.'));
+    } else if (['stopped', 'failed'].includes(run.state) && !run.problem) {
+      h.add(node, make('p', 'lede', 'Stopped before the deck was ready. Everything made so far '
+        + 'is kept; Resume carries on from where it stopped.'));
+    } else {
+      h.add(node, make('p', 'lede', 'The deck opens here when it is ready.'));
+    }
+    if (run.state === 'working' && run.sentence) h.add(node, make('p', '', run.sentence));
+    if (run.state === 'working' && found.started_at && kit) {
+      h.add(node, make('p', 'quiet desk-clock', kit.clock(found)));
+    }
+    return node;
+  }
+
+  // The one pause a desk deck makes, when its start chose to pick the look. It leads the
+  // screen, and nothing else on it asks for a decision.
+  function lookPause(run, lead) {
+    const gate = run.gate;
+    const offered = gate.offered;
+    const path = h.view.path;
+    const key = path + '\n' + gate.round;
+    const pick = held.looks[key] || (held.looks[key] = { look: '', words: '' });
+    const node = h.card('Pick the look', 'card-needs');
+    h.add(node, make('p', '', LOOK_PAUSE),
+      make('p', 'quiet', 'Made in ' + (gate.made_in || 'your brand') + '. The brand drew one '
+        + 'slide of your outline in each of its looks. The look you pick sets the colours, '
+        + 'what each colour means and how cards are drawn on every slide.'),
+      window.DeckPanels.lookPicker({
+        name: 'the deck', looks: h.list(offered.looks), defaultId: offered.default,
+        sheet: offered.sheet, notes: h.list(offered.notes), failed: offered.failed,
+        picked: { choice: pick.look, words: pick.words },
+        changed: (now) => {
+          pick.look = now.choice;
+          pick.words = now.words;
+        },
+        picture: (number, alt) => h.picture({ kind: 'look', ref: number === 0 ? 'sheet'
+          : number }, alt, gate.round) }));
+    const problem = h.alertLine('look-problem');
+    if (offered.failed) {
+      const again = h.capsule('Draw the looks again', '', () => act('desk-look-again',
+        { path }, again, 'The looks are being drawn again.', problem), 'look-again');
+      const plain = h.capsule('Use the brand’s default look', lead ? 'filled' : '', () => act(
+        'desk-look', { path, look: 'default' }, plain, 'The deck is drawn in the brand’s '
+          + 'default look.', problem), 'look-default');
+      return h.add(node, problem, bar(plain, again));
+    }
+    const go = h.capsule('Draw the deck in this look', lead ? 'filled' : '', () => {
+      if (!pick.look) {
+        h.say(problem, 'Pick a look first.');
+        return;
+      }
+      const named = h.list(offered.looks).find((one) => one.id === pick.look);
+      const words = (pick.words || '').trim();
+      act('desk-look', { path, look: pick.look, ...(words ? { note: words } : {}) }, go,
+        'The deck is drawn in ' + (named ? named.name : 'that look') + ' now.', problem);
+    }, 'look-pick');
+    return h.add(node, problem, bar(go));
+  }
+
+  // The slides as they are drawn, each with one box for a note to its section.
+  function previewsCard(run) {
+    const found = run.build_progress;
+    const read = h.theirs(run);
+    const node = h.card('Slides taking shape');
+    h.add(node, make('p', 'quiet', found.incomplete ? 'The render stopped before it '
+      + 'finished. These previews are kept so you can look at them.'
+      : 'Each slide shows here as it is drawn. A note on one goes to the part of the deck '
+        + 'that draws it.'));
+    const slides = h.list(found.slides).map((one) => ({ ...one, partial: true,
+      where: h.pictureOf(h.view.path, { kind: 'progress', ref: one.ref }), mark: one.ref }));
+    if (slides.length) {
+      h.add(node, h.pager(slides, (one) => [one.part !== 'whole' && run.mine && !read
+        ? previewNote(one) : null]));
+    }
+    return node;
+  }
+
+  function previewNote(one) {
+    const path = h.view.path;
+    const key = path + '\n' + one.ref;
+    const kept = held.previews[key] || (held.previews[key] = { note: '' });
+    const id = 'preview-note-' + one.ref;
+    const box = noteField(id, 'How should this slide change?', kept, 'Slide ' + one.number);
+    const go = h.capsule('Send note', '', async () => {
+      const note = kept.note.trim();
+      if (!note) {
+        h.refuse(id, NO_NOTE);
+        return;
+      }
+      const sent = await sendFeedback(path, one, note, go);
+      if (!sent) return;
+      kept.note = '';
+      const input = h.byId(id);
+      if (input) input.value = '';
+    }, 'preview-send ' + one.ref);
+    return h.add(make('div', 'answer'), box, bar(go));
+  }
+
+  // A note on a slide while it is drawn: kept for its section, as the page always sent it.
+  async function sendFeedback(path, one, note, pressed) {
+    if (h.view.busy) return false;
+    h.view.busy = true;
+    pressed.disabled = true;
+    try {
+      // Its number too: a note that comes after the section is drawn is kept for the desk.
+      const found = await h.send('build-feedback', {path, ref: one.ref, note, number: one.number});
+      h.view.busy = false;
+      h.toast('Your note on slide ' + one.number + ' is kept for the part of the deck that '
+        + 'draws it.');
+      if (path === h.view.path) {
+        h.view.run = found;
+        h.paintDeck(false);
+      }
+      return true;
+    } catch (failure) {
+      h.view.busy = false;
+      h.refuse('preview-note-' + one.ref, failure.message + ' Your note is still here.');
+      return false;
+    } finally {
+      pressed.disabled = false;
+    }
+  }
+
+  window.deckDesk = { init, opens, start, progress };
   // The page waits for this script before it begins; it begins now.
   if (typeof window.deckDeskWaits === 'function') window.deckDeskWaits();
 }());

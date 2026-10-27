@@ -5990,6 +5990,11 @@ function deckActions(run, lead) {
 
 function paintDeck(fresh) {
   const run = view.run;
+  // A deck started on the desk is drawn by deck-desk.js until it reaches the desk.
+  if (window.deckDesk.opens(run) && !run.desk.arrived) {
+    window.deckDesk.progress(run, fresh);
+    return;
+  }
   const title = run.title || 'Untitled';
   const read = theirs(run);
   const driver = run.driver || null;
