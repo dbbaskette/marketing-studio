@@ -933,6 +933,12 @@ VOICE_JSON = (
     'what changed.'
 )
 NO_GUIDE = 'Choose a voice guide that is not retired.'
+DOC_PENDING = (
+    'The Google Doc this draft came from has suggestions still waiting for its owner, listed in '
+    'doc_suggestions with the part and the words each would remove and insert. Do not suggest '
+    'the same change again: the Doc already suggests it. You may still suggest rewording words '
+    'they cover where a sentence needs it; such a suggestion makes theirs moot.'
+)
 VERDICTS = {
     'supported': 'supported',
     'not-in-sources': 'not-in-sources',
@@ -960,6 +966,25 @@ def _lenses():
         if keeping:
             lines.append(line)
     return 'Editing lenses for this copy edit:\n' + '\n'.join(lines)
+
+
+def _doc_pending(root, ident, draft):
+    """The Doc's pending suggestions placed on this draft, as a review job reads them."""
+    import google_pending
+
+    texts = {}
+    found = []
+    for mark in google_pending.on_desk(root, ident, draft):
+        text = texts.setdefault(mark['part'], desk.text_of(draft, mark['part']))
+        found.append(
+            {
+                'part': mark['part'],
+                'removes': text[mark['at'] : mark['at'] + mark['length']],
+                'inserts': mark['inserted'],
+                'beside': text[max(0, mark['at'] - 40) : mark['at'] + mark['length'] + 40],
+            }
+        )
+    return found
 
 
 def _payload(draft, extra):
@@ -1054,6 +1079,13 @@ def request(root, ident, draft, tool, level=None, guide=None):
         guidance = FEEDBACK + '\n\n' + blog_runner.STAGES['review'][2] + ' '
         guidance += manuscript_editor.CHECKS['shape'] + '\n\n' + _reference('review', 'shape.md')
         guidance += '\n\n' + shared + '\n' + FEEDBACK_JSON
+    if tool in ('copyedit', 'humanize'):
+        pending = _doc_pending(root, ident, draft)
+        if pending:
+            # Other people's suggestions waiting in the blog's Google Doc: not repeated, but
+            # their words may still be reworded where a sentence needs it.
+            payload['doc_suggestions'] = pending
+            guidance += '\n\n' + DOC_PENDING
     return kinds[tool], payload, guidance, meta
 
 
@@ -2520,11 +2552,11 @@ def google_plan(root, ident, mode):
             row['settled'] = True
         elif row.get('id') not in current:
             gone.append(row)
-    waiting, covers, later = 0, {}, 0
+    waiting, covers, later, theirs = 0, {}, 0, 0
     if gone:
         waiting, proposals = len(gone) + len(proposals), []
     if proposals:
-        proposals, also, unplaced, covers, later = _not_pending(
+        proposals, also, unplaced, covers, later, theirs = _not_pending(
             inline, base['document'], proposals, paragraphs
         )
         waiting += also
@@ -2594,6 +2626,7 @@ def google_plan(root, ident, mode):
         'comments': sum(1 for p in proposals if p['kind'] == 'comment'),
         'left': left,
         'later': later,
+        'doc_overlap': theirs,
         'sent_before': before,
         'waiting': waiting,
     }
@@ -2904,7 +2937,7 @@ def _not_pending(inline, document, proposals, expected):
             continue
         place = json.dumps([found.get('paragraph'), found.get('near')])
         groups.setdefault(place, []).append(proposal)
-    free, waiting, moved, used, stopped = [], 0, [], set(), set()
+    free, waiting, moved, used, stopped, theirs = [], 0, [], set(), set(), 0
     for group in groups.values():
         states = []
         for proposal in group:
@@ -2912,6 +2945,8 @@ def _not_pending(inline, document, proposals, expected):
             meant = ' '.join((found.get('text') or '').split())
             where = _where(texts, proposal, found)
             if where is not None and not where[3]:
+                if where[1] not in mine:
+                    theirs += 1  # Words someone else's suggestion also changes: a comment.
                 states.append(('wait' if where[1] in mine else 'move', proposal))
             elif (
                 where is None
@@ -2950,7 +2985,7 @@ def _not_pending(inline, document, proposals, expected):
             later += 1  # Every paragraph near it has a change in this plan: it goes next time.
         else:
             free.append(comment)
-    return free, waiting, unplaced, covers, later
+    return free, waiting, unplaced, covers, later, theirs
 
 
 def _ours(inline, texts):

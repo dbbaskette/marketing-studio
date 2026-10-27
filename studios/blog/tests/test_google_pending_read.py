@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 import blog_runner
 import desk
+import desk_finish
 import google_drive
 import google_intake
 import google_model as gm
@@ -260,6 +261,32 @@ class PendingRecordTests(PendingDocCase):
         self.assertEqual([m['kind'] for m in shown['marks']], ['replacement'])
 
 
+class PendingReviewTests(PendingDocCase):
+    """Copy edit and Humanize are told what the Doc already suggests."""
+
+    def test_the_review_jobs_are_told_the_docs_pending_suggestions(self):
+        self.start()
+        draft = desk.read(self.root, self.ident)
+        for tool, level in (('copyedit', None), ('humanize', 'light')):
+            with self.subTest(tool=tool):
+                _, payload, guidance, _ = desk_finish.request(
+                    self.root, self.ident, draft, tool, level
+                )
+                self.assertIn(desk_finish.DOC_PENDING, guidance)
+                self.assertIn('Do not suggest the same change again', guidance)
+                self.assertEqual(
+                    [(p['removes'], p['inserts']) for p in payload['doc_suggestions']],
+                    [('simple and ', 'quite '), ('', 'Truly ')],
+                )
+        _, payload, guidance, _ = desk_finish.request(self.root, self.ident, draft, 'feedback')
+        self.assertNotIn(desk_finish.DOC_PENDING, guidance)
+        import google_pending
+
+        google_pending.forget(self.root, self.ident)
+        _, payload, guidance, _ = desk_finish.request(self.root, self.ident, draft, 'copyedit')
+        self.assertNotIn('doc_suggestions', payload)
+
+
 class PendingSendTests(PendingDocCase):
     """Our changes beside theirs land exactly, or go as comments, and theirs stay theirs."""
 
@@ -286,6 +313,9 @@ class PendingSendTests(PendingDocCase):
         )
         plan = self.act('google-plan', mode='auto')
         self.assertEqual(plan['left'], 0)
+        self.assertEqual(
+            plan['doc_overlap'], 1, 'one change is over words a Doc suggestion changes'
+        )
         result = self.act('google-send', plan=plan['plan'], confirmed=True)
         self.assertEqual(result['status'], 'verified-pending')
         comments = [p for p in plan['proposals'] if p['kind'] == 'comment']

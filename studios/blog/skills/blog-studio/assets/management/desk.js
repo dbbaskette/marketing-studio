@@ -779,6 +779,7 @@ function sDeskGoogleSaid(plan){
   else if(n)said+=' Its owner accepts or rejects each suggestion.';
   if(plan.waiting)said+=' '+plan.waiting+(plan.waiting===1?' change waits':' changes wait')+' for the Doc’s owner to decide the earlier suggestion in its paragraph, and '+(plan.waiting===1?'goes':'go')+' next time.';
   if(plan.sent_before)said+=' '+plan.sent_before+(plan.sent_before===1?' change was':' changes were')+' sent before.';
+  if(plan.doc_overlap)said+=' '+plan.doc_overlap+' of these '+(plan.doc_overlap===1?'changes':'change')+' words a Doc suggestion also changes, so '+(plan.doc_overlap===1?'it goes':'they go')+' as '+(plan.doc_overlap===1?'a comment':'comments')+'; the Doc’s suggestion stays for its owner.';
   if(plan.later)said+=' '+plan.later+(plan.later===1?' note goes':' notes go')+' with the next send (nearby paragraphs already have changes).';
   if(plan.left)said+=' '+plan.left+(plan.left===1?' change':' changes')+' could not be placed in the Doc: pull the latest Doc and check again.';
   return said;

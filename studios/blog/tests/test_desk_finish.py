@@ -2687,7 +2687,9 @@ class GooglePairingTests(unittest.TestCase):
         inline = fixtures.paragraph_doc(*[([(line + '\n', {})], {}, None) for line in doc_lines])
         found, _, expected = desk_finish.google_changes(baseline, body)
         document = {'document_id': 'fixture-doc', 'tab_ids': ['t.0']}
-        free, waiting, unplaced, _, _ = desk_finish._not_pending(inline, document, found, expected)
+        free, waiting, unplaced, _, _, _ = desk_finish._not_pending(
+            inline, document, found, expected
+        )
         return [(f['kind'], f['before']) for f in free], waiting, unplaced, free
 
     def test_a_quote_found_in_another_paragraph_goes_as_a_comment_on_a_certain_one(self):
@@ -2756,7 +2758,7 @@ class GooglePairingTests(unittest.TestCase):
         inline = fixtures.paragraph_doc(([('Keep it short.\n', {})], {}, None))
         found, _, expected = desk_finish.google_changes('Keep it short.\n', '### Keep it brief.\n')
         document = {'document_id': 'fixture-doc', 'tab_ids': ['t.0']}
-        free, waiting, unplaced, _, later = desk_finish._not_pending(
+        free, waiting, unplaced, _, later, _ = desk_finish._not_pending(
             inline, document, found, expected
         )
         self.assertEqual(([f['kind'] for f in free], waiting, unplaced, later), (['edit'], 0, 0, 1))
