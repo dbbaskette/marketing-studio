@@ -1660,6 +1660,8 @@ def _simulated(old, edits):
         keep_start, keep_end = google_suggestions.trimmed(before, after)
         a, b = start + keep_start, end - keep_end
         style = old[a][1] if a < b else old[max(start, a - 1)][1]
+        if a == b and start < a < len(old) and old[a - 1][0].isspace():
+            style = old[a][1]  # After a space: the style of the words it comes before.
         out += [(old[i][0], old[i][1], ('old', i)) for i in range(start, a)]
         out += [(c, style, ('edit', number)) for c in after[keep_start : len(after) - keep_end]]
         out += [(old[i][0], old[i][1], ('old', i)) for i in range(b, end)]

@@ -1084,6 +1084,27 @@ class ParagraphSuggestionTests(unittest.TestCase):
         self.assertEqual(gs.trimmed('teh.', 'the.'), (0, 0))
         self.assertEqual(gs.trimmed('Kit', 'new Kit'), (0, 3))
 
+    def test_text_inserted_after_a_linked_space_is_not_linked(self):
+        # Google may stretch a link over the space after its words; Markdown shows the space
+        # outside. Words inserted after the space take the style of the words that follow.
+        blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
+        link = {'link': {'url': 'https://example.invalid'}}
+        blocks[3]['paragraph']['elements'] = [
+            {'textRun': {'content': 'the new ', 'textStyle': link}},
+            {'textRun': {'content': 'AI.\n', 'textStyle': {}}},
+        ]
+        reindex(blocks)
+        self.record['google']['baselines']['draft']['document']['format_sha256'] = gs.signature(
+            self.client.doc
+        )
+        studio.persist(self.directory, 'articles', self.record)
+        saved = self.plan([self.edit('for', 'new ', 'new for ', blocks[3]['startIndex'] + 4)])
+        styles = [
+            r['updateTextStyle']['textStyle'] for r in saved['requests'] if 'updateTextStyle' in r
+        ]
+        self.assertEqual(styles, [{}])
+        self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-pending')
+
     def test_a_replacement_sharing_its_last_words_reads_back_as_its_quote(self):
         _, second, _ = self.starts()
         blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']

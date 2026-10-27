@@ -585,6 +585,10 @@ def validate(document_value, findings, selected_tabs):
             ]
             # Inserted text takes the style of the words it replaces, or of the word it follows.
             style = styles[da] if da < db else styles[max(a, da - 1)]
+            if da == db and a < da < len(text) - 1 and text[da - 1].isspace():
+                # After a space, text takes the style of the words it comes before: a link or
+                # bold stretched over the space stays where it was.
+                style = styles[da]
             if inserted and any(v != style for v in styles[da:db]):
                 raise GoogleError('Split replacements at style or link boundaries.')
             cut = (start + rt.utf16(text[:da]), start + rt.utf16(text[:db]))
