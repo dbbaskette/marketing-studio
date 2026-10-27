@@ -1085,7 +1085,9 @@ function sDeskGoogleSaid(plan){
   if(n)parts.push(n+(n===1?' suggestion':' suggestions'));
   if(m)parts.push(m+(m===1?' comment':' comments'));
   let said=parts.join(' and ')+(n+m===1?' goes':' go')+' to the Google Doc.';
-  if(n)said+=' Its owner accepts or rejects each suggestion.';
+  // Comments fallback: Google cannot take suggestions here, so each change is a comment.
+  if(plan.mode==='comments')said=(n+m)+(n+m===1?' change goes':' changes go')+' to the Google Doc as comments: it cannot take suggestions, so its owner makes each change by hand.';
+  else if(n)said+=' Its owner accepts or rejects each suggestion.';
   if(plan.waiting)said+=' '+plan.waiting+(plan.waiting===1?' change waits':' changes wait')+' for the Doc’s owner to decide the earlier suggestion in its paragraph, and '+(plan.waiting===1?'goes':'go')+' next time.';
   if(plan.sent_before)said+=' '+plan.sent_before+(plan.sent_before===1?' change was':' changes were')+' sent before.';
   if(plan.left)said+=' '+plan.left+(plan.left===1?' change':' changes')+' could not be placed in the Doc: pull the latest Doc and check again.';
