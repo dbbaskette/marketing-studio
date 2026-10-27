@@ -35,6 +35,10 @@
     + 'the Outline tab.';
   const NO_NOTE = 'Say how the slide should change.';
   const NO_DECK_NOTE = 'Say how the whole deck should change.';
+  const NOT_DELIVERABLE = 'The deck cannot be delivered yet: a change to it is still waiting '
+    + 'or under way. Deliver when it is done.';
+  // The runner's own refusal of a save while the deck is redrawn (desk.OUTLINE_BUSY).
+  const OUTLINE_BUSY = 'The deck is being redrawn now. Save the outline when that ends.';
   const NOTE_SAYS = {
     waiting: 'Your note waits to be drawn: ',
     drawing: 'Being redrawn with your note: ',
@@ -322,11 +326,18 @@
 
   // --- progress: before the deck reaches the desk -------------------------------------------
 
+  // The look waits for the person's pick: at the start's pause, or on the desk after Change
+  // the look, or after the document is read the other way on a deck that picks.
+  function pausedAtLook(run) {
+    const gate = run.gate;
+    return !h.theirs(run) && Boolean(gate && gate.name === 'gate:look' && gate.offered
+      && !gate.offered.chosen);
+  }
+
   function progress(run, fresh) {
     const read = h.theirs(run);
     const gate = run.gate;
-    const pause = !read && gate && gate.name === 'gate:look' && gate.offered
-      && !gate.offered.chosen;
+    const pause = pausedAtLook(run);
     const lead = h.view.sheet || read ? '' : run.question ? 'answer'
       : run.problem && run.problem.action ? 'problem' : pause ? 'look'
         : ['paused', 'stopped'].includes(run.state) ? 'resume' : '';
@@ -511,8 +522,10 @@
     const path = h.view.path;
     const title = run.title || 'Untitled';
     const working = Boolean(found.working);
+    const pause = pausedAtLook(run);
     const lead = h.view.sheet || read ? '' : run.question ? 'answer'
-      : run.problem && run.problem.action ? 'problem' : found.delivered ? '' : 'deliver';
+      : run.problem && run.problem.action ? 'problem' : pause ? 'look'
+        : found.delivered || found.deliverable === false ? '' : 'deliver';
     h.view.lead = lead;
     const tab = held.tabs[path] === 'outline' ? 'outline' : 'slides';
     const can = !read && found.drawn_here;
@@ -520,6 +533,7 @@
       mark: ['desk', title, run.state, lead, read, run.driver, working, found.drawn_here,
         Boolean(found.delivered), found.expected, h.view.downloading] }, [
       ...interruptions(run, lead, title),
+      pause ? ['look-pause', [run.gate, lead], () => lookPause(run, lead === 'look')] : null,
       working ? ['working', [found.working, read], () => workingPart(run)] : null,
       !found.drawn_here ? ['away', [found.no_drawing, found.draw_here_price, read, working],
         () => awayPart(run)] : null,
@@ -534,13 +548,22 @@
     h.tidyPictures();
   }
 
+  // Whether Deliver can be pressed now: the deck rests on the desk, drawn here, with no change
+  // waiting or under way, as the runner says (desk.deliverable).
+  function deliverableNow(found) {
+    return found.deliverable !== false && !found.working && Boolean(found.drawn_here)
+      && Boolean(found.expected);
+  }
+
   // Deliver, the one filled button, then Download and More.
   function deskActions(run, lead) {
     if (h.theirs(run)) return [];
     const found = run.desk;
     const deliver = found.delivered ? null : h.capsule('Deliver', lead === 'deliver' ? 'filled'
       : '', h.openSheet('desk-deliver', 'deliver'), 'deliver');
-    if (deliver) deliver.disabled = Boolean(found.working) || !found.drawn_here || !found.expected;
+    if (deliver) {
+      deliver.disabled = !deliverableNow(found);
+    }
     const download = found.drawn_here ? h.capsule(h.view.downloading ? 'Downloading…'
       : 'Download', '', () => h.downloadDeck(run, download), 'download') : null;
     return [deliver, download, moreFor(run)];
@@ -729,7 +752,7 @@
     if (!outline) return [];
     return [
       ['outline', [outline.expected, outline.slides, outline.editable, can, working],
-        () => outlinePart(run, can && outline.editable)],
+        () => outlinePart(run, can && outline.editable, working)],
       outline.reading ? ['reading', [outline.reading, can, working],
         () => readingPart(run, can, working)] : null,
       outline.look ? ['look', [outline.look, can, working], () => lookPart(run, can, working)]
@@ -749,7 +772,7 @@
     return edit;
   }
 
-  function outlinePart(run, editable) {
+  function outlinePart(run, editable, working) {
     const outline = run.desk.outline;
     const path = h.view.path;
     const edit = outlineEdit(outline);
@@ -771,14 +794,15 @@
     const edited = () => now() !== JSON.stringify(h.list(outline.slides));
     const tell = () => {
       const changed = edited();
-      said.textContent = !changed ? 'Saving redraws only the sections whose slides change.'
-        : edit.priced === now() ? edit.says : 'Its price is worked out when you leave the box.';
-      save.disabled = !changed || edit.priced !== now();
+      said.textContent = working ? OUTLINE_BUSY
+        : !changed ? 'Saving redraws only the sections whose slides change.'
+          : edit.priced === now() ? edit.says : 'Its price is worked out when you leave the box.';
+      save.disabled = working || !changed || edit.priced !== now();
       back.hidden = !changed;
     };
     // What saving would redraw is asked of the server before Save sends anything.
     const price = async () => {
-      if (!edited()) {
+      if (working || !edited()) {
         tell();
         return;
       }
@@ -800,6 +824,7 @@
       tell();
     };
     const saveOutline = async () => {
+      if (working) return;
       if (edit.priced !== now()) {
         await price();
         return;
@@ -910,14 +935,19 @@
       deliver(run, blockers, go, problem);
     });
     const google = run.output === 'google';
+    const ready = deliverableNow(found);
+    if (!ready) {
+      h.say(problem, NOT_DELIVERABLE);
+      go.disabled = true;
+    }
     h.add(form,
       make('p', '', found.reviewed ? 'This deck was reviewed.' : 'This deck has not been '
         + 'reviewed. Its brand check ran; no review of the deck did.'),
       blockers.length ? make('p', '', 'The brand check found ' + h.count(blockers.length,
         'problem that blocks', 'problems that block') + ' delivery. Deliver anyway, or fix '
         + 'them first.') : make('p', '', 'The brand check found nothing that blocks delivery.'),
-      blockers.length ? h.bullets(blockers.map((one) => 'Slide ' + one.number + ': '
-        + one.says)) : null,
+      blockers.length ? h.bullets(blockers.map((one) => (typeof one.number === 'number'
+        ? 'Slide ' + one.number + ': ' : '') + one.says)) : null,
       make('p', 'quiet', google && h.googleReady() ? 'It goes to Google Slides.'
         : google ? 'Google is not connected on this computer, so delivering makes a '
           + 'PowerPoint file. Send it to Google Slides once you are signed in.'
@@ -928,6 +958,11 @@
 
   async function deliver(run, blockers, pressed, problem) {
     if (h.view.busy) return;
+    // The deck may have moved on since the sheet was opened: it is read as it is now.
+    if (!deliverableNow((h.view.run || run).desk || {})) {
+      h.say(problem, NOT_DELIVERABLE);
+      return;
+    }
     const path = run.path || h.view.path;
     const body = { path, expected: run.desk.expected };
     if (blockers.length) body.blockers_seen = run.desk.blockers_seen;

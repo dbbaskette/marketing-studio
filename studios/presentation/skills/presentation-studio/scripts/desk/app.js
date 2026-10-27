@@ -1512,12 +1512,14 @@ function rows(title, found, kind, className) {
 function invitation() {
   return add(make('section', 'card shine invite'),
     make('h2', 'invite-title', 'Start your first deck'),
-    make('p', '', 'Start from scratch, from a document, or from a deck you already have. '
-      + 'Presentation Studio researches, outlines, designs and builds it on its own, and '
-      + 'stops where its review level says, for your decision.'),
+    make('p', '', 'Start from an idea, from a document, or from a deck you already have. A '
+      + 'deck from an idea or a document is researched, outlined, designed and built on its '
+      + 'own, and opens on the desk when it is ready. It stops only if you chose to pick its '
+      + 'look. A deck you already have stops where its review level says, for your '
+      + 'decision.'),
     add(make('div', 'bar'), newButton(view.sheet ? '' : 'filled')),
-    make('p', 'quiet', 'It takes two or three short steps, and this page tells you each time '
-      + 'it needs you.'));
+    make('p', 'quiet', 'Starting takes three short steps, and this page tells you when it '
+      + 'needs you.'));
 }
 
 function alerts() {

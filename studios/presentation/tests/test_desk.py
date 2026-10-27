@@ -766,12 +766,18 @@ class ScreenTests(ScriptedPage, PageCase):
                             'From the first decision on'):
                     self.assertNotIn(old, last['text'])
 
-    def test_home_says_the_review_level_decides_where_it_stops(self):
+    def test_home_says_new_decks_run_on_the_desk_and_a_deck_you_have_stops_by_its_level(self):
         result = self.run_page(self.answers(), [{'snapshot': 'home'}])
         text = result['snapshots']['home']['text']
-        self.assertIn('Presentation Studio researches, outlines, designs and builds it on its '
-                      'own, and stops where its review level says, for your decision.', text)
-        self.assertNotIn('stops each time it needs your decision', text)
+        self.assertIn('A deck from an idea or a document is researched, outlined, designed and '
+                      'built on its own, and opens on the desk when it is ready. It stops only '
+                      'if you chose to pick its look.', text)
+        self.assertIn('A deck you already have stops where its review level says, for your '
+                      'decision.', text)
+        for old in ('stops each time it needs your decision',
+                    'builds it on its own, and stops where its review level says',
+                    'It takes two or three short steps'):
+            self.assertNotIn(old, text)
 
     def test_a_step_the_level_passes_is_not_called_your_decision(self):
         from studio_core import review_policy
