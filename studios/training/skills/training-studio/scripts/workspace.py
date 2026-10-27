@@ -77,6 +77,7 @@ DESK_ACCEPTED = ('desk', 'review-policy')
 PERSON_MARKED = ('blueprint', 'document', 'brief', 'deck', 'scenario', 'yoodli')
 NOT_ON_DESK = 'This training is not on the desk.'
 KEPT = 'Kept on the desk.'
+UP_TO_DATE = 'This is up to date.'
 DECISIONS = ('approve', 'accept', 'revise', 'rebuild', 'skip', 'restore')
 REQUESTS = ('revise', 'rebuild')
 WHERE = {'chat': 'in the conversation', 'page': 'on the page'}
@@ -1002,7 +1003,8 @@ def keep_as_is(root: Path, name: str, reason: str | None = None, by: str = 'page
     """Keep a held material as it is: what it is built from becomes what is there now.
 
     A material the person marked ready stays ready; anything else is accepted on the desk
-    again. Refused while one of its own inputs is held, which is kept or updated first.
+    again. Refused while one of its own inputs is held, which is kept or updated first, and
+    for a material that is not out of date.
     """
     session = load(root)
     if not on_desk(session):
@@ -1018,7 +1020,11 @@ def keep_as_is(root: Path, name: str, reason: str | None = None, by: str = 'page
             raise WorkspaceError(f'Update or keep {label(upstream)} first.')
     entry = session['artifacts'].get(name)
     if entry is None or current is None:
-        raise WorkspaceError(f'Nothing to keep in {label(name)}: it is {state[name]}.')
+        raise WorkspaceError(f'{sentence(label(name))} has nothing to keep yet.')
+    # Only a material built from what has since changed is kept as it is: anything else has
+    # nothing to keep, and no decision or limitation is recorded for it.
+    if state.get(name) != 'stale':
+        raise WorkspaceError(UP_TO_DATE)
     found = pinned_inputs(root, session, name)
     session['decisions'].append({'at': now(), 'artifact': name, 'decision': 'kept-as-is',
                                  'from': entry.get('built_from'), 'to': found,
@@ -1028,7 +1034,9 @@ def keep_as_is(root: Path, name: str, reason: str | None = None, by: str = 'page
     if approved and approved.get('by') == 'page' and approved.get('sha256') == current:
         approved['inputs'] = dict(found)
     else:
+        # Accepted on the desk again, as accept_desk does, so the stage moves on.
         _approve(root, session, name, None, 'desk', policy=True)
+        after_approval(root, session, name, KEPT)
     log(session, 'kept-as-is', artifact=name, by=by)
     store(root, session)
     return {'artifact': name, 'status': person_statuses(root, session)[name]}

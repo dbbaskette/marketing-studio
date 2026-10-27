@@ -1,8 +1,10 @@
-"""The training desk in the runner: a desk start, which saves no review level, and a desk
-run, which the engine carries past every gate with a desk receipt. Scripted workers, the
+"""The training desk in the runner: a desk start, which saves no review level; a desk run,
+which the engine carries past every gate with a desk receipt; and holds, which keep what a
+desk change reaches until the person updates it or keeps it as it is. Scripted workers, the
 stand-in for harness-research and a studios config of the test's own; nothing real is
-started. Tests named row_138 to row_140 and row_161 cover those rows of the
-state-transition matrix in docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
+started. Tests named row_138 to row_140, row_144 to row_146, row_158 and row_161 cover those
+rows of the state-transition matrix in
+docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
 import json
 from pathlib import Path
 from unittest import mock
@@ -253,3 +255,166 @@ class DeskRunTests(DeckCase):
         problem = self.record(other)['problem']
         self.assertEqual((problem['step'], problem['action']), ('document', 'more-time'))
         self.assertIsNone(workspace.load(other)['gate'])
+
+
+class DeskHoldTests(DeckCase):
+    """What a desk change reaches is held, not remade: it waits until the person presses
+    Update, which remakes it, or Keep as it is. A saved run remakes as it always did."""
+
+    def edit(self, root: Path, name: str, change) -> None:
+        """Type a change into a material, as the desk saves it, and accept it on the desk
+        (on a saved run, approve it on the page)."""
+        session = workspace.load(root)
+        file = root / workspace.artifact(root, session, name)['file']
+        typed = self.base / 'typed' / file.name
+        typed.parent.mkdir(exist_ok=True)
+        typed.write_text(change(file.read_text(encoding='utf-8')), encoding='utf-8')
+        workspace.save(root, name, source=typed, edit=True, via='save')
+        if drafts.on_desk(self.record(root)):
+            workspace.accept_desk(root, name)
+        else:
+            workspace.approve(root, name, by='page')
+
+    def guide_edit(self, root: Path) -> None:
+        self.edit(root, 'document@101', lambda text: text + '\nOne line more.\n')
+
+    def drawn_count(self) -> tuple[int, int]:
+        return len(self.workers.of('outline')), len(self.workers.of('section'))
+
+    def held(self, root: Path) -> frozenset:
+        return drafts.held(root, workspace.load(root), self.record(root))
+
+    def says(self, root: Path, name: str) -> str | None:
+        return drafts.hold_says(root, workspace.load(root), self.held(root), name)
+
+    def desk_deck(self) -> Path:
+        root = self.begin(flow='desk', levels=['101'])
+        self.assertEqual(self.to_end(root), [])
+        self.assertIsNone(self.record(root)['problem'], self.view(root))
+        self.assertEqual(self.held(root), frozenset())
+        return root
+
+    def test_row_144_a_guide_edit_holds_the_deck(self):
+        root = self.desk_deck()
+        before = self.drawn_count()
+        self.guide_edit(root)
+        self.assertEqual(self.held(root), {'deck@101'})
+        self.engine.wake(root)
+        self.assertEqual(self.to_end(root), [])
+        self.assertEqual(self.drawn_count(), before, 'a held deck is not drawn again')
+        self.assertIsNone(self.record(root)['problem'])
+        self.assertEqual(self.held(root), {'deck@101'})
+        listed = {step.id for step in self.engine._survey(root, self.engine._load(root)).steps}
+        self.assertFalse({workspace.qualify(step, '101') for step in pipeline.DECK_STEPS}
+                         & listed, 'none of its steps is due')
+        self.assertEqual(self.says(root, 'deck@101'), 'Built from an earlier guide.')
+        self.assertIsNone(self.says(root, 'document@101'))
+
+    def test_row_145_update_remakes_only_what_was_held(self):
+        root = self.desk_deck()
+        outlines, sections = self.drawn_count()
+        documents = len(self.workers.of('document'))
+        self.guide_edit(root)
+        self.engine.wake(root)
+        with self.assertRaisesRegex(WorkspaceError, '^This is up to date.$'):
+            self.engine.update(root, 'document@101')
+        self.engine.update(root, 'deck@101')
+        self.assertEqual(self.to_end(root), [])
+        self.assertIsNone(self.record(root)['problem'], self.view(root))
+        self.assertEqual(len(self.workers.of('outline')), outlines + 1,
+                         "the deck's steps ran once")
+        # What the deck says is written as before, so its drawn sections are kept.
+        self.assertEqual(len(self.workers.of('section')), sections)
+        self.assertEqual(len(self.workers.of('document')), documents, 'nothing else is made')
+        self.assertEqual(self.held(root), frozenset())
+        self.assertEqual(self.record(root)['drafts']['updates'], {})
+        session = workspace.load(root)
+        self.assertEqual(workspace.statuses(root, session)['deck@101'], 'approved')
+        self.assertEqual(session['artifacts']['deck@101']['built_from']['document@101'],
+                         workspace.sha256_file(root / '101' / 'document.md'))
+        self.assertIn('Rolling restarts: update the level 101 slide deck from the guide',
+                      self.log())
+
+    def test_an_update_waits_for_the_one_under_way(self):
+        root = self.desk_deck()
+        self.guide_edit(root)
+        record = self.engine._load(root)
+        record['drafts']['updates']['brief@101'] = {'at': home.now(), 'by': 'page',
+                                                    'scope': None}
+        self.engine._store(root, record)
+        commits = self.log()
+        with self.assertRaisesRegex(WorkspaceError, f'^{drafts.BUSY}$'):
+            self.engine.update(root, 'deck@101')
+        self.assertEqual(self.log(), commits)
+        self.assertEqual(drafts.BUSY, 'A change is already being made to this training. '
+                                      'Wait for it, or stop it.')
+
+    def test_row_146_keep_as_it_is_from_the_page(self):
+        root = self.desk_deck()
+        before = self.drawn_count()
+        self.guide_edit(root)
+        self.engine.keep(root, 'deck@101')
+        self.assertEqual(self.held(root), frozenset())
+        self.assertEqual(self.to_end(root), [])
+        self.assertEqual(self.drawn_count(), before, 'no deck step runs')
+        session = workspace.load(root)
+        self.assertEqual(workspace.statuses(root, session)['deck@101'], 'approved')
+        decision = session['decisions'][-1]
+        self.assertEqual((decision['artifact'], decision['decision'], decision['by']),
+                         ('deck@101', 'kept-as-is', 'page'))
+        self.assertIn('Rolling restarts: keep the level 101 slide deck as it is', self.log())
+        with self.assertRaisesRegex(WorkspaceError, '^This is up to date.$'):
+            self.engine.keep(root, 'deck@101')
+
+    def test_a_card_below_a_held_one_waits(self):
+        root = self.start(flow='desk', levels=['101'])
+        self.assertEqual(self.to_end(root), [])
+        report = root / '.harness-research' / 'research-report.md'
+        report.write_text(report.read_text(encoding='utf-8') + '\nOne finding more.\n',
+                          encoding='utf-8')
+        held = self.held(root)
+        self.assertIn('blueprint@101', held)
+        self.assertIn('document@101', held)
+        self.assertEqual(self.says(root, 'document@101'),
+                         'Waiting for the plan to be updated or kept.')
+        commits = self.log()
+        for act in (self.engine.keep, self.engine.update):
+            with self.subTest(act=act.__name__), self.assertRaisesRegex(
+                    WorkspaceError, '^Update or keep the level 101 blueprint first.$'):
+                act(root, 'document@101')
+        self.assertEqual(self.log(), commits)
+        self.assertEqual(self.record(root)['drafts']['updates'], {})
+
+    def test_row_158_the_practice_plan_holds_its_scenario(self):
+        root = self.start(flow='desk', levels=['101'])
+        self.assertEqual(self.to_end(root), [])
+        plan = (root / '101' / 'blueprint.md').read_text(encoding='utf-8')
+        line = next(line for line in plan.splitlines() if line.startswith('- main:'))
+        self.edit(root, 'blueprint@101',
+                  lambda text: text.replace(line, line + ' Who now asks about cost.'))
+        self.assertIn('scenario:main@101', self.held(root))
+        self.assertEqual(drafts.input_of(root, workspace.load(root), 'scenario:main@101'),
+                         ['practice'])
+        self.assertEqual(self.says(root, 'scenario:main@101'), drafts.PRACTICE)
+        self.assertEqual(drafts.PRACTICE, 'The plan for this practice changed.')
+        scenarios = len(self.workers.of('scenario'))
+        self.engine.wake(root)
+        self.assertEqual(len(self.workers.of('scenario')), scenarios, 'it is not drafted again')
+        self.assertIn('scenario:main@101', self.held(root))
+
+    def test_saved_runs_still_remake(self):
+        root = self.begin(levels=['101'])
+        self.drawn(root, '101')
+        self.to_end(root)
+        self.assertIsNone(workspace.status(root)['gate'])
+        outlines = len(self.workers.of('outline'))
+        self.guide_edit(root)
+        self.assertEqual(drafts.held(root, workspace.load(root), self.record(root)),
+                         frozenset())
+        self.engine.wake(root)
+        self.assertEqual(len(self.workers.of('outline')), outlines + 1,
+                         'the deck is put back through its steps, as today')
+        for act in (self.engine.update, self.engine.keep):
+            with self.subTest(act=act.__name__), self.assertRaisesRegex(
+                    WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
+                act(root, 'deck@101')

@@ -1808,6 +1808,36 @@ class DeskWorkspaceTests(DeskCase):
         with self.assertRaisesRegex(WorkspaceError, '^This training is not on the desk.$'):
             workspace.keep_as_is(self.saved(), 'document')
 
+    def test_keep_as_it_is_refuses_what_is_up_to_date(self):
+        self.page(*CHAIN)
+        before = workspace.session_path(self.root).read_bytes()
+        with self.assertRaisesRegex(WorkspaceError, '^This is up to date.$'):
+            workspace.keep_as_is(self.root, 'document')
+        self.assertEqual(workspace.session_path(self.root).read_bytes(), before)
+        self.assertEqual(workspace.load(self.root)['decisions'], [])
+
+    def test_keep_as_it_is_says_plainly_there_is_nothing_to_keep(self):
+        self.page('intake', 'research-plan', 'research', 'blueprint')
+        for name, said in (('document', 'The learner guide'),
+                           ('scenario:extra', 'The practice scenario "extra"')):
+            with self.subTest(name=name), self.assertRaisesRegex(
+                    WorkspaceError, f'^{said} has nothing to keep yet.$'):
+                workspace.keep_as_is(self.root, name)
+
+    def test_keeping_on_the_desk_moves_the_stage_on(self):
+        self.page('intake', 'research-plan', 'research', 'blueprint')
+        self.build('document')
+        self.write('blueprint.md', helpers.CONTENT['blueprint'] + 'edited\n')
+        workspace.approve(self.root, 'blueprint', by='page')
+        workspace.checkpoint(self.root, stage='document')
+        self.assertEqual((self.state()['document'], workspace.load(self.root)['stage']),
+                         ('stale', 'document'))
+        workspace.keep_as_is(self.root, 'document')
+        self.assertEqual(workspace.load(self.root)['artifacts']['document']['approved']['by'],
+                         'desk')
+        self.assertNotEqual(workspace.load(self.root)['stage'], 'document',
+                            'kept on the desk, the stage moves on as accept_desk does')
+
 
 BLUEPRINT = (helpers.EXAMPLES / 'blueprint.md').read_text(encoding='utf-8')
 MAIN_LINE = BLUEPRINT.splitlines()[32]

@@ -28,7 +28,9 @@ What a caller needs to know
 - A stage the person left out, or that could not be made, has no steps. Something made
   from a version of its inputs that has since changed is made again, and comes back to
   its gate: a blueprint, a guide, a brief or a Yoodli scenario. Nothing is ever accepted
-  as it is here.
+  as it is here. On the desk it is held instead (`drafts.held`): its steps are left out
+  until the person updates it or keeps it as it is, and an update made is closed in the
+  run passed in, which the caller stores.
 - A practice scenario is drafted only when the blueprint's practice plan names it and it
   has no file. A file the person wrote is taken in as it is. Only a request from them has
   a worker lay it out, in their own words.
@@ -1245,6 +1247,12 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     listed = steps(session['levels'], wanted(session), named, kept, bool(given),
                    own - asked.keys(), own & asked.keys(), drawn,
                    bool(run.get('research_contract')))
+    # On the desk, what a change reaches is held, not remade: its steps, gates and copies are
+    # left out until the person updates it or keeps it as it is. An update made closes here.
+    if drafts.on_desk(run):
+        drafts.close_updates(root, session, run, state)
+        holding = drafts.held(root, session, run, state)
+        listed = tuple(step for step in listed if step.artifact not in holding)
     decks = {level: stands(root, session, state, asked, run, level)
              for level in session['levels'] or [None]} if drawn else {}
     seen = _Seen(root, session, state, asked, found, own, kept,

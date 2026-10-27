@@ -191,6 +191,10 @@ What a caller needs to know
   carries a desk run past every gate, deck outline and look (`_desk_gate`), each with a desk
   receipt in `review_events`, and never groups it for review. That is not the person's
   approval of a material, which they give on the desk. A problem still stops it.
+- On the desk, what a change reaches is held, not remade (`drafts.held`). `update` asks for
+  a held material to be made again, through its own steps, and carries on; `keep` keeps it
+  as it is (`workspace.keep_as_is`, by the page). Each commits; an update closes in the
+  commit that lands its material. A saved run remakes as it always did.
 """
 from __future__ import annotations
 
@@ -753,9 +757,16 @@ class Engine(Reviewing):
         if self._run(root).gone:
             gitstate.discard(self.space(), root)
             raise _Gone('This training is no longer run from this computer.')
+        self._updates_made(root)
         self._decision_arrived(root)
         title = workspace.load(root)['title']
         gitstate.commit(self.space(), f'{title}: {what}', [root])
+
+    def _updates_made(self, root: Path) -> None:
+        """Close each desk update whose material is made again, in the commit that lands it."""
+        record = self._load(root)
+        if drafts.close_updates(root, workspace.load(root), record):
+            self._store(root, record)
 
     def _decision_arrived(self, root: Path) -> None:
         """Retire decision feedback in the normal commit that reaches its next stop."""
@@ -3750,6 +3761,60 @@ class Engine(Reviewing):
         if self.space().share == gitstate.SHARE[0]:
             self.share_soon()
         self.wake(path)
+
+    def _on_desk(self, path) -> tuple[Path, dict]:
+        """A desk training's folder and run record, refused for a training not on the desk.
+        Call it holding `files`."""
+        root = self._held(path)
+        record = self._load(root)
+        if not drafts.on_desk(record):
+            raise WorkspaceError(drafts.NOT_ON_DESK)
+        return root, record
+
+    def update(self, path, name, scope=None) -> dict:
+        """Update a held material from what it is built from now: an update is asked for in
+        the run, which leaves its steps in the survey again, and the run carries on. In this
+        version the material is made again whole, through its own steps, as an out-of-date
+        one is on a saved run; the update closes when it lands. Refused while another change
+        is being made, for a material that is not held, and while an input of its own is."""
+        with self.files:
+            root, record = self._on_desk(path)
+            if drafts.busy(record):
+                raise WorkspaceError(drafts.BUSY)
+            session = workspace.load(root)
+            if not isinstance(name, str) or name not in drafts.held(root, session, record):
+                raise WorkspaceError(drafts.UP_TO_DATE)
+            state = workspace.statuses(root, session)
+            for upstream in workspace.artifact(root, session, name)['upstream']:
+                if state.get(upstream) == 'stale':
+                    raise WorkspaceError(f'Update or keep {workspace.label(upstream)} first.')
+            changed = drafts.input_of(root, session, name)
+            record['drafts']['updates'][name] = {'at': home.now(), 'by': 'page', 'scope': scope}
+            base, level = workspace.split(name)
+            for step in ([workspace.qualify(step, level) for step in pipeline.DECK_STEPS]
+                         if base == 'deck' else [name]):
+                self._fresh(record, step)   # tried from the start again
+            self._store(root, record)
+            source = ' and '.join(f'the {drafts.what(key)}' for key in changed)
+            self._commit(root, f'update {workspace.label(name)} from '
+                               f'{source or "what it is built from"}')
+        self.carry_on(root)
+        return self.view(root)
+
+    def keep(self, path, name, reason=None, seen=None) -> dict:
+        """Keep a held material as it is, as the person asked on the desk: what it is built
+        from becomes what is there now, and nothing is made again. A material being updated
+        is left to its update."""
+        with self.files:
+            root, record = self._on_desk(path)
+            if not isinstance(name, str):
+                raise WorkspaceError(drafts.UP_TO_DATE)
+            if name in drafts.updates(record):
+                raise WorkspaceError(drafts.BUSY)
+            workspace.keep_as_is(root, name, reason=reason, by='page', seen=seen)
+            self._commit(root, f'keep {workspace.label(name)} as it is')
+        self.carry_on(root)
+        return self.view(root)
 
     def act(self, path, action: str) -> dict:
         """Pause, resume, stop or try again, as the person asks."""
