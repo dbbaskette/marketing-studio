@@ -4,6 +4,8 @@
 //                                        markdown.js builds from it
 //   node page_harness.js app FILE        runs app.js against the answers in FILE, follows its
 //                                        steps, and prints what was on the page at each one
+//   node page_harness.js kit FILE        draws the shared list kit's parts (lists.js) on an
+//                                        empty page, as FILE's steps say, and prints them
 //
 // A step is one of: {snapshot: name}, {click: the name of a control}, {fill: the label of a
 // box, value: what is typed}, {type: text} for the note in the sheet, {enter: the label of a
@@ -12,7 +14,9 @@
 // label of a file picker, files: what is chosen in it}, {polls: how many} for the page's own
 // refresh asked for that many times at once, {hidden: true or false} for the tab put behind
 // another or brought back, {timer: a function's name} for the last timer the page set to
-// call it, and {hold: the name of a control} to follow that very node: each
+// call it, {tick: the name of a check box} for a click on that box, {select: the label of a
+// box, start, end} for words selected in it, and {hold: the name of
+// a control} to follow that very node: each
 // snapshot then says, in `still`, which of those held are still on the page, and in `asked`
 // how many requests had been made by then. A box that is filled is left as a
 // person leaves it, unless the step says {stay: true}: then they are still typing in it. A chosen file is {name, text} or {name,
@@ -24,7 +28,13 @@
 // Nothing is laid out here, so nothing scrolls into view by itself: {see: the words a
 // picture's place begins with} says that it has. A plan with {unwatched: true} is a browser
 // that cannot say when anything comes into view. A plan with {narrow: true} is a phone:
-// the page's own width queries match.
+// the page's own width queries match, and what the kit's stylesheet hides on a phone (the
+// filters behind Filters) or shows only there (Filters itself) is hidden or shown here too.
+//
+// Each snapshot also says how the screen is laid out: the toolbar's controls in order, each
+// filled or quiet; the ledes; the heading tags of each card; how many cards sit inside
+// another; the parts' names in order (card titles, sheet parts and a selection's count); the
+// boxes that are ticked; the words of the selection bar; and every heading on the screen.
 //
 // The document here has no HTML parser at all. A script that tried to set innerHTML would
 // throw, so anything that reaches the page as markup fails the test that runs this.
@@ -104,6 +114,8 @@ class FakeElement extends FakeNode {
     this.inert = false;
     this.open = false;
     this.value = '';
+    this.checked = false;
+    this.indeterminate = false;
     const owner = this;
     this.classList = {
       add: (...names) => { owner.className = [...new Set([...owner.classes(), ...names])].join(' '); },
@@ -343,9 +355,25 @@ function settle() {
   return new Promise((resolve) => setImmediate(() => setImmediate(() => setImmediate(resolve))));
 }
 
+// The kit's phone rules for a filter row: on a phone only the search shows until Filters
+// opens the rest; on a desktop there is no Filters button.
+let phone = false;
+// Where the page sent the browser, when it set location.href: a page of its own is not left.
+let here = null;
+
+function styledAway(at) {
+  if (at.nodeType !== 1) return false;
+  const classes = at.classes();
+  if (classes.includes('filters-toggle')) return !phone;
+  const row = at.parentNode;
+  if (!phone || !row || row.nodeType !== 1 || !row.classes().includes('filter-bar')) return false;
+  if (row.classes().includes('filters-open')) return false;
+  return classes.includes('more-filters') || (classes.includes('field') && !classes.includes('search'));
+}
+
 function visible(node) {
   for (let at = node; at; at = at.parentNode) {
-    if (at.hidden || (at.tagName === 'DETAILS' && !at.open && node !== at
+    if (at.hidden || styledAway(at) || (at.tagName === 'DETAILS' && !at.open && node !== at
         && !at.children.filter((child) => child.tagName === 'SUMMARY').some((s) => s.contains(node)))) {
       return false;
     }
@@ -353,13 +381,74 @@ function visible(node) {
   return true;
 }
 
+function labelOf(node) {
+  for (let at = node.parentNode; at; at = at.parentNode) if (at.tagName === 'LABEL') return at;
+  if (!node.id) return null;
+  return document.body.querySelectorAll('label').find((label) => label.htmlFor === node.id) || null;
+}
+
 function name(node) {
+  if (node.tagName === 'INPUT' && !node.getAttribute('aria-label')) {
+    const label = labelOf(node);
+    return label ? (label.textContent || '').trim() : '';
+  }
   return (node.getAttribute('aria-label') || node.textContent || '').trim();
+}
+
+// A check box, by the words of its label.
+function checkbox(label) {
+  const all = document.body.querySelectorAll('input').filter((node) => node.type === 'checkbox'
+    && visible(node));
+  const exact = all.filter((node) => name(node) === label);
+  const found = exact.length ? exact : all.filter((node) => name(node).startsWith(label));
+  if (!found.length) throw new Error('No check box on the page is labelled "' + label + '".');
+  return found[0];
+}
+
+// How the screen is laid out, for the layout rules the tests hold every screen to.
+const HEADINGS = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+
+function inside(node, root, className) {
+  for (let at = node.parentNode; at && at !== root; at = at.parentNode) {
+    if (at.nodeType === 1 && at.classes().includes(className)) return true;
+  }
+  return false;
+}
+
+function layout() {
+  const main = document.getElementById('main');
+  const sheet = document.getElementById('sheet');
+  const actions = document.getElementById('actions');
+  const cards = main.querySelectorAll('.card').filter(visible);
+  const bar = document.body.querySelectorAll('.selection-bar').filter(visible)[0];
+  return {
+    toolbar: actions.querySelectorAll('button, a, summary').filter(visible).map((node) => ({
+      name: name(node), filled: node.classes().includes('button-filled'),
+      quiet: node.classes().includes('button-quiet') })),
+    ledes: [main, sheet].filter((part) => visible(part))
+      .flatMap((part) => part.querySelectorAll('.lede').filter(visible))
+      .map((node) => node.textContent.trim()),
+    cardHeadings: cards.map((card) => [...new Set(card.all()
+      // A document's own headings (markdown.js's .md) are what it says, not the card's.
+      .filter((node) => HEADINGS.includes(node.tagName) && visible(node)
+        && !inside(node, card, 'card') && !inside(node, card, 'md'))
+      .map((node) => node.tagName.toLowerCase()))].sort()),
+    nested: cards.filter((card) => inside(card, main, 'card')).length,
+    // Every heading on the screen, in order, cards and all: what a reader's headings list
+    // shows.
+    headings: main.all().filter((node) => HEADINGS.includes(node.tagName) && visible(node)
+      && !inside(node, main, 'md')).map((node) => words(node).replace(/\s+/g, ' ').trim()),
+    parts: document.body.querySelectorAll('.card-title, .sheet-part, .selection-count')
+      .filter(visible).map((node) => words(node).replace(/\s+/g, ' ').trim()),
+    ticked: document.body.querySelectorAll('input')
+      .filter((node) => node.type === 'checkbox' && node.checked && visible(node)).map(name),
+    bar: bar ? words(bar).replace(/\n+/g, '\n').trim() : '',
+  };
 }
 
 function words(node) {
   if (node.nodeType === 3) return node.data;
-  if (node.hidden) return '';
+  if (node.hidden || styledAway(node)) return '';
   const inline = ['SPAN', 'CODE', 'STRONG', 'EM', 'A', 'BUTTON', 'P', 'LI', 'H1', 'H2', 'H3',
     'TIME', 'TH', 'TD', 'LABEL', 'SUMMARY'];
   return node.childNodes.map(words).join(inline.includes(node.tagName) ? '' : '\n');
@@ -438,7 +527,8 @@ function snapshot() {
     if (control.tagName === 'TEXTAREA' || control.tagName === 'INPUT') {
       if (control.getAttribute('aria-hidden') === 'true') continue;
       const labelled = document.body.querySelectorAll('label')
-        .some((label) => label.htmlFor && label.htmlFor === control.id && name(label));
+        .some((label) => label.htmlFor && label.htmlFor === control.id && name(label))
+        || Boolean(control.tagName === 'INPUT' && name(control));
       if (!labelled && !control.getAttribute('aria-label')) unnamed.push(control.tagName);
     } else if (!name(control)) {
       unnamed.push(control.tagName + '.' + control.className);
@@ -504,6 +594,13 @@ function snapshot() {
     pace: report.paces[report.paces.length - 1] || 0,
     asked: report.requests.length,
     still: followed.filter(([node]) => document.body.contains(node)).map(([, named]) => named),
+    href: (here && here.href) || '',
+    // A key two parts of the page share: focus kept by that key may land on the wrong one.
+    keyedTwice: [...document.body.all().filter((node) => node.dataset && node.dataset.key
+      && visible(node)).map((node) => node.dataset.key)
+      .reduce((seen, key) => seen.set(key, (seen.get(key) || 0) + 1), new Map())]
+      .filter(([, times]) => times > 1).map(([key]) => key),
+    ...layout(),
   };
 }
 
@@ -542,8 +639,11 @@ function enter(held) {
   form.dispatch('submit', event);
 }
 
+// A control by its name. What is inert, behind an open sheet, cannot be reached, so a name
+// shared with something behind the sheet is the sheet's.
 function control(label) {
-  const all = document.body.querySelectorAll('button, summary, a').filter(visible);
+  const all = document.body.querySelectorAll('button, summary, a')
+    .filter((node) => visible(node) && !node.behind);
   const exact = all.filter((node) => name(node) === label);
   const found = exact.length ? exact : all.filter((node) => name(node).startsWith(label));
   if (!found.length) throw new Error('Nothing on the page is named "' + label + '".');
@@ -583,6 +683,7 @@ async function app(file) {
   const plan = JSON.parse(fs.readFileSync(file, 'utf8'));
   const answers = plan.answers;
   const timers = [];
+  phone = Boolean(plan.narrow);
   build(fs.readFileSync(path.join(PAGE, 'index.html'), 'utf8'));
 
   class Notification {
@@ -608,9 +709,11 @@ async function app(file) {
     Notification,
     location: { hash: plan.hash === undefined ? '#token=the-test-key' : plan.hash,
       reload() { report.reloads += 1; } },
+    // A plan with {state} opens the page as a reload does, at the screen that state names.
     history: {
-      state: null,
-      earlier: [],
+      state: plan.state || null,
+      // A plan with {earlier: [states]} has been there before: Back goes to them in turn.
+      earlier: (plan.earlier || []).slice(),
       pushState(state) {
         this.earlier.push(this.state);
         this.state = state;
@@ -651,6 +754,8 @@ async function app(file) {
       if (!held && key === 'GET /api/storyboard') return {ok: true, status: 200, json: async () => ({html:'<h1>Fixture storyboard</h1>'})};
       if (!held) return { ok: false, status: 404, json: async () => ({ error: 'No answer for ' + key }) };
       const answer = held.length > 1 ? held.shift() : held[0];
+      // {pending: true} is an answer that has not come yet, and never does here.
+      if (answer.pending) return new Promise(() => {});
       if (answer.picture === undefined) {
         return { ok: answer.status === 200, status: answer.status, json: async () => answer.body };
       }
@@ -661,14 +766,27 @@ async function app(file) {
           size: Buffer.from(answer.picture, 'base64').length, from: address }) };
     },
   };
+  // A plan with {transitions: true} is a browser with view transitions: the new screen is
+  // drawn a moment after it is asked for, as startViewTransition does.
+  if (plan.transitions) {
+    document.startViewTransition = (update) => {
+      const done = new Promise((resolve) => setImmediate(resolve)).then(update);
+      return { ready: done, finished: done, updateCallbackDone: done };
+    };
+  }
   window.window = window;
+  here = window.location;
   window.navigator.clipboard.writeText = () => Promise.resolve();
   const context = vm.createContext(window);
   context.navigator = window.navigator;
   // The deck panels are the shared core's, served beside the page.
   const panels = path.join(PAGE, '..', 'studio_core', 'deck_web', 'deck-panels.js');
   vm.runInContext(fs.readFileSync(panels, 'utf8'), context, { filename: 'deck-panels.js' });
-  for (const script of ['markdown.js', 'app.js']) {
+  const lists = path.join(PAGE, '..', 'studio_core', 'deck_web', 'lists.js');
+  vm.runInContext(fs.readFileSync(lists, 'utf8'), context, { filename: 'lists.js' });
+  // The shared desk kit (drafting.js, linked from ui-kit), then the page, then the deck desk,
+  // in the order index.html loads them.
+  for (const script of ['markdown.js', 'drafting.js', 'app.js', 'deck-desk.js']) {
     vm.runInContext(fs.readFileSync(path.join(PAGE, script), 'utf8'), context, { filename: script });
   }
   await settle();
@@ -698,6 +816,15 @@ async function app(file) {
         held.dispatch('change', { target: held });
       }
       if (step.see !== undefined) see(step.see);
+      // {select: the label of a box, start, end}: those characters of it are selected, as a
+      // person drags across them, and the box says so.
+      if (step.select !== undefined) {
+        const held = box(step.select);
+        held.focus();
+        held.selectionStart = step.start;
+        held.selectionEnd = step.end;
+        held.dispatch('select', { target: held });
+      }
       if (step.poll) await timers.filter((timer) => timer.name === 'refresh').pop()();
       if (step.timer) await timers.filter((timer) => timer.name === step.timer).pop()();
       if (step.polls) {
@@ -708,7 +835,18 @@ async function app(file) {
         document.hidden = step.hidden;
         for (const listener of documentListeners.visibilitychange || []) listener({});
       }
+      if (step.tick !== undefined) {
+        const held = checkbox(step.tick);
+        if (!held.disabled && !held.behind) {
+          held.focus();
+          held.checked = !held.checked;
+          held.indeterminate = false;
+          held.dispatch('change', { target: held, currentTarget: held });
+        }
+      }
       if (step.hold !== undefined) followed.push([control(step.hold), step.hold]);
+      // The browser's own Back.
+      if (step.back) window.history.back();
       if (step.key) for (const listener of documentListeners.keydown || []) listener({ key: step.key });
     } catch (failure) {
       report.errors.push(String(failure && failure.stack ? failure.stack : failure));
@@ -722,8 +860,85 @@ process.on('unhandledRejection', (failure) => {
   report.errors.push('Unhandled: ' + String(failure && failure.stack ? failure.stack : failure));
 });
 
+// --- the list kit on its own ---------------------------------------------------------
+//
+// A step {build: 'filterRow' | 'tick' | 'selectPage' | 'selectionBar', spec} draws that part
+// in place of the last one. Each function a part is handed is one that writes down what it
+// was called with, in `calls`; a list named `ticked` is handed over as a set. The other
+// steps are the page's: {fill}, {click}, {tick}, {enter} and {snapshot}.
+async function kit(file) {
+  const plan = JSON.parse(fs.readFileSync(file, 'utf8'));
+  phone = Boolean(plan.narrow);
+  const calls = [];
+  const main = new FakeElement('main');
+  main.id = 'main';
+  document.body.append(main);
+  const window = { document, console,
+    matchMedia: (query) => ({ matches: phone && /max-width/.test(query) }) };
+  window.window = window;
+  const context = vm.createContext(window);
+  const lists = path.join(PAGE, '..', 'studio_core', 'deck_web', 'lists.js');
+  vm.runInContext(fs.readFileSync(lists, 'utf8'), context, { filename: 'lists.js' });
+  const recorder = (named) => (...args) => { calls.push([named, ...args]); };
+  const shots = {};
+  for (const step of plan.steps) {
+    try {
+      if (step.build) {
+        const spec = { ...step.spec };
+        for (const named of ['changed', 'searched', 'toggled', 'flip', 'selectShown', 'clear']) {
+          spec[named] = recorder(named);
+        }
+        if (spec.ticked) spec.ticked = new Set(spec.ticked);
+        if (spec.actions) {
+          spec.actions = spec.actions.map((action) => ({ ...action,
+            run: () => { calls.push([action.label]); } }));
+        }
+        const made = window.StudioLists[step.build](spec);
+        main.replaceChildren(...(made ? [made] : []));
+      }
+      if (step.snapshot) {
+        const controls = main.querySelectorAll('input, select, button, summary').filter(visible);
+        shots[step.snapshot] = {
+          controls: controls.map((node) => ({ tag: node.tagName.toLowerCase(),
+            name: node.tagName === 'SELECT' ? (labelOf(node) ? labelOf(node).textContent : '')
+              : name(node), type: node.type || '',
+            checked: Boolean(node.checked), indeterminate: Boolean(node.indeterminate),
+            classes: node.className })),
+          text: words(main).replace(/\n+/g, '\n').trim(),
+          empty: !main.children.length,
+          calls: calls.slice(),
+          bar: main.querySelectorAll('.selection-bar').filter(visible)
+            .map((node) => words(node).replace(/\n+/g, '\n').trim())[0] || '',
+        };
+      }
+      if (step.click) control(step.click).click();
+      if (step.fill !== undefined) {
+        const held = box(step.fill);
+        held.focus();
+        held.value = step.value;
+        held.dispatch('input', { target: held });
+        if (!step.stay) held.dispatch('change', { target: held });
+      }
+      if (step.enter !== undefined) enter(box(step.enter));
+      if (step.tick !== undefined) {
+        const held = checkbox(step.tick);
+        held.checked = !held.checked;
+        held.indeterminate = false;
+        held.dispatch('change', { target: held, currentTarget: held });
+      }
+    } catch (failure) {
+      report.errors.push(String(failure && failure.stack ? failure.stack : failure));
+    }
+    await settle();
+  }
+  console.log(JSON.stringify({ errors: report.errors, snapshots: shots }));
+}
+
 const [mode, file] = process.argv.slice(2);
 if (mode === 'markdown') markdown();
+else if (mode === 'kit') kit(file).catch((failure) => {
+  console.log(JSON.stringify({ errors: [String(failure.stack)], snapshots: {} }));
+});
 else app(file).catch((failure) => {
   console.log(JSON.stringify({ ...report, errors: [...report.errors, String(failure.stack)] }));
 });

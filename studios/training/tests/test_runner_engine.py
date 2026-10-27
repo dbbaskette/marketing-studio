@@ -92,6 +92,165 @@ class WhereThisTrainingStopsTests(StudioCase):
             pipeline.check_form({**FORM, 'review_default': 'yes'})
 
 
+class SynthesisAtStartTests(StudioCase):
+    """A training is not started on a Harness Research that cannot synthesize: the start is
+    refused with nothing made. A training brought in from a conversation is not a start, and
+    is not refused. Matrix row 137."""
+
+    def setUp(self):
+        super().setUp()
+        patch = mock.patch.object(self.engines, 'LEGACY_RESEARCH', False)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def made(self):
+        """What a start could leave behind: the trainings driven and remembered, the
+        workspace's folders and commits, and the shared studios config's bytes."""
+        config = self.base / 'studios.json'
+        return (self.engine.trainings(), [entry['path'] for entry in home.trainings()],
+                sorted(path.name for path in self.space.root.iterdir()), self.log(),
+                config.read_bytes() if config.exists() else None)
+
+    def test_row_137_a_training_is_not_started_without_synthesis(self):
+        before = self.made()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.start(review_level='automatic', review_seen='automatic', review_default=True)
+        self.assertEqual(str(caught.exception), self.engines.NO_SYNTHESIS)
+        self.assertEqual(self.made(), before, 'nothing is made')
+        # A read error is refused the same way, with a real-looking Harness Research found.
+        from stand_ins import research as research_stand_in
+        from studio_core import research_contract
+        runtime = self.base / 'harness-research'
+        (runtime / 'scripts' / 'lib').mkdir(parents=True)
+        (runtime / 'package.json').write_text('{"version": "1.0.0"}\n', encoding='utf-8')
+        (runtime / 'scripts' / 'lib' / 'synthesis-cli.mjs').write_text('', encoding='utf-8')
+        self.research = research.Research(runtime=runtime, run=research_stand_in.StandIn())
+        with mock.patch.object(research_contract, 'snapshot', return_value=None), \
+                self.assertRaises(WorkspaceError) as caught:
+            self.start()
+        self.assertEqual(str(caught.exception), self.engines.NO_SYNTHESIS)
+        self.assertEqual(self.made(), before, 'nothing is made')
+
+    def test_a_conversation_training_brought_in_is_not_refused(self):
+        chat = self.base / 'started-in-a-chat'
+        chat.mkdir()
+        workspace.init(chat, 'Started in a chat')
+        workspace.write_atomic(chat / 'intake.md', pipeline.intake_text(
+            pipeline.check_form({**FORM, 'title': 'Started in a chat'})).encode())
+        workspace.save(chat, 'intake', built=True)
+        workspace.approve(chat, 'intake')
+        self.assertNotIn('research_contract', workspace.load(chat))
+        made = self.engine.bring(chat)
+        self.assertNotIn('research_contract', self.engine._load(Path(made['path'])))
+
+
+class SavedWorkTests(StudioCase):
+    """`studio saved-work`: which saved trainings still need each older path. Each run is
+    begun on the legacy queue, as a saved one was, and its record set as the case needs."""
+
+    QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
+    CHAT = 'A conversation training whose research has not started.'
+    LAYOUT = 'It began before the current review layout, and its final review is still to come.'
+
+    def needed(self, said, ident):
+        return {entry['path']: entry['why'] for entry in
+                next(found for found in said['paths'] if found['id'] == ident)['needed_by']}
+
+    def saved(self, title, **changes):
+        """A training started from the form, its run record then changed as `changes` says:
+        a value of None takes the key out."""
+        return self.changed(self.start(title=title), **changes)
+
+    def changed(self, root, **changes):
+        record = self.engine._load(root)
+        for key, value in changes.items():
+            if value is None:
+                record.pop(key, None)
+            else:
+                record[key] = value
+        self.engine._store(root, record)
+        return root
+
+    def chat(self, title='Started in a chat'):
+        root = self.base / workspace.slugify(title)
+        root.mkdir()
+        workspace.init(root, title)
+        home.remember(root, title, [])
+        return root
+
+    def done(self, *steps):
+        """The engine's survey, with `steps` done as well."""
+        survey = self.engine._survey_files
+        return mock.patch.object(self.engine, '_survey_files', lambda root, record: replace(
+            survey(root, record), done=survey(root, record).done | set(steps)))
+
+    def test_nothing_is_run_or_asked_online_to_answer(self):
+        # Seeing what this computer has for a deck runs the slides tool and the brand skill,
+        # and may ask Google Drive; the answer needs only the files.
+        waiting = self.saved('Waiting training')
+        asked = mock.Mock(side_effect=AssertionError('the computer was looked at'))
+        with mock.patch.object(pipeline, 'wanted', lambda found: {'deck'}), \
+                mock.patch.object(self.engine, 'deck_needs', asked):
+            with self.assertRaises(AssertionError):
+                self.engine._survey(waiting, self.engine._load(waiting))
+            said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'research-queue'), {str(waiting): self.QUEUE})
+        asked.assert_called_once()
+
+    def test_a_run_begun_on_the_queue_needs_it_until_its_research_has_run(self):
+        waiting = self.saved('Waiting training')
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'research-queue'), {str(waiting): self.QUEUE})
+        self.assertEqual(said['paths'][0]['needed_by'][0]['title'], 'Waiting training')
+        with self.done('research'):
+            self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
+        # A training folder given outside the workspace is looked at too.
+        import shutil
+        outside = self.base / 'elsewhere' / 'waiting-training'
+        shutil.copytree(waiting, outside)
+        self.assertEqual(self.needed(self.engine.saved_work(folders=(outside,)),
+                                     'research-queue'),
+                         {str(waiting): self.QUEUE, str(outside): self.QUEUE})
+        self.changed(waiting, research_contract={'schema': 2, 'version': '1.0.0',
+                                                 'digest': 'abc'}, schema=3)
+        self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
+
+    def test_a_conversation_training_whose_research_has_not_started_needs_it(self):
+        chat = self.chat()
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'research-queue'), {str(chat): self.CHAT})
+        session = workspace.load(chat)
+        session['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
+        workspace.store(chat, session)
+        self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
+
+    def test_a_balanced_run_with_no_layout_needs_layout_1_until_its_final_review(self):
+        balanced = {'schema': 1, 'level': 'balanced'}
+        older = self.saved('Older layout', review_layout=None, review_policy=balanced,
+                           schema=2)
+        self.saved('Current layout', review_policy=balanced, schema=2)
+        self.saved('Step by step', review_layout=None)
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'review-layout-1'), {str(older): self.LAYOUT})
+        with self.done('review:final'):
+            self.assertEqual(self.needed(self.engine.saved_work(), 'review-layout-1'), {})
+
+    def test_the_old_slides_branches_are_always_unused_and_nothing_changes(self):
+        self.saved('Waiting training')
+        chat = self.chat()
+        outside = self.base / 'elsewhere'
+        before = (self.git('status', '--porcelain'),
+                  {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
+                   if path.is_file() and '.git' not in path.parts})
+        said = self.engine.saved_work(folders=(chat, outside))
+        self.assertEqual([entry['id'] for entry in said['paths']],
+                         ['research-queue', 'review-layout-1', 'old-harness-slides'])
+        self.assertEqual(said['unused'], ['review-layout-1', 'old-harness-slides'])
+        self.assertEqual((self.git('status', '--porcelain'),
+                          {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
+                           if path.is_file() and '.git' not in path.parts}), before)
+
+
 class ObjectionsTests(StudioCase):
     def test_read_every_objection_is_offered_only_where_the_check_objected(self):
         root = self.start()

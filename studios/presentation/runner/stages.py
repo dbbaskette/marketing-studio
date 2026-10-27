@@ -69,8 +69,6 @@ PIPELINE: tuple[Step, ...] = (
        'Waiting for you to approve the deck'),
     _s('deliver', 'deliver', 'code', 'Deliver the deck',
        'Saving the finished deck'),
-    _s('rehearse', 'rehearse', 'gate', 'Rehearse (coming later)',
-       'Rehearsal is coming later'),
 )
 BY_NAME = {s.name: s for s in PIPELINE}
 
@@ -91,7 +89,7 @@ def _has(run: dict, name: str) -> bool:
     existing = route == 'existing'
     if name == 'gate:classify':
         return route in ('document', 'existing')
-    if name in ('intake-source', 'brand', 'build-render', 'gate:build', 'deliver', 'rehearse'):
+    if name in ('intake-source', 'brand', 'build-render', 'gate:build', 'deliver'):
         return True
     if name in _RESEARCH:
         return bool((run.get('form') or {}).get('research')) and (
@@ -168,7 +166,7 @@ def survey(run: dict) -> Survey:
     nxt: Optional[Step] = None
     waiting: Optional[str] = None
     for s in listed:
-        if s.name == 'rehearse' or _is_done(run, s):
+        if _is_done(run, s):
             continue
         if s.kind == 'gate':
             state = _state(run, s)
@@ -211,13 +209,11 @@ def reopen(run: dict, gate: str) -> dict:
 
 
 def timeline(run: dict) -> list[dict]:
-    """One row per step for the page: done, current (the next one), upcoming; rehearse is later."""
+    """One row per step for the page: done, current (the next one), upcoming."""
     current = survey(run).next
     rows, seen_current = [], False
     for s in steps(run):
-        if s.name == 'rehearse':
-            state = 'later'
-        elif _is_done(run, s) and not seen_current:
+        if _is_done(run, s) and not seen_current:
             state = 'done'
         elif current is not None and s.name == current.name:
             state, seen_current = 'current', True

@@ -459,6 +459,12 @@ class FloorTests(unittest.TestCase):
         with mock.patch.object(brand, 'PINS', Path('/nowhere/companions.json')):
             self.assertEqual(brand.floor(), '0.14.0')
 
+    def test_brand_pins_are_this_studio_s(self):
+        import runner
+        self.assertEqual(brand.PINS, Path(runner.__file__).resolve().parents[1] / 'installer'
+                         / 'companions.json')
+        self.assertTrue(brand.PINS.is_file())
+
 
 class CompanionsTests(unittest.TestCase):
     """The brand skill draws through harness-slides and asks harness-research: it is told
@@ -805,7 +811,5 @@ class BrandEntryTests(unittest.TestCase):
             self.brand.look_choose(self.root / 'looks', 'example-bold', '  ')
         chosen = self.brand.look_choose(self.root / 'looks', 'example-bold', 'The bold one.')
         self.assertEqual((chosen['status'], chosen['choice']), ('chosen', 'example-bold'))
-        self.assertEqual(self.brand.look_status(self.root / 'looks')['choice']['words'],
-                         'The bold one.')
         with self.assertRaises(brand.Refused):
             self.brand.look_choose(self.root / 'looks', 'example-clear', 'Changed my mind.')

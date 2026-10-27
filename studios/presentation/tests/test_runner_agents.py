@@ -836,7 +836,10 @@ class ModelListTests(JobCase):
             'source': 'Anthropic model reference, cached 2026-10-06'})
 
     def test_the_list_of_claude_models_is_kept_as_data_with_its_source(self):
-        kept = json.loads((helpers.REPO / 'runner' / 'claude-code-models.json').read_text())
+        import studio_core
+        listed = Path(studio_core.__file__).resolve().with_name('claude-code-models.json')
+        self.assertEqual(settings.CLAUDE_MODELS, listed)
+        kept = json.loads(listed.read_text())
         self.assertEqual((kept['source'], kept['date']),
                          ('Anthropic model reference, cached 2026-10-06', '2026-10-06'))
         self.assertEqual(settings.claude_models()['models'], CLAUDE_LISTED)

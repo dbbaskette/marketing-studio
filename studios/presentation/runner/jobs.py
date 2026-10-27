@@ -42,7 +42,7 @@ import home
 from studio_core import model_profiles, research_contract, stops
 from workspace import WorkspaceError
 
-from runner import agents, briefs, settings, stages, worker_tools
+from runner import agents, briefs, decks, settings, stages, worker_tools
 
 ATTEMPTS = 3            # tries at one step: the first, and two more with the reason added
 QUESTIONS = 3           # questions the workers on one step may put to the person
@@ -123,9 +123,9 @@ def done(record: dict, step: stages.Step) -> bool:
 
 def first(record: dict) -> stages.Step | None:
     """The first step of a deck that is not done: what comes next. None once the deck is
-    delivered. Rehearsing is never next."""
+    delivered."""
     return next((step for step in stages.steps(record)
-                 if step.name != 'rehearse' and not done(record, step)), None)
+                 if not done(record, step)), None)
 
 
 def gate_state(record: dict, gate: str) -> str | None:
@@ -237,6 +237,10 @@ class Jobs:
             'dollars': dollars, 'tokens': tokens, 'outcome': outcome, 'error': error})
         if outcome == 'kept':
             entry['failed'] = 0
+            if decks.on_desk(record):
+                # How long a desk deck's steps take here, for its progress line.
+                from runner import desk
+                desk.took(desk.step_key(step), seconds)
         elif outcome == 'failed':
             entry['failed'] = entry.get('failed', 0) + 1
         return entry

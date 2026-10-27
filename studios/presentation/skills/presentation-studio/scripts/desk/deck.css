@@ -4,7 +4,7 @@
 
 /* What is said of the slide on the stage, under it. */
 .slide-about {
-  margin-top: 0.7rem;
+  margin-top: 0.6rem;
 }
 
 .slide-about > * + * {
@@ -14,21 +14,12 @@
 .pair {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
-  gap: 0.8rem;
+  gap: 0.6rem;
 }
 
 .strip-item .tag {
   grid-column: 1 / -1;
   justify-self: start;
-}
-
-/* Rehearsing with Yoodli is shown dimmed, as coming later. */
-.timeline .bead-stage[data-state="later"] {
-  opacity: 0.6;
-}
-
-.bead-later {
-  font-size: 0.72rem;
 }
 
 /* A deck's contact sheet, small, in a list and on its own screen. */
@@ -43,7 +34,7 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
   gap: 0.6rem;
-  margin: 0.4rem 0 0.8rem;
+  margin: 0.6rem 0;
 }
 
 .review-count {
@@ -116,12 +107,11 @@
 .review-bar {
   margin-top: 1rem;
   padding-top: 0.8rem;
-  border-top: 1px solid var(--hair);
 }
 
 /* A slide's points and notes, folded under its row, spaced as the row is. */
 .outline-slide > details > * + * {
-  margin-top: 0.55rem;
+  margin-top: 0.6rem;
 }
 
 /* The outline engine's self-contained wireframe is isolated from the page, so it cannot
@@ -149,4 +139,48 @@
   opacity: 0.45;
   filter: grayscale(1);
   transition: opacity 0.2s ease;
+}
+
+/* The new-deck sheet's options: a plain disclosure, its summary as tall as any control. */
+.new-options > summary {
+  display: list-item;
+  min-height: 2.75rem;
+  padding-block: 0.65rem;
+}
+
+.new-options > * + * {
+  margin-top: 0.6rem;
+}
+
+/* The deck desk (deck-desk.js): the slide cards under their section headings, each with its
+   picture, its words and its note. */
+.deck-desk-section > * + * {
+  margin-top: 1.1rem;
+}
+
+.deck-desk-section-title {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.deck-desk-slide > * + * {
+  margin-top: 0.6rem;
+}
+
+.deck-desk-picture {
+  max-width: 34rem;
+}
+
+.deck-desk-words > * + * {
+  margin-top: 0.35rem;
+}
+
+.deck-desk-outline {
+  margin: 0;
+  padding: 0;
+}
+
+/* The desk's two tabs sit beside its one sentence, and wrap under it on a phone. */
+.deck-desk-tabs {
+  min-width: 14rem;
 }

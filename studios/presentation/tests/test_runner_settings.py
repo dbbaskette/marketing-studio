@@ -230,5 +230,17 @@ class SharedTests(SettingsCase):
         self.assertEqual(settings.own(), {})
 
 
+class SavedFileTests(SettingsCase):
+    """runner.json, byte for byte, as the code wrote it before settings shared its parts."""
+
+    def test_runner_json_is_written_as_before(self):
+        settings.save(settings.Settings())
+        self.assertEqual(settings.path().read_bytes(),
+                         b'{\n  "deck_dollars": 20.0,\n  "look_for_updates": true,\n'
+                         b'  "notify": false,\n  "parallel": 2,\n  "schema": 1,\n'
+                         b'  "step_seconds": 900\n}\n')
+        self.assertFalse(self.config.exists(), 'the defaults write nothing every studio shares')
+
+
 if __name__ == '__main__':
     unittest.main()

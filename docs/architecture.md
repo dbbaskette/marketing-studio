@@ -13,8 +13,8 @@ self-contained installer archive for each studio.
 | `studios/blog/` | Blog Studio pipeline and native interfaces |
 | `studios/presentation/` | Presentation Studio pipeline and native interfaces |
 | `studios/training/` | Training Studio pipeline and native interfaces |
-| `core/studio_core/` | Shared settings storage, page-server protections, companion installation, and packaging |
-| `ui-kit/` | Common stylesheet and safe Markdown renderer |
+| `core/studio_core/` | Shared settings storage, page-server protections, companion installation, packaging, and the desk parts (`drafting/`, `text_checks.py`, `step_times.py`) |
+| `ui-kit/` | Common stylesheet (with the desk's styles), safe Markdown renderer, and the desk's page kit (`drafting.js`) |
 | `pins/companions.json` | Canonical companion revisions and integrity hashes |
 | `installer/` | Suite/subset install orchestration and restoration |
 

@@ -27,6 +27,7 @@ import workspace
 from runner import engine as engines
 from runner import gitstate, page, pipeline, settings, team
 from workspace import WorkspaceError
+from test_runner_gitstate import WorkspaceCase
 
 STAMP = r'^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$'
 STARTED = 'Rolling restarts: start the training from the form'
@@ -1160,6 +1161,47 @@ class PageTests(Team):
         self.assertEqual((handed['mine'], handed['driver']), (False, None))
         self.assertIn('Nobody is running this training',
                       self.ask(self.blake, 'run', {'path': theirs, 'action': 'stop'}, 409)['error'])
+
+
+class TagShapeTests(WorkspaceCase):
+    """The published tag and the notification variable are this studio's, before and after
+    team moved to the shared runner."""
+
+    def test_a_published_revision_keeps_its_tag_shape(self):
+        import json as _json
+        from test_runner_gitstate import git as _git
+        ws = gitstate.local(self.base / 'tag-shape')
+        self.write(ws, 'rolling-restarts/.training-studio/run.json', '{}\n')
+        gitstate.commit(ws, 'Start it')
+        first = team.publish(ws, 'rolling-restarts', 'Tag shape', True, 'Alex')
+        second = team.publish(ws, 'rolling-restarts', 'Tag shape', False, 'Alex')
+        self.assertEqual((first['tag'], second['tag']), ('training-studio/trainings/rolling-restarts/1', 'training-studio/trainings/rolling-restarts/2'))
+        self.assertEqual(_git(ws.repo, 'tag', '--list').splitlines(), ['training-studio/trainings/rolling-restarts/1', 'training-studio/trainings/rolling-restarts/2'])
+        self.assertEqual(team.revisions(ws, 'rolling-restarts'), 2)
+        latest = team.published(ws)
+        self.assertEqual([(entry['id'], entry['revision'], entry['ready']) for entry in latest],
+                         [('rolling-restarts', 2, False)])
+        self.assertEqual(latest[0]['path'], str(ws.root / 'rolling-restarts'))
+        # A tag written by plain git in the shape the code wrote before reads the same.
+        about = {'id': 'rolling-restarts', 'title': 'Tag shape', 'revision': 3, 'ready': True,
+                  'at': '2026-10-01T00:00:00Z', 'by': 'Blake'}
+        _git(ws.repo, 'tag', '--annotate', '-m', 'Publish Tag shape, revision 3', '-m',
+             _json.dumps(about, sort_keys=True), 'training-studio/trainings/rolling-restarts/3', 'HEAD')
+        self.assertEqual(team.revisions(ws, 'rolling-restarts'), 3)
+        self.assertEqual([(entry['revision'], entry['by']) for entry in team.published(ws)],
+                         [(3, 'Blake')])
+
+    def test_notifications_use_this_studio_s_variable(self):
+        self.assertEqual(team.REPLACED, 'TRAINING_STUDIO_NOTIFY')
+        self.assertEqual(team.APP, 'Training Studio')
+
+    def test_team_is_one_module_object(self):
+        import sys
+        from runner import gitstate as fellow
+        from runner import team as again
+        self.assertIs(team.gitstate, fellow)
+        self.assertIs(sys.modules['runner.team'], team)
+        self.assertIs(again, team)
 
 
 if __name__ == '__main__':

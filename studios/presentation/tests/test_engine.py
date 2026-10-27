@@ -28,8 +28,7 @@ class DispatchTests(unittest.TestCase):
         from runner import engine
         self.assertEqual(set(engine.RUN), {step.name for step in stages.PIPELINE})
         for name, method in engine.RUN.items():
-            if name != 'rehearse':
-                self.assertTrue(callable(getattr(engine.Engine, method)), name)
+            self.assertTrue(callable(getattr(engine.Engine, method)), name)
 
 
 class ReviewLevelFormTests(StudioCase):
@@ -77,6 +76,152 @@ class ReviewLevelFormTests(StudioCase):
         self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
 
 
+class SynthesisAtStartTests(StudioCase):
+    """A deck's research is not started on a Harness Research that cannot synthesize: the
+    start is refused with nothing made. A deck without research, and a deck brought in, are
+    not refused."""
+
+    def setUp(self):
+        super().setUp()
+        patch = mock.patch.object(self.engines, 'LEGACY_RESEARCH', False)
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def made(self):
+        """What a start could leave behind: the workspace's folders, the decks this computer
+        remembers, the workspace's commits and the shared studios config's bytes."""
+        import home
+        config = self.base / 'studios-config.json'
+        return (sorted(path.name for path in self.space.root.iterdir()),
+                [entry['path'] for entry in home.decks()], self.log(),
+                config.read_bytes() if config.exists() else None)
+
+    def refused(self, **changes):
+        before = self.made()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.start(research=True, review_level='automatic', review_seen='automatic',
+                       review_default=True, **changes)
+        self.assertEqual(str(caught.exception), self.engines.NO_SYNTHESIS)
+        self.assertEqual(self.made(), before, 'nothing is made')
+
+    def test_a_deck_with_research_is_refused_without_synthesis(self):
+        self.start(title='Earlier deck')
+        self.refused()
+
+    def test_a_deck_without_research_starts_as_before(self):
+        root = self.start(research=False)
+        self.assertNotIn('research_contract', decks.read_run(root))
+        self.assertIn(str(root), [entry['path'] for entry in __import__('home').decks()])
+
+    def test_a_read_error_is_refused_the_same_way(self):
+        from runner import research as tool
+        from stand_ins import research as research_stand_in
+        runtime = self.base / 'harness-research'
+        (runtime / 'scripts' / 'lib').mkdir(parents=True)
+        (runtime / 'package.json').write_text('{"version": "1.0.0"}\n', encoding='utf-8')
+        (runtime / 'scripts' / 'lib' / 'synthesis-cli.mjs').write_text('', encoding='utf-8')
+        self.research = tool.Research(runtime=runtime, run=research_stand_in.StandIn())
+        from studio_core import research_contract
+        with mock.patch.object(research_contract, 'snapshot', return_value=None):
+            self.refused()
+
+    def test_a_deck_brought_in_is_not_refused(self):
+        import shutil
+        root = self.start(research=False)
+        outside = self.base / 'outside' / 'restarts'
+        shutil.copytree(root, outside, ignore=shutil.ignore_patterns('work', 'sources'))
+        record = decks.read_run(outside)
+        record['form']['research'] = True
+        record.pop('research_contract', None)
+        decks.write_run(outside, record)
+        made = self.engine.bring(outside)
+        self.assertNotIn('research_contract', decks.read_run(Path(made['path'])))
+
+
+class SavedWorkTests(StudioCase):
+    """`studio saved-work`: which saved decks still need each older path, read from decks
+    written as files, with nothing started and nothing changed."""
+
+    QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
+    DRAWN = 'It was drawn a cover to show its brand.'
+    MAY = 'It may need it: its brand was exported before it reached the look.'
+
+    def deck(self, ident, research=True, done=(), gates=None, files=(), at=None, **extra):
+        """A deck's folder as a saved run leaves it: its record and the files named."""
+        root = (at or self.space.root) / ident
+        root.mkdir(parents=True)
+        decks.write_run(root, {
+            'schema': decks.SCHEMA, 'id': ident, 'title': ident.title(), 'route': 'scratch',
+            'form': {**runner_support.FORM, 'title': ident.replace('-', ' ').title(),
+                     'research': research},
+            'created': '2026-01-01T00:00:00Z', 'driver': None, 'gates': gates or {},
+            'steps': {name: {'done': '2026-01-01T00:00:00Z'} for name in done},
+            'classified': None, 'look': None, 'revisions': [], 'halted': None, **extra})
+        for name in files:
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text('kept\n', encoding='utf-8')
+        return root
+
+    def kept(self):
+        self.git('add', '-A')
+        self.git('commit', '--quiet', '-m', 'Decks saved before')
+
+    def tree(self, *folders):
+        return {path: path.read_bytes() for folder in folders for path in
+                sorted(folder.rglob('*')) if path.is_file() and '.git' not in path.parts}
+
+    def needed(self, said, ident):
+        return {entry['path']: entry['why'] for entry in
+                next(found for found in said['paths'] if found['id'] == ident)['needed_by']}
+
+    def test_a_deck_begun_on_the_queue_needs_it_until_its_research_has_run(self):
+        waiting = self.deck('waiting-deck')
+        self.deck('researched-deck', done=('research',))
+        self.deck('contract-deck', research_contract={'schema': 2, 'version': '1.0.0',
+                                                      'digest': 'abc'})
+        self.deck('plain-deck', research=False)
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'research-queue'), {str(waiting): self.QUEUE})
+        self.assertEqual(said['paths'][0]['needed_by'][0]['title'], 'Waiting Deck')
+
+    def test_an_undelivered_deck_may_need_the_cover_sample(self):
+        drawn = self.deck('drawn-deck', research=False, files=('look.md',))
+        self.deck('shown-deck', research=False, files=('look.md', 'work/look/shown.json'))
+        exported = self.deck('exported-deck', research=False,
+                             files=('brand/brand-contract.json',))
+        self.deck('looked-deck', research=False, files=('brand/brand-contract.json',),
+                  gates={'gate:look': {'state': 'approved'}})
+        self.deck('delivered-deck', done=('research', 'deliver'),
+                  files=('look.md', 'brand/brand-contract.json'))
+        said = self.engine.saved_work()
+        self.assertEqual(self.needed(said, 'cover-sample'), {str(drawn): self.DRAWN,
+                                                             str(exported): self.MAY})
+        self.assertEqual(self.needed(said, 'research-queue'), {})
+
+    def test_the_old_slides_branches_are_always_unused(self):
+        self.deck('waiting-deck', files=('look.md',))
+        said = self.engine.saved_work()
+        self.assertEqual([entry['id'] for entry in said['paths']],
+                         ['research-queue', 'cover-sample', 'old-harness-slides'])
+        self.assertEqual(said['unused'], ['old-harness-slides'])
+
+    def test_a_folder_given_outside_the_workspace_is_looked_at_too(self):
+        outside = self.deck('outside-deck', at=self.base / 'elsewhere')
+        self.assertEqual(self.needed(self.engine.saved_work(), 'research-queue'), {})
+        said = self.engine.saved_work(folders=(outside, self.base / 'no-deck-here'))
+        self.assertEqual(self.needed(said, 'research-queue'), {str(outside): self.QUEUE})
+
+    def test_nothing_in_the_workspace_changes(self):
+        self.deck('waiting-deck', files=('look.md', 'brand/brand-contract.json'))
+        outside = self.deck('outside-deck', at=self.base / 'elsewhere')
+        self.kept()
+        before = self.tree(self.space.repo, outside)
+        said = self.engine.saved_work(folders=(outside,))
+        self.assertEqual(len(self.needed(said, 'research-queue')), 2)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertEqual(self.tree(self.space.repo, outside), before)
+
+
 class AheadTests(StudioCase):
     """Each deck's view says how many steps are left, where it next stops for the person
     under its own level, and what its agent's jobs have spent so far."""
@@ -102,7 +247,7 @@ class AheadTests(StudioCase):
         self.assertEqual(ahead['next_stop'], 'Review the direction')
         self.assertEqual(ahead['next_gate'], 'gate:outline')
         self.assertEqual(ahead['steps_left'], len([row for row in shown['timeline']
-                                                    if row['state'] not in ('done', 'later')]))
+                                                    if row['state'] != 'done']))
         self.assertEqual(ahead['steps_left'], 10)
         # The scripted agents report no cost: the line says so, never $0.00.
         self.assertIsNone(ahead['dollars'])
@@ -181,7 +326,7 @@ class RedoTests(StudioCase):
         record = decks.read_run(root)
         redo = self.view(root)['gate']['redo']
         again = [step for step in stages.steps(stages.reopen(record, 'gate:outline'))
-                 if step.kind != 'gate' and step.name != 'rehearse'
+                 if step.kind != 'gate'
                  and step.name in self.engine._reopened(record, 'gate:outline')]
         self.assertEqual(redo['names'][0], 'Draft the outline')
         self.assertEqual(redo['steps'], len(again))
@@ -277,8 +422,8 @@ class ScratchTests(StudioCase):
         self.assertEqual(view['deliver']['revision'], 1)
         self.assertTrue(view['deliver']['url'].startswith('https://docs.google.com/'))
         self.assertIsNone(view['gate'])
-        self.assertEqual([row['state'] for row in view['timeline']][-1], 'later')
-        self.assertTrue(all(row['state'] == 'done' for row in view['timeline'][:-1]))
+        self.assertNotIn('rehearse', [row['name'] for row in view['timeline']])
+        self.assertTrue(all(row['state'] == 'done' for row in view['timeline']))
         decisions = [line for line in self.log()[before:]
                      if line.startswith('Rolling restarts: approve the ')]
         self.assertEqual(decisions, ['Rolling restarts: approve the outline',

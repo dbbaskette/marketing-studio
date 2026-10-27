@@ -819,6 +819,10 @@ class Workers:
         self._ok(tools.preview_section(made))
         self._ok(tools.submit_section(made, 'Nothing: it read well at once.'))
 
+    def words(self, tools, job):
+        spec = tools.job['artifacts']['words']
+        self._ok(tools.submit_artifact('words', spec['text'] + ' (fresh)'))
+
     def review(self, tools, job):
         review = tools.job['review']
         listed = review['slides']
@@ -830,6 +834,24 @@ class Workers:
             self._ok(tools.look_at_slide(slide['number']))
         found = self.found.pop(0)(listed) if self.found else []
         self._ok(tools.submit_assessment(json.dumps(found), '[]'))
+
+
+def read_word_for_word(case):
+    """An outline job for a case's workers: an existing deck's inventory read word for word,
+    as test_flow_routes reads one; any other outline drafted as the workers draft it."""
+    from test_flow_routes import read_in
+
+    from runner.steps import outline as outlines
+
+    def extract(tools, job):
+        if tools.job['artifacts']['outline'].get('rules'):
+            found = next(Path(case.space.repo).rglob(Path(outlines.INVENTORY).name))
+            said = read_in(json.loads(found.read_text(encoding='utf-8')))
+            case.workers.outline_said = said
+            case.workers._ok(tools.submit_outline(json.dumps(said)))
+        else:
+            case.workers.outline(tools, job)
+    return extract
 
 
 class StudioCase(unittest.TestCase):
@@ -873,6 +895,8 @@ class StudioCase(unittest.TestCase):
                                          'GIT_CONFIG_NOSYSTEM': '1'}),
             mock.patch.object(worker_tools, 'fetch_once', self.web.opener),
             mock.patch.object(worker_tools, 'resolve', self.web.resolver),
+            # The research stand-in is the legacy queue CLI.
+            mock.patch.object(engines, 'LEGACY_RESEARCH', True),
             # The engine and a worker's tools both find the slides tool and a brand skill
             # through these two, so no test can reach a real one.
             mock.patch.object(engines.slides_tool, 'Slides', self.the_slides),
@@ -945,18 +969,9 @@ class StudioCase(unittest.TestCase):
         """An existing deck started at `level` under the review level `review`, read word
         for word by the extract worker, as test_flow_routes reads one."""
         from unittest import mock
-        from runner.steps import outline as outlines
-        from test_flow_routes import DECK, read_in
 
-        def extract(tools, job):
-            if tools.job['artifacts']['outline'].get('rules'):
-                found = next(Path(self.space.repo).rglob(Path(outlines.INVENTORY).name))
-                said = read_in(json.loads(found.read_text(encoding='utf-8')))
-                self.workers.outline_said = said
-                self.workers._ok(tools.submit_outline(json.dumps(said)))
-            else:
-                self.workers.outline(tools, job)
-        self.workers.queued['outline'] = [extract] * 4
+        from test_flow_routes import DECK
+        self.workers.queued['outline'] = [read_word_for_word(self)] * 4
         with mock.patch('studio_core.review_policy.capture',
                         return_value={'schema': 1, 'level': review}):
             return self.start(route='existing', level=level, title='Old deck',
@@ -1011,6 +1026,54 @@ class StudioCase(unittest.TestCase):
 
     def record(self, root: Path) -> dict:
         return json.loads((root / 'run.json').read_text())
+
+
+class DeskCase(StudioCase):
+    """A deck started from the desk's start, over a brand that offers looks and an outline
+    the stand-in splits into two sections: slides 2 to 4, and slides 5 to 7, between a cover
+    (slide 1) and a closing (slide 8)."""
+
+    def setUp(self):
+        super().setUp()
+        self.brand.run.offers_looks = True
+        self.brand.run.guides = True
+        self.workers.outline_said = LONG_OUTLINE
+
+    def start_desk(self, uploads=None, engine=None, **changes) -> Path:
+        return self.start(uploads=uploads, engine=engine, **{'flow': 'desk', **changes})
+
+    def pick_look(self, root: Path, choice: str | None = None, engine=None):
+        """Pick a look at the desk's one pause: the first the brand offers, unless named."""
+        engine = engine or self.engine
+        gate = engine.view(root)['gate']
+        assert gate and gate['name'] == 'gate:look', gate
+        offered = (gate.get('offered') or {}).get('looks') or []
+        return engine.desk_look(root, choice or offered[0]['id'])
+
+    def on_desk(self, root: Path) -> dict:
+        """The deck rests on the desk: gate:build waits, and the desk has the deck."""
+        shown = self.view(root)
+        self.assertEqual((shown['gate'] or {}).get('name'), 'gate:build', shown['sentence'])
+        self.assertTrue((self.record(root).get('desk') or {}).get('arrived_at'))
+        return shown
+
+    def desk_view(self, root: Path) -> dict:
+        return self.view(root)['desk']
+
+    def gated(self, **changes) -> Path:
+        """A deck started the gated way, approved stop by stop, with the first look where
+        one is asked for, until its deck waits at gate:build."""
+        root = self.start(**changes)
+        for _ in range(12):
+            gate = self.view(root)['gate']
+            assert gate is not None, self.view(root)['sentence']
+            if gate['name'] == 'gate:build':
+                return root
+            offered = gate.get('offered') or (gate.get('look') or {}).get('offered')
+            self.decide(root, gate['name'], 'approve', None,
+                        {'look': offered['looks'][0]['id']}
+                        if offered and not offered['chosen'] else None)
+        self.fail('gate:build never came up')
 
 
 class Notifier:
@@ -1147,6 +1210,8 @@ def fake_studio() -> Fake:
     for patch in (
             mock.patch.object(worker_tools, 'fetch_once', web.opener),
             mock.patch.object(worker_tools, 'resolve', web.resolver),
+            # The research stand-in is the legacy queue CLI, as in StudioCase.
+            mock.patch.object(engines, 'LEGACY_RESEARCH', True),
             mock.patch.object(engines.slides_tool, 'Slides', lambda *a, **k: slides),
             mock.patch.object(engines.brand_skill, 'Brand', lambda *a, **k: brand),
             mock.patch.object(engines.agents, 'shared_temporary', lambda: []),

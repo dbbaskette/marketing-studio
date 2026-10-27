@@ -50,8 +50,7 @@ features are already implemented.
 
 ## Layout rules
 
-These rules put each screen in the order a person works. Blog Studio follows them; apply
-the same rules to Presentation Studio, Training Studio and Marketing Studio.
+These rules put each screen in the order a person works. Every studio follows them.
 
 | Part | Rule |
 | --- | --- |
@@ -87,6 +86,12 @@ shared setup, Blog Studio, Presentation Studio and Training Studio:
 | Studio mark | `.studio-symbol`, the rounded tile that carries a studio's drawing in its accent colour |
 | Studio identity | `[data-studio]` sets `--studio-color` and `--studio-wash`; `.card[data-studio]` takes that studio's colour for its accent, link, focus and hover border |
 | Way back | `.suite-link`, the "Marketing Studio" sidebar item a studio shows when Marketing Studio opened it |
+| Filters | `.filter-bar` (a `.search` field first), `.more-filters`, `.filters-toggle` |
+| Selection | `.panel-heading` with `.select-page`, and `.selection-bar.glass` with `.selection-count` and `.selection-actions` |
+| Sheet steps | `.create-flow`, `.create-step` (each headed by a `.sheet-part`), `.create-foot`, and the sticky `.sheet-heading` |
+| Page | `.stack` (its parts `1.1rem` apart), `.page-head` (the `.lede` and a `.bar` beside it) |
+| Ticks | `label.check` with its checkbox; `.research-choices` and `.site-choices` for Research from |
+| Desk | `.desk-*` from `drafting.js`: the reading column and aside, part cards, the selection bar, History and the Finishing panel |
 
 A page stylesheet (`home.css`, `blog.css`, `deck.css`, or an inline style on a static page)
 lays out its own parts. It may size and place a shared control, but never draws one, never

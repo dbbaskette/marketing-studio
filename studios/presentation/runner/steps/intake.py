@@ -33,6 +33,9 @@ from runner.steps import Work
 
 KINDS = ('spec', 'material')
 CORRECTED = {'spec': 'You said it is a spec.', 'material': 'You said it is material.'}
+# How a desk deck's start said its document is read, when it said: no job reads it.
+GIVEN = {'spec': 'You said at the start it lays out the slides.',
+         'material': 'You said at the start it is material to build from.'}
 NAME = 'classification'
 FILE = 'classify.md'
 GATE = 'gate:classify'
@@ -138,6 +141,17 @@ def keep_classification(root, run: dict, handed) -> dict:
     run['classified'] = kind
     gate = (run.setdefault('gates', {})).get(GATE) or {}
     run['gates'][GATE] = {'state': 'waiting', 'round': int(gate.get('round') or 0) + 1}
+    decks.write_run(root, run)
+    return run
+
+
+def given(root, run: dict, kind: str) -> dict:
+    """The reading the desk's start gave the document: kept as the verdict, in the
+    person's words, with no job. Returns the run, written."""
+    if kind not in KINDS:
+        raise WorkspaceError('A document is a spec or material.')
+    run['classified'] = kind
+    _write_note(root, kind, GIVEN[kind], None, corrected=False)
     decks.write_run(root, run)
     return run
 

@@ -64,6 +64,8 @@ AGAIN, DEFAULT = 'again', 'default'   # choices on the page: draw the looks agai
                                       # on in the brand's default when none could be rendered
 NO_COMMENT = 'Picked {name} on the page, with no comment.'
 DEFAULT_NAME = "the brand's default"
+# The look a desk deck's start chose: the brand's default, with no pause to pick.
+START_DEFAULT_WORDS = "You chose the brand's default look at the start: {name}."
 LOOK_MD = 'look.md'
 COVER = 'cover'
 
@@ -289,11 +291,14 @@ def default_name(root, shown: dict) -> str:
         or DEFAULT_NAME
 
 
-def choose_default(root, brand_skill, level: str = 'automatic') -> dict | None:
+def choose_default(root, brand_skill, level: str = 'automatic', words: str | None = None,
+                   by: str = 'review-policy') -> dict | None:
     """A look gate the level passes with no look picked: the brand's default look, recorded
     with why, whether or not its looks could be rendered. Under Automatic draft it says so;
-    at any other level it says no look was picked in the direction review. None where the
-    brand was not asked for looks, or where the outline changed since they were drawn."""
+    at any other level it says no look was picked in the direction review. `words` (with
+    {name}) say why instead, as a desk deck's start does, and `by` says who chose. None
+    where the brand was not asked for looks, or where the outline changed since they were
+    drawn."""
     shown = shown_looks(root)
     if shown is None:
         return None
@@ -305,11 +310,9 @@ def choose_default(root, brand_skill, level: str = 'automatic') -> dict | None:
     if default is None:
         # Nothing could be rendered: the default, used without anyone seeing it, and why.
         return choose(root, brand_skill, DEFAULT, deck_flow.UNRENDERED_WORDS.format(
-            why=shown.get('failed') or 'no samples', name=default_name(root, shown)),
-            by='review-policy')
-    words = deck_flow.DEFAULT_WORDS if level == 'automatic' else deck_flow.DEFAULT_KEPT
-    return choose(root, brand_skill, default['id'], words.format(name=default['name']),
-                  by='review-policy')
+            why=shown.get('failed') or 'no samples', name=default_name(root, shown)), by=by)
+    words = words or (deck_flow.DEFAULT_WORDS if level == 'automatic' else deck_flow.DEFAULT_KEPT)
+    return choose(root, brand_skill, default['id'], words.format(name=default['name']), by=by)
 
 
 def _markdown(form: dict, shown: dict | None = None) -> str:
@@ -378,7 +381,9 @@ def approve(root, run: dict, note: str | None = None, by: str = 'page') -> None:
     note = (note or '').strip() or None
     outline = _outline(root)
     said = (((run.get('gates') or {}).get('gate:outline') or {}).get('note'))
-    words = [f'{"Continued automatically" if by == "review-policy" else "Approved on the page"}, {at}, in {decks.brand_words(run.get("form") or {})}.']
+    how = {'review-policy': 'Continued automatically', 'desk': 'Continued on the desk'}.get(
+        by, 'Approved on the page')
+    words = [f'{how}, {at}, in {decks.brand_words(run.get("form") or {})}.']
     picked = chosen(root)
     if picked:
         # Kept in the run, which every computer reads: whether the look was seen rendered.
@@ -386,7 +391,7 @@ def approve(root, run: dict, note: str | None = None, by: str = 'page') -> None:
         run['look_by'] = picked.get('by') or by
         # A look the saved level chose is recorded as it was; only a look the person
         # picked is in their words.
-        whose = 'Recorded' if picked.get('by') == 'review-policy' else 'In their words'
+        whose = 'Recorded' if picked.get('by') in ('review-policy', 'desk') else 'In their words'
         words.append(f"Look chosen: {picked['name']} ({picked['choice']}). {whose}: "
                      f"\"{picked['words']}\"")
     words += [line for line in (said, note) if line]

@@ -103,7 +103,7 @@ The first time, the page opens on set-up. It asks three things.
 - **The agent and the limits.** Which agent drafts by default, which of its models and how hard it reasons, the longest one step may take, the most one training may spend, and how many trainings may work at once.
   - The models are the agent's own. Codex lists them itself, in its own order, each with its name, its short name in brackets and what Codex says of it ("Older generation workhorse model.", for example). The list is asked for when the choice is shown and kept for an hour. Claude Code has no list, so the runner keeps one: each version by its exact name, such as "Opus 5.5 (claude-opus-5-5)", grouped by family, newest first. Each family's own name comes first in its group, saying what it means today: "Opus, always the newest (now Opus 5.5)". Whatever is chosen is what the agent is given. "The agent's own choice" leaves the model to the agent, and "Another model…" takes a name the list does not have. A model chosen before, or a name typed in, still works: one the list does not have shows as "Another model…". If the list cannot be had, the page says so, and a name can still be typed.
   - The reasoning level is how much the agent thinks before it answers: more is slower, and costs more. Only the levels the chosen model takes are offered, and choosing another agent or model lets go of a level it does not take. A model that takes none, such as Haiku 4.5, is offered none and given none. "The agent's own choice" leaves that to the agent too.
-  - The last step of "New training" asks the same, starting from these. A training keeps what it started with, and every step of it uses that.
+  - Step 4 of "New training", **Where it stops, and the assistant**, asks the same, starting from these. A training keeps what it started with, and every step of it uses that.
 
 Where this computer can make a deck, set-up asks two more things.
 
@@ -141,9 +141,12 @@ Saving writes only the values you changed on that screen, and only where the fil
 
 ## Start a training
 
-"New training" has three steps: Learning goal, Materials, and Review and start.
-Describe the learner's task and prior knowledge, choose the materials and learner
-time, then confirm sources and the saved review preference. Research and the
+"New training" opens one sheet in four numbered steps: **1. Learning goal**,
+**2. Materials**, **3. Research** and **4. Where it stops, and the assistant**, then the
+**Ready to start** summary, with **Start the training** and **Cancel** together at its
+end. Describe the learner's task and prior knowledge, choose the materials and learner
+time, then confirm sources and the saved review preference. Cancel closes the sheet and
+keeps what you filled in for the session. Research and the
 teaching blueprint support whichever materials you select. Guide-only,
 brief-only, deck-only and practice-only bundles are supported; existing runs
 keep their selections. Yoodli requires a reference brief and practice scenarios
@@ -155,10 +158,18 @@ materials appear before the collapsible production steps. If another studio
 changes the review preference while this form is open, starting is refused
 before any files are made; the page reloads the preference and keeps the answers.
 
-The sequence below describes Step by step review. Balanced stops for the research
-questions, then groups the teaching plan (with each deck's wireframe draft and its
-look) and, after each drawn deck, the finished-material decisions; Automatic draft
-stops at each drawn deck and brings the finished materials for review. A deck that
+### Review levels
+
+Where a training stops for you is its review level. Balanced reads the research plan,
+then **Review the first drafts** for all levels together (the research and what is
+written so far, with each deck's wireframe draft and the look you pick from the brand's
+rendered samples), then each drawn deck, then the finished materials. Automatic draft
+stops at each drawn deck and the finished materials, and uses the brand's default look;
+Step by step reviews every stage. A drawn deck always comes to you, and no stop is
+passed while a review or the brand's audit still finds something grave. Each run says
+how many steps are left, where it next stops and what it has spent so far.
+
+A deck that
 continued past its own gate under the saved level before this release is not held
 again: only decks drawn from now on stop at it. A training chooses where it stops on
 the last step of the form, in **Where this training stops**; the shared level is the
@@ -170,6 +181,10 @@ the review level they started with. For web research and legacy queues, the rese
 means: it applies to any Balanced training that has not
 reached its research plan yet, including one started earlier, and a run already past
 its plan is unaffected.
+
+### The steps
+
+The steps below are Step by step review.
 
 | The runner does this on its own | Then it stops for you |
 | --- | --- |
@@ -197,27 +212,27 @@ New Balanced and Automatic draft trainings prepare the research, blueprints, gui
 
 After a decision, its time and what happens next stay above the working line until the next stop for you. With levels, every blueprint is drafted first. Then each level is finished in turn, lowest first.
 
-**The deck.** Choose "No deck" when you start and the deck is left out. Otherwise you choose its brand and the brand's variant from what your brand skill offers, and whether it is a PowerPoint file or Google Slides. The deck is made for each level after its brief, the brand's way: the deck's slide task is started through the brand's own guidance, the brand's guidance for composers goes to every agent that draws, and the brand decides how it looks. You decide three times.
+**The deck.** Choose "No deck" when you start and the deck is left out. Otherwise you choose its brand and the brand's variant from what your brand skill offers, and whether it is a PowerPoint file or Google Slides. The deck is made for each level after its brief, the brand's way: the deck's slide task is started through the brand's own guidance, the brand's guidance for composers goes to every agent that draws, and the brand decides how it looks. A new deck is approved on what it says and on its look, as the brand's checkpoints are, and then on the deck itself. You decide three times.
 
+- **What the deck says.** Every slide's title, points, caveat and notes, beside its wireframe draft, before any slide is drawn. Words are quick to change here and slow to change later. The run says what a deck of this size has cost before.
 - **The look.** After what the deck says is approved (`gate:deck-look`), the brand draws one of its slides in each of its looks (`deck-look`), rendered the way this computer renders every preview, which the page says. You pick one on a picker that shows each look with what it is for, and may say why; your words are kept with the choice, and the brand writes the look into the deck's outline. Under Balanced you pick it in **Review the first drafts** instead. If the looks cannot be rendered, nothing is picked blind: try again, or carry on knowingly in the brand's default, and the deck says it is an unreviewed draft of its look. Automatic draft uses the brand's default and says why. A brand too old to offer looks is noted, and the deck is drawn in its default direction.
-
-- **What the deck says, and how each slide is drawn.** Every slide's title, points, caveat and notes, before any slide is drawn. Words are quick to change here and slow to change later. The run says what a deck of this size has cost before.
-  - Each slide's words sit beside its design: the visual and what it teaches, how it is laid out, the claim, what it was weighed against, the assets it needs and any not found yet, and the wording it must keep. A slide that is right as text says why.
-  - It is still one decision. Approving records your approval of the words and the design together, in harness-slides' own record of the design, and the slides are drawn from both. Ask for changes and the words and the design come back together. When a change touches only some slides, the others are marked as approved before.
-  - A deck keeps the review it started with, so a deck that was already under way is never redesigned behind your back. A deck begun before decks had a design shows its words alone, as before.
 - **The deck itself.** Every slide as a picture, with what the review still finds, the result of the brand's own check, and which slides cover each objective. The file you approve is the one whose pictures you are shown.
 
-Between the two, the slides are drawn in sections, side by side, by agents that look at a preview of what they draw. A deck whose design you approved is drawn from it: each agent is given the approved design of its slides and the icon each concept has across the whole deck, and harness-slides checks every section, and then the whole deck, against what you approved. Such a deck needs a harness-slides that can check a section; on a computer whose harness-slides cannot, the run stops and says to update it, and your approval is kept. Where harness-slides keeps a deck's pictures and icons, the icons the design names are found in your brand's library before anything is drawn, and every agent uses the same ones. A picture the design needs, such as a screenshot, is yours to give: the run waits, the deck card lists what is still needed, and you add the picture there with what it shows and where it came from. Nothing needs approving again, and giving another picture later has the slides that show it drawn again. Generated art uses harness-slides' own image setup; when it is not set up, the run says what harness-slides needs. A different agent then reviews every slide. Sections with something badly wrong in how they are drawn are drawn again, at most twice. After that the deck comes to you as it is, with what remains listed, the gravest first. A finding about what a slide says is never fixed for you: it is listed, and "Ask for changes" takes you back to the words.
+**A talk or a handout, asked once.** With the slide deck, the form's Materials step asks **How is this deck used?**: **Presented in a session** (a talk, the default) or **Read on its own**. The brand is exported, the looks drawn and the outline checked for that delivery; a talk's notes carry what the presenter says and the source behind each claim. A training started before this was asked stays for reading, and a change after the first outline is refused.
+
+**Walking through each slide's design.** **Walk through each slide's design before it is built**, beside **How is this deck used?** on the form, is off by default. With it on, what the deck says is approved with how each slide is drawn:
+
+- Each slide's words sit beside its design: the visual and what it teaches, how it is laid out, the claim, what it was weighed against, the assets it needs and any not found yet, and the wording it must keep. A slide that is right as text says why.
+- It is still one decision. Approving records your approval of the words and the design together, in harness-slides' own record of the design, and the slides are drawn from both. Ask for changes and the words and the design come back together. When a change touches only some slides, the others are marked as approved before.
+- A deck keeps the review it started with, so a deck that was already under way is never redesigned behind your back. A deck begun before decks had a design shows its words alone, as before. A deck already written keeps what it was written with, and **Redesign** still draws one from a design.
+
+After what the deck says and its look are settled, the slides are drawn in sections, side by side, by agents that look at a preview of what they draw. A deck whose design you approved is drawn from it: each agent is given the approved design of its slides and the icon each concept has across the whole deck, and harness-slides checks every section, and then the whole deck, against what you approved. Such a deck needs a harness-slides that can check a section; on a computer whose harness-slides cannot, the run stops and says to update it, and your approval is kept. Where harness-slides keeps a deck's pictures and icons, the icons the design names are found in your brand's library before anything is drawn, and every agent uses the same ones. A picture the design needs, such as a screenshot, is yours to give: the run waits, the top of the run and the deck card list what is still needed, and **Add the picture** opens a sheet, **Add a picture**, that asks for the picture, what it shows, and where it came from with any limit on its use. Nothing needs approving again, and giving another picture later has the slides that show it drawn again. Generated art uses harness-slides' own image setup; when it is not set up, the run says what harness-slides needs. A different agent then reviews every slide. Sections with something badly wrong in how they are drawn are drawn again, at most twice. After that the deck comes to you as it is, with what remains listed, the gravest first. A finding about what a slide says is never fixed for you: it is listed, and "Ask for changes" takes you back to the words.
 
 Where harness-slides can review a deck against the design you approved, a deck drawn from that design is reviewed that way. harness-slides renders the whole deck itself, with LibreOffice on this computer, or through Google Drive when that is where your previews go and harness-slides can, and that file is the deck that comes to you, with its pictures. The reviewer answers harness-slides' own questions about every slide: whether the visual teaches what the slide claims, whether it is drawn as approved, whether its pictures and icons are there, and whether it fits. A slide approved as plain text, such as a quiz question, is accepted without pictures. What remains is listed by kind at the deck's gate.
 - A finding that drawing again can put right, keeping the approved idea and words, is drawn again as above.
 - A finding that needs other words, other facts or another way of showing the idea comes back to you at what the deck says, before anything more is drawn, with why. Ask for changes there, or approve it as it stands to have the deck finished, with those findings listed when it comes to you. An agent drawing a section again can send a slide back the same way. This happens at most once for each approval.
 - If the deck, its pictures or what it was built from change after the review, it is rendered and reviewed again before it comes to you. Without LibreOffice, and without a harness-slides that renders a review through Drive, the run stops and says to install it.
 - Where harness-slides can, the deck is put to you there too, with what its review still finds. Your approval at the deck's gate is then sent to harness-slides as your answer, before it is recorded, and nothing is recorded if harness-slides does not take it.
-
-**A talk or a handout, asked once.** The deck step asks **How is this deck used?**: **Presented in a session** (a talk, the default) or **Read on its own**. The brand is exported, the looks drawn and the outline checked for that delivery; a talk's notes carry what the presenter says and the source behind each claim. A training started before this was asked stays for reading, and a change after the first outline is refused.
-
-**Walking through each slide's design.** A new deck is approved on what it says and on its look, as the brand's checkpoints are. **Walk through each slide's design before it is built**, on the deck step, off by default, runs the design session above; a deck already written keeps what it was written with, and **Redesign** still draws one from a design.
 
 **A new harness-slides.** A deck needs Harness Slides 0.16.0 or newer, the version the installer pins, and a brand skill of 0.14.0 or newer; when the brand skill's own installer brings an older Harness Slides, Status says so. A deck whose design is walked through also needs a harness-slides that keeps a design, checks each section against it, keeps the deck's pictures and icons and reviews the whole deck against it. The Status screen says what the one on this computer lacks, in plain words, and "See the versions" goes to where it is updated. Until then a training whose deck has not begun is made up to its deck and waits there, saying the same; check this computer again once it is updated, and the deck begins. The brand skill's line says too whether it can export a brand for a deck and check it again.
 
@@ -235,7 +250,7 @@ You can close the page while it works. Home, and the browser if you turned notif
 
 ## Where the research looks
 
-The last step of "New training" asks where the research looks: **Research from: Your documents, Your sites (N), The public web**, each on or off, any of them together. At least one must be on; with none, the form says "Choose where research may look: your documents, your sites or the public web." and does not start.
+Step 3 of "New training", **Research**, asks where the research looks: **Research from**, a row of ticks for **Your documents**, **Your sites (N)** and **The public web**, each on or off, any of them together. At least one must be on; with none, the form says "Choose where research may look: your documents, your sites or the public web." and does not start.
 
 - **Your documents** are the files you add right after starting (see below).
 - **Your sites** are a list of base addresses, such as `blogs.vmware.com/tanzu`. The list starts as the one every studio shares, kept in Shared settings in the studios config under `research.sites`, with each site ticked. Untick a site to leave it out of this training, or add one under "Add a site for this training": the runner checks it the way every studio does and says what is wrong with one it cannot use, and the site is for this training only; the shared list stays as it is. Training Studio reads the shared list and never writes it.
@@ -347,7 +362,7 @@ The original folder is left exactly as it was, with nothing deleted. From then o
 - Reusing a teammate's scenarios or audiences in a new training is not in the runner yet. The [team hub](team-hub.md) does it from a conversation.
 - A training made in a conversation is not picked up by the runner until you bring it in, and a training the runner drives should not also be driven from a conversation while it runs.
 - Working as a team has been tried with two people's data on one computer against one repository. Two real computers, and a teammate installing it for the first time, have not been tried yet.
-- Claude Code's models are kept in one file, `runner/claude-code-models.json`, because Claude Code cannot list them and the runner has no key to ask Anthropic. To bring it up to date, read Anthropic's model reference and change that file alone. Set `source` and `date` to the day you read it. A version is `{"id", "label", "family", "levels"}`: `id` is the exact name the agent is given, `label` how the page names it ("Opus 5.5"), and `levels` the reasoning levels it takes, `[]` for none. A family's own name is `{"id", "family", "alias"}`, where `alias` is the version it means now; its label and levels follow from that version. Keep each family's own name first, then its versions newest first, and leave out models only some accounts can use. The runner refuses a file that is not whole, and `tests/test_runner_agents.py` says what the list should hold, so change it there too. A new release of the runner carries the change.
+- Claude Code's models are kept in one file, `core/studio_core/claude-code-models.json`, because Claude Code cannot list them and the runner has no key to ask Anthropic. To bring it up to date, read Anthropic's model reference and change that file alone. Set `source` and `date` to the day you read it. A version is `{"id", "label", "family", "levels"}`: `id` is the exact name the agent is given, `label` how the page names it ("Opus 5.5"), and `levels` the reasoning levels it takes, `[]` for none. A family's own name is `{"id", "family", "alias"}`, where `alias` is the version it means now; its label and levels follow from that version. Keep each family's own name first, then its versions newest first, and leave out models only some accounts can use. The runner refuses a file that is not whole, and `tests/test_runner_agents.py` says what the list should hold, so change it there too. A new release of the runner carries the change.
 - `sh ~/.local/share/training-studio/studio status` prints what is set up and where every run is, as JSON. From a copy of the repository it is `python3 runner/studio.py status`.
 
 The design is in [the runner's specification](superpowers/specs/2026-10-13-studio-runner-design.md). Working as a team is specified in [milestone 5](superpowers/specs/2026-10-13-milestone-5-team.md).
@@ -376,7 +391,7 @@ questions and your request, retaining the supplied-only boundary and eight-quest
 Step by step stops at the plan. Balanced and Automatic accept this plan under the saved
 policy, so Balanced's first stop is the first-drafts review. Web research still drafts a
 plan with your questions. Older runs retain their saved source scope and legacy queue.
-The legacy question queue is kept for a training begun before the synthesis research contract, so that it finishes as it began. It can go once no workspace holds such a run.
+A new training on a Harness Research without synthesis is refused at Start. The legacy question queue is kept for a training begun before the synthesis research contract, so that it finishes as it began. `studio saved-work` lists any that still need it.
 
 Writers are told what the reviewed research is: its brief first, and that its IDs, digests
 and verdicts are for checking and provenance, never words a learner reads. A goal that

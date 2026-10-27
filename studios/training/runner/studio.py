@@ -4,6 +4,9 @@
     studio serve [--port N] [--open]
                                start the runner and print the link to its page
     studio status              what is set up and where every run is, as JSON for a script
+    studio saved-work [--folder PATH]
+                               which saved trainings still need each older path, as JSON;
+                               read-only
 
 `serve` is started by a person. To a terminal it prints the link whole, with its key. To
 anything else, such as an assistant or a pipe, it prints the address without the key and
@@ -164,6 +167,14 @@ def status(args, make=engines.Engine, out=None, keeper=None) -> int:
     return 0
 
 
+def saved_work(args, make=engines.Engine, out=None) -> int:
+    """Which saved trainings still need each older path. Starts nothing, changes nothing,
+    and asks nothing online."""
+    report = make().saved_work(tuple(args.folder or ()))
+    print(json.dumps(report, indent=2, sort_keys=True), file=out or sys.stdout)
+    return 0
+
+
 def parser() -> argparse.ArgumentParser:
     top = argparse.ArgumentParser(prog='studio', description=__doc__.splitlines()[0])
     commands = top.add_subparsers(dest='command', required=True)
@@ -175,6 +186,11 @@ def parser() -> argparse.ArgumentParser:
     serving.set_defaults(handler=serve)
     commands.add_parser('status', help='what is set up and where every run is, as JSON'
                         ).set_defaults(handler=status)
+    saving = commands.add_parser('saved-work', help='which saved trainings still need each '
+                                 'older path, as JSON')
+    saving.add_argument('--folder', action='append', type=Path,
+                        help='a training folder to look at besides the workspace')
+    saving.set_defaults(handler=saved_work)
     return top
 
 

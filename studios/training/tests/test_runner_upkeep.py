@@ -416,6 +416,7 @@ class ReleaseTests(ReleaseCase):
     def test_a_companion_released_beyond_the_pin_is_said_and_never_offered(self):
         tag(_made['harness-slides'], 'v0.14.0')
         self.addCleanup(git, _made['harness-slides'].bare, 'tag', '-d', 'v0.14.0')
+        self.addCleanup(git, _made['harness-slides'].work, 'tag', '-d', 'v0.14.0')
         for skills in (self.claude, self.codex):
             self.companion(skills, 'harness-research', '0.8.0')
             self.companion(skills, 'harness-slides', '0.13.1')
@@ -754,6 +755,7 @@ class GuidanceTests(UpkeepCase):
         # Training Studio at the commit main has, whose pins are read the same way.
         tag(_made['harness-slides'], 'v0.15.0')
         self.addCleanup(git, _made['harness-slides'].bare, 'tag', '-d', 'v0.15.0')
+        self.addCleanup(git, _made['harness-slides'].work, 'tag', '-d', 'v0.15.0')
         git(remote, 'tag', 'v99.1.0')
         self.look_online(True)
         with mock.patch.dict(os.environ, {'TRAINING_STUDIO_SOURCE': str(remote)}):
@@ -781,6 +783,34 @@ class GuidanceTests(UpkeepCase):
                           rows['harness-slides']['state']), ('99.2.0', None, 'current'))
         self.assertIn('Which version Training Studio 99.2.0 is made with is not known here yet',
                       rows['harness-slides']['says'])
+
+
+class SavedLookTests(ReleaseCase):
+    """What a look online keeps, as the code wrote it before upkeep shared its parts."""
+
+    def assert_saved_as_before(self, keep, own: str, latest: str) -> None:
+        data = keep.saved_path().read_bytes()
+        found = json.loads(data)
+        # Two-space JSON with sorted keys and a closing line end, as it was written before.
+        self.assertEqual(data, (json.dumps(found, indent=2, sort_keys=True) + '\n').encode())
+        self.assertEqual(sorted(found), ['at', 'dismissed', 'found', 'schema'])
+        self.assertEqual((found['at'], found['dismissed'], found['schema']),
+                         ('2026-10-01T00:00:00Z', None, 1))
+        entry = found['found'][own]
+        self.assertEqual(sorted(entry), ['commit', 'known_at', 'latest', 'problem',
+                                         'repository', 'tag'])
+        self.assertRegex(entry['commit'], '^[0-9a-f]{40}$')
+        self.assertEqual((entry['known_at'], entry['latest'], entry['problem'], entry['tag'],
+                          entry['repository']),
+                         ('2026-10-01T00:00:00Z', latest, None, 'v' + latest, str(self.source)))
+
+    def test_the_saved_look_is_written_as_before(self):
+        self.release('v99.0.0')
+        with mock.patch.object(upkeep, '_now', lambda: '2026-10-01T00:00:00Z'):
+            self.assertTrue(self.keep.look())
+        self.assertEqual(sorted(json.loads(self.keep.saved_path().read_text())['found']),
+                         ['harness-research', 'harness-slides', 'training-studio'])
+        self.assert_saved_as_before(self.keep, 'training-studio', '99.0.0')
 
 
 if __name__ == '__main__':

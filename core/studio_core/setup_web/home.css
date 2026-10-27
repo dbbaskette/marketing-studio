@@ -1,6 +1,7 @@
 /* Marketing Studio home and shared setup. The shell, the controls and every colour come
    from style.css. This file lays out what only these pages have: the studio launch cards,
-   the setup form's grid and the model profiles. */
+   the setup form's grid and the model profiles. Each view and the setup form are ui-kit's
+   .stack; a launch card's tile is ui-kit's .studio-symbol and its status ui-kit's .state. */
 
 .sidebar-foot {
   margin-top: auto;
@@ -15,7 +16,7 @@
 .studio-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
+  gap: 1.1rem;
 }
 
 .studio-card {
@@ -25,17 +26,12 @@
   min-height: 19rem;
 }
 
-.studio-icon {
-  display: grid;
-  place-items: center;
+.studio-card > .studio-symbol {
   width: 3.25rem;
   height: 3.25rem;
-  background: var(--studio-wash);
-  color: var(--studio-color);
-  border-radius: 15px;
 }
 
-.studio-icon > svg {
+.studio-card > .studio-symbol > .icon {
   width: 1.6rem;
   height: 1.6rem;
 }
@@ -53,26 +49,8 @@
   font-size: 0.93rem;
 }
 
-.studio-status {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
+.studio-card > .state {
   padding-bottom: 0.6rem;
-  color: var(--quiet);
-  font-size: 0.8rem;
-}
-
-.studio-status::before {
-  content: "";
-  flex: none;
-  width: 6px;
-  height: 6px;
-  background: currentColor;
-  border-radius: 50%;
-}
-
-.studio-status[data-running="true"] {
-  color: var(--done);
 }
 
 .studio-link {
@@ -129,14 +107,7 @@
   width: auto;
 }
 
-/* --- setup: a card for each step, its fields two to a row -------------------------- */
-
-#home > * + *,
-#settings > * + *,
-#computer > * + *,
-.setup-form > * + * {
-  margin-top: 1.1rem;
-}
+/* --- setup: a card for each part, its fields two to a row -------------------------- */
 
 .field-grid {
   display: grid;
@@ -149,16 +120,10 @@
   grid-column: 1 / -1;
 }
 
-.setup-part {
-  padding-top: 1.1rem;
-  border-top: 1px solid var(--hair);
-}
-
-.setup-part > * + *,
 #model-profiles > * + *,
 .setup-more > * + *,
 #brand-choices > * + * {
-  margin-top: 0.8rem;
+  margin-top: 0.6rem;
 }
 
 .setup-more-label {
@@ -194,21 +159,29 @@
 .profile-cards {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
-  gap: 0.8rem;
+  gap: 0.6rem;
 }
 
+/* A profile is a group of fields named by its legend, which sits inside its paper. */
 .profile-card {
   min-width: 0;
+  margin: 0;
   padding: 1rem;
+}
+
+.profile-card > legend {
+  float: left;
+  width: 100%;
+  padding: 0;
+}
+
+.profile-card > legend + * {
+  clear: both;
 }
 
 .profile-card > * + *,
 .profile-explicit > * + * {
-  margin-top: 0.8rem;
-}
-
-.profile-card > .sheet-part {
-  margin: 0;
+  margin-top: 0.6rem;
 }
 
 .brand-choice {
@@ -241,13 +214,13 @@
     margin-top: 0;
   }
 
-  .studio-icon {
+  .studio-card > .studio-symbol {
     grid-row: 1 / 6;
   }
 
   .studio-name,
   .studio-says,
-  .studio-status,
+  .studio-card > .state,
   .studio-link {
     grid-column: 2;
     padding: 0;
@@ -282,10 +255,9 @@
     grid-template-columns: 2.5rem minmax(0, 1fr);
   }
 
-  .studio-icon {
+  .studio-card > .studio-symbol {
     width: 2.5rem;
     height: 2.5rem;
-    border-radius: 11px;
   }
 
   .studio-card > .button {
@@ -296,28 +268,9 @@
   }
 }
 
-/* --- research sites: one row a site, its Remove button at the end ---------------------- */
+/* --- research sites: ui-kit's table, one row a site, its Remove button at the end ------- */
 
-.site-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.site-list:empty {
-  display: none;
-}
-
-.site-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.6rem;
-  padding: 0.45rem 0;
-  border-bottom: 1px solid var(--hair);
-}
-
-.site-row > span {
+.site-row > td:first-child {
   min-width: 0;
   overflow-wrap: anywhere;
 }

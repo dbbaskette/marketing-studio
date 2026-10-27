@@ -37,8 +37,12 @@ class CatalogTests(IsolatedHome):
         by_name = {model['name']: model for model in result['models']}
         self.assertEqual(by_name['claude-haiku-4-5']['levels'], [])
         self.assertEqual(by_name['opus']['levels'], by_name['claude-opus-5-5']['levels'])
-        self.assertEqual((ROOT/'core/studio_core/claude-code-models.json').resolve(),
-                         ROOT/'studios/presentation/runner/claude-code-models.json')
+
+    def test_the_model_list_is_one_file_in_core(self):
+        kept = ROOT/'core/studio_core/claude-code-models.json'
+        self.assertTrue(kept.is_file())
+        self.assertFalse(kept.is_symlink())
+        self.assertEqual(list(ROOT.glob('studios/*/runner/claude-code-models.json')), [])
 
     def test_cache_coalesces_requests_and_explicit_refresh_is_read_only(self):
         loader = mock.Mock(return_value=LISTED)
@@ -104,7 +108,7 @@ class CatalogTests(IsolatedHome):
             payload = inventory(ROOT, [product])
             name = f'studios/{product}/skills/{product}-studio/scripts/studio_core/claude-code-models.json'
             self.assertIn(name, payload)
-            self.assertEqual(payload[name].read_bytes(), (ROOT/'studios/presentation/runner/claude-code-models.json').read_bytes())
+            self.assertEqual(payload[name].read_bytes(), (ROOT/'core/studio_core/claude-code-models.json').read_bytes())
 
     def test_marketing_models_endpoint_validates_agent_and_keeps_settings(self):
         self.page.models = model_catalog.Catalog(lambda _: LISTED)

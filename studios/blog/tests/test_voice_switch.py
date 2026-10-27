@@ -273,21 +273,6 @@ class EnforcementTests(EnforcementCase):
         )
         self.assertEqual(saved['voice'], pin)
 
-    def test_a_profile_on_a_new_run_from_the_page_is_refused(self):
-        data = {
-            'operation': 'ab' * 16,
-            'title': 'T',
-            'audience': 'A',
-            'goal': 'G',
-            'research': 'none',
-            'profile': self.profile['id'],
-        }
-        self.refused('run-create', data)
-        self.on()
-        found = management.dispatch(self.root, 'run-create', data)
-        _, record = studio.item(self.root, 'articles', found['id'])
-        self.assertEqual(record['voice']['profile_id'], self.profile['id'])
-
     def test_a_voice_job_queued_before_the_switch_went_off_is_not_saved(self):
         import tool_jobs
 

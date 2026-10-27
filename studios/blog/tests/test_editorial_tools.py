@@ -1261,20 +1261,17 @@ class HubEditorialTests(Fixture):
             'operation': 'd' * 32,
             'filename': 'receipt.md',
             'content': base64.b64encode(b'Retained draft.').decode(),
-            'as_blog': True,
         }
         publish = self.workspace.publish_mutation
 
         def partial(group, record):
-            if group == 'article':
+            if group == 'source':
                 raise OSError('Fixture transport unavailable.')
             return publish(group, record)
 
         with patch.object(self.workspace, 'publish_mutation', side_effect=partial):
             saved = management.dispatch(self.root, 'upload', data)
-        self.assertEqual(
-            [r['sharing'] for r in saved['receipts']], ['shared', 'local-saved-not-shared']
-        )
+        self.assertEqual([r['sharing'] for r in saved['receipts']], ['local-saved-not-shared'])
         pending = management.receipts(self.root)['items']
         failed = next(r for r in pending if r['sharing'] == 'local-saved-not-shared')
         before = len(self.hub.graph()['revisions'])
@@ -1284,7 +1281,6 @@ class HubEditorialTests(Fixture):
         self.assertEqual(after, before + 1)
         management.dispatch(self.root, 'retry-sync', {'id': failed['id']})
         self.assertEqual(len(self.hub.graph()['revisions']), after)
-        self.assertEqual(len(list((self.root / 'articles').iterdir())), 1)
         self.assertEqual(len(list((self.root / 'sources').iterdir())), 1)
 
     def test_receipts_keep_review_queue_and_reject_changed_unqueued_checkpoint(self):
@@ -2054,21 +2050,38 @@ class ManagementTests(Fixture):
         self.assertEqual(status, 200)
         self.assertEqual(json.loads(body)['editorial']['owner'], 'Morgan')
 
+    def test_an_upload_that_asks_to_start_a_blog_is_refused(self):
+        # Every new blog starts on the writing desk; the upload only saves the file.
+        articles = self.root / 'articles'
+        before = sorted(articles.iterdir()) if articles.is_dir() else []
+        with self.assertRaisesRegex(ValueError, 'Unknown upload field.'):
+            management.upload(
+                self.root,
+                {
+                    'operation': 'f' * 32,
+                    'filename': 'draft.md',
+                    'content': base64.b64encode(b'# Title\n\nText').decode(),
+                    'title': 'Draft',
+                    'purpose': 'reference',
+                    'as_blog': True,
+                },
+            )
+        self.assertEqual(sorted(articles.iterdir()) if articles.is_dir() else [], before)
+
     def test_upload_idempotency_original_preservation_and_pending_pdf(self):
         data = {
             'operation': 'a' * 32,
             'filename': 'draft.md',
             'content': base64.b64encode(b'A draft with a clear argument.').decode(),
             'title': '<script>private</script>',
-            'as_blog': True,
         }
         first = management.dispatch(self.root, 'upload', data)
         second = management.dispatch(self.root, 'upload', data)
         self.assertEqual(first, second)
-        self.assertEqual(len(list((self.root / 'articles').iterdir())), 1)
-        directory, _ = studio.item(self.root, 'articles', first['article']['id'])
+        self.assertEqual(len(list((self.root / 'sources').iterdir())), 1)
+        directory, _ = studio.item(self.root, 'sources', first['source']['id'])
         self.assertEqual(
-            (directory / 'ORIGINAL.md').read_bytes(), b'A draft with a clear argument.'
+            (directory / 'original.md').read_bytes(), b'A draft with a clear argument.'
         )
         changed = dict(data, title='different')
         with self.assertRaises(ValueError):
@@ -2282,7 +2295,6 @@ class MaterialUploadTests(Fixture):
                 'filename': 'launch.md',
                 'content': base64.b64encode(b'The launch brief.').decode(),
                 'purpose': 'messaging',
-                'as_blog': False,
                 'analyze': False,
             },
         )
@@ -2404,7 +2416,6 @@ class MaterialUploadTests(Fixture):
                 'filename': 'earlier-post.md',
                 'content': base64.b64encode(b'An earlier announcement.').decode(),
                 'purpose': 'inspiration',
-                'as_blog': False,
                 'analyze': False,
             },
         )
@@ -2673,24 +2684,6 @@ class HubMaterialTests(Fixture):
                 'material',
             )
         self.command('article', 'attach', '--id', article['id'], '--source', ident)
-        self.assert_unshared()
-
-    def test_material_cannot_become_a_blog_manuscript(self):
-        with self.assertRaisesRegex(ValueError, 'cannot start a blog'):
-            management.dispatch(
-                self.root,
-                'upload',
-                {
-                    'operation': '0' * 32,
-                    'filename': 'draft.md',
-                    'content': base64.b64encode(b'Unshared material words.').decode(),
-                    'purpose': 'material',
-                    'as_blog': True,
-                },
-            )
-        self.assertFalse(
-            (self.root / 'articles').exists() and any((self.root / 'articles').iterdir())
-        )
         self.assert_unshared()
 
     def test_the_hub_refuses_a_material_source_however_it_is_reached(self):

@@ -37,7 +37,7 @@ function fixture(responder=()=>({items:[],total:0})){
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
-  return {get,nodes,run:code=>vm.runInContext(code,context),set:(name,value)=>{context[name]=value;},loadRunner:()=>{vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/markdown.js','utf8'),context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/runner.js','utf8').split('// Keep initialization below this marker')[0],context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/desk.js','utf8'),context);}};
+  return {get,nodes,run:code=>vm.runInContext(code,context),set:(name,value)=>{context[name]=value;},loadRunner:()=>{vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/markdown.js','utf8'),context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/runner.js','utf8').split('// Keep initialization below this marker')[0],context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/drafting.js','utf8'),context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/desk.js','utf8'),context);}};
 }
 async function check(){
   const lan=fixture();
@@ -67,8 +67,6 @@ async function check(){
   await busyAnalysis();
   await refreshWithNewSelection();
   await guidedRuns();
-  await googleIntake();
-  await googleReopening();
   await manuscriptEditing();
   await reviewInteractions();
   await editorTransitions();
@@ -149,13 +147,16 @@ async function check(){
   await deskPasteAndUpload();
   await deskPublishKeeps();
   await deskGoogleDoc();
+  await deskStartReopensALinkedDoc();
+  await oldIntakeAddressesOpenTheDeskStart();
   await deskStartRecovery();
   await deskTakeOver();
   pageDefinesEveryElement();
-  const checks=['Review mode with suggestions that meet: a cut beside a word another fix changes keeping that word as context and still accepted, two that add the same word at one place never both landing, and Accept all leaving a rewrite that would retire a flagged fix','Review mode’s Accept all sending what is shown and not flagged from both sets in one request, a hidden fix never accepted, the toast counting what was accepted, carried and no longer fits, and a retired suggestion naming the one that changed its words; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, a rewrite of words an accepted fix changed retiring and naming the fix, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Send accepted changes to Google Doc counting its suggestions and comments, a new paragraph, a removed one and a comment listed, none said to stay here, Copy and Download otherwise, Open the full desk and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send with every change a suggestion or a comment, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
+  noUnusedPageParts();
+  const checks=['Review mode with suggestions that meet: a cut beside a word another fix changes keeping that word as context and still accepted, two that add the same word at one place never both landing, and Accept all leaving a rewrite that would retire a flagged fix','Review mode’s Accept all sending what is shown and not flagged from both sets in one request, a hidden fix never accepted, the toast counting what was accepted, carried and no longer fits, and a retired suggestion naming the one that changed its words; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, a rewrite of words an accepted fix changed retiring and naming the fix, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Send accepted changes to Google Doc counting its suggestions and comments, a new paragraph, a removed one and a comment listed, none said to stay here, Copy and Download otherwise, Open the full desk and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send with every change a suggestion or a comment, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, the old Polish, paste and Google Doc addresses opening its polishing screen, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','Google manuscript preview, confirmation and reopening','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start asks what you are writing, then what you have, then sources and settings','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','a desk start that stopped on another computer: who drives it, Take over or Take this blog with the desk’s version, then Retry','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','a Google Doc already a blog here reopening on the desk from the polishing start, an unreadable answer said there with the link kept','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start asks what you are writing, then what you have, then sources and settings','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','a desk start that stopped on another computer: who drives it, Take over or Take this blog with the desk’s version, then Retry','no page code nothing calls: the brand notice, the old run renderers, the Writing runs view and unused mode descriptions','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -305,8 +306,8 @@ async function pendingEditorSaves(){
   const page=()=>descendants(g.get('studio-page'));const next=descendants(g.get('actions')).find(e=>e.className.includes('review-continue'));
   const keeping=next.listeners.click();assert.equal(page().find(e=>e.type==='checkbox').disabled,true,'selection is stable during its save');
   assert.equal(page().find(e=>e.id==='wording-0').disabled,true);
-  await g.run("sRoute('polish')");selected.resolve(review);await keeping;
-  assert.equal(g.run('studio.screen'),'polish','a completed save does not pull the person back after navigation');
+  await g.run("sRoute('guides')");selected.resolve(review);await keeping;
+  assert.equal(g.run('studio.screen'),'guides','a completed save does not pull the person back after navigation');
 }
 
 async function manualEditingJourneys(){
@@ -444,7 +445,7 @@ async function phase4GoogleHandoff(){
 }
 
 async function phase4Starts(){
-  const f=fixture(url=>url==='/api/run-options'?{settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}}:{items:[]});
+  const f=fixture(url=>url==='/api/run-options'?{settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',tone:'',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}}:{items:[]});
   f.loadRunner();f.run('sHome()');
   const nodes=()=>descendants(f.get('studio-page'));
   for(const title of ['Write from a topic or my documents','Work from my outline or notes','Edit or polish a draft'])assert.ok(nodes().some(n=>n.textContent===title));
@@ -458,149 +459,18 @@ async function phase4Starts(){
 }
 
 async function taskJourneys(){
-  const defaults={engine:'codex',seconds:600,research:'web-allowed',stop:'package',tone:'Clear',author:''};
-  const requests=[];
-  const manuscript={id:'pasted',title:'Pasted draft',content:'Café draft.',expected:'v1',google:null,proposals:[],findings:[],checks:{},working:false};
-  const found={id:'written',title:'Supplied outline',status:'queued',next:'draft',approval:'page',expected:'r1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[]};
-  const f=fixture((url,options)=>{
-    requests.push({url,data:options?.body?JSON.parse(options.body):null});
+  const defaults={engine:'codex',seconds:600,research:'web-allowed',tone:'Clear',author:''};
+  const f=fixture((url)=>{
     if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{codex:true}};
-    if(url==='/api/upload')return {article:{id:'pasted'}};
-    if(url.startsWith('/api/manuscript?'))return manuscript;
-    if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
     return {items:[],total:0};
   });f.loadRunner();f.run('sHome()');
-  const nodes=()=>descendants(f.get('studio-page')),field=id=>nodes().find(e=>e.id===id);
+  const nodes=()=>descendants(f.get('studio-page'));
   for(const label of ['Write from a topic or my documents','Work from my outline or notes','Edit or polish a draft'])assert.ok(nodes().some(e=>e.textContent===label));
   // Setting up voices, styles and the library is on Home, without starting a blog.
   assert.ok(nodes().some(e=>e.textContent==='Set up before you write'),'Home offers setting up before writing');
   for(const label of ['Kinds of post','Team library'])assert.ok(nodes().some(e=>e.className==='pick-card'&&descendants(e).some(d=>d.textContent===label)||e.textContent===label),label);
   await nodes().find(e=>e.textContent==='Edit or polish a draft').listeners.click();
   assert.equal(f.run('studio.screen'),'desk-start');
-  await f.run("sRoute('polish')");
-  assert.ok(nodes().some(e=>e.textContent==='Google Doc'));assert.ok(nodes().some(e=>e.textContent==='Upload a file'));
-  await nodes().find(e=>e.textContent==='Paste text').listeners.click();
-  for(const [id,value] of [['draft-title','Pasted draft'],['draft-content','Café draft.']]){field(id).value=value;field(id).listeners.input();}
-  await nodes().find(e=>e.textContent==='Google Doc').listeners.click();
-  await nodes().find(e=>e.textContent==='Paste text').listeners.click();
-  assert.equal(field('draft-content').value,'Café draft.');
-  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  const upload=requests.find(r=>r.url==='/api/upload').data;
-  assert.equal(upload.as_blog,true);assert.equal(upload.analyze,false);assert.equal(Buffer.from(upload.content,'base64').toString(),'Café draft.');
-  assert.equal(f.run('studio.screen'),'editor');assert.equal(requests.some(r=>r.url==='/api/editor-check'),false,'opening a manuscript does not start a model');
-  await f.run("sRoute('polish')");
-  await nodes().find(e=>e.textContent==='Upload a file').listeners.click();
-  field('draft-title').value='Uploaded draft';field('draft-title').listeners.input();
-  const file=nodes().find(e=>e.type==='file');file.files=[{name:'sample.txt',size:11,arrayBuffer:async()=>new TextEncoder().encode('Plain text.').buffer}];file.listeners.change();
-  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  const uploaded=requests.filter(r=>r.url==='/api/upload').at(-1).data;
-  assert.equal(uploaded.filename,'sample.txt');assert.equal(uploaded.analyze,false);assert.equal(Buffer.from(uploaded.content,'base64').toString(),'Plain text.');
-  await f.run("sRoute('polish')");await nodes().find(e=>e.textContent==='Paste text').listeners.click();
-  field('draft-content').value='# Café notes\n\nA new draft.';field('draft-content').listeners.input();
-  assert.equal(field('draft-title').required,false);
-  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.equal(requests.filter(r=>r.url==='/api/upload').at(-1).data.title,'Café notes','a pasted heading supplies the optional working title');
-}
-
-async function googleReopening(){
-  const manuscript={id:'existing',title:'Existing manuscript',content:'Keep these local edits.',expected:'v2',google:{url:'https://docs.google.com/document/d/fixture-doc/edit'},proposals:[],findings:[],checks:{},working:false};
-  const linked={status:'already-linked',id:manuscript.id,title:manuscript.title,linked_document:manuscript.google.url};
-  const preview={status:'preview',preview:'b'.repeat(32),expected:'v1',title:'Synthetic manuscript',linked_document:manuscript.google.url,content:'Original text.',summary:{structure:{paragraphs:1}}};
-  for(const entry of ['polish','google']){
-    for(const response of [linked,{...preview,summary:undefined},{...preview,summary:{}},{status:'unrecognized'},{status:'already-linked'}]){
-      const requests=[];let result=response;
-      const f=fixture((url,options)=>{requests.push({url,options});if(url==='/api/google-preview')return result;if(url.startsWith('/api/manuscript?'))return manuscript;return {items:[]};});
-      f.loadRunner();await f.run(`sRoute('${entry}')`);
-      const nodes=()=>descendants(f.get('studio-page'));
-      const input=nodes().find(e=>e.id===(entry==='polish'?'polish-url':'google-url'));input.value='fixture-doc';input.listeners.input();
-      const submit=()=>nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-      await submit();
-      if(response===linked){
-        assert.equal(f.run('studio.screen'),'editor',entry+' reopens an already linked Doc');
-        assert.equal(f.run('studio.editorDraft.content'),manuscript.content,'saved local edits are kept');
-        assert.ok(f.run('studio.intake')==null);assert.equal(f.run('studio.google'),null);
-      }else{
-        assert.equal(f.run('studio.screen'),entry,'invalid response stays at the entered link');
-        assert.equal(nodes().find(e=>e.id===input.id).value,'fixture-doc');
-        assert.ok(nodes().some(e=>e.className==='problem'&&e.textContent.includes('Read the document again')));
-        assert.equal(nodes().find(e=>e.type==='submit').disabled,false,'retry stays available');
-        result=linked;await submit();assert.equal(f.run('studio.screen'),'editor','retry reopens the existing manuscript');
-      }
-      assert.equal(requests.some(r=>r.options?.method==='POST'&&r.url!=='/api/google-preview'),false,'reopening does not reimport, start a model, or send feedback');
-      assert.equal(nodes().some(e=>e.textContent==='This view could not be read'),false);
-    }
-  }
-  // A link can become associated with a saved blog between preview and confirmation.
-  const raced=[];const f=fixture((url)=>{raced.push(url);if(url==='/api/google-preview')return preview;if(url==='/api/google-start')return linked;if(url.startsWith('/api/manuscript?'))return manuscript;return {items:[]};});f.loadRunner();
-  await f.run("sRoute('polish')");let nodes=()=>descendants(f.get('studio-page'));
-  const input=nodes().find(e=>e.id==='polish-url');input.value='fixture-doc';input.listeners.input();
-  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  await nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.equal(f.run('studio.screen'),'editor');assert.equal(f.run('studio.editorDraft.content'),manuscript.content);
-  assert.equal(raced.filter(url=>url==='/api/google-start').length,1);
-  // Navigating away while the new entry point reads a link must not reopen it later.
-  const pending=deferred(),late=fixture(()=>pending.promise);late.loadRunner();await late.run("sRoute('polish')");
-  const reading=descendants(late.get('studio-page')).find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  late.run("studio.turn++;studio.screen='blogs'");pending.resolve(linked);await reading;
-  assert.equal(late.run('studio.screen'),'blogs');assert.equal(late.run('studio.google'),undefined);
-}
-
-async function googleIntake(){
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'review',tone:'Clear',author:''};
-  const preview={status:'preview',preview:'b'.repeat(32),expected:'capture-version',title:'Synthetic Google draft',linked_document:'https://docs.google.com/document/d/fixture-doc/edit',content:'# Synthetic manuscript\n\n<script>not executable</script>',images_omitted:true,summary:{pending_suggestions:1,projection:'blog-studio/1',structure:{paragraphs:2,headings:1}}};
-  const manuscript={id:'imported',title:preview.title,content:'Synthetic text',expected:'v1',google:{url:preview.linked_document},proposals:[],findings:[],baseline:'Synthetic text',diff:[],checks:{},working:false};
-  const requests=[];
-  const f=fixture((url,options)=>{
-    requests.push({url,options});
-    if(url.startsWith('/api/manuscript?'))return manuscript;
-    if(url==='/api/google-preview')return preview;
-    if(url==='/api/google-start')return {id:'imported',status:'started-from-google',title:preview.title,linked_document:preview.linked_document};
-    if(url==='/api/run-options')return {settings:{defaults},brand:{default:{brand:'default-brand',variant:'default-variant'}},sources:[],profiles:[],agents:{codex:true}};
-    if(url.startsWith('/api/article?'))return {title:preview.title,view:{google:{url:preview.linked_document}},record:{}};
-    return {items:[],total:0};
-  });
-  f.loadRunner();
-  const find=id=>descendants(f.get('studio-page')).find(e=>e.id===id);
-  await f.run("sRoute('polish')");
-  assert.equal(f.get('title').textContent,'Polish a document');
-  find('polish-url').value=preview.linked_document;find('polish-url').listeners.input();
-  let form=f.get('studio-page').children.find(e=>e.tagName==='form');await form.listeners.submit({preventDefault(){}});
-  assert.equal(requests.filter(r=>r.url==='/api/google-preview').length,1);
-  assert.equal(requests.some(r=>r.url==='/api/google-start'),false);
-  form=f.get('studio-page').children.find(e=>e.tagName==='form');let nodes=descendants(form);
-  assert.equal(nodes.find(e=>e.type==='submit').disabled,false);
-  assert.equal(nodes.some(e=>e.tagName==='script'),false);
-  assert.ok(nodes.some(e=>e.textContent.includes('1 pending Google suggestions')));
-  assert.ok(nodes.some(e=>e.textContent.includes('Images are omitted from this preview.')));
-  assert.equal(nodes.some(e=>e.type==='checkbox'),false,'the preview is checked by reading it, not by a checkbox');
-  await form.listeners.submit({preventDefault(){}});
-  assert.equal(f.run('studio.screen'),'editor');
-  assert.equal(f.run('studio.editorDraft.id'),'imported');
-  assert.equal(f.run('studio.editorDraft.content'),'Synthetic text');
-  assert.equal(requests.some(r=>r.url==='/api/run-create'),false,'intake does not start an assistant');
-  assert.deepEqual(JSON.parse(requests.find(r=>r.url==='/api/google-start').options.body),{preview:preview.preview,expected:preview.expected,title:preview.title,confirmed:true});
-  assert.ok(descendants(f.get('actions')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
-  // Access failures keep the entered link, show an inline error, and permit retry.
-  const denied=fixture(()=>({__http:400,error:'Google sign-in is unavailable.'}));denied.loadRunner();
-  await denied.run('sGoogleButton().listeners.click()');denied.run("studio.google.url='fixture-doc'");
-  await denied.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.equal(denied.run('studio.google.url'),'fixture-doc');
-  assert.ok(descendants(denied.get('studio-page')).some(e=>e.textContent.includes('Google sign-in is unavailable.')));
-  assert.equal(descendants(denied.get('studio-page')).find(e=>e.type==='submit').disabled,false);
-  // A late preview response cannot replace the screen the person navigated to.
-  const pending=deferred(),late=fixture(()=>pending.promise);late.loadRunner();
-  await late.run('sGoogleButton().listeners.click()');late.run("studio.google.url='fixture-doc'");
-  const reading=late.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  late.run("studio.turn++;studio.screen='blogs'");pending.resolve(preview);await reading;
-  assert.equal(late.run('studio.screen'),'blogs');
-  // A repeated link opens its existing guided run without a new import.
-  const existing={id:'imported',title:preview.title,google:{url:preview.linked_document},status:'complete',complete:true,next:null,stages:[],brief:{goal:'Synthetic review',audience:'Authors'},decisions:[],engine:'codex',seconds:600,approval:'page',directory:'/synthetic/articles/imported'};
-  const reopened=[];const again=fixture((url)=>{reopened.push(url);if(url==='/api/google-preview')return {status:'already-linked',id:existing.id};if(url==='/api/runs')return {items:[existing]};if(url.startsWith('/api/run?'))return existing;if(url.startsWith('/api/manuscript?'))return manuscript;if(url==='/api/run-options')return {sources:[]};return {items:[]};});again.loadRunner();
-  await again.run('sGoogleButton().listeners.click()');again.run("studio.google.url='fixture-doc'");
-  await again.get('studio-page').children.find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
-  assert.equal(again.run('studio.screen'),'editor');assert.equal(again.run('studio.id'),'imported');
-  assert.equal(reopened.includes('/api/google-start'),false);
-  assert.ok(descendants(again.get('actions')).some(e=>e.tagName==='a'&&e.href===preview.linked_document));
 }
 const empty=(total=0)=>({items:[],total});
 async function requestOrdering(){
@@ -946,7 +816,7 @@ async function refreshWithNewSelection(){
 }
 
 async function staleSharedForms(){
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:'Before'},oldBefore={engine:'codex',author:'Before'},freshBefore={engine:'claude',author:'Other studio'};
+  const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:'Before'},oldBefore={engine:'codex',author:'Before'},freshBefore={engine:'claude',author:'Other studio'};
   let saved=false,reads=0;const requests=[];
   const f=fixture((url,options)=>{
     if(options?.method==='POST'){const data=JSON.parse(options.body);requests.push({url,data});if(!saved)return {__http:400,error:'Shared settings changed in another studio. Reload before saving.'};return {defaults:{...defaults,...data},shared_before:freshBefore,workspace:'/synthetic'};}
@@ -987,7 +857,7 @@ async function staleSharedForms(){
 }
 
 async function sharedSettings(){
-  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:'Before'},before={engine:'codex',author:'Before'};
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:'Before'},before={engine:'codex',author:'Before'};
   const voices=[{id:'mine',name:'Synthetic Author',revision:3},{id:'guest',name:'Guest Writer',revision:1}];
   const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});return {defaults,shared_before:before,workspace:'/synthetic',features:{voice:true},voice:null,voices};}if(url==='/api/run-options')return {settings:{defaults},sources:[],profiles:[],agents:{}};if(url==='/api/team')return {};return empty();});
   f.loadRunner();f.set('defaults',defaults);f.set('before',before);f.set('voices',voices);f.run("studio.settings={defaults,shared_before:before,workspace:'/synthetic',features:{voice:true},voice:{profile_id:'mine',revision:3},voices};studio.screen='settings';sSettings()");
@@ -1027,7 +897,7 @@ async function sharedSettings(){
 async function interviewVoice(){
   const requests=[],mine={scope:'personal',profile:'mine',name:'Synthetic Author',revision:2,status:'confirmed'};
   const f=fixture((url,o)=>{const data=o?.body?JSON.parse(o.body):null;requests.push({url,data});
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''}},sources:[],agents:{codex:true},default_voice:mine,profiles:[{id:'mine',name:'Synthetic Author',status:'confirmed'},{id:'guest',name:'Guest Writer',status:'provisional'}],styles:[]};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''}},sources:[],agents:{codex:true},default_voice:mine,profiles:[{id:'mine',name:'Synthetic Author',status:'confirmed'},{id:'guest',name:'Guest Writer',status:'provisional'}],styles:[]};
     if(url==='/api/tool-action'&&data.action==='interview-start')return {id:'interviewed',title:data.title,answers:[],notes:'',question:'What is the main point?',expected:'i1',outline:false,outline_content:''};
     if(url.startsWith('/api/interview?'))return {id:'interviewed',title:'Synthetic interview',answers:[],notes:'',question:'What is the main point?',expected:'i1',outline:false,outline_content:''};
     return {items:[],total:0};});
@@ -1049,7 +919,7 @@ async function interviewVoice(){
 }
 
 async function brandInputs(){
-  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};
   let found={repository:'/synthetic/brand-repo',release:'',runtime:'/synthetic/brand-two',name:'Synthetic Brand',version:'1.0.0',skills:[{runtime:'/synthetic/brand-one',name:'Brand one',version:'1.0.0'},{runtime:'/synthetic/brand-two',name:'Brand two',version:'1.0.0'}],brands:[{brand:'fictional',name:'Fictional identity',variants:['light','dark']}],checked:{tag:'v1.2.0',version:'1.2.0',commit:'a'.repeat(40)},job:{}};
   const f=fixture((url,options)=>{if(options?.method==='POST'){requests.push({url,data:JSON.parse(options.body)});if(url==='/api/brand-configure'){found={...found,...requests.at(-1).data};return found;}if(url==='/api/brand-install')return {...found,job:{status:'working',message:'Installing…'}};}
     if(url==='/api/brand')return found;if(url==='/api/run-settings')return {defaults,workspace:'/synthetic',configured:true};if(url==='/api/run-options')return {settings:{defaults},brand:found,sources:[],profiles:[],agents:{codex:true}};if(url==='/api/team')return {};if(url==='/api/computer')return {checks:[],brand:found};return empty();});
@@ -1309,6 +1179,14 @@ async function authorClarify(){
   assert.deepEqual([sent.author,sent.expected,'topics' in sent],['Dan Smith','e'.repeat(64),false]);
 }
 
+// Page code nothing calls is gone: the brand notice, the old run renderers, the Writing runs
+// view, and each mode's unused description.
+function noUnusedPageParts(){
+  const f=fixture();f.loadRunner();
+  for(const name of ['sBrandNotice','renderRun','renderRuns'])assert.equal(f.run('typeof '+name),'undefined',name+' is gone');
+  assert.equal(f.run('views.runs'),undefined,'no Writing runs view');
+  assert.ok(f.run('BLOG_MODES.every(entry=>entry.length===2)'),'each mode is its id and label');
+}
 function pageDefinesEveryElement(){
   // The fixture creates any element on demand, so check the real page defines every id the script asks for.
   const base='skills/blog-studio/assets/management/';
@@ -1350,10 +1228,10 @@ async function guidedRuns(){
     assert.equal(calls[0].url,'/api/run-approve','grouped reviews approve the displayed revision directly');
     assert.deepEqual(JSON.parse(calls[0].options.body),{id:'synthetic',expected:'version-1'});
   }
-  f.set('found',{...found,approval:'conversation',status:'in-chat'});f.run('renderRun(found)');
+  f.set('found',{...found,approval:'conversation',status:'in-chat'});f.run("studio.screen='run';sRun(found)");
   assert.ok(f.get('actions').children.some(e=>e.textContent==='Run this from here'));
   assert.ok(!f.get('actions').children.some(e=>e.textContent==='Approve'));
-  f.set('found',{...found,status:'failed',error:'Synthetic failure',enabled:false});f.run('renderRun(found)');
+  f.set('found',{...found,status:'failed',error:'Synthetic failure',enabled:false});f.run("studio.screen='run';sRun(found)");
   assert.ok(f.get('actions').children.some(e=>e.textContent==='Try again'));
   assert.ok(descendants(content).some(e=>e.textContent==='Synthetic failure'));
   f.set('found',found);f.run('studio.listing=[found];sHome()');
@@ -1419,7 +1297,7 @@ async function guidedRuns(){
   assert.ok(descendants(content).some(e=>e.textContent==='Run codex login'));
   assert.ok(f.get('actions').children.some(e=>e.textContent==='Check this computer'));
   // Safe Markdown turns no document-supplied HTML or javascript link into active content.
-  f.run("sPage(window.TrainingStudioMarkdown.render('<script>bad()</script> [bad](javascript:bad()) [good](https://example.com)'))");
+  f.run("sPage(window.StudioMarkdown.render('<script>bad()</script> [bad](javascript:bad()) [good](https://example.com)'))");
   assert.equal(descendants(content).some(e=>e.tagName==='script'),false);
   assert.equal(descendants(content).filter(e=>e.tagName==='a').length,1);
   f.run('sChanges(found, "outline")');const note=descendants(f.get('sheet')).find(e=>e.tagName==='textarea');note.value='Keep my request';
@@ -1484,8 +1362,8 @@ async function contextualTools(){
 // own card. A blog on the desk has no stops.
 async function whereThisRunStops(){
   const requests=[];let refuse=false;const found={id:'synthetic',title:'Synthetic blog',status:'queued',expected:'version-1',stages:[],decisions:[],brief:{goal:'Explain',audience:'Authors'},seconds:600,engine:'codex',mode:'write'};
-  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/review-level'){if(refuse)return {__http:400,error:'Another studio changed where new work stops. Reload the page and try again.'};return {defaults,workspace:'/synthetic',shared_before:{},review_level:data.level};}if(url==='/api/run-create')return found;return url.startsWith('/api/run?')?found:{};});f.loadRunner();
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/review-level'){if(refuse)return {__http:400,error:'Another studio changed where new work stops. Reload the page and try again.'};return {defaults,workspace:'/synthetic',shared_before:{},review_level:data.level};}return url.startsWith('/api/run?')?found:{};});f.loadRunner();
+  const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};f.set('defaults',defaults);
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
   // Settings: Where new work stops, saved at once; a refusal shows in its own problem line.
   f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced'};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
@@ -1520,7 +1398,7 @@ async function oneVocabulary(){
   const labels=f.get('actions').children.map(e=>e.textContent);
   assert.ok(labels.includes('Record in team repository'),labels.join('|'));assert.equal(labels.includes('Publish revision'),false);
   // The research choice in Settings: your documents, your sites and the public web.
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};f.set('defaults',defaults);
   const ticks=['your sites (3)','the public web'],shared=['https://a.example','https://b.example/docs','https://c.example'];f.set('shared',shared);
   f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced',research_sites:shared};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
   assert.ok(text().includes('Research for new blogs from:'));assert.ok(text().includes('Your documents are always read. Choose what else research may use.'));assert.ok(!text().includes('your documents'),'documents are a sentence, not a tick');for(const label of ticks)assert.ok(text().includes(label),label+': '+text().join('|'));
@@ -1535,7 +1413,7 @@ async function honestBlogCopy(){
   const requests=[];let changed=null;
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/run-changes')return changed;return {};});f.loadRunner();voicesOn(f);
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),all=()=>text().join('\n');
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};f.set('defaults',defaults);
   // Each gate's lede says what its decision does.
   const stages=[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'draft'},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'pending'},{stage:'package',label:'Handoff',path:'derived/blog-package.md',status:'pending'}];
   const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'draft',approval:'page',expected:'v1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'step_by_step',decisions:[],brief:{goal:'Explain',audience:'Authors'},notes:{},stages};
@@ -1566,9 +1444,9 @@ async function honestBlogCopy(){
 // without stopping, and a phone keeps one decision in the toolbar.
 async function sharedPattern(){
   const requests=[];const found={id:'synthetic',title:'Synthetic blog',status:'working',next:'draft',approval:'page',expected:'version-1',enabled:true,directory:'/synthetic/articles/synthetic',seconds:600,engine:'codex',mode:'write',review_level:'balanced',ahead:{steps_left:2,next_gate:'draft',next_stop:'Draft',jobs:2,seconds:180,dollars:null,spent:'3 minutes; the assistant reported no cost'},decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},started_at:new Date(Date.now()-3*60000).toISOString(),note_stage:'review',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'},{stage:'review',label:'Review',path:'REVIEW.md',status:'pending'}]};
-  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url==='/api/upload')return f.run('studio.api_upload');if(url==='/api/run-create')return found;return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();voicesOn(f);
+  const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url==='/api/upload')return f.run('studio.api_upload');return url.startsWith('/api/run?')?found:{...found,noted:'draft'};});f.loadRunner();voicesOn(f);
   const text=()=>descendants(f.get('studio-page')).map(e=>e.textContent);
-  const defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};f.set('defaults',defaults);
   // The desk start's sources take every file at once and list each one with its text and role.
   {f.run("studio.options={settings:{defaults,review_level:'balanced'},sources:[],profiles:[],styles:[],agents:{codex:true}};studio.screen='desk-start';held={files:[],role:'material'};draw=()=>sPage(sFilesCard(held,sNode('p'),draw,()=>{}));draw()");
    const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id);
@@ -1649,7 +1527,7 @@ async function sharedPattern(){
 // angles gate offers picks or none of these.
 async function filesJourney(){
   const requests=[];let refuseRole=false;
-  const defaults={engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'Clear',author:''};
+  const defaults={engine:'codex',seconds:600,research:'supplied-only',tone:'Clear',author:''};
   let uploaded={files:[{filename:'notes.md',source:{id:'s1',name:'notes'},state:'ready',chars:1200,note:''},{filename:'scan.pdf',source:{id:'s2',name:'scan'},state:'pending',chars:0,note:'This computer has no PDF reader (pdftotext), so this PDF needs text.'}],receipts:[],state:'saved',next_step:'1 of 2 files have text.'};
   const found={id:'files',title:'From my files',status:'queued',next:'angles',approval:'page',expected:'a1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',mode:'from-files',review_level:'balanced',decisions:[],brief:{goal:'A team post',audience:'To be chosen with the angle.'},stages:[{stage:'angles',label:'Angles',path:'derived/blog-angles.md',status:'pending'}],excerpted:[]};
   const f=fixture((url,options)=>{requests.push({url,data:options?.body?JSON.parse(options.body):null});
@@ -1657,7 +1535,7 @@ async function filesJourney(){
     if(url==='/api/source-role'&&refuseRole)return {__http:400,error:'A started blog read this file as facts; its role stays.'};
     if(url==='/api/upload')return (JSON.parse(options.body).files||[]).some(e=>e.google)?{files:[{filename:'Messaging Doc',source:{id:'s9',name:'Messaging Doc'},state:'ready',chars:4200,note:'All 3 tabs were read: “Overview”, “Messaging”, “FAQ”. Link one tab to read only that tab.',link:'https://docs.google.com/document/d/abc/edit'}]}:uploaded;
     if(url==='/api/source-role')return {id:JSON.parse(options.body).id,role:JSON.parse(options.body).role};
-    if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
+    if(url.startsWith('/api/run?'))return found;
     if(url.startsWith('/api/run-'))return found;
     return {items:[],total:0};});
   f.loadRunner();
@@ -2077,7 +1955,7 @@ async function libraryScreen(){
     if(url==='/api/tool-action')return {id:'j'.repeat(32),kind:data.kind,status:'queued',metadata:{},attempts:0};
     if(url.startsWith('/api/styles'))return {styles:[],samples:[],candidates:[{id:'a',name:'A post',author:'Avery'},{id:'z',name:'Other',author:''}],pending:[]};
     if(url.startsWith('/api/voices'))return {profiles:[],samples:[{id:'a',name:'A post',author:'Avery'},{id:'b',name:'B notes',author:'Avery'}],candidates:[],pending:[]};
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',stop:'package',tone:'Clear',author:''},review_level:'balanced'},sources:[],profiles:[],default_voice:null,agents:{codex:true},styles:[]};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'supplied-only',tone:'Clear',author:''},review_level:'balanced'},sources:[],profiles:[],default_voice:null,agents:{codex:true},styles:[]};
     return {items:[],total:0};});
   f.loadRunner();voicesOn(f);
   f.run("view='library'");await f.run('load()');
@@ -2148,7 +2026,7 @@ async function libraryScreen(){
 // eight, newest first) as examples and a starter none; the picker's filters reach the request;
 // a picked item keeps its library role for this blog only and goes as `library`, not a source.
 async function libraryPicker(){
-  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};
   const sampleIds=Array.from({length:9},(_,n)=>'s'+(n+1));
   const options={settings:{defaults,review_level:'balanced'},sources:sampleIds.map(id=>({id,name:'Sample '+id,status:id==='s9'?'pending':'ready'})).concat([{id:'lib1',name:'Launch notes',status:'ready'}]),profiles:[],default_voice:null,agents:{codex:true},styles:[{id:'product-announcement',name:'Product announcement',kind:'seed',revision:1,status:'confirmed',sample_ids:[]},{id:'field-notes',name:'Field notes',kind:'learned',revision:2,status:'confirmed',sample_ids:sampleIds}]};
   const f=fixture((url,o)=>{const data=o?.body?JSON.parse(o.body):null;requests.push({url,data});
@@ -2327,7 +2205,7 @@ async function voiceCandidates(){
   const upload=sheet().find(e=>e.id==='learn-voice-upload');upload.files=[{name:'post.md',size:20,arrayBuffer:async()=>new TextEncoder().encode('# A post\n\nText.').buffer}];
   await upload.listeners.change();
   const sent=requests.find(r=>r.url==='/api/upload').data;
-  assert.equal(sent.purpose,'voice-sample');assert.equal(sent.author,'Synthetic Author');assert.equal(sent.as_blog,false);assert.equal(sent.analyze,false);
+  assert.equal(sent.purpose,'voice-sample');assert.equal(sent.author,'Synthetic Author');assert.equal('as_blog' in sent,false);assert.equal(sent.analyze,false);
 }
 
 // The run says which voice and kind of post it writes with; Change asks once before a voice
@@ -2393,7 +2271,7 @@ async function runVoiceChange(){
 // Write as, Default voice, Change the voice, voice learning, Create voices for every author,
 // voice-sample uploads or library marks. Kinds of post have their own screen. On, they return.
 async function voiceSwitch(){
-  const requests=[],defaults={engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''};
+  const requests=[],defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};
   const found={id:'synthetic',title:'Synthetic blog',status:'waiting-for-approval',next:'draft',approval:'page',expected:'run-1',enabled:false,directory:'/synthetic',seconds:600,engine:'codex',mode:'write',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},voice_name:'Synthetic Author',voice_mode:'profile',voice_profile:'voice',voice_revision:1,style_name:'Product announcement',notes:{},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved'},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'pending'}]};
   let settings={defaults,shared_before:{engine:'codex',author:''},workspace:'/synthetic',voice:{profile_id:'voice',revision:1},voices:[{id:'voice',name:'Synthetic Author',revision:1}],features:{voice:false}};
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
@@ -2719,7 +2597,7 @@ async function failureRecovery(){
 
 async function phase3ResearchDefaults(){
   const sites=['https://blogs.vmware.com/tanzu','https://docs.example.com'];
-  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:false,web:false},stop:'package',tone:'Clear',author:''};
+  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:false,web:false},tone:'Clear',author:''};
   // Blog Studio's own default: your sites stay off until ticked, even with a shared list.
   const usual=fixture(url=>url==='/api/run-options'?{settings:{defaults,review_level:'balanced',research_sites:sites},sources:[],profiles:[],agents:{codex:true}}:{items:[],total:0});
   usual.loadRunner();usual.set('defaults',defaults);usual.set('sites',sites);
@@ -2731,12 +2609,12 @@ async function phase3ResearchDefaults(){
 // A step-by-step run's research names the sites that kept pages out, on the run and its gate.
 async function researchFromJourney(){
   const sites=['https://blogs.vmware.com/tanzu','https://docs.example.com'],words={empty:'Choose where research may look: your documents, your sites or the public web.',no_documents:'No documents were given, so choose your sites or the public web for research, or add documents.',no_sites:'Choose at least one of your sites, or turn your sites off.'};
-  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},stop:'package',tone:'Clear',author:''},requests=[];
+  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},tone:'Clear',author:''},requests=[];
   const found={id:'written',title:'A synthetic blog',status:'queued',next:'research-plan',approval:'page',expected:'r1',enabled:true,directory:'/synthetic',seconds:600,engine:'codex',decisions:[],brief:{goal:'Explain',audience:'Authors'},stages:[]};
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
     if(url==='/api/run-options')return {settings:{defaults,review_level:'balanced',research_sites:sites,research_words:words},sources:[{id:'s1',name:'Specification',status:'ready',purposes:['reference']}],profiles:[],agents:{codex:true},styles:[]};
     if(url==='/api/research-site'){if(data.site.startsWith('http://'))return {__http:400,error:'"http://intranet.example": research sites use https only.'};return {site:'https://extra.example.org/guide',shown:'extra.example.org/guide'};}
-    if(url==='/api/run-create'||url.startsWith('/api/run?'))return found;
+    if(url.startsWith('/api/run?'))return found;
     return {items:[],total:0};});
   f.loadRunner();
   const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id),text=()=>nodes().map(e=>e.textContent),said=()=>nodes().filter(e=>e.className.split(' ').includes('research-scope')).map(e=>e.textContent);
@@ -2804,7 +2682,7 @@ async function deskJourneys(){
   const requests=[],timers=[];let view=deskView(),refuse=false;
   const f=fixture((url,options)=>{
     const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''}},sources:[],profiles:[],styles:[{id:'how-to',name:'How-to and tutorial',status:'confirmed',kind:'seed'}],agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''}},sources:[],profiles:[],styles:[{id:'how-to',name:'How-to and tutorial',status:'confirmed',kind:'seed'}],agents:{codex:true}};
     if(url==='/api/desk-create')return {...view,first_pass_problem:null};
     if(url.startsWith('/api/desk?'))return view;
     if(url==='/api/desk-save'){if(refuse)return {__http:409,error:'This draft changed since you opened it. Reload to see the latest.'};view={...view,revision:view.revision+1,versions:{[data.part]:1},sections:view.sections.map(s=>s.id===data.part?{...s,text:data.text}:s)};return view;}
@@ -2972,7 +2850,7 @@ async function deskOpenFromLists(){
   const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
     if(url==='/api/runs')return {items:[row],deleted:[]};
     if(url.startsWith('/api/board'))return {items:[],total:0};
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''}},sources:[],profiles:[],styles:[],agents:{codex:true}};
     if(url==='/api/team')return {};
     if(url.startsWith('/api/run?'))return run;
     if(url.startsWith('/api/manuscript?'))return {id:'done',title:'Done blog',content:'# Done blog\n\nText.\n',expected:'m1',google:null,proposals:[],findings:[],checks:{},working:false,operation,sources:[],baseline:''};
@@ -3014,7 +2892,7 @@ function deskStartFixture(answer=()=>null){
   const f=fixture((url,options)=>{
     const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
     const given=answer(url,data);if(given!==null&&given!==undefined)return given;
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''},research_sites:['https://docs.example.com']},sources:[],profiles:[],styles:[{id:'how-to',name:'How-to and tutorial',summary:'Prerequisites, numbered steps with checkpoints, a finished state, troubleshooting.',status:'confirmed',kind:'seed'},{id:'old',name:'Retired kind',status:'retired',kind:'learned'}],agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},research_sites:['https://docs.example.com']},sources:[],profiles:[],styles:[{id:'how-to',name:'How-to and tutorial',summary:'Prerequisites, numbered steps with checkpoints, a finished state, troubleshooting.',status:'confirmed',kind:'seed'},{id:'old',name:'Retired kind',status:'retired',kind:'learned'}],agents:{codex:true}};
     if(url==='/api/desk-share')return {id:data.id,shared:true};
     return {items:[],total:0};
   });
@@ -3032,7 +2910,6 @@ async function deskTopicStart(){
   const angles=[{headline:'Retries that keep work',point:'A retry resumes from the last checkpoint.',audience:'Operators'},{headline:'Why jobs stop',point:'Most stops are timeouts.',audience:'Developers'},{headline:'A checkpoint primer',point:'Checkpoints are cheap.',audience:'Newcomers'}];
   const t=deskStartFixture((url,data)=>{
     if(url==='/api/upload')return {files:[{filename:'notes.md',source:{id:'s1'},state:'ready',chars:120,note:''}]};
-    if(url==='/api/source-keep')return {id:data.id,kept:data.keep};
     if(url==='/api/desk-angles')return {operation:data.operation,job:'a1',status:'queued',busy:true,angles:[],error:''};
     if(url.startsWith('/api/desk-angles?')){polls++;return {operation:new URLSearchParams(url.split('?')[1]).get('operation'),job:'a1',status:'ready',busy:false,angles,error:''};}
     if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};
@@ -3267,7 +3144,7 @@ async function deskPolishStart(){
 async function deskResearchSites(){
   const words={no_sites:'Choose at least one of your sites, or turn your sites off.'};
   const t=deskStartFixture((url,data)=>{
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',stop:'package',tone:'Clear',author:''},research_sites:['https://blogs.vmware.com/tanzu','https://docs.example.com'],research_words:words},sources:[],profiles:[],styles:[],agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research:'none',tone:'Clear',author:''},research_sites:['https://blogs.vmware.com/tanzu','https://docs.example.com'],research_words:words},sources:[],profiles:[],styles:[],agents:{codex:true}};
     if(url==='/api/research-site'){if(data.site.startsWith('http://'))return {__http:400,error:'"http://intranet.example": research sites use https only.'};return {site:'https://extra.example.org/guide',shown:'extra.example.org/guide'};}
     if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};
     if(url.startsWith('/api/desk?'))return startView();
@@ -3306,7 +3183,7 @@ async function deskResearchSites(){
 async function deskResearchDefault(){
   let research={documents:true,sites:true,web:true},sites=['https://docs.example.com'];
   const t=deskStartFixture((url)=>{
-    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research,stop:'package',tone:'Clear',author:''},research_sites:sites},sources:[],profiles:[],styles:[],agents:{codex:true}};
+    if(url==='/api/run-options')return {settings:{defaults:{engine:'codex',seconds:600,research,tone:'Clear',author:''},research_sites:sites},sources:[],profiles:[],styles:[],agents:{codex:true}};
     if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};
     if(url.startsWith('/api/desk?'))return startView();
     return null;});
@@ -4444,7 +4321,6 @@ async function deskAddSource(){
   const t=deskStartFixture((url,data)=>{
     if(url.startsWith('/api/desk?'))return view;
     if(url==='/api/upload')return {files:[{filename:'A synthetic page',source:{id:'link1'},state:'ready',chars:900,note:'',link:data.files[0].link}]};
-    if(url==='/api/source-keep')return {id:data.id,kept:data.keep};
     if(url==='/api/desk-sources'){view={...view,revision:2,source_names:[{id:'s1',name:'Notes',purposes:['reference']}]};return view;}
     return null;
   });
@@ -4588,6 +4464,51 @@ async function deskGoogleDoc(){
   await t.click('Open its run');
   assert.equal(t.f.run('studio.screen'),'run');assert.equal(t.f.run('studio.id'),'older-run');
 }
+// A Google Doc that is already a blog here reopens on the desk from the polishing start, with
+// nothing made again; an answer the page cannot read is said on the start, the link kept.
+async function deskStartReopensALinkedDoc(){
+  const url='https://docs.google.com/document/d/fixture-doc/edit';
+  const linked={status:'already-linked',id:'existing',title:'Existing blog',linked_document:url};
+  const preview={status:'preview',preview:'b'.repeat(32),expected:'v1',title:'Synthetic Doc',linked_document:url,content:'Original text.',summary:{structure:{paragraphs:1}}};
+  for(const response of [linked,{status:'already-linked'},{status:'unrecognized'},{...preview,summary:undefined},{...preview,summary:{}}]){
+    let result=response;
+    const t=deskStartFixture((asked)=>{
+      if(asked==='/api/google-preview')return result;
+      if(asked==='/api/desk?id=existing')return deskView({id:'existing',title:'Existing blog'});
+      if(asked.startsWith('/api/desk?'))return {__http:400,error:'This blog is not on the desk.'};
+      return null;
+    });
+    await t.f.run("sDeskBegin({have:'draft',source:'google'})");
+    t.type('desk-google',url);
+    await t.submit();
+    if(response!==linked){
+      assert.equal(t.f.run('studio.screen'),'desk-start','an unreadable answer stays on the start');
+      assert.ok(t.nodes().some(n=>n.className==='problem'&&n.textContent.includes('The Google Doc preview is incomplete')),'the preview check says what is wrong');
+      assert.equal(t.byId('desk-google').value,url,'the link is kept');
+      assert.equal(t.nodes().some(n=>n.textContent==='This view could not be read'),false);
+      result=linked;await t.submit();
+    }
+    assert.equal(t.f.run('studio.screen'),'desk','an already linked Doc reopens on the desk');assert.equal(t.f.run('studio.id'),'existing');
+    assert.equal(t.requests.some(r=>r.url==='/api/desk-create'),false,'nothing is made again');
+    assert.equal(t.requests.some(r=>['/api/google-start','/api/upload'].includes(r.url)),false,'nothing is imported again');
+  }
+}
+// The old Polish, paste and Google Doc intake addresses open the polishing start.
+async function oldIntakeAddressesOpenTheDeskStart(){
+  for(const [screen,source] of [['polish',undefined],['draft','paste'],['google','google']]){
+    const t=deskStartFixture();let address='';
+    t.f.set('history',{replaceState:(_,__,to)=>{address=to;},pushState:(_,__,to)=>{address=to;}});
+    t.f.set('location',{hash:'',pathname:'/',get search(){return address.slice(address.indexOf('?'));}});
+    t.f.run("studio.deskStart={have:'topic',title:'Left over'}");
+    await t.f.run(`studioNavigate('${screen}')`);
+    assert.equal(t.f.run('studio.screen'),'desk-start',screen+' opens the desk start');
+    assert.equal(t.f.run('location.search'),'?screen=desk-start',screen+' says the desk start in the address');
+    assert.equal(t.f.run('studio.deskStart.have'),'draft',screen+' opens the polishing screen');
+    assert.equal(t.f.run('studio.deskStart.title'),'',screen+' is a fresh start');
+    if(source)assert.equal(t.f.run('studio.deskStart.source'),source,screen+' brings the draft its way');
+    assert.equal(t.f.get('title').textContent,'Polish a draft');
+  }
+}
 // Mark as published on the desk says the draft is kept in the team library, and the toast
 // says whether it was.
 async function deskPublishKeeps(){
@@ -4702,7 +4623,7 @@ async function oneNameEach(){
   // Settings: the default voice says where it is used, and documents are a sentence.
   const f=fixture(()=>({}));f.loadRunner();voicesOn(f);
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
-  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},stop:'package',tone:'Clear',author:''};f.set('defaults',defaults);
+  const defaults={engine:'codex',seconds:600,research:{documents:true,sites:true,web:false},tone:'Clear',author:''};f.set('defaults',defaults);
   f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced',research_sites:['https://a.example'],voices:[{id:'v1',name:'Avery'}]};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
   assert.ok(text().some(t=>/^Used for Interview me and for blogs written step by step in chat\. A blog on the writing desk is written with its tone\./.test(t)),text().join('|'));
   assert.ok(text().includes('Your documents are always read. Choose what else research may use.'));

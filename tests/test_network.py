@@ -199,7 +199,7 @@ class FramedDraftBridgeTests(unittest.TestCase):
             return response.status, response.headers, response.read()
 
     def test_the_panels_and_the_draft_reach_a_phone_without_the_key(self):
-        for path in ('/deck-panels.js', '/deck-panels.css'):
+        for path in ('/deck-panels.js', '/deck-panels.css', '/lists.js'):
             with self.subTest(path=path):
                 status, _, body = self.request(path)
                 self.assertEqual(status, 200)

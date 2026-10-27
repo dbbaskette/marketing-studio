@@ -10,4 +10,5 @@
 - **`main` is live.** New trainings fetch their guidance from it. Guidance that needs a script change raises `minimum_runtime` in `guidance/manifest.json` and the `VERSION` together.
 - **The README is for a new user.** It takes someone from nothing to a first training in plain language. Technical detail goes in `docs/` and is linked from it.
 - **Research and decks are delegated.** Do not add research or slide-building logic here; they belong to `harness-research` and `harness-slides`.
+- **Shared runner parts live in core.** A runner module both deck studios use lives in `core/studio_core/shared_runner/`, and `runner/<name>.py` passes the product in.
 - **State changes need a matrix row.** A change to status, approval, inputs or readiness adds or updates a row in the plan's state-transition matrix and its test.

@@ -468,6 +468,41 @@ class FloorTests(unittest.TestCase):
         with mock.patch.object(brand, 'PINS', Path('/nowhere/companions.json')):
             self.assertEqual(brand.floor(), '0.14.0')
 
+    def test_brand_pins_are_this_studio_s(self):
+        import runner
+        self.assertEqual(brand.PINS, Path(runner.__file__).resolve().parents[1] / 'installer'
+                         / 'companions.json')
+        self.assertTrue(brand.PINS.is_file())
+
+
+class CompanionsTests(unittest.TestCase):
+    """The brand skill draws through harness-slides and asks harness-research: it is told
+    the copies this runner uses, as harness-slides says a brand adapter is
+    (HARNESS_SLIDES_ROOT), so that both use one copy, wherever it was found."""
+
+    SAID = ('import os; print(os.environ.get("HARNESS_SLIDES_ROOT"), '
+            'os.environ.get("HARNESS_RESEARCH_ROOT"))')
+
+    def test_the_brand_skill_is_told_which_companions_to_use(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                mock.patch.object(slides, 'find_runtime', lambda: Path(folder) / 'slides'), \
+                mock.patch('runner.research.find_runtime', lambda: Path(folder) / 'research'), \
+                mock.patch.dict(os.environ, {}):
+            os.environ.pop('HARNESS_SLIDES_ROOT', None)
+            os.environ.pop('HARNESS_RESEARCH_ROOT', None)
+            code, out, _ = brand.run_command([sys.executable, '-c', self.SAID])
+        self.assertEqual((code, out.split()), (0, [str(Path(folder) / 'slides'),
+                                                   str(Path(folder) / 'research')]))
+        # One already set is kept; one not found is not named.
+        def missing():
+            raise WorkspaceError('There is none.')
+        with mock.patch.object(slides, 'find_runtime', missing), \
+                mock.patch('runner.research.find_runtime', missing), \
+                mock.patch.dict(os.environ, {'HARNESS_SLIDES_ROOT': '/chosen/slides'}):
+            os.environ.pop('HARNESS_RESEARCH_ROOT', None)
+            code, out, _ = brand.run_command([sys.executable, '-c', self.SAID])
+        self.assertEqual(out.split(), ['/chosen/slides', 'None'])
+
 
 class StandInTests(unittest.TestCase):
     """The stand-in is a made-up brand that behaves as a brand skill does."""

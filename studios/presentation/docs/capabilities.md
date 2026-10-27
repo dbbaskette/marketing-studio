@@ -1,6 +1,6 @@
 # Presentation Studio capability coverage
 
-The installed `studio` CLI has `serve` and read-only `status`; drafting operations
+The installed `studio` CLI has `serve` and the read-only `status` and `saved-work`; drafting operations
 run through the same engine as the browser. Worker tools are internal validated
 contracts, not additional person-facing CLI commands. The conversation skill
 uses companion commands and the same readable deck records.
@@ -8,14 +8,14 @@ uses companion commands and the same readable deck records.
 | Task | Browser entry point | Engine or command |
 | --- | --- | --- |
 | Start from an idea, document, or existing deck | New deck | `Engine.start` |
-| Choose preservation scope and selected slides | New deck → What changes | `decks.check_form` |
-| Import a conversation-created deck | Decks → Bring in a deck | `Engine.bring`; remembered decks only |
+| Choose preservation scope and selected slides | New deck → 2. Your deck and what changes | `decks.check_form` |
+| Import a conversation-created deck | Decks → Bring in a deck → Bring it in | `Engine.bring`; remembered decks only |
 | Review research, classify, revise and approve | Current deck checkpoint | `Engine.decide` and item marks |
 | Retitle, reorder, add or remove outline slides | Outline review | `outline.apply_edits` |
 | Preview a visual storyboard, including unsaved edits | Automatically at Outline, again 1.5 s after the last edit; Refresh now | Harness Slides `outline draft` |
 | Correct how a document was read, from the direction stop | Review the direction → That’s wrong | `Engine.decide` with `direction_target: gate:classify` |
-| Confirm identity or change brand | Direction/brand review | Saved contract and cover preview |
-| See the first draft before the deck is checked | New deck → Options → See the first draft before the deck is checked | Run-scoped `initial_review` |
+| Choose the look, or change brand | Choose the look; Review the direction under Balanced → Choose another brand | Saved contract and look samples |
+| See the first draft before the deck is checked | New deck → How it looks → Options → See the first draft before the deck is checked | Run-scoped `initial_review` |
 | Inspect native slides, partial previews and findings | Current deck | `Engine.picture`, build progress |
 | Send revision-bound feedback during section construction | Partial slide preview | `Engine.build_feedback` |
 | Keep feedback that came after its section was drawn, as the slide's mark at the deck review | Partial slide preview → the deck review | `Engine.build_feedback` with the slide's number |
@@ -27,15 +27,15 @@ uses companion commands and the same readable deck records.
 | Answer a worker question | Current deck question | `Engine.answer` |
 | Read saved intake, outline and research files | Saved inputs, outline and run details | Authenticated bounded `/api/file` |
 | Inspect requested model routing and reported actual model | Saved inputs, outline and run details | Run-scoped model receipts |
-| Download PowerPoint or deliver to Google Slides | Finished deck | Exact native artifact; `Engine.download` / `deliver_again` |
+| Download PowerPoint or send it to Google Slides | Finished deck → Download .pptx; Send to Google Slides | The exact native file; `Engine.download` / `deliver_again` |
 | Share, fetch, take or hand over | Sharing controls and deck ownership | Existing Git workspace operations |
 | Record numbered team revisions | Finished deck → Publish; Decks → Published | `Engine.publish` / `published`; no public CMS write |
 | Delete a deck with a preview of retained work | Current deck → Delete; Delete on each deck in Home and Decks | `Engine.leaving` / `delete` |
 | Setup, models, budgets, notifications and release checks | Settings and Status | Existing settings/upkeep APIs |
 | Read setup and deck status without serving | Status; terminal `studio status` | No provider jobs |
+| List the saved decks that still need an older path | Terminal `studio saved-work [--folder PATH]` | `Engine.saved_work`; read-only, no provider jobs |
 
-Installation, rollback and removal remain explicit installer operations. Rehearsal
-is not implemented by either route and is labeled as future work. Native Google
+Installation, rollback and removal remain explicit installer operations. Native Google
 and assistant acceptance requires a signed-in destination; fixture checks do not
 establish that provider coverage.
 

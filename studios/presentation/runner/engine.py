@@ -20,6 +20,7 @@ What a caller needs to know
     engine.publish(path); engine.published() # numbered revisions, as tags
     engine.leaving(path); engine.delete(path, title)
     engine.bring(folder)                     # copy a deck made elsewhere in, and run it
+    engine.saved_work(folders)               # which saved decks still need each older path
     engine.standing()                        # the status screen
     engine.serving(); engine.seen(); engine.tell()   # fetch and notify while serving
     engine.close()                           # end every worker; nothing half-made is kept
@@ -136,7 +137,7 @@ import home
 import hub
 from workspace import WorkspaceError, write_atomic
 
-from runner import agents, companion, decks, documents, gitstate, marks, settings, stages
+from runner import agents, companion, decks, desk, documents, gitstate, marks, settings, stages
 from runner import build_progress, team, worker_tools
 from runner import brand as brand_skill
 from runner import brand_source
@@ -145,8 +146,10 @@ from runner import slides as slides_tool
 from runner.jobs import (FED, KEPT_SO_FAR, NEXT_NOTE, Gone as _Gone, Halted as _Halted, Jobs,
                          Run as _Run, Slots as _Slots, attempts, first, gate_state,
                          last_error, spent, text_of, tries, sha256_of)
+from runner import desk_actions
+from runner.desk_actions import DeskActions
 from runner.research_steps import FROM_FORM, PLAN, PLAN_MD, REPORT, REVIEW, Researching
-from runner.steps import build, deliver as delivering, existing, intake
+from runner.steps import build, deliver as delivering, existing, intake, words
 from runner.steps import look as looks
 from runner.steps import outline as outlines
 
@@ -165,14 +168,14 @@ PAGE_OPEN = 45          # seconds since a page last asked, while one counts as o
 STOP_WAIT = 30          # seconds a run that is being deleted may take to end
 IN_HAND = 'work/step.lock'      # written when a step starts, removed when it ends
 INCOMING = 'sources/incoming'   # what the form brought, until intake-source takes it
-PICTURE_KINDS = ('build', 'look', 'original', 'progress')
+PICTURE_KINDS = ('build', 'look', 'original', 'progress', 'version')
 PICTURE_STARTS = (b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff')   # a PNG, a JPEG, by their first bytes
 PICTURE_MOST = 20_000_000   # bytes of one picture a person gives a slide
 PICTURE_WORDS = 300         # characters of what a picture shows, and of where it came from
 SHEET = 'contact-sheet'
 
 # What the engine does for each step of the pipeline: the name of its method. Every gate is
-# opened the same way; rehearse is never next.
+# opened the same way.
 RUN = {
     'intake-source': '_intake_source', 'classify': '_classify', 'inventory': '_inventory',
     'gate:classify': '_gate', 'research-plan': '_research_plan',
@@ -183,7 +186,7 @@ RUN = {
     'build-start': '_build_start', 'build-sections': '_build_sections',
     'build-whole': '_build_whole', 'build-review': '_build_review',
     'build-repair': '_build_repair', 'build-render': '_build_render', 'gate:build': '_gate',
-    'deliver': '_deliver', 'rehearse': None}
+    'deliver': '_deliver'}
 # What each gate decides on, as a commit and a sentence say it.
 WORDS = {'gate:classify': 'classification', 'gate:research-plan': 'research plan',
          'gate:research': 'research', 'gate:outline': 'outline', 'gate:look': 'look',
@@ -293,6 +296,11 @@ NO_BRAND = ("Your deck needs your brand from here on, and no brand skill is inst
             "computer: name the brand skill's repository in Settings and install it, then "
             'retry.')
 DRIVE_FILES = {'preview': 'Preview presentation', 'slides': 'Google Slides deck'}
+NO_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
+                'here cannot do it. Update Harness Research, then start again.')
+# True lets a new run start on the legacy question queue. Only the test suites that still
+# drive the queue through its stand-in set it; piece 7 removes it with the queue.
+LEGACY_RESEARCH = False
 
 
 # --- what a run record holds ----------------------------------------------------------------
@@ -319,7 +327,7 @@ class Elsewhere(WorkspaceError):
     """This computer may not change a deck: someone else drives it, or nobody does."""
 
 
-class Engine(Jobs, Researching):
+class Engine(Jobs, Researching, DeskActions):
     """Drives every deck in this computer's workspace."""
 
     def __init__(self, adapters=None, research=None, slides=None, brand=None, drive=None,
@@ -733,7 +741,9 @@ class Engine(Jobs, Researching):
         space, chosen = self.space(), settings.load()
         gitstate.identity(space.repo)
         checked = decks.check_form(form, self.brands())
-        level, seen, default = decks.review_choice(form)
+        # A desk deck has no review level: its start chose the one pause it has.
+        level, seen, default = (None, None, False) if checked.get('flow') \
+            else decks.review_choice(form)
         given = self._given(form, checked, uploads or {})
         named = isinstance(form, dict) and form.get('agent') not in (None, '')
         agent = settings.check_agent(form['agent']) if named else chosen.agent
@@ -752,6 +762,15 @@ class Engine(Jobs, Researching):
         if checked['route'] in ('existing', 'document') and source.get('kind') == 'google' \
                 and not self._google_ready():
             raise WorkspaceError(existing.NOT_READY)
+        # The research contract is taken before anything is written: research on a Harness
+        # Research that cannot synthesize is refused with nothing made.
+        try:
+            contract = research_contract.snapshot(self.research()) if checked.get('research') \
+                else None
+        except WorkspaceError:
+            contract = None
+        if checked.get('research') and contract is None and not LEGACY_RESEARCH:
+            raise WorkspaceError(NO_SYNTHESIS)
         if default:
             # Refused, with nothing made, when another studio changed the level the form read.
             import studios_config
@@ -768,17 +787,12 @@ class Engine(Jobs, Researching):
                     target.write_bytes(data)
                 record = self._load(root)
                 record.update(agent=agent, model=model, level_of_effort=effort,
-                              model_profiles=profiles,
-                              review_policy=({'schema': 1, 'level': level} if level
-                                             else review_policy.capture()),
-                              driver=team.claim(space),
+                              model_profiles=profiles, driver=team.claim(space),
                               limits={'step_seconds': chosen.step_seconds,
                                       'dollars': chosen.deck_dollars})
-                from studio_core import research_contract
-                try:
-                    contract = research_contract.snapshot(self.research()) if checked.get('research') else None
-                except WorkspaceError:
-                    contract = None
+                if not checked.get('flow'):
+                    record['review_policy'] = ({'schema': 1, 'level': level} if level
+                                               else review_policy.capture())
                 if contract:
                     record['research_contract'] = contract
                 if review_policy.level(record) != 'step_by_step':
@@ -982,10 +996,29 @@ class Engine(Jobs, Researching):
                     if self._settle(root, record):
                         continue
                 self._original(root, record)
+                if decks.on_desk(record) and (record.get('desk') or {}).get('edits'):
+                    self._desk_land_queued(root)   # words saved while the chain ran
+                    continue
+                if decks.on_desk(record) and record.get('desk_jobs'):
+                    self._desk_job(root, run)      # a words job, before the next step
+                    continue
                 step = first(record)
                 if step is None:
                     return
-                if step.kind == 'gate' and not (step.name == 'gate:look' and record.get('look_again')) and self._automatic(
+                if step.name in BUILT and step.name != 'build-start' and decks.on_desk(record) \
+                        and not desk.selected(record) and not build.read_state(root).get('start'):
+                    return   # no drawing of this desk deck here: drawn only when asked
+                if self._patched_elsewhere(root, record, step.name):
+                    return   # its plan was made on another computer: made here when asked
+                if step.kind == 'gate' and decks.on_desk(record):
+                    # A desk deck's stops are met on the desk: those it continues past, and
+                    # the look when the start chose to pick it, and the desk itself.
+                    if desk.passes(record, step.name, root):
+                        self._desk_gate(root, step)
+                        continue
+                    if gate_state(record, step.name) == 'waiting':
+                        return
+                elif step.kind == 'gate' and not (step.name == 'gate:look' and record.get('look_again')) and self._automatic(
                         record, step.name, holding=self._holding(root, step.name)):
                     self._policy_gate(root, step)
                     continue
@@ -1022,6 +1055,14 @@ class Engine(Jobs, Researching):
                 self._slots.give_back()
             run.queued = run.busy = False
 
+    @staticmethod
+    def _patched_elsewhere(root: Path, record: dict, step: str) -> bool:
+        """Whether a Selected changes desk deck's plan was made on another computer and not
+        here: its plan and its copy are made here only when asked (desk_draw_here)."""
+        return step in ('patch', 'build-render') and decks.on_desk(record) \
+            and desk.selected(record) and desk._last_try(record, 'patch', kept=True) is not None \
+            and not (root / existing.PATCH).is_file() and not (root / desk_actions.DRAW_HERE).is_file()
+
     def _settle(self, root: Path, record: dict) -> bool:
         """Do again the steps whose work this computer lacks. What a deck is made from
         (sources/) and what its steps make on the way (work/) stay on the computer that
@@ -1031,6 +1072,7 @@ class Engine(Jobs, Researching):
         if decks.delivered(root) is not None:
             return False
         names = [step.name for step in stages.steps(record)]
+        desk_deck = decks.on_desk(record)
 
         def did(name: str) -> bool:
             return name in names and bool(tries(record, name).get('done'))
@@ -1052,9 +1094,21 @@ class Engine(Jobs, Researching):
         if gate_state(record, 'gate:look') != 'approved' and did('look-preview') \
                 and not (root / looks.SAMPLE).is_file() and looks.shown_looks(root) is None:
             again.append('look-preview')
-        if did('patch') and (lacks or not (root / existing.PATCH).is_file()):
+        # A desk deck's plan is made here only when asked (desk_draw_here).
+        if did('patch') and not desk_deck and (lacks or not (root / existing.PATCH).is_file()):
             again += ['patch', 'build-render']
-        if any(did(name) for name in BUILT) and (
+        if desk_deck and not build.read_state(root).get('start') and desk.opened(record) \
+                and any(did(name) for name in BUILT):
+            # A desk deck is drawn here only when asked (desk_draw_here): what the driving
+            # computer was drawing for its notes is drawn here then.
+            with self.files:
+                record = self._load(root)
+                if any(item.get('status') == 'drawing' for item in desk.opened(record)):
+                    for item in desk.opened(record):
+                        item['status'] = 'waiting'
+                    self._store(root, record)
+                    self._commit(root, 'keep the notes to draw here when asked')
+        if not desk_deck and any(did(name) for name in BUILT) and (
                 not build.read_state(root).get('start') and 'build-start' in names
                 or did('build-render') and not self._rendered(root, record)):
             again += [name for name in BUILT if name in names]
@@ -1188,6 +1242,8 @@ class Engine(Jobs, Researching):
                 build_progress.mark(root, (build.read_state(root).get('start') or {}).get('folder'),
                     'first_draft_ready_at' if decks.user_first(record) else 'final_review_ready_at')
                 record = self._load(root)
+                if decks.on_desk(record):
+                    return self._on_desk(root, record)
             else:
                 gate = record['gates'].get(step.name) or {}
                 record['gates'][step.name] = {**gate, 'state': 'waiting',
@@ -1553,7 +1609,7 @@ class Engine(Jobs, Researching):
         state = build.read_state(root)
         if not state.get('start') or build.to_draw(root):
             return False
-        if not state['rounds']:
+        if not state['rounds'] or state.get('rewhole'):
             return True
         made = state['rounds'][-1].get('made_from') or {}
         return any(made.get(ident) != entry.get('file')
@@ -1576,8 +1632,26 @@ class Engine(Jobs, Researching):
             skill = self._skill()
         except WorkspaceError:
             skill = None
-        build.render(root, self._load(root), self.slides(), brand=skill,  # work/ only
-                     renderer=how)
+        record = self._load(root)
+        own = decks.on_desk(record) and desk.selected(record)
+        try:
+            build.render(root, record, self.slides(), brand=skill, renderer=how)  # work/ only
+        except WorkspaceError as refusal:
+            # A change the copy of your own deck cannot take is put back, kept on its card,
+            # and the copy made again as it was.
+            if not own or not (root / desk_actions.BEFORE).is_file():
+                raise
+            with self.files:
+                record = self._desk_patch_back(root, self._load(root), [str(refusal)])
+                self._store(root, record)
+                self._commit(root, 'put back the change the copy of your deck could not take')
+            build.render(root, self._load(root), self.slides(), brand=skill, renderer=how)
+        if own:
+            (root / desk_actions.BEFORE).unlink(missing_ok=True)
+            (root / desk_actions.DRAW_HERE).unlink(missing_ok=True)
+            state = build.read_state(root)
+            state['deckSha256'] = sha256_of(root / state['deck'])   # the copy on screen
+            build.write_state(root, state)
         with self.files:
             self._done(root, step, clock, 'render the deck to deliver')
 
@@ -1600,6 +1674,14 @@ class Engine(Jobs, Researching):
     # --- the steps a worker does -------------------------------------------------------------
 
     def _classify(self, root: Path, run: _Run, step: stages.Step) -> None:
+        reading = (self._load(root).get('form') or {}).get('reading')
+        if reading and decks.on_desk(self._load(root)):
+            # The start said how the document is read: no job reads it.
+            clock = time.monotonic()
+            with self.files:
+                record = intake.given(root, self._load(root), reading)
+                self._done(root, step, clock, 'read the document as the start said', record)
+            return
         self._agent(root, run, step,
                     lambda record, request, error: intake.classify_work(root, record, request,
                                                                         error),
@@ -1627,12 +1709,25 @@ class Engine(Jobs, Researching):
 
     def _patch(self, root: Path, run: _Run, step: stages.Step) -> None:
         self._contract(root)
+
+        def keep(record, handed):
+            existing.keep_patch(root, self._text(handed, existing.NAME))
+            if decks.on_desk(record):
+                # A note's plan changes its own slide only, and the words typed on the desk
+                # stay as they were typed.
+                kept = home.read_json(root / desk_actions.BEFORE, None) or {}
+                change = kept.get('change') or {}
+                try:
+                    before = json.loads(kept.get('plan') or '{}').get('operations') or []
+                except (ValueError, AttributeError):
+                    before = []
+                words.with_shared_ops(
+                    root, before, change.get('number') if change.get('kind') == 'note' else None)
+
         self._agent(root, run, step,
                     lambda record, request, error: existing.patch_work(root, record, request,
                                                                        error),
-                    lambda record, handed: existing.keep_patch(
-                        root, self._text(handed, existing.NAME)),
-                    'keep the plan of the changes you asked for')
+                    keep, 'keep the plan of the changes you asked for')
 
     def _draw(self, root: Path, run: _Run, step: stages.Step, how: str) -> None:
         """One try at each section still to draw, side by side. Their previews are still
@@ -1671,6 +1766,7 @@ class Engine(Jobs, Researching):
         if build.to_draw(root):
             self._draw(root, run, step, how)
         with self.files:
+            self._desk_pick_up(root)
             if not build.to_draw(root):
                 self._done(root, step, time.monotonic(), 'every section is drawn')
 
@@ -1798,6 +1894,7 @@ class Engine(Jobs, Researching):
     def review_draft(self, path, expected: str) -> dict:
         """Explicitly request normal AI review for the exact native draft on screen."""
         root = self._held(path)
+        desk.refuse_on_desk(self._load(root))   # a desk deck is reviewed from Finishing
         with self.files:
             record = self._load(root)
             last = (build.read_state(root).get('rounds') or [{}])[-1]
@@ -1861,6 +1958,7 @@ class Engine(Jobs, Researching):
         if root is None:
             raise WorkspaceError('There is no deck there.')
         saved = self._load(root)
+        desk.refuse_on_desk(saved)   # a desk deck's stops are met on the desk
         if decision == 'approve' and saved.get('research_contract') and (saved.get('steps', {}).get('research-report') or {}).get('done'):
             from studio_core.research_contract import read_bundle
             try:
@@ -2419,6 +2517,9 @@ class Engine(Jobs, Researching):
         this deck, and stops nothing; a second note before then replaces the first. `expected`
         is the note's version the page read: a page that read an older one is refused."""
         root = self._held(path)
+        # A desk deck's notes are on its cards: the next step's note would reach a composer
+        # by a second way.
+        desk.refuse_on_desk(self._load(root))
         if not isinstance(text, str) or not text.strip():
             raise WorkspaceError('Write the note first.')
         text = text.replace('\r\n', '\n').replace('\r', '\n').strip()
@@ -2472,6 +2573,9 @@ class Engine(Jobs, Researching):
         within, file = (root / 'work').resolve(), None
         if kind == 'build' and ref == SHEET:
             within, file = root.resolve(), root / build.SHEET
+        elif kind == 'version':
+            # A drawing a slide's History kept on this computer, by its version's ref.
+            file = desk.version_picture(root, ref)
         elif kind == 'look':
             shown = looks.shown_looks(root) or {}
             numbers = {str(look['number']) for look in shown.get('looks') or ()}
@@ -2498,7 +2602,8 @@ class Engine(Jobs, Researching):
             raise WorkspaceError('There is no deck there.')
         record = self._load(root)
         deck = delivering.shared_file(root) or build.delivered_deck(root, record)
-        return f'{root.name}' + ('-unreviewed-first-draft' if decks.user_first(record) else '') + '.pptx', deck.read_bytes()
+        labelled = decks.user_first(record) and not decks.on_desk(record)
+        return f'{root.name}' + ('-unreviewed-first-draft' if labelled else '') + '.pptx', deck.read_bytes()
 
     # --- sharing -----------------------------------------------------------------------------
 
@@ -2653,6 +2758,10 @@ class Engine(Jobs, Researching):
                                     f" {said['notice']}" if said.get('notice') else ''))
         if nxt.kind == 'gate' and gate_state(record, nxt.name) == 'waiting':
             return 'waiting', f'{nxt.doing}.'
+        if decks.on_desk(record) and nxt.name in BUILT and nxt.name != 'build-start' \
+                and not desk.selected(record) and not build.read_state(root).get('start') \
+                or self._patched_elsewhere(root, record, nxt.name):
+            return 'waiting', desk.NO_DRAWING + ' Draw it here to carry on.'
         if run.queued:
             ahead = self._slots.ahead(run) or 0
             return 'working', 'Waiting for its turn. ' + (
@@ -3154,6 +3263,7 @@ class Engine(Jobs, Researching):
                             == 'maker' else {})}
                         if said else None),
             'contactSheet': (root / build.SHEET).is_file(),
+            'desk': self._desk_view(root, record) if decks.on_desk(record) else None,
             'undo': bool(mine and state != 'working' and not run.busy and self._can_undo(root))}
 
     def _can_undo(self, root: Path) -> bool:
@@ -3194,7 +3304,7 @@ class Engine(Jobs, Researching):
         every one of them reported its cost. None of it when one has never run here."""
         names = self._reopened(record, gate)
         again = [step for step in stages.steps(record) if step.name in names
-                 and step.kind != 'gate' and step.name != 'rehearse']
+                 and step.kind != 'gate']
         if not again:
             return None
         kept = record.get('steps') or {}
@@ -3226,7 +3336,7 @@ class Engine(Jobs, Researching):
         among them its own level always stops at (one a grave finding may still hold is not
         counted), and the seconds of every try with the dollars of its agent's jobs, said
         only when every one of them reported its cost."""
-        rows = [row for row in stages.timeline(record) if row['state'] not in ('done', 'later')]
+        rows = [row for row in stages.timeline(record) if row['state'] != 'done']
         gates = review_policy.ahead(record, 'presentation',
                                     [row['name'] for row in rows if row['name'].startswith('gate:')],
                                     run_gates=[step.name for step in stages.steps(record)])
@@ -3737,6 +3847,45 @@ class Engine(Jobs, Researching):
             home.remember(root, title)
         self.wake(root)
         return {'path': str(root), 'id': root.name}
+
+    # --- what saved decks still need ---------------------------------------------------------
+
+    def saved_work(self, folders=()) -> dict:
+        """Which saved decks still need each older path, as `saved_work.report` says: every
+        deck in the workspace and each of `folders` that holds one. Only read: no lock is
+        taken, nothing is written and nothing is asked online. A record that cannot be read
+        is passed over, as the runner passes it over."""
+        from studio_core import saved_work
+        found: dict[str, list[dict]] = {}
+        seen: set[Path] = set()
+        for root in [*self.every(), *(Path(folder) for folder in folders)]:
+            if root.resolve() in seen or not (root / decks.RUN).is_file():
+                continue
+            seen.add(root.resolve())
+            try:
+                run = decks.read_run(root)
+                survey = stages.survey(run)
+                listed = [step.name for step in stages.steps(run)]
+            except (OSError, ValueError, TypeError, AttributeError, KeyError):
+                continue
+            title = (run.get('form') or {}).get('title') or root.name
+            if 'research' in listed and not run.get('research_contract') \
+                    and 'research' not in survey.done:
+                found.setdefault('research-queue', []).append(saved_work.needs(
+                    root, title, 'Its research has not run, and it was started before '
+                    'Harness Research could synthesize.'))
+            if 'deliver' in survey.done:
+                continue
+            looked = looks.GATE in survey.done or survey.waiting == looks.GATE
+            if (root / looks.LOOK_MD).is_file() and not (root / looks.SHOWN).is_file():
+                why = 'It was drawn a cover to show its brand.'
+            elif (root / build.CONTRACT).is_file() and not looked:
+                why = 'It may need it: its brand was exported before it reached the look.'
+            else:
+                continue
+            found.setdefault('cover-sample', []).append(saved_work.needs(root, title, why))
+        return saved_work.report(('research-queue', 'cover-sample', 'old-harness-slides'),
+                                 found)
 
 
 # Which step's worker spoke last before each gate, for what the gate shows it said.

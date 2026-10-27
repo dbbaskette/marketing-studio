@@ -198,15 +198,19 @@ class GuidanceTests(Deck):
         shutil.rmtree(self.root / build.BRAND)
         return build.export_brand(self.root, self.run_, self.brand)
 
+    def kept(self):
+        """What is kept of the brand's slide guidance for this deck, as it is saved."""
+        return json.loads((self.root / build.ENTRY).read_text(encoding='utf-8'))
+
     def test_an_older_brand_is_noted_and_the_tools_own_guidance_is_used(self):
-        kept = build.guided(self.root)
+        kept = self.kept()
         self.assertEqual(kept['problem'], build.NO_ENTRY)
         self.assertEqual(build.guided_reading(self.root), {})
         self.assertEqual(set(build.brand_for_workers(self.root, self.contract)), {'brand design'})
 
     def test_the_deck_task_is_started_through_the_brand_and_kept_out_of_the_share(self):
         self.entered()
-        kept = build.guided(self.root)
+        kept = self.kept()
         self.assertEqual((kept['brand'], kept['variant'], kept['worker']),
                          ('example', 'light', True))
         self.assertIn('task', kept)
@@ -221,7 +225,7 @@ class GuidanceTests(Deck):
         # Exported again for the same brand, the task is resumed, not started again.
         task = kept['task']
         self.entered()
-        self.assertEqual(build.guided(self.root)['task'], task)
+        self.assertEqual(self.kept()['task'], task)
         self.assertEqual(self.brand.run.calls[-1][:2], ['guidance', 'resume'])
 
     def test_every_composer_and_the_outline_writer_get_the_brands_worker_guidance(self):

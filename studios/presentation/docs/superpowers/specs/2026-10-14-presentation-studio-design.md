@@ -1,3 +1,5 @@
+Superseded: kept as the first design. `docs/runner.md` describes the studio now.
+
 # Presentation Studio — Design
 
 Date: 2026-10-14

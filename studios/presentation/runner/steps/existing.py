@@ -440,11 +440,14 @@ def named_slides(selected) -> list[int]:
 
 def _named_for(run: dict, inventory: dict) -> list[int]:
     """The slides the person named at intake, then any more they asked for changes to at
-    the deck's gate."""
+    the deck's gate, or noted on the desk (`desk_patch_slides`)."""
     wanted = named_slides((run.get('form') or {}).get('selected'))
     asked = ((run.get('gates') or {}).get('gate:build') or {}).get('slides') or ()
     wanted += [number for number in asked
                if type(number) is int and number not in wanted] if wanted else []
+    for number in run.get('desk_patch_slides') or ():
+        if type(number) is int and number not in wanted:
+            wanted.append(number)
     if not wanted:
         raise WorkspaceError('Say which slides to change by their numbers, for example '
                              '"slide 3" or "slides 4 and 7", and what to change on them.')
@@ -481,6 +484,37 @@ def _spec(inventory: dict, named: list[int]) -> dict:
         for item in slide['objects']}}
 
 
+def _desk_made(root: Path) -> str:
+    """The changes the person made on the desk, one a line, for the plan job to keep."""
+    from runner.steps import words
+    shared = words.SHARED_OPS
+    try:
+        found = json.loads((root / shared).read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return ''
+    lines = []
+    for op in (found.get('operations') if isinstance(found, dict) else None) or ():
+        if not isinstance(op, dict):
+            continue
+        said = json.dumps(op.get('runs') if 'runs' in op else op.get('text'),
+                          ensure_ascii=False)
+        lines.append(f"- slide {op.get('slide')}, object {op.get('object')}: {said}")
+    return '\n'.join(lines)
+
+
+def _desk_notes(run: dict) -> str:
+    """The notes a person made on the desk's slides that were planned, or are planned now,
+    one a line by slide, oldest first: a later plan is made with every one of them."""
+    if run.get('flow') != 'desk':
+        return ''
+    lines = []
+    for item in run.get('desk_notes') or ():
+        if isinstance(item, dict) and type(item.get('number')) is int \
+                and item.get('status') in ('drawing', 'done') and item.get('note'):
+            lines.append(f"- Slide {item['number']}: {item['note']}")
+    return '\n'.join(lines)
+
+
 def patch_work(root, run: dict, request: dict | None, error: str | None) -> Work:
     """The job of planning the changes the person named, on the slides they named."""
     root = Path(root)
@@ -493,6 +527,14 @@ def patch_work(root, run: dict, request: dict | None, error: str | None) -> Work
              'Your inputs: Inventory, Selected changes.']
     if request and request.get('note'):
         lines.append(f"The person added:\n\n{request['note']}")
+    noted = _desk_notes(run)
+    if noted:
+        lines.append('Every note the person made on the desk, by slide. Plan the changes each '
+                     'asks for:\n\n' + noted)
+    made = _desk_made(root)
+    if made:
+        lines.append('The person also changed these words themselves. They stay as they are: '
+                     'plan no change to those runs.\n\n' + made)
     if error:
         lines.append(f'An earlier try at this job did not work: {error}\n'
                      'Take care not to end the same way.')
@@ -622,6 +664,11 @@ def _shots(folder: Path) -> dict:
         return found
     except (OSError, ValueError, KeyError, TypeError):
         return {}
+
+
+def pictured(folder) -> dict:
+    """The pictures a shots.json in `folder` names, by slide number: {number: path}."""
+    return _shots(Path(folder))
 
 
 def pairs(root, run: dict) -> list[dict]:

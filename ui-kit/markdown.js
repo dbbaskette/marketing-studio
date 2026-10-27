@@ -355,6 +355,6 @@
   }
 
   const api = { render };
-  if (typeof window !== 'undefined') window.TrainingStudioMarkdown = api;
+  if (typeof window !== 'undefined') window.StudioMarkdown = api;
   if (typeof module !== 'undefined') module.exports = api;
 })();

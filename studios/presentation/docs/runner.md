@@ -29,6 +29,8 @@ One runner serves on a computer at a time. The installer will not update, roll b
 
 `sh ~/.local/share/presentation-studio/studio status` prints what is set up and where every deck is, as JSON. It changes nothing and asks nothing online.
 
+`sh ~/.local/share/presentation-studio/studio saved-work` prints, as JSON, which saved decks still need each older path the runner keeps for them: the legacy research question queue, the cover drawn for a brand skill that offers no looks, and the branches for a Harness Slides that lists no capabilities. Each path comes with the decks that need it and why, and `unused` lists the paths no deck needs. `--folder PATH`, given once or more, looks at a deck folder outside the workspace as well, such as one made in a conversation. Like `status`, it starts nothing, changes nothing and asks nothing online.
+
 ## Set it up
 
 The first time, the page opens on set-up.
@@ -42,7 +44,7 @@ Nothing is changed until you save, and anything can be changed later in Settings
 
 ## Make a deck
 
-"New deck" asks how you are starting, then a short form: the title, who it is for, what it should achieve, roughly how long, the brand and variant, and the output. It starts at once.
+"New deck" opens one sheet in numbered steps: **1. How it begins**, then **2. Your document** or **2. Your deck and what changes** (a deck from an idea has no such step, and the numbers close up), **What it is about**, **How it looks** and **Where it stops**, with **Start the deck** and **Cancel** together at its end. **Start a deck** on Home opens the same sheet with the way it begins already chosen. Start checks every step and goes to the first answer still missing; Cancel closes the sheet and keeps what you filled in for the session. The form asks the title, who it is for, what it should achieve, roughly how long, the brand and variant, and the output. A deck from an idea has an optional brief for points, examples or a rough order, of up to 4000 characters, which goes to the research plan and the outline; with research on, the form asks where research may look: your documents, your sites and/or the public web. It starts at once.
 
 | You start from | The runner stops for you at |
 | --- | --- |
@@ -50,7 +52,7 @@ Nothing is changed until you save, and anything can be changed later in Settings
 | A document | Whether it lays out the slides or is material to make them from; the research, for material with research on; the outline; the look; the deck |
 | A deck | Its slides, as pictures; then what the level you chose needs: the new outline (full rework), the look (redesign and full rework), and the deck |
 
-These are Step by step's stops. The last step of the form chooses, in **Where this deck stops**, the level for this deck: Balanced reads the direction (the research, the outline and the look together) and then the deck, or, for a Redesign that keeps its content and so has no outline stop, the look and then the deck; Automatic draft only the deck. Undo the last step is offered only while that step is this deck's and not shared yet, and reading a document the other way at the direction review says what it redraws, and its price, before it is sent. **Use this for new work in every studio** also makes it the shared level when the deck starts; **Settings** has **Where new work stops**. Once it runs, a line under the deck's stages says how many steps are left, where it next stops and what it has cost so far, and every **Ask for changes** says what is drawn again and what that took the last time.
+These are Step by step's stops. The last step of the form chooses, in **Where this deck stops**, the level for this deck: Balanced reads the direction (the research, the outline and the look together) and then the deck, or, for a Redesign that keeps its content and so has no outline stop, the look and then the deck; Automatic draft only the deck, in the brand's default look. Between its stops a deck carries on by itself, and each step it continues is recorded as the level's, never as your approval. Balanced's direction review is approved only with a look picked from the samples shown: edit the outline there and its looks are drawn again, for you to choose from before the build, and a previous pick is marked for you, never applied to samples you have not seen. Every level stops at the deck. **See the first draft before the deck is checked**, under Options on the form, builds and renders the deck without its check and repairs: it stops as **First draft, not checked**, where **Check the deck** runs them and **Use this first draft** takes it as it is, and a deck delivered that way says **Delivered: first draft, not checked**. Undo the last step is offered only while that step is this deck's and not shared yet, and reading a document the other way at the direction review says what it redraws, and its price, before it is sent. **Use this for new work in every studio** also makes it the shared level when the deck starts; **Settings** has **Where new work stops**. Once it runs, a line under the deck's stages says how many steps are left, where it next stops and what it has cost so far, and every **Ask for changes** says what is drawn again and what that took the last time.
 
 At each stop the page shows what was made: the text, or the real slides in a slide viewer with the contact sheet, the brand's own check and the review's notes. A redesign shows each slide before and after. Beside it the page says what approving does, and **Approve** does it at once, with no second question. Or **Ask for changes** in your own words; the runner makes them and brings the new version back. At the deck, each slide has its own "Ask for changes".
 
@@ -58,9 +60,9 @@ At each stop the page shows what was made: the text, or the real slides in a sli
 
 **The research check.** Research for a deck is written by one assistant and checked by another, for up to three rounds of correction. The check reads every source the report quotes and, for a document you supplied as a PDF, a Word file or a web page, the file itself as well, with its size and fingerprint, so that it can say it read both; a Google Doc, a text or a Markdown document is its own text. If the check says it could not read a document it must vouch for, the studio reads it the same way itself: when it can, the next round's check reads it; when it cannot, the research stops after that round and says it is the studio's problem, not the research's, and **Try again** works once the document can be read. When the check still objects after the third round, the stop counts its objections by what they are about, with the first of each, and says what the rounds took; every objection is listed under its group in `research/review.md`.
 
-**The brand.** Before any slide is designed, the runner draws the deck's cover in the brand you chose, so you can see it is the right one. No assistant is used for it, and nothing about the slides is chosen there. **Choose another brand** offers the brands and variants your brand skill lists; the cover is drawn again in the one you choose. When the deck is built, each slide's layout is designed on its own from what it says, in the brand's own colours.
+**The look.** Before any slide is designed, the brand draws one slide of the outline in each of its looks, side by side, through harness-slides' own preview route. No assistant is used for it. You pick the look every slide is drawn in, in your own words if you like: it sets the colours, what each colour means and how cards are drawn on every slide. **Choose another brand** offers the brands and variants your brand skill lists; the looks are drawn again in the one you choose. If the looks cannot be rendered here, **Try again** draws them again, and **Carry on in the brand’s default look** goes on knowingly, with the deck marked as an unreviewed draft of its look. When the deck is built, each slide's layout is designed on its own from what it says, in the look you chose.
 
-The deck is delivered as Google Slides, or as a PowerPoint file to download. A PowerPoint delivery is kept beside the deck as `deck.pptx` and shared with it, so a teammate's computer can download it too; a new delivery replaces it. A delivery made before that stays on the computer that made it, and the page says so. An existing deck is never changed: you always get a new copy. Asking for changes to a delivered deck draws again the sections that hold the slides you name (every section when you name none), reviews the deck again and delivers a new numbered revision. A deck made as a PowerPoint file because Google was not connected can be sent to Google Slides later, unchanged, with **Send to Google Slides** on its screen. Status → Check this computer says whether Google is signed in on this computer, and how to sign in.
+The deck is delivered as Google Slides, or as a PowerPoint file to download. A PowerPoint delivery is kept beside the deck as `deck.pptx` and shared with it, so a teammate's computer can download it too; a new delivery replaces it. A delivery made before that stays on the computer that made it, and the page says so. An existing deck is never changed: you always get a new copy. Asking for changes to a delivered deck draws again the sections that hold the slides you name (every section when you name none), reviews the deck again and delivers a new numbered revision. A deck delivered as a PowerPoint file, whether PowerPoint was chosen or Google was not connected, can be sent to Google Slides later, unchanged, with **Send to Google Slides** on its screen: the saved deck goes as the next revision, nothing in it is built again, and the form's original output choice is kept. Status → Check this computer says whether Google is signed in on this computer, and how to sign in. On a team deck, the computer that delivered it can ask for changes directly: the confirmation says the deck will run here again, and the request takes the deck back before changing it. A teammate takes it first.
 
 **Watching a run.** A deck's run shows every step, how long each took and what it cost.
 - **Pause**: the step in hand finishes and nothing new starts until you resume. **Stop**: the work in hand is ended; everything already kept stays.
@@ -122,15 +124,7 @@ When your decks are kept in a repository your team shares, several people work i
 - **When the repository cannot be reached,** your work is kept and labelled "not shared yet", and goes with the next share.
 - **Publishing** marks a finished deck, as it stands, as its next numbered revision.
 - **What is shared.** The deck's text, decisions, brand contract, Google Slides link and a small contact sheet. Uploaded files, the original deck, slide pictures and renders stay on the computer that made them (`sources/` and `work/` are never committed).
-- **A deck made in a conversation** with `/presentation-studio` keeps the same folder and run record as one the runner makes. The runner can copy such a deck into its workspace and carry on from what its record says, leaving the original folder as it was; the page does not offer this yet. A deck the runner drives is never also driven from a conversation.
-
-## What the runner guarantees
-
-- **Only you approve.** A deck moves past a stop only by your decision on the page. Neither the runner nor an assistant can approve for you.
-- **An assistant cannot touch your files.** Each one works in an empty folder outside your decks, with no shell and no file tools, only the runner's own tools. The runner checks what it hands back before anything is kept.
-- **Slides are made by harness-slides,** with your brand's exported contract. The studio never edits a slide file itself.
-- **Your original is never changed.** An existing deck is read, and you always get a new copy.
-- **Everything is recorded.** Each step, decision and request for changes is a commit in the workspace.
+- **A deck made in a conversation** with `/presentation-studio` keeps the same folder and run record as one the runner makes. The runner can copy such a deck into its workspace and carry on from what its record says, leaving the original folder as it was; the page offers it as **Bring in a deck**, on Decks, for the decks this computer remembers: pick one, then **Bring it in**. A deck the runner drives is never also driven from a conversation.
 
 ## Research you can review
 
@@ -139,8 +133,14 @@ sources, source counts and findings mapped to your planning questions. Report an
 remain available in folds. An unreadable bundle leaves the saved report readable without
 claiming that its check accepted it.
 
+**Research needs synthesis.** Research for a new deck is done by a Harness Research that can
+synthesize, 1.0 or newer. On one that cannot, **Start the deck** refuses a deck with research on, with
+nothing made: "Research needs Harness Research 1.0 or newer on this computer, and the one
+here cannot do it. Update Harness Research, then start again." A deck with research off
+starts as before.
+
 **Where research may look.** Research from your documents, your sites and/or the public
-web: the form's **Research from** offers *your documents* (a deck from a document, on by
+web: the form's **Research from**, a row of ticks, offers *your documents* (a deck from a document, on by
 default), *your sites* (the shared list from Shared settings, prefilled, a tick for each site
 and **Add a site for this piece of work**, which does not change the shared list) and *the
 public web*. At least one that applies must be on. A deck from a document starts with your
@@ -187,7 +187,9 @@ rerunning research. The full reviewed bundle stays intact.
   and a brand skill of 0.14.0 or newer, for its look samples and talk-or-handout export. An
   older Harness Slides is refused when a deck needs it, in the same words on Status and at
   the step; when the brand skill's own installer brings that very version, Status says so.
-  An older brand skill is a Status line, and a new deck waits at its brand step.
+  An older brand skill is a Status line, and it stops a new deck at its first step that
+  needs the brand, with a sentence saying to update it in Settings; a deck whose brand was
+  exported already carries on.
 - **The review.** The reviewer answers the slides tool's own questions, as each whole-deck
   preview writes them in `critic.json`; a round keeps the questions it was asked, and a
   review is reused only for a round asked the same ones. The reviewer also reads the slides
@@ -216,12 +218,14 @@ rerunning research. The full reviewed bundle stays intact.
 - **Research.** Writers are told what the reviewed research is, and that its IDs and digests
   are never words a reader reads. A goal that compares options asks the research for a
   comparison. **Bring the evidence up to date**, at the research stop, reads the sources
-  again. The legacy question queue is kept for a deck begun before the synthesis research contract, so that it finishes as it began. It can go once no workspace holds such a run.
+  again. The legacy question queue is kept for a deck begun before the synthesis research contract, so that it finishes as it began; a new deck never starts on it. It can go once no workspace holds such a run: `studio saved-work` lists any deck that still needs it.
 
-## Finish from the page
+## What the runner guarantees
 
-A deck from scratch has an optional brief for points, examples or a rough order, limited to 4000 characters. It goes to the research plan and outline. Research first, when on, asks where research may look: your documents, your sites and/or the public web.
-
-Balanced direction approval needs a look picked from the samples shown. If you edit the outline, its looks are drawn again and you choose from the new samples before building. A previous pick is marked for you, never applied to unseen samples.
-
-After delivery, the computer that made a team deck can ask for changes directly. The confirmation says it will run here again, and the request reclaims the deck before changing it. Teammates still take it explicitly. A deck delivered as PowerPoint can later use **Send to Google Slides** when Google is connected, whether PowerPoint was chosen or used because Google was unavailable. This sends the saved deck as the next revision and keeps the form's original output choice.
+- **Only you approve.** A deck moves past a stop only by your decision on the page. Neither the runner nor an assistant can approve for you: a step its review level carries on past is recorded as the level's, never as your approval.
+  On the desk, the steps before your deck run as your start chose. Delivering is always yours.
+- **An assistant cannot touch your files.** Each one works in an empty folder outside your decks, with no shell and no file tools, only the runner's own tools. The runner checks what it hands back before anything is kept.
+- **Slides are made by harness-slides,** with your brand's exported contract. The studio never edits a slide file itself.
+  On the desk, a word or speaker-notes edit is put into the section's drawing as its composer handed it in, and kept only when harness-slides compiles it and every approved word is there; otherwise nothing is saved, and the slide can be redrawn with the new words.
+- **Your original is never changed.** An existing deck is read, and you always get a new copy.
+- **Everything is recorded.** Each step, decision and request for changes is a commit in the workspace.

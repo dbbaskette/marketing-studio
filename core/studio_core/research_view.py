@@ -104,9 +104,6 @@ def _account(folder, questions):
     }
 
 
-REFRESH = 'Bring the evidence up to date'
-
-
 def refresh_words(tried) -> str:
     """What bringing the research up to date costs, as its control says it: what its last try
     took, where that was recorded."""

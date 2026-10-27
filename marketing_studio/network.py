@@ -25,9 +25,11 @@ TOKEN_HEADERS = {identifier: 'X-' + name + '-Studio-Token' for identifier, name 
 # Native upload handlers retain their smaller, per-route limits.
 MAX_BODY = 120_000_000
 STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
-                    '/blog.css', '/runner.js', '/desk.js', '/markdown.js', '/deck.css', '/favicon.ico',
+                    '/blog.css', '/runner.js', '/desk.js', '/drafting.js', '/markdown.js',
+                    '/deck.css', '/favicon.ico',
                     '/onboarding/', '/onboarding/app.js', '/onboarding/style.css',
-                    '/onboarding/home.css', '/deck-panels.js', '/deck-panels.css'))
+                    '/onboarding/home.css', '/deck-panels.js', '/deck-panels.css',
+                    '/lists.js', '/deck-desk.js'))
 # GET addresses a studio's page opens in a frame, which cannot send the key: the studio
 # server checks the one-page ticket in its address instead. Every other check still holds.
 FRAMED = {'presentation': frozenset(('/api/deck-draft',)),

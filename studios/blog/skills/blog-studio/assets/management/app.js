@@ -45,7 +45,7 @@ const operationCache = new Map();
 // getRandomValues is available on trusted-LAN HTTP as well as secure origins.
 function operationId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),value=>value.toString(16).padStart(2,'0')).join('');}
 function operationFor(kind,data){const key=kind+JSON.stringify(data);if(!operationCache.has(key))operationCache.set(key,operationId());return operationCache.get(key);}
-const views = {runs:['Writing runs','Start a blog, review each stage, and pick up where you left off.','Your writing runs'],board:['All blogs','Every saved blog by stage and owner. Open one to read it, decide or keep writing.','All blogs'],inbox:['Review findings','Find waiting decisions, review findings and stale companions.','Review findings'],library:['Team library','Finished blogs, files, links and Google Docs your team writes from, by role, kind of post and author.','Library items'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
+const views = {board:['All blogs','Every saved blog by stage and owner. Open one to read it, decide or keep writing.','All blogs'],inbox:['Review findings','Find waiting decisions, review findings and stale companions.','Review findings'],library:['Team library','Finished blogs, files, links and Google Docs your team writes from, by role, kind of post and author.','Library items'],memory:['Team memory','Keep useful knowledge and writing guidance easy to find.','Shared notes, context and rules']};
 function element(tag, text, cls) {const e=document.createElement(tag);if(text!==undefined)e.textContent=text;if(cls)e.className=cls;return e;}
 function notice(message, error=false) {
   const dialog=document.querySelector('dialog[open]');
@@ -227,7 +227,6 @@ async function load() {
 }
 function render(state, result) {
   const {view,offset}=state, total=result.total;
-  if(view==='runs'){renderRuns(result);return;}
   $('heading').textContent=views[view][0];$('subtitle').textContent=views[view][1];$('section-title').textContent=views[view][2];$('count').textContent=total+' '+(total===1?'item':'items');
   $('stage-filter').hidden=view!=='board';for(const name of ['status','role','kind','author'])$('library-'+name+'-filter').hidden=view!=='library';$('library-more-filters').hidden=view!=='library';
   if(view==='library'){const kinds=$('library-kind'),chosen=kinds.value;kinds.replaceChildren(...[['','Any kind'],...(result.kinds||[]).map(kind=>[kind.id,kind.name])].map(([value,text])=>{const option=element('option',text);option.value=value;return option;}));kinds.value=chosen;}

@@ -782,5 +782,40 @@ class SourceTests(Supplied):
         self.assertTrue(documents.sources(self.root)[0][0]['title'].strip('\u200b'))
 
 
+class IndexBytesTests(Supplied):
+    """The documents index, byte for byte, as the code wrote it before documents moved to
+    the shared runner."""
+
+    INDEX = (b'{\n'
+             b'  "documents": [\n'
+             b'    {\n'
+             b'      "bytes": 127,\n'
+             b'      "distinct": false,\n'
+             b'      "id": "notes-md",\n'
+             b'      "name": "Notes.md",\n'
+             b'      "problem": null,\n'
+             b'      "readable": true,\n'
+             b'      "sha256": "53b12a70c15d9e66bf3637edb0908dab9bee21e62f5b53d4d340dc2272415841"\n'
+             b'    },\n'
+             b'    {\n'
+             b'      "bytes": 16,\n'
+             b'      "distinct": true,\n'
+             b'      "id": "scaling-guide-pdf",\n'
+             b'      "name": "Scaling guide.pdf",\n'
+             b'      "problem": null,\n'
+             b'      "readable": true,\n'
+             b'      "sha256": "ac49e7cdeb16d583fdb5281cf839e1cb2daa6888c79747793414aadbbbdf6d48"\n'
+             b'    }\n'
+             b'  ],\n'
+             b'  "schema": 1\n'
+             b'}\n')
+
+    def test_the_index_is_written_as_before(self):
+        self.pdf(lambda path: f'Page one\n\n{QUOTE}\n')
+        self.add('Notes.md', NOTES)
+        self.add('Scaling guide.pdf', b'%PDF-1.7 pretend')
+        self.assertEqual((self.root / documents.INDEX).read_bytes(), self.INDEX)
+
+
 if __name__ == '__main__':
     unittest.main()

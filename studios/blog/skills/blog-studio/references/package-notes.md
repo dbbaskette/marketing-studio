@@ -22,9 +22,9 @@ public research is allowed only when selected. Website imports fetch selected
 public pages. Other writing and connected-service operations use the host’s
 available capabilities. Workspaces live outside the installed skill.
 
-The browser bundles Training Studio’s MIT-licensed page stylesheet and safe DOM
-Markdown renderer unchanged. [The UI provenance record](../assets/management/training-studio-ui.json)
-pins their source revision and hashes; [the upstream license](../assets/management/training-studio-LICENSE.txt)
+The page's stylesheet and safe DOM Markdown renderer are Marketing Studio's `ui-kit`,
+linked in as `style.css` and `markdown.js`. They came from Training Studio's MIT-licensed
+page materials; [the upstream license](../assets/management/training-studio-LICENSE.txt)
 is included. Blog modes, controller and compatibility styles are authored here.
 
 Run `python3 scripts/validate_package.py` for source integrity, routing, and

@@ -19,7 +19,7 @@ Levels are independent: editing one never makes another stale. A scenario file a
 
 ## Order of work
 
-1. Research once, weighted toward the deepest level asked for. That level needs questions about mechanisms, limits and failure modes. If the levels together need more than 30 questions, propose splitting them across two directories.
+1. Research once, weighted toward the deepest level asked for. That level needs questions about mechanisms, limits and failure modes. If the levels together need more than eight research questions, the most one plan asks, propose splitting them across two directories.
 2. Draft the blueprint for every level before any is approved, and present them together. Overlap and gaps between levels show only here.
 3. Then finish one level at a time, lowest first: document, brief, deck, scenarios.
 

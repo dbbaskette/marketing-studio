@@ -225,6 +225,57 @@ class FormTests(unittest.TestCase):
             decks.check_form(form(minutes=241), BRANDS)
 
 
+class DeskFormTests(unittest.TestCase):
+    """A deck started from the desk's start: its flow, its look and how its document is read."""
+
+    def test_a_desk_form_keeps_its_flow_look_and_reading(self):
+        checked = decks.check_form(form(route='document', source={'kind': 'paste', 'text': 'x'},
+                                        flow='desk', look='default', reading='spec'), BRANDS)
+        self.assertEqual((checked['flow'], checked['look'], checked['reading']),
+                         ('desk', 'default', 'spec'))
+        self.assertEqual((checked['initial_review'], checked['initial_review_source']),
+                         ('user-first', 'desk'))
+
+    def test_a_desk_form_picks_the_look_by_default(self):
+        self.assertEqual(decks.check_form(form(flow='desk'), BRANDS)['look'], 'pick')
+
+    def test_a_desk_form_ignores_the_first_draft_choice_it_sends(self):
+        checked = decks.check_form(form(flow='desk', initial_review='standard'), BRANDS)
+        self.assertEqual(checked['initial_review'], 'user-first')
+
+    def test_a_form_without_flow_is_as_it_was(self):
+        checked = decks.check_form(form(), BRANDS)
+        for key in ('flow', 'look', 'reading', 'initial_review'):
+            self.assertNotIn(key, checked)
+
+    def test_a_wrong_flow_look_or_reading_is_refused(self):
+        with self.assertRaisesRegex(WorkspaceError, '^Choose to pick the look when the samples '
+                                    'are drawn, or to use the brand’s default look.$'):
+            decks.check_form(form(flow='desk', look='x'), BRANDS)
+        with self.assertRaisesRegex(WorkspaceError, '^Only a document is read as a script for '
+                                    'the slides or as material.$'):
+            decks.check_form(form(flow='desk', reading='spec'), BRANDS)
+        with self.assertRaisesRegex(WorkspaceError, '^Only a document is read as a script for '
+                                    'the slides or as material.$'):
+            decks.check_form(form(route='document', source={'kind': 'paste', 'text': 'x'},
+                                  flow='desk', reading='both'), BRANDS)
+        with self.assertRaisesRegex(WorkspaceError, 'desk'):
+            decks.check_form(form(flow='gated'), BRANDS)
+        # The look and the reading come only with the desk's start.
+        for extra in ({'look': 'pick'}, {'reading': 'spec'}):
+            with self.assertRaisesRegex(WorkspaceError, 'start'):
+                decks.check_form(form(route='document', source={'kind': 'paste', 'text': 'x'},
+                                      **extra), BRANDS)
+
+    def test_a_new_desk_run_carries_its_flow(self):
+        checked = decks.check_form(form(flow='desk'), BRANDS)
+        made = decks._new_run('x', checked)
+        self.assertEqual(made['flow'], 'desk')
+        self.assertTrue(decks.on_desk(made))
+        self.assertFalse(decks.on_desk({}))
+        self.assertNotIn('flow', decks._new_run('y', decks.check_form(form(), BRANDS)))
+
+
 class CreateTests(unittest.TestCase):
     def setUp(self):
         self.space = gitstate.local(Path(tempfile.mkdtemp()) / 'ws')

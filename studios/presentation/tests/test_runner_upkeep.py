@@ -733,3 +733,33 @@ class RequirementTests(UpkeepCase):
         self.assertEqual((entry['state'], entry['wanted']), ('older', '1.1.0'))
         self.assertNotIn('1.2.0', entry['says'])
         self.assertEqual((row['state'], row['target']), ('update', '1.1.0'))
+
+
+class SavedLookTests(UpkeepCase):
+    """What a look online keeps, as the code wrote it before upkeep shared its parts."""
+
+    def assert_saved_as_before(self, keep, own: str, latest: str) -> None:
+        data = keep.saved_path().read_bytes()
+        found = json.loads(data)
+        # Two-space JSON with sorted keys and a closing line end, as it was written before.
+        self.assertEqual(data, (json.dumps(found, indent=2, sort_keys=True) + '\n').encode())
+        self.assertEqual(sorted(found), ['at', 'dismissed', 'found', 'schema'])
+        self.assertEqual((found['at'], found['dismissed'], found['schema']),
+                         ('2026-10-01T00:00:00Z', None, 1))
+        entry = found['found'][own]
+        self.assertEqual(sorted(entry), ['commit', 'known_at', 'latest', 'problem',
+                                         'repository', 'tag'])
+        self.assertRegex(entry['commit'], '^[0-9a-f]{40}$')
+        self.assertEqual((entry['known_at'], entry['latest'], entry['problem'], entry['tag'],
+                          entry['repository']),
+                         ('2026-10-01T00:00:00Z', latest, None, 'v' + latest, str(self.source)))
+
+    def test_the_saved_look_is_written_as_before(self):
+        ReleaseTests.release(self, '0.2.0')
+        keep = self.keeper()
+        with mock.patch.object(upkeep, '_now', lambda: '2026-10-01T00:00:00Z'):
+            self.assertTrue(keep.look())
+        self.assertEqual(keep.saved_path(), self.base / 'data' / upkeep.SAVED)
+        self.assertEqual(sorted(json.loads(keep.saved_path().read_text())['found']),
+                         ['presentation-studio'])
+        self.assert_saved_as_before(keep, 'presentation-studio', '0.2.0')
