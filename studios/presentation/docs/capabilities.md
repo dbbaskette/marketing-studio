@@ -8,14 +8,14 @@ uses companion commands and the same readable deck records.
 | Task | Browser entry point | Engine or command |
 | --- | --- | --- |
 | Start from an idea, document, or existing deck | New deck | `Engine.start` |
-| Choose preservation scope and selected slides | New deck → What changes | `decks.check_form` |
-| Import a conversation-created deck | Decks → Bring in a deck | `Engine.bring`; remembered decks only |
+| Choose preservation scope and selected slides | New deck → 2. Your deck and what changes | `decks.check_form` |
+| Import a conversation-created deck | Decks → Bring in a deck → Bring it in | `Engine.bring`; remembered decks only |
 | Review research, classify, revise and approve | Current deck checkpoint | `Engine.decide` and item marks |
 | Retitle, reorder, add or remove outline slides | Outline review | `outline.apply_edits` |
 | Preview a visual storyboard, including unsaved edits | Automatically at Outline, again 1.5 s after the last edit; Refresh now | Harness Slides `outline draft` |
 | Correct how a document was read, from the direction stop | Review the direction → That’s wrong | `Engine.decide` with `direction_target: gate:classify` |
 | Choose the look, or change brand | Choose the look; Review the direction under Balanced → Choose another brand | Saved contract and look samples |
-| See the first draft before the deck is checked | New deck → Options → See the first draft before the deck is checked | Run-scoped `initial_review` |
+| See the first draft before the deck is checked | New deck → How it looks → Options → See the first draft before the deck is checked | Run-scoped `initial_review` |
 | Inspect native slides, partial previews and findings | Current deck | `Engine.picture`, build progress |
 | Send revision-bound feedback during section construction | Partial slide preview | `Engine.build_feedback` |
 | Keep feedback that came after its section was drawn, as the slide's mark at the deck review | Partial slide preview → the deck review | `Engine.build_feedback` with the slide's number |

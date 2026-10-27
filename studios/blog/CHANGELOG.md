@@ -5,6 +5,9 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Every control is at least 44px tall,** and on a phone the selection bar sits above the
+  tab bar. The library's filter row, selection bar, ticks, research choice and sheet steps
+  now take their styles from the shared stylesheet; nothing else a person sees changes.
 - **Human-sounding suggestions, mixed into Check spelling and grammar.** Under **Check
   spelling and grammar**, tick **Also suggest more human-sounding wording** and choose
   **Light**, **Medium** or **Strong**: Humanize runs after Copy edit ("Looking for

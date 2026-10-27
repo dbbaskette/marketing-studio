@@ -44,7 +44,7 @@ Nothing is changed until you save, and anything can be changed later in Settings
 
 ## Make a deck
 
-"New deck" asks how you are starting, then a short form: the title, who it is for, what it should achieve, roughly how long, the brand and variant, and the output. A deck from an idea has an optional brief for points, examples or a rough order, of up to 4000 characters, which goes to the research plan and the outline; with research on, the form asks where research may look: your documents, your sites and/or the public web. It starts at once.
+"New deck" opens one sheet in numbered steps: **1. How it begins**, then **2. Your document** or **2. Your deck and what changes** (a deck from an idea has no such step, and the numbers close up), **What it is about**, **How it looks** and **Where it stops**, with **Start the deck** and **Cancel** together at its end. **Start a deck** on Home opens the same sheet with the way it begins already chosen. Start checks every step and goes to the first answer still missing; Cancel closes the sheet and keeps what you filled in for the session. The form asks the title, who it is for, what it should achieve, roughly how long, the brand and variant, and the output. A deck from an idea has an optional brief for points, examples or a rough order, of up to 4000 characters, which goes to the research plan and the outline; with research on, the form asks where research may look: your documents, your sites and/or the public web. It starts at once.
 
 | You start from | The runner stops for you at |
 | --- | --- |
@@ -124,7 +124,7 @@ When your decks are kept in a repository your team shares, several people work i
 - **When the repository cannot be reached,** your work is kept and labelled "not shared yet", and goes with the next share.
 - **Publishing** marks a finished deck, as it stands, as its next numbered revision.
 - **What is shared.** The deck's text, decisions, brand contract, Google Slides link and a small contact sheet. Uploaded files, the original deck, slide pictures and renders stay on the computer that made them (`sources/` and `work/` are never committed).
-- **A deck made in a conversation** with `/presentation-studio` keeps the same folder and run record as one the runner makes. The runner can copy such a deck into its workspace and carry on from what its record says, leaving the original folder as it was; the page offers it as **Bring in a deck**, on Decks, for the decks this computer remembers. A deck the runner drives is never also driven from a conversation.
+- **A deck made in a conversation** with `/presentation-studio` keeps the same folder and run record as one the runner makes. The runner can copy such a deck into its workspace and carry on from what its record says, leaving the original folder as it was; the page offers it as **Bring in a deck**, on Decks, for the decks this computer remembers: pick one, then **Bring it in**. A deck the runner drives is never also driven from a conversation.
 
 ## Research you can review
 
@@ -140,7 +140,7 @@ here cannot do it. Update Harness Research, then start again." A deck with resea
 starts as before.
 
 **Where research may look.** Research from your documents, your sites and/or the public
-web: the form's **Research from** offers *your documents* (a deck from a document, on by
+web: the form's **Research from**, a row of ticks, offers *your documents* (a deck from a document, on by
 default), *your sites* (the shared list from Shared settings, prefilled, a tick for each site
 and **Add a site for this piece of work**, which does not change the shared list) and *the
 public web*. At least one that applies must be on. A deck from a document starts with your

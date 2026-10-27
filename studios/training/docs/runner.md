@@ -103,7 +103,7 @@ The first time, the page opens on set-up. It asks three things.
 - **The agent and the limits.** Which agent drafts by default, which of its models and how hard it reasons, the longest one step may take, the most one training may spend, and how many trainings may work at once.
   - The models are the agent's own. Codex lists them itself, in its own order, each with its name, its short name in brackets and what Codex says of it ("Older generation workhorse model.", for example). The list is asked for when the choice is shown and kept for an hour. Claude Code has no list, so the runner keeps one: each version by its exact name, such as "Opus 5.5 (claude-opus-5-5)", grouped by family, newest first. Each family's own name comes first in its group, saying what it means today: "Opus, always the newest (now Opus 5.5)". Whatever is chosen is what the agent is given. "The agent's own choice" leaves the model to the agent, and "Another model…" takes a name the list does not have. A model chosen before, or a name typed in, still works: one the list does not have shows as "Another model…". If the list cannot be had, the page says so, and a name can still be typed.
   - The reasoning level is how much the agent thinks before it answers: more is slower, and costs more. Only the levels the chosen model takes are offered, and choosing another agent or model lets go of a level it does not take. A model that takes none, such as Haiku 4.5, is offered none and given none. "The agent's own choice" leaves that to the agent too.
-  - The last step of "New training" asks the same, starting from these. A training keeps what it started with, and every step of it uses that.
+  - Step 4 of "New training", **Where it stops, and the assistant**, asks the same, starting from these. A training keeps what it started with, and every step of it uses that.
 
 Where this computer can make a deck, set-up asks two more things.
 
@@ -141,9 +141,12 @@ Saving writes only the values you changed on that screen, and only where the fil
 
 ## Start a training
 
-"New training" has three steps: Learning goal, Materials, and Review and start.
-Describe the learner's task and prior knowledge, choose the materials and learner
-time, then confirm sources and the saved review preference. Research and the
+"New training" opens one sheet in four numbered steps: **1. Learning goal**,
+**2. Materials**, **3. Research** and **4. Where it stops, and the assistant**, then the
+**Ready to start** summary, with **Start the training** and **Cancel** together at its
+end. Describe the learner's task and prior knowledge, choose the materials and learner
+time, then confirm sources and the saved review preference. Cancel closes the sheet and
+keeps what you filled in for the session. Research and the
 teaching blueprint support whichever materials you select. Guide-only,
 brief-only, deck-only and practice-only bundles are supported; existing runs
 keep their selections. Yoodli requires a reference brief and practice scenarios
@@ -247,7 +250,7 @@ You can close the page while it works. Home, and the browser if you turned notif
 
 ## Where the research looks
 
-The last step of "New training" asks where the research looks: **Research from: Your documents, Your sites (N), The public web**, each on or off, any of them together. At least one must be on; with none, the form says "Choose where research may look: your documents, your sites or the public web." and does not start.
+Step 3 of "New training", **Research**, asks where the research looks: **Research from**, a row of ticks for **Your documents**, **Your sites (N)** and **The public web**, each on or off, any of them together. At least one must be on; with none, the form says "Choose where research may look: your documents, your sites or the public web." and does not start.
 
 - **Your documents** are the files you add right after starting (see below).
 - **Your sites** are a list of base addresses, such as `blogs.vmware.com/tanzu`. The list starts as the one every studio shares, kept in Shared settings in the studios config under `research.sites`, with each site ticked. Untick a site to leave it out of this training, or add one under "Add a site for this training": the runner checks it the way every studio does and says what is wrong with one it cannot use, and the site is for this training only; the shared list stays as it is. Training Studio reads the shared list and never writes it.
