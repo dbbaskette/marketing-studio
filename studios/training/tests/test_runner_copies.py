@@ -12,7 +12,7 @@ import urllib.request
 from pathlib import Path
 from unittest import mock
 
-import runner_support  # noqa: F401  puts the runner on the import path
+import runner_support  # puts the runner on the import path, and its StudioCase
 from test_cli import Flow, example, levelled
 from test_google import FakeTransport
 import gdocs

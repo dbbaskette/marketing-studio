@@ -5,7 +5,7 @@ stand-in for harness-research and a studios config of the test's own; nothing re
 started. Tests named row_138 to row_140, row_144 to row_149, row_158 and row_161 cover those
 rows of the state-transition matrix in
 docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
-import json
+import json  # noqa: I001  the path-setting imports must come before runner
 from pathlib import Path
 from unittest import mock
 
