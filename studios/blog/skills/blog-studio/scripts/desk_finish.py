@@ -38,9 +38,11 @@ SAME = (
 EMPTY = (
     'Write the words to use. To cut text, edit the part itself; a suggestion is not applied empty.'
 )
-OVERLAP = 'Another suggestion applied here covers the same words, so this one was not applied.'
 RETIRED = 'This suggestion no longer fits: another change replaced its words.'
-FLAGGED = 'It covers words a flagged suggestion still waits on, so Accept all left it for you.'
+CHANGED = 'Its words were changed by an accepted suggestion.'
+FLAGGED = (
+    'It now changes a fact, code or the shape of a part, so Accept all left it for you to check.'
+)
 
 
 def _require_lock():
@@ -210,27 +212,36 @@ def apply(root, ident, seen, job, chosen, every=False):
     """Apply chosen proposals, each with its suggested text or the person's own (Edit).
 
     One proposal that no longer fits is refused with nothing changed. Several at once
-    (Apply all) apply every one that still fits and leave the rest open, counted in `left`;
-    one retired meanwhile is left out too. `every` is Review mode's Accept all: a suggestion
-    that covers words a flagged one from Copy edit or Humanize still waits on is left out,
-    so the flagged one is never retired without the person deciding on it. Each part
-    changed keeps one `finishing` version first."""
+    (Apply all) land one by one in reading order, each checked against the text as the ones
+    before it left it: one that no longer fits is left out, counted in `left`, and one
+    retired meanwhile is left out too. `every` is Review mode's Accept all, which may name
+    suggestions from the other waiting set of Copy edit and Humanize too (an entry's `job`),
+    and leaves out one that is flagged. Every other open suggestion stays independent unless
+    a change it took in changes its words (see _reconcile); the result counts the ones
+    `carried` and `retired`, when there are any. Each part changed keeps one `finishing`
+    version first."""
     found = read(root, ident, job)
     if not isinstance(chosen, list) or not chosen or len(chosen) > ITEMS:
         raise ValueError('Choose the suggestions to apply.')
     if type(every) is not bool:
         raise ValueError('Choose suggestions from this set.')
-    items = {item['id']: item for item in found['items']}
+    held = dict(_sentence_sets(root, ident, job, found))
     picks, named, gone = [], set(), []
-    for entry in chosen:
+    for number, entry in enumerate(chosen):
+        name = entry.get('job', job) if isinstance(entry, dict) else None
+        items = (
+            {item['id']: item for item in held[name]['items']}
+            if isinstance(name, str) and name in held
+            else {}
+        )
         if (
             not isinstance(entry, dict)
-            or set(entry) - {'id', 'after', 'alternative'}
+            or set(entry) - {'id', 'after', 'alternative', 'job'}
             or entry.get('id') not in items
-            or entry['id'] in named
+            or (name, entry['id']) in named
         ):
             raise ValueError('Choose suggestions from this set.')
-        named.add(entry['id'])
+        named.add((name, entry['id']))
         item = items[entry['id']]
         if 'comment' in item:
             raise ValueError('A comment changes nothing. Make it a note, or skip it.')
@@ -243,41 +254,53 @@ def apply(root, ident, seen, job, chosen, every=False):
             continue
         if item['state'] != 'open':
             raise ValueError('This suggestion was already applied or skipped.')
-        after = entry['after'] if 'after' in entry else item['after']
+        pick = {'job': name, 'item': item, 'kind': held[name].get('kind'), 'order': number}
+        if 'after' in entry:
+            pick['own'] = entry['after']
         if 'alternative' in entry:
             # One of a wording fix's alternatives, by its place in the list.
             others = item.get('alternatives') or []
-            number = entry['alternative']
-            if 'after' in entry or type(number) is not int or not 0 <= number < len(others):
+            choice = entry['alternative']
+            if 'after' in entry or type(choice) is not int or not 0 <= choice < len(others):
                 raise ValueError('Choose one of this suggestion’s alternatives.')
-            after = others[number]['after']
-        if not isinstance(after, str) or len(after) > desk.LIMIT:
+            pick['alternative'] = choice
+        if not isinstance(_after(pick), str) or len(_after(pick)) > desk.LIMIT:
             raise ValueError('Keep one part under 200,000 characters.')
-        picks.append((item, after))
+        picks.append(pick)
     draft = desk.read(root, ident)
-    parts = sorted({item['part'] for item, _ in picks})
+    parts = sorted({pick['item']['part'] for pick in picks})
     desk.checked(draft, seen, parts)
     working = _busy_parts(root, ident)
     if any(part in working or ('sections' in working and part not in desk.PARTS) for part in parts):
         raise ValueError('A desk job is working on this part. Wait for it, or stop it, then apply.')
     single = len(chosen) == 1 and not every  # Accept all never refuses: it leaves out.
-    texts, applied, left = {}, [], gone
-    # Where each applied suggestion sat in its part as it was, so two that cover the same
-    # words never both land, and the others it covered are retired once it does.
-    originals = {part: desk.text_of(draft, part) for part in parts}
-    spans = {part: [] for part in parts}
-    waiting = _flagged_spans(root, ident, job, found, originals, named) if every else {}
-    for item, after in picks:
+    texts = {part: desk.text_of(draft, part) for part in parts}
+    picks.sort(key=lambda pick: _reading(draft, texts, pick))
+    # Every open suggestion from these sets whose words are in its part once is kept in
+    # step with the text as each chosen one lands.
+    watched = [
+        (name, item)
+        for name, value in held.items()
+        for item in value['items']
+        if item.get('state') == 'open'
+        and item.get('part') in texts
+        and not item.get('whole')
+        and 'comment' not in item
+        and _once(texts[item['part']], item.get('before') or '')
+    ]
+    applied, left, touched, carried, retired = [], gone, set(), set(), set()
+    for pick in picks:
+        item = pick['item']
         part = item['part']
+        if item['state'] != 'open':
+            continue  # Retired by one that landed before it: counted there.
+        text = texts[part]
         try:
+            after = _after(pick)
             if not after.strip():
                 raise ValueError(EMPTY)
-            span = _span(originals[part], item)
-            if span is not None and _covers(spans[part], span):
-                raise ValueError(OVERLAP)
-            if span is not None and _covers(waiting.get(part, []), span):
-                raise ValueError(FLAGGED)
-            text = texts[part] if part in texts else desk.text_of(draft, part)
+            if every and _pick_flag(pick):
+                raise ValueError(FLAGGED)  # A change it took in made it one to check.
             if item.get('whole'):
                 fits = desk_images.scrub(text) == item['before']
             else:
@@ -312,9 +335,21 @@ def apply(root, ident, seen, job, chosen, every=False):
             left.append(item['id'])
             continue
         texts[part] = updated
-        applied.append(item)
-        if span is not None:
-            spans[part].append(span)
+        applied.append(pick)
+        touched.add(pick['job'])
+        item['state'] = 'applying'  # Marked applied once the draft is written.
+        for name, other in watched:
+            if other.get('part') != part or other['state'] != 'open':
+                continue
+            was = other['before']
+            if not _reconcile(other, text, updated, item, pick['job'], picks):
+                continue
+            touched.add(name)
+            if other['state'] == 'retired':
+                retired.add(id(other))
+                carried.discard(id(other))
+            elif other['before'] != was:
+                carried.add(id(other))
     if not applied:
         if every:
             return {'applied': 0, 'left': left}  # Each left for the person; nothing changed.
@@ -329,16 +364,63 @@ def apply(root, ident, seen, job, chosen, every=False):
         changed.append(part)
     if changed:
         desk._write(root, ident, draft, changed)
-    # Only once the draft is written are the proposals marked applied.
-    for item in applied:
+    # Only once the draft is written are the proposals marked applied, and the others kept
+    # in step with it.
+    for pick in applied:
+        item = pick['item']
         item['state'] = 'applied'
+        carried.discard(id(item))
         if item.get('group'):
-            for other in found['items']:
+            for other in held[pick['job']]['items']:
                 if other.get('group') == item['group'] and other['state'] == 'open':
                     other['state'] = 'skipped'  # An alternative to the one chosen.
-    studio.write_json(_path(root, ident, job), found)
-    _retire(root, ident, job, found, originals, spans)
-    return {'applied': len(applied), 'left': left}
+    for name in sorted(touched):
+        studio.write_json(_path(root, ident, name), held[name])
+    done = {'applied': len(applied), 'left': left}
+    if carried:
+        done['carried'] = len(carried)
+    if retired:
+        done['retired'] = len(retired)
+    return done
+
+
+def _after(pick):
+    """The wording a pick lands: the person's own, an alternative, or the suggestion's."""
+    item = pick['item']
+    if 'own' in pick:
+        return pick['own']
+    if 'alternative' in pick:
+        return item['alternatives'][pick['alternative']]['after']
+    return item['after']
+
+
+def _pick_flag(pick):
+    """Why a pick waits to be checked one by one, or '': the person's own wording never does."""
+    item = pick['item']
+    if 'own' in pick:
+        return ''
+    if 'alternative' in pick:
+        return item['alternatives'][pick['alternative']].get('flag') or ''
+    return item.get('flag') or ''
+
+
+def _reading(draft, texts, pick):
+    """A pick's place in reading order: its part, then where it starts, the shorter of two
+    that start together first, then Copy edit before Humanize, then as chosen."""
+    item = pick['item']
+    order = ['title', 'opening'] + [section['id'] for section in draft['sections']]
+    text = texts[item['part']]
+    before = item.get('before') or ''
+    if item.get('whole'):
+        start, end = 0, len(text)
+    elif _once(text, before):
+        start = text.index(before)
+        end = start + len(before)
+    else:
+        start = end = len(text) + 1  # Not there once: it is left out wherever it goes.
+    tool = SENTENCES.index(pick['kind']) if pick['kind'] in SENTENCES else len(SENTENCES)
+    part = order.index(item['part']) if item['part'] in order else len(order)
+    return (part, start, end, tool, pick['order'])
 
 
 def _sentence_sets(root, ident, job, found):
@@ -356,68 +438,152 @@ def _sentence_sets(root, ident, job, found):
     return found_sets
 
 
-def _flagged_spans(root, ident, job, found, originals, named):
-    """{part: [span]} of open, flagged suggestions still in the text that Accept all leaves
-    for the person, from either tool, other than the ones being applied."""
-    spans = {}
-    for name, value in _sentence_sets(root, ident, job, found):
-        for item in value.get('items', []):
-            part = item.get('part')
-            if (
-                item.get('state') != 'open'
-                or not item.get('flag')
-                or part not in originals
-                or (name == job and item.get('id') in named)
-            ):
-                continue
-            span = _span(originals[part], item)
-            if span is not None:
-                spans.setdefault(part, []).append(span)
-    return spans
-
-
-def _span(text, item):
-    """Where a suggestion sits in its part's text, (start, end), or None when it is not
-    there once. A whole-part alternative covers the whole part."""
-    if item.get('whole'):
-        return (0, max(1, len(text)))
-    before = item.get('before') or ''
-    if 'comment' in item or not _once(text, before):
-        return None
-    at = text.index(before)
-    return (at, at + len(before))
-
-
-def _covers(spans, span):
-    """Whether `span` shares any character with one of `spans`: two suggestions that start
-    at the same place overlap too."""
-    start, end = span
-    return any(start < b and a < end for a, b in spans)
-
-
-# The tools whose sentence rewrites Review mode shows together; accepting one retires the
-# others, from either tool, that covered the same words.
+# The tools whose sentence suggestions Review mode shows together. They stay independent:
+# accepting one changes another only where it changed the other's words.
 SENTENCES = ('finish-copyedit', 'finish-humanize')
+TOKENS = re.compile(r'\w+|\s+|[^\w\s]')
+WORDLIKE = re.compile(r'\w')
 
 
-def _retire(root, ident, job, found, originals, spans):
-    """Mark open suggestions that covered words an applied one replaced as retired: they
-    no longer fit, whether or not their words still happen to be in the text. Only this
-    computer's waiting sets change."""
-    if not any(spans.values()):
-        return
-    for name, value in _sentence_sets(root, ident, job, found):
-        changed = False
-        for item in value.get('items', []):
-            part = item.get('part')
-            if item.get('state') != 'open' or part not in spans or not spans[part]:
-                continue
-            span = _span(originals[part], item)
-            if span is not None and _covers(spans[part], span):
-                item['state'] = 'retired'
-                changed = True
-        if changed:
-            studio.write_json(_path(root, ident, name), value)
+def _reconcile(other, old, new, by, job, picks):
+    """Keep an open suggestion in step with its part after an accepted one (`by`) turned
+    `old` into `new`; say whether the suggestion changed.
+
+    One whose words the change did not touch is left as it is, and still fits while its
+    words are in the text once. One with the changed words inside its own takes them in:
+    its `before` becomes the new text there, and its wording (each alternative too, and the
+    person's own for a pick still to land) takes the same change where it still has the
+    earlier words in the same place, or else keeps its own rewrite of them; its flag is read
+    again. One whose words are gone, or in the text more than once, retires, naming the
+    accepted one."""
+    at = old.index(other['before'])
+    end = at + len(other['before'])
+    start, old_end, new_end = _changed(old, new)
+    if start == old_end:
+        touches = at < start < end  # Words added, none taken away.
+    else:
+        touches = start < end and at < old_end
+    if not touches and _once(new, other['before']):
+        return False
+    if touches and at <= start and old_end <= end:
+        was = other['before']
+        other['before'] = new[at : end + len(new) - len(old)]
+        swaps = _swaps(old, new, (start, old_end, new_end), (at, end), by)
+        if 'after' in other:
+            other['after'] = _carried(was, other['after'], swaps)
+            other['flag'] = _flags(other['before'], other['after'])
+        for alternative in other.get('alternatives') or []:
+            alternative['after'] = _carried(was, alternative['after'], swaps)
+            alternative['flag'] = _flags(other['before'], alternative['after'])
+        for pick in picks:
+            if pick['item'] is other and 'own' in pick:
+                pick['own'] = _carried(was, pick['own'], swaps)
+        other.setdefault('carried', []).append({'job': job, 'id': by['id']})
+        wordings = [other.get('after')] + [a['after'] for a in other.get('alternatives') or []]
+        fits = _once(new, other['before']) and (
+            'after' not in other or any(text != other['before'] for text in wordings)
+        )
+    else:
+        fits = _once(new, other['before'])
+    if not fits:
+        other['state'] = 'retired'
+        other['reason'] = CHANGED
+        other['retired_by'] = {'job': job, 'id': by['id']}
+    return True
+
+
+def _changed(old, new):
+    """(start, end in old, end in new) of the one stretch where `new` differs from `old`."""
+    limit = min(len(old), len(new))
+    start = 0
+    while start < limit and old[start] == new[start]:
+        start += 1
+    same = 0
+    while same < limit - start and old[-1 - same] == new[-1 - same]:
+        same += 1
+    return start, len(old) - same, len(new) - same
+
+
+def _swaps(old, new, change, span, by):
+    """The earlier and new words of a change inside a suggestion's span, most certain first:
+    the changed stretch widened to whole words, at its offset in the suggestion's `before`,
+    then the accepted suggestion's own words when they are all inside it."""
+    start, old_end, new_end = change
+    at, end = span
+    if (start < old_end and WORDLIKE.match(old[start])) or (
+        start < new_end and WORDLIKE.match(new[start])
+    ):
+        while start > at and WORDLIKE.match(old[start - 1]):
+            start -= 1  # The text before the change is the same in both.
+    grown = 0
+    if (old_end > start and WORDLIKE.match(old[old_end - 1])) or (
+        new_end > start and WORDLIKE.match(new[new_end - 1])
+    ):
+        while old_end + grown < end and WORDLIKE.match(old[old_end + grown]):
+            grown += 1  # And so is the text after it.
+    swaps = [(start - at, old[start : old_end + grown], new[start : new_end + grown])]
+    before = by.get('before') or ''
+    if not by.get('whole') and before and _once(old, before):
+        first = old.index(before)
+        last = first + len(before)
+        if at <= first and last <= end and first <= change[0] and change[1] <= last:
+            swaps.append((None, before, new[first : last + len(new) - len(old)]))
+    return swaps
+
+
+def _carried(was, wording, swaps):
+    """`wording`, a rewrite of `was`, with a change to `was` taken in: where the rewrite kept
+    the changed words in the same place, or, failing that, has the accepted suggestion's
+    words just once, as whole words. Otherwise its own rewrite of them stays."""
+    if not isinstance(wording, str):
+        return wording
+    offset, earlier, later = swaps[0]
+    if earlier:
+        placed = _aligned_at(was, wording, offset, offset + len(earlier))
+        if placed is not None:
+            first, last, lead, tail = placed
+            return wording[:first] + lead + later + tail + wording[last:]
+    for _, earlier, later in swaps[1:]:
+        found = _whole_words(wording, earlier)
+        if len(found) == 1:
+            return wording[: found[0]] + later + wording[found[0] + len(earlier) :]
+    return wording
+
+
+def _aligned_at(was, wording, start, end):
+    """Where `was[start:end]` sits in `wording` when the rewrite kept those words unchanged
+    in the same place: (first, last, lead, tail), the stretch of `wording` and the text of
+    `was` around the words inside it; or None."""
+    import difflib
+
+    old = [(m.start(), m.end()) for m in TOKENS.finditer(was)]
+    new = [(m.start(), m.end()) for m in TOKENS.finditer(wording)]
+    first = max(i for i, (a, _) in enumerate(old) if a <= start)
+    last = min(i for i, (_, b) in enumerate(old) if b >= end) + 1
+    matcher = difflib.SequenceMatcher(
+        None, [was[a:b] for a, b in old], [wording[a:b] for a, b in new], autojunk=False
+    )
+    for op, a0, a1, b0, _ in matcher.get_opcodes():
+        if op == 'equal' and a0 <= first and last <= a1:
+            lo, hi = old[first][0], old[last - 1][1]
+            into = new[b0 + first - a0][0], new[b0 + last - 1 - a0][1]
+            return into[0], into[1], was[lo:start], was[end:hi]
+    return None
+
+
+def _whole_words(text, words):
+    """Where `words` occur in `text` without starting or ending inside a word."""
+    found, at = [], text.find(words) if words else -1
+    while at != -1:
+        clear_start = at == 0 or not (WORDLIKE.match(words[0]) and WORDLIKE.match(text[at - 1]))
+        stop = at + len(words)
+        clear_end = stop == len(text) or not (
+            WORDLIKE.match(words[-1]) and WORDLIKE.match(text[stop])
+        )
+        if clear_start and clear_end:
+            found.append(at)
+        at = text.find(words, at + 1)
+    return found
 
 
 def skip(root, ident, job, ids):

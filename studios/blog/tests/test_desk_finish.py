@@ -620,7 +620,8 @@ class CopyEditTests(ToolCase):
             self.act('apply', seen=seen, job=job, items=[{'id': 'p2', 'after': pasted}])
         self.assertEqual(self.draft()['title'], title)
         shown = self.act('apply', seen=seen, job=job, items=[{'id': 'p1'}, {'id': 'p2'}])
-        self.assertEqual(shown['finished'], {'applied': 1, 'left': ['p1']})
+        # The one left takes in the word the other changed, and waits.
+        self.assertEqual(shown['finished'], {'applied': 1, 'left': ['p1'], 'carried': 1})
         self.assertEqual(self.draft()['title'], 'A synthetic heading, fixed')
         self.assertNotIn('data:image', json.dumps(self.draft()))
 
@@ -895,7 +896,8 @@ class ReviewTests(ToolCase):
 
 class MixedReviewTests(ToolCase):
     """Check spelling and grammar with human-sounding suggestions: Copy edit, then Humanize
-    at the chosen strength, their suggestions together, each retiring the others it covers."""
+    at the chosen strength, their suggestions together and independent: accepting one changes
+    another only where it changed the other's words."""
 
     def setUp(self):
         super().setUp()
@@ -1094,75 +1096,166 @@ class MixedReviewTests(ToolCase):
         kept = desk.versions(self.root, self.ident, self.first)[0]
         self.assertEqual(kept['source'], 'finishing')
 
-    def test_accepting_one_retires_the_others_that_covered_its_words_from_either_tool(self):
-        text = 'We leverage a robust parser. It reads 12 files in 3 seconds at Acme Labs.'
+    def write(self, text, part=None):
+        desk.save(self.root, self.ident, self.draft()['revision'], part or self.second, text)
+
+    def states(self, job):
+        return [item['state'] for item in desk_finish.read(self.root, self.ident, job)['items']]
+
+    def accept(self, job, *entries, **extra):
+        seen = self.draft()['revision']
+        return self.act('apply', seen=seen, job=job, items=list(entries), **extra)
+
+    def test_a_fix_accepted_first_is_carried_into_the_rewrites_that_cover_it(self):
+        self.write('Agentic AI is here. Their are two parser.')
         fixes = self.offer(
             [
-                {
-                    'part': self.first,
-                    'before': 'We leverage a robust parser.',
-                    'after': 'We leverage a robust parser now.',
-                    'kind': 'wording',
-                },
-                {
-                    'part': self.second,
-                    'before': 'Their are two parser.',
-                    'after': 'There are two parsers.',
-                    'kind': 'grammar',
-                },
+                self.fix('Agentic AI', 'agentic AI', kind='consistency'),
+                self.fix('Their are', 'There are', kind='grammar'),
             ],
             kind='finish-copyedit',
         )
         human = self.offer(
             [
-                # Starts where the fix starts; its words would still be in the text after it.
-                {'part': self.first, 'before': 'We leverage', 'after': 'We rely on'},
-                {
-                    'part': self.first,
-                    'before': 'It reads 12 files',
-                    'after': 'It reads 12 files fast',
-                },
-                {'part': self.second, 'before': 'two parser', 'after': 'a pair of parsers'},
-            ],
+                self.fix('Agentic AI is here.', 'Agentic AI has arrived.', flag=''),
+                self.fix('Their are two parser.', 'Two parsers exist.', flag=''),
+            ]
         )
-        self.act('apply', seen=self.seen, job=fixes, items=[{'id': 'p1'}])
+        done = self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'carried': 1})
+        item = desk_finish.read(self.root, self.ident, human)['items'][0]
         self.assertEqual(
-            self.draft()['sections'][0]['text'], text.replace('parser.', 'parser now.', 1)
+            (item['state'], item['before'], item['after']),
+            ('open', 'agentic AI is here.', 'agentic AI has arrived.'),
+            'the rewrite takes in the fix where it kept the earlier words',
         )
-        states = [i['state'] for i in desk_finish.read(self.root, self.ident, human)['items']]
-        self.assertEqual(states, ['retired', 'open', 'open'])
+        self.assertEqual(item['carried'], [{'job': fixes, 'id': 'p1'}])
+        # A rewrite that rewrote the fixed words keeps its own wording, and still fits.
+        done = self.accept(fixes, {'id': 'p2'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'carried': 1})
+        item = desk_finish.read(self.root, self.ident, human)['items'][1]
+        self.assertEqual(
+            (item['state'], item['before'], item['after']),
+            ('open', 'There are two parser.', 'Two parsers exist.'),
+        )
+        # Kept with the waiting set: the view, as after a reload, shows them as they are now.
         shown = desk_jobs.view(self.root, self.ident)['finishing']['humanize']['items']
-        self.assertTrue(shown[0]['present'], 'its words are still there, but it is retired')
-        with self.assertRaisesRegex(ValueError, 'no longer fits'):
-            self.act('apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p1'}])
-        # The other way round: a Humanize suggestion accepted retires the fix it covered.
-        self.act('apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p3'}])
-        states = [i['state'] for i in desk_finish.read(self.root, self.ident, fixes)['items']]
-        self.assertEqual(states, ['applied', 'retired'])
-        self.assertEqual(self.draft()['sections'][1]['text'], 'Their are a pair of parsers.')
+        self.assertEqual(
+            [(i['before'], i['present'], i['state']) for i in shown],
+            [('agentic AI is here.', True, 'open'), ('There are two parser.', True, 'open')],
+        )
+        self.accept(human, {'id': 'p1'})
+        self.assertEqual(
+            self.draft()['sections'][1]['text'], 'agentic AI has arrived. There are two parser.'
+        )
+        self.assertEqual(self.states(human), ['applied', 'open'])
+        self.assertEqual(self.states(fixes), ['applied', 'applied'])
 
-    def test_two_suggestions_that_start_together_never_both_apply_at_once(self):
-        job = self.offer(
+    def test_a_rewrite_accepted_first_leaves_a_fix_it_kept_open_and_retires_one_it_removed(self):
+        fixes = self.offer(
+            [self.fix('Their are', 'There are', kind='grammar')], kind='finish-copyedit'
+        )
+        kept = self.offer([self.fix('Their are two parser.', 'Their are two parsers, it seems.')])
+        done = self.accept(kept, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': []})
+        item = done['finishing']['copyedit']['items'][0]
+        self.assertEqual(
+            (item['state'], item['before'], item['present']), ('open', 'Their are', True)
+        )
+        self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(self.draft()['sections'][1]['text'], 'There are two parsers, it seems.')
+        # A rewrite that takes the fixed words away retires the fix, saying why.
+        self.write('Their are two parser.')
+        fixes = self.offer(
+            [self.fix('Their are', 'There are', kind='grammar')], kind='finish-copyedit'
+        )
+        gone = self.offer([self.fix('Their are two parser.', 'Two parsers exist.')])
+        done = self.accept(gone, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'retired': 1})
+        item = done['finishing']['copyedit']['items'][0]
+        self.assertEqual(item['state'], 'retired')
+        self.assertEqual(item['reason'], 'Its words were changed by an accepted suggestion.')
+        self.assertEqual(item['retired_by'], {'job': gone, 'id': 'p1'})
+        with self.assertRaisesRegex(ValueError, 'no longer fits'):
+            self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(self.draft()['sections'][1]['text'], 'Two parsers exist.')
+
+    def test_suggestions_that_share_no_changed_words_stay_open_whichever_is_accepted(self):
+        fixes = self.offer(
             [
-                {
-                    'part': self.first,
-                    'before': 'We leverage a robust parser.',
-                    'after': 'We leverage a robust parser today.',
-                },
-                {'part': self.first, 'before': 'We leverage', 'after': 'We use'},
-                {'part': self.second, 'before': 'Their are', 'after': 'There are'},
+                self.fix('We leverage', 'We use', self.first, kind='wording'),
+                self.fix('Their', 'There', kind='spelling'),
             ],
             kind='finish-copyedit',
         )
-        shown = self.act(
-            'apply', seen=self.seen, job=job, items=[{'id': 'p1'}, {'id': 'p2'}, {'id': 'p3'}]
+        human = self.offer(
+            [
+                self.fix('at Acme Labs.', 'for Acme Labs.', self.first),
+                self.fix('two parser.', 'two parsers.'),
+            ]
         )
-        self.assertEqual(shown['finished'], {'applied': 2, 'left': ['p2']})
+        done = self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': []})
+        self.assertEqual(self.states(human), ['open', 'open'])
+        self.accept(human, {'id': 'p2'})
+        self.assertEqual(self.states(fixes), ['applied', 'open'])
+        self.assertNotIn('carried', desk_finish.read(self.root, self.ident, fixes)['items'][1])
+        self.accept(human, {'id': 'p1'})
+        self.accept(fixes, {'id': 'p2'})
+        draft = self.draft()
+        self.assertEqual(
+            draft['sections'][0]['text'],
+            'We use a robust parser. It reads 12 files in 3 seconds for Acme Labs.',
+        )
+        self.assertEqual(draft['sections'][1]['text'], 'There are two parsers.')
+
+    def test_two_that_start_together_both_apply_when_neither_changes_the_others_words(self):
+        job = self.offer(
+            [
+                self.fix(
+                    'We leverage a robust parser.', 'We leverage a robust parser today.', self.first
+                ),
+                self.fix('We leverage', 'We use', self.first),
+                self.fix('Their are', 'There are'),
+            ],
+            kind='finish-copyedit',
+        )
+        shown = self.accept(job, {'id': 'p1'}, {'id': 'p2'}, {'id': 'p3'})
+        self.assertEqual(shown['finished'], {'applied': 3, 'left': []})
         self.assertTrue(
-            self.draft()['sections'][0]['text'].startswith('We leverage a robust parser today.')
+            self.draft()['sections'][0]['text'].startswith('We use a robust parser today.')
         )
-        states = [i['state'] for i in desk_finish.read(self.root, self.ident, job)['items']]
-        self.assertEqual(states, ['applied', 'retired', 'applied'])
+        self.assertEqual(self.states(job), ['applied', 'applied', 'applied'])
+
+    def test_an_alternative_is_carried_too(self):
+        fixes = self.offer(
+            [
+                self.fix(
+                    'We leverage a robust parser.',
+                    'We use a robust parser.',
+                    self.first,
+                    kind='wording',
+                    flag='',
+                    alternatives=[
+                        {'after': 'We rely on a robust parser.', 'flag': ''},
+                        {'after': 'Our parser is robust.', 'flag': ''},
+                    ],
+                )
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer([self.fix('a robust parser', 'a sturdy parser', self.first)])
+        done = self.accept(human, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'carried': 1})
+        item = desk_finish.read(self.root, self.ident, fixes)['items'][0]
+        self.assertEqual(item['before'], 'We leverage a sturdy parser.')
+        self.assertEqual(item['after'], 'We use a sturdy parser.')
+        self.assertEqual(
+            [a['after'] for a in item['alternatives']],
+            ['We rely on a sturdy parser.', 'Our parser is sturdy.'],
+        )
+        self.accept(fixes, {'id': 'p1', 'alternative': 1})
+        self.assertTrue(self.draft()['sections'][0]['text'].startswith('Our parser is sturdy. It'))
 
     def test_accept_all_leaves_flagged_suggestions_from_both_tools(self):
         first = self.check(humanize='medium')
@@ -1251,92 +1344,168 @@ class MixedReviewTests(ToolCase):
         self.assertFalse(view['finishing']['humanize']['items'][0]['flag'])
         return view
 
-    def test_accept_all_never_retires_a_flagged_fix_from_the_other_tool(self):
-        view = self.flagged_fix_and_rewrite()
-        # Accept all as the page sends it: the unflagged fixes, then the unflagged rewrites.
-        for tool in ('copyedit', 'humanize'):
-            picked = [
-                {'id': i['id']}
-                for i in view['finishing'][tool]['items']
-                if i['state'] == 'open' and i['present'] and not i['flag']
-            ]
-            view = self.act(
-                'apply',
-                seen=view['revision'],
-                job=view['finishing'][tool]['job'],
-                items=picked,
-                all=True,
-            )
-        self.assertEqual(view['finished'], {'applied': 1, 'left': ['p1']})
-        states = {
-            t: [i['state'] for i in view['finishing'][t]['items']] for t in ('copyedit', 'humanize')
-        }
-        self.assertEqual(states, {'copyedit': ['open', 'applied'], 'humanize': ['open', 'applied']})
-        self.assertTrue(
-            view['finishing']['copyedit']['items'][0]['present'], 'the flagged fix waits'
-        )
-        self.assertIn('at Acme Labs.', self.draft()['sections'][0]['text'])
-        self.assertTrue(self.draft()['sections'][0]['text'].startswith('We use a parser.'))
-
-    def test_accept_all_with_only_a_rewrite_over_a_flagged_fix_changes_nothing(self):
-        view = self.flagged_fix_and_rewrite()
-        job = view['finishing']['humanize']['job']
-        done = self.act('apply', seen=view['revision'], job=job, items=[{'id': 'p1'}], all=True)
-        self.assertEqual(done['finished'], {'applied': 0, 'left': ['p1']})
-        self.assertEqual(done['revision'], view['revision'])
-        states = {
-            t: [i['state'] for i in done['finishing'][t]['items']] for t in ('copyedit', 'humanize')
-        }
-        self.assertEqual(states, {'copyedit': ['open', 'open'], 'humanize': ['open', 'open']})
-
-    def test_an_explicit_accept_still_retires_what_it_covers(self):
-        view = self.flagged_fix_and_rewrite()
-        job = view['finishing']['humanize']['job']
-        view = self.act('apply', seen=view['revision'], job=job, items=[{'id': 'p1'}])
-        self.assertEqual(view['finishing']['copyedit']['items'][0]['state'], 'retired')
-        self.assertTrue(
-            self.draft()['sections'][0]['text'].endswith(
-                'In 3 seconds it reads 12 files at Acme Labs.'
-            )
-        )
-
-    def test_a_retired_item_in_a_multi_item_accept_is_left_out_and_the_rest_apply(self):
+    def test_accept_all_lands_in_reading_order_carrying_skipping_and_leaving_flagged_ones(self):
+        self.write('Agentic AI is here. Their are two parser.')
         fixes = self.offer(
             [
-                {
-                    'part': self.first,
-                    'before': 'We leverage a robust parser.',
-                    'after': 'We use a robust parser.',
-                }
+                self.fix('Agentic AI', 'agentic AI', kind='consistency'),
+                self.fix('Their are two parser.', 'There are two parsers.', kind='grammar'),
+                self.fix('robust parser', 'sturdy tool', self.first, kind='wording'),
+                self.fix('in 3 seconds', 'within 3 seconds', self.first, kind='wording'),
             ],
             kind='finish-copyedit',
         )
         human = self.offer(
             [
-                {
-                    'part': self.first,
-                    'before': 'We leverage a robust parser.',
-                    'after': 'We rely on a parser.',
-                },
-                {'part': self.second, 'before': 'Their are two parser.', 'after': 'Two parsers.'},
+                self.fix('Agentic AI is here.', 'Agentic AI has arrived.'),
+                self.fix('Their are two parser.', 'Two parsers exist.'),
+                self.fix(
+                    'It reads 12 files in 3 seconds',
+                    'It reads 15 files in 3 seconds',
+                    self.first,
+                    flag='Check the facts: this changes a number.',
+                ),
+                self.fix('We leverage a robust', 'We use a strong', self.first),
             ]
         )
-        self.act('apply', seen=self.seen, job=fixes, items=[{'id': 'p1'}])
+        with self.assertRaisesRegex(ValueError, 'Choose suggestions'):
+            self.accept(fixes, {'id': 'p1'}, {'job': 'f' * 32, 'id': 'p1'}, all=True)
+        # As the page sends it: every shown suggestion that is not flagged, from both sets.
+        done = self.accept(
+            fixes,
+            *({'id': name} for name in ('p1', 'p2', 'p3', 'p4')),
+            *({'job': human, 'id': name} for name in ('p1', 'p2', 'p4')),
+            all=True,
+        )
+        self.assertEqual(done['finished'], {'applied': 6, 'left': [], 'carried': 1, 'retired': 1})
+        draft = self.draft()
+        self.assertEqual(
+            draft['sections'][0]['text'],
+            'We use a strong parser. It reads 12 files within 3 seconds at Acme Labs.',
+        )
+        self.assertEqual(draft['sections'][1]['text'], 'agentic AI has arrived. Two parsers exist.')
+        self.assertEqual(self.states(fixes), ['applied', 'applied', 'retired', 'applied'])
+        self.assertEqual(self.states(human), ['applied', 'applied', 'open', 'applied'])
+        # The rewrite that started first landed; the fix whose words it changed retired.
+        retired = desk_finish.read(self.root, self.ident, fixes)['items'][2]
+        self.assertEqual(retired['retired_by'], {'job': human, 'id': 'p4'})
+        # The flagged one waits, carried, with its flag read again.
+        waiting = done['finishing']['humanize']['items'][2]
+        self.assertEqual(
+            (waiting['before'], waiting['after'], waiting['present']),
+            ('It reads 12 files within 3 seconds', 'It reads 15 files within 3 seconds', True),
+        )
+        self.assertIn('a number', waiting['flag'])
+        for part in (self.first, self.second):
+            self.assertEqual(
+                [v['source'] for v in desk.versions(self.root, self.ident, part)][:1],
+                ['finishing'],
+            )
+            self.assertEqual(
+                [v['source'] for v in desk.versions(self.root, self.ident, part)].count(
+                    'finishing'
+                ),
+                1,
+                'one version per part',
+            )
+
+    def test_accept_all_keeps_a_flagged_fix_whose_words_survive_and_retires_one_whose_are_gone(
+        self,
+    ):
+        fixes = self.offer(
+            [
+                self.fix(
+                    'Acme Labs',
+                    'ACME Labs',
+                    self.first,
+                    kind='consistency',
+                    flag='Check the facts: this changes a name.',
+                ),
+                self.fix(
+                    'two parser',
+                    'three parsers',
+                    kind='grammar',
+                    flag='Check the facts: this changes a number.',
+                ),
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer(
+            [
+                self.fix(
+                    'It reads 12 files in 3 seconds at Acme Labs.',
+                    'In 3 seconds it reads 12 files at Acme Labs.',
+                    self.first,
+                ),
+                self.fix('Their are two parser.', 'There is a pair of parsers.'),
+            ]
+        )
+        done = self.accept(human, {'id': 'p1'}, {'id': 'p2'}, all=True)
+        self.assertEqual(done['finished'], {'applied': 2, 'left': [], 'retired': 1})
+        items = done['finishing']['copyedit']['items']
+        self.assertEqual(
+            [(i['state'], i['present']) for i in items], [('open', True), ('retired', False)]
+        )
+        self.assertEqual(items[1]['retired_by'], {'job': human, 'id': 'p2'})
+        self.assertEqual(self.states(fixes), ['open', 'retired'], 'as kept for a reload')
+
+    def test_accept_all_leaves_one_that_a_change_it_took_in_made_flagged(self):
+        self.write('It reads files at the lab.', self.first)
+        fixes = self.offer(
+            [
+                self.fix(
+                    'the lab',
+                    'Acme Labs',
+                    self.first,
+                    kind='consistency',
+                    flag='Check the facts: this changes a name.',
+                )
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer(
+            [self.fix('It reads files at the lab.', 'It reads files there.', self.first, flag='')]
+        )
+        self.accept(fixes, {'id': 'p1'})  # Checked and accepted one by one.
+        item = desk_finish.read(self.root, self.ident, human)['items'][0]
+        self.assertEqual(item['before'], 'It reads files at Acme Labs.')
+        self.assertIn('a name', item['flag'], 'its rewrite would now drop the name')
         revision = self.draft()['revision']
-        done = self.act('apply', seen=revision, job=human, items=[{'id': 'p1'}, {'id': 'p2'}])
+        done = self.accept(human, {'id': 'p1'}, all=True)
+        self.assertEqual(done['finished'], {'applied': 0, 'left': ['p1']})
+        self.assertEqual(self.draft()['revision'], revision)
+        self.assertEqual(self.states(human), ['open'])
+
+    def test_a_retired_item_in_a_multi_item_accept_is_left_out_and_the_rest_apply(self):
+        fixes = self.offer(
+            [
+                self.fix(
+                    'We leverage a robust parser. It reads',
+                    'We use a robust parser, and it reads',
+                    self.first,
+                )
+            ],
+            kind='finish-copyedit',
+        )
+        human = self.offer(
+            [
+                self.fix('It reads 12 files', 'It reads all 12 files', self.first),
+                self.fix('Their are two parser.', 'Two parsers.'),
+            ]
+        )
+        self.accept(fixes, {'id': 'p1'})
+        self.assertEqual(self.states(human), ['retired', 'open'])
+        done = self.accept(human, {'id': 'p1'}, {'id': 'p2'})
         self.assertEqual(done['finished'], {'applied': 1, 'left': ['p1']})
         self.assertEqual(self.draft()['sections'][1]['text'], 'Two parsers.')
-        states = [i['state'] for i in desk_finish.read(self.root, self.ident, human)['items']]
-        self.assertEqual(states, ['retired', 'applied'])
+        self.assertEqual(self.states(human), ['retired', 'applied'])
         with self.assertRaisesRegex(ValueError, 'no longer fits'):
-            self.act('apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p1'}])
+            self.accept(human, {'id': 'p1'})
         with self.assertRaisesRegex(ValueError, 'Choose suggestions'):
-            self.act(
-                'apply', seen=self.draft()['revision'], job=human, items=[{'id': 'p2'}], all='yes'
-            )
+            self.accept(human, {'id': 'p2'}, all='yes')
         # Accept all with only a retired item in it changes nothing, and says so.
         revision = self.draft()['revision']
-        done = self.act('apply', seen=revision, job=human, items=[{'id': 'p1'}], all=True)
+        done = self.accept(human, {'id': 'p1'}, all=True)
         self.assertEqual(done['finished'], {'applied': 0, 'left': ['p1']})
         self.assertEqual(self.draft()['revision'], revision)
 
@@ -2977,6 +3146,64 @@ class CopyEditTeamTests(TeamCase):
             'The first text.',
             support.git(self.remote, 'show', 'main:blogs/' + ident + '/DRAFT.md'),
         )
+
+    def test_a_carried_or_retired_suggestion_stays_on_this_computer(self):
+        import management
+        from studio_sync import gitstate
+
+        ident = self.made['id']
+        seen = management.view(self.root, 'desk', {'id': [ident]})['revision']
+        management.dispatch(
+            self.root,
+            'desk-save',
+            {
+                'id': ident,
+                'seen': seen,
+                'part': self.part,
+                'text': 'Agentic AI is here. Their are two parser.',
+                'session': 'a' * 16,
+            },
+        )
+        fixes, human = secrets.token_hex(16), secrets.token_hex(16)
+        with studio.locked(self.root):
+            desk_finish.keep(
+                self.root,
+                ident,
+                fixes,
+                'finish-copyedit',
+                [
+                    {'part': self.part, 'before': 'Agentic AI', 'after': 'agentic AI'},
+                    {'part': self.part, 'before': 'Their are', 'after': 'There are'},
+                ],
+            )
+            desk_finish.keep(
+                self.root,
+                ident,
+                human,
+                'finish-humanize',
+                [
+                    {'part': self.part, 'before': 'Agentic AI is here.', 'after': 'It is here.'},
+                    {'part': self.part, 'before': 'Their are two parser.', 'after': 'Two parsers.'},
+                ],
+            )
+        remote = self.remote_commits()
+
+        def accept(job, item):
+            seen = management.view(self.root, 'desk', {'id': [ident]})['revision']
+            return management.dispatch(
+                self.root, 'desk-apply', {'id': ident, 'seen': seen, 'job': job, 'items': [item]}
+            )
+
+        done = accept(fixes, {'id': 'p1'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'carried': 1})
+        done = accept(human, {'id': 'p2'})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': [], 'retired': 1})
+        self.assertEqual(gitstate.changed(self.found), [], 'the waiting sets are not shared')
+        self.assertGreater(self.remote_commits(), remote, 'the accepts are')
+        self.assertEqual(self.remote_commits(), self.local_commits())
+        shown = management.view(self.root, 'desk', {'id': [ident]})['finishing']
+        self.assertEqual(shown['humanize']['items'][0]['before'], 'agentic AI is here.')
+        self.assertEqual(shown['copyedit']['items'][1]['state'], 'retired')
 
 
 if __name__ == '__main__':
