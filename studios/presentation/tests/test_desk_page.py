@@ -24,6 +24,8 @@ WORDS_LINE = ('A note changes how the slide is drawn. To change its words, edit 
 NOTHING_NEEDED = 'Nothing needed from you. The deck opens here when it is ready.'
 NO_RECORD = 'This computer has no record yet of how long that takes.'
 LOOK_PAUSE = 'One thing needs you: pick the look. The deck is drawn in it.'
+WAITS = ('The deck cannot be delivered yet: a change to it is still waiting or under way. '
+         'Deliver when it is done.')
 
 
 def cards_of(desk: dict) -> list:
@@ -570,6 +572,97 @@ class DeskTests(DeskPageCase):
                 self.assertNotIn(view['desk']['expected'][:12], said)
                 self.assertNotIn(view['desk']['blockers_seen'][:12], said)
         self.assertIn('Section 1', json.dumps(result['snapshots']['desk']['headings']))
+
+
+class SecondReviewTests(DeskPageCase):
+    """What the second review of the desk found on the page."""
+
+    def test_change_the_look_on_the_desk_leads_with_the_look_pause(self):
+        path = self.desk_deck()
+        again = self.post('desk-look-again', {'path': path})
+        self.assertTrue(again['desk']['arrived'])
+        self.assertEqual(again['gate']['name'], 'gate:look')
+        looks = again['gate']['offered']['looks']
+        picked = self.run_of(path)
+        result = self.open_deck(path, again, [
+            {'snapshot': 'pause'}, {'click': looks[1]['name']},
+            {'click': 'Draw the deck in this look'}],
+            **{'POST /api/desk-look': [ok(picked)]})
+        pause = result['snapshots']['pause']
+        self.assertEqual(pause['parts'][0], 'Pick the look')
+        lines = pause['text'].split('\n')
+        self.assertEqual(lines[lines.index('Pick the look') + 1], LOOK_PAUSE)
+        self.assertEqual(pause['filled'], ['Draw the deck in this look'])
+        self.assertIn('Deliver', pause['off'])
+        self.assertNotIn('Redrawing', pause['text'])
+        self.assertEqual(self.posts(result),
+                         [('/api/desk-look', {'path': path, 'look': looks[1]['id']})])
+        after = self.post('desk-look', {'path': path, 'look': looks[1]['id']})
+        self.assertEqual(after['gate']['name'], 'gate:build')
+
+    def test_a_redraw_that_stopped_offers_stop_beside_the_problem(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        halted = copy.deepcopy(view)
+        halted['state'] = 'failed'
+        halted['problem'] = {'state': 'failed', 'why': 'A section could not be drawn.',
+                             'action': 'retry'}
+        halted['desk'].update(deliverable=False, working={
+            'what': 'The redraw stopped. Stop it to keep what was redrawn, or carry on.',
+            'done': 1, 'total': 2, 'halted': True})
+        result = self.open_deck(path, halted, [{'snapshot': 'halted'}, {'click': 'Stop'}],
+                                **{'POST /api/desk-stop': [ok(view)]})
+        shot = result['snapshots']['halted']
+        self.assertIn('The redraw stopped. Stop it to keep what was redrawn, or carry on.',
+                      shot['text'].split('\n'))
+        self.assertIn('Try again', shot['buttons'])
+        self.assertIn('Stop', shot['buttons'])
+        self.assertEqual(self.posts(result), [('/api/desk-stop', {'path': path})])
+
+    def test_deliver_waits_while_the_deck_is_not_deliverable(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        self.assertIs(view['desk']['deliverable'], True)
+        waiting = copy.deepcopy(view)
+        waiting['desk']['deliverable'] = False
+        shot = self.open_deck(path, waiting, [{'snapshot': 'waiting'}])['snapshots']['waiting']
+        self.assertIn('Deliver', shot['off'])
+        # A sheet opened before the deck moved on says why, and sends nothing.
+        answers = self.answers(**{'GET /api/run': [ok(view), ok(view), ok(waiting)]})
+        result = self.run_page(answers, [
+            {'click': 'Deliver'}, {'poll': True}, {'click': 'Deliver'}, {'snapshot': 'sheet'}],
+            state={'screen': 'deck', 'path': path})
+        self.assertIn('Deliver the deck', result['snapshots']['sheet']['sheet'])
+        self.assertIn(WAITS, result['snapshots']['sheet']['sheet'])
+        self.assertEqual(self.posts(result), [])
+
+    def test_a_blocker_with_no_slide_has_no_slide_prefix(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        blocked = copy.deepcopy(view)
+        blocked['desk']['blockers'] = [{'number': None, 'says': 'The deck has no title slide.'}]
+        sheet = self.open_deck(path, blocked, [{'click': 'Deliver'}, {'snapshot': 'sheet'}])[
+            'snapshots']['sheet']['sheet']
+        self.assertIn('The deck has no title slide.', sheet)
+        self.assertNotIn('Slide null', sheet)
+        self.assertNotIn('Slide None', sheet)
+
+    def test_save_waits_while_the_deck_is_redrawn(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        busy = copy.deepcopy(view)
+        busy['state'] = 'working'
+        busy['desk'].update(deliverable=False, working={
+            'what': 'Redrawing: 1 of 2 sections', 'done': 1, 'total': 2})
+        result = self.open_deck(path, busy, [
+            {'click': 'Outline'},
+            {'fill': 'Title of slide 3', 'value': 'Capacity holds with two instances'},
+            {'snapshot': 'edited'}, {'click': 'Save'}])
+        shot = result['snapshots']['edited']
+        self.assertIn('Save', shot['off'])
+        self.assertIn('The deck is being redrawn now. Save the outline when that ends.',
+                      shot['text'])
+        self.assertEqual(self.posts(result), [])
 
 
 if __name__ == '__main__':
