@@ -58,7 +58,7 @@ const Drafting = (() => {
   //             started(held, view), landed(held, job)
   //   parts     title(view, part), textOf(view, part), nameOf(view, part), single(part),
   //             noted(view, part)
-  //   words()   {thing, sources, doing, steps, named, withOpening, ready(tab)}
+  //   words()   {thing, sources, doing, steps, named, withOpening, chain, ready(tab)}
   //   tools()   the Finishing tools, in panel order (see the Finishing parts below)
   //   progress  stopped(held), show(held)
   // `held` is the studio's screen state for one item, with the field names Blog Studio's desk
@@ -198,8 +198,9 @@ const Drafting = (() => {
     // section of how many; a kind in words().named says which part.
     k.statusWords = held => {
       const view = held.view, job = view.working; if (!job) return '';
-      if (job.total && job.part === 'opening') return 'Revising ' + a.parts.nameOf(view, 'opening') + '…';
-      if (job.total) return 'Revising section ' + (job.index + 1) + ' of ' + job.total + '…';
+      const chain = (a.words().chain || []).includes(job.kind);
+      if (chain && job.part === 'opening') return 'Revising ' + a.parts.nameOf(view, 'opening') + '…';
+      if (chain && job.total) return 'Revising section ' + (job.index + 1) + ' of ' + job.total + '…';
       const said = a.words();
       return ((said.doing || {})[job.kind] || 'Working') + ((said.named || []).includes(job.kind) ? ' ' + a.parts.nameOf(view, job.part) : '') + '…';
     };

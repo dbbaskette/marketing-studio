@@ -126,7 +126,7 @@ function studio(answers = {}) {
       single: part => part === 'title',
       noted: (view, part) => (view.sections || []).some(s => s.id === part),
     },
-    words: () => ({ thing: 'piece', sources: { save: 'Before your edit', rewrite: 'Before a rewrite' }, doing: { 'piece-section': 'Rewriting', 'piece-whole': 'Revising the piece' }, steps: { gather: 'Gathering', write: 'Writing' }, named: ['piece-section'], ready: tab => tab === 'plan' ? 'The plan is ready.' : 'The piece is ready.' }),
+    words: () => ({ thing: 'piece', sources: { save: 'Before your edit', rewrite: 'Before a rewrite' }, doing: { 'piece-section': 'Rewriting', 'piece-whole': 'Revising the piece' }, steps: { gather: 'Gathering', write: 'Writing' }, named: ['piece-section'], chain: ['piece-whole'], ready: tab => tab === 'plan' ? 'The plan is ready.' : 'The piece is ready.' }),
     tools: () => a.toolList || [],
     progress: {
       stopped: held => { const node = own('div', 'piece-stopped'); node.append(own('p', '', held.view.start.problem), a.ui.button('Try again', () => {})); return node; },
@@ -378,6 +378,11 @@ Object.assign(groups, {
     assert.equal(kit.statusWords(held), 'Rewriting “Second”…');
     held.view.working = { id: 'j', kind: 'piece-whole', part: 'opening', total: 1 };
     assert.equal(kit.statusWords(held), 'Revising “opening”…');
+    // A whole-item note's job recorded without its order still names the opening.
+    held.view.working = { id: 'j', kind: 'piece-whole', part: 'opening' };
+    assert.equal(kit.statusWords(held), 'Revising “opening”…');
+    held.view.working = { id: 'j', kind: 'piece-section', part: 'opening', total: 2, index: 0 };
+    assert.notEqual(kit.statusWords(held), 'Revising “opening”…');
     held.view.working = { id: 'j', kind: 'other' };
     assert.equal(kit.statusWords(held), 'Working…');
     held.view.working = null; assert.equal(kit.statusWords(held), '');

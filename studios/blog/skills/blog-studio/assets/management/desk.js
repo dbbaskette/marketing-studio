@@ -1302,7 +1302,7 @@ const DESK_KIT=Drafting.kit({
     landed:(held,last)=>held.mode==='review'&&last.kind==='finish-copyedit'?'The fixes are marked in your text.':held.mode==='review'&&last.kind==='finish-humanize'?'The suggestions are marked in your text.':'',
   },
   parts:{title:(view,part)=>part==='title'?'Title':part==='opening'?'Opening':deskHeading(((view.sections||[]).find(row=>row.id===part)||{}).heading),textOf:(view,part)=>deskTextOf(view,part),nameOf:(view,part)=>deskPartName(view,part),single:part=>part==='title',noted:(view,part)=>(view.sections||[]).some(row=>row.id===part)},
-  words:()=>({thing:'draft',sources:DESK_SOURCES,doing:DESK_DOING,steps:DESK_STEPS,named:['desk-section','desk-selection'],withOpening:['desk-first-pass'],ready:tab=>tab==='outline'?'The outline is ready. Shape it here, then write the draft.':'The draft is ready. Edit it here.'}),
+  words:()=>({thing:'draft',sources:DESK_SOURCES,doing:DESK_DOING,steps:DESK_STEPS,named:['desk-section','desk-selection'],withOpening:['desk-first-pass'],chain:['desk-revise-all'],ready:tab=>tab==='outline'?'The outline is ready. Shape it here, then write the draft.':'The draft is ready. Edit it here.'}),
   tools:()=>DESK_TOOLS,
   progress:{stopped:held=>sDeskStopped(held),show:held=>sDeskProgress(held)},
 });
