@@ -40,7 +40,7 @@ class DeskActions:
         the brand's default: it is chosen, in words that say so."""
         with self.files:
             record = self._load(root)
-            if not desk.passes(record, step.name):
+            if not desk.passes(record, step.name, root):
                 raise WorkspaceError('This step needs your review.')
             evidence = getattr(self, f"_show_{step.name.partition(':')[2].replace('-', '_')}")(
                 root, record)
@@ -125,6 +125,7 @@ class DeskActions:
                 'progress': None if desk.arrived(record) else {
                     'minutes_left': desk.estimate(record), 'started_at': record.get('created')},
                 'working': desk.working(root, record, state),
+                'deliverable': desk.deliverable(root, record),
                 'outline': self._desk_outline_view(root, record),
                 **({} if shown['drawn_here'] else {
                     'no_drawing': desk.NO_DRAWING,
@@ -212,6 +213,8 @@ class DeskActions:
         root, space, by = self._desk_change(path)
         with self.files:
             record, state = self._load(root), build.read_state(root)
+            if not desk.arrived(record):
+                raise WorkspaceError(desk.NOT_YET)
             if not expected or desk.last_round(state).get('deck') != expected:
                 raise WorkspaceError(desk.CHANGED)
             sections = [entry['id'] for entry in (state.get('start') or {}).get('sections') or ()]
@@ -241,7 +244,8 @@ class DeskActions:
         record = self._load(root)
         # A Stop that did not end in time left the deck stopped mid-redraw: Stop again waits
         # for it and tidies up.
-        again = (record.get('halted') or {}).get('state') == 'stopped' and (
+        # A redraw that failed is given up the same way.
+        again = (record.get('halted') or {}).get('state') in ('stopped', 'failed') and (
             desk.opened(record) or (build.read_state(root).get('asked') or {}).get('sections'))
         if not again and desk.working(root, record) is None:
             raise WorkspaceError(desk.NOTHING_TO_STOP)
@@ -342,14 +346,15 @@ class DeskActions:
 
     # --- the Outline tab -----------------------------------------------------------------------
 
-    def _desk_resting(self, root, record: dict, space) -> tuple[dict, tuple]:
+    def _desk_resting(self, root, record: dict, space,
+                      said: str = 'Change the outline.') -> tuple[dict, tuple]:
         """A change the Outline tab makes is taken while the deck rests on the desk or is
         delivered: a delivered deck is set aside first, to make its next revision. Call it
         holding `files`, once every check of the change has passed. Returns the run, and
         what else its commit lists."""
         if decks.delivered(root) is not None:
-            return (delivering.again(root, record, self.slides(), 'Change the outline.', space,
-                                     sections=[]), self._listed(space))
+            return (delivering.again(root, record, self.slides(), said, space, sections=[]),
+                    self._listed(space))
         if not desk.resting(record):
             raise WorkspaceError(desk.OUTLINE_BUSY)
         return record, ()
@@ -434,7 +439,10 @@ class DeskActions:
             record = self._load(root)
             if 'gate:look' not in {step.name for step in stages.steps(record)}:
                 raise WorkspaceError('This deck keeps the look of the deck you gave.')
-            record, also = self._desk_resting(root, record, space)
+            if gate_state(record, 'gate:look') == 'waiting':
+                also = ()   # at the look's pause: its looks are drawn again for the pick
+            else:
+                record, also = self._desk_resting(root, record, space, 'Change the look.')
             looks.drop(root)
             record.pop('look_picked', None)
             record = stages.reopen(record, 'gate:look')

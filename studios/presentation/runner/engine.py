@@ -1004,7 +1004,7 @@ class Engine(Jobs, Researching, DeskActions):
                 if step.kind == 'gate' and decks.on_desk(record):
                     # A desk deck's stops are met on the desk: those it continues past, and
                     # the look when the start chose to pick it, and the desk itself.
-                    if desk.passes(record, step.name):
+                    if desk.passes(record, step.name, root):
                         self._desk_gate(root, step)
                         continue
                     if gate_state(record, step.name) == 'waiting':
@@ -2468,6 +2468,9 @@ class Engine(Jobs, Researching, DeskActions):
         this deck, and stops nothing; a second note before then replaces the first. `expected`
         is the note's version the page read: a page that read an older one is refused."""
         root = self._held(path)
+        # A desk deck's notes are on its cards: the next step's note would reach a composer
+        # by a second way.
+        desk.refuse_on_desk(self._load(root))
         if not isinstance(text, str) or not text.strip():
             raise WorkspaceError('Write the note first.')
         text = text.replace('\r\n', '\n').replace('\r', '\n').strip()

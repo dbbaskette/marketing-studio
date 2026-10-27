@@ -57,6 +57,7 @@ AGAIN_ASIDE = ('Not redrawn: it came while the deck was being put together, too 
                'row. Send it again.')
 NO_DECK_NOTE = 'Say how the whole deck should change.'
 PUTTING = 'Putting the deck together, rendering and checking it'
+HALTED = 'The redraw stopped. Stop it to keep what was redrawn, or carry on.'
 STILL = 'Your last change is still being put together. Deliver when it is done.'
 BLOCKERS_CHANGED = ('The brand check changed since this page read it. Look again before you '
                     'deliver.')
@@ -73,11 +74,16 @@ NOT_ENDED = ('It was stopped, but something it started has not ended yet. Try St
 
 # --- the stops ----------------------------------------------------------------------------
 
-def passes(run: dict, gate: str) -> bool:
+def passes(run: dict, gate: str, root=None) -> bool:
     """Whether a desk deck continues past `gate` with the desk's receipt: every stop before
-    the look, and the look itself when the start chose the brand's default."""
+    the look, and the look itself when the start chose the brand's default, or when the
+    brand offers no looks to pick from (`root` is the deck, to say)."""
     if gate in PASSED:
         return True
+    if gate == 'gate:look' and root is not None:
+        from runner.steps import look as looks
+        if looks.shown_looks(root) is None:
+            return True
     # Change the look asks for a pick, whatever the start chose.
     return gate == 'gate:look' and (run.get('form') or {}).get('look') == 'default' \
         and not (run.get('desk') or {}).get('pick')
@@ -146,15 +152,24 @@ def working(root, run: dict, state: dict | None = None) -> dict | None:
     """What desk work is under way, for the line above the desk: {'what', 'done', 'total'},
     or None while the deck rests, before it reaches the desk and once it stopped."""
     from runner.steps import build
-    if not arrived(run) or resting(run) or run.get('halted') or decks.delivered(root):
+    if not arrived(run) or resting(run) or decks.delivered(root):
         return None
-    if stages.survey(run).next is None:
+    nxt = stages.survey(run).next
+    if nxt is None:
         return None
+    if nxt.kind == 'gate' and ((run.get('gates') or {}).get(nxt.name) or {}).get(
+            'state') == 'waiting':
+        return None   # a pause for the person, such as the look: not desk work
     state = state if state is not None else build.read_state(root)
     if not state.get('start'):
         return None   # no drawing here: nothing is drawn until Draw it here
     asked = list(((state.get('asked') or {}).get('sections')) or ())
-    nxt = stages.survey(run).next
+    if run.get('halted'):
+        # A redraw that stopped or failed can still be given up with Stop.
+        if (run['halted'].get('state') in ('stopped', 'failed')) and (asked or opened(run)):
+            return {'what': HALTED, 'done': len(fresh(state) & set(asked)), 'total': len(asked),
+                    'halted': True}
+        return None
     if not asked:
         building = nxt.stage == 'build' and nxt.name not in ('build-start', 'build-sections')
         return {'what': PUTTING if building else nxt.doing, 'done': 0, 'total': 0}
@@ -250,6 +265,13 @@ def reopen(run: dict) -> dict:
         **gate, 'state': 'changes', 'by': 'desk', 'note': None, 'slides': None,
         'slide_notes': None, 'at': home.now()}
     return stages.reopen(run, 'gate:build')
+
+
+def deliverable(root, run: dict) -> bool:
+    """Whether Deliver is offered now: the deck rests on the desk, nothing is halted, and no
+    note waits to be drawn."""
+    return resting(run) and not run.get('halted') and not opened(run) \
+        and decks.delivered(root) is None
 
 
 def resting(run: dict) -> bool:

@@ -911,6 +911,105 @@ class ReviewFixTests(DeskCase):
         self.assertEqual(plan['items'][0]['public_query'], 'What starts the next batch?')
 
 
+class SecondReviewTests(DeskCase):
+    """What the second review of the desk found, each held to here."""
+
+    def deck(self, **changes) -> Path:
+        root = self.start_desk(**{'look': 'default', **changes})
+        self.on_desk(root)
+        return root
+
+    def test_the_look_pause_on_the_desk_is_not_desk_work(self):
+        root = self.deck()
+        self.engine.desk_look_again(root)
+        shown = self.view(root)
+        self.assertEqual(shown['gate']['name'], 'gate:look')
+        self.assertIsNone(shown['desk']['working'])
+        self.assertFalse(shown['desk']['deliverable'])
+
+    def test_the_looks_are_drawn_again_at_the_pause(self):
+        root = self.start_desk(look='pick')
+        self.assertEqual(self.waiting(root), 'gate:look')
+        self.engine.desk_look_again(root)
+        self.assertEqual(self.waiting(root), 'gate:look')
+        self.pick_look(root)
+        self.on_desk(root)
+
+    def test_a_brand_with_no_looks_does_not_pause_for_one(self):
+        self.brand.run.offers_looks = False
+        root = self.start_desk(look='pick')
+        self.on_desk(root)
+        self.assertEqual(self.record(root)['gates']['gate:look']['by'], 'desk')
+
+    def test_a_redraw_that_fails_can_be_given_up(self):
+        root = self.deck()
+
+        def failing(tools, job):
+            if section_of_job(tools) == 2:
+                return runner_support.fails()(tools, job)
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', *[failing] * 8)
+        self.engine.desk_deck_note(root, 'Fewer words.', self.desk_view(root)['expected'])
+        shown = self.view(root)
+        self.assertEqual(shown['problem']['state'], 'failed')
+        self.assertTrue(shown['desk']['working']['halted'])
+        self.assertFalse(shown['desk']['deliverable'])
+        self.engine.desk_stop(root)
+        shown = self.on_desk(root)
+        self.assertIsNone(self.record(root)['halted'])
+        self.assertTrue(shown['desk']['deliverable'])
+        notes = {item['section']: item['status'] for item in self.record(root)['desk_notes']}
+        self.assertEqual(notes, {'section-1': 'done', 'section-2': 'set aside'})
+
+    def test_a_stopped_redraw_still_offers_stop(self):
+        from runner import engine as engines
+        root = self.deck()
+        tried = []
+
+        def stopping(tools, job):
+            if section_of_job(tools) == 2:
+                import threading
+
+                def stop():
+                    with mock.patch.object(engines.Engine, '_ended', return_value=False):
+                        try:
+                            self.engine.desk_stop(root)
+                        except WorkspaceError as refusal:
+                            tried.append(str(refusal))
+                thread = threading.Thread(target=stop)
+                thread.start()
+                thread.join(30)
+                return None
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', stopping, stopping)
+        self.engine.desk_deck_note(root, 'Fewer words.', self.desk_view(root)['expected'])
+        shown = self.view(root)['desk']
+        self.assertTrue(shown['working']['halted'])
+        self.assertFalse(shown['deliverable'])
+
+    def test_the_older_note_for_the_next_step_is_refused_on_the_desk(self):
+        root = self.deck()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.note(root, 'Keep it short.')
+        self.assertEqual(str(caught.exception), desk.ON_DESK)
+
+    def test_a_whole_deck_note_before_the_desk_says_so(self):
+        said = []
+
+        def noting(tools, job):
+            root = self.engine.every()[0]
+            with self.assertRaises(WorkspaceError) as caught:
+                self.engine.desk_deck_note(root, 'Fewer words.', 'x')
+            said.append(str(caught.exception))
+            return self.workers.outline(tools, job)
+
+        self.workers.then('outline', noting)
+        self.deck()
+        self.assertEqual(said, [desk.NOT_YET])
+
+
 class DeskTeamFixTests(DeskCase, runner_support.TeamCase):
     def test_draw_it_here_sends_the_notes_with_the_first_drawing(self):
         with self.be(self.alex):
