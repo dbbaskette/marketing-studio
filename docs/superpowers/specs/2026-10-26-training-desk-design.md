@@ -22,6 +22,9 @@ C = `core/studio_core`.
 
 Each is a real choice. The recommendation comes first; the design below follows it.
 
+**The owner's answers (2026-10-26):** every recommendation is taken except decision 13. There,
+findings become suggestions, as in piece 5 (decision 13 below says what that means here).
+
 1. **The look of a training's decks.** *Recommended:* the brand's default look at Start, and
    **Try another look** on each deck card afterwards (samples first, then a priced redraw).
    *Alternative:* piece 5's start choice, "Pick it when the samples are drawn", which pauses
@@ -69,11 +72,14 @@ Each is a real choice. The recommendation comes first; the design below follows 
     (`runner/drafts.py`, `desk/drafts.js`, `/api/drafts/…`), and `docs/desk.md` is renamed
     `docs/page.md`. The `training.py desk` command and `S/desk.py` keep their names, because
     guidance and installed helpers call them. See "Naming".
-13. **The deck's review on the desk.** *Recommended:* keep Training's automatic review of the
-    slides that changed, and at most two repair rounds, after each slide note or update. That
-    is what a training's deck has today, and it needs no person. *Alternative:* piece 5's
-    way, where the review runs only from Finishing and its findings are proposals. That is
-    cheaper, but a training's deck would reach the desk unreviewed.
+13. **The deck's review on the desk.** *Decided (the owner, 2026-10-26):* findings are
+    suggestions in both studios. Training keeps its automatic review of the slides that
+    changed after each slide note or update, so a training's deck never reaches the desk
+    unreviewed. No repair round runs. Each finding waits on its slide as a proposal, as in
+    piece 5's Review the deck. **Apply** is a slide note made from the finding's note and fix,
+    priced. **Skip** keeps the finding as read. The grave-finding rule stands: a deck with a
+    grave finding open cannot be marked ready. *Was recommended:* at most two automatic
+    repair rounds, as today.
 
 ## What is wrong now
 
@@ -584,8 +590,8 @@ wired to it.
      with piece 5's sentence: "this slide has no requested repair. Keep its drawing
      unchanged."
    - The chain is: that section, then the whole deck merged and rendered (`_whole`), then the
-     review of changed slides only, then at most `deck.REPAIRS` repair rounds (Decision
-     13), then the deck saved with its audit (`_keep`).
+     review of changed slides only, whose findings wait on their slides as proposals with no
+     repair round (Decision 13), then the deck saved with its audit (`_keep`).
    - The deck lands as a Draft. It takes about 3 to 6 minutes and $0.40 to $1.50, against
      about 10 minutes and $3.20 for eight slides today.
 3. **Words and speaker notes.** Piece 5's chains, wired to Training's files:
@@ -853,7 +859,7 @@ Stop.
 | D11 | A level with several cards | Mark this level ready | Each marked in order; stops at the first that cannot be, naming why |
 | D12 | Every wanted material of every level Ready | Survey | `package` writes the index with no stop |
 | D13 | A desk run after research | Add a source | Document added; research request recorded; research runs again; each plan, brief and guide-less deck held; findings marked new or changed |
-| D14 | A drawn deck | A note on one slide | Only that slide's section drawn again, its other slides frozen; review of changed slides only; deck Draft |
+| D14 | A drawn deck | A note on one slide | Only that slide's section drawn again, its other slides frozen; review of changed slides only, its findings proposals on their slides with no repair round; deck Draft |
 | D15 | A drawn deck | Speaker notes changed on one slide | Outline and drawn notes rewritten, deck compiled, no worker; deck Draft |
 | D16 | A drawn deck | Another look applied | Whole deck drawn again in that look; deck Draft |
 | D17 | A drawn deck | Typed words on a slide that fit / do not fit | Fit: outline and drawn section patched, deck merged, no worker, deck Draft. Do not fit: nothing saved; Redraw with these words or Discard |

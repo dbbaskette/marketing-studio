@@ -16,6 +16,9 @@ piece 3's spec is being written at the same time.
 Each choice below comes with a recommendation. The rest of the spec assumes the
 recommendation.
 
+**The owner's answers (2026-10-26):** every recommendation is taken. Decision 2 also holds
+in Training Studio: a training's deck review gives suggestions too (piece 6, decision 13).
+
 1. **What the shared review level means for a desk deck.** *Recommended:* nothing. On a
    desk deck the start form's **Look** choice is the only setting left. It is either "Pick
    it when the samples are drawn" (the default) or "Use the brand's default look". The
