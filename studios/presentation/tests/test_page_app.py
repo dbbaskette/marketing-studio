@@ -26,7 +26,8 @@ class ApiTests(unittest.TestCase):
     """Every address the page asks for is one the server answers, in the way it answers it."""
 
     def setUp(self):
-        self.script = read('app.js')
+        # The deck desk's script asks the server only through app.js's own helpers.
+        self.script = read('app.js') + read('deck-desk.js')
         self.reads = set(page.RunnerPage.reads)
         self.writes = set(page.RunnerPage.writes)
 
@@ -72,7 +73,7 @@ class LinkTests(unittest.TestCase):
     """The page loads nothing from anywhere else, and links out only where the server said."""
 
     def test_no_address_outside_this_computer_is_written_into_the_page(self):
-        for name in ('app.js', 'index.html', 'deck.css'):
+        for name in ('app.js', 'deck-desk.js', 'index.html', 'deck.css'):
             with self.subTest(name):
                 text = read(name).replace(f"'{SVG}'", "''")
                 self.assertNotRegex(text, r'(?i)\b(?:https?|wss?|ftp|data|blob):')
@@ -99,13 +100,17 @@ class LinkTests(unittest.TestCase):
     def test_the_shell_loads_only_its_own_files(self):
         shell = read('index.html')
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', shell)),
-                         ['#main', 'app.js', 'deck-panels.css', 'deck-panels.js', 'deck.css',
-                      'lists.js', 'markdown.js', 'style.css'])
+                         ['#main', 'app.js', 'deck-desk.js', 'deck-panels.css', 'deck-panels.js',
+                          'deck.css', 'drafting.js', 'lists.js', 'markdown.js', 'style.css'])
         # The list kit is the shared core's, loaded after the deck panels and before app.js.
+        # The desk kit comes before app.js, and the deck desk after it, which hands it its parts.
         scripts = re.findall(r'<script src="([^"]+)"', shell)
         self.assertLess(scripts.index('deck-panels.js'), scripts.index('lists.js'))
         self.assertLess(scripts.index('lists.js'), scripts.index('app.js'))
-        for name in ('/deck.css', '/style.css', '/app.js', '/markdown.js'):
+        self.assertLess(scripts.index('drafting.js'), scripts.index('app.js'))
+        self.assertLess(scripts.index('app.js'), scripts.index('deck-desk.js'))
+        for name in ('/deck.css', '/style.css', '/app.js', '/markdown.js', '/deck-desk.js',
+                     '/drafting.js'):
             self.assertIn(name, server.PAGE)
         styles = read('deck.css')
         for loads in ('url(', '@import', '@font-face'):
@@ -114,7 +119,7 @@ class LinkTests(unittest.TestCase):
 
 class MarkupTests(unittest.TestCase):
     def test_no_value_is_ever_treated_as_markup(self):
-        for name in ('app.js', 'markdown.js'):
+        for name in ('app.js', 'deck-desk.js', 'markdown.js'):
             script = read(name)
             for risky in ('innerHTML', 'outerHTML', 'insertAdjacentHTML', 'document.write',
                           'createContextualFragment', 'DOMParser', 'srcdoc', 'eval(',
@@ -156,12 +161,12 @@ class MarkupTests(unittest.TestCase):
 
 class WordTests(unittest.TestCase):
     def test_no_word_a_person_should_not_read(self):
-        for name in ('app.js', 'index.html', 'deck.css'):
+        for name in ('app.js', 'deck-desk.js', 'index.html', 'deck.css'):
             with self.subTest(name):
                 self.assertNotRegex(read(name), FORBIDDEN_WORDS)
 
     def test_a_deck_is_called_a_deck(self):
-        for name in ('app.js', 'index.html'):
+        for name in ('app.js', 'deck-desk.js', 'index.html'):
             with self.subTest(name):
                 text = read(name)
                 self.assertNotRegex(text, TRAINING_WORDS)
@@ -184,7 +189,7 @@ class WordTests(unittest.TestCase):
 
     def test_no_brand_is_named(self):
         # Any brand: the brands offered are only those the brand skill on this computer has.
-        for name in ('app.js', 'index.html', 'deck.css'):
+        for name in ('app.js', 'deck-desk.js', 'index.html', 'deck.css'):
             with self.subTest(name):
                 self.assertNotRegex(read(name), test_no_brand_named.NAMED)
 

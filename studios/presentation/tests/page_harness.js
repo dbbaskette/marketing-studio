@@ -33,7 +33,7 @@
 // Each snapshot also says how the screen is laid out: the toolbar's controls in order, each
 // filled or quiet; the ledes; the heading tags of each card; how many cards sit inside
 // another; the parts' names in order (card titles, sheet parts and a selection's count); the
-// boxes that are ticked; and the words of the selection bar.
+// boxes that are ticked; the words of the selection bar; and every heading on the screen.
 //
 // The document here has no HTML parser at all. A script that tried to set innerHTML would
 // throw, so anything that reaches the page as markup fails the test that runs this.
@@ -433,6 +433,10 @@ function layout() {
         && !inside(node, card, 'card') && !inside(node, card, 'md'))
       .map((node) => node.tagName.toLowerCase()))].sort()),
     nested: cards.filter((card) => inside(card, main, 'card')).length,
+    // Every heading on the screen, in order, cards and all: what a reader's headings list
+    // shows.
+    headings: main.all().filter((node) => HEADINGS.includes(node.tagName) && visible(node)
+      && !inside(node, main, 'md')).map((node) => words(node).replace(/\s+/g, ' ').trim()),
     parts: document.body.querySelectorAll('.card-title, .sheet-part, .selection-count')
       .filter(visible).map((node) => words(node).replace(/\s+/g, ' ').trim()),
     ticked: document.body.querySelectorAll('input')
@@ -779,7 +783,9 @@ async function app(file) {
   vm.runInContext(fs.readFileSync(panels, 'utf8'), context, { filename: 'deck-panels.js' });
   const lists = path.join(PAGE, '..', 'studio_core', 'deck_web', 'lists.js');
   vm.runInContext(fs.readFileSync(lists, 'utf8'), context, { filename: 'lists.js' });
-  for (const script of ['markdown.js', 'app.js']) {
+  // The shared desk kit (drafting.js, linked from ui-kit), then the page, then the deck desk,
+  // in the order index.html loads them.
+  for (const script of ['markdown.js', 'drafting.js', 'app.js', 'deck-desk.js']) {
     vm.runInContext(fs.readFileSync(path.join(PAGE, script), 'utf8'), context, { filename: script });
   }
   await settle();
