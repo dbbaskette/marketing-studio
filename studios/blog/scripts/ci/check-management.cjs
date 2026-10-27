@@ -37,7 +37,7 @@ function fixture(responder=()=>({items:[],total:0})){
   const source=fs.readFileSync('skills/blog-studio/assets/management/app.js','utf8').split("for(const b of document.querySelectorAll('[data-view]'))")[0];
   vm.runInContext(source,context);
   vm.runInContext("access={status:'local-only',message:'Local only',actions:{edit:true,memory:false,refresh:false}}",context);
-  return {get,nodes,run:code=>vm.runInContext(code,context),set:(name,value)=>{context[name]=value;},loadRunner:()=>{vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/markdown.js','utf8'),context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/runner.js','utf8').split('// Keep initialization below this marker')[0],context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/desk.js','utf8'),context);}};
+  return {get,nodes,run:code=>vm.runInContext(code,context),set:(name,value)=>{context[name]=value;},loadRunner:()=>{vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/markdown.js','utf8'),context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/runner.js','utf8').split('// Keep initialization below this marker')[0],context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/drafting.js','utf8'),context);vm.runInContext(fs.readFileSync('skills/blog-studio/assets/management/desk.js','utf8'),context);}};
 }
 async function check(){
   const lan=fixture();
