@@ -2784,14 +2784,9 @@ def _base_of(paragraph, start):
                     positions.append(at)
                 at += rt.utf16(c)
             continue
-        shown = ''
-        if 'richLink' in element:
-            props = element['richLink'].get('richLinkProperties') or {}
-            shown = str(props.get('title') or props.get('uri') or '')
-        elif 'person' in element:
-            props = element['person'].get('personProperties') or {}
-            shown = str(props.get('name') or props.get('email') or '')
-        inner = next((v for k, v in element.items() if k not in ('startIndex', 'endIndex')), {})
+        kind = next((k for k in element if k not in ('startIndex', 'endIndex')), '')
+        inner = element.get(kind) or {}
+        shown = rt.chip_text(kind, inner) if kind != 'inlineObjectElement' else ''
         if not (isinstance(inner, dict) and inner.get('suggestedInsertionIds')):
             text.extend(shown)
             positions.extend([at] * len(shown))

@@ -68,6 +68,27 @@ class LenientReadTests(unittest.TestCase):
         body = gs.accepted_markdown(doc, images={}).decode()
         self.assertIn('| Port | Depth |\n| --- | --- |\n| North | 12 \\| m |', body)
 
+    def test_a_date_chip_and_a_newer_chip_read_as_the_text_they_show(self):
+        doc = gm.objects_doc()
+        elements = doc['tabs'][0]['documentTab']['body']['content'][1]['paragraph']['elements']
+        date = {'dateElement': {'dateElementProperties': {'displayText': 'Oct 27, 2026'}}}
+        newer = {'placeChip': {'placeChipProperties': {'displayText': 'Pier 39'}}}
+        elements[0:0] = [date, gm.run(' at '), newer, gm.run(' ')]
+        body = gs.accepted_markdown(doc, images={}).decode()
+        self.assertIn('Oct 27, 2026 at Pier 39 ', body)
+        # Without its shown text a date still reads, by its day.
+        self.assertEqual(
+            rt.chip_text('dateElement', {'dateElementProperties': {'timestamp': '2026-10-27T15:00:00Z'}}),
+            '2026-10-27',
+        )
+        # The send sees the same words where the chip sits, at one Doc index.
+        text, positions = desk_finish._base_of(
+            {'elements': [{**date, 'startIndex': 5}, {**gm.run(' ok\n'), 'startIndex': 6}]}, 5
+        )
+        self.assertEqual(text, 'Oct 27, 2026 ok')
+        self.assertEqual(positions[:12], [5] * 12)
+        self.assertEqual(positions[12:], [6, 7, 8])
+
     def test_anything_else_is_named_plainly(self):
         doc = gm.objects_doc()
         doc['tabs'][0]['documentTab']['body']['content'][1]['paragraph']['elements'].insert(

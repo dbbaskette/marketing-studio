@@ -401,6 +401,32 @@ def paragraph_text(paragraph):
     )
 
 
+CHIP_KINDS = ('richLink', 'person', 'dateElement')
+
+
+def chip_text(kind, value):
+    """The words a smart chip shows in the Doc: a link's title, a person's name, a date as
+    written. '' when it shows none. A chip of a kind not known here still reads by the text
+    Google says it displays, so a new kind of chip need not stop a read."""
+    if not isinstance(value, dict):
+        return ''
+    if kind == 'richLink':
+        props = value.get('richLinkProperties') or {}
+        return str(props.get('title') or props.get('uri') or '')
+    if kind == 'person':
+        props = value.get('personProperties') or {}
+        return str(props.get('name') or props.get('email') or '')
+    if kind == 'dateElement':
+        props = value.get('dateElementProperties') or {}
+        return str(props.get('displayText') or str(props.get('timestamp') or '')[:10])
+    for key, props in value.items():
+        if key.endswith('Properties') and isinstance(props, dict):
+            shown = props.get('displayText') or props.get('title') or props.get('name')
+            if shown:
+                return str(shown)
+    return ''
+
+
 def require_settled(paragraph):
     """A passage with someone's pending suggestion is theirs to review first; other paragraphs stay editable."""
     if suggestions(paragraph):

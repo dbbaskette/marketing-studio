@@ -5,6 +5,11 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **A date chip in a Google Doc reads as its date.** A Doc with pending suggestions and a
+  date chip stopped at "This Google Doc holds something (dateElement)". The date now reads
+  as Google shows it, and a newer kind of chip reads by the text it shows instead of
+  stopping the read. Maintainers: `google_roundtrip.chip_text` is the one place a chip's
+  words come from, for the read, the pending-suggestion record and the send.
 - **A Google Doc with other people's pending suggestions reads like a clean one.** Reading a
   Doc whose suggestions were still waiting stopped at "Review pull cannot project embedded
   objects", and **Read Google Doc** looked stuck after it. Now the Doc reads as it is

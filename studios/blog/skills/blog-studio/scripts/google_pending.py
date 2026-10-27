@@ -39,20 +39,11 @@ def record(inline, tabs=None, own=()):
                 at = element.get('startIndex')
                 run = element.get('textRun')
                 if run is None:
-                    value = next(
-                        (v for k, v in element.items() if k not in ('startIndex', 'endIndex')),
-                        {},
-                    )
+                    kind = next((k for k in element if k not in ('startIndex', 'endIndex')), '')
+                    value = element.get(kind)
                     marks = value if isinstance(value, dict) else {}
                     # A smart chip reads as its text on the desk; an image as nothing.
-                    props = marks.get('richLinkProperties') or marks.get('personProperties') or {}
-                    shown = str(
-                        props.get('title')
-                        or props.get('name')
-                        or props.get('uri')
-                        or props.get('email')
-                        or ''
-                    )
+                    shown = rt.chip_text(kind, marks) if kind != 'inlineObjectElement' else ''
                     for c in shown or ['']:
                         chars.append(
                             {
