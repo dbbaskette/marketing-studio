@@ -14,16 +14,16 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError
 
+import runner  # noqa: F401  puts the core on the import path
 from runner import decks, desk, gitstate, stages
 from runner.jobs import gate_state, sha256_of
 from runner.steps import build, intake
 from runner.steps import deliver as delivering
-from runner.steps import outline as outlines
 from runner.steps import look as looks
+from runner.steps import outline as outlines
 
 NO_PICK = 'The look is not waiting to be picked now.'
 AGAIN = 3   # chains one rest on the desk may run for notes that came while it was put together
@@ -95,8 +95,8 @@ class DeskActions:
             # What a note's chain took here, for the next price's "usually".
             from datetime import datetime
             try:
-                took = (datetime.fromisoformat(home.now().replace('Z', '+00:00'))
-                        - datetime.fromisoformat(chain['at'].replace('Z', '+00:00')))
+                took = (datetime.fromisoformat(home.now())
+                        - datetime.fromisoformat(chain['at']))
                 desk.took(chain['kind'], max(0.0, took.total_seconds()))
             except (KeyError, TypeError, ValueError):
                 pass
@@ -269,7 +269,7 @@ class DeskActions:
         """Draw a desk deck on this computer, which has no drawing of it: every build step is
         done again here, with the notes it was asked for, as `_settle` does for a gated deck."""
         from runner.engine import BUILT
-        root, space, by = self._desk_change(path)
+        root, _, _ = self._desk_change(path)
         with self.files:
             record = self._load(root)
             if build.read_state(root).get('start'):
@@ -344,7 +344,7 @@ class DeskActions:
         """Save the outline as the Outline tab edited it, checked by the slides tool: the
         deck is split again, every section whose slides did not change is kept as drawn, and
         the others are drawn. Bound to the outline the page read (`expected`)."""
-        root, space, by = self._desk_change(path)
+        root, space, _ = self._desk_change(path)
         with self.files:
             record = self._load(root)
             if not expected or sha256_of(root / outlines.OUTLINE) != expected:
@@ -408,7 +408,7 @@ class DeskActions:
     def desk_look_again(self, path) -> dict:
         """Change the look: the brand's looks are drawn again, the deck waits for a pick,
         and every section is drawn again in the look picked."""
-        root, space, by = self._desk_change(path)
+        root, space, _ = self._desk_change(path)
         with self.files:
             record = self._load(root)
             if 'gate:look' not in {step.name for step in stages.steps(record)}:

@@ -14,7 +14,7 @@ from runner_support import LONG_OUTLINE, DeskCase
 from stand_ins import brand as brand_stand_in
 from workspace import WorkspaceError
 
-from runner import desk, stages
+from runner import desk
 from runner.steps import look as looks
 
 
@@ -83,8 +83,9 @@ class DeskGateTests(DeskCase):
         self.on_desk(root)
 
     def test_research_on_a_desk_deck_plans_from_the_form(self):
-        from runner import research_steps
         from studio_core import research_contract
+
+        from runner import research_steps
         contract = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         with mock.patch.object(self.engines.research_contract, 'snapshot',
                                return_value=contract), \
@@ -112,7 +113,11 @@ class DeskRefusalTests(DeskCase):
     """A desk deck is changed only on the desk, and a gated deck only on its own screen."""
 
     # Each desk route, with what it is sent, by name.
-    ROUTES = {'desk_look': ('example-clear',)}
+    ROUTES = (('desk_note', (3, 'Shorter.', 'x')), ('desk_deck_note', ('Shorter.', 'x')),
+              ('desk_stop', ()), ('desk_deliver', ('x',)), ('desk_outline', ([], 'x')),
+              ('desk_outline_price', (None,)), ('desk_reread', ('spec',)),
+              ('desk_look', ('example-clear',)), ('desk_look_again', ()),
+              ('desk_draw_here', ()))
 
     def test_a_desk_deck_refuses_a_gate_decision(self):
         root = self.start_desk(look='default')
@@ -150,7 +155,7 @@ class DeskRefusalTests(DeskCase):
 
     def test_a_gated_deck_refuses_every_desk_route(self):
         root = self.gated()
-        for name, given in self.ROUTES.items():
+        for name, given in self.ROUTES:
             with self.subTest(route=name):
                 with self.assertRaises(WorkspaceError) as caught:
                     getattr(self.engine, name)(root, *given)
@@ -258,6 +263,7 @@ def digests(root: Path) -> dict:
     """Every drawn section file and every slide picture of this computer's last round, by
     name, as SHA-256."""
     import hashlib
+
     from runner.steps import build
     state = build.read_state(root)
     found = {f"file:{ident}": hashlib.sha256((root / entry['file']).read_bytes()).hexdigest()
@@ -289,7 +295,7 @@ class SlideNoteTests(DeskCase):
         self.engine.desk_note(root, 3, 'Make the diagram a sequence.', self.expected(root))
         again = self.workers.jobs[jobs:]
         self.assertEqual([kind for kind, _, _ in again], ['section'])
-        kind, job, spec = again[0]
+        _, job, spec = again[0]
         self.assertIn('Draw section 1 of', job.task)
         self.assertIn('Slide 3: Make the diagram a sequence.', job.task)
         unchanged = spec['artifacts']['section']['unchanged_slides']
@@ -587,10 +593,9 @@ class OutlineTabTests(DeskCase):
         slides = self.edited(root, 3, title='Capacity holds with two or more instances')
         refused = {'status': 'findings', 'slides': 8, 'words': {},
                    'findings': [{'slide': 's3', 'code': 'title-too-long'}]}
-        with mock.patch.object(self.slides, 'outline_check', return_value=refused):
-            with self.assertRaises(WorkspaceError) as caught:
-                self.engine.desk_outline(root, slides,
-                                         self.desk_view(root)['outline']['expected'])
+        with mock.patch.object(self.slides, 'outline_check', return_value=refused), \
+                self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_outline(root, slides, self.desk_view(root)['outline']['expected'])
         self.assertTrue(str(caught.exception).startswith('The outline cannot be saved.'))
         self.assertEqual((root / 'outline.json').read_bytes(), before)
         self.assertEqual(self.waiting(root), 'gate:build')
