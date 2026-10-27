@@ -102,6 +102,20 @@ def _fitted(draft, before):
     return desk_images.fitted(draft, before=before.get('images') or {})
 
 
+def _landed(draft, before, text):
+    """A returned text as it lands: each token for image data kept as text (in code, say)
+    put back as that data, and refused when one was lost or changed (desk_images.restored);
+    any image data in it moved to the draft's images under labels of its own; and the image
+    references `before` had kept: one left out goes back where it was, one changed or made
+    up is taken out (desk_images.kept)."""
+    text = desk_images.restored(before, text)
+    own = set()
+    text, draft['images'] = desk_images.take(
+        text, draft.get('images'), rename=True, previous=before, touched=own
+    )
+    return desk_images.kept(before, text, draft['images'], own)
+
+
 def _shown(text):
     """A kept version as the page shows it: a version kept before images moved out of the
     text shows their references, not their data."""
@@ -116,6 +130,7 @@ CODEC = parts.MARKDOWN.replace(
     vet=lambda part, text: _vet(part, text),
     taken=lambda draft, part, text, previous: _taken(draft, part, text, previous),
     fitted=lambda draft, before: _fitted(draft, before),
+    landed=lambda draft, before, text: _landed(draft, before, text),
     shown=lambda text: _shown(text),
 )
 
