@@ -108,7 +108,7 @@
     {
       "path": "runner/slides.py",
       "from": "runner/slides.py",
-      "note": "pptx inspect/patch/compare, review --file, drive export and outline draft added",
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/slides.py`; the rest is this studio's. The port: pptx inspect/patch/compare, review --file, drive export and outline draft added",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
     },
     {
