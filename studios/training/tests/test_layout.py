@@ -347,5 +347,170 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         self.assertIn('Published', shot['buttons'])
 
 
+    # --- the new-training sheet, the picture sheet and the research choice ----------
+
+    def begun(self, **more) -> dict:
+        self.started()
+        return self.answers(**{
+            'POST /api/trainings': [ok({'path': str(self.root), 'id': 'rolling-restarts',
+                                        'gates': 8})],
+            'GET /api/run': [a_run('working', 'Drafting the research questions.')], **more})
+
+    FILLED = [{'fill': 'A short title', 'value': 'Rolling restarts'},
+              {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
+              {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'}]
+
+    def test_new_training_is_one_sheet_in_numbered_steps(self):
+        result = self.run_page(self.begun(), [{'click': 'New training'}, {'snapshot': 'sheet'}])
+        shot = result['snapshots']['sheet']
+        sheet = shot['sheet']
+        steps = ['1. Learning goal', '2. Materials', '3. Research',
+                 '4. Where it stops, and the assistant']
+        self.assertEqual([part for part in shot['parts'] if part[:2] in ('1.', '2.', '3.', '4.')],
+                         steps)
+        self.assertEqual(sorted(steps, key=sheet.index), steps)
+        self.assertEqual(shot['filled'], ['Start the training'])
+        self.assertTrue(sheet.rstrip().endswith('Start the training\nCancel'), sheet[-200:])
+        self.assertNotIn('Continue', shot['buttons'])
+        self.assertNotIn('Back a step', shot['buttons'])
+        self.assertEqual([control['name'] for control in shot['toolbar']], [])
+
+    def test_ready_to_start_sits_above_start(self):
+        result = self.run_page(self.begun(), [{'click': 'New training'}, {'snapshot': 'sheet'}])
+        sheet = result['snapshots']['sheet']['sheet']
+        ready = sheet.index('Ready to start')
+        self.assertLess(sheet.index('4. Where it stops, and the assistant'), ready)
+        self.assertLess(ready, sheet.rindex('Start the training'))
+
+    def test_the_sheet_sends_what_the_wizard_sent(self):
+        result = self.run_page(self.begun(), [
+            {'click': 'New training'}, *self.FILLED,
+            {'click': 'Technical upskilling'},
+            {'click': 'Learner guide'}, {'click': 'Reference brief'},
+            {'click': 'Practice scenarios'}, {'click': '301'},
+            {'click': 'About the reference brief'}, {'click': 'A comparison'},
+            {'click': 'Google Slides'}, {'click': 'Deck brand'},
+            {'fill': 'The brand’s variant', 'value': 'dark'},
+            {'click': 'Extra copies and Yoodli'}, {'click': 'Google Docs'},
+            {'fill': 'How long it should take', 'value': '30 minutes'},
+            {'snapshot': 'filled'},
+            {'click': 'Start the training'}])
+        filled = result['snapshots']['filled']
+        for shown in ('at least 14 decisions for research, the selected teaching materials and '
+                      'each deck', 'A deck adds three stops per level: its outline, its look '
+                      'and the deck.', '30 minutes'):
+            self.assertIn(shown, filled['sheet'])
+        self.assertEqual(self.posts(result), [('/api/trainings', {
+            'title': 'Rolling restarts', 'topic': 'How a rolling restart works.',
+            'audience': 'Platform engineers new to it.', 'purpose': 'Technical upskilling',
+            'levels': ['101', '301'], 'brief_kind': 'competitive', 'time_limit': '30 minutes',
+            'research_from': {'documents': False, 'sites': [], 'web': True},
+            'research_questions': [''], 'deck_target': 'google',
+            'brand': {'brand': 'example-co', 'variant': 'dark'}, 'delivery': 'live',
+            'walkthrough': False, 'copies': ['google'], 'yoodli': False,
+            'materials': ['document', 'brief', 'scenario'], 'agent': 'claude', 'model': None,
+            'effort': None, 'review_level': 'step_by_step'})])
+
+    def test_start_checks_every_step_and_focuses_the_first_gap(self):
+        result = self.run_page(self.begun(), [
+            {'click': 'New training'}, {'click': 'Start the training'}, {'snapshot': 'empty'},
+            *self.FILLED, {'click': 'Start the training'}, {'snapshot': 'no materials'}])
+        empty = result['snapshots']['empty']
+        self.assertEqual((empty['focus'], empty['posts']), ('new-title', 0))
+        self.assertIn('Something above is missing.', empty['sheet'])
+        self.assertIn('Choose at least one material to make, or a slide deck.',
+                      result['snapshots']['no materials']['sheet'])
+        self.assertEqual(self.posts(result), [])
+
+    def test_cancel_keeps_the_draft_for_the_session(self):
+        result = self.run_page(self.begun(), [
+            {'click': 'New training'}, {'fill': 'A short title', 'value': 'Rolling restarts'},
+            {'click': 'Learner guide'}, {'click': 'Cancel'}, {'snapshot': 'closed'},
+            {'click': 'New training'}, {'snapshot': 'again'}])
+        shots = result['snapshots']
+        self.assertEqual(shots['closed']['sheet'], '')
+        self.assertEqual(shots['closed']['heading'], 'Home')
+        self.assertEqual(shots['again']['fields']['A short title'], 'Rolling restarts')
+        self.assertIn('Learner guide', shots['again']['chosen'])
+        self.assertEqual(self.posts(result), [])
+
+    def test_new_training_opens_over_the_screen_it_was_asked_from(self):
+        answers = self.begun()
+        result = self.run_page(answers, [{'click': 'Trainings'}, {'click': 'New training'},
+                                         {'snapshot': 'trainings'}])
+        self.assertIn('1. Learning goal', result['snapshots']['trainings']['sheet'])
+        self.assertEqual(result['snapshots']['trainings']['heading'], 'Trainings')
+
+    def test_research_from_is_ticks(self):
+        shared = {**SET_UP, 'shared': {**SET_UP.get('shared', {}),
+                                       'research': {'sites': ['docs.example.com',
+                                                              'blog.example.com']}}}
+        answers = self.begun()
+        answers['GET /api/setup'] = [ok(shared)]
+        result = self.run_page(answers, [
+            {'click': 'New training'}, *self.FILLED, {'click': 'Learner guide'},
+            {'snapshot': 'research'}, {'tick': 'Your sites (2)'}, {'snapshot': 'sites'},
+            {'tick': 'The public web'}, {'click': 'Start the training'}])
+        research = result['snapshots']['research']
+        self.assertEqual(research['ticked'], ['The public web'])
+        self.assertIn('Your sites (2)', research['buttons'])
+        self.assertIn('Research from', research['sheet'])
+        sites = result['snapshots']['sites']
+        self.assertIn('docs.example.com', sites['ticked'])
+        (_, body), = self.posts(result)
+        self.assertEqual(body['research_from'], {'documents': False, 'web': False,
+                                                 'sites': ['docs.example.com',
+                                                           'blog.example.com']})
+
+    def waiting_for_a_picture(self) -> dict:
+        self.started()
+        wanted = {'asset': 'hero', 'kind': 'picture', 'ref': 'cluster-photo',
+                  'concept': 'A cluster at rest', 'slide': 'the opening slide', 'alt': None,
+                  'state': 'wanted', 'supply': True}
+        deck = {'level': None, 'sections': [], 'assets': [wanted], 'before': None}
+        waits = 'Waiting for a picture for the slide deck.'
+        recorded = a_run('waiting', waits, steps=steps('done', 'waiting'),
+                         deck={**deck, 'assets': [{**wanted, 'state': 'recorded',
+                                                   'supply': False}]})
+        return self.answers(**{
+            'GET /api/trainings': [self.listed('waiting', waits)],
+            'GET /api/training': [self.detail('waiting', waits)],
+            'GET /api/run': [a_run('waiting', waits, steps=steps('done', 'waiting'), deck=deck)],
+            'POST /api/asset': [recorded]})
+
+    def test_a_picture_is_added_in_its_own_sheet(self):
+        result = self.run_page(self.waiting_for_a_picture(), [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'run'},
+            {'click': 'Add the picture'}, {'snapshot': 'sheet'},
+            {'click': 'Save the picture'}, {'snapshot': 'refused'},
+            {'attach': 'Supply the picture', 'files': [{'name': 'cluster.png',
+                                                        'bytes': 'PNG-bytes'}]},
+            {'fill': 'What it shows', 'value': 'Three nodes, one restarting.'},
+            {'fill': 'Where it came from', 'value': 'Our own diagram.'},
+            {'click': 'Save the picture'}, {'snapshot': 'saved'}])
+        shots = result['snapshots']
+        run = shots['run']
+        self.assertEqual(run['parts'][0], 'Needs you')
+        self.assertIn('cluster-photo', run['text'].split('Needs you', 1)[1][:200])
+        sheet = shots['sheet']['sheet']
+        steps = ['Add a picture', '1. The picture', '2. What it shows',
+                 '3. Where it came from, and any limit on its use']
+        self.assertEqual(sorted(steps, key=sheet.index), steps)
+        self.assertEqual(shots['sheet']['filled'], ['Save the picture'])
+        self.assertTrue(sheet.rstrip().endswith('Save the picture\nCancel'), sheet[-120:])
+        self.assertEqual(shots['refused']['posts'], 0)
+        self.assertIn('Choose the picture first.', shots['refused']['sheet'])
+        (address, body), = self.posts(result)
+        self.assertEqual(address, '/api/asset')
+        self.assertEqual({key: body[key] for key in ('path', 'level', 'asset', 'alt', 'source',
+                                                      'restrictions')},
+                         {'path': str(self.root), 'level': None, 'asset': 'hero',
+                          'alt': 'Three nodes, one restarting.', 'source': 'Our own diagram.',
+                          'restrictions': None})
+        self.assertTrue(body['content'])
+        self.assertEqual(shots['saved']['sheet'], '')
+        self.assertIn('The picture is recorded.', shots['saved']['toasts'])
+
+
 if __name__ == '__main__':
     unittest.main()

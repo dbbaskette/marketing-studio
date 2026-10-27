@@ -173,7 +173,8 @@ const LEVELS = ['101', '201', '301', '401'];
 const DECKS = [['pptx', 'PowerPoint'], ['google', 'Google Slides'], [null, 'No deck']];
 const DELIVERIES = [['live', 'Presented in a session'], ['reading', 'Read on its own']];
 const COPIES = [['google', 'Google Docs'], ['word', 'Word']];
-const STEPS = ['Learning goal', 'Materials', 'Review and start'];
+// The new-training sheet's numbered steps, in the order a person fills them in.
+const STEPS = ['Learning goal', 'Materials', 'Research', 'Where it stops, and the assistant'];
 const MATERIALS = [['document', 'Learner guide'], ['brief', 'Reference brief'],
   ['scenario', 'Practice scenarios']];
 // Where the research looks. What each answer means is said under the choice.
@@ -437,6 +438,8 @@ const view = {
   // a list, by list. Ticks stay through filter changes. The trainings a sheet deletes
   // together, and what the runner said deleting each would do.
   filters: {}, filtersOpen: false, ticked: {}, doomedMany: null, leavingMany: null,
+  // The picture a deck waits for that the picture sheet is adding.
+  picture: null,
   // The refresh in hand, and whether another was asked for while it was. What the list said
   // of each run whose asks were read, and of the open training when it was last read: each
   // is read again only once that has changed.
@@ -1372,12 +1375,20 @@ function closeSheet() {
   view.doomedMany = null;
   view.leavingMany = null;
   view.redesigning = null;
+  view.picture = null;
   drawSheet();
+  repaintUnder();
+  if (!focusKey(opener)) byId('title').focus({ preventScroll: true });
+}
+
+// The screen under a sheet, drawn again as a sheet opens or is put away: while one is open
+// it holds the one filled button, so the screen under it gives its own up.
+function repaintUnder() {
   if (view.gate) paintGate(false);
   else if (view.screen === 'run' && view.run) paintRun(false);
   else if (outlined()) paintOutline(false);
   else if (view.screen === 'training' && view.training) paintTraining(false);
-  if (!focusKey(opener)) byId('title').focus({ preventScroll: true });
+  else if (['home', 'trainings'].includes(view.screen) && view.listing) draw(false);
 }
 
 function problemLine() {
@@ -1505,6 +1516,7 @@ function drawSheet() {
   const holder = byId('sheet');
   const shown = view.after || (view.sheet && (view.gate || view.deciding || outlined()
     || TEAM_SHEETS.includes(view.sheet)
+    || (view.sheet === 'new' && view.draft) || (view.sheet === 'picture' && view.picture)
     || ['delete', 'bulk-delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
       'update-research', 'stop-run'].includes(view.sheet)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
@@ -1522,6 +1534,8 @@ function drawSheet() {
   if (view.after) body = afterSheet();
   else if (view.sheet === 'delete') body = deleteSheet();
   else if (view.sheet === 'bulk-delete') body = bulkDeleteSheet();
+  else if (view.sheet === 'new') body = newSheet();
+  else if (view.sheet === 'picture') body = pictureSheet();
   else if (view.sheet === 'companions') body = updateSheet();
   else if (view.sheet === 'upgrade') body = upgradeSheet();
   else if (view.sheet === 'redesign') body = redesignSheet();
@@ -1534,6 +1548,7 @@ function drawSheet() {
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
   else body = confirmSheet(view.sheet);
   holder.replaceChildren(...body);
+  if (view.sheet === 'new') paintAgents();
 }
 
 async function decide(decision, note, problem, pressed, more) {
@@ -1755,7 +1770,8 @@ function invitation() {
     return add(node,
       make('h2', 'invite-title', 'Start your first training'),
       make('p', '', START_SAYS),
-      add(make('div', 'bar'), newButton('filled')),
+      // While the sheet is open it holds the one filled button.
+      add(make('div', 'bar'), newButton(view.sheet ? '' : 'filled')),
       make('p', 'quiet', 'It takes three short steps, and this page tells you each time it '
         + 'needs you.'));
   }
@@ -1812,7 +1828,7 @@ function drawHome(fresh) {
   const setup = [['updates', [upkeepOf()], updatesCard],
     ['studios', studiosMark(), studiosHomeCard]];
   if (!all.length) {
-    parts.push(['invite', [Boolean(view.runner)], invitation], ...setup);
+    parts.push(['invite', [Boolean(view.runner), Boolean(view.sheet)], invitation], ...setup);
   } else {
     parts.push(
       rows('Needs you', pick('needs-you'), needsRow, 'card-needs'),
@@ -1927,7 +1943,7 @@ function trainingFilters() {
 function drawTrainings(fresh) {
   const parts = [];
   if (!view.listing.length) {
-    parts.push(['invite', [Boolean(view.runner)], invitation]);
+    parts.push(['invite', [Boolean(view.runner), Boolean(view.sheet)], invitation]);
   } else {
     const said = count(view.listing.length, 'training', 'trainings')
       + ' on this computer, the one that changed last first.';
@@ -3397,7 +3413,23 @@ function standingOf(training) {
 }
 
 function newButton(kind, key) {
-  return capsule('New training', kind, () => show('new'), key || 'new');
+  return capsule('New training', kind, () => openNew(key || 'new'), key || 'new');
+}
+
+// The new-training sheet, over the screen it was asked from. What was filled in before is
+// still there: a draft is kept for the session until the training starts.
+function openNew(opener) {
+  if (!view.draft) view.draft = newDraft();
+  openSheet('new', opener || 'new')();
+  repaintUnder();
+  readAgents();
+  readModels(view.draft.agent);
+}
+
+// A section of a sheet that makes something: its number and name, then what it asks.
+function createStep(number, title, ...nodes) {
+  return add(make('section', 'create-step'), make('h3', 'sheet-part', number + '. ' + title),
+    ...nodes);
 }
 
 // The list says that a run needs its person. What it asks is read from the run itself: the
@@ -4525,38 +4557,38 @@ function researchFields(draft, changed) {
   const node = make('div', 'fields');
   const fill = () => {
     const ticked = research.listed.filter((site) => research.picked.includes(site)).length;
-    const row = make('div', 'chips');
-    row.setAttribute('role', 'group');
-    row.setAttribute('aria-label', 'Research from');
+    const row = add(make('fieldset', 'research-choices'), make('legend', 'field-label',
+      'Research from'));
     for (const [id, label] of RESEARCH_FROM) {
       const words = id === 'sites' ? label + ' (' + ticked + ')' : label;
-      row.append(chip(words, research[id], (on) => {
-        research[id] = on;
-        say(byId('new-problem'), '');
-        fill();
-        focusKey('research ' + id);
-        changed();
-      }, 'research ' + id));
+      row.append(window.StudioLists.tick({ id: 'research-' + id, label: words,
+        on: research[id], flip: (on) => {
+          research[id] = on;
+          say(byId('new-problem'), '');
+          fill();
+          focusKey('research-' + id);
+          changed();
+        } }));
     }
     const means = bullets(RESEARCH_FROM.filter(([id]) => research[id])
       .map(([id]) => RESEARCH_SAYS[id === 'sites' && research.web ? 'sitesAndWeb' : id]),
     'reasons meanings');
     node.replaceChildren();
-    add(node, add(make('div', 'field'), make('p', 'field-label', 'Research from'), row), means);
+    add(node, row, means);
     if (!research.sites) return;
-    const listed = make('div', 'chips');
-    listed.setAttribute('role', 'group');
-    listed.setAttribute('aria-label', 'Your sites');
-    for (const site of research.listed) {
-      listed.append(chip(shownSite(site), research.picked.includes(site), (on) => {
-        research.picked = research.listed.filter((one) => (one === site ? on
-          : research.picked.includes(one)));
-        say(byId('new-problem'), '');
-        fill();
-        focusKey('site ' + site);
-        changed();
-      }, 'site ' + site));
-    }
+    const listed = add(make('fieldset', 'site-choices'), make('legend', 'field-label',
+      'Your sites'));
+    research.listed.forEach((site, index) => {
+      listed.append(window.StudioLists.tick({ id: 'site-' + index, label: shownSite(site),
+        on: research.picked.includes(site), flip: (on) => {
+          research.picked = research.listed.filter((one) => (one === site ? on
+            : research.picked.includes(one)));
+          say(byId('new-problem'), '');
+          fill();
+          focusKey('site-' + index);
+          changed();
+        } }));
+    });
     // The runner checks a site the way every studio does, and keeps it nowhere: it is
     // sent with this training's choice when the training starts.
     const added = async () => {
@@ -4588,8 +4620,7 @@ function researchFields(draft, changed) {
       event.preventDefault();
       added();
     });
-    add(node, research.listed.length ? add(make('div', 'field'),
-      make('p', 'field-label', 'Your sites'), listed)
+    add(node, research.listed.length ? listed
       : make('p', 'quiet', 'No sites are shared yet. Add one for this training, or add your '
         + 'sites in Shared settings.'),
     box, add(make('div', 'bar'), capsule('Add the site', 'quiet', added, 'add-site')));
@@ -4643,7 +4674,7 @@ function chips(label, options, chosen, flip, key, hint) {
 }
 
 function topicStep(draft) {
-  return [add(card('About it'),
+  return [
     field('new-title', 'A short title', draft, 'title',
       { hint: 'What it is called in every list, for example “Rolling restarts”.' }),
     field('new-topic', 'What should it teach?', draft, 'topic', { long: true,
@@ -4652,7 +4683,7 @@ function topicStep(draft) {
       hint: 'Their role, and what they already know.' }),
     choice('What it is for', PURPOSES, draft.purpose, (index) => {
       draft.purpose = index;
-    }, 'purpose'))];
+    }, 'purpose')];
 }
 
 // One thing chosen from several, in the browser's own list. Where there is only one, there
@@ -4698,6 +4729,11 @@ function trainingOptions(label, key, ...children) {
   return add(node, make('summary', '', label), ...children);
 }
 
+// What the sheet's summary says is said again whenever a choice it reads changes.
+function retell() {
+  if (view.draft && view.draft.retell) view.draft.retell();
+}
+
 function materialChoices(draft) {
   const node = make('div', 'chips material-choices');
   node.setAttribute('role', 'group');
@@ -4709,10 +4745,11 @@ function materialChoices(draft) {
       // Yoodli's knowledge and scenario dependencies are explicit selections.
       if (!selected && ['brief', 'scenario'].includes(id)) {
         draft.yoodli = false;
-        const yoodli = Array.from(main().querySelectorAll('.chip')).find((item) => item.dataset.key === 'practice yoodli');
+        const yoodli = Array.from(byId('sheet').querySelectorAll('.chip')).find((item) => item.dataset.key === 'practice yoodli');
         if (yoodli) yoodli.setAttribute('aria-pressed', 'false');
       }
       say(byId('new-problem'), '');
+      retell();
     }, 'material ' + id));
   }
   return node;
@@ -4722,6 +4759,7 @@ function shapeStep(draft) {
   const toggle = (held) => (value, on) => {
     draft[held] = draft[held].filter((other) => other !== value);
     if (on) draft[held].push(value);
+    retell();
   };
   settleDeck(draft);
   const able = brandsFound().length > 0;
@@ -4749,12 +4787,13 @@ function shapeStep(draft) {
     brand.hidden = DECKS[index][0] === null;
     used.hidden = !able || DECKS[index][0] === null;
     walk.hidden = used.hidden;
+    retell();
   }, 'deck');
   for (const option of able ? [] : deck.querySelectorAll('.seg-option[aria-pressed="false"]')) {
     option.disabled = true;
     option.classList.add('seg-absent');
   }
-  return [add(card('What would you like to make?'),
+  return [
     make('p', 'quiet', 'Choose only what you need. Research and a blueprint connect every selected material.'),
     materialChoices(draft),
     chips('Levels', LEVELS.map((level) => [level, level]),
@@ -4763,7 +4802,7 @@ function shapeStep(draft) {
         + 'Each selected level gets its own materials, and its own cost. Choose none for one training without levels.'),
     deck, used, walk, brand,
     field('new-time', 'How long it should take (optional)', draft, 'time',
-      { hint: 'The learner’s time, including examples and practice: “30 minutes” or “a half-day workshop”.' }),
+      { typed: retell, hint: 'The learner’s time, including examples and practice: “30 minutes” or “a half-day workshop”.' }),
     trainingOptions('About the reference brief', 'training-depth',
       choice('What the brief is about', ['One product or technology', 'A comparison'],
         draft.brief, (index) => { draft.brief = index; }, 'brief')),
@@ -4774,7 +4813,7 @@ function shapeStep(draft) {
       chips('Practice', [['yoodli', 'Make scenarios for Yoodli']], () => draft.yoodli,
         (value, on) => {
           if (on && !['brief', 'scenario'].every((id) => draft.materials.includes(id))) {
-            const control = Array.from(main().querySelectorAll('.chip')).find((node) => node.dataset.key === 'practice yoodli');
+            const control = Array.from(byId('sheet').querySelectorAll('.chip')).find((node) => node.dataset.key === 'practice yoodli');
             if (control) control.setAttribute('aria-pressed', 'false');
             say(byId('new-problem'), 'Select Reference brief and Practice scenarios first. Yoodli uses both.');
             draft.yoodli = false;
@@ -4782,14 +4821,15 @@ function shapeStep(draft) {
           }
           draft.yoodli = on;
           say(byId('new-problem'), '');
-        }, 'practice', 'Prepares Yoodli scenarios to copy into Yoodli and a reference brief to upload. Nothing is posted to Yoodli.')))];
+          retell();
+        }, 'practice', 'Prepares Yoodli scenarios to copy into Yoodli and a reference brief to upload. Nothing is posted to Yoodli.'))];
 }
 
 // Where this one training stops for you. The shared level is its default; a level picked
 // here is saved with the training when it starts, and a settings change never moves it. The
 // chip also makes it the level new work starts at in every studio, written when the training
 // starts. Nothing here leaves the form.
-function reviewLevelCard(draft, line) {
+function reviewLevelParts(draft, line) {
   const at = Math.max(0, REVIEW_LEVELS.findIndex(([id]) => id === draft.review_level));
   // The step is drawn again from the pick, so everything that reads the level follows it.
   const control = segmented('Review level', REVIEW_LEVELS.map(([, label]) => label), at,
@@ -4800,14 +4840,15 @@ function reviewLevelCard(draft, line) {
       focusKey('review-level ' + index);
     }, 'review-level');
   const shared = REVIEW_LEVELS.find(([id]) => id === draft.review_seen);
-  return add(card('Where this training stops'), control, line,
+  return [add(make('div', 'field'), make('p', 'field-label', 'Where this training stops'),
+    control), line,
     make('p', 'quiet', reviewSays(draft.review_level, plannedOf(draft),
       Boolean(DECKS[draft.deck][0]))),
     make('p', 'quiet', (shared ? 'Shared default: ' + shared[1] + '. ' : '')
       + 'This training keeps the level it starts with.'),
     add(make('div', 'field'), chip('Use this for new work in every studio',
       draft.review_default, (on) => { draft.review_default = on; }, 'review-default'),
-    make('p', 'quiet field-hint', 'Saved when the training starts.')));
+    make('p', 'quiet field-hint', 'Saved when the training starts.'))];
 }
 
 // Settings: where new work stops in every studio, saved at once. A refusal, such as a level
@@ -4843,6 +4884,8 @@ function startStep(draft) {
       + draftModelWords(draft) + '.';
   };
   told();
+  const made = make('p', '');
+  const sized = make('p', 'quiet');
   const first = make('p', '');
   const then = make('p', 'quiet stops-line');
   const comes = make('p', 'quiet');
@@ -4850,11 +4893,17 @@ function startStep(draft) {
   draft.review_seen = view.setup && view.setup.review_level;
   if (!draft.review_picked) draft.review_level = draft.review_seen || 'step_by_step';
   const policy = draft.review_level;
-  const selected = MATERIALS.filter(([id]) => draft.materials.includes(id)).map(([, label]) => label);
-  if (DECKS[draft.deck][0]) selected.push(DECKS[draft.deck][1] + ' deck');
-  if (draft.yoodli) selected.push('Yoodli scenarios');
   const looks = make('p', 'quiet research-line');
+  // Everything the summary says, said again whenever a choice it reads changes.
   const tell = () => {
+    const selected = MATERIALS.filter(([id]) => draft.materials.includes(id))
+      .map(([, label]) => label);
+    if (DECKS[draft.deck][0]) selected.push(DECKS[draft.deck][1] + ' deck');
+    if (draft.yoodli) selected.push('Yoodli scenarios');
+    made.textContent = selected.length ? series(selected) : 'Nothing chosen to make yet.';
+    sized.textContent = (draft.levels.length ? 'Levels: ' + draft.levels.join(', ')
+      : 'One training without levels')
+      + (draft.time.trim() ? ' · ' + draft.time.trim() : ' · Sized from the blueprint');
     const chosen = researchChoice(draft);
     const supplied = chosen.documents;
     first.textContent = supplied ? 'First, add your documents on the next screen. Research waits until you say they are all added.'
@@ -4882,62 +4931,64 @@ function startStep(draft) {
         ? 'A deck adds three stops per level: its outline, its look and the deck.'
         : 'A deck has its own review.') : '');
   };
+  draft.retell = tell;
   tell();
-  return [add(card('Ready to start'), make('p', 'lede', series(selected)),
-    make('p', 'quiet', (draft.levels.length ? 'Levels: ' + draft.levels.join(', ') : 'One training without levels')
-      + (draft.time ? ' · ' + draft.time : ' · Sized from the blueprint')),
-    first, looks, comes, make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
-  reviewLevelCard(draft, then),
-  add(card('Sources'), researchFields(draft, tell),
-    questionsField(draft)),
-  trainingOptions('Assistant and limits', 'training-assistant',
-    ...agentFields(draft, 'new', 'For this training', told), drafted,
-    make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
-    make('p', 'quiet', 'Limits are changed in Settings.'))];
+  return {
+    research: [researchFields(draft, tell), questionsField(draft)],
+    stops: [...reviewLevelParts(draft, then),
+      trainingOptions('Assistant and limits', 'training-assistant',
+        ...agentFields(draft, 'new', 'For this training', told), drafted,
+        make('p', 'quiet', limitsSays(limits) || 'No limits are set for this computer.'),
+        make('p', 'quiet', 'Limits are changed in Settings.'))],
+    ready: add(make('div', 'ready-start'), make('p', 'field-label', 'Ready to start'), made,
+      sized, first, looks, comes,
+      make('p', 'quiet', 'You can close this page while it works. Saved materials stay available.')),
+  };
 }
 
-function paintNew(fresh) {
+// The new-training sheet: four numbered steps in the order they are filled in, what it
+// will do, then Start the training and Cancel together. Enter in a box starts it, as the
+// filled button does, after every step is checked.
+function newSheet() {
   const draft = view.draft;
-  if (view.drawn === 'new') {
-    const shown = Array.from(main().querySelectorAll('details'));
-    const keys = shown.map((node) => node.dataset.key);
-    draft.opened = [...list(draft.opened).filter((key) => !keys.includes(key)),
-      ...shown.filter((node) => node.open).map((node) => node.dataset.key)];
-  }
-  view.drawn = 'new';
-  const builders = [topicStep, shapeStep, startStep];
   const problem = alertLine('new-problem');
   if (draft.start_problem) say(problem, draft.start_problem);
-  const last = draft.step === STEPS.length - 1;
-  const go = capsule(last ? 'Start the training' : 'Continue', 'filled',
-    () => (last ? startTraining(go) : nextStep()), 'continue');
-  // A native submit inside the form preserves Enter while the visible action stays
-  // reachable in the existing toolbar on a phone.
-  const submit = submitButton(last ? 'Start the training' : 'Continue', 'form-submit');
-  submit.hidden = true;
-  const earlier = draft.step ? capsule('Back a step', 'quiet', () => {
-    draft.step -= 1;
-    paintNew(true);
-  }, 'earlier') : null;
-  // Each step is a form, so Enter in a box goes on as the filled button does.
-  const body = add(pageForm(() => (last ? startTraining(go) : nextStep())),
-    ...builders[draft.step](draft),
-    add(make('div', 'form-foot'), problem, add(make('div', 'bar'), earlier, submit)));
-  place({ title: STEPS[draft.step], name: 'New training', back: true,
-    actions: [go],
-    above: [make('span', '', 'New training · Step ' + (draft.step + 1) + ' of ' + STEPS.length)] },
-  [body], fresh);
-  if (last) paintAgents();
+  const go = submitButton('Start the training', 'continue');
+  const last = startStep(draft);
+  const form = make('form', 'create-flow');
+  form.noValidate = true;
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    startTraining(go);
+  });
+  add(form,
+    createStep(1, STEPS[0], ...topicStep(draft)),
+    createStep(2, STEPS[1], ...shapeStep(draft)),
+    createStep(3, STEPS[2], ...last.research),
+    createStep(4, STEPS[3], ...last.stops),
+    last.ready,
+    problem,
+    add(make('div', 'bar create-foot'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel')));
+  return [add(make('div', 'sheet-heading'), sheetTitle('New training')), form];
 }
 
-function drawNew(fresh) {
-  if (!fresh && view.drawn === 'new') return;
-  if (!view.draft) view.draft = newDraft();
-  paintNew(true);
-  if (view.draft.step === STEPS.length - 1) {
-    readAgents();
-    readModels(view.draft.agent);
-  }
+// The sheet drawn again in place, from the draft: what was open stays open.
+function paintNew() {
+  const holder = byId('sheet');
+  const draft = view.draft;
+  if (view.sheet !== 'new' || !draft) return;
+  const shown = Array.from(holder.querySelectorAll('details'));
+  const keys = shown.map((node) => node.dataset.key);
+  draft.opened = [...list(draft.opened).filter((key) => !keys.includes(key)),
+    ...shown.filter((node) => node.open).map((node) => node.dataset.key)];
+  holder.replaceChildren(...newSheet());
+  paintAgents();
+}
+
+// An address that names the form, from history or a link: Home, with the sheet open on it.
+function drawNew() {
+  show('home', null, true);
+  openNew();
 }
 
 // The research questions, checked as they are typed against what the runner takes.
@@ -4963,32 +5014,25 @@ function questionsField(draft) {
   return node;
 }
 
-function nextStep() {
-  const draft = view.draft;
-  draft.start_problem = '';
-  if (draft.step === 0) {
-    const missing = [['new-title', draft.title, 'Give it a title first.'],
-      ['new-topic', draft.topic, 'Say what it should teach first.'],
-      ['new-audience', draft.audience, 'Say who it is for first.']]
-      .filter(([id, value, text]) => refuse(id, value.trim() ? '' : text)
-        .getAttribute('aria-invalid'));
-    say(byId('new-problem'), missing.length ? 'Something above is missing.' : '');
-    if (missing.length) {
-      byId(missing[0][0]).focus();
-      return;
-    }
+// What is missing before it can start: each box it needs is marked beside it, and the first
+// is focused. Returns true when nothing is missing.
+function startReady(draft) {
+  const missing = [['new-title', draft.title, 'Give it a title first.'],
+    ['new-topic', draft.topic, 'Say what it should teach first.'],
+    ['new-audience', draft.audience, 'Say who it is for first.']]
+    .filter(([id, value, text]) => refuse(id, value.trim() ? '' : text)
+      .getAttribute('aria-invalid'));
+  if (missing.length) {
+    say(byId('new-problem'), 'Something above is missing.');
+    byId(missing[0][0]).focus();
+    return false;
   }
-  if (draft.step === 1 && !draft.materials.length && !DECKS[draft.deck][0]) {
+  if (!draft.materials.length && !DECKS[draft.deck][0]) {
     say(byId('new-problem'), 'Choose at least one material to make, or a slide deck.');
     focusKey('material document');
-    return;
+    return false;
   }
-  draft.step += 1;
-  paintNew(true);
-  if (draft.step === STEPS.length - 1) {
-    readAgents();
-    readModels(draft.agent);
-  }
+  return true;
 }
 
 async function startTraining(pressed) {
@@ -4996,11 +5040,14 @@ async function startTraining(pressed) {
   if (draft.starting) return;
   const turn = view.turn;
   const problem = byId('new-problem');
+  draft.start_problem = '';
+  say(problem, '');
+  if (!startReady(draft)) return;
   // Somewhere research may look, or it does not start; the runner refuses the same.
   const nowhere = researchProblem(draft);
   if (nowhere) {
     say(problem, nowhere);
-    focusKey(draft.research.sites ? 'research sites' : 'research web');
+    focusKey(draft.research.sites ? 'research-sites' : 'research-web');
     return;
   }
   const asked = questionsProblem(draft.researchQuestions);
@@ -5031,7 +5078,7 @@ async function startTraining(pressed) {
   if (draft.review_default) body.review_default = true;
   draft.starting = true;
   pressed.disabled = true;
-  const form = main().querySelector('form');
+  const form = byId('sheet').querySelector('form');
   if (form) form.inert = true;
   say(problem, '');
   let started;
@@ -5047,11 +5094,12 @@ async function startTraining(pressed) {
     const setup = await ask('setup').catch(() => null);
     if (turn !== view.turn || view.draft !== draft) return;
     if (setup) view.setup = setup;
-    paintNew(false);
+    paintNew();
     focusKey('continue');
     return;
   }
   if (view.draft === draft) view.draft = null;
+  view.sheet = '';
   if (turn !== view.turn) { refresh(); return; }
   view.promised = { path: started.path, gates: Number(started.gates) || 0 };
   toast(!body.research_from.documents ? 'Started. It is working on its own now.'
@@ -5367,12 +5415,12 @@ function problemPart(run, lead) {
   // An agent that could not be used: Status says what it needs. Missing answers: a new
   // training in its place.
   const goes = found.action === 'status' ? () => show('status')
-    : found.action === 'new' ? () => show('new')
+    : found.action === 'new' ? () => openNew('problem-action')
     // A deck waiting for a picture leads to the deck's picture form, and to its file.
     : found.action === 'asset' ? () => {
-    const at = list(run.deck && run.deck.assets).findIndex((asset) => asset.supply);
-    const box = at < 0 ? null : byId('asset-' + at + '-file');
-    if (box) box.focus();
+    const assets = list(run.deck && run.deck.assets);
+    const at = assets.findIndex((asset) => asset.supply);
+    if (at >= 0) openPicture(assets[at], at, 'problem-action');
   } : () => steer(found.action, go);
   const go = found.action && !theirs
     ? capsule(label, lead ? 'filled' : '', goes, 'problem-action')
@@ -6298,13 +6346,56 @@ function assetItem(found, index, theirs) {
   const text = add(make('div', 'row-text'), make('p', 'step-name', named),
     make('p', 'quiet', (found.concept ? found.concept + ', on ' : 'On ') + found.slide
       + (found.alt ? '. It shows: ' + found.alt : '')));
-  if (found.supply && !theirs) add(text, assetForm(found, index));
+  if (found.supply && !theirs) {
+    add(text, add(make('div', 'bar'), capsule('Add the picture', '',
+      () => openPicture(found, index, 'asset-' + index), 'asset-' + index)));
+  }
   const item = make('li', 'row step asset');
   item.dataset.state = found.state;
   return add(item, bead(shape), text, make('span', 'step-words', words));
 }
 
-function assetForm(found, index) {
+// Whether the deck waits for a picture from this person, and nothing else says so already.
+function waitsForPicture(run) {
+  return run.mine !== false && list(run.deck && run.deck.assets).some((found) => found.supply)
+    && !(run.problem && run.problem.action === 'asset');
+}
+
+// At the top of the run: each picture the deck waits for, and the way to add it.
+function picturePart(run) {
+  const items = make('ul', 'rows');
+  list(run.deck.assets).forEach((found, index) => {
+    if (!found.supply) return;
+    const go = capsule('Add the picture', '', () => openPicture(found, index,
+      'needs-asset-' + index), 'needs-asset-' + index);
+    go.setAttribute('aria-label', 'Add the picture: ' + assetName(found));
+    items.append(add(make('li', 'row row-needs'), bead('review'), add(make('div', 'row-text'),
+      make('p', 'row-title', assetName(found)),
+      make('p', 'row-says', 'The slide deck waits for this picture, on ' + found.slide + '.')),
+    go));
+  });
+  return add(card('Needs you', 'card-needs'), items);
+}
+
+// The name a deck's picture or icon goes by.
+function assetName(found) {
+  return (found.kind === 'icon' ? 'Icon' : capital(found.kind)) + ': '
+    + (found.ref || found.asset);
+}
+
+// Open the sheet for one picture a deck waits for.
+function openPicture(found, index, opener) {
+  view.picture = { found, index };
+  openSheet('picture', opener)();
+  repaintUnder();
+  const box = byId('asset-' + index + '-file');
+  if (box) box.focus();
+}
+
+// The sheet that adds a picture: the file, what it shows, where it came from and any limit
+// on its use, then Save the picture and Cancel together.
+function pictureSheet() {
+  const { found, index } = view.picture;
   view.assetsHeld = view.assetsHeld || {};
   const held = view.assetsHeld[found.asset] || (view.assetsHeld[found.asset] = {});
   const id = 'asset-' + index;
@@ -6313,17 +6404,25 @@ function assetForm(found, index) {
     held.file = (input.files || [])[0] || null;
   }, accept: '.png,.jpg,.jpeg,.gif', hint: 'A PNG, JPEG or GIF file.' });
   picture.querySelector('input').multiple = false;
-  const send = capsule('Save the picture', '', () => supplyAsset(found, index, send),
-    id + '-send');
-  return add(make('div', 'asset-supply'), picture,
-    field(id + '-alt', 'What it shows', held, 'alt'),
-    field(id + '-source', 'Where it came from', held, 'source'),
-    field(id + '-restrictions', 'Any limit on its use, if there is one', held,
-      'restrictions'),
-    add(make('div', 'bar'), send));
+  const send = submitButton('Save the picture', id + '-send');
+  const form = make('form', 'create-flow');
+  form.noValidate = true;
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    supplyAsset(found, index, send);
+  });
+  add(form,
+    createStep(1, 'The picture', make('p', 'quiet', assetName(found) + ', on '
+      + found.slide + (found.concept ? ': ' + found.concept : '') + '.'), picture),
+    createStep(2, 'What it shows', field(id + '-alt', 'What it shows', held, 'alt')),
+    createStep(3, 'Where it came from, and any limit on its use',
+      field(id + '-source', 'Where it came from', held, 'source'),
+      field(id + '-restrictions', 'Any limit on its use, if there is one', held,
+        'restrictions')),
+    add(make('div', 'bar create-foot'), send, capsule('Cancel', 'quiet', closeSheet, 'cancel')));
+  return [add(make('div', 'sheet-heading'), sheetTitle('Add a picture')), form];
 }
 
-// Give the slides tool a picture for the deck. A deck that waited for it carries on.
 async function supplyAsset(found, index, pressed) {
   if (view.busy) return;
   const id = 'asset-' + index;
@@ -6347,6 +6446,9 @@ async function supplyAsset(found, index, pressed) {
     if (turn !== view.turn) return;
     view.run = run;
     delete view.assetsHeld[found.asset];
+    view.picture = null;
+    view.sheet = '';
+    drawSheet();
     toast('The picture is recorded.');
   } catch (failure) {
     view.busy = false;
@@ -6381,7 +6483,7 @@ function deckCard(run) {
     const items = make('ul', 'rows');
     assets.forEach((found, index) => items.append(assetItem(found, index,
       run.mine === false)));
-    add(node, make('h3', 'row-title', 'Pictures and icons'), make('p', '', 'What its '
+    add(node, make('p', 'row-title', 'Pictures and icons'), make('p', '', 'What its '
       + 'approved design uses. The slides tool keeps each one, and a picture is yours to '
       + 'give.'), items);
   }
@@ -6771,6 +6873,7 @@ function paintRun(fresh) {
       () => noticePart(run)] : null,
     run.problem ? ['problem', [run.problem, lead, theirs],
       () => problemPart(run, lead === 'problem')] : null,
+    waitsForPicture(run) ? ['picture', [run.deck.assets], () => picturePart(run)] : null,
     run.question && theirs ? ['asked', [run.question, driver], () => askedPart(run)] : null,
     run.review ? ['combined-review', [run.review, theirs], () => combinedReview(run)] : null,
     run.question && !theirs ? ['question', [run.question, title],
