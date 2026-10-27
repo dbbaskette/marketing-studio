@@ -14,7 +14,7 @@ classify.md        a document's kind, or an existing deck's inventory
 research/plan.md   research/report.md
 outline.json       the outline as harness-slides reads it
 outline.md         each slide's title, key message and notes
-look.md            the brand the deck is made in, shown on its cover
+look.md            the brand the deck is made in, and its looks
 brand/             brand-contract.json, DESIGN.md, VOICE.md
 reviews/build-<n>.md    what the review of each round of the build found
 deliver.json       the Google Slides link or the .pptx name, and the revision
@@ -28,10 +28,11 @@ work/              never shared: harness-slides' workspace, the build plan and w
 
 The runner reads it to know where a deck stands, so write it in its shape:
 
-- `schema` 1, `id`, `title`, `route`, and `form`: `route`, `title`, `audience`, `goal`, `minutes`, `brand`, `variant`, `output`, `research`; for an existing deck also `level`, and `selected` for that level.
+- `schema` 1, or 2 when `review_policy` is not Step by step (3 is the runner's, for research it started under a research contract), `id`, `title`, `route`, and `form`: `route`, `title`, `audience`, `goal`, `minutes`, `brand`, `variant`, `output`, `research`; for an existing deck also `level`, and `selected` for that level.
 - `classified`: `"spec"` or `"material"` for a document, once decided; else `null`. `look`: `null`.
 - `steps`: each step finished, as `{"done": true, "at": "<time>"}`, by the runner's names, in order: `intake-source`, `classify` (document), `inventory` (existing), `research-plan`, `research`, `research-report`, `extract` (existing, not `selected`), `outline`, `brand`, `look-preview`, `patch` (`selected`), `build-start`, `build-sections`, `build-whole`, `build-review`, `build-repair`, `build-render`, `deliver`. Only those the route and level have.
-- `gates`: each stop, `gate:classify`, `gate:research-plan`, `gate:research`, `gate:outline`, `gate:look` (the brand) or `gate:build`, as `{"state": "approved"}`, or `"changes"` with the person's `note`, with `at`, and `by` from `person.name`.
+- `gates`: each stop, `gate:classify`, `gate:research-plan`, `gate:research`, `gate:outline`, `gate:look` (the look) or `gate:build`, as `{"state": "approved"}`, or `"changes"` with the person's `note`, with `at`, and `by` from `person.name`.
+- `review_policy`: `{"schema": 1, "level": "step_by_step"}`, or `balanced` or `automatic`: the level the person chose, kept when the runner brings the deck in. Without it the deck is read as Step by step.
 - `revisions` `[]`, and `driver`, `halted` as `null`.
 
 The runner carries on at the first step not done or stop not approved. Work kept in `sources/` and `work/` is not shared, so it redoes a step whose work it lacks.
