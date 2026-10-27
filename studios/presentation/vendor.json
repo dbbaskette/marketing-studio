@@ -297,7 +297,7 @@
       "path": "runner/upkeep.py",
       "from": "runner/upkeep.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "companions looked at here (harness-slides, harness-research) against installer/companions.json; a missing pins file is no pins yet; the brand skill's row and install follow runner/upkeep.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66), reading each assistant's companions itself"
+      "note": "Original port provenance retained. The parts both deck studios share come from `core/studio_core/shared_runner/upkeep.py`; the rest is this studio's. The port: companions looked at here (harness-slides, harness-research) against installer/companions.json; a missing pins file is no pins yet; the brand skill's row and install follow runner/upkeep.py at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66), reading each assistant's companions itself"
     },
     {
       "path": "runner/studio.py",
