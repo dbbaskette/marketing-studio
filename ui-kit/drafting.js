@@ -222,7 +222,7 @@ const Drafting = (() => {
       else input.addEventListener('select', () => k.selected(held, part, input));
       card.append(input);
       const extra = hook('extra', held, part); if (extra) card.append(extra);
-      const comments = hook('comments', held, part); if (comments) card.append(comments);
+      const comments = k.comments(held, part); if (comments) card.append(comments);
       if (working) { const note = make('p', 'desk-working-note', 'Working on this section'); note.setAttribute('role', 'status'); card.append(note); card.deskWorkingNotes = [note]; if (view.working.note) { const said = make('p', 'quiet', 'Your note: ' + view.working.note); card.append(said); card.deskWorkingNotes.push(said); } }
       if (noted) {
         const typed = (held.notes || {})[part] || '', row = make('div', 'desk-note');
@@ -255,7 +255,7 @@ const Drafting = (() => {
           if (ended) {
             held.watching = false; const last = (view.jobs || []).at(-1);
             if (last?.applied) a.ui.toast(hook('landed', held, last) || (/^finish-/.test(last.kind) ? 'Suggestions are ready in Finishing.' : 'Done. The earlier text is in History.'));
-            if (held.finish?.tool === 'proofread' && !/^finish-/.test(last?.kind || '')) await hook('proofread', held);
+            if (held.finish?.tool === 'proofread' && !/^finish-/.test(last?.kind || '')) await k.proofread(held);
             return;
           }
         } catch (error) { if (held.status) held.status.textContent = error.message; }
@@ -299,6 +299,236 @@ const Drafting = (() => {
         } catch (error) { a.ui.notice(error.message, true); k.followStart(held); }
       }, POLL);
     };
+
+    // Finishing: an optional side panel of tools that propose. Each proposal is previewed
+    // before and after, then applied, edited or skipped; nothing changes until Apply, and each
+    // Apply keeps the earlier text in History. On a phone the panel is a full-screen sheet.
+    //
+    // A tool, as a.tools() lists them in panel order: {key, name, says}; for one that runs a
+    // job, run (its button) and doing (its working line), sent as `finish` with {tool: key}
+    // and data(f); optional start (the panel state it begins with), options(held, f) (controls
+    // above run), ready(f) (whether run is on), open(held) (takes over its own opening, in
+    // place of the panel), opened(held, first) (called once it shows: first when the panel
+    // opens at it), view(held) (a whole view in place of proposals), and the shape of its
+    // proposals: verdicts (a tag per claim, supported ones folded, Keep it, and source(held)
+    // for Add a source), groups ([[part, name]] of alternatives, Use this), comments ({aspect:
+    // name}, feedback that can become a note), applyAll, counted ([one, many]), empty (the
+    // line for an empty set), said(set, said) (more of the set's line) and flagged(n).
+    const commenting = () => (a.tools() || []).find(tool => tool.comments) || null;
+    k.finishOpen = (held, key = null) => {
+      const tool = key ? k.tool(key) : null;
+      if (tool && tool.open) return tool.open(held);
+      if (!held.finish) { held.finish = { tool: null, editing: {}, noted: {} }; for (const each of a.tools() || []) Object.assign(held.finish, each.start || {}); }
+      held.finish.tool = key; a.hooks.render(held);
+      if (tool && tool.opened) return tool.opened(held, true);
+    };
+    k.finishClose = held => { held.finish = null; a.hooks.render(held); };
+    k.finishTool = (held, key) => {
+      const tool = k.tool(key);
+      if (tool.open) return tool.open(held);
+      held.finish.tool = key; k.panelShow(held);
+      if (tool.opened) return tool.opened(held, false);
+    };
+    k.panel = held => {
+      const f = held.finish, tool = f.tool ? k.tool(f.tool) : null;
+      const panel = make('aside', 'desk-finish' + (a.ui.narrow() ? ' desk-finish-sheet' : '')); panel.setAttribute('aria-label', 'Finishing');
+      const head = make('div', 'desk-finish-head glass');
+      if (tool) head.append(a.ui.button('All tools', () => { f.tool = null; k.panelShow(held); }));
+      head.append(make('h2', 'desk-finish-title', tool ? tool.name : 'Finishing'), a.ui.button('Close', () => k.finishClose(held)));
+      const body = make('div', 'desk-finish-body'); body.append(...(tool ? k.toolView(held, f.tool) : k.toolList(held)));
+      panel.addEventListener('focusout', () => setTimeout(() => { if (held.panelStale && held.panel === panel) k.panelSync(held, true); }, 0));
+      panel.hidden = !!held.panelUnder;  // Under a sheet opened from it, on a narrower screen.
+      return add(panel, head, body);
+    };
+    // What the panel shows, so a poll redraws it only when that changed.
+    k.panelKey = held => { const view = held.view, f = held.finish || {}; return JSON.stringify([f.tool, view.finishing || {}, view.working && [view.working.id, view.working.kind, view.working.status], (view.jobs || []).filter(job => /^finish-/.test(job.kind)).slice(-4).map(job => [job.id, job.status, job.error]), view.google_suggestions, view.revision, view.source_names?.length]); };
+    k.panelShow = held => { if (!held.finish || !held.panel) return; const panel = k.panel(held); held.panel.replaceWith(panel); held.panel = panel; held.panelKey = k.panelKey(held); held.panelStale = false; };
+    // A redraw the person did not ask for waits while they use a control in the panel, and
+    // happens as soon as focus leaves it.
+    k.panelSync = (held, force = false) => {
+      if (!held.finish || !held.panel || (!force && k.panelKey(held) === held.panelKey)) return true;
+      const focused = typeof document.activeElement === 'object' ? document.activeElement : null;
+      if (focused && ['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'SUMMARY'].includes(String(focused.tagName).toUpperCase()) && typeof held.panel.contains === 'function' && held.panel.contains(focused)) { held.panelStale = true; return false; }
+      k.panelShow(held); return true;
+    };
+    k.toolList = held => {
+      const list = make('div', 'pick-cards desk-finish-tools');
+      for (const tool of a.tools() || []) list.append(a.ui.pickCard(tool.name, k.toolSays(held, tool.key) || tool.says, () => k.finishTool(held, tool.key)));
+      return [make('p', 'quiet', 'Each tool proposes changes. Preview each one, then apply, edit or skip it. Nothing changes until you apply, and the earlier text stays in History.'), list];
+    };
+    k.toolSays = (held, key) => {
+      const job = held.view.working; if (job && job.kind === 'finish-' + key) return 'Working on it…';
+      const set = (held.view.finishing || {})[key]; if (!set) return '';
+      const open = set.items.filter(item => item.state === 'open').length;
+      return open ? open + ' to review.' : 'Nothing left to review.';
+    };
+    k.toolView = (held, key) => {
+      const tool = k.tool(key);
+      if (tool.view) return tool.view(held);
+      const view = held.view, f = held.finish, kind = 'finish-' + key, set = (view.finishing || {})[key], working = view.working;
+      const parts = [make('p', 'quiet', tool.says)];
+      if (tool.options) parts.push(...tool.options(held, f));
+      const run = a.ui.button(set ? tool.run + ' again' : tool.run, control => k.job(held, control, a.routes.finish, { tool: key, ...(tool.data ? tool.data(f) : {}) }), 'filled');
+      run.disabled = !a.canEdit(held) || !!working || (tool.ready ? !tool.ready(f) : false);
+      parts.push(add(make('div', 'bar'), run));
+      if (working && working.kind === kind) { const note = make('p', 'desk-working-note', tool.doing); note.setAttribute('role', 'status'); parts.push(note); }
+      else if (working) parts.push(make('p', 'quiet', 'Another change is under way. This can run when it ends.'));
+      const last = (view.jobs || []).filter(job => job.kind === kind).at(-1);
+      if (last && !last.busy && last.error && (!set || set.job !== last.id)) parts.push(make('p', 'problem', last.error));
+      if (set) parts.push(...k.proposals(held, key, set));
+      return parts;
+    };
+    k.proposals = (held, key, set) => {
+      const tool = k.tool(key), items = set.items, open = items.filter(item => item.state === 'open'), out = [];
+      if (tool.comments) {
+        if (set.summary) out.push(a.ui.card('Overall', make('p', '', set.summary)));
+        if (!items.length) out.push(make('p', '', 'No comments.'));
+        const order = ['whole', 'title', 'opening', ...(held.view.sections || []).map(section => section.id)];
+        for (const item of [...items].sort((x, y) => order.indexOf(x.part) - order.indexOf(y.part))) out.push(k.comment(held, set, item, true));
+        return out;
+      }
+      const checked = tool.verdicts ? open.filter(item => item.verdict !== 'supported') : open;
+      const [one, many] = tool.counted || [' suggestion', ' suggestions'];
+      const said = [items.length + (items.length === 1 ? one : many), checked.length + ' to review'];
+      if (set.level) said.unshift('Found at ' + set.level);
+      if (tool.said) tool.said(set, said);
+      if (set.dropped) said.push(set.dropped + ' left out because ' + (set.dropped === 1 ? 'it did not' : 'they did not') + ' match the text');
+      out.push(make('p', 'quiet', said.join(' · ') + '.'));
+      if (!items.length) { out.push(make('p', '', tool.empty || 'Nothing to change at this level.')); return out; }
+      // Apply all: every open proposal that still fits; flagged ones wait to be checked one by one.
+      const ready = open.filter(item => item.present && !item.flag && 'after' in item);
+      if (tool.applyAll && ready.length > 1) {
+        const flagged = open.filter(item => item.flag).length;
+        const all = a.ui.button('Apply all (' + ready.length + ')', control => k.apply(held, set, ready.map(item => ({ id: item.id })), control)); all.disabled = !a.canEdit(held) || !!held.view.working;
+        out.push(add(make('div', 'bar'), all), flagged ? make('p', 'quiet', tool.flagged ? tool.flagged(flagged) : flagged + (flagged === 1 ? ' flagged suggestion is' : ' flagged suggestions are') + ' left for you to check one by one.') : null);
+      }
+      if (tool.groups) {
+        for (const [part, name] of tool.groups) { const group = items.filter(item => item.part === part); if (group.length) out.push(make('h3', 'sheet-part', name + ' alternatives'), ...group.map(item => k.proposal(held, set, item, key))); }
+        return out.filter(Boolean);
+      }
+      const supported = items.filter(item => item.verdict === 'supported');
+      out.push(...items.filter(item => item.verdict !== 'supported').map(item => k.proposal(held, set, item, key)));
+      if (supported.length) out.push(a.ui.disclosure('Supported (' + supported.length + ')', ...supported.map(item => k.proposal(held, set, item, key))));
+      return out.filter(Boolean);
+    };
+    k.proposal = (held, set, item, key) => {
+      const tool = k.tool(key), f = held.finish, card = make('section', 'card desk-proposal'); card.dataset.item = item.id;
+      const head = add(make('div', 'desk-part-head'), make('h3', 'row-title', tool.groups ? 'Alternative' : 'In ' + a.parts.nameOf(held.view, item.part)));
+      if (item.verdict) head.append(make('span', 'tag', (tool.verdicts || {})[item.verdict]));
+      card.append(head);
+      if (item.flag) card.append(make('p', 'decision-notice', item.flag));
+      const editing = f.editing[item.id], hasAfter = 'after' in item;
+      let sides = null;
+      if (hasAfter || editing !== undefined) { sides = k.sides(item.before, editing !== undefined ? editing : item.after); card.append(sides); }
+      else card.append(make('blockquote', 'desk-quote', item.before));
+      if (item.note) card.append(make('p', 'quiet', item.note));
+      if (item.verdict && item.verdict !== 'supported' && !item.passage) card.append(make('p', 'quiet', 'No passage in your sources says this.'));
+      if (item.passage) card.append(make('p', 'quiet', 'From ' + (item.source || 'your sources') + ': “' + item.passage + '”'));
+      if (item.state !== 'open') { card.append(make('p', 'quiet', item.state === 'applied' ? 'Applied. The earlier text is in History.' : item.state === 'retired' ? 'No longer fits: another change replaced these words.' : item.verdict ? 'Kept as it is.' : 'Skipped.')); return card; }
+      const skip = a.ui.button(item.verdict ? 'Keep it' : 'Skip', control => k.skip(held, set, [item.id], control)); skip.disabled = !a.canEdit(held);
+      if (!item.present) { card.append(make('p', 'quiet', 'The text changed since this was suggested, so it no longer fits.'), add(make('div', 'bar'), skip)); return card; }
+      if (item.verdict === 'supported') return card;
+      const editable = a.canEdit(held) && !held.view.working;
+      if (editing !== undefined) {
+        const box = make('textarea', 'input desk-edit'); box.id = 'desk-edit-' + item.id; box.rows = Math.min(12, Math.max(3, Math.ceil(editing.length / 60))); box.value = editing; box.setAttribute('aria-label', 'Your wording');
+        box.addEventListener('input', () => { f.editing[item.id] = box.value; const next = k.sides(item.before, box.value); if (sides) sides.replaceWith(next); sides = next; });
+        const use = a.ui.button('Apply this', control => k.apply(held, set, [{ id: item.id, after: f.editing[item.id] }], control), 'filled'); use.disabled = !editable;
+        card.append(box, add(make('div', 'bar'), use, a.ui.button('Cancel', () => { delete f.editing[item.id]; k.panelShow(held); })));
+        return card;
+      }
+      const edit = a.ui.button(hasAfter ? 'Edit' : 'Fix the wording', () => { f.editing[item.id] = hasAfter ? item.after : item.before; k.panelShow(held); }); edit.disabled = !editable;
+      const apply = hasAfter ? a.ui.button(tool.groups ? 'Use this' : 'Apply', control => k.apply(held, set, [{ id: item.id }], control), 'filled') : null; if (apply) apply.disabled = !editable;
+      const source = item.verdict && tool.source ? a.ui.button('Add a source', () => tool.source(held)) : null; if (source) source.disabled = !a.canEdit(held);
+      card.append(add(make('div', 'bar'), apply, edit, source, skip));
+      return card;
+    };
+    k.apply = async (held, set, items, control) => {
+      await a.ui.busy(control, 'Applying…', async () => {
+        try {
+          await k.flush(held); if (held.stale) return;
+          const before = held.view; held.view = await a.api(a.routes.apply, { id: held.id, seen: held.view.revision, job: set.job, items });
+          for (const chosen of items) delete held.finish.editing[chosen.id];
+          const done = held.view.finished || { applied: items.length, left: [] }, left = (done.left || []).length;
+          a.ui.toast((done.applied === 1 ? 'Applied.' : 'Applied ' + done.applied + '.') + ' The earlier text is in History.' + (left ? ' ' + left + (left === 1 ? ' no longer fits and is' : ' no longer fit and are') + ' left for you.' : ''));
+          a.hooks.refresh(held, before); k.panelShow(held);
+        } catch (error) { if (stale(error)) { held.stale = true; k.stale(held); } else a.ui.notice(error.message, true); }
+      });
+    };
+    k.skip = async (held, set, ids, control) => {
+      await a.ui.busy(control, 'Setting aside…', async () => { try { const before = held.view; held.view = await a.api(a.routes.skip, { id: held.id, job: set.job, items: ids }); a.hooks.refresh(held, before); k.panelShow(held); } catch (error) { a.ui.notice(error.message, true); } });
+    };
+    // Feedback: comments shown in the panel and in their part's card, each a note in one click.
+    k.commentKey = (view, part) => { const tool = commenting(), set = tool && (view?.finishing || {})[tool.key]; return set ? JSON.stringify(set.items.filter(item => item.part === part && item.state === 'open').map(item => item.id)) : ''; };
+    k.comments = (held, part) => {
+      const tool = commenting(), set = tool && (held.view.finishing || {})[tool.key]; if (!set) return null;
+      const items = set.items.filter(item => item.part === part && item.state === 'open'); if (!items.length) return null;
+      const box = make('div', 'desk-comments'); box.setAttribute('aria-label', 'Feedback on this part');
+      box.append(make('h3', 'sheet-part', 'Feedback'), ...items.map(item => k.comment(held, set, item, false)));
+      return box;
+    };
+    k.comment = (held, set, item, inPanel) => {
+      const thing = a.words().thing, aspects = (commenting() || {}).comments || {};
+      const card = make(inPanel ? 'section' : 'div', inPanel ? 'card desk-proposal desk-comment' : 'desk-comment'); card.dataset.item = item.id;
+      if (inPanel) card.append(add(make('div', 'desk-part-head'), make('h3', 'row-title', item.part === 'whole' ? 'The whole ' + thing : 'In ' + a.parts.nameOf(held.view, item.part)), make('span', 'tag', aspects[item.aspect] || Object.values(aspects)[0])));
+      if (item.quote) card.append(make('blockquote', 'desk-quote', item.quote));
+      card.append(make('p', '', item.comment));
+      if (item.state !== 'open') { card.append(make('p', 'quiet', 'Dismissed.')); return card; }
+      const section = (held.view.sections || []).some(found => found.id === item.part), noted = (held.finish?.noted || {})[item.id];
+      const turn = a.ui.button(noted ? 'In the note' : section ? 'Make it a note' : 'Make it the whole-' + thing + ' note', () => k.toNote(held, item)); turn.disabled = !a.canEdit(held);
+      const dismiss = a.ui.button('Dismiss', control => k.skip(held, set, [item.id], control)); dismiss.disabled = !a.canEdit(held);
+      card.append(add(make('div', 'bar'), turn, dismiss));
+      return card;
+    };
+    // A comment made a note: added to whatever note is there already, never over it. The
+    // parts are drawn on the `draft` tab.
+    k.toNote = (held, item) => {
+      const thing = a.words().thing, section = (held.view.sections || []).find(found => found.id === item.part);
+      const comment = item.comment + (item.quote ? ' (About: “' + item.quote + '”)' : ''), join = had => (had.trim() ? had.replace(/\s+$/, '') + '\n\n' : '') + comment;
+      if (section) { held.notes = held.notes || {}; held.notes[item.part] = join(held.notes[item.part] || '').slice(0, 4000); } else held.wholeNote = join(held.wholeNote || '').slice(0, 4000);
+      if (held.finish) held.finish.noted[item.id] = true;
+      if (held.finish && a.ui.narrow()) held.finish = null;  // On a phone the sheet steps aside for the note.
+      if (held.tab !== 'draft' || !held.cards || (section && !held.cards[item.part]) || a.ui.narrow()) { held.tab = 'draft'; a.hooks.render(held); }
+      else {
+        if (section) { const card = k.part(held, item.part); held.cards[item.part].replaceWith(card); held.cards[item.part] = card; }
+        else { const whole = k.whole(held); held.wholeCard.replaceWith(whole); held.wholeCard = whole; }
+        k.panelShow(held);
+      }
+      const target = section ? held.cards?.[item.part]?.querySelector('.desk-note-text') : held.wholeCard?.querySelector('textarea');
+      if (target) { target.focus(); if (typeof target.scrollIntoView === 'function') target.scrollIntoView({ block: 'center' }); }
+      a.ui.toast(section ? 'Now the note for “' + section.heading + '”. Choose Rewrite when you are ready.' : 'Now the note for the whole ' + thing + '. Choose Revise the ' + thing + ' when you are ready.');
+    };
+    // Quick check (the key and route say proofread): in place, at once; Fix rewrites only the
+    // sentence a finding is in.
+    k.proofread = async (held, control) => {
+      const go = async () => { try { await k.flush(held); const found = await a.api(a.routes.proofread + '?' + new URLSearchParams({ id: held.id })); if (!held.finish) return; held.finish.proof = found; held.finish.proofProblem = ''; } catch (error) { if (held.finish) held.finish.proofProblem = error.message; } k.panelShow(held); };
+      if (control) await a.ui.busy(control, 'Checking…', go); else await go();
+    };
+    k.proofView = held => {
+      const f = held.finish, found = f.proof;
+      const again = a.ui.button(found ? 'Check again' : 'Check now', control => k.proofread(held, control), 'filled');
+      const parts = [make('p', 'quiet', k.tool('proofread').says + ' Fix rewrites only the sentence a finding is in, and keeps the earlier text in History.'), add(make('div', 'bar'), again)];
+      if (f.proofProblem) parts.push(make('p', 'problem', f.proofProblem));
+      if (!found) return parts;
+      if (found.revision !== held.view.revision) parts.push(make('p', 'quiet', 'The ' + a.words().thing + ' changed since this check. Check again for the latest.'));
+      if (!found.findings.length) { parts.push(make('p', '', 'Nothing found by these checks.')); return parts; }
+      parts.push(make('p', 'quiet', found.findings.length + (found.findings.length === 1 ? ' finding' : ' findings') + (found.more ? ', and ' + found.more + ' more' : '') + '. ' + found.limitations));
+      for (const finding of found.findings) parts.push(k.finding(held, finding));
+      return parts;
+    };
+    k.finding = (held, finding) => {
+      const card = make('section', 'card desk-proposal');
+      card.append(add(make('div', 'desk-part-head'), make('h3', 'row-title', 'In ' + a.parts.nameOf(held.view, finding.part))), make('p', '', finding.label));
+      const said = make('p', 'desk-plain desk-quote'), at = finding.at - finding.start;
+      if (at >= 0 && finding.sentence.slice(at, at + finding.target.length) === finding.target) said.append(document.createTextNode(finding.sentence.slice(0, at)), make('mark', '', finding.target), document.createTextNode(finding.sentence.slice(at + finding.target.length)));
+      else said.textContent = finding.sentence;
+      const still = a.parts.textOf(held.view, finding.part).slice(finding.start, finding.start + finding.sentence.length) === finding.sentence;
+      const fix = a.ui.button('Fix', control => k.job(held, control, a.routes.selection, { part: finding.part, text: finding.sentence, start: finding.start, action: 'fix', instruction: finding.fix })); fix.disabled = !a.canEdit(held) || !!held.view.working || !still;
+      return add(card, said, add(make('div', 'bar'), fix), still ? null : make('p', 'quiet', 'This sentence changed since the check.'));
+    };
+    // Where Finishing sits: a full-screen sheet on a phone, a drawer below 1100 pixels, else
+    // beside the draft.
+    k.floating = () => a.ui.narrow() || (typeof window === 'object' && typeof window.matchMedia === 'function' && !!window.matchMedia('(max-width: 1099px)').matches);
+    k.layout = () => a.ui.narrow() ? 'phone' : k.floating() ? 'drawer' : 'wide';
 
     return k;
   }

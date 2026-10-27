@@ -42,6 +42,18 @@ class DraftingPageTests(unittest.TestCase):
     def test_progress_on_the_page_kit(self):
         self.group('progress')
 
+    def test_tools_on_the_page_kit(self):
+        self.group('tools')
+
+    def test_proposals_on_the_page_kit(self):
+        self.group('proposals')
+
+    def test_feedback_on_the_page_kit(self):
+        self.group('feedback')
+
+    def test_layout_on_the_page_kit(self):
+        self.group('layout')
+
 
 if __name__ == '__main__':
     unittest.main()

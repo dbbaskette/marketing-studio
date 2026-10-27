@@ -18,8 +18,9 @@ class Element {
     this.dataset = {}; this.hidden = false; this.disabled = false; this.readOnly = false;
     this.value = ''; this.className = ''; this._text = ''; this.parent = null;
   }
-  get textContent() { return this.children.length ? this.children.map(c => c.textContent).join('') : this._text; }
-  set textContent(value) { this.children = []; this._text = String(value); }
+  // Text is a text node among the children, as in a page, so text and children can sit together.
+  get textContent() { return this.tagName === '#text' ? this._text : this.children.map(c => c.textContent).join(''); }
+  set textContent(value) { if (this.tagName === '#text') { this._text = String(value); return; } this.children = []; if (String(value)) { const node = new Element('#text'); node._text = String(value); node.parent = this; this.children.push(node); } }
   append(...nodes) { for (const node of nodes) { if (node.parent) node.remove(); node.parent = this; this.children.push(node); } }
   prepend(...nodes) { for (const node of nodes) node.parent = this; this.children.unshift(...nodes); }
   replaceChildren(...nodes) { for (const child of this.children) child.parent = null; this.children = []; this._text = ''; this.append(...nodes); }
@@ -452,6 +453,214 @@ Object.assign(groups, {
     await tick();
     same(said.started, ['plan']); assert.equal(said.renders, 1);
     same(said.toasts, ['The plan is ready.']);
+  },
+});
+
+// Finishing tools of a studio that is not Blog Studio, in an order of its own.
+function finishing(kit, said) {
+  return [
+    { key: 'publish', name: 'Before it goes', says: 'Checks before it goes out.', view: () => [Drafting.make('p', 'piece-publish', 'Its own view')] },
+    { key: 'proofread', name: 'Check', says: 'Mechanical checks.', view: held => kit.proofView(held), opened: (held, first) => { said.opened.push(['proofread', first]); } },
+    { key: 'humanize', name: 'Humanise', says: 'Sentences to rewrite.', run: 'Find', doing: 'Finding sentences…', start: { level: 'light' }, options: () => [Drafting.make('p', 'piece-options', 'Its options')], data: f => ({ level: f.level }), ready: f => f.level !== 'none', applyAll: true },
+    { key: 'facts', name: 'Facts', says: 'Each claim checked.', run: 'Check', doing: 'Checking…', verdicts: { supported: 'Backed', 'not-in-sources': 'Not found', contradicted: 'Contradicted' }, counted: [' claim checked', ' claims checked'], empty: 'No claims to check.', source: () => { said.sources++; } },
+    { key: 'headline', name: 'Names', says: 'Other names.', run: 'Suggest', doing: 'Suggesting…', groups: [['title', 'Name']] },
+    { key: 'notes', name: 'Notes', says: 'Comments only.', run: 'Get notes', doing: 'Reading…', comments: { shape: 'Shape', argument: 'Argument' } },
+    { key: 'review', name: 'Review', says: 'Reviewed in the text.', open: () => { said.opened.push(['review']); } },
+  ];
+}
+function item(id, extra = {}) { return { id, part: 's1', before: 'one two', after: 'one 2', state: 'open', present: true, ...extra }; }
+
+Object.assign(groups, {
+  async tools() {
+    const proof = { revision: 3, findings: [{ part: 's1', rule: 'dash', label: 'A dash.', fix: 'Replace the dash.', target: 'one', sentence: 'one two one', start: 0, at: 8 }], more: 2, limitations: 'Hints only.' };
+    const { a, said, page } = studio({ 'piece-proofread': proof, 'piece-finish': () => view({ working: null }), 'piece-selection': () => view() });
+    said.opened = []; const kit = Drafting.kit(a), held = desk(kit);
+    a.toolList = finishing(kit, said);
+    kit.finishOpen(held);
+    assert.equal(said.renders, 1); assert.equal(held.finish.tool, null); assert.equal(held.finish.level, 'light');
+    held.panel = kit.panel(held); page.append(held.panel);
+    assert.equal(held.panel.className, 'desk-finish'); assert.equal(held.panel.getAttribute('aria-label'), 'Finishing');
+    assert.equal(held.panel.querySelector('h2.desk-finish-title').textContent, 'Finishing');
+    const list = held.panel.querySelector('.desk-finish-tools');
+    assert.equal(list.className, 'pick-cards desk-finish-tools');
+    same(list.children.map(card => card.children[0].textContent), ['Before it goes', 'Check', 'Humanise', 'Facts', 'Names', 'Notes', 'Review']);
+    same(list.children.map(card => card.querySelector('span.piece-says').textContent), ['Checks before it goes out.', 'Mechanical checks.', 'Sentences to rewrite.', 'Each claim checked.', 'Other names.', 'Comments only.', 'Reviewed in the text.']);
+    // A tool that takes over its own opening is not drawn in the panel.
+    kit.finishTool(held, 'review'); same(said.opened, [['review']]); assert.equal(held.finish.tool, null);
+    // Quick check, found by its key wherever it sits in the list, opens with its own words.
+    await kit.finishTool(held, 'proofread');
+    same(said.opened.at(-1), ['proofread', false]);
+    assert.equal(held.panel.querySelector('h2.desk-finish-title').textContent, 'Check');
+    assert.ok(button(held.panel, 'All tools'));
+    const body = held.panel.querySelector('.desk-finish-body');
+    assert.equal(body.children[0].textContent, 'Mechanical checks. Fix rewrites only the sentence a finding is in, and keeps the earlier text in History.');
+    await button(body, 'Check now').fire('click'); await settle();
+    same(said.requests.at(-1), { route: 'piece-proofread?id=p1' });
+    const checked = held.panel.querySelector('.desk-finish-body');
+    assert.ok(texts(checked).includes('1 finding, and 2 more. Hints only.'));
+    const card = checked.querySelector('section.desk-proposal');
+    assert.equal(card.querySelector('h3').textContent, 'In “First”');
+    assert.equal(card.querySelector('mark').textContent, 'one');
+    await button(card, 'Fix').fire('click'); await settle();
+    same(said.requests.find(r => r.route === 'piece-selection').data, { id: 'p1', seen: 3, part: 's1', text: 'one two one', start: 0, action: 'fix', instruction: 'Replace the dash.' });
+    // Opening the panel at Quick check reads it again.
+    kit.finishOpen(held, 'proofread'); same(said.opened.at(-1), ['proofread', true]);
+    // A tool's own view, and a tool that runs a job with its options, data and readiness.
+    kit.finishTool(held, 'publish');
+    assert.equal(held.panel.querySelector('p.piece-publish').textContent, 'Its own view');
+    held.view.finishing = { humanize: { job: 'h', items: [item('p1'), item('p2', { state: 'skipped' })] } };
+    held.view.working = { id: 'w', kind: 'finish-facts' };
+    held.finish.tool = null; kit.panelShow(held);
+    same(held.panel.querySelectorAll('span.piece-says').map(n => n.textContent).slice(2, 4), ['1 to review.', 'Working on it…']);
+    held.view.working = null; held.view.finishing = {};
+    kit.finishTool(held, 'humanize');
+    const tool = held.panel.querySelector('.desk-finish-body');
+    same(tool.children.slice(0, 2).map(n => n.textContent), ['Sentences to rewrite.', 'Its options']);
+    await button(tool, 'Find').fire('click'); await settle();
+    same(said.requests.at(-1), { route: 'piece-finish', data: { id: 'p1', seen: 3, tool: 'humanize', level: 'light' } });
+    held.finish.level = 'none'; kit.panelShow(held);
+    assert.equal(button(held.panel, 'Find').disabled, true);
+    held.finish.level = 'light'; held.view.working = { id: 'w', kind: 'finish-humanize' }; kit.panelShow(held);
+    assert.ok(texts(held.panel).includes('Finding sentences…'));
+    held.view.working = { id: 'w', kind: 'piece-section' }; kit.panelShow(held);
+    assert.ok(texts(held.panel).includes('Another change is under way. This can run when it ends.'));
+    held.view.working = null; held.view.jobs = [{ id: 'x', kind: 'finish-humanize', busy: false, error: 'It failed.' }]; kit.panelShow(held);
+    assert.ok(texts(held.panel).includes('It failed.'));
+    await button(held.panel, 'Close').fire('click');
+    assert.equal(held.finish, null);
+  },
+  async proposals() {
+    let applied = { applied: 1, left: [] };
+    const { a, said, page } = studio({ 'piece-apply': () => view({ finished: applied }), 'piece-skip': () => view() });
+    said.opened = []; said.sources = 0;
+    const kit = Drafting.kit(a), held = desk(kit);
+    a.toolList = finishing(kit, said);
+    held.finish = { tool: 'humanize', editing: {}, noted: {} };
+    const set = { job: 'j'.repeat(32), level: 'light', dropped: 1, items: [item('p1'), item('p2', { flag: 'Check the facts: this changes a number.' }), item('p3', { part: 's2', before: 'three', after: '3' })] };
+    held.view.finishing = { humanize: set };
+    held.panel = kit.panel(held); page.append(held.panel);
+    const body = held.panel.querySelector('.desk-finish-body');
+    assert.ok(texts(body).includes('Found at light · 3 suggestions · 3 to review · 1 left out because it did not match the text.'));
+    assert.ok(button(body, 'Apply all (2)'));
+    assert.ok(texts(body).includes('1 flagged suggestion is left for you to check one by one.'));
+    const cards = body.querySelectorAll('section.desk-proposal');
+    same(cards.map(card => card.dataset.item), ['p1', 'p2', 'p3']);
+    assert.equal(cards[0].querySelector('h3').textContent, 'In “First”');
+    assert.equal(cards[1].querySelector('p.decision-notice').textContent, 'Check the facts: this changes a number.');
+    assert.ok(cards[0].querySelector('.desk-sides'));
+    await button(cards[0], 'Apply').fire('click'); await settle();
+    same(said.requests.at(-1), { route: 'piece-apply', data: { id: 'p1', seen: 3, job: set.job, items: [{ id: 'p1' }] } });
+    same(said.toasts.at(-1), 'Applied. The earlier text is in History.');
+    applied = { applied: 2, left: ['p2'] };
+    held.view.finishing = { humanize: set }; kit.panelShow(held);
+    await button(held.panel, 'Apply all (2)').fire('click'); await settle();
+    same(said.requests.at(-1).data.items, [{ id: 'p1' }, { id: 'p3' }]);
+    same(said.toasts.at(-1), 'Applied 2. The earlier text is in History. 1 no longer fits and is left for you.');
+    // Edit puts the person's wording beside the text, then Apply this sends it.
+    held.view.finishing = { humanize: set }; kit.panelShow(held);
+    await button(held.panel.querySelectorAll('section.desk-proposal')[0], 'Edit').fire('click');
+    const box = held.panel.querySelector('textarea.desk-edit');
+    assert.equal(box.id, 'desk-edit-p1'); assert.equal(box.value, 'one 2'); assert.equal(box.getAttribute('aria-label'), 'Your wording');
+    box.value = 'one, two'; await box.fire('input');
+    await button(held.panel, 'Apply this').fire('click'); await settle();
+    same(said.requests.at(-1).data.items, [{ id: 'p1', after: 'one, two' }]);
+    held.view.finishing = { humanize: set }; kit.panelShow(held);
+    await button(held.panel.querySelectorAll('section.desk-proposal')[2], 'Skip').fire('click'); await settle();
+    same(said.requests.at(-1), { route: 'piece-skip', data: { id: 'p1', job: set.job, items: ['p3'] } });
+    // A suggestion whose words changed since, and ones already decided.
+    held.view.finishing = { humanize: { ...set, items: [item('p1', { present: false }), item('p2', { state: 'applied' }), item('p3', { state: 'retired' })] } }; kit.panelShow(held);
+    const later = held.panel.querySelectorAll('section.desk-proposal');
+    assert.ok(texts(later[0]).includes('The text changed since this was suggested, so it no longer fits.'));
+    assert.ok(texts(later[1]).includes('Applied. The earlier text is in History.'));
+    assert.ok(texts(later[2]).includes('No longer fits: another change replaced these words.'));
+    // Facts: a tag per claim, supported ones folded away, Keep it, and Add a source.
+    held.finish.tool = 'facts';
+    held.view.finishing = { facts: { job: 'f', items: [item('p1', { verdict: 'supported' }), item('p2', { verdict: 'contradicted', after: undefined, passage: 'It says three.', source: 'Notes' }), item('p3', { verdict: 'not-in-sources' })] } };
+    delete held.view.finishing.facts.items[1].after;
+    kit.panelShow(held);
+    const facts = held.panel.querySelector('.desk-finish-body');
+    assert.ok(texts(facts).includes('3 claims checked · 2 to review.'));
+    const folded = facts.querySelector('details');
+    assert.equal(folded.children[0].textContent, 'Supported (1)');
+    const claim = facts.querySelectorAll('section.desk-proposal').find(card => card.dataset.item === 'p2');
+    assert.equal(claim.querySelector('span.tag').textContent, 'Contradicted');
+    assert.equal(claim.querySelector('blockquote.desk-quote').textContent, 'one two');
+    assert.ok(texts(claim).includes('From Notes: “It says three.”'));
+    assert.ok(button(claim, 'Keep it')); assert.ok(button(claim, 'Fix the wording'));
+    await button(claim, 'Add a source').fire('click'); assert.equal(said.sources, 1);
+    const missing = facts.querySelectorAll('section.desk-proposal').find(card => card.dataset.item === 'p3');
+    assert.ok(texts(missing).includes('No passage in your sources says this.'));
+    held.view.finishing = { facts: { job: 'f', items: [] } }; kit.panelShow(held);
+    assert.ok(texts(held.panel).includes('No claims to check.'));
+    // Alternatives in groups: Use this.
+    held.finish.tool = 'headline';
+    held.view.finishing = { headline: { job: 'n', items: [item('p1', { part: 'title', group: 'title', whole: true }), item('p2', { part: 'title', group: 'title', whole: true })] } };
+    kit.panelShow(held);
+    assert.ok(texts(held.panel).includes('Name alternatives'));
+    const alternative = held.panel.querySelector('section.desk-proposal');
+    assert.equal(alternative.querySelector('h3').textContent, 'Alternative');
+    assert.ok(button(alternative, 'Use this'));
+    assert.equal(button(held.panel, 'Apply all (2)'), undefined, 'only tools that apply all offer it');
+  },
+  async feedback() {
+    const { a, said, page } = studio({ 'piece-skip': () => view() });
+    said.opened = []; said.sources = 0;
+    const kit = Drafting.kit(a), held = desk(kit);
+    a.toolList = finishing(kit, said);
+    const set = { job: 'f', summary: 'Good overall.', items: [{ id: 'p1', part: 's1', quote: 'one two', aspect: 'argument', comment: 'Say why.', state: 'open' }, { id: 'p2', part: 'whole', quote: '', aspect: 'odd', comment: 'Shorter.', state: 'open' }] };
+    held.view.finishing = { notes: set };
+    const box = kit.comments(held, 's1');
+    assert.equal(box.className, 'desk-comments'); assert.equal(box.getAttribute('aria-label'), 'Feedback on this part');
+    assert.equal(box.children[0].textContent, 'Feedback');
+    const comment = box.querySelector('.desk-comment');
+    assert.equal(comment.className, 'desk-comment');
+    assert.equal(comment.querySelector('blockquote.desk-quote').textContent, 'one two');
+    assert.ok(button(comment, 'Make it a note')); assert.ok(button(comment, 'Dismiss'));
+    assert.equal(kit.comments(held, 's2'), null);
+    assert.equal(kit.commentKey(held.view, 's1'), '["p1"]');
+    assert.equal(kit.commentKey(held.view, 's2'), '[]');
+    // The card shows the comment, and the panel the summary and every comment with its aspect.
+    assert.ok(kit.part(held, 's1').querySelector('.desk-comments'));
+    held.finish = { tool: 'notes', editing: {}, noted: {} };
+    held.panel = kit.panel(held); page.append(held.panel);
+    const panel = held.panel.querySelector('.desk-finish-body');
+    assert.equal(panel.querySelector('section.card').querySelector('h2').textContent, 'Overall');
+    const shown = panel.querySelectorAll('section.desk-comment');
+    same(shown.map(card => card.querySelector('h3').textContent), ['The whole piece', 'In “First”']);
+    same(shown.map(card => card.querySelector('span.tag').textContent), ['Shape', 'Argument']);
+    assert.ok(button(shown[0], 'Make it the whole-piece note'));
+    // Make it a note adds the comment to what was typed, never over it.
+    held.notes = { s1: 'Keep this.' }; held.tab = 'draft';
+    held.cards = { s1: kit.part(held, 's1') }; held.wholeCard = kit.whole(held); page.append(held.cards.s1, held.wholeCard);
+    kit.toNote(held, set.items[0]);
+    assert.equal(held.notes.s1, 'Keep this.\n\nSay why. (About: “one two”)');
+    assert.equal(held.finish.noted.p1, true);
+    assert.equal(held.cards.s1.querySelector('textarea.desk-note-text').value, 'Keep this.\n\nSay why. (About: “one two”)');
+    assert.equal(document.activeElement, held.cards.s1.querySelector('textarea.desk-note-text'));
+    same(said.toasts.at(-1), 'Now the note for “First”. Choose Rewrite when you are ready.');
+    assert.ok(button(held.panel, 'In the note'));
+    kit.toNote(held, set.items[1]);
+    assert.equal(held.wholeNote, 'Shorter.');
+    same(said.toasts.at(-1), 'Now the note for the whole piece. Choose Revise the piece when you are ready.');
+    // From another tab the parts are drawn again first.
+    held.tab = 'plan'; const renders = said.renders; kit.toNote(held, set.items[1]);
+    assert.equal(held.tab, 'draft'); assert.equal(said.renders, renders + 1);
+    await button(shown[1], 'Dismiss').fire('click'); await settle();
+    same(said.requests.at(-1), { route: 'piece-skip', data: { id: 'p1', job: 'f', items: ['p1'] } });
+  },
+  async layout() {
+    const { a, setNarrow } = studio();
+    const kit = Drafting.kit(a), held = desk(kit);
+    a.toolList = [];
+    let wide = true; context.window.matchMedia = query => ({ matches: query === '(max-width: 1099px)' && !wide });
+    assert.equal(kit.layout(), 'wide'); assert.equal(kit.floating(), false);
+    wide = false; assert.equal(kit.layout(), 'drawer'); assert.equal(kit.floating(), true);
+    setNarrow(true); assert.equal(kit.layout(), 'phone');
+    held.finish = { tool: null, editing: {}, noted: {} };
+    assert.equal(kit.panel(held).className, 'desk-finish desk-finish-sheet');
+    setNarrow(false); assert.equal(kit.panel(held).className, 'desk-finish');
+    held.panelUnder = true; assert.equal(kit.panel(held).hidden, true);
+    delete context.window.matchMedia; wide = true; assert.equal(kit.layout(), 'wide');
   },
 });
 
