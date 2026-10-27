@@ -684,7 +684,7 @@ summary {
 .seg-option {
   position: relative;
   z-index: 1;
-  min-height: 2.3rem;
+  min-height: 2.75rem;
   padding: 0.3rem 1rem;
   background: none;
   border: 0;
@@ -724,7 +724,7 @@ summary {
 }
 
 .menu-item {
-  min-height: 2.4rem;
+  min-height: 2.75rem;
   padding: 0.35rem 0.75rem;
   background: none;
   border: 0;
@@ -1288,7 +1288,7 @@ select.input {
 .input {
   display: block;
   width: 100%;
-  min-height: 2.7rem;
+  min-height: 2.75rem;
   padding: 0.55rem 0.85rem;
   background: var(--paper);
   color: var(--ink);
@@ -1350,7 +1350,7 @@ textarea.input {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  min-height: 2.4rem;
+  min-height: 2.75rem;
   padding: 0.3rem 1rem;
   background: var(--well);
   color: var(--quiet);
@@ -2152,6 +2152,25 @@ p.fact > .bead {
   animation-duration: 240ms;
 }
 
+@media (pointer: coarse) {
+  /* A link or the file picker's button is as tall as any other control under a thumb; on
+     a desktop a link inside a sentence keeps its line's height. */
+  .link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+
+  .input[type="file"]::file-selector-button {
+    min-height: 2.75rem;
+  }
+
+  /* A tick and its words are one target, as tall as any control. */
+  .check {
+    min-height: 2.75rem;
+  }
+}
+
 /* --- room for two columns ----------------------------------------------------------- */
 
 @media (min-width: 70rem) {
@@ -2201,6 +2220,11 @@ p.fact > .bead {
 /* --- a narrow window: the sidebar becomes a bar along the foot ----------------------- */
 
 @media (max-width: 52rem) {
+  /* The height the tab bar takes: fixed and sticky bars sit just above it. */
+  :root {
+    --tab-bar-room: calc(4.4rem + env(safe-area-inset-bottom));
+  }
+
   .window {
     display: block;
   }
@@ -2245,6 +2269,23 @@ p.fact > .bead {
     position: absolute;
     top: 0.2rem;
     left: calc(50% + 0.3rem);
+  }
+
+  /* A link or the file picker's button is as tall as any other control under a thumb; on
+     a desktop a link inside a sentence keeps its line's height. */
+  .link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+
+  .input[type="file"]::file-selector-button {
+    min-height: 2.75rem;
+  }
+
+  /* A tick and its words are one target, as tall as any control. */
+  .check {
+    min-height: 2.75rem;
   }
 
   .content {
@@ -2661,6 +2702,270 @@ a.button {
   }
 }
 
+/* --- lists, sheet steps and page heads ------------------------------------------------ */
+
+/* Blog Studio drew these first; every studio shares them now. Late in the kit, after the
+   controls, as when Blog Studio's stylesheet drew them, so the same rules win. */
+
+/* A screen's header: its one-sentence lede, and the view's own actions in a bar beside it. */
+.page-head {
+  margin-bottom: 1.1rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1.5rem;
+}
+
+.page-head > .lede {
+  flex: 1 1 28rem;
+  min-width: 0;
+  margin: 0;
+}
+
+/* Cards and sections of a page, 1.1rem apart. */
+.stack > * + * {
+  margin-top: 1.1rem;
+}
+
+/* One filter row: search takes the room, each choice a fixed share; rarely used filters fold. */
+.filter-bar {
+  display: flex;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  align-items: end;
+  margin: 0 0 1rem;
+}
+
+.filter-bar .search {
+  flex: 2 1 14rem;
+  min-width: 12rem;
+}
+
+.filter-bar > .field:not(.search) {
+  flex: 1 1 9rem;
+  min-width: 8rem;
+}
+
+.more-filters {
+  flex-basis: 100%;
+  min-width: 0;
+}
+
+.more-filters > summary {
+  min-height: 44px;
+  display: list-item;
+  padding-top: 0.65rem;
+}
+
+.more-filters > .field {
+  max-width: 20rem;
+  margin-top: 0.4rem;
+}
+
+.filters-toggle {
+  display: none;
+}
+
+/* A list's heading, with its count and Select all on this page. */
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: center;
+}
+
+.select-page {
+  font-size: 0.95rem;
+  min-height: 44px;
+}
+
+/* A tick with its label. */
+.check {
+  display: flex;
+  gap: 0.7rem;
+  align-items: center;
+  font-weight: 400;
+}
+
+.check input {
+  width: auto;
+}
+
+/* The selection bar: the toolbar's material, shown only while something is ticked. It stays
+   in view below the toolbar; on a phone it sits above the tab bar. */
+.selection-bar {
+  position: sticky;
+  top: calc(4.2rem + 0.6rem);
+  z-index: 4;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0 0 1rem;
+  padding: 0.6rem 0.8rem;
+  border-radius: 16px;
+}
+
+.selection-bar .selection-count {
+  flex: 1 1 12rem;
+  min-width: 0;
+  margin: 0;
+}
+
+.selection-bar .bar {
+  gap: 0.45rem;
+}
+
+/* A sheet that makes something: numbered steps in the order a person works, each on the
+   sheet's surface, a hairline between them, the submit and Cancel together at the foot. */
+.create-flow > * + * {
+  margin-top: 1rem;
+}
+
+.create-step {
+  padding-top: 0.9rem;
+  border-top: 1px solid var(--hair);
+}
+
+.create-step:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.create-step > * + * {
+  margin-top: 0.6rem;
+}
+
+.create-foot {
+  justify-content: flex-start;
+}
+
+/* A sheet's heading stays in view while its steps scroll. */
+.sheet-heading {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--sheet-fill);
+  border-bottom: 1px solid var(--hair);
+  padding-bottom: 0.75rem;
+}
+
+.sheet-heading .sheet-title {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sheet-heading .button {
+  flex-shrink: 0;
+}
+
+/* Research from: your documents, your sites and the public web, one row of ticks that wraps
+   on a phone; the sites open below on the form's own opaque paper. */
+.research-choices {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  align-items: center;
+}
+
+.research-choices legend {
+  padding: 0;
+  margin: 0 0 0.4rem;
+}
+
+.research-choices[hidden],
+.site-choices[hidden] {
+  display: none;
+}
+
+.site-choices {
+  display: grid;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--hair);
+  border-radius: 12px;
+  background: var(--paper);
+}
+
+.site-choices .check span {
+  overflow-wrap: anywhere;
+}
+
+/* A launch card's tile takes its studio's wash and colour, flat on the card. */
+.card[data-studio] > .studio-symbol {
+  background: var(--studio-wash);
+  color: var(--studio-color);
+  box-shadow: none;
+}
+
+@media (max-width: 52rem) {
+  .selection-bar {
+    position: fixed;
+    top: auto;
+    left: max(var(--gutter), env(safe-area-inset-left));
+    right: max(var(--gutter), env(safe-area-inset-right));
+    bottom: var(--tab-bar-room);
+    z-index: 4;
+    margin: 0;
+    gap: 0.4rem 0.6rem;
+    padding: 0.55rem 0.65rem;
+  }
+
+  .selection-bar .bar {
+    flex: 1 1 100%;
+  }
+
+  .selection-bar .selection-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.4rem;
+  }
+
+  .selection-bar .selection-actions > .button-filled {
+    grid-column: 1 / -1;
+  }
+
+  .selection-bar .button {
+    padding-inline: 0.6rem;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  /* The page leaves room at its foot for the bar: the 7rem it always leaves, and 12rem more. */
+  .content:has(.selection-bar:not([hidden])) {
+    padding-bottom: calc(19rem + env(safe-area-inset-bottom));
+  }
+
+  /* On a phone the search leads; the other filters open under Filters. */
+  .filters-toggle {
+    display: inline-flex;
+  }
+
+  .filter-bar:not(.filters-open) > .field:not(.search),
+  .filter-bar:not(.filters-open) > .more-filters {
+    display: none;
+  }
+
+  .filter-bar .search {
+    flex-basis: 100%;
+  }
+
+  .more-filters > .field {
+    max-width: none;
+  }
+}
+
 /* --- fallbacks: each one swaps the glass for something solid --------------------------- */
 
 /* No blur to be had: glass would be see-through and nothing more. */
@@ -2793,7 +3098,7 @@ a.button {
 }
 .review-bar > * + * { margin-top: 0.6rem; }
 @media (max-width: 52rem) {
-  .review-bar { padding-bottom: 0.9rem; }
+  .review-bar { bottom: var(--tab-bar-room); z-index: 4; padding-bottom: 0.9rem; }
   .review-bar > .bar > .button { flex: 1 1 auto; }
 }
 

@@ -19,7 +19,16 @@ PAGE_STYLES = (
     ROOT / 'core/studio_core/setup_web/home.css',
     ROOT / 'studios/blog/skills/blog-studio/assets/management/blog.css',
     ROOT / 'studios/presentation/skills/presentation-studio/scripts/desk/deck.css',
+    ROOT / 'core/studio_core/deck_web/deck-panels.css',
 )
+# Folders whose style.css and markdown.js are links into ui-kit/, never copies.
+LINKED = (
+    *sorted(ROOT.glob('studios/*/skills/*/scripts/desk')),
+    ROOT / 'studios/blog/skills/blog-studio/assets/management',
+    ROOT / 'core/studio_core/setup_web',
+    ROOT / 'marketing_studio/web',
+)
+PHONE = '(max-width:52rem)'
 APP_PAGES = (
     ROOT / 'core/studio_core/setup_web/index.html',
     ROOT / 'studios/blog/skills/blog-studio/assets/management/index.html',
@@ -34,7 +43,11 @@ STATIC_PAGES = {
 SHELL = (('backdrop',), ('window',), ('sidebar', 'glass'), ('toolbar', 'glass'), ('page',))
 COMPONENTS = ('.pick-card', '.pick-cards', '.workflow-steps', '.workflow-step', '.dialog',
               '.dialog-header', '.dialog-content', '.dialog-form', 'label.field',
-              'label.seg-option', '.input-typed')
+              'label.seg-option', '.input-typed', '.filter-bar', '.more-filters', '.filters-toggle',
+              '.panel-heading', '.select-page', '.selection-bar', '.selection-count',
+              '.selection-actions', '.create-flow', '.create-step', '.create-foot',
+              '.sheet-heading', '.stack', '.page-head', '.research-choices', '.site-choices',
+              '.check')
 SHARED = frozenset({
     'backdrop', 'window', 'sidebar', 'nav-item', 'glass', 'content', 'toolbar-wrap', 'toolbar',
     'page', 'button', 'button-filled', 'button-quiet', 'button-danger', 'button-round', 'field',
@@ -42,7 +55,69 @@ SHARED = frozenset({
     'chip', 'pick-cards', 'pick-card', 'pick-title', 'pick-says', 'workflow-steps',
     'workflow-step', 'card', 'paper', 'table', 'callout', 'large-title', 'lede', 'card-title',
     'sheet-part', 'state', 'bead', 'tag', 'toasts', 'toast', 'notice', 'sheet', 'dialog',
-    'dialog-header', 'dialog-content', 'dialog-form', 'menu'})
+    'dialog-header', 'dialog-content', 'dialog-form', 'menu', 'filter-bar', 'more-filters',
+    'filters-toggle', 'panel-heading', 'select-page', 'selection-bar', 'selection-count',
+    'selection-actions', 'create-flow', 'create-step', 'create-foot', 'sheet-heading', 'stack',
+    'page-head', 'research-choices', 'site-choices', 'check'})
+# The parts Blog Studio drew first, now the kit's, with Blog Studio's values (main efdaa11).
+# Each selector's declarations, top level and inside the phone query.
+MOVED = {
+    '': {
+        '.filter-bar': 'display:flex;gap:.7rem;flex-wrap:wrap;align-items:end;margin:0 0 1rem',
+        '.filter-bar .search': 'flex:2 1 14rem;min-width:12rem',
+        '.filter-bar>.field:not(.search)': 'flex:1 1 9rem;min-width:8rem',
+        '.more-filters': 'flex-basis:100%;min-width:0',
+        '.more-filters>summary': 'min-height:44px;display:list-item;padding-top:.65rem',
+        '.more-filters>.field': 'max-width:20rem;margin-top:.4rem',
+        '.filters-toggle': 'display:none',
+        '.panel-heading': 'display:flex;justify-content:space-between;gap:1rem;align-items:center',
+        '.select-page': 'font-size:.95rem;min-height:44px',
+        '.selection-bar': 'position:sticky;top:calc(4.2rem + .6rem);z-index:4;display:flex;'
+                          'flex-wrap:wrap;align-items:center;gap:.5rem 1rem;margin:0 0 1rem;'
+                          'padding:.6rem .8rem;border-radius:16px',
+        '.selection-bar .selection-count': 'flex:1 1 12rem;min-width:0;margin:0',
+        '.selection-bar .bar': 'gap:.45rem',
+        '.create-flow>*+*': 'margin-top:1rem',
+        '.create-step': 'padding-top:.9rem;border-top:1px solid var(--hair)',
+        '.create-step:first-child': 'padding-top:0;border-top:0',
+        '.create-step>*+*': 'margin-top:.6rem',
+        '.create-foot': 'justify-content:flex-start',
+        '.sheet-heading': 'position:sticky;top:0;z-index:1;display:flex;align-items:center;'
+                          'justify-content:space-between;gap:1rem;background:var(--sheet-fill);'
+                          'border-bottom:1px solid var(--hair);padding-bottom:.75rem',
+        '.sheet-heading .sheet-title': 'margin:0;min-width:0;overflow-wrap:anywhere',
+        '.sheet-heading .button': 'flex-shrink:0',
+        '.stack>*+*': 'margin-top:1.1rem',
+        '.page-head': 'margin-bottom:1.1rem;display:flex;flex-wrap:wrap;align-items:center;'
+                      'justify-content:space-between;gap:.5rem 1.5rem',
+        '.page-head>.lede': 'flex:1 1 28rem;min-width:0;margin:0',
+        '.research-choices': 'border:0;margin:0;padding:0;min-width:0;display:flex;'
+                             'flex-wrap:wrap;gap:.5rem 1.25rem;align-items:center',
+        '.research-choices legend': 'padding:0;margin:0 0 .4rem',
+        '.research-choices[hidden]': 'display:none',
+        '.site-choices[hidden]': 'display:none',
+        '.site-choices': 'display:grid;gap:.6rem;margin-top:.75rem;padding:.75rem;'
+                         'border:1px solid var(--hair);border-radius:12px;background:var(--paper)',
+        '.site-choices .check span': 'overflow-wrap:anywhere',
+        '.check': 'display:flex;gap:.7rem;align-items:center;font-weight:400',
+        '.check input': 'width:auto',
+    },
+    '(max-width:52rem)': {
+        '.selection-bar': 'position:fixed;top:auto;left:max(var(--gutter),env(safe-area-inset-left));'
+                          'right:max(var(--gutter),env(safe-area-inset-right));'
+                          'margin:0;gap:.4rem .6rem;padding:.55rem .65rem',
+        # Its bottom and z-index changed on purpose: test_bars_sit_above_the_tab_bar_on_a_phone.
+        '.selection-bar .bar': 'flex:1 1 100%',
+        '.selection-bar .selection-actions': 'display:grid;grid-template-columns:1fr 1fr;gap:.4rem',
+        '.selection-bar .selection-actions>.button-filled': 'grid-column:1 / -1',
+        '.selection-bar .button': 'padding-inline:.6rem;min-width:0;white-space:normal',
+        '.filters-toggle': 'display:inline-flex',
+        '.filter-bar:not(.filters-open)>.field:not(.search)': 'display:none',
+        '.filter-bar:not(.filters-open)>.more-filters': 'display:none',
+        '.filter-bar .search': 'flex-basis:100%',
+        '.more-filters>.field': 'max-width:none',
+    },
+}
 ELEMENTS = frozenset({'a', 'button', 'dialog', 'h1', 'h2', 'h3', 'h4', 'input', 'label',
                       'select', 'summary', 'textarea', 'table', 'thead', 'tbody', 'tr', 'th',
                       'td'})
@@ -139,6 +214,56 @@ def problems(css: str) -> list[str]:
     return found
 
 
+def plain(text: str, value: bool = False) -> str:
+    """A selector or a value with its spacing and leading zeros made one way."""
+    text = ' '.join(text.split())
+    text = re.sub(r'\s*([,;])\s*' if value else r'\s*([>~;,]|\+(?=\s*[*.#a-z:\[]))\s*', r'\1', text)
+    return re.sub(r'(?<![\d.\w-])0\.', '.', re.sub(r':\s+', ':', text)).strip(';')
+
+
+def contexts(css: str):
+    """Each style rule as (the at-rule it sits in or '', selector, declarations)."""
+    css, at, start, found = uncommented(css), [], 0, []
+    for index, char in enumerate(css):
+        if char == '{':
+            head = css[start:index].rsplit(';', 1)[-1].strip()
+            at.append(head)
+            start = index + 1
+        elif char == '}':
+            head = at.pop() if at else ''
+            if not head.startswith('@'):
+                outer = next((plain(a.split(None, 1)[1]) for a in reversed(at) if a.startswith('@media')), '')
+                found.append((outer, head, css[start:index]))
+            start = index + 1
+    return found
+
+
+def declared(css: str) -> dict:
+    """Selector to {property: value} for each context, rules of one selector merged."""
+    out = {}
+    for context, listed, block in contexts(css):
+        for one in split_top(listed, ','):
+            into = out.setdefault(context, {}).setdefault(plain(one), {})
+            for part in block.split(';'):
+                if ':' in part:
+                    name, value = part.split(':', 1)
+                    into[name.strip().lower()] = plain(value, True)
+    return out
+
+
+def rem(value: str) -> float:
+    """A length in rem: 2.75rem is 2.75 and 44px is 2.75."""
+    if value.endswith('rem'):
+        return float(value[:-3])
+    if value.endswith('px'):
+        return float(value[:-2]) / 16
+    raise ValueError(value)
+
+
+def wanted(text: str) -> dict:
+    return {name: plain(value, True) for name, value in (part.split(':', 1) for part in text.split(';'))}
+
+
 def inline_styles(html: str) -> str:
     return '\n'.join(re.findall(r'<style\b[^>]*>(.*?)</style>', html, flags=re.S))
 
@@ -158,7 +283,7 @@ class SharedLookTests(unittest.TestCase):
 
     def test_kit_defines_every_shared_component(self):
         kit = KIT.read_text()
-        missing = [name for name in COMPONENTS if not re.search(re.escape(name) + r'\s*[{,:\[]', kit)]
+        missing = [name for name in COMPONENTS if not re.search(re.escape(name) + r'\s*[{,:\[>]', kit)]
         self.assertEqual(missing, [], 'ui-kit/style.css does not define these')
 
     def test_page_stylesheets_only_lay_out(self):
@@ -248,6 +373,100 @@ class SharedLookTests(unittest.TestCase):
 
         self.assertEqual(gap_rules(drawn), gap_rules(blog))
         self.assertEqual(len(gap_rules(drawn)), 4)
+
+    def test_moved_components_are_defined_only_in_the_kit(self):
+        moved = {'filter-bar', 'more-filters', 'filters-toggle', 'library-selection',
+                 'selection-bar', 'create-flow', 'create-step', 'create-foot', 'sheet-heading',
+                 'research-choices', 'site-choices', 'check'}
+        for sheet in PAGE_STYLES:
+            with self.subTest(sheet=sheet.relative_to(ROOT).as_posix()):
+                css = sheet.read_text()
+                drawn, named = [], []
+                for listed, block in rules(css):
+                    for whole, classes, _, _ in selectors(listed):
+                        if 'library-selection' in whole or '#studio-page>' in whole.replace(' ', ''):
+                            named.append(whole)
+                        if classes & moved and any(not LAYOUT.fullmatch(p) for p in properties(block)):
+                            drawn.append(whole)
+                self.assertEqual(drawn, [])
+                self.assertEqual(named, [])
+
+    def test_moved_rules_keep_blog_studios_values(self):
+        kit = declared(KIT.read_text())
+        for context, moved in MOVED.items():
+            for selector, block in moved.items():
+                with self.subTest(context=context or 'top level', selector=selector):
+                    have = kit.get(context, {}).get(plain(selector), {})
+                    want = wanted(block)
+                    self.assertEqual({name: have.get(name) for name in want}, want)
+        phone = kit['(max-width:52rem)']
+        room = phone.get('.content:has(.selection-bar:not([hidden]))', {})
+        # The 7rem a phone's page always leaves, and 12rem more for the bar, as Blog Studio had.
+        self.assertEqual(room.get('padding-bottom'), 'calc(19rem + env(safe-area-inset-bottom))')
+        self.assertEqual(phone['.content'].get('padding-bottom'),
+                         'calc(7rem + env(safe-area-inset-bottom))')
+        tile = kit[''].get('.card[data-studio]>.studio-symbol', {})
+        self.assertEqual(tile, {'background': 'var(--studio-wash)', 'color': 'var(--studio-color)',
+                                'box-shadow': 'none'})
+
+    def test_blog_studios_bar_keeps_its_id(self):
+        html = APP_PAGES[1].read_text()
+        bar = re.search(r'<[a-z]+\b[^>]*\bid="library-selection"[^>]*>', html).group(0)
+        self.assertEqual(re.search(r'class="([^"]*)"', bar).group(1), 'selection-bar glass')
+        page = re.search(r'<[a-z]+\b[^>]*\bid="studio-page"[^>]*>', html).group(0)
+        self.assertEqual(re.search(r'class="([^"]*)"', page).group(1), 'stack')
+        self.assertEqual(missing_classes(html, (('page-head', 'view-head'),)), [])
+
+    def test_every_shared_control_is_at_least_44px(self):
+        kit = declared(KIT.read_text())
+        for selector in ('.button', '.nav-item', '.seg-option', '.chip', '.menu-item', '.input',
+                         '.select-page', '.more-filters>summary'):
+            with self.subTest(selector=selector):
+                self.assertGreaterEqual(rem(kit[''][selector]['min-height']), 2.75)
+        for context in (PHONE, '(pointer:coarse)'):
+            for selector in ('.link', '.input[type="file"]::file-selector-button', '.check'):
+                with self.subTest(context=context, selector=selector):
+                    self.assertEqual(kit[context][selector].get('min-height'), '2.75rem')
+            self.assertEqual(kit[context]['.link'].get('display'), 'inline-flex')
+
+    def test_bars_sit_above_the_tab_bar_on_a_phone(self):
+        kit = declared(KIT.read_text())
+        phone = kit[PHONE]
+        self.assertEqual(phone[':root'].get('--tab-bar-room'),
+                         'calc(4.4rem + env(safe-area-inset-bottom))')
+        self.assertEqual(phone['.review-bar'].get('bottom'), 'var(--tab-bar-room)')
+        self.assertEqual(phone['.review-bar'].get('z-index'), '4')
+        self.assertEqual(phone['.selection-bar'].get('position'), 'fixed')
+        self.assertEqual(phone['.selection-bar'].get('bottom'), 'var(--tab-bar-room)')
+        tab_bar = int(phone['.sidebar']['z-index'])
+        self.assertEqual(tab_bar, 6)
+        self.assertGreater(tab_bar, int(phone['.review-bar']['z-index']))
+        self.assertGreater(tab_bar, int(phone['.selection-bar']['z-index']))
+
+    def test_studio_pages_link_the_kit(self):
+        found = []
+        for folder in LINKED:
+            for name in ('style.css', 'markdown.js'):
+                path = folder / name
+                if path.exists() or path.is_symlink():
+                    found.append(path)
+                    with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                        self.assertTrue(path.is_symlink())
+                        self.assertEqual(path.resolve(), ROOT / 'ui-kit' / name)
+        self.assertGreaterEqual(len(found), 8)
+
+    def test_home_css_draws_no_shared_control(self):
+        # Marketing Studio's launch tile is ui-kit's .studio-symbol, its status ui-kit's
+        # .state with a bead, and its research sites ui-kit's .table.
+        css = PAGE_STYLES[0].read_text()
+        for listed, block in rules(css):
+            for whole, classes, _, _ in selectors(listed):
+                with self.subTest(selector=whole):
+                    self.assertNotIn('studio-icon', whole)
+                    self.assertNotIn('studio-status', whole)
+                    if 'site-row' in classes:
+                        drawn = [p for p in properties(block) if p.startswith(('border', 'padding'))]
+                        self.assertEqual(drawn, [])
 
     def test_a_choice_set_straight_in_a_card_fits_it_at_phone_width(self):
         # Training Studio's "Where this training stops" puts its three levels straight in a

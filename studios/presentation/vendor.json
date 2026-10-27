@@ -351,12 +351,13 @@
       "path": "skills/presentation-studio/scripts/desk/app.js",
       "from": "skills/training-studio/scripts/desk/app.js",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "the brand skill's Settings card, sheet and Versions parts follow skills/training-studio/scripts/desk/app.js at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66); adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): the \"Your other studios\" card on Status and Settings, with Join it and Got it"
+      "note": "the brand skill's Settings card, sheet and Versions parts follow skills/training-studio/scripts/desk/app.js at 0881ce768039ebeb9e1fa39b89cedf792bf5d40e (PR #66); adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): the \"Your other studios\" card on Status and Settings, with Join it and Got it; layout pass, piece 4"
     },
     {
       "path": "tests/page_harness.js",
       "from": "tests/page_harness.js",
-      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d"
+      "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
+      "note": "layout pass, piece 4"
     },
     {
       "path": "tests/test_desk.py",

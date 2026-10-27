@@ -94,17 +94,19 @@ function show(next) {
   // In setup the numbered list names the step, and the step's card is titled with it.
   $('#settings-title').textContent = 'Shared settings';
   $('#settings-title').hidden = setup;
-  $('#settings-intro').textContent = setup ? 'Set up once. Your studios will start with these choices.' : 'New work in every studio starts with these choices.';
+  $('#settings-intro').textContent = setup ? 'Set up once, and every studio starts with these choices.' : 'New work in every studio starts with these choices.';
   $('#step-label').textContent = '';
   $('#step-label').hidden = true;
-  // Blog Studio's own first run asks only what Blog Studio uses.
-  $('#review-part').hidden = blogAlone();
-  $('#delivery-part').hidden = blogAlone();
+  // This computer's one action is its toolbar's.
+  $('#check').hidden = view !== 'computer';
   $('#setup-progress').hidden = !setup;
   $('#setup-progress').querySelectorAll('li').forEach((node, index) => {
     if (index === step) node.setAttribute('aria-current', 'step'); else node.removeAttribute('aria-current');
   });
   form.querySelectorAll('[data-step]').forEach(section => { section.hidden = setup && Number(section.dataset.step) !== step; });
+  // Blog Studio's own first run asks only what Blog Studio uses.
+  $('#review-part').hidden = blogAlone() || (setup && step !== 0);
+  $('#delivery-part').hidden = blogAlone() || (setup && step !== 2);
   $('#back').hidden = !setup || step === 0;
   $('#save').textContent = setup ? (step === 2 ? 'Finish setup' : 'Continue') : 'Save settings';
   $('#installations').hidden = setup || standalone;
@@ -218,15 +220,18 @@ function siteShown(site) { return site.replace(/^https:\/\//, ''); }
 function renderSites() {
   const list = $('#research-site-list'); list.replaceChildren();
   researchSites.forEach((site, index) => {
-    const row = element('li', '', 'site-row'), remove = element('button', 'Remove', 'button button-quiet');
+    const row = element('tr', '', 'site-row'), remove = element('button', 'Remove', 'button button-quiet');
     remove.type = 'button'; remove.setAttribute('aria-label', `Remove ${siteShown(site)}`);
     remove.addEventListener('click', () => {
       researchSites.splice(index, 1); renderSites();
       $('#research-site-hint').textContent = `${siteShown(site)} removed. Save settings to keep the list.`;
       (list.querySelectorAll('.site-row .button')[Math.min(index, researchSites.length - 1)] || $('#research-site-input')).focus();
     });
-    row.append(element('span', siteShown(site)), remove); list.append(row);
+    const shown = element('td', siteShown(site)), action = element('td');
+    shown.dataset.label = 'Site'; action.append(remove);
+    row.append(shown, action); list.append(row);
   });
+  $('#research-site-table').hidden = researchSites.length === 0;
   $('#research-site-empty').hidden = researchSites.length > 0;
 }
 async function addSite() {
@@ -272,8 +277,8 @@ function fillProfiles() {
   for (const name of profileNames) {
     const saved = snapshot.shared.models?.profiles?.[name] || {};
     const title = name[0].toUpperCase() + name.slice(1);
-    const card = element('section', '', 'paper profile-card'); card.dataset.profile = name;
-    card.append(element('h5', title, 'sheet-part'), element('p', descriptions[name], 'field-hint quiet'));
+    const card = element('fieldset', '', 'paper profile-card'); card.dataset.profile = name;
+    card.append(element('legend', title, 'field-label'), element('p', descriptions[name], 'field-hint quiet'));
     const choice = element('div', '', 'field');
     const choiceLabel = element('label', `${title} model choice`, 'field-label'); choiceLabel.htmlFor = `models-${name}-selection`;
     const selection = element('select', '', 'input'); selection.id = choiceLabel.htmlFor; selection.name = `models.${name}.selection`;
@@ -296,10 +301,19 @@ function fillProfiles() {
 form.querySelectorAll('[name="models.mode"]').forEach(input => input.addEventListener('change', profilesChanged));
 $('#confirm-profiles').addEventListener('click', () => { profileAgent = form.elements['assistant.agent'].value; profilesChanged(); });
 const drawings = {
-  blog: '<path d="M5 4h10l4 4v14H5zM14 4v5h5M8 13h8M8 17h6"/>',
-  presentation: '<path d="M3 5h20v14H3zM13 19v5M8 24h10M7 14l4-4 4 3 4-5"/>',
-  training: '<path d="m2 9 11-5 11 5-11 5zM6 12v7c4 3 10 3 14 0v-7M24 9v10"/>'
+  blog: 'M5 4h10l4 4v14H5zM14 4v5h5M8 13h8M8 17h6',
+  presentation: 'M3 5h20v14H3zM13 19v5M8 24h10M7 14l4-4 4 3 4-5',
+  training: 'm2 9 11-5 11 5-11 5zM6 12v7c4 3 10 3 14 0v-7M24 9v10'
 };
+// A studio's tile: ui-kit's .studio-symbol, in the card's studio colours, its drawing an svg.
+function studioSymbol(id) {
+  const tile = element('div', '', 'studio-symbol'); tile.setAttribute('aria-hidden', 'true');
+  const space = 'http://www.w3.org/2000/svg', drawing = document.createElementNS(space, 'svg');
+  for (const [name, value] of Object.entries({class: 'icon', viewBox: '0 0 26 28', fill: 'none', stroke: 'currentColor',
+    'stroke-width': '1.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round'})) drawing.setAttribute(name, value);
+  const line = document.createElementNS(space, 'path'); line.setAttribute('d', drawings[id] || '');
+  drawing.append(line); tile.append(drawing); return tile;
+}
 // What a Connect action did, in one message that stays on the page.
 function connectedWords(done) {
   const to = done.to?.repository ? `${done.to.repository} (${done.to.branch})` : `local Git at ${done.to?.root}`;
@@ -330,12 +344,10 @@ function renderHome() {
   for (const studio of snapshot.studios) {
     const card = element('article', '', 'card studio-card');
     card.dataset.studio = studio.id;
-    const icon = element('div', '', 'studio-icon'); icon.setAttribute('aria-hidden', 'true');
-    // Drawings are static application assets; user and repository text use textContent.
-    icon.innerHTML = `<svg viewBox="0 0 26 28" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${drawings[studio.id]}</svg>`;
-    card.append(icon, element('h3', studio.name, 'studio-name'), element('p', studio.description, 'studio-says'));
-    const status = element('p', studio.running ? 'Running' : studio.installed ? `Ready${studio.version ? ` · ${studio.version}` : ''}` : 'Not installed', 'studio-status');
-    status.dataset.running = String(studio.running); card.append(status);
+    card.append(studioSymbol(studio.id), element('h3', studio.name, 'studio-name'), element('p', studio.description, 'studio-says'));
+    card.append(studio.running ? stateLine('done', 'Running')
+      : studio.installed ? stateLine('none', `Ready${studio.version ? ` · ${studio.version}` : ''}`)
+        : stateLine('off', 'Not installed'));
     const link = studio.workspace;
     if (link) {
       // Where its work lives, read from the studio's own records.
@@ -345,7 +357,7 @@ function renderHome() {
       card.append(line);
     }
     if (studio.installed && link?.connect) {
-      const connect = element('button', 'Connect', 'button studio-connect'); connect.type = 'button';
+      const connect = element('button', 'Connect', 'button studio-connect button-filled'); connect.type = 'button';
       connect.setAttribute('aria-label', `Connect ${studio.name} to the shared storage`);
       connect.addEventListener('click', async () => {
         connect.disabled = true; connect.textContent = 'Connecting…'; $('#problem').hidden = true; $('#message').hidden = true;
@@ -360,7 +372,7 @@ function renderHome() {
     }
     if (studio.installed) {
       const label = studio.running ? `Return to ${studio.name}` : `Open ${studio.name}`;
-      const button = element('button', label, 'button button-filled');
+      const button = element('button', label, link?.connect ? 'button' : 'button button-filled');
       button.addEventListener('click', async () => {
         if (inThisTab((query) => window.matchMedia(query).matches)) {
           button.disabled = true; button.textContent = 'Opening…'; $('#problem').hidden = true;
@@ -515,7 +527,7 @@ $('#check').addEventListener('click', async () => {
     for (const item of result.computer.items) {
       const kind = item.ready ? 'done' : item.optional ? 'none' : 'review';
       const row = element('li', '', 'computer-item'), top = element('div', '', 'computer-top');
-      top.append(element('h4', item.name, 'row-title'), stateLine(kind, item.ready ? 'Available' : item.optional ? 'Optional' : 'Needs setup'));
+      top.append(element('p', item.name, 'row-title'), stateLine(kind, item.ready ? 'Available' : item.optional ? 'Optional' : 'Needs setup'));
       row.append(top, element('p', item.detail, 'facts')); list.append(row);
     }
   } catch (error) { inform(error.message, true); } finally { $('#check').disabled = false; }

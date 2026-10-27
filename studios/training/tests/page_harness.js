@@ -12,7 +12,8 @@
 // label of a file picker, files: what is chosen in it}, {polls: how many} for the page's own
 // refresh asked for that many times at once, {hidden: true or false} for the tab put behind
 // another or brought back, {timer: a function's name} for the last timer the page set to
-// call it, and {hold: the name of a control} to follow that very node: each
+// call it, {tick: the name of a check box} for a click on that box, and {hold: the name of
+// a control} to follow that very node: each
 // snapshot then says, in `still`, which of those held are still on the page, and in `asked`
 // how many requests had been made by then. A box that is filled is left as a
 // person leaves it, unless the step says {stay: true}: then they are still typing in it. A chosen file is {name, text} or {name,
@@ -23,8 +24,18 @@
 // the screen and which are still held; what was let go is listed beside the requests.
 // Nothing is laid out here, so nothing scrolls into view by itself: {see: the words a
 // picture's place begins with} says that it has. A plan with {unwatched: true} is a browser
-// that cannot say when anything comes into view. A plan with {narrow: true} is a phone:
-// the page's own width queries match.
+// that cannot say when anything comes into view. A plan with {state} opens the page at that
+// history entry, as an address or the browser's way back does; {transitions: true} is a
+// browser that changes screens with a view transition, which draws the next screen a moment
+// later. An answer {pending: true} is a request that is never answered while the plan runs.
+// A plan with {narrow: true} is a phone:
+// the page's own width queries match, and what the kit's stylesheet hides on a phone (the
+// filters behind Filters) or shows only there (Filters itself) is hidden or shown here too.
+//
+// Each snapshot also says how the screen is laid out: the toolbar's controls in order, each
+// filled or quiet; the ledes; the heading tags of each card; how many cards sit inside
+// another; the parts' names in order (card titles, sheet parts and a selection's count); the
+// boxes that are ticked; and the words of the selection bar.
 //
 // The document here has no HTML parser at all. A script that tried to set innerHTML would
 // throw, so anything that reaches the page as markup fails the test that runs this.
@@ -104,6 +115,8 @@ class FakeElement extends FakeNode {
     this.inert = false;
     this.open = false;
     this.value = '';
+    this.checked = false;
+    this.indeterminate = false;
     const owner = this;
     this.classList = {
       add: (...names) => { owner.className = [...new Set([...owner.classes(), ...names])].join(' '); },
@@ -342,9 +355,23 @@ function settle() {
   return new Promise((resolve) => setImmediate(() => setImmediate(() => setImmediate(resolve))));
 }
 
+// The kit's phone rules for a filter row: on a phone only the search shows until Filters
+// opens the rest; on a desktop there is no Filters button.
+let phone = false;
+
+function styledAway(at) {
+  if (at.nodeType !== 1) return false;
+  const classes = at.classes();
+  if (classes.includes('filters-toggle')) return !phone;
+  const row = at.parentNode;
+  if (!phone || !row || row.nodeType !== 1 || !row.classes().includes('filter-bar')) return false;
+  if (row.classes().includes('filters-open')) return false;
+  return classes.includes('more-filters') || (classes.includes('field') && !classes.includes('search'));
+}
+
 function visible(node) {
   for (let at = node; at; at = at.parentNode) {
-    if (at.hidden || (at.tagName === 'DETAILS' && !at.open && node !== at
+    if (at.hidden || styledAway(at) || (at.tagName === 'DETAILS' && !at.open && node !== at
         && !at.children.filter((child) => child.tagName === 'SUMMARY').some((s) => s.contains(node)))) {
       return false;
     }
@@ -352,13 +379,79 @@ function visible(node) {
   return true;
 }
 
+function labelOf(node) {
+  for (let at = node.parentNode; at; at = at.parentNode) if (at.tagName === 'LABEL') return at;
+  if (!node.id) return null;
+  return document.body.querySelectorAll('label').find((label) => label.htmlFor === node.id) || null;
+}
+
 function name(node) {
+  if (node.tagName === 'INPUT' && !node.getAttribute('aria-label')) {
+    const label = labelOf(node);
+    return label ? (label.textContent || '').trim() : '';
+  }
   return (node.getAttribute('aria-label') || node.textContent || '').trim();
 }
 
+// A check box, by the words of its label.
+function checkbox(label) {
+  const all = document.body.querySelectorAll('input').filter((node) => node.type === 'checkbox'
+    && visible(node));
+  const exact = all.filter((node) => name(node) === label);
+  const found = exact.length ? exact : all.filter((node) => name(node).startsWith(label));
+  if (!found.length) throw new Error('No check box on the page is labelled "' + label + '".');
+  return found[0];
+}
+
+// How the screen is laid out, for the layout rules the tests hold every screen to.
+const HEADINGS = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6'];
+
+function inside(node, root, className) {
+  for (let at = node.parentNode; at && at !== root; at = at.parentNode) {
+    if (at.nodeType === 1 && at.classes().includes(className)) return true;
+  }
+  return false;
+}
+
+function layout() {
+  const main = document.getElementById('main');
+  const sheet = document.getElementById('sheet');
+  const actions = document.getElementById('actions');
+  const cards = main.querySelectorAll('.card').filter(visible);
+  const bar = document.body.querySelectorAll('.selection-bar').filter(visible)[0];
+  return {
+    // The toolbar's own actions: a menu is its opener, not the items it opens on.
+    toolbar: actions.children.map((node) => (node.tagName === 'DETAILS'
+      ? node.children.find((child) => child.tagName === 'SUMMARY') : node))
+      .filter((node) => node && visible(node)).map((node) => ({
+        name: name(node), filled: node.classes().includes('button-filled'),
+        quiet: node.classes().includes('button-quiet') })),
+    ledes: [main, sheet].filter((part) => visible(part))
+      .flatMap((part) => part.querySelectorAll('.lede').filter(visible))
+      .map((node) => node.textContent.trim()),
+    cardHeadings: cards.map((card) => [...new Set(card.all()
+      // A document read in a card keeps its own outline: its headings are not the card's.
+      .filter((node) => HEADINGS.includes(node.tagName) && visible(node)
+        && !inside(node, card, 'card') && !inside(node, card, 'md'))
+      .map((node) => node.tagName.toLowerCase()))].sort()),
+    nested: cards.filter((card) => inside(card, main, 'card')).length,
+    parts: document.body.querySelectorAll('.card-title, .sheet-part, .selection-count')
+      .filter(visible).map((node) => words(node).replace(/\s+/g, ' ').trim()),
+    ticked: document.body.querySelectorAll('input')
+      .filter((node) => node.type === 'checkbox' && node.checked && visible(node)).map(name),
+    bar: bar ? words(bar).replace(/\n+/g, '\n').trim() : '',
+  };
+}
+
+// A closed list shows the one option chosen in it, not every option it holds.
 function words(node) {
   if (node.nodeType === 3) return node.data;
-  if (node.hidden) return '';
+  if (node.hidden || styledAway(node)) return '';
+  if (node.tagName === 'SELECT') {
+    const options = node.querySelectorAll('option');
+    const chosen = options.find((option) => option.value === node.value) || options[0];
+    return chosen ? chosen.textContent : '';
+  }
   const inline = ['SPAN', 'CODE', 'STRONG', 'EM', 'A', 'BUTTON', 'P', 'LI', 'H1', 'H2', 'H3',
     'TIME', 'TH', 'TD', 'LABEL', 'SUMMARY'];
   return node.childNodes.map(words).join(inline.includes(node.tagName) ? '' : '\n');
@@ -438,7 +531,8 @@ function snapshot() {
     if (control.tagName === 'TEXTAREA' || control.tagName === 'INPUT') {
       if (control.getAttribute('aria-hidden') === 'true') continue;
       const labelled = document.body.querySelectorAll('label')
-        .some((label) => label.htmlFor && label.htmlFor === control.id && name(label));
+        .some((label) => label.htmlFor && label.htmlFor === control.id && name(label))
+        || Boolean(control.tagName === 'INPUT' && name(control));
       if (!labelled && !control.getAttribute('aria-label')) unnamed.push(control.tagName);
     } else if (!name(control)) {
       unnamed.push(control.tagName + '.' + control.className);
@@ -504,6 +598,7 @@ function snapshot() {
     pace: report.paces[report.paces.length - 1] || 0,
     asked: report.requests.length,
     still: followed.filter(([node]) => document.body.contains(node)).map(([, named]) => named),
+    ...layout(),
   };
 }
 
@@ -583,7 +678,15 @@ async function app(file) {
   const plan = JSON.parse(fs.readFileSync(file, 'utf8'));
   const answers = plan.answers;
   const timers = [];
+  phone = Boolean(plan.narrow);
   build(fs.readFileSync(path.join(PAGE, 'index.html'), 'utf8'));
+  // A browser with view transitions draws the next screen after the current task.
+  if (plan.transitions) {
+    document.startViewTransition = (update) => {
+      const done = new Promise((resolve) => setImmediate(() => { update(); resolve(); }));
+      return { ready: done, finished: done, updateCallbackDone: done };
+    };
+  }
 
   class Notification {
     constructor(title, options) {
@@ -609,7 +712,7 @@ async function app(file) {
     location: { hash: plan.hash === undefined ? '#token=the-test-key' : plan.hash,
       reload() { report.reloads += 1; } },
     history: {
-      state: null,
+      state: plan.state || null,
       earlier: [],
       pushState(state) {
         this.earlier.push(this.state);
@@ -650,6 +753,7 @@ async function app(file) {
       const held = answers[method + ' ' + address] || answers[key];
       if (!held) return { ok: false, status: 404, json: async () => ({ error: 'No answer for ' + key }) };
       const answer = held.length > 1 ? held.shift() : held[0];
+      if (answer.pending) return new Promise(() => {});
       if (answer.picture === undefined) {
         return { ok: answer.status === 200, status: answer.status, json: async () => answer.body };
       }
@@ -671,6 +775,8 @@ async function app(file) {
   // The deck panels are the shared core's, served beside the page.
   const panels = path.join(PAGE, '..', 'studio_core', 'deck_web', 'deck-panels.js');
   vm.runInContext(fs.readFileSync(panels, 'utf8'), context, { filename: 'deck-panels.js' });
+  const lists = path.join(PAGE, '..', 'studio_core', 'deck_web', 'lists.js');
+  vm.runInContext(fs.readFileSync(lists, 'utf8'), context, { filename: 'lists.js' });
   for (const script of ['markdown.js', 'app.js']) {
     vm.runInContext(fs.readFileSync(path.join(PAGE, script), 'utf8'), context, { filename: script });
   }
@@ -710,6 +816,15 @@ async function app(file) {
       if (step.hidden !== undefined) {
         document.hidden = step.hidden;
         for (const listener of documentListeners.visibilitychange || []) listener({});
+      }
+      if (step.tick !== undefined) {
+        const held = checkbox(step.tick);
+        if (!held.disabled && !held.behind) {
+          held.focus();
+          held.checked = !held.checked;
+          held.indeterminate = false;
+          held.dispatch('change', { target: held, currentTarget: held });
+        }
       }
       if (step.hold !== undefined) followed.push([control(step.hold), step.hold]);
       if (step.key) for (const listener of documentListeners.keydown || []) listener({ key: step.key });

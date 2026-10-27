@@ -100,7 +100,11 @@ class LinkTests(unittest.TestCase):
         shell = read('index.html')
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', shell)),
                          ['#main', 'app.js', 'deck-panels.css', 'deck-panels.js', 'deck.css',
-                      'markdown.js', 'style.css'])
+                      'lists.js', 'markdown.js', 'style.css'])
+        # The list kit is the shared core's, loaded after the deck panels and before app.js.
+        scripts = re.findall(r'<script src="([^"]+)"', shell)
+        self.assertLess(scripts.index('deck-panels.js'), scripts.index('lists.js'))
+        self.assertLess(scripts.index('lists.js'), scripts.index('app.js'))
         for name in ('/deck.css', '/style.css', '/app.js', '/markdown.js'):
             self.assertIn(name, server.PAGE)
         styles = read('deck.css')

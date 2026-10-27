@@ -62,7 +62,7 @@ class PageFileTests(unittest.TestCase):
         # The deck panels are the shared core's, served beside every studio page.
         self.assertEqual(set(server.PAGE), {'/', '/index.html', '/app.js', '/markdown.js',
                                             '/style.css', '/deck.css', '/deck-panels.js',
-                                            '/deck-panels.css'})
+                                            '/deck-panels.css', '/lists.js'})
 
     def test_the_page_has_nothing_its_own_policy_would_block(self):
         page = self.read('index.html')
@@ -72,7 +72,7 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(page, r'<svg\b')
         # markdown.js, the shared deck panels and app.js: each a file, none inline.
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', '', ''])
+                         ['', '', '', ''])
 
     def test_the_shell_names_its_controls_and_its_regions(self):
         page = self.read('index.html')
@@ -154,7 +154,8 @@ class MarkdownTests(unittest.TestCase):
 class ScriptedPage:
     """Runs app.js in the harness, and checks what every screen it shows must hold."""
 
-    def run_page(self, answers: dict, steps: list, **plan) -> dict:
+    def run_page(self, answers: dict, steps: list, layout: bool = True,
+                 **plan) -> dict:
         file = self.base / 'plan.json'
         file.write_text(json.dumps({'answers': answers, 'steps': steps, **plan}),
                         encoding='utf-8')
@@ -172,7 +173,25 @@ class ScriptedPage:
                 self.assertEqual(shot['bareBeads'], 0, 'every bead has words beside it')
                 self.assertLessEqual(len(shot['filled']), 1, 'one filled button on a screen')
                 self.assertNotRegex(shot['text'] + shot['sheet'], FORBIDDEN_WORDS)
+        if layout:
+            for name, shot in result['snapshots'].items():
+                with self.subTest(screen=name, rule='layout'):
+                    self.assertLayout(shot)
         return result
+
+    def assertLayout(self, shot: dict):
+        """The layout rules every screen keeps: one lede at most, one heading level in a
+        card, no card inside a card, and a toolbar's filled action first with the rest
+        quiet."""
+        self.assertLessEqual(len(shot['ledes']), 1, f"one lede on a screen: {shot['ledes']}")
+        for tags in shot['cardHeadings']:
+            self.assertLessEqual(len(tags), 1, f'one heading level in a card: {tags}')
+        self.assertEqual(shot['nested'], 0, 'no card inside a card')
+        bar = shot['toolbar']
+        if any(control['filled'] for control in bar):
+            self.assertTrue(bar[0]['filled'], f'the filled action comes first: {bar}')
+            self.assertEqual([control['name'] for control in bar[1:] if not control['quiet']],
+                             [], 'the rest of the toolbar is quiet')
 
     def posts(self, result: dict) -> list:
         made = [request for request in result['requests'] if request['method'] == 'POST']
@@ -273,13 +292,12 @@ class ScreenTests(ScriptedPage, PageCase):
                                                     'body': {'error': 'There is no deck there.'}}]})
         result = self.run_page(answers, [
             {'click': 'New deck'}, {'snapshot': 'routes'},
-            {'click': 'Redesign an existing deck'}, {'click': 'Continue'},
+            {'click': 'Redesign an existing deck'}, {'click': 'Start the deck'},
             {'snapshot': 'missing'},
             {'attach': 'The deck, as a .pptx',
              'files': [{'name': 'old.pptx', 'bytes': DECK.decode('latin-1')}]},
             {'click': 'Selected changes'}, {'click': 'Polish'}, {'snapshot': 'levels'},
-            {'click': 'Continue'},
-            {'fill': 'A short title', 'value': 'Old deck'}, {'click': 'Continue'},
+            {'fill': 'A short title', 'value': 'Old deck'},
             {'snapshot': 'last'}, {'click': 'Start the deck'}])
         shots = result['snapshots']
         for route in ('Start from scratch', 'Start from a document', 'Redesign an existing deck'):
@@ -322,7 +340,7 @@ class ScreenTests(ScriptedPage, PageCase):
             {'click': 'New deck'}, {'click': 'Start from scratch'},
             {'fill': 'A short title', 'value': 'Synthetic deck'},
             {'fill': 'What should it cover? (optional)', 'value': ' Cover rollback first. '},
-            {'click': 'Continue'}, {'click': 'Start the deck'}])
+            {'click': 'Start the deck'}])
         (_, body), = self.posts(result)
         self.assertEqual(body['form']['notes'], 'Cover rollback first.')
 
@@ -348,14 +366,14 @@ class ScreenTests(ScriptedPage, PageCase):
         result = self.run_page(answers, [
             {'click': 'New deck'}, {'click': 'Start from a document'},
             {'click': 'Paste the text'}, {'fill': 'The text', 'value': 'Synthetic notes.'},
-            {'click': 'Continue'}, {'fill': 'A short title', 'value': 'Synthetic deck'},
+            {'fill': 'A short title', 'value': 'Synthetic deck'},
             {'snapshot': 'off'}, {'click': 'Research first'}, {'snapshot': 'offered'},
-            {'click': 'your sites'}, {'snapshot': 'sites'},
-            {'click': 'the public web'}, {'click': 'docs.example.com'},
+            {'tick': 'your sites'}, {'snapshot': 'sites'},
+            {'tick': 'the public web'}, {'tick': 'docs.example.com'},
             {'fill': 'Add a site for this piece of work', 'value': 'learn.example.org/guide/'},
             {'click': 'Add the site'}, {'snapshot': 'chosen'},
             {'fill': 'What should the research answer? (optional)', 'value': 'Why?\nWhat next?'},
-            {'click': 'Continue'}, {'snapshot': 'last'}, {'click': 'Start the deck'}])
+            {'snapshot': 'last'}, {'click': 'Start the deck'}])
         self.assertEqual(result['errors'], [])
         off, offered, sites, chosen, last = (result['snapshots'][name] for name in
                                              ('off', 'offered', 'sites', 'chosen', 'last'))
@@ -366,14 +384,15 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertIsNone(FORBIDDEN_WORDS.search(shot['text']))
         # A document's research reads the documents alone until more is ticked: your sites
         # stay off, the shared list ready under them.
-        self.assertEqual(offered['chosen'], ['Research first', 'your documents'])
+        self.assertEqual(offered['chosen'], ['Research first'])
+        self.assertEqual(offered['ticked'], ['your documents'])
         for button in ('your sites (2)', 'the public web'):
             self.assertIn(button, offered['buttons'])
         self.assertNotIn('Add a site for this piece of work', offered['fields'])
         self.assertIn('Research from your documents.', offered['text'])
         self.assertIn(self.ONLY_DOCUMENTS, offered['text'])
         self.assertNotIn(self.SEARCHED, offered['text'])
-        self.assertEqual(sites['chosen'], ['Research first', 'your documents', 'your sites (2)',
+        self.assertEqual(sites['ticked'], ['your documents', 'your sites (2)',
                                            'blog.example.com/platform', 'docs.example.com'])
         self.assertIn('Add a site for this piece of work', sites['fields'])
         self.assertIn('It is for this deck only; your shared list is changed in Shared settings.',
@@ -382,7 +401,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn(self.ONLY_DOCUMENTS, sites['text'])
         self.assertIn('Research from your documents and 2 of your sites '
                       '(blog.example.com/platform, docs.example.com).', sites['text'])
-        self.assertEqual(chosen['chosen'], ['Research first', 'your documents', 'your sites (2)',
+        self.assertEqual(chosen['ticked'], ['your documents', 'your sites (2)',
                                             'the public web', 'blog.example.com/platform',
                                             'learn.example.org/guide'])
         self.assertEqual(chosen['fields']['Add a site for this piece of work'], '')
@@ -391,7 +410,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn(said, chosen['text'])
         # The stops line says it again, sites named, where the deck is started.
         self.assertIn(said, last['text'])
-        self.assertIn('Where this deck stops', last['text'])
+        self.assertIn('Where it stops', last['text'])
         # The added site is checked by the runner; only the deck is started, and nothing
         # changes the shared list.
         self.assertEqual([address for address, _ in self.posts(result)],
@@ -414,7 +433,8 @@ class ScreenTests(ScriptedPage, PageCase):
         shot = self.run_page(answers, [
             {'click': 'New deck'}, {'click': 'Start from scratch'},
             {'click': 'Research first'}, {'snapshot': 'web'}])['snapshots']['web']
-        self.assertEqual(shot['chosen'], ['Research first', 'the public web'])
+        self.assertEqual(shot['chosen'], ['Research first'])
+        self.assertEqual(shot['ticked'], ['the public web'])
         self.assertIn('your sites (2)', shot['buttons'])
         self.assertIn('Research from the public web.', shot['text'])
         self.assertNotIn(self.ONLY_DOCUMENTS, shot['text'])
@@ -430,30 +450,31 @@ class ScreenTests(ScriptedPage, PageCase):
             {'click': 'New deck'}, {'click': 'Start from scratch'},
             {'fill': 'A short title', 'value': 'Synthetic deck'},
             {'click': 'Research first'}, {'snapshot': 'web'},
-            {'click': 'the public web'}, {'click': 'Continue'}, {'snapshot': 'nowhere'},
-            {'click': 'your sites'}, {'snapshot': 'none'}, {'click': 'Continue'},
+            {'tick': 'the public web'}, {'click': 'Start the deck'}, {'snapshot': 'nowhere'},
+            {'tick': 'your sites'}, {'snapshot': 'none'}, {'click': 'Start the deck'},
             {'snapshot': 'no-site'}, {'click': 'Add the site'}, {'snapshot': 'empty'},
             {'fill': 'Add a site for this piece of work', 'value': 'http://docs.example.com'},
             {'click': 'Add the site'}, {'snapshot': 'http'},
             {'fill': 'Add a site for this piece of work', 'value': 'docs.example.com/guide'},
-            {'click': 'Add the site'}, {'click': 'Continue'}, {'snapshot': 'went-on'}])
+            {'click': 'Add the site'}, {'snapshot': 'went-on'}])
         self.assertEqual(result['errors'], [])
         shots = result['snapshots']
         # A deck from an idea has no documents to offer; it reads the public web.
         self.assertNotIn('your documents', shots['web']['buttons'])
-        self.assertEqual(shots['web']['chosen'], ['Research first', 'the public web'])
+        self.assertEqual(shots['web']['ticked'], ['the public web'])
         self.assertIn('Research from the public web.', shots['web']['text'])
-        self.assertIn(research_sites.EMPTY, shots['nowhere']['text'])
-        self.assertEqual(shots['nowhere']['heading'], 'What it is about')
+        self.assertIn(research_sites.EMPTY, shots['nowhere']['sheet'])
+        self.assertEqual(shots['nowhere']['focus'], 'research-sites')
+        self.assertEqual(shots['nowhere']['posts'], 0)
         self.assertIn('Your shared list has no sites yet.', shots['none']['text'])
-        self.assertIn(research_sites.NO_SITES, shots['no-site']['text'])
-        self.assertEqual(shots['no-site']['heading'], 'What it is about')
+        self.assertIn(research_sites.NO_SITES, shots['no-site']['sheet'])
+        self.assertIn('Something above is missing.', shots['no-site']['sheet'])
         self.assertIn('Type the site first, such as docs.example.com/guide.', shots['empty']['text'])
         # The runner's own sentence, from the same check every site has.
         self.assertIn('research sites use https only', refused['body']['error'])
         self.assertIn(refused['body']['error'], shots['http']['text'])
         self.assertIn('Add a site for this piece of work', shots['http']['invalid'])
-        self.assertEqual(shots['went-on']['heading'], 'How it looks, and starting it')
+        self.assertNotIn(research_sites.NO_SITES, shots['went-on']['sheet'])
         self.assertIn('Research from 1 of your sites (docs.example.com/guide).',
                       shots['went-on']['text'])
         self.assertEqual([body for address, body in self.posts(result)
@@ -587,7 +608,7 @@ class ScreenTests(ScriptedPage, PageCase):
             path = self.started(research=True)
         record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
         self.engine._store(Path(path), record)
-        result = self.deck_screen(path, [{'click': 'Ask for changes to the research'}, {'snapshot': 'research'}])
+        result = self.deck_screen(path, [{'snapshot': 'research'}])
         self.assertIn('Asking for changes runs the research again', result['snapshots']['research']['text'])
 
     def test_the_start_step_says_where_it_stops_and_folds_the_options(self):
@@ -602,7 +623,7 @@ class ScreenTests(ScriptedPage, PageCase):
             {'fill': 'Who is it for?', 'value': 'Operators'},
             {'fill': 'What should they take away?', 'value': 'Skip AI review on the first build.'},
             {'snapshot': 'about'},
-            {'click': 'Continue'}, {'snapshot': 'last'}, {'click': 'Options'},
+            {'snapshot': 'last'}, {'click': 'Options'},
             {'snapshot': 'opened'}, {'click': 'Start the deck'}])
         last, opened = result['snapshots']['last'], result['snapshots']['opened']
         self.assertIn('Balanced: it stops for the direction (the outline and the look '
@@ -631,11 +652,11 @@ class ScreenTests(ScriptedPage, PageCase):
             {'click': 'New deck'}, {'click': 'Start from scratch'},
             {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'click': 'Research first'},
-            {'click': 'Continue'}, {'snapshot': 'balanced'},
+            {'snapshot': 'balanced'},
             {'click': 'Step by step'}, {'snapshot': 'step'},
             {'click': 'Start the deck'}])
         balanced, step = result['snapshots']['balanced'], result['snapshots']['step']
-        self.assertIn('Where this deck stops', balanced['text'])
+        self.assertIn('Where it stops', balanced['text'])
         for level in ('Balanced', 'Automatic draft', 'Step by step'):
             self.assertIn(level, balanced['buttons'])
         self.assertIn('Balanced', balanced['pressed'])
@@ -663,23 +684,19 @@ class ScreenTests(ScriptedPage, PageCase):
                          {'fill': 'A short title', 'value': 'Rolling restarts'}]
                 if form['research']:
                     steps.append({'click': 'Research first'})
-                steps.append({'click': 'Continue'})
             elif form['route'] == 'document':
                 steps = [{'click': 'Start from a document'}, {'click': 'Paste the text'},
                          {'fill': 'The text', 'value': 'Synthetic notes.'},
-                         {'click': 'Continue'},
-                         {'fill': 'A short title', 'value': 'Synthetic deck'},
-                         {'click': 'Continue'}]
+                         {'fill': 'A short title', 'value': 'Synthetic deck'}]
             else:
-                steps = [{'click': 'Redesign an existing deck'}, {'click': 'Continue'},
+                steps = [{'click': 'Redesign an existing deck'},
                          {'attach': 'The deck, as a .pptx',
                           'files': [{'name': 'old.pptx', 'bytes': DECK.decode('latin-1')}]},
                          {'click': titles[form['level']]}]
                 if form['level'] == 'selected':
                     steps.append({'fill': 'Which slides, and what to fix',
                                   'value': 'Slide 2: shorten it.'})
-                steps += [{'click': 'Continue'}, {'fill': 'A short title', 'value': 'Old deck'},
-                          {'click': 'Continue'}]
+                steps += [{'fill': 'A short title', 'value': 'Old deck'}]
             for level in route_stops.LEVELS:
                 steps += [{'click': route_stops.LEVEL_WORDS[level]}, {'snapshot': level}]
             answers = self.answers(**{
@@ -733,7 +750,7 @@ class ScreenTests(ScriptedPage, PageCase):
             result = self.run_page(answers, [
                 {'click': 'New deck'}, {'click': 'Start from scratch'},
                 {'fill': 'A short title', 'value': 'Rolling restarts'},
-                {'click': 'Research first'}, {'snapshot': 'about'}, {'click': 'Continue'},
+                {'click': 'Research first'}, {'snapshot': 'about'},
                 {'snapshot': 'last'}])
             with self.subTest(level=level):
                 about, last = result['snapshots']['about'], result['snapshots']['last']
@@ -807,11 +824,11 @@ class ScreenTests(ScriptedPage, PageCase):
             {'click': 'New deck'}, {'click': 'Start from scratch'},
             {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'snapshot': 'about'}, {'click': 'A handout'},
-            {'click': 'Continue'}, {'snapshot': 'last'}, {'click': 'Start the deck'}])
+            {'snapshot': 'last'}, {'click': 'Start the deck'}])
         about = result['snapshots']['about']
         self.assertIn('Is this deck for a talk or a handout?', about['text'])
         self.assertIn('A talk', about['buttons'])
-        self.assertNotIn('talk or a handout', result['snapshots']['last']['text'],
+        self.assertEqual(result['snapshots']['last']['sheet'].count('talk or a handout'), 1,
                          'asked once, on the form')
         posted = [body for address, body in self.posts(result) if address == '/api/decks']
         self.assertEqual(posted[0]['form']['delivery'], 'reading')
@@ -1027,11 +1044,9 @@ class ScreenTests(ScriptedPage, PageCase):
         shown = self.run_of(path)
         self.assertIs(shown['undo'], True)
         shown['undo'] = False
-        result = self.deck_screen(path, [{'snapshot': 'deck'}, {'click': 'More'},
-                                         {'snapshot': 'menu'}], narrow=True,
+        result = self.deck_screen(path, [{'snapshot': 'deck'}], narrow=True,
                                   **{'GET /api/run': [ok(shown)]})
-        for shot in ('deck', 'menu'):
-            self.assertNotIn('Undo the last step', result['snapshots'][shot]['buttons'])
+        self.assertNotIn('Undo the last step', result['snapshots']['deck']['buttons'])
 
     def test_undo_names_the_last_step_with_its_time_and_cost(self):
         path = self.started()
@@ -1190,22 +1205,24 @@ class ScreenTests(ScriptedPage, PageCase):
                                                    'error': 'There is no deck there.'}}]}), [
             {'click': 'New deck'}, {'click': 'Start from scratch'},
             {'fill': 'A short title', 'value': 'Rolling restarts'},
-            {'click': 'Continue'}, {'click': 'Options'}, {'snapshot': 'options'}])
+            {'click': 'Options'}, {'snapshot': 'options'}])
         self.assertIn(said, result['snapshots']['options']['text'])
         result = self.deck_screen(path, [{'snapshot': 'signed'}],
                                   **{'GET /api/setup': [self.setup_with(google=True)]})
         self.assertNotIn(said, result['snapshots']['signed']['text'])
 
-    def test_a_phone_keeps_one_decision_in_the_toolbar(self):
+    def test_a_phone_wraps_every_toolbar_action_under_the_title(self):
         path = self.started()
-        result = self.deck_screen(path, [{'snapshot': 'phone'}, {'click': 'More'},
-                                         {'snapshot': 'menu'}], narrow=True)
-        phone, menu = result['snapshots']['phone'], result['snapshots']['menu']
+        result = self.deck_screen(path, [{'snapshot': 'phone'}], narrow=True)
+        phone = result['snapshots']['phone']
         self.assertEqual(phone['filled'], ['Approve'])
-        self.assertNotIn('Ask for changes', phone['buttons'])
-        self.assertNotIn('Undo the last step', phone['buttons'])
-        self.assertIn('Ask for changes', menu['buttons'])
-        self.assertIn('Undo the last step', menu['buttons'])
+        # No More menu: the rest wrap in the toolbar, and a stop reviewed item by item is
+        # sent from its review bar, above the tab bar.
+        self.assertNotIn('Approve', [control['name'] for control in phone['toolbar']])
+        self.assertIn('Ask for changes', [control['name'] for control in phone['toolbar']])
+        self.assertIn('Ask for changes', phone['buttons'])
+        self.assertIn('Undo the last step', phone['buttons'])
+        self.assertNotIn('More', phone['buttons'])
 
     def test_every_gate_of_a_deck_from_scratch_is_drawn_and_decided(self):
         path = self.started(research=True)
@@ -1975,7 +1992,8 @@ class ScreenTests(ScriptedPage, PageCase):
                                   'GET /api/published': [ok(self.get('published'))]})
         result = self.run_page(answers, [
             {'click': 'Decks'}, {'snapshot': 'decks'},
-            {'fill': 'Find a deck', 'value': 'capacity', 'stay': True}, {'snapshot': 'found'},
+            {'fill': 'Search', 'value': 'capacity', 'stay': True}, {'click': 'Search'},
+            {'snapshot': 'found'},
             {'click': 'Published'}, {'snapshot': 'published'},
             {'click': 'Status'}, {'snapshot': 'status'},
             {'click': 'Settings'}, {'snapshot': 'settings'}])
@@ -1988,7 +2006,7 @@ class ScreenTests(ScriptedPage, PageCase):
         for shown in ('Running on this computer', 'Rolling restarts', 'Cost so far',
                       'This computer'):
             self.assertIn(shown, shots['status']['text'])
-        for shown in ('Workspace', 'What a new deck starts with', 'When this page is closed',
+        for shown in ('Workspace', 'Delivered as', 'When this page is closed',
                       'Updates'):
             self.assertIn(shown, shots['settings']['text'])
         self.assertEqual(self.posts(result), [])
@@ -2258,8 +2276,8 @@ class ScreenTests(ScriptedPage, PageCase):
                                   'GET /api/run': [{'status': 404,
                                                     'body': {'error': 'There is no deck there.'}}]})
         result = self.run_page(answers, [
-            {'click': 'New deck'}, {'click': 'Start from scratch'}, {'click': 'Continue'},
-            {'fill': 'A short title', 'value': 'Rolling restarts'}, {'click': 'Continue'},
+            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'snapshot': 'last'}, {'click': 'Start the deck'}])
         self.assertIn('A deck can still be started: it is made up to the point it needs your '
                       'brand, and waits there.', result['snapshots']['last']['text'])
