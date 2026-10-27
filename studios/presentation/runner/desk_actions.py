@@ -124,6 +124,9 @@ class DeskActions:
         return {**shown, 'arrived': desk.arrived(record),
                 'working': desk.working(root, record, state),
                 'outline': self._desk_outline_view(root, record),
+                **({} if shown['drawn_here'] else {
+                    'no_drawing': desk.NO_DRAWING,
+                    'draw_here_price': desk.deck_price(self._last_build(record))}),
                 'delivered': decks.delivered(root),
                 'revision': desk.DELIVERED_AGAIN.format(
                     revision=len(record['revisions']), next=len(record['revisions']) + 1)
@@ -192,6 +195,7 @@ class DeskActions:
                 record['desk']['chain'] = {'kind': desk.SLIDE_NOTE, 'at': home.now()}
             self._store(root, record)
             self._commit(root, f'ask to redraw slide {number}', also)
+        self._desk_shared()
         self.wake(root)
         return self.view(root)
 
@@ -220,6 +224,7 @@ class DeskActions:
                 record['desk']['chain'] = {'kind': desk.DECK_NOTE, 'at': home.now()}
             self._store(root, record)
             self._commit(root, 'ask to redraw every section', also)
+        self._desk_shared()
         self.wake(root)
         return self.view(root)
 
@@ -252,8 +257,42 @@ class DeskActions:
             self._store(root, record)
             self._commit(root, 'stop the whole-deck note')
         run.stop.clear()
+        self._desk_shared()
         self.wake(root)
         return self.view(root)
+
+    # --- a deck drawn elsewhere -------------------------------------------------------------
+
+    def desk_draw_here(self, path) -> dict:
+        """Draw a desk deck on this computer, which has no drawing of it: every build step is
+        done again here, with the notes it was asked for, as `_settle` does for a gated deck."""
+        from runner.engine import BUILT
+        root, space, by = self._desk_change(path)
+        with self.files:
+            record = self._load(root)
+            if build.read_state(root).get('start'):
+                raise WorkspaceError('This deck is drawn on this computer already.')
+            names = [step.name for step in stages.steps(record)]
+            for name in BUILT:
+                if name in names:
+                    record['steps'][name] = {**(record['steps'].get(name) or {}), 'done': False,
+                                             'failed': 0}
+            if gate_state(record, 'gate:build') == 'waiting' or decks.delivered(root) is None:
+                record['gates']['gate:build'] = {**(record['gates'].get('gate:build') or {}),
+                                                 'state': 'absent'}
+            for item in desk.waiting(record):
+                item['status'] = 'drawing'
+            self._store(root, record)
+            self._commit(root, 'draw the deck on this computer')
+        self._desk_shared()
+        self.wake(root)
+        return self.view(root)
+
+    def _desk_shared(self) -> None:
+        """Share what a desk action did, where the workspace shares after each decision."""
+        space = self.workspace
+        if space is not None and space.share == gitstate.SHARE[0]:
+            self.share_soon()
 
     # --- Deliver ------------------------------------------------------------------------------
 
@@ -333,6 +372,7 @@ class DeskActions:
             self._commit(root, 'save the outline on the desk',
                          self._listed(space) if decks.delivered(root) is None
                          and record.get('revisions') else ())
+        self._desk_shared()
         self.wake(root)
         return self.view(root)
 
@@ -356,6 +396,7 @@ class DeskActions:
             record = self._desk_resting(root, record, space)
             said = self._reclassify(root, record, {'kind': kind}, None, home.now(), by)
             self._commit(root, said + ' on the desk')
+        self._desk_shared()
         self.wake(root)
         return self.view(root)
 
@@ -378,6 +419,7 @@ class DeskActions:
                 self._fresh(record, step)
             self._store(root, record)
             self._commit(root, 'draw the looks again on the desk')
+        self._desk_shared()
         self.wake(root)
         return self.view(root)
 
@@ -442,5 +484,6 @@ class DeskActions:
                                             'round': int(gated.get('round') or 1)}
             self._store(root, record)
             self._commit(root, 'pick the look on the desk')
+        self._desk_shared()
         self.wake(root)
         return self.view(root)

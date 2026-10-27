@@ -721,5 +721,80 @@ class DeliverTests(DeskCase):
         self.assertEqual(name, f'{root.name}-unreviewed-first-draft.pptx')
 
 
+class DeskTeamTests(DeskCase, runner_support.TeamCase):
+    """The team claim holds on the desk: only the computer that drives a deck changes it,
+    and a computer that took a deck over draws it only when asked."""
+
+    def deck(self) -> Path:
+        with self.be(self.alex):
+            root = self.start_desk(look='default')
+            self.on_desk(root)
+            self.engine.share()
+        return root
+
+    def as_blake(self, action, *args):
+        return self.as_(self.blake, action, *args)
+
+    def test_a_teammate_cannot_note_a_slide_on_a_deck_driven_elsewhere(self):
+        from runner import team
+        root = self.deck()
+        self.as_blake(self.blake.engine.fetch)
+        theirs = self.theirs(self.blake, root)
+        expected = self.as_blake(self.blake.engine.view, theirs)['desk']['expected']
+        with self.be(self.blake):
+            with self.assertRaises(self.engines.Elsewhere) as caught:
+                self.blake.engine.desk_note(theirs, 3, 'Shorter.', expected)
+            said = team.elsewhere(self.blake.space, self.blake.engine._load(theirs))
+        self.assertEqual(str(caught.exception), said)
+
+    def test_a_deck_taken_over_does_not_redraw_itself(self):
+        root = self.deck()
+        self.as_blake(self.blake.engine.fetch)
+        theirs = self.theirs(self.blake, root)
+        jobs = len(self.workers.of('section'))
+        taken = self.as_blake(self.blake.engine.drive, theirs, 'take')
+        self.assertTrue(taken['mine'])
+        self.assertEqual(len(self.workers.of('section')), jobs)
+        shown = taken['desk']
+        self.assertFalse(shown['drawn_here'])
+        self.assertEqual(shown['no_drawing'], desk.NO_DRAWING)
+        self.assertTrue(shown['draw_here_price'].startswith('Redraws every section.'))
+        self.assertEqual(taken['gate']['name'], 'gate:build')
+        # Its cards are the shared outline's words, with no pictures.
+        cards = [card for part in shown['sections'] for card in part['slides']]
+        self.assertEqual(len(cards), 8)
+        self.assertEqual({card['image'] for card in cards}, {None})
+        drawn = self.as_blake(self.blake.engine.desk_draw_here, theirs)
+        self.assertEqual(len(self.workers.of('section')), jobs + 2)
+        self.assertTrue(drawn['desk']['drawn_here'])
+        self.assertEqual(drawn['gate']['name'], 'gate:build')
+
+    def test_desk_work_settles_only_on_the_driving_computer(self):
+        root = self.deck()
+        theirs = self.theirs(self.blake, root)
+
+        def taken_over(tools, job):
+            self.as_blake(self.blake.engine.fetch)
+            self.as_blake(self.blake.engine.drive, theirs, 'take')
+            with self.be(self.alex):
+                self.alex.engine.fetch()
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', taken_over)
+        kept = self.shared().count('Rolling restarts: keep section 1')
+        with self.be(self.alex):
+            self.engine.desk_note(root, 3, 'Make the diagram a sequence.',
+                                  self.desk_view(root)['expected'])
+        mine = self.as_blake(self.blake.engine.view, theirs)
+        self.assertTrue(mine['mine'])
+        notes = self.as_blake(self.blake.engine._load, theirs)['desk_notes']
+        self.assertEqual([(item['number'], item['status']) for item in notes], [(3, 'waiting')])
+        self.assertFalse(mine['desk']['drawn_here'])
+        with self.be(self.alex):
+            self.assertFalse(self.engine.view(root)['mine'])
+        # Alex's drawing of it was not kept as the deck's: the shared record never had it.
+        self.assertEqual(self.shared().count('Rolling restarts: keep section 1'), kept)
+
+
 if __name__ == '__main__':
     unittest.main()

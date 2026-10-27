@@ -998,6 +998,9 @@ class Engine(Jobs, Researching, DeskActions):
                 step = first(record)
                 if step is None:
                     return
+                if step.name in BUILT and step.name != 'build-start' and decks.on_desk(record) \
+                        and not build.read_state(root).get('start'):
+                    return   # no drawing of this desk deck here: drawn only when asked
                 if step.kind == 'gate' and decks.on_desk(record):
                     # A desk deck's stops are met on the desk: those it continues past, and
                     # the look when the start chose to pick it, and the desk itself.
@@ -1052,6 +1055,7 @@ class Engine(Jobs, Researching, DeskActions):
         if decks.delivered(root) is not None:
             return False
         names = [step.name for step in stages.steps(record)]
+        desk_deck = decks.on_desk(record)
 
         def did(name: str) -> bool:
             return name in names and bool(tries(record, name).get('done'))
@@ -1075,7 +1079,17 @@ class Engine(Jobs, Researching, DeskActions):
             again.append('look-preview')
         if did('patch') and (lacks or not (root / existing.PATCH).is_file()):
             again += ['patch', 'build-render']
-        if any(did(name) for name in BUILT) and (
+        if desk_deck and not build.read_state(root).get('start') and desk.opened(record):
+            # A desk deck is drawn here only when asked (desk_draw_here): what the driving
+            # computer was drawing for its notes is drawn here then.
+            with self.files:
+                record = self._load(root)
+                if any(item.get('status') == 'drawing' for item in desk.opened(record)):
+                    for item in desk.opened(record):
+                        item['status'] = 'waiting'
+                    self._store(root, record)
+                    self._commit(root, 'keep the notes to draw here when asked')
+        if not desk_deck and any(did(name) for name in BUILT) and (
                 not build.read_state(root).get('start') and 'build-start' in names
                 or did('build-render') and not self._rendered(root, record)):
             again += [name for name in BUILT if name in names]
