@@ -4,6 +4,7 @@ one cannot be made.
 Nothing here reaches Google or runs gcloud or pandoc: a pretend Drive takes the Docs and a
 pretend converter makes the Word files.
 """
+import json
 import subprocess
 import unittest
 import urllib.error
@@ -20,6 +21,7 @@ from workspace import WorkspaceError
 
 from runner import copies
 
+RUN = subprocess.run   # kept before the module blocks it, for the desk tests' own Git
 TOKEN = 'stand-in-access-token-0123456789abcdef'
 FORBIDDEN = ('artifact', 'stale', 'lineage')
 FILES = (('blueprint', 'blueprint.md'), ('document', 'document.md'),
@@ -254,6 +256,28 @@ class MakingTests(Built):
         made, _ = copies.make(other, word=self.word)
         self.assertEqual([entry['link'] for entry in made],
                          ['document.docx', 'product-brief.docx'])
+
+    def test_on_the_desk_a_copy_follows_mark_ready_or_a_send(self):
+        self.built('google', 'word')
+        # The same training on the desk: each material accepted on the desk, none marked.
+        session = workspace.load(self.root)
+        session['flow'] = 'desk'
+        for name in ('document', 'brief'):
+            session['artifacts'][name]['approved']['by'] = 'desk'
+        workspace.store(self.root, session)
+        run = self.root / workspace.STATE_DIR / 'run.json'
+        run.write_text(json.dumps({'flow': 'desk', 'drafts': {'send': []}}), encoding='utf-8')
+        self.assertEqual(self.copy(), ([], {}), 'no copy of a draft')
+        run.write_text(json.dumps({'flow': 'desk', 'drafts': {'send': ['brief']}}),
+                       encoding='utf-8')
+        self.assertEqual(self.copy(only='document'), ([], {}))
+        made, problems = self.copy(only='brief')
+        self.assertEqual(([(entry['artifact'], entry['kind']) for entry in made], problems),
+                         ([('brief', 'google'), ('brief', 'word')], {}))
+        workspace.decide(self.root, 'document', 'approve', by='page')
+        made, _ = self.copy()
+        self.assertEqual([(entry['artifact'], entry['kind']) for entry in made],
+                         [('document', 'google'), ('document', 'word')])
 
 
 # --- a Google Doc that cannot be made ------------------------------------------------------
@@ -675,3 +699,59 @@ class PullTests(Built):
         with self.assertRaisesRegex(WorkspaceError, 'changed again'):
             copies.pull(self.root, 'document@101', self.drive, choose='ours')
         self.assertIn('New remote edit.', self.drive.docs[ident])
+
+
+class DeskCopyTests(runner_support.StudioCase):
+    """On the desk a copy follows Mark ready, not the desk's acceptance, and Send to a
+    Google Doc makes one of a draft at once. The engine, scripted workers and a pretend
+    Drive; nothing reaches Google."""
+
+    def setUp(self):
+        # The workspace is a Git repository of the test's own: git alone may run.
+        def git_only(command, *given, **named):
+            if Path(command[0]).name != 'git':
+                raise AssertionError(f'A test tried to run {command[0]}.')
+            return RUN(command, *given, **named)
+
+        patcher = mock.patch.object(subprocess, 'run', git_only)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        super().setUp()
+
+    def seen(self, root: Path, name: str) -> str:
+        session = workspace.load(root)
+        return workspace.sha256_file(root / workspace.artifact(root, session, name)['file'])
+
+    def docs(self, root: Path) -> list[str]:
+        return sorted(gdocs.read_links(root)['docs'])
+
+    def test_copies_follow_mark_ready_on_the_desk(self):
+        root = self.start(flow='desk', levels=['101'], copies=['google'])
+        self.assertEqual(self.to_end(root), [])
+        self.assertIsNone(self.record(root)['problem'], self.view(root))
+        self.assertEqual(self.copies.drive.docs, {}, 'no Doc of a draft')
+        self.assertEqual(self.docs(root), [])
+        self.engine.mark_ready(root, 'document@101', seen=self.seen(root, 'document@101'))
+        self.assertEqual(self.docs(root), ['document@101'])
+        self.assertEqual(len(self.copies.drive.docs), 1)
+        # Send to a Google Doc makes the brief's Doc while it is still a draft.
+        person = workspace.person_statuses(root, workspace.load(root))
+        self.assertEqual(person['brief@101'], 'draft')
+        sent = self.engine.send_copy(root, 'brief@101')
+        self.assertEqual([(entry['artifact'], entry['kind'], entry['state'])
+                          for entry in sent['made']], [('brief@101', 'google', 'made')])
+        self.assertEqual(sent['problems'], {})
+        self.assertEqual(self.docs(root), ['brief@101', 'document@101'])
+        self.assertEqual(self.record(root)['drafts']['send'], ['brief@101'])
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['brief@101'],
+                         'draft', 'sending it marks nothing ready')
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.engine.wake(root)
+        self.assertEqual(len(self.copies.drive.docs), 2, 'nothing else is made')
+
+    def test_a_saved_run_s_copies_follow_its_approvals(self):
+        root = self.start(levels=['101'], copies=['google'])
+        self.to_end(root)
+        self.assertEqual(self.docs(root), ['brief@101', 'document@101'])
+        with self.assertRaisesRegex(WorkspaceError, '^This training is not on the desk.'):
+            self.engine.send_copy(root, 'brief@101')

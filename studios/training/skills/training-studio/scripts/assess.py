@@ -23,9 +23,10 @@ def read(root: Path, relative: str) -> str | None:
 
 
 def run_checks(root: Path, show_all: bool = False) -> dict:
-    """Run every check that applies to what exists, and report readiness."""
+    """Run every check that applies to what exists, and report readiness. On the desk a
+    material is ready once the person marks it so: the desk's acceptance is a draft."""
     session = workspace.load(root)
-    state = workspace.statuses(root, session)
+    state = workspace.person_statuses(root, session)
     wanted = session['settings']['stages']
     found = workspace.scenarios(root, session)['found']
     profile = json.loads(workspace.profile_for(root).read_text(encoding='utf-8'))

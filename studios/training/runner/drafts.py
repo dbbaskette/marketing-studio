@@ -10,11 +10,17 @@ On the desk, a material built from something that has since changed is held, not
 `held` names it, the survey leaves its steps out, and it waits until the person presses
 Update (an open entry in `run['drafts']['updates']`, closed by `close_updates` once the
 material is made again) or Keep as it is.
+
+The desk's acceptance is never Ready: only the person's Mark ready is (`workspace.decide`
+by the page, with the hash shown). Readiness is read from `workspace.person_statuses`, so
+the index is written only once every material is Ready (`ready`), and a copy is made of
+what is Ready or what the person sent (`copied`).
 """
 from __future__ import annotations
 
 from pathlib import Path
 
+import home
 import workspace
 from studio_core import review_policy
 from studio_core.drafting import basis
@@ -23,6 +29,12 @@ import runner  # noqa: F401  puts the core on the import path
 
 FLOW = 'desk'
 SCHEMA = 4
+RECORD = f'{workspace.STATE_DIR}/run.json'   # the engine's run record
+# The order a level's cards are marked ready in: scenarios and Yoodli layouts by their ID.
+ORDER = ('blueprint', 'document', 'brief', 'deck', 'scenario', 'yoodli')
+HELD_FIRST = '{it} is built from an earlier {what}. Update it or keep it as it is first.'
+NEEDS_YOU = 'Settle what needs you on {it} before marking it ready.'
+NO_COPY = 'This training keeps no copy of {it}.'
 # A training on a Harness Research that cannot synthesize is refused before anything is made,
 # whatever its flow: one check and one sentence, which the engine's NO_SYNTHESIS is.
 NEEDS_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
@@ -147,3 +159,66 @@ def close_updates(root: Path, session: dict, run: dict | None, state: dict | Non
     for name in closed:
         del asked[name]
     return closed
+
+
+def run_of(root: Path) -> dict | None:
+    """A training's run record as it is on disk, read for what the desk keeps in it, or
+    None when no run is driving it. The engine reads and checks it for everything else."""
+    record = home.read_json(Path(root) / RECORD, None)
+    return record if isinstance(record, dict) else None
+
+
+def sent(run: dict | None) -> list[str]:
+    """The materials the person sent to their copies while each was a draft."""
+    return list(((run or {}).get('drafts') or {}).get('send') or ())
+
+
+def copied(root: Path, session: dict, run: dict | None = None) -> frozenset[str]:
+    """What a copy is made of now. On the desk, what the person marked Ready and any draft
+    they sent; the desk's acceptance alone makes no copy. Otherwise, what is approved."""
+    if not workspace.on_desk(session):
+        return frozenset(name for name, status in workspace.statuses(root, session).items()
+                         if status == 'approved')
+    asked = set(sent(run))
+    return frozenset(name for name, status in workspace.person_statuses(root, session).items()
+                     if status == 'approved' or (status == 'draft' and name in asked))
+
+
+def ready(root: Path) -> bool:
+    """Whether every material is Ready and nothing else is in the way, as the index says
+    it: on the desk read from what the person marked ready, never the desk's acceptance."""
+    import assess
+    return bool(assess.run_checks(root)['ready'])
+
+
+def earlier(root: Path, session: dict, name: str, state: dict | None = None) -> str:
+    """What a held material was built from an earlier version of, as the desk names it."""
+    spec = workspace.artifact(root, session, name)
+    state = workspace.statuses(root, session) if state is None else state
+    changed = _changed(root, session, name, [*spec['upstream'], *spec['extras']]) or [
+        upstream for upstream in spec['upstream'] if state.get(upstream) == 'stale']
+    return ' and '.join(dict.fromkeys(what(key) for key in changed)) or 'version of its inputs'
+
+
+def needs_you(root: Path, found, name: str) -> list[str]:
+    """What keeps a material from being marked ready, a sentence each: for a deck, the grave
+    findings its last round's review still has and its audit's blockers. `found` is the
+    training's survey. Nothing for any other material."""
+    if workspace.split(name)[0] != 'deck':
+        return []
+    from runner import pipeline
+    shown = pipeline.deck_gate(root, found.session, name)
+    return review_policy.held((shown.get('review') or {}).get('findings'),
+                              (shown.get('audit') or {}).get('blockers'))
+
+
+def level_ready(root: Path, session: dict, level: str | None,
+                state: dict | None = None) -> list[str]:
+    """What Mark this level ready marks, in ORDER: each card of the level the person has
+    not marked Ready, a draft or one held. Scenarios and Yoodli layouts come by their ID."""
+    state = workspace.person_statuses(root, session) if state is None else state
+    names = workspace.artifact_names(root, session)
+    return [name for base in ORDER for name in names
+            if workspace.split(name)[1] == level
+            and workspace.split(name)[0].partition(':')[0] == base
+            and state.get(name) in ('draft', 'stale')]

@@ -4,7 +4,7 @@ Yoodli scenario.
 What a caller needs to know
 ---------------------------
     copies.wanted(root, problems=None)       # every copy the training asks for, as shown
-    made, problems = copies.make(root, google=None, word=None)
+    made, problems = copies.make(root, google=None, word=None, only=None)
     found = copies.check(root, google=None)  # each Doc, as Google has it now, when asked
     entry = copies.remake(root, name, google=None)   # a Doc Google cannot find, made anew
 
@@ -16,7 +16,8 @@ What a caller needs to know
   `workspace.export_states` for Word. This module adds no rule of its own about which
   artifacts get a copy.
 - `make` makes every wanted copy of an approved artifact that is not current, and leaves
-  the rest alone. It never raises for a copy that cannot be made. A Word copy that cannot
+  the rest alone; `only` names the one artifact whose copies are made. On the desk an
+  artifact is approved once the person marks it ready, or sends it to its copies. It never raises for a copy that cannot be made. A Word copy that cannot
   be made is recorded through the core as unavailable, with the reason. A Google Doc that
   cannot be made has nowhere in the core to say why, so `make` returns `problems`:
   {artifact: sentence}. The caller keeps them and passes them back to `wanted`.
@@ -41,6 +42,8 @@ import runner  # noqa: F401  puts the core on the import path
 import gdocs
 import workspace
 from workspace import WorkspaceError
+
+from runner import drafts
 
 STATES = {'current': 'made', 'outdated': 'out-of-date', 'missing': 'not-made',
           'unavailable': 'not-made'}
@@ -101,17 +104,18 @@ def _entry(name: str, kind: str, state: str, link, problem) -> dict:
 
 # --- making them ---------------------------------------------------------------------------
 
-def make(root: Path, google=None, word=None) -> tuple[list[dict], dict]:
-    """Make every wanted copy of something approved that is not current. Returns the
-    copies made and, for each Google Doc that could not be, why."""
+def make(root: Path, google=None, word=None, only: str | None = None
+         ) -> tuple[list[dict], dict]:
+    """Make every wanted copy of something approved that is not current, or with `only`,
+    the copies of that one. Returns the copies made and, for each Google Doc that could not
+    be, why. On the desk what is approved is what the person marked Ready, and any draft
+    they sent to its copies (`drafts.copied`)."""
     root = Path(root).resolve()
-    approved = {name for name, status
-                in workspace.statuses(root, workspace.load(root)).items()
-                if status == 'approved'}
+    approved = drafts.copied(root, workspace.load(root), drafts.run_of(root))
     tried, problems = [], {}
     for entry in wanted(root):
         name = entry['artifact']
-        if entry['state'] == 'made' or name not in approved:
+        if entry['state'] == 'made' or name not in approved or only not in (None, name):
             continue
         tried.append((name, entry['kind']))
         if entry['kind'] == 'word':

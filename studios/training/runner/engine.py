@@ -230,7 +230,7 @@ from runner import research as research_cli
 from runner import slides as slides_tool
 
 SCHEMA = 1
-RECORD = f'{workspace.STATE_DIR}/run.json'
+RECORD = drafts.RECORD   # f'{workspace.STATE_DIR}/run.json'
 # Written when a step starts and removed when it ends, and never shared. One left behind
 # says the runner ended in the middle of a step, not that a person changed a file.
 IN_HAND = f'{workspace.STATE_DIR}/step.lock'
@@ -775,9 +775,11 @@ class Engine(Reviewing):
             return
         found = self._survey(root, record)
         step = found.next
-        automatic = step.kind in ('wait', 'outline', 'look') and review_policy.automatic(
-            record, 'training', step.step.id,
-            holding=pipeline.holding(root, found, step.step))
+        # A desk run continues every gate, outline and look on the desk: none is a stop.
+        automatic = step.kind in ('wait', 'outline', 'look') and (
+            drafts.on_desk(record) or review_policy.automatic(
+                record, 'training', step.step.id,
+                holding=pipeline.holding(root, found, step.step)))
         if (record.get('question') or record.get('problem') or (not automatic and step.kind in
                 ('wait', 'outline', 'look', 'review', 'stuck', 'documents', 'done'))):
             record['last_decision_stop'] = home.now()
@@ -1499,9 +1501,12 @@ class Engine(Reviewing):
         tried and why a Google Doc could not be made. Call it holding `files`."""
         problems = self.copies.make(root)[1]
         session, tried = workspace.load(root), {}
+        # On the desk a copy is tried only of what is Ready or sent: a draft the desk accepted
+        # is tried once the person marks it ready.
+        copyable = drafts.copied(root, session, record) if drafts.on_desk(record) else None
         for entry in self._wanted(root, record):
             approved = (session['artifacts'].get(entry['artifact']) or {}).get('approved')
-            if approved:
+            if approved and (copyable is None or entry['artifact'] in copyable):
                 tried[entry['artifact']] = approved['sha256']
         # What Google was last found to hold is kept until the Doc is brought in. A push
         # refused because the Doc was changed there says so too.
@@ -3825,6 +3830,106 @@ class Engine(Reviewing):
         self.carry_on(root)
         return self.view(root)
 
+    def _mark(self, root: Path, record: dict, name, seen) -> None:
+        """Mark one material ready: the person's approval, by the page, of the version they
+        were shown. Refused for a held material, a deck with something that needs them, and
+        in the core's own words for anything else, a changed version among them. Call it
+        holding `files`."""
+        if not isinstance(name, str):
+            raise WorkspaceError(drafts.UP_TO_DATE)
+        if name in drafts.updates(record):
+            raise WorkspaceError(drafts.BUSY)
+        session = workspace.load(root)
+        state = workspace.statuses(root, session)
+        it = workspace.label(name) if name in state else name
+        if state.get(name) == 'stale':
+            raise WorkspaceError(drafts.HELD_FIRST.format(
+                it=workspace.sentence(it), what=drafts.earlier(root, session, name, state)))
+        if workspace.split(name)[0] == 'deck' and name in state \
+                and drafts.needs_you(root, self._survey_files(root, record), name):
+            raise WorkspaceError(drafts.NEEDS_YOU.format(it=it))
+        workspace.decide(root, name, 'approve', by='page', seen=seen)
+
+    def _ready_again(self, root: Path) -> None:
+        """A training whose index was written is to write it again once everything is Ready,
+        so that it says what was marked. Call it holding `files`."""
+        if workspace.load(root)['stage'] == 'done':
+            workspace.checkpoint(root, stage='package')
+
+    def mark_ready(self, path, name, seen) -> dict:
+        """Mark one material ready on the desk, as the person asked: their approval of the
+        version they were shown (`seen`, its hash). The desk's acceptance never is. Refused
+        for a held material ("Update it or keep it as it is first."), a deck with something
+        that needs the person, and when the version has changed since it was opened."""
+        with self.files:
+            root, record = self._on_desk(path)
+            self._mark(root, record, name, seen)
+            self._ready_again(root)
+            self._remember_decision(root, self._load(root), workspace.label(name), 'approve')
+            self._commit(root, f'mark {workspace.label(name)} ready')
+        self.carry_on(root)
+        return self.view(root)
+
+    def mark_level_ready(self, path, level, seen) -> dict:
+        """Mark every card of one level ready, in `drafts.ORDER`, each with the version the
+        person was shown (`seen`, by name). It stops at the first that cannot be, saying why,
+        and commits once. Returns {'marked': [names], 'stopped': {'name', 'said'} or None}."""
+        marked, stopped = [], None
+        with self.files:
+            root = self._on_desk(path)[0]
+            session = workspace.load(root)
+            if session['levels'] and level not in session['levels'] \
+                    or not session['levels'] and level is not None:
+                raise WorkspaceError(f'This training has no level {level}.')
+            seen = seen if isinstance(seen, dict) else {}
+            for name in drafts.level_ready(root, session, level):
+                try:
+                    # A card the person was not shown is not marked: its version is unknown.
+                    self._mark(root, self._load(root), name, seen.get(name) or '')
+                except WorkspaceError as refusal:
+                    stopped = {'name': name, 'said': str(refusal)}
+                    break
+                marked.append(name)
+            if marked:
+                which = f'level {level}' if level else 'every material'
+                self._ready_again(root)
+                self._remember_decision(root, self._load(root), which, 'approve')
+                self._commit(root, f'mark {which} ready')
+        if marked:
+            self.carry_on(root)
+        return {'marked': marked, 'stopped': stopped}
+
+    def send_copy(self, path, name) -> dict:
+        """Send one material to its copies at once, as the person asked on its card, Ready
+        or a draft: its Google Doc (and any other copy it keeps) is made or brought up to
+        date, and from then on it is kept so. Returns what `copies.make` made and, for a
+        Google Doc that could not be, why."""
+        with self.files:
+            root, record = self._on_desk(path)
+            if not isinstance(name, str) or not any(
+                    entry['artifact'] == name for entry in self._wanted(root, record)):
+                raise WorkspaceError(drafts.NO_COPY.format(
+                    it=workspace.label(name) if isinstance(name, str) else 'it'))
+            sent = record.setdefault('drafts', {}).setdefault('send', [])
+            if name not in sent:
+                sent.append(name)
+            self._store(root, record)
+            made, problems = self.copies.make(root, only=name)
+            kept = record.setdefault('copies', {})
+            kept.setdefault('problems', {}).pop(name, None)
+            if problems.get(name):
+                kept['problems'][name] = problems[name]
+            if problems.get(name) == CHANGED_THERE:
+                kept.setdefault('remote', {})[name] = 'both changed'
+            approved = (workspace.load(root)['artifacts'].get(name) or {}).get('approved')
+            if approved:
+                kept.setdefault('tried', {})[name] = approved['sha256']
+            self._store(root, record)
+            self._commit(root, f'send {workspace.label(name)} to its copies, as asked on '
+                               'the desk')
+        self.carry_on(root)
+        return {'made': made, 'problems': dict(problems or {})}
+
     def act(self, path, action: str) -> dict:
         """Pause, resume, stop or try again, as the person asks."""
         root = self._held(path)
@@ -4215,7 +4320,10 @@ class Engine(Reviewing):
             self._store(root, record)
             copies = self._wanted(root, record)
             found = self._survey(root, record, copies)
-            if found.next.kind == 'done':  # the index lists the copies, so it is written again
+            # The index lists the copies, so it is written again; on the desk only once it is
+            # due, when every material is Ready.
+            if found.next.kind == 'done' and (not drafts.on_desk(record) or any(
+                    step.id == 'package' for step in found.steps)):
                 report = self.index.write(root, copies)
                 workspace.checkpoint(root, next_step=pipeline.finished_says(report, found))
             self._commit(root, 'make the copies again, as asked on the page')
@@ -4558,9 +4666,11 @@ class Engine(Reviewing):
             else:
                 status = 'to-do'
             # A gate a grave finding holds is not called automatic: it stops for the person.
-            automatic = step.kind == 'gate' and review_policy.automatic(
-                record, 'training', step.id,
-                holding=pipeline.holding(root, found, step) if root is not None else ())
+            # A desk run has no review level, so none of its gates is asked about.
+            automatic = step.kind == 'gate' and not drafts.on_desk(record) \
+                and review_policy.automatic(
+                    record, 'training', step.id,
+                    holding=pipeline.holding(root, found, step) if root is not None else ())
             listed.append({
                 'id': step.id, 'label': (step.label.replace('Your review of ', 'Continue ') + ' automatically'
                                          if automatic else pipeline.FROM_FORM if step.id == 'research-plan'

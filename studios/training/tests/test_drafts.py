@@ -2,7 +2,7 @@
 which the engine carries past every gate with a desk receipt; and holds, which keep what a
 desk change reaches until the person updates it or keeps it as it is. Scripted workers, the
 stand-in for harness-research and a studios config of the test's own; nothing real is
-started. Tests named row_138 to row_140, row_144 to row_146, row_158 and row_161 cover those
+started. Tests named row_138 to row_140, row_144 to row_149, row_158 and row_161 cover those
 rows of the state-transition matrix in
 docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
 import json
@@ -23,6 +23,21 @@ from runner import engine as engines
 CONTRACT = {'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}
 NO_CONTRACT = 'This run is missing its saved research contract. Restore its run record.'
 CONTINUED = 'continued-on-the-desk'
+
+
+def edit(case, root: Path, name: str, change) -> None:
+    """Type a change into a material, as the desk saves it, and accept it on the desk (on a
+    saved run, approve it on the page)."""
+    session = workspace.load(root)
+    file = root / workspace.artifact(root, session, name)['file']
+    typed = case.base / 'typed' / file.name
+    typed.parent.mkdir(exist_ok=True)
+    typed.write_text(change(file.read_text(encoding='utf-8')), encoding='utf-8')
+    workspace.save(root, name, source=typed, edit=True, via='save')
+    if drafts.on_desk(case.record(root)):
+        workspace.accept_desk(root, name)
+    else:
+        workspace.approve(root, name, by='page')
 
 
 class DeskStartTests(DeckCase):
@@ -183,7 +198,13 @@ class DeskRunTests(DeckCase):
         record = self.record(root)
         self.assertIsNone(record['problem'])
         self.assertIsNone(workspace.status(root)['gate'])
-        self.assertEqual(self.state(root), 'done')
+        # Everything is written and nothing waits, but nothing is Ready yet: the desk's
+        # acceptances never write the index.
+        found = self.engine._survey(root, record)
+        self.assertEqual(found.next.kind, 'done', 'nothing is left for the run to do')
+        self.assertNotIn('package', [step.id for step in found.steps], 'the index is not due')
+        self.assertFalse((root / pipeline.INDEX).is_file())
+        self.assertNotEqual(workspace.load(root)['stage'], 'done')
         gates = self.gates(root)
         self.assertEqual(gates, ['gate:research-plan', 'gate:research', 'gate:blueprint',
                                  'gate:document', 'gate:brief'])
@@ -262,18 +283,7 @@ class DeskHoldTests(DeckCase):
     Update, which remakes it, or Keep as it is. A saved run remakes as it always did."""
 
     def edit(self, root: Path, name: str, change) -> None:
-        """Type a change into a material, as the desk saves it, and accept it on the desk
-        (on a saved run, approve it on the page)."""
-        session = workspace.load(root)
-        file = root / workspace.artifact(root, session, name)['file']
-        typed = self.base / 'typed' / file.name
-        typed.parent.mkdir(exist_ok=True)
-        typed.write_text(change(file.read_text(encoding='utf-8')), encoding='utf-8')
-        workspace.save(root, name, source=typed, edit=True, via='save')
-        if drafts.on_desk(self.record(root)):
-            workspace.accept_desk(root, name)
-        else:
-            workspace.approve(root, name, by='page')
+        edit(self, root, name, change)
 
     def guide_edit(self, root: Path) -> None:
         self.edit(root, 'document@101', lambda text: text + '\nOne line more.\n')
@@ -450,3 +460,175 @@ class DeskHoldTests(DeckCase):
             with self.subTest(act=act.__name__), self.assertRaisesRegex(
                     WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
                 act(root, 'deck@101')
+
+
+class DeskReadyTests(DeckCase):
+    """Mark ready is the person's approval on the desk, one material or one level at a
+    time; the desk's acceptance never is. The index is written only once every material is
+    Ready, with no stop."""
+
+    def seen(self, root: Path, name: str) -> str:
+        session = workspace.load(root)
+        return workspace.sha256_file(root / workspace.artifact(root, session, name)['file'])
+
+    def person(self, root: Path) -> dict:
+        return workspace.person_statuses(root, workspace.load(root))
+
+    def drafted(self, root: Path) -> list[str]:
+        return [name for name, status in self.person(root).items() if status == 'draft']
+
+    def ready(self, root: Path) -> bool:
+        """Whether the core's check says the training is ready, as the index says it."""
+        import assess
+        return assess.run_checks(root)['ready']
+
+    def desk(self, **changes) -> Path:
+        root = self.start(flow='desk', levels=['101'], **changes)
+        self.assertEqual(self.to_end(root), [])
+        self.assertIsNone(self.record(root)['problem'], self.view(root))
+        return root
+
+    def grave(self, root: Path) -> None:
+        """Leave a grave finding open in the deck's last review."""
+        shows = pipeline.place(root, '101', pipeline.SHOWS)
+        kept = json.loads(shows.read_text(encoding='utf-8'))
+        kept['findings'] = [*kept['findings'], {
+            'slide': 'what-it-does', 'number': 2, 'severity': 'critical', 'about': 'drawing',
+            'note': 'The diagram contradicts the guide.', 'fix': None}]
+        shows.write_text(json.dumps(kept), encoding='utf-8')
+
+    def test_row_147_mark_ready_is_the_person_s_approval(self):
+        root = self.desk()
+        name = 'document@101'
+        self.assertEqual(self.person(root)[name], 'draft')
+        commits = self.log()
+        with self.assertRaisesRegex(
+                WorkspaceError, '^The level 101 learner guide has changed since it was '
+                                r'opened\. Read the new version before deciding\.$'):
+            self.engine.mark_ready(root, name, seen='0' * 64)
+        self.assertEqual(self.log(), commits)
+        self.assertEqual(self.person(root)[name], 'draft')
+        self.engine.mark_ready(root, name, seen=self.seen(root, name))
+        self.assertEqual(self.person(root)[name], 'approved')
+        self.assertEqual(workspace.load(root)['artifacts'][name]['approved']['by'], 'page')
+        self.assertIn('Rolling restarts: mark the level 101 learner guide ready', self.log())
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        # A change afterwards is a draft again, even once the desk has accepted it.
+        edit(self, root, name, lambda text: text + '\nOne line more.\n')
+        self.assertEqual(self.person(root)[name], 'draft')
+
+    def test_a_held_material_is_not_marked_ready(self):
+        root = self.begin(flow='desk', levels=['101'])
+        self.assertEqual(self.to_end(root), [])
+        edit(self, root, 'document@101', lambda text: text + '\nOne line more.\n')
+        commits = self.log()
+        with self.assertRaisesRegex(
+                WorkspaceError, '^The level 101 slide deck is built from an earlier guide. '
+                                'Update it or keep it as it is first.$'):
+            self.engine.mark_ready(root, 'deck@101', seen=self.seen(root, 'deck@101'))
+        self.assertEqual(self.log(), commits)
+        self.assertNotEqual(self.person(root)['deck@101'], 'approved')
+        # A held material is never Ready, so the index waits for it.
+        self.assertIs(self.ready(root), False)
+
+    def test_mark_ready_is_the_desk_s_alone(self):
+        root = self.start(levels=['101'])
+        with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
+            self.engine.mark_ready(root, 'intake', seen=self.seen(root, 'intake'))
+        with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
+            self.engine.mark_level_ready(root, '101', {})
+
+    def test_row_148_a_level_is_marked_ready_in_order(self):
+        root = self.begin(flow='desk', levels=['101'])
+        self.assertEqual(self.to_end(root), [])
+        self.grave(root)
+        found = self.engine._survey(root, self.record(root))
+        self.assertEqual(drafts.needs_you(root, found, 'deck@101'),
+                         ['Critical on what-it-does: The diagram contradicts the guide.'])
+        self.assertEqual(drafts.needs_you(root, found, 'brief@101'), [])
+        seen = {name: self.seen(root, name) for name in self.drafted(root)}
+        commits = len(self.log())
+        marked = self.engine.mark_level_ready(root, '101', seen)
+        self.assertEqual(marked['marked'], ['blueprint@101', 'document@101', 'brief@101'])
+        self.assertEqual(marked['stopped'], {
+            'name': 'deck@101',
+            'said': 'Settle what needs you on the level 101 slide deck before marking it '
+                    'ready.'})
+        self.assertEqual(len(self.log()), commits + 1, 'one commit')
+        self.assertEqual(self.log()[-1], 'Rolling restarts: mark level 101 ready')
+        person = self.person(root)
+        self.assertEqual([person[name] for name in marked['marked']], ['approved'] * 3)
+        self.assertEqual(person['deck@101'], 'draft')
+        self.assertEqual(drafts.ORDER,
+                         ('blueprint', 'document', 'brief', 'deck', 'scenario', 'yoodli'))
+        with self.assertRaisesRegex(
+                WorkspaceError, '^Settle what needs you on the level 101 slide deck before '
+                                'marking it ready.$'):
+            self.engine.mark_ready(root, 'deck@101', seen=self.seen(root, 'deck@101'))
+
+    def test_a_level_stops_at_a_material_that_changed_since_it_was_opened(self):
+        root = self.desk()
+        seen = {name: self.seen(root, name) for name in self.drafted(root)}
+        seen['document@101'] = '0' * 64
+        marked = self.engine.mark_level_ready(root, '101', seen)
+        self.assertEqual(marked['marked'], ['blueprint@101'])
+        self.assertEqual(marked['stopped']['name'], 'document@101')
+        self.assertTrue(marked['stopped']['said'].endswith(
+            'has changed since it was opened. Read the new version before deciding.'))
+        self.assertEqual(self.person(root)['document@101'], 'draft')
+
+    def test_row_149_the_index_is_written_once_everything_is_ready(self):
+        root = self.desk()
+        names = self.drafted(root)
+        self.assertTrue(names)
+        for name in names[:-1]:
+            self.engine.mark_ready(root, name, seen=self.seen(root, name))
+        self.assertEqual(self.to_end(root), [])
+        self.assertFalse((root / pipeline.INDEX).is_file(), 'one material is still a draft')
+        self.assertIs(self.ready(root), False)
+        self.engine.mark_ready(root, names[-1], seen=self.seen(root, names[-1]))
+        self.assertEqual(self.to_end(root), [])
+        self.assertTrue((root / pipeline.INDEX).is_file())
+        self.assertIsNone(workspace.status(root)['gate'])
+        self.assertIsNone(self.record(root)['problem'])
+        self.assertEqual(workspace.load(root)['stage'], 'done')
+        self.assertIs(self.ready(root), True)
+        self.assertIn('Rolling restarts: write the index; the training is finished',
+                      self.log())
+
+    def test_the_desk_s_acceptance_never_lets_the_package_run(self):
+        root = self.desk()
+        session = workspace.load(root)
+        accepted = [name for name, entry in session['artifacts'].items()
+                    if (entry.get('approved') or {}).get('by') == 'desk']
+        self.assertTrue({'blueprint@101', 'document@101', 'brief@101'} <= set(accepted))
+        state = workspace.statuses(root, session)
+        self.assertTrue(all(state[name] == 'approved' for name in accepted),
+                        'every material is accepted on the desk')
+        marked = [name for name in accepted
+                  if workspace.split(name)[0].partition(':')[0] in workspace.PERSON_MARKED]
+        self.assertTrue(marked)
+        self.assertEqual({self.person(root)[name] for name in marked}, {'draft'},
+                         'and none is marked ready')
+        found = self.engine._survey(root, self.record(root))
+        self.assertNotIn('package', found.done)
+        self.assertNotIn('package', [step.id for step in found.steps])
+        self.assertIs(self.ready(root), False)
+        self.assertFalse((root / pipeline.INDEX).is_file())
+        self.engine.wake(root)
+        self.assertFalse((root / pipeline.INDEX).is_file(), 'waking it writes nothing')
+
+    def test_a_desk_run_never_asks_whether_a_gate_is_held(self):
+        root = self.desk()
+        name = 'document@101'
+        with mock.patch.object(pipeline, 'holding',
+                               side_effect=AssertionError('a desk run is never held')):
+            self.engine.mark_ready(root, name, seen=self.seen(root, name))
+            self.assertIsNotNone(self.record(root).get('last_decision_stop'))
+            self.view(root)
+
+    def test_saved_runs_still_write_their_index(self):
+        root = self.start(levels=['101'])
+        self.to_end(root)
+        self.assertTrue((root / pipeline.INDEX).is_file())
+        self.assertEqual(self.state(root), 'done')
