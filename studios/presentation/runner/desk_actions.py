@@ -124,6 +124,10 @@ class DeskActions:
         return {**shown, 'arrived': desk.arrived(record),
                 'working': desk.working(root, record, state),
                 'outline': self._desk_outline_view(root, record),
+                'delivered': decks.delivered(root),
+                'revision': desk.DELIVERED_AGAIN.format(
+                    revision=len(record['revisions']), next=len(record['revisions']) + 1)
+                if record.get('revisions') and decks.delivered(root) is None else None,
                 'deck_price': desk.deck_price(self._last_build(record)),
                 'blockers': desk.blockers(state), 'blockers_seen': desk.blockers_seen(state),
                 'reviewed': desk.reviewed(state)}
@@ -248,6 +252,37 @@ class DeskActions:
             self._store(root, record)
             self._commit(root, 'stop the whole-deck note')
         run.stop.clear()
+        self.wake(root)
+        return self.view(root)
+
+    # --- Deliver ------------------------------------------------------------------------------
+
+    def desk_deliver(self, path, expected, blockers_seen=None) -> dict:
+        """Deliver the deck on screen: the brand's `final` checkpoint, and always the
+        person's. Bound to the deck the page read (`expected`) and, where the brand check
+        found blockers, to the list the person was shown (`blockers_seen`). Refused while
+        desk work runs."""
+        root = self._desk_held(path)
+        space = self.space()
+        by = gitstate.identity(space.repo)
+        with self.files:
+            record, state = self._load(root), build.read_state(root)
+            step = stages.survey(record).next
+            if step is None or step.name != 'gate:build' or not desk.resting(record) \
+                    or desk.opened(record) or record.get('halted'):
+                raise WorkspaceError(desk.STILL)
+            if not expected or desk.last_round(state).get('deck') != expected:
+                raise WorkspaceError(desk.CHANGED)
+            if desk.blockers(state) and blockers_seen != desk.blockers_seen(state):
+                raise WorkspaceError(desk.BLOCKERS_CHANGED)
+            gated = record['gates'].get('gate:build') or {}
+            record['gates']['gate:build'] = {**gated, 'state': 'approved',
+                                             'note': desk.DELIVERED_FROM, 'at': home.now(),
+                                             'by': by, 'round': int(gated.get('round') or 1)}
+            self._store(root, record)
+            self._commit(root, 'deliver the deck from the desk')
+        if space.share == gitstate.SHARE[0]:
+            self.share_soon()
         self.wake(root)
         return self.view(root)
 

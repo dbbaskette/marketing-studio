@@ -2532,7 +2532,8 @@ class Engine(Jobs, Researching, DeskActions):
             raise WorkspaceError('There is no deck there.')
         record = self._load(root)
         deck = delivering.shared_file(root) or build.delivered_deck(root, record)
-        return f'{root.name}' + ('-unreviewed-first-draft' if decks.user_first(record) else '') + '.pptx', deck.read_bytes()
+        labelled = decks.user_first(record) and not decks.on_desk(record)
+        return f'{root.name}' + ('-unreviewed-first-draft' if labelled else '') + '.pptx', deck.read_bytes()
 
     # --- sharing -----------------------------------------------------------------------------
 

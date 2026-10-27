@@ -624,5 +624,102 @@ class OutlineTabTests(DeskCase):
         self.on_desk(root)
 
 
+class DeliverTests(DeskCase):
+    """Deliver sends the deck on screen, with the brand check the person saw, and is theirs."""
+
+    def deck(self) -> Path:
+        root = self.start_desk(look='default')
+        self.on_desk(root)
+        return root
+
+    def deliver(self, root: Path, **named) -> dict:
+        return self.engine.desk_deliver(root, self.desk_view(root)['expected'], **named)
+
+    def names(self) -> list[str]:
+        return [entry['name'] for entry in self.slides.run.files.values()]
+
+    def test_deliver_sends_the_deck_on_screen(self):
+        root = self.deck()
+        self.deliver(root)
+        said = json.loads((root / 'deliver.json').read_text())
+        self.assertEqual((said['revision'], said['review_status']), (1, 'unreviewed'))
+        self.assertEqual(self.names(), ['Rolling restarts'])
+        record = self.record(root)
+        self.assertEqual(record['gates']['gate:build']['by'],
+                         self.gitstate.identity(self.space.repo))
+        self.assertEqual(record['gates']['gate:build']['note'], 'Delivered from the desk.')
+        shown = self.desk_view(root)
+        self.assertEqual(shown['delivered']['revision'], 1)
+        name, _ = self.engine.download(root)
+        self.assertEqual(name, f'{root.name}.pptx')
+
+    def test_deliver_against_another_deck_is_refused(self):
+        root = self.deck()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.desk_deliver(root, '0' * 64)
+        self.assertEqual(str(caught.exception), desk.CHANGED)
+        self.assertFalse((root / 'deliver.json').exists())
+
+    def test_deliver_while_a_redraw_runs_is_refused(self):
+        root = self.deck()
+        refused = []
+
+        def delivering(tools, job):
+            with self.assertRaises(WorkspaceError) as caught:
+                self.deliver(root)
+            refused.append(str(caught.exception))
+            return self.workers.section(tools, job)
+
+        self.workers.then('section', delivering)
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.',
+                              self.desk_view(root)['expected'])
+        self.assertEqual(refused, [desk.STILL])
+        self.assertFalse((root / 'deliver.json').exists())
+
+    def test_deliver_over_blockers_needs_the_list_the_person_saw(self):
+        with mock.patch.object(self.brand, 'audit', return_value=BLOCKED):
+            root = self.deck()
+        shown = self.desk_view(root)
+        with self.assertRaises(WorkspaceError) as caught:
+            self.deliver(root)
+        self.assertEqual(str(caught.exception), desk.BLOCKERS_CHANGED)
+        # The brand check changed after the page read it: refused again.
+        from runner.steps import build
+        state = build.read_state(root)
+        state['audit']['messages'].append('Slide 5: Text overlaps the picture. (error)')
+        build.write_state(root, state)
+        with self.assertRaises(WorkspaceError) as caught:
+            self.deliver(root, blockers_seen=shown['blockers_seen'])
+        self.assertEqual(str(caught.exception), desk.BLOCKERS_CHANGED)
+        self.deliver(root, blockers_seen=self.desk_view(root)['blockers_seen'])
+        self.assertTrue((root / 'deliver.json').exists())
+
+    def test_a_change_after_delivery_makes_the_next_revision(self):
+        root = self.deck()
+        self.deliver(root)
+        jobs = len(self.workers.of('section'))
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.',
+                              self.desk_view(root)['expected'])
+        from runner import decks
+        self.assertIsNone(decks.delivered(root))
+        self.assertEqual([one['revision'] for one in self.record(root)['revisions']], [1])
+        again = self.workers.of('section')[jobs:]
+        self.assertEqual(len(again), 1)
+        self.assertIn('Draw section 1 of', again[0].task)
+        shown = self.desk_view(root)
+        self.assertIsNone(shown['delivered'])
+        self.assertEqual(shown['revision'], desk.DELIVERED_AGAIN.format(revision=1, next=2))
+        self.deliver(root)
+        self.assertEqual([one['revision'] for one in self.record(root)['revisions']], [1, 2])
+        self.assertEqual(self.names(), ['Rolling restarts', 'Rolling restarts (revision 2)'])
+
+    def test_a_gated_deck_still_delivers_with_its_first_draft_title(self):
+        root = self.gated(initial_review='user-first')
+        self.decide(root, 'gate:build')
+        self.assertEqual(self.names(), ['Rolling restarts — first draft, not checked'])
+        name, _ = self.engine.download(root)
+        self.assertEqual(name, f'{root.name}-unreviewed-first-draft.pptx')
+
+
 if __name__ == '__main__':
     unittest.main()

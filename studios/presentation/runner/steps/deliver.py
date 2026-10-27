@@ -37,7 +37,7 @@ import runner  # noqa: F401  puts the core on the import path
 import home
 from workspace import WorkspaceError, write_atomic
 
-from runner import decks, stages
+from runner import decks, desk, stages
 from runner.steps import build
 
 GATE = 'gate:build'
@@ -48,7 +48,9 @@ NOTE = 4000
 
 def _title(run: dict, revision: int) -> str:
     title = run.get('title') or (run.get('form') or {}).get('title') or 'Deck'
-    if decks.user_first(run):
+    # A desk deck is never labelled: the Deliver sheet says whether it was reviewed, and
+    # deliver.json records it.
+    if decks.user_first(run) and not decks.on_desk(run):
         title += ' — first draft, not checked'
     return title if revision == 1 else f'{title} (revision {revision})'
 
@@ -88,6 +90,9 @@ def upload(root, run: dict, slides, output=None) -> dict:
     output = output or (run.get('form') or {}).get('output') or 'google'
     record = {'output': output, 'url': None, 'fileId': None, 'pptx': None,
               'revision': revision, 'at': at, **({'review_status': 'unreviewed'} if decks.user_first(run) else {})}
+    if decks.on_desk(run):
+        record['review_status'] = 'reviewed' if desk.reviewed(build.read_state(root)) \
+            else 'unreviewed'
     if output == 'google':
         if slides.drive_check():
             made = slides.drive_import(deck, _title(run, revision))

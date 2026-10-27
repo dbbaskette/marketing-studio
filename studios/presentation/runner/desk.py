@@ -52,6 +52,12 @@ NO_DRAWING = 'There is no drawing of this deck on this computer.'
 NO_NOTE = 'Say how the slide should change.'
 NO_DECK_NOTE = 'Say how the whole deck should change.'
 PUTTING = 'Putting the deck together, rendering and checking it'
+STILL = 'Your last change is still being put together. Deliver when it is done.'
+BLOCKERS_CHANGED = ('The brand check changed since this page read it. Look again before you '
+                    'deliver.')
+DELIVERED_AGAIN = ('Delivered as revision {revision}. A change here makes revision {next}, '
+                   'delivered when you press Deliver.')
+DELIVERED_FROM = 'Delivered from the desk.'
 OUTLINE_CHANGED = 'The outline changed since this page read it. Reload it, then try again.'
 OUTLINE_BUSY = 'The deck is being redrawn now. Save the outline when that ends.'
 SECTION_SIZE = 4   # content slides one section holds at most, as the slides tool splits them
