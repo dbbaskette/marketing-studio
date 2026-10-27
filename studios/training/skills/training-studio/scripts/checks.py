@@ -680,6 +680,9 @@ def readiness(artifacts: list[dict], exports: dict[str, str], outcomes: list[dic
     limitations += [f"{decision['artifact']} was accepted as it was after its inputs "
                     f"changed: {decision['reason']}" for decision in decisions or []
                     if decision.get('decision') == 'accepted-stale']
+    limitations += [f"{decision['artifact']} was kept as it was after its inputs "
+                    f"changed: {decision['reason']}" for decision in decisions or []
+                    if decision.get('decision') == 'kept-as-is']
     limitations += [f'{stage} unavailable: {reason}' for stage, reason in unavailable.items()]
     approved = {item['name'] for item in artifacts if item['status'] == 'approved'}
     upload_needed = yoodli and 'yoodli' not in unavailable
