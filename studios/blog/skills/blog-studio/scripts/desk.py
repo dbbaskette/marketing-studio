@@ -10,16 +10,16 @@ from collections import OrderedDict
 import json
 import re
 import secrets
-import textwrap
 from types import SimpleNamespace
 
 import desk_images
 import studio
+from studio_core.drafting import parts
 
 DESK = 'desk'
 KEEP = 20  # versions kept per part
-PARTS = ('title', 'opening')  # plus each section id
-LIMIT = 200_000  # characters in one part, not counting image data (desk_images)
+PARTS = parts.MARKDOWN.fixed  # ('title', 'opening'), plus each section id
+LIMIT = parts.LIMIT  # characters in one part, not counting image data (desk_images)
 ON_DESK = 'This blog is on the desk. Edit it there.'
 TITLE_IMAGE = 'Keep images out of the title. Put the image in the opening or a section.'
 LENGTHS = ('style', 'short', 'deep')  # as blog_runner.LENGTHS: usual, short, in depth
@@ -46,215 +46,47 @@ CREATE = frozenset(
 # What the person brings: a draft (edit), a topic (author), an outline written from or an
 # outline shaped with them first (co-author).
 WAYS = ('draft', 'topic', 'outline', 'shape')
-FENCE = re.compile(r' {0,3}(`{3,}|~{3,})')
-TITLE = re.compile(r'# (?!#)(.*\S)\s*')
-# A heading that may start a section: up to three spaces, ## to ######, then spaces or a tab,
-# then its words. Four spaces in is indented code.
-SECTION = re.compile(r' {0,3}(#{2,6})[ \t]+(?![# \t])(.*\S)\s*')
-ANY_HEADING = re.compile(r'(#{1,6})\s+(.*?\S)\s*#*\s*')
-ITEM = re.compile(r'(?:[-*+]|\d{1,3}[.)])\s+(\S.*)')
-SECTIONS = 60  # sections in one outline or draft
-TOO_MANY = 'Keep the draft to 60 sections.'
-BRIEF = 4000  # characters in one section's brief
-
-
-def _id(taken):
-    while True:
-        value = secrets.token_hex(4)
-        if value not in taken:
-            taken.add(value)
-            return value
-
-
-def _tidy(lines):
-    """Lines as one text without blank lines around it; a first line keeps its indent."""
-    return re.sub(r'^(?:[ \t]*\n)+', '', '\n'.join(lines)).rstrip()
-
-
-def _free(lines):
-    """Each line with whether it is outside fenced code; a fence line itself is not."""
-    fence = None
-    for line in lines:
-        marker = FENCE.match(line)
-        if marker:
-            if fence is None:
-                fence = marker.group(1)
-            elif marker.group(1).startswith(fence[0] * len(fence)):
-                fence = None
-            yield line, False
-            continue
-        yield line, fence is None
-
-
-def _divide(lines):
-    """The opening and the sections of a draft's body, as lines.
-
-    The section level is the shallowest heading level from ## to ###### used outside fenced
-    code: each heading at that level starts a section, and deeper ones stay inside it. A
-    Google Doc's export often uses ### headings, in bold; a draft that mixes ## and ### is
-    divided at ##. The heading keeps its words as written, bold marks included, and a
-    section split at a level other than ## records it (`level`), as one whose marks are
-    indented or followed by a tab keeps them (`mark`), so `join` writes it back."""
-    found = [SECTION.fullmatch(line) if free else None for line, free in _free(lines)]
-    levels = [len(match.group(1)) for match in found if match]
-    depth = min(levels) if levels else None
-    opening, sections, current, taken = [], [], None, set()
-    for match, line in zip(found, lines, strict=True):
-        if match and len(match.group(1)) == depth:
-            current = {'id': _id(taken), 'heading': match.group(2).strip(), 'brief': ''}
-            if depth != 2:
-                current['level'] = depth
-            if line[: match.start(2)] != '#' * depth + ' ':
-                current['mark'] = line[: match.start(2)]  # Indented, or a tab: kept as written.
-            current['lines'] = []
-            sections.append(current)
-        else:
-            (current['lines'] if current else opening).append(line)
-    for section in sections:
-        section['text'] = _tidy(section.pop('lines'))
-    return _tidy(opening), sections
+# The draft's parts and their Markdown reading are the shared desk's (studio_core.drafting).
+FENCE = parts.FENCE
+TITLE = parts.TITLE
+SECTION = parts.SECTION
+ANY_HEADING = parts.ANY_HEADING
+ITEM = parts.ITEM
+SECTIONS = parts.SECTIONS  # sections in one outline or draft
+TOO_MANY = parts.TOO_MANY
+BRIEF = parts.BRIEF  # characters in one section's brief
+_id = parts.new_id
+_tidy = parts.tidy
+_free = parts.free
+_divide = parts.divide
+level = parts.level
+limit = parts.limit
+heading_in = parts.heading_in
+has_heading = parts.has_heading
+heading_problem = parts.heading_problem
+outline_from = parts.outline_from
+_title_line = parts.title_line
 
 
 def split(markdown, title=''):
-    """Title, opening and sections of a Markdown draft.
-
-    The first line is the title when it is a `# ` heading; a `# ` line further down is text.
-    Sections start at the shallowest heading level from ## to ###### used below the title
-    (`_divide`); text before the first one is the opening. A bold line is not a heading,
-    and a heading inside a fenced code block is text. Images held as data leave the text
-    first, for `images`; their references stay where they sit.
-    """
-    lines = markdown.replace('\r\n', '\n').strip('\n').split('\n')
-    found = TITLE.fullmatch(lines[0]) if lines else None
-    if found:
-        title, lines = found.group(1), lines[1:]  # As it is: image data is refused there.
-    body, images = desk_images.take('\n'.join(lines))
-    opening, sections = _divide(body.strip('\n').split('\n'))
-    return {'title': title.strip(), 'opening': opening, 'sections': sections, 'images': images}
-
-
-def level(draft):
-    """The heading level a draft's sections start at: ## unless it was split deeper."""
-    for section in draft.get('sections') or []:
-        if section.get('level') in range(3, 7):
-            return section['level']
-    return 2
-
-
-def limit(draft):
-    """The deepest heading a part may not hold: one at the section level or above would
-    start a section the next time DRAFT.md is read, and in a draft with no sections, any
-    heading from ## to ###### would. A record kept before the desk read headings below ##,
-    whose opening still holds them (a job was under way when it was read, or it has more
-    headings than a draft has sections), keeps the old rule: ## only."""
-    if draft.get('sections'):
-        return level(draft)
-    return 2 if has_heading(draft.get('opening') or '', 6) else 6
-
-
-def heading_in(text, level=2):
-    """The marks of the first heading from ## down to `level` a part's text holds outside
-    code, such as '###', or ''. Such a heading would start a new section the next time
-    DRAFT.md is read."""
-    for line, free in _free(text.replace('\r\n', '\n').split('\n')):
-        match = SECTION.fullmatch(line) if free else None
-        if match and len(match.group(1)) <= level:
-            return match.group(1)
-    return ''
-
-
-def has_heading(text, level=2):
-    """Whether a part's text holds a heading from ## down to `level` outside code."""
-    return bool(heading_in(text, level))
-
-
-def outline_from(text):
-    """The outline a person pasted, as a title, an opening brief and sections with briefs,
-    or None when it is notes without structure.
-
-    Headings outside code (at the shallowest level used) start sections; without headings,
-    top-level list items do, and the lines indented under each are its brief. Text before
-    the first section is the opening brief. Fewer than two sections is not an outline."""
-    lines = (text or '').replace('\r\n', '\n').strip('\n').split('\n')
-    title = ''
-    found = TITLE.fullmatch(lines[0]) if lines and lines[0] else None
-    if found:
-        title, lines = found.group(1), lines[1:]
-    headings, items, fence = [], [], None
-    for at, line in enumerate(lines):
-        marker = FENCE.match(line)
-        if marker:
-            if fence is None:
-                fence = marker.group(1)
-            elif marker.group(1).startswith(fence[0] * len(fence)):
-                fence = None
-            continue
-        if fence is not None:
-            continue
-        heading = ANY_HEADING.fullmatch(line)
-        if heading:
-            headings.append((at, len(heading.group(1)), heading.group(2)))
-        elif ITEM.fullmatch(line) and not line[:1].isspace():
-            items.append((at, ITEM.fullmatch(line).group(1)))
-    if headings:
-        top = min(depth for _, depth, _ in headings)
-        cuts = [(at, words) for at, depth, words in headings if depth == top]
-    else:
-        cuts = items
-    if not 2 <= len(cuts) <= SECTIONS:
-        return None
-    sections, taken = [], set()
-    for number, (at, words) in enumerate(cuts):
-        end = cuts[number + 1][0] if number + 1 < len(cuts) else len(lines)
-        body = '\n'.join(lines[at + 1 : end])
-        words = words.strip()
-        if not headings:
-            body = textwrap.dedent(body)
-            lead, colon, rest = words.partition(': ')
-            if colon and len(lead) <= 100:
-                words, body = lead, rest + ('\n' + body if body.strip() else '')
-        heading = ' '.join(words.rstrip(':').split())[:200] or 'Section ' + str(number + 1)
-        sections.append(
-            {
-                'id': _id(taken),
-                'heading': heading,
-                'brief': _tidy(body.split('\n'))[:BRIEF],
-                'text': '',
-            }
-        )
-    return {
-        'title': title.strip()[:500],
-        'opening_brief': _tidy(lines[: cuts[0][0]])[:BRIEF],
-        'sections': sections,
-    }
-
-
-def _title_line(text):
-    """The `# ` title on the first line of a pasted outline or notes, or ''."""
-    first = (text or '').replace('\r\n', '\n').strip('\n').split('\n')[0]
-    found = TITLE.fullmatch(first)
-    return found.group(1).strip()[:500] if found else ''
+    """Title, opening and sections of a Markdown draft (studio_core.drafting.parts.split).
+    Images held as data leave the text first, for `images`; their references stay where
+    they sit."""
+    return parts.split(markdown, title, take=desk_images.take)
 
 
 def join(draft, images=True, data=None):
     """The Markdown the parts make, as DRAFT.md keeps it: then the definitions of the images
     the text refers to, at the end, from `data` (desk/images.json) or as just taken from
     text. Without `images`, the text alone, as the page shows it."""
-    parts = []
-    if draft.get('title'):
-        parts.append('# ' + draft['title'])
-    if draft.get('opening'):
-        parts.append(draft['opening'])
-    mark = '#' * level(draft) + ' '
-    for section in draft['sections']:
-        written = section.get('mark') or mark
-        if written.strip() != mark.strip():
-            written = mark  # Marks kept from another level are not this draft's.
-        parts.append(
-            written + section['heading'] + ('\n\n' + section['text'] if section['text'] else '')
-        )
-    held = desk_images.definitions(draft, data) if images else []
-    return '\n\n'.join(parts + held) + '\n'
+    return parts.join(draft, desk_images.definitions(draft, data) if images else [])
+
+
+# Blog Studio's codec: the shared Markdown one, reading and writing images beside the text.
+CODEC = parts.MARKDOWN.replace(
+    split=lambda markdown, title='': split(markdown, title),
+    join=lambda draft, *rest, **named: join(draft, *rest, **named),
+)
 
 
 # The desk record. Every function below expects the caller to hold the studio lock, as the
@@ -928,25 +760,15 @@ def _recovered(root, ident, draft, labels):
 
 def _part(draft, part):
     """The section a part names, or None for the title and the opening."""
-    if part in PARTS:
-        return None
-    for section in draft['sections']:
-        if section['id'] == part:
-            return section
-    raise ValueError('Choose a part of this draft.')
+    return CODEC.section(draft, part)
 
 
 def text_of(draft, part):
-    section = _part(draft, part)
-    return draft[part] if section is None else section['text']
+    return CODEC.text_of(draft, part)
 
 
 def _set(draft, part, text):
-    section = _part(draft, part)
-    if section is None:
-        draft[part] = text.strip()
-    else:
-        section['text'] = text.strip()
+    CODEC.set_text(draft, part, text)
 
 
 def _leveled(section, depth):
@@ -1025,17 +847,6 @@ def checked(draft, seen, parts=None):
         stale = any(changed.get(part, 1) > seen for part in parts)
     if stale:
         raise ValueError('This draft changed since you opened it. Reload to see the latest.')
-
-
-def heading_problem(deepest):
-    """What to say when a part holds a heading that would start a section."""
-    if deepest >= 6:
-        return 'A heading would start a new section. Add sections on the Outline tab.'
-    mark = '#' * deepest
-    return (
-        'A ' + mark + ' heading would start a new section. Use ' + mark + '# for a heading '
-        'inside this part.'
-    )
 
 
 def checked_text(part, text, deepest=2):
@@ -1372,7 +1183,7 @@ def add_sources(root, ident, data):
     return written
 
 
-PART = re.compile(r'[a-f0-9]{8}')
+PART = parts.MARKDOWN.part
 SOURCES = (
     'save',
     'rewrite',
