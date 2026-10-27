@@ -182,6 +182,32 @@ class BindTests(unittest.TestCase):
                 self.assertNotIn(method, vars(namespace['Thing']))
                 self.assertNotIn('__shared_parts__', namespace)
 
+    def test_super_given_its_class_is_bound_and_finds_the_studio_s_class(self):
+        # Naming `super` at all gives a method a __class__ cell; only a call without
+        # arguments reads it, so one given its class and instance binds.
+        shared = source_module("""
+            class Thing:
+                def hello(self):
+                    return super(Thing, self).hello() + PRODUCT
+
+                def later(self):
+                    return (lambda: super(Thing, self).hello())()
+        """)
+        namespace = studio("""
+            PRODUCT = '!'
+
+            class Base:
+                def hello(self):
+                    return 'studio base'
+
+            class Thing(Base):
+                pass
+        """)
+        modules.bind(namespace, shared, methods={'Thing': ['hello', 'later']})
+        self.assertEqual(namespace['Thing']().hello(), 'studio base!')
+        self.assertEqual(namespace['Thing']().later(), 'studio base')
+        self.assertEqual(modules.unresolved(namespace), [])
+
     def test_a_name_the_studio_defines_is_refused(self):
         shared = source_module("""
             A = 1

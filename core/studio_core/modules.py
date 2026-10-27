@@ -43,10 +43,28 @@ def fresh_module(source, name, values):
     return module
 
 
+def _reads_class(code):
+    """Whether `code`, or code inside it, reads its `__class__` cell, as `super()` without
+    arguments does. Naming `super` at all gives a method the cell; `super(Thing, self)`
+    never reads it."""
+    listed = list(dis.get_instructions(code))
+    for at, instruction in enumerate(listed):
+        if instruction.opname in ('LOAD_DEREF', 'LOAD_CLASSDEREF') \
+                and instruction.argval == '__class__':
+            return True       # Python 3.12 and later load the cell for super()
+        if instruction.opname in ('LOAD_GLOBAL', 'LOAD_NAME') and instruction.argval == 'super':
+            following = listed[at + 1] if at + 1 < len(listed) else None
+            if following is not None and following.opname in ('PRECALL', 'CALL') \
+                    and following.arg == 0:
+                return True   # Python 3.11 calls super with nothing, and it reads the cell
+    return any(_reads_class(constant) for constant in code.co_consts
+               if isinstance(constant, CodeType))
+
+
 def _rebuilt(function, namespace, label):
     """`function` again, reading `namespace` as its globals."""
     code = function.__code__
-    if '__class__' in code.co_freevars:
+    if _reads_class(code):
         raise ValueError(f'{label} uses super() without arguments, which would name the '
                          'shared class; give super() its class and instance.')
     made = FunctionType(code, namespace, function.__name__, function.__defaults__,
