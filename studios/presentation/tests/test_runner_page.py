@@ -39,10 +39,12 @@ VERSION = (helpers.SKILL / 'VERSION').read_text().strip()
 GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
         '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
         '/api/delete', '/api/file', '/api/computer', '/api/known-decks', '/api/storyboard',
-        '/api/desk-outline-price')
+        '/api/desk-outline-price', '/api/desk-versions')
 DESK_POSTS = ('/api/desk-note', '/api/desk-deck-note', '/api/desk-stop', '/api/desk-deliver',
               '/api/desk-draw-here', '/api/desk-outline', '/api/desk-reread', '/api/desk-look',
-              '/api/desk-look-again')
+              '/api/desk-look-again', '/api/desk-words', '/api/desk-notes',
+              '/api/desk-selection', '/api/desk-redraw-words', '/api/desk-discard',
+              '/api/desk-restore')
 POSTS = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
          '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
