@@ -185,6 +185,9 @@ What a caller needs to know
 - `bring` copies a training's folder into the workspace under the name its title gives,
   moves its decisions to the page, gives it a run record that takes it, and commits. The
   folder it came from is only read. The run then carries on from what the files say.
+- A form with `flow: 'desk'` starts the training on the desk: a run of schema 4 with
+  `flow: 'desk'` in the run and the session, and no review level. None is saved with it and
+  the shared one is never written from its form, so its start promises no stops.
 """
 from __future__ import annotations
 
@@ -209,7 +212,7 @@ import hub
 import workspace
 from workspace import WorkspaceError
 
-from runner import agents, companion, deck, gitstate, pipeline, settings, team, worker_tools
+from runner import agents, companion, deck, drafts, gitstate, pipeline, settings, team, worker_tools
 from runner import brand as brand_skill
 from runner import brand_source
 from runner import copies as copies_made
@@ -332,8 +335,8 @@ STALE = {'review-stale', 'asset-hash-changed', 'asset-file-missing', 'input-miss
 # What a slides tool says of an asset an approved design names and that is not to hand.
 CANDIDATE = ('asset-unresolved', 'provider-missing', 'asset-conflict')
 ASSETS_WAIT = ('The deck is not drawn until what its approved design uses is to hand. {said}')
-NO_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
-                'here cannot do it. Update Harness Research, then start again.')
+# Every start is refused so, on the desk or not: one check and one sentence.
+NO_SYNTHESIS = drafts.NEEDS_SYNTHESIS
 # True lets a new run start on the legacy question queue. Only the test suites that still
 # drive the queue through its stand-in set it; piece 7 removes it with the queue.
 LEGACY_RESEARCH = False
@@ -401,13 +404,18 @@ def read_record(root: Path) -> dict | None:
     if not path.is_file():
         return None
     record = home.read_json(path, None)
-    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3) \
+    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA) \
             or not isinstance(record.get('steps'), dict):
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
                              'will not drive this training.')
     if record.get('schema') == 2 and not record.get('review_policy'):
         raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
-    if record.get('schema') == 3 and (record.get('research_contract') or {}).get('schema') != 2:
+    contracted = (record.get('research_contract') or {}).get('schema') == 2
+    # A desk run is started with a research contract, as every run is, except on the legacy
+    # queue the test suites still drive.
+    if record.get('schema') == drafts.SCHEMA:
+        contracted = drafts.on_desk(record) and (contracted or LEGACY_RESEARCH)
+    if record.get('schema') in (3, drafts.SCHEMA) and not contracted:
         raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
 
@@ -1029,11 +1037,17 @@ class Engine(Reviewing):
             contract = None
         if contract is None and not LEGACY_RESEARCH:
             raise WorkspaceError(NO_SYNTHESIS)
+        # A training on the desk has no review level: none is saved with it, and the shared
+        # one is never written from its form.
+        desk = drafts.on_desk(form)
         with self.files:
             record = new_record(agent, model, chosen, form['source_scope'], effort,
                                 form.get('research_from'))
             record['research_questions'] = form.get('research_questions') or []
-            if form.get('review_default'):
+            if desk:
+                record.pop('review_policy')
+                record.pop('review_layout')
+            elif form.get('review_default'):
                 # Use this for new work in every studio: written under the studios config's
                 # lock, or refused, with nothing made, when another studio changed the level
                 # the form read.
@@ -1045,7 +1059,7 @@ class Engine(Reviewing):
                     raise WorkspaceError(str(error)) from None
             # A per-training choice does not write shared settings and stays valid even
             # when another studio changes the default while this form is open.
-            if form.get('review_level'):  # this training's own choice, saved with its run
+            if form.get('review_level') and not desk:  # this training's own, saved with it
                 record['review_policy'] = {'schema': 1, 'level': form['review_level']}
             root = pipeline.create(space, form)
             try:
@@ -1054,10 +1068,14 @@ class Engine(Reviewing):
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
+                if desk:
+                    record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
+                        'jobs': [], 'updates': {}, 'findings_before': None})
                 session = workspace.load(root)
                 if contract:
                     session['research_contract'] = contract
-                session['review_policy'] = record['review_policy']
+                if not desk:
+                    session['review_policy'] = record['review_policy']
                 workspace.store(root, session)
                 record['driver'] = team.claim(space)
                 self._tried(record, 'intake', home.now(), 0.0, 'kept')
@@ -1080,7 +1098,7 @@ class Engine(Reviewing):
         decks = max(1, len(form['levels'])) if drawn else 0
         balanced = 2 if pipeline.planned_from_form(record) else 3
         return {'path': str(root), 'id': root.name, 'gates': (
-            pipeline.gates(form, drawn) if chosen == 'step_by_step'
+            0 if desk else pipeline.gates(form, drawn) if chosen == 'step_by_step'
             else (balanced if chosen == 'balanced' else 1) + decks)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
@@ -4646,7 +4664,8 @@ class Engine(Reviewing):
             'clash': root.name in self._clash,
             'model': record.get('model'), 'effort': record.get('effort'),
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
-            'review_level': review_policy.level(record),
+            # A desk run has none: a run without one reads as Step by step everywhere else.
+            'review_level': None if drafts.on_desk(record) else review_policy.level(record),
             'review': self._review_view(root, record, found),
             'steps': self._steps(record, found, state, root),
             'workers': self._workers(run),

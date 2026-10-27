@@ -624,6 +624,12 @@ def check_form(sent: dict, brands=None) -> dict:
             raise WorkspaceError('Choose where this training stops before using it for new '
                                  'work.')
         form['review_default'] = True
+    # `flow: 'desk'` starts the training on the desk, with no review level. Left out, it
+    # starts as every training did before the desk.
+    if sent.get('flow') is not None:
+        if sent['flow'] not in workspace.FLOWS:
+            raise WorkspaceError(workspace.NO_FLOW)
+        form['flow'] = sent['flow']
     return form
 
 
@@ -684,7 +690,7 @@ def create(space: gitstate.Workspace, form: dict) -> Path:
                        form['deck_target'], form['brand'], form['yoodli'], form['copies'],
                        delivery=form.get('delivery') or 'live',
                        walkthrough=bool(form.get('walkthrough')),
-                       approval='page')
+                       approval='page', flow=form.get('flow'))
         sync_guidance.adopt(root)
         if form['deck_target'] is None:
             workspace.skip(root, 'deck', reason=NO_DECK, by='page')
