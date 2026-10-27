@@ -8,7 +8,7 @@ Keep intake and form in `run.json`; sources stay in never-shared `sources/`. Res
 | A document | Classify as slide-by-slide spec or raw material → outline; optional research only for material → look/build/delivery |
 | An existing deck | Copy PPTX or Google Slides input, inventory and show original images → steps required by the selected [level](levels.md) → new delivery |
 
-Honor the requested review cadence. Show required checkpoints and wait; never invent approvals. Reuse unchanged decisions.
+Honor the requested review cadence. Show required checkpoints and wait; never invent approvals. Reuse unchanged decisions. A [desk](desk.md) deck continues them with a desk receipt, except a look pick it chose.
 
 ## Research and outline
 
