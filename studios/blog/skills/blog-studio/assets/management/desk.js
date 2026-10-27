@@ -1277,7 +1277,7 @@ function sDeskResized(){const held=studio.desk;if(!held||!sDeskCurrent(held)||he
 // parts and Finishing tools. Each member names Blog's function when it is called, so the kit
 // can be built here, before anything runs, and a check that swaps a global still reaches it.
 const DESK_KIT=Drafting.kit({
-  ui:{button:(...x)=>sButton(...x),card:(...x)=>sCard(...x),pickCard:(...x)=>sPickCard(...x),choice:(...x)=>sChoice(...x),disclosure:(...x)=>disclosure(...x),bead:(...x)=>sBead(...x),openSheet:(...x)=>sOpenSheet(...x),closeSheet:()=>sCloseSheet(),toast:(...x)=>sToast(...x),notice:(...x)=>notice(...x),busy:(...x)=>busy(...x),narrow:()=>sNarrow(),field:(...x)=>sField(...x)},
+  ui:{button:(...x)=>sButton(...x),card:(...x)=>sCard(...x),pickCard:(...x)=>sPickCard(...x),choice:(...x)=>sChoice(...x),disclosure:(...x)=>disclosure(...x),bead:(...x)=>sBead(...x),openSheet:(...x)=>sOpenSheet(...x),closeSheet:()=>sCloseSheet(),toast:(...x)=>sToast(...x),notice:(...x)=>notice(...x),busy:(...x)=>busy(...x),narrow:()=>sNarrow()},
   api:(route,data)=>api(route,data),
   routes:{view:'desk',save:'desk-save',versions:'desk-versions',restore:'desk-restore',note:'desk-note',revise:'desk-revise',selection:'desk-selection',stop:'desk-stop',retry:'desk-retry',finish:'desk-finish',apply:'desk-apply',skip:'desk-skip',proofread:'desk-proofread'},
   share:id=>fetch('/api/desk-share',{method:'POST',keepalive:true,headers:{'X-Blog-Studio-Token':token,'Content-Type':'application/json'},body:JSON.stringify({id})}),
