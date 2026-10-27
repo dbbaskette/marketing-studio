@@ -14,7 +14,8 @@
 // label of a file picker, files: what is chosen in it}, {polls: how many} for the page's own
 // refresh asked for that many times at once, {hidden: true or false} for the tab put behind
 // another or brought back, {timer: a function's name} for the last timer the page set to
-// call it, {tick: the name of a check box} for a click on that box, and {hold: the name of
+// call it, {tick: the name of a check box} for a click on that box, {select: the label of a
+// box, start, end} for words selected in it, and {hold: the name of
 // a control} to follow that very node: each
 // snapshot then says, in `still`, which of those held are still on the page, and in `asked`
 // how many requests had been made by then. A box that is filled is left as a
@@ -815,6 +816,15 @@ async function app(file) {
         held.dispatch('change', { target: held });
       }
       if (step.see !== undefined) see(step.see);
+      // {select: the label of a box, start, end}: those characters of it are selected, as a
+      // person drags across them, and the box says so.
+      if (step.select !== undefined) {
+        const held = box(step.select);
+        held.focus();
+        held.selectionStart = step.start;
+        held.selectionEnd = step.end;
+        held.dispatch('select', { target: held });
+      }
       if (step.poll) await timers.filter((timer) => timer.name === 'refresh').pop()();
       if (step.timer) await timers.filter((timer) => timer.name === step.timer).pop()();
       if (step.polls) {
