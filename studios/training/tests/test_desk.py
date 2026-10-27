@@ -2180,7 +2180,7 @@ class PageScriptTests(ScriptedPage, PageCase):
                          ('Rolling restarts', ['Trainings'], []))
         for shown in ('In progress', 'You asked for changes to the learner guide.', 'Files',
                       'not approved yet, changes asked for', 'In the way', 'Checks',
-                      'Left out or limited', 'Practice', 'Research', 'Guidance',
+                      'Warnings', 'Practice', 'Research', 'Guidance',
                       'How this training is decided', 'Carry on with your assistant',
                       'Use training-studio to resume the training in'):
             self.assertIn(shown, one['text'])
@@ -5700,7 +5700,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         page = shots['index']
         self.assertEqual((page['heading'], page['title'], page['current'], page['filled']),
                          ('The index', 'The index · Rolling restarts · Training Studio',
-                          ['Trainings'], []))
+                          ['Trainings'], ['Download the index']))
         for shown in ('Who it is for', 'Platform engineers new to it.'):
             self.assertIn(shown, page['text'])
         self.assertNotIn('## Who', page['text'])
@@ -7560,11 +7560,12 @@ class TeamScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [('/api/fetch', {})] * 4)
         self.assertNotIn('Running on this computer', text)
         self.assertNotIn('Last changed', text)
-        # This computer's own are first, the team's apart, and the check stays where it was.
+        # The check of this computer first, where its result is read; then this computer's
+        # own trainings, and the team's apart.
+        self.assertLess(text.index('See whether this computer has what a training needs'),
+                        text.index('Trainings on this computer'))
         self.assertLess(text.index('Trainings on this computer'),
                         text.index('Run by your teammates'))
-        self.assertLess(text.index('Run by your teammates'),
-                        text.index('See whether this computer has what a training needs'))
         self.assertEqual(status['filled'], ['Check this computer'])
         self.assertEqual(self.asked(result, 'status')[:2], ['/api/status', '/api/status'])
         self.assertEqual((shots['theirs']['heading'], shots['theirs']['filled']),

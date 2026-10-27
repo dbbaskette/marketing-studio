@@ -1662,7 +1662,7 @@ function needsRow(training, index) {
   const waiting = training.waiting || {};
   const asked = view.asks[training.path] || {};
   const title = training.title || 'Untitled';
-  const text = add(make('div', 'row-text'), make('h3', 'row-title', title));
+  const text = add(make('div', 'row-text'), make('p', 'row-title', title));
   const says = asked.problem ? asked.problem.what : saysOf(training);
   if (asked.question) {
     add(text, questionBox(training.path, title, asked.question, '', 'answer-' + index));
@@ -1687,7 +1687,7 @@ function needsRow(training, index) {
 
 function quietRow(training, kind) {
   const text = add(make('div', 'row-text'),
-    make('h3', 'row-title', training.title || 'Untitled'));
+    make('p', 'row-title', training.title || 'Untitled'));
   if (kind === 'in-progress') add(text, beads(training.stages, true));
   // A run that is not working says so: paused, stopped, or finished as far as it goes here.
   if (training.run && training.run.state !== 'working' && kind === 'in-progress'
@@ -1703,7 +1703,7 @@ function quietRow(training, kind) {
 
 function brokenRow(training) {
   const text = add(make('div', 'row-text'),
-    make('h3', 'row-title', training.title || 'Untitled'),
+    make('p', 'row-title', training.title || 'Untitled'),
     make('p', 'row-says', 'Its record cannot be read: ' + training.error),
     pathInto(make('p', 'path'), training.path));
   const go = capsule('Open', 'quiet', openTraining(training), 'open ' + training.path);
@@ -1721,23 +1721,41 @@ function rows(title, trainings, build, className) {
         working(training), unclaimed(training)], () => build(training, index)]))];
 }
 
+// How a training is started, as the invitation and the Start a training card say it.
+const START_SAYS = 'Say what it is about and who it is for. Training Studio does the '
+  + 'research and writes the blueprint, the learner guide, the brief and the practice '
+  + 'scenarios on its own, and stops where its review level says, for your decision.';
+const ASK_SAYS = 'Make a folder for your topic, start your assistant in that folder, and ask '
+  + 'for the training in a sentence, for example:';
+const ASK_SENTENCE = 'Use training-studio to build a 101 training on rolling restarts.';
+const HOME_LEDE = 'What needs you comes first, then trainings in progress, then ways to start '
+  + 'one.';
+
+// Home's way to start another: with the runner, New training; without it, what to ask the
+// assistant.
+function startCard() {
+  const node = card('Start a training');
+  if (view.runner) {
+    return add(node, make('p', '', START_SAYS),
+      add(make('div', 'bar'), newButton('', 'start-new')));
+  }
+  return add(node, make('p', '', ASK_SAYS), make('p', 'sentence', ASK_SENTENCE));
+}
+
 function invitation() {
   const node = make('section', 'card shine invite');
   if (view.runner) {
     return add(node,
       make('h2', 'invite-title', 'Start your first training'),
-      make('p', '', 'Say what it is about and who it is for. Training Studio does the '
-        + 'research and writes the blueprint, the learner guide, the brief and the practice '
-        + 'scenarios on its own, and stops where its review level says, for your decision.'),
+      make('p', '', START_SAYS),
       add(make('div', 'bar'), newButton('filled')),
       make('p', 'quiet', 'It takes three short steps, and this page tells you each time it '
         + 'needs you.'));
   }
   return add(node,
     make('h2', 'invite-title', 'Start your first training'),
-    make('p', '', 'Make a folder for your topic, start your assistant in that folder, and ask '
-      + 'for the training in a sentence, for example:'),
-    make('p', 'sentence', 'Use training-studio to build a 101 training on rolling restarts.'),
+    make('p', '', ASK_SAYS),
+    make('p', 'sentence', ASK_SENTENCE),
     make('p', 'quiet', 'It appears here as soon as it exists, and this page tells you each '
       + 'time it needs you.'));
 }
@@ -1783,14 +1801,18 @@ function drawHome(fresh) {
   const start = view.runner && all.length ? newButton(lead ? '' : 'filled') : null;
   const said = greeting();
   const parts = [['greeting', [said], () => make('p', 'large-title', said)],
-    ['updates', [upkeepOf()], updatesCard], ['studios', studiosMark(), studiosHomeCard]];
+    ['head', [], () => pageHead(HOME_LEDE)]];
+  const setup = [['updates', [upkeepOf()], updatesCard],
+    ['studios', studiosMark(), studiosHomeCard]];
   if (!all.length) {
-    parts.push(['invite', [Boolean(view.runner)], invitation]);
+    parts.push(['invite', [Boolean(view.runner)], invitation], ...setup);
   } else {
     parts.push(
       rows('Needs you', pick('needs-you'), needsRow, 'card-needs'),
       rows('In progress', pick('in-progress'), (training) => quietRow(training, 'in-progress')),
       rows('Run by your teammates', teammates(), teamRow),
+      ['start', [Boolean(view.runner)], startCard],
+      ...setup,
       rows('Finished', pick('finished'), (training) => quietRow(training, 'finished')),
       rows('Cannot be read', all.filter((training) => training.error), brokenRow));
   }
@@ -1975,7 +1997,7 @@ function computerItem(item) {
   const [shape, words] = COMPUTER_WORDS[item.state] || COMPUTER_WORDS.problem;
   const node = make('li', 'computer-item');
   const said = item.state !== 'ok' && item.optional ? words + ' (optional)' : words;
-  add(node, add(make('div', 'computer-top'), make('h3', 'row-title', item.name),
+  add(node, add(make('div', 'computer-top'), make('p', 'row-title', item.name),
     state(item.state !== 'ok' && item.optional ? 'none' : shape, said)));
   const facts = make('ul', 'facts');
   for (const found of list(item.facts)) facts.append(fact(found, item.optional));
@@ -2044,6 +2066,12 @@ function studiosHomeCard() {
   return parts.length ? add(card('Your other studios'), ...parts) : null;
 }
 
+// Who runs a training is said only where there is a team to run it.
+function statusLede() {
+  return 'What is running, ' + (teamSpace() ? 'who runs it, ' : '')
+    + 'and whether this computer has what a training needs.';
+}
+
 function drawStatus(fresh) {
   const check = capsule(view.checking ? 'Checking…' : view.computer ? 'Check this computer again'
     : 'Check this computer', 'filled', checkComputer, 'check-computer');
@@ -2052,13 +2080,14 @@ function drawStatus(fresh) {
     : teammates().map(statusOf);
   placeParts({ title: 'Status', actions: [check],
     mark: ['Status', view.checking, Boolean(view.computer)] }, [
+    ['head', [statusLede()], () => pageHead(statusLede())],
+    ['computer', [view.computer, Boolean(view.runner)], computerCard],
     trainingsTable(),
     ['teammates', [Boolean(view.runner), Boolean(view.status), theirs, teamSpace(),
       view.fetching, view.fetched], teammatesCard],
     ['versions', [upkeepOf(), view.restarting], versionsCard],
     ['skills', [upkeepOf()], skillsCard],
-    ['studios', studiosMark(), studiosStatusCard],
-    ['computer', [view.computer, Boolean(view.runner)], computerCard]], fresh);
+    ['studios', studiosMark(), studiosStatusCard]], fresh);
   // With the runner, every run and who runs what is asked for as the screen opens.
   if (fresh && view.runner) {
     const turn = view.turn;
@@ -2087,7 +2116,7 @@ function alertsCard() {
       + 'what needs you.'));
   }
   return add(node, make('p', '', 'Be told when a training needs you, even when this tab is '
-    + 'behind another.'), add(make('div', 'bar'), capsule('Turn on notifications', 'filled',
+    + 'behind another.'), add(make('div', 'bar'), capsule('Turn on notifications', '',
     async () => {
       try {
         await Notification.requestPermission();
@@ -2120,6 +2149,9 @@ function decidedCard() {
   return node;
 }
 
+const SETTINGS_LEDE = 'How Training Studio works on this computer; what every studio shares '
+  + 'is changed in Shared settings.';
+
 // Each card is built again only when what it is drawn from has changed: where each training
 // is decided, only when a training's own answer to that has.
 function drawSettings(fresh) {
@@ -2127,17 +2159,19 @@ function drawSettings(fresh) {
     training.approval, Boolean(training.error), watched(training), Boolean(training.run),
     elsewhere(training)]);
   placeParts({ title: 'Settings', mark: ['Settings'] }, [
+    ['head', [], () => pageHead(SETTINGS_LEDE)],
     ['shared-settings', [Boolean(view.runner)], () => view.runner ? add(card('Shared settings'),
       make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
       capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings')) : null],
     ['review-level', [Boolean(view.runner), view.setup && view.setup.review_level,
       view.reviewRefused], whereNewWorkStopsCard],
-    ['workspace', around(), workspaceCard], ['left', around(), leftCard],
-    ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
-    ['look', [view.setup && view.setup.updates, view.lookRefused], lookCard],
+    ['workspace', around(), workspaceCard],
+    ['decided', [decided, view.unmoved], decidedCard],
     ['brand-source', [view.setup && view.setup.brand && [view.setup.brand.repository,
       view.setup.brand.release], view.brandRefused, view.savingBrand], brandSourceCard],
-    ['decided', [decided, view.unmoved], decidedCard],
+    ['look', [view.setup && view.setup.updates, view.lookRefused], lookCard],
+    ['alerts', [alerts()], alertsCard], ['notify', around(), notifyCard],
+    ['left', around(), leftCard],
     ['page', [Boolean(view.runner)], () => add(card('This page'),
       make('p', '', 'It runs on this computer and answers only to the link that opened it. '
         + (view.runner ? 'The page sends what you read and decide nowhere else. The agent that '
@@ -2958,10 +2992,10 @@ function filesCard(training) {
   return node;
 }
 
-function reasonsCard(title, items, none) {
-  const node = card(title);
-  if (!list(items).length) return add(node, make('p', 'quiet', none));
-  return add(node, bullets(list(items), 'reasons'));
+// A card of reasons, drawn only when there is one to give.
+function reasonsCard(title, items) {
+  if (!list(items).length) return null;
+  return add(card(title), bullets(list(items), 'reasons'));
 }
 
 function checksCard(check) {
@@ -2970,7 +3004,7 @@ function checksCard(check) {
   add(node, make('p', 'quiet', count(Number(check.passed) || 0, 'check', 'checks') + ' passed.'
     + (failing.length ? '' : ' None failed, and none was unable to run.')));
   for (const outcome of failing) {
-    add(node, add(make('div', 'check'),
+    add(node, add(make('div', 'check-outcome'),
       add(make('p', ''), make('code', '', outcome.check), ' ',
         make('span', 'quiet', outcome.status === 'unavailable' ? 'could not run' : 'failed')),
       bullets(list(outcome.problems), 'reasons')));
@@ -2999,7 +3033,7 @@ function practiceCard(training) {
       + 'scenario to compare.'));
   }
   for (const [title, part] of parts) {
-    add(node, add(make('div', 'practice'), title ? make('h3', 'row-title', title) : null,
+    add(node, add(make('div', 'practice'), title ? make('p', 'row-title', title) : null,
       objectives('Exercised', list(part.exercised), true),
       objectives('Not exercised', list(part.not_exercised), false),
       make('p', 'quiet', 'Read from the ' + part.basis + '.')));
@@ -3086,7 +3120,7 @@ function decisionsCard(training) {
   }
   const out = list(training.view.left_out);
   if (out.length) {
-    add(node, make('h3', 'row-title', 'Left out'));
+    add(node, make('p', 'row-title', 'Left out'));
     const items = make('ul', 'rows');
     for (const stage of out) {
       const problem = alertLine('restore-' + stage.stage + '-problem');
@@ -3150,11 +3184,11 @@ function paintTraining(fresh) {
     [add(make('div', 'intro'), state(shape, words), beads(training.stages, false),
       make('p', 'lede', saysOf(training)), whoLine(known)),
     adoptCard(known),
+    reasonsCard('In the way', training.view.blocking),
     filesCard(training),
-    reasonsCard('In the way', training.view.blocking, 'Nothing is in the way.'),
     checksCard(training.check),
-    reasonsCard('Left out or limited', training.view.limitations, 'Nothing was left out.'),
-    reasonsCard('Warnings', training.view.warnings, 'No warnings.'),
+    reasonsCard('Left out or limited', training.view.limitations),
+    reasonsCard('Warnings', training.view.warnings),
     practiceCard(training), researchCard(training.status), guidanceCard(training.status),
     decisionsCard(training),
     // One driver for a training: while the page runs it, nobody is sent to an assistant.
@@ -3256,8 +3290,8 @@ function standingOf(training) {
   return STATES[training.state] || STATES['in-progress'];
 }
 
-function newButton(kind) {
-  return capsule('New training', kind, () => show('new'), 'new');
+function newButton(kind, key) {
+  return capsule('New training', kind, () => show('new'), key || 'new');
 }
 
 // The list says that a run needs its person. What it asks is read from the run itself: the
@@ -3982,8 +4016,9 @@ function placeCard(form) {
   const checks = make('div', 'checks');
   checks.id = 'setup-checks';
   checks.setAttribute('role', 'status');
-  return add(node, make('h3', 'row-title', 'Checked for you'), checks,
-    add(make('div', 'bar'), capsule('Check again', 'quiet', again, 'check-again')));
+  return add(node, add(make('fieldset', 'checked'), make('legend', 'field-label',
+    'Checked for you'), checks,
+  add(make('div', 'bar'), capsule('Check again', 'quiet', again, 'check-again'))));
 }
 
 // What every studio on this computer shares, as the runner read it, or nothing from a runner
@@ -7125,7 +7160,7 @@ function keptLine(names) {
 
 function teamRow(training) {
   const title = training.title || 'Untitled';
-  const text = add(make('div', 'row-text'), make('h3', 'row-title', title),
+  const text = add(make('div', 'row-text'), make('p', 'row-title', title),
     beads(training.stages, true), whoLine(training), lastOr(training, 'row-says'),
     noticeLine(training));
   const go = capsule('Open', 'quiet', openTraining(training), 'open ' + training.path);
@@ -7714,7 +7749,7 @@ function teammatesCard() {
       'theirs ' + found.path);
     go.setAttribute('aria-label', 'Open ' + found.title + ', to read it');
     add(items, add(make('li', 'row'), add(make('div', 'row-text'),
-      make('h3', 'row-title', found.title),
+      make('p', 'row-title', found.title),
       found.driver ? whoSays(found.driver, 'who') : null,
       lastLine(found.last_shared, 'row-says')
         || (found.sentence ? make('p', 'row-says', found.sentence) : null),
@@ -8335,8 +8370,7 @@ function brandSourceCard() {
   const save = capsule(view.savingBrand ? 'Checking…' : 'Check and save', '',
     () => saveBrand(save), 'brand-save');
   save.disabled = view.savingBrand;
-  return add(node, problem, add(make('div', 'bar'), save,
-    capsule('See the versions', 'quiet', () => show('status'), 'brand-versions')));
+  return add(node, problem, add(make('div', 'bar'), save));
 }
 
 async function saveBrand(pressed) {
@@ -8445,12 +8479,14 @@ async function drawIndex(fresh) {
   try {
     const read = await ask('file', { path, artifact: view.artifact });
     if (turn !== view.turn) return;
+    const download = capsule('Download the index', 'filled', (event) => downloadFile(path,
+      { artifact: 'README.md' }, 'README.md', event.currentTarget), 'download-index');
     place({ title: 'The index', name: 'The index · ' + (found.title || 'Untitled'), back: true,
-      above: [button(found.title || 'Untitled', 'link', home, 'training')] },
-    [add(make('div', 'reading index'), documentBody(asDocument(read),
-      { label: 'The index', path, files: true }),
-      capsule('Download the index', 'quiet', (event) => downloadFile(path,
-        {artifact: 'README.md'}, 'README.md', event.currentTarget), 'download-index'))], true);
+      above: [button(found.title || 'Untitled', 'link', home, 'training')],
+      actions: [download] },
+    [pageHead('Everything this training made, with where each file is.'),
+      add(make('div', 'reading index'), documentBody(asDocument(read),
+        { label: 'The index', path, files: true }))], true);
   } catch (failure) {
     if (turn !== view.turn) return;
     unopened(failure, false, true, { title: 'The index cannot be opened',
