@@ -67,7 +67,7 @@ This is how a deck you start on the page is made, from an idea, a document or a 
 - **Brand only and Polish keep your words** exactly, so a word edit is refused, with a sentence that says so. Speaker notes can still be changed, and a note on a slide still changes how it is drawn.
 - **Selected changes** changes your deck's text through patches to a copy. Your words are changed in their boxes on the card, and a note on a slide plans its changes again. Your deck itself is never changed, its speaker notes stay as they are, and there is no whole-deck note or Finishing.
 
-**Open on the desk.** A gated deck that is delivered offers **Open on the desk** on its screen. It opens from this computer's drawing of the deck, still delivered, and its first change there makes the next revision. A computer without that drawing says so: draw it there first, or open it on the computer that made it.
+**Open on the desk.** A gated deck that is delivered offers **Open on the desk** on its screen. It opens from this computer's drawing of the deck, still delivered, and its first change there makes the next revision. From then on it is a desk deck, with no review level. A computer without that drawing says so: draw it there first, or open it on the computer that made it.
 
 **With a team.** A teammate's computer has a desk deck's words, not its drawing: the desk says "There is no drawing of this deck on this computer." and offers **Draw it here**, priced. It is never redrawn there unasked.
 
