@@ -3776,7 +3776,11 @@ class Engine(Reviewing):
         the run, which leaves its steps in the survey again, and the run carries on. In this
         version the material is made again whole, through its own steps, as an out-of-date
         one is on a saved run; the update closes when it lands. Refused while another change
-        is being made, for a material that is not held, and while an input of its own is."""
+        is being made, for a material that is not held, while an input of its own is, and for
+        one no step of its own makes again (a scenario the person wrote, the research plan and
+        the research), which is only kept: its update would never close."""
+        if scope is not None:
+            raise WorkspaceError(drafts.NO_SCOPE)
         with self.files:
             root, record = self._on_desk(path)
             if drafts.busy(record):
@@ -3784,12 +3788,17 @@ class Engine(Reviewing):
             session = workspace.load(root)
             if not isinstance(name, str) or name not in drafts.held(root, session, record):
                 raise WorkspaceError(drafts.UP_TO_DATE)
+            if workspace.split(name)[0] in drafts.NEVER_REMADE \
+                    or name in self._survey_files(root, record).own:
+                raise WorkspaceError(drafts.NOT_REMADE.format(
+                    it=workspace.sentence(workspace.label(name))))
             state = workspace.statuses(root, session)
             for upstream in workspace.artifact(root, session, name)['upstream']:
                 if state.get(upstream) == 'stale':
                     raise WorkspaceError(f'Update or keep {workspace.label(upstream)} first.')
             changed = drafts.input_of(root, session, name)
-            record['drafts']['updates'][name] = {'at': home.now(), 'by': 'page', 'scope': scope}
+            record.setdefault('drafts', {}).setdefault('updates', {})[name] = {
+                'at': home.now(), 'by': 'page', 'scope': scope}
             base, level = workspace.split(name)
             for step in ([workspace.qualify(step, level) for step in pipeline.DECK_STEPS]
                          if base == 'deck' else [name]):

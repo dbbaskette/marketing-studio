@@ -36,6 +36,12 @@ NOT_ON_DESK = ('This training is not on the desk. Use its own screen, or open it
 # One change at a time: a desk job or an update under way. Task 13's draft_jobs re-exports it.
 BUSY = 'A change is already being made to this training. Wait for it, or stop it.'
 UP_TO_DATE = workspace.UP_TO_DATE
+# What no step of its own makes again when it is out of date: a scenario the person wrote, the
+# research plan and the research. It can only be kept as it is.
+NOT_REMADE = '{it} is not made again by the studio. Keep it as it is, or change it yourself.'
+NEVER_REMADE = ('research-plan', 'research')
+# Until the deck's scoped update (Task 20), an update is of the whole material.
+NO_SCOPE = 'An update is of the whole material for now. Leave out what it covers.'
 # What a held card says: what it was built from, and how much of it changed since.
 HELD = 'Built from an earlier {what}.'
 CHANGED = ' {n} {parts} changed since.'

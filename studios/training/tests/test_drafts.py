@@ -402,6 +402,38 @@ class DeskHoldTests(DeckCase):
         self.assertEqual(len(self.workers.of('scenario')), scenarios, 'it is not drafted again')
         self.assertIn('scenario:main@101', self.held(root))
 
+    def test_what_the_studio_does_not_make_again_is_only_kept(self):
+        root = self.start(flow='desk', levels=['101'])
+        self.assertEqual(self.to_end(root), [])
+        # The person wrote this scenario: it is taken in as it is, never drafted again.
+        record = self.engine._load(root)
+        record['drafted'] = [name for name in record.get('drafted') or ()
+                             if name != 'scenario:main@101']
+        self.engine._store(root, record)
+        plan = (root / '101' / 'blueprint.md').read_text(encoding='utf-8')
+        line = next(line for line in plan.splitlines() if line.startswith('- main:'))
+        self.edit(root, 'blueprint@101',
+                  lambda text: text.replace(line, line + ' Who now asks about cost.'))
+        self.assertIn('scenario:main@101', self.held(root))
+        commits = self.log()
+        with self.assertRaisesRegex(
+                WorkspaceError, '^The level 101 practice scenario is not made again by the '
+                                'studio. Keep it as it is, or change it yourself.$'):
+            self.engine.update(root, 'scenario:main@101')
+        self.assertEqual(self.log(), commits)
+        self.assertFalse(drafts.busy(self.record(root)))
+        self.assertEqual(self.record(root)['drafts']['updates'], {})
+        self.engine.keep(root, 'scenario:main@101')
+        self.assertNotIn('scenario:main@101', self.held(root))
+        self.assertIsNone(self.record(root)['problem'])
+
+    def test_an_update_names_no_scope_yet(self):
+        root = self.desk_deck()
+        self.guide_edit(root)
+        with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NO_SCOPE}$'):
+            self.engine.update(root, 'deck@101', scope='slides 1-3')
+        self.assertEqual(self.record(root)['drafts']['updates'], {})
+
     def test_saved_runs_still_remake(self):
         root = self.begin(levels=['101'])
         self.drawn(root, '101')
