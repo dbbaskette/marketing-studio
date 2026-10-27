@@ -10,6 +10,10 @@ that the review policy did not continue, and every other gate carries the policy
 receipt. It is delivered as Google Slides through the stand-in Drive, with a link; its contact
 sheet is committed; nothing under sources/ or work/ is tracked; and every decision is a
 commit of its own. Nothing starts an agent, renders or leaves this computer.
+
+A deck started from the desk's start (DeskRouteTests) is walked to its first delivery too:
+it reads no review level, and its only decisions that are the person's are the look, where
+its start chose to pick it, and Deliver.
 """
 import json
 import re
@@ -266,6 +270,113 @@ class StepByStepCorrectionTests(RouteCase):
         self.assertEqual([spec['named'] for spec in patches], [[2], [2, 1]])
         self.assertEqual(self.walk(path, 'Old deck'), ['gate:build'])
         self.delivered(path, ['gate:classify', 'gate:build'], sheet=False)
+
+
+class DeskRouteTests(RouteCase):
+    """Every route a desk deck takes from the desk's start to its first delivery, through the
+    page's own addresses. The only decisions that are the person's are the look, where the
+    start chose to pick it, and Deliver; every other stop is continued with the desk's
+    receipt, at whatever level the shared settings hold."""
+
+    review_level = 'automatic'   # a desk deck never reads it
+
+    def setUp(self):
+        super().setUp()
+        self.brand.run.offers_looks = True
+        self.brand.run.guides = True
+
+    def desk(self, **changes) -> str:
+        return self.started(flow='desk', **changes)
+
+    def to_delivery(self, path: str) -> list[str]:
+        """Pick the look when the deck pauses for it, then Deliver the deck on screen.
+        Returns what the person did, in order."""
+        did = []
+        for _ in range(6):
+            view = self.run_of(path)
+            gate = view['gate']
+            if gate is None:
+                self.assertEqual(view['state'], 'finished', view['sentence'])
+                return did
+            if gate['name'] == 'gate:look':
+                did.append('look')
+                self.post('desk-look', {'path': path,
+                                        'look': gate['offered']['looks'][0]['id']})
+            else:
+                self.assertEqual(gate['name'], 'gate:build', view['sentence'])
+                shown = view['desk']
+                did.append('deliver')
+                self.post('desk-deliver', {'path': path, 'expected': shown['expected'],
+                                           **({'blockers_seen': shown['blockers_seen']}
+                                              if shown['blockers'] else {})})
+        self.fail('The deck never finished')
+
+    def finished(self, path: str, did: list[str]) -> dict:
+        root = Path(path)
+        record = self.record(root)
+        person = self.gitstate.identity(self.space.repo)
+        by = {name: ((record.get('gates') or {}).get(name) or {}).get('by')
+              for name in gates_of(record)}
+        theirs = ['gate:look'] if 'look' in did else []
+        self.assertEqual([name for name in by if by[name] == person], [*theirs, 'gate:build'],
+                         by)
+        self.assertEqual({by[name] for name in by if name not in (*theirs, 'gate:build')},
+                         {'desk'} if len(by) > len(theirs) + 1 else set(), by)
+        self.assertEqual({event['by'] for event in record.get('review_events') or ()},
+                         {'desk'} if record.get('review_events') else set())
+        self.assertNotIn('review_policy', record)
+        delivered = json.loads((root / decks.DELIVER).read_text())
+        self.assertEqual((delivered['revision'], delivered['review_status']), (1, 'unreviewed'))
+        self.assertTrue(delivered['url'].startswith('https://'), delivered)
+        relative = root.relative_to(self.space.repo).as_posix()
+        tracked = self.git('ls-files', relative).splitlines()
+        self.assertIn(f'{relative}/{build.SHEET}', tracked)
+        self.assertEqual([name for name in tracked
+                          if name.startswith((f'{relative}/sources/', f'{relative}/work/'))], [])
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        return record
+
+    def test_an_idea_without_research(self):
+        path = self.desk(look='pick')
+        did = self.to_delivery(path)
+        self.assertEqual(did, ['look', 'deliver'])
+        self.finished(path, did)
+
+    def test_an_idea_with_research_from_the_web(self):
+        path = self.desk(look='pick', research=True)
+        did = self.to_delivery(path)
+        record = self.finished(path, did)
+        self.assertEqual(did, ['look', 'deliver'])
+        self.assertTrue((Path(path) / 'research' / 'report.md').is_file())
+        self.assertEqual((record['gates']['gate:research-plan']['by'],
+                          record['gates']['gate:research']['by']), ('desk', 'desk'))
+
+    def test_a_document_read_as_a_script(self):
+        path = self.desk(look='pick', route='document', reading='spec',
+                         source={'kind': 'upload', 'name': 'script.md'},
+                         uploads={'script.md': SCRIPT.encode()})
+        did = self.to_delivery(path)
+        record = self.finished(path, did)
+        self.assertEqual(record['classified'], 'spec')
+        self.assertEqual(self.workers.of('classification'), [])
+
+    def test_a_document_left_to_its_classify_job(self):
+        # The scripted research worker saves a page from the public web.
+        path = self.desk(look='pick', route='document', research=True,
+                         research_from={'documents': True, 'sites': [], 'web': True},
+                         source={'kind': 'paste', 'text': 'Notes: capacity holds with two.'})
+        did = self.to_delivery(path)
+        record = self.finished(path, did)
+        self.assertEqual(record['classified'], 'material')
+        self.assertEqual(len(self.workers.of('classification')), 1)
+        self.assertEqual(record['gates']['gate:classify']['by'], 'desk')
+
+    def test_the_default_look_with_no_pause(self):
+        path = self.desk(look='default')
+        did = self.to_delivery(path)
+        self.assertEqual(did, ['deliver'])
+        record = self.finished(path, did)
+        self.assertEqual(record['gates']['gate:look']['by'], 'desk')
 
 
 class BalancedScratchRouteTests(ScratchRouteTests):

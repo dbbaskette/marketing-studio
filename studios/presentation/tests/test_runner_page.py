@@ -31,22 +31,27 @@ from runner_support import FORM, StudioCase, TeamCase, asks
 import computer
 import home
 import server
-from runner import agents, decks, engine as engines, page, settings
+from runner import agents, decks, desk, engine as engines, page, settings
 from runner.steps import deliver
 from workspace import WorkspaceError
 
 VERSION = (helpers.SKILL / 'VERSION').read_text().strip()
 GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
         '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
-        '/api/delete', '/api/file', '/api/computer', '/api/known-decks', '/api/storyboard')
+        '/api/delete', '/api/file', '/api/computer', '/api/known-decks', '/api/storyboard',
+        '/api/desk-outline-price')
+DESK_POSTS = ('/api/desk-note', '/api/desk-deck-note', '/api/desk-stop', '/api/desk-deliver',
+              '/api/desk-draw-here', '/api/desk-outline', '/api/desk-reread', '/api/desk-look',
+              '/api/desk-look-again')
 POSTS = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
          '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
          '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
          '/api/note', '/api/review-level', '/api/research-site', '/api/picture',
-         '/api/picture-remove')
-BOTH = ('/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard')
+         '/api/picture-remove', '/api/desk-outline-price', *DESK_POSTS)
+BOTH = ('/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard',
+        '/api/desk-outline-price')
 LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None,
            'about': 'Previous generation workhorse model.', 'default_level': 'medium',
            'levels': ['low', 'medium', 'high', 'xhigh']}]
@@ -658,6 +663,75 @@ class RunTests(PageCase):
                                                   'notice': None})
         self.assertEqual(self.post('drive', {'path': self.started(), 'action': 'take'},
                                    409)['error'], engines.NO_DRIVERS)
+
+
+class DeskRouteTests(PageCase):
+    """The desk's routes: each answers the deck's view, and refuses in a sentence."""
+
+    def setUp(self):
+        super().setUp()
+        self.brand.run.offers_looks = True
+        self.brand.run.guides = True
+
+    def desk_deck(self, **changes) -> str:
+        path = self.started(flow='desk', look='default', **changes)
+        self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
+        return path
+
+    def test_each_desk_route_answers_the_view(self):
+        path = self.desk_deck()
+        shown = self.run_of(path)['desk']
+        self.assertIn('says', self.get('desk-outline-price', path=path))
+        priced = self.post('desk-outline-price', {'path': path,
+                                                  'slides': shown['outline']['slides']})
+        self.assertEqual(priced['sections'], [])
+        after = self.post('desk-note', {'path': path, 'number': 3, 'note': 'Shorter.',
+                                        'expected': shown['expected']})
+        card = next(card for part in after['desk']['sections'] for card in part['slides']
+                    if card['number'] == 3)
+        self.assertEqual(card['note']['status'], 'done')
+        expected = after['desk']['expected']
+        after = self.post('desk-deck-note', {'path': path, 'note': 'Fewer words.',
+                                             'expected': expected})
+        self.assertEqual(after['gate']['name'], 'gate:build')
+        said = self.post('desk-stop', {'path': path}, 400)
+        self.assertEqual(said['error'], desk.NOTHING_TO_STOP)
+        outline = after['desk']['outline']
+        after = self.post('desk-outline', {'path': path, 'slides': outline['slides'],
+                                           'expected': outline['expected']})
+        self.assertEqual(after['gate']['name'], 'gate:build')
+        after = self.post('desk-look-again', {'path': path})
+        self.assertEqual(after['gate']['name'], 'gate:look')
+        looks = after['gate']['offered']['looks']
+        after = self.post('desk-look', {'path': path, 'look': looks[1]['id']})
+        self.assertEqual(after['gate']['name'], 'gate:build')
+        said = self.post('desk-reread', {'path': path, 'kind': 'spec'}, 400)
+        self.assertEqual(said['error'], decks.WRONG_READING)
+        said = self.post('desk-draw-here', {'path': path}, 400)
+        self.assertIn('drawn on this computer already', said['error'])
+        after = self.post('desk-deliver', {'path': path, 'expected': after['desk']['expected']})
+        self.assertEqual(after['desk']['delivered']['revision'], 1)
+
+    def test_a_desk_route_without_the_key_is_refused(self):
+        path = self.desk_deck()
+        before = self.on_disk()
+        for target in DESK_POSTS:
+            with self.subTest(target):
+                status, said, _ = self.answer('POST', target, json.dumps({'path': path}).encode(),
+                                              token=False, origin=self.origin,
+                                              kind='application/json')
+                self.assertEqual(status, 403)
+                self.assertIn('needs the key', said['error'])
+        self.assertEqual(self.on_disk(), before)
+
+    def test_a_desk_note_on_a_gated_deck_is_400_with_its_sentence(self):
+        path = self.started()
+        said = self.post('desk-note', {'path': path, 'number': 3, 'note': 'Shorter.',
+                                       'expected': 'x'}, 400)
+        self.assertEqual(said['error'], desk.NOT_ON_DESK)
+        said = self.post('desk-note', {'path': path, 'number': 'three', 'note': 'Shorter.',
+                                       'expected': 'x'}, 400)
+        self.assertEqual(said['error'], 'Name the slide by its number.')
 
 
 class WordlessChangeTests(PageCase):

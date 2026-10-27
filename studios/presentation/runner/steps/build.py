@@ -90,7 +90,7 @@ import home
 from studio_core import brand_guidance, critic, deck_copy, deck_direction, deck_flow
 from workspace import WorkspaceError, write_atomic
 
-from runner import briefs, build_progress, decks, slides as slides_tool
+from runner import briefs, build_progress, decks, desk, slides as slides_tool
 from runner.steps import Work
 
 PREVIEWS = 4            # times one composer may render its section
@@ -1187,9 +1187,15 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
                  if entry.get('slide') in ids] if drawn and section in (
         state.get('repair') or ()) else []
     note, look = _note(run, request), []
+    # A note sent while the section is drawn; and on the desk, the section's notes in this
+    # ask, each handed to a composer once: keeping the section settles them.
     feedback = [item for item in run.get('build_feedback', []) if item.get('section') == section]
+    if decks.on_desk(run):
+        feedback += desk.pending(run, section)
     if feedback:
-        note = '\n'.join(filter(None, [note, *(f"Slide {item['number']}: {item['note']}" for item in feedback)]))
+        told = [f"Slide {item['number']}: {item['note']}" if item.get('slide') else item['note']
+                for item in feedback]
+        note = '\n'.join(filter(None, [note, *dict.fromkeys(told)]))
     # The line the person wrote against each of this section's slides at the deck's gate.
     noted = _slide_notes(run, state, ids)
     lines_noted = [f'Slide {number}: {line}' for number, line in noted.items()
@@ -1237,7 +1243,7 @@ def section_work(root, run: dict, section: str, request: dict | None, error: str
     asked_numbers = ((run.get('gates') or {}).get('gate:build') or {}).get('slides')
     if asked_numbers and last:
         focused.update(slide['id'] for slide in last['slides'] if slide['number'] in asked_numbers)
-    focused.update(item['slide'] for item in feedback)
+    focused.update(item['slide'] for item in feedback if item.get('slide'))
     focused.update(slide['id'] for slide in (last or {}).get('slides') or ()
                    if slide['number'] in noted)
     if drawn and focused:
@@ -1337,6 +1343,9 @@ def keep_section(root, run: dict, section: str, handed) -> Path:
     state['sections'][section] = {'file': file.as_posix(), 'round': turn, 'notes': notes,
                                   'at': home.now()}
     write_state(root, state)
+    if decks.on_desk(run):
+        desk.settle_notes(run, section)
+        decks.write_run(root, run)
     return root / file
 
 

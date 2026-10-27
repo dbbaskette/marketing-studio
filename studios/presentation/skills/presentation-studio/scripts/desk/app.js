@@ -1372,6 +1372,7 @@ function drawSheet() {
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
   else if (view.sheet === 'rebrand') body = rebrandSheet();
   else if (view.sheet === 'reclassify') body = reclassifySheet();
+  else if (view.sheet === 'desk-deliver') body = window.deckDesk.deliverSheet();
   else body = undoSheet();
   holder.replaceChildren(...body);
 }
@@ -1511,12 +1512,14 @@ function rows(title, found, kind, className) {
 function invitation() {
   return add(make('section', 'card shine invite'),
     make('h2', 'invite-title', 'Start your first deck'),
-    make('p', '', 'Start from scratch, from a document, or from a deck you already have. '
-      + 'Presentation Studio researches, outlines, designs and builds it on its own, and '
-      + 'stops where its review level says, for your decision.'),
+    make('p', '', 'Start from an idea, from a document, or from a deck you already have. A '
+      + 'deck from an idea or a document is researched, outlined, designed and built on its '
+      + 'own, and opens on the desk when it is ready. It stops only if you chose to pick its '
+      + 'look. A deck you already have stops where its review level says, for your '
+      + 'decision.'),
     add(make('div', 'bar'), newButton(view.sheet ? '' : 'filled')),
-    make('p', 'quiet', 'It takes two or three short steps, and this page tells you each time '
-      + 'it needs you.'));
+    make('p', 'quiet', 'Starting takes three short steps, and this page tells you when it '
+      + 'needs you.'));
 }
 
 function alerts() {
@@ -3347,6 +3350,9 @@ function lookStep(draft, told) {
 // numbers close up.
 function newSheet() {
   const draft = view.draft;
+  // A deck from an idea or a document starts on the desk, in deck-desk.js's three steps. One
+  // from a deck you have keeps this form for now.
+  if (draft.route !== 'existing') return window.deckDesk.start();
   const go = submitButton('Start the deck', 'continue');
   const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
   const drafted = make('span', '');
@@ -3485,16 +3491,17 @@ function formOf(draft) {
   return [form, uploads];
 }
 
-async function startDeck(pressed) {
+// `how` is the desk's start: its own check of the sheet, and its own form.
+async function startDeck(pressed, how) {
   const draft = view.draft;
   if (draft.starting) return;
   const problem = byId('new-problem');
-  if (!sheetReady(draft)) return;
+  if (!(how ? how.ready(draft) : sheetReady(draft))) return;
   if (!draft.brand && brandsFound().length) {
     say(problem, 'Choose the brand the deck is made in.');
     return;
   }
-  const [form, uploads] = formOf(draft);
+  const [form, uploads] = how ? how.form(draft) : formOf(draft);
   draft.starting = true;
   pressed.disabled = true;
   say(problem, '');
@@ -5986,6 +5993,13 @@ function deckActions(run, lead) {
 
 function paintDeck(fresh) {
   const run = view.run;
+  // A deck started on the desk is drawn by deck-desk.js: its progress until it reaches the
+  // desk, and the desk from then on. Every other deck keeps the screen below.
+  if (window.deckDesk.opens(run)) {
+    if (run.desk.arrived) window.deckDesk.desk(run, fresh);
+    else window.deckDesk.progress(run, fresh);
+    return;
+  }
   const title = run.title || 'Untitled';
   const read = theirs(run);
   const driver = run.driver || null;
@@ -7638,4 +7652,36 @@ function begin() {
   refresh();
 }
 
-begin();
+// --- the deck desk -------------------------------------------------------------------------
+// deck-desk.js draws the desk's start, a desk deck's progress and the desk itself. It owns no
+// copy of what this page draws with: it is handed these parts, once, before the page begins.
+
+function deskParts() {
+  return {
+    view, make, add, count, list, series, lower, capital, spoken, given, card, bullets, callout,
+    state, button, capsule, chip, field, refuse, choice, explained, segmented, pickCard, oneOf,
+    moreMenu, submitButton, alertLine, problemLine, say, outLink, pageHead, focusKey, byId,
+    send, ask, toast, notify, show, refresh, placeParts, tidyPictures, pager, slideName,
+    // A slide's picture, fetched with this page's key and held in memory: `image` is what the
+    // server names it by, and `mark` changes when a newer one is drawn.
+    picture: (image, alt, mark) => pictureAt(pictureOf(view.path, image), alt, mark),
+    pictureAt, pictureOf, sheetTitle, openSheet, closeSheet, drawSheet, paintDeck, steer,
+    askDelete, downloadDeck, theirs, theirsPart, noticePart, problemPart, questionPart,
+    findingItems, routeWords, nameOf, googleReady, createStep, chooseRoute, paintNew,
+    paintAgents, readAgents, readModels, researchFromField, researchSummary, researchFromOf,
+    brandFields, brandsFound, agentFields, modelFields, draftModelWords, limitsSays,
+    sourceFields, formOf, missingIn, startDeck, deliveryOf,
+    words: { OUTPUTS, OUTPUT_SAYS, DELIVERIES, AGENT_NAMES, NOT_CONNECTED, ROUTES, KINDS,
+      STEERED },
+  };
+}
+
+// The deck desk's script is loaded after this one. The page begins once it is here, so a
+// desk deck is never drawn on the screen meant for gated decks.
+function withDesk() {
+  window.deckDesk.init(deskParts());
+  begin();
+}
+
+if (window.deckDesk) withDesk();
+else window.deckDeskWaits = withDesk;

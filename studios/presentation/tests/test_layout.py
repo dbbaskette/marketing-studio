@@ -99,7 +99,9 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         result = self.run_page(self.answers(), [
             {'click': 'Start from a document'}, {'snapshot': 'document'}])
         shot = result['snapshots']['document']
-        self.assertIn('2. Your document', shot['parts'])
+        # Home's way in opens the desk's start at that kind, with the document asked for.
+        self.assertIn('3. What you have', shot['parts'])
+        self.assertIn('Paste the text', shot['buttons'])
         self.assertEqual(shot['heading'], 'Home')
 
     def test_status_shows_the_check_first(self):
@@ -321,43 +323,46 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
     def test_new_deck_is_one_sheet_in_numbered_steps(self):
         result = self.run_page(self.answers(), [
             {'click': 'New deck'}, {'snapshot': 'routes'},
-            {'click': 'Start from a document'}, {'snapshot': 'document'}])
+            {'click': 'A document'}, {'snapshot': 'document'}])
         shots = result['snapshots']
         self.assertEqual(shots['routes']['heading'], 'Home')
-        self.assertIn('1. How it begins', shots['routes']['sheet'])
+        self.assertIn('1. Kind of deck', shots['routes']['sheet'])
         sheet = shots['document']['sheet']
-        steps = ['1. How it begins', '2. Your document', '3. What it is about',
-                 '4. How it looks', '5. Where it stops']
+        steps = ['1. Kind of deck', '2. Sources and settings', '3. What you have']
         self.assertEqual([step for step in steps if step in sheet], steps)
         self.assertEqual(sorted(steps, key=sheet.index), steps)
-        self.assertTrue(sheet.rstrip().endswith('Start the deck\nCancel'), sheet[-200:])
-        self.assertEqual(shots['document']['filled'], ['Start the deck'])
+        self.assertNotIn('4. ', sheet)
+        self.assertTrue(sheet.rstrip().endswith('Start\nCancel'), sheet[-200:])
+        self.assertEqual(shots['document']['filled'], ['Start'])
         self.assertEqual(shots['document']['heading'], 'Home')
 
-    def test_an_idea_has_no_source_step_and_the_numbers_close_up(self):
+    def test_an_idea_has_the_same_three_steps_with_its_brief_and_no_document(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New deck'}, {'click': 'Start from scratch'}, {'snapshot': 'idea'}])
+            {'click': 'New deck'}, {'click': 'An idea'}, {'snapshot': 'idea'}])
         sheet = result['snapshots']['idea']['sheet']
-        for step in ('2. What it is about', '3. How it looks', '4. Where it stops'):
+        for step in ('1. Kind of deck', '2. Sources and settings', '3. What you have'):
             self.assertIn(step, sheet)
-        self.assertNotIn('5. ', sheet)
+        self.assertNotIn('4. ', sheet)
+        self.assertIn('What should it cover? (optional)', sheet)
+        self.assertNotIn('Where the document is', sheet)
 
     def test_start_checks_every_step_and_focuses_the_first_gap(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New deck'}, {'click': 'Start from a document'},
-            {'click': 'Start the deck'}, {'snapshot': 'missing'}])
+            {'click': 'New deck'}, {'click': 'A document'},
+            {'click': 'Start'}, {'snapshot': 'missing'}])
         missing = result['snapshots']['missing']
         self.assertEqual(missing['posts'], 0)
         self.assertIn('Something above is missing.', missing['sheet'])
         self.assertIn('Choose the file first.', missing['sheet'])
         self.assertIn('Give it a title first.', missing['sheet'])
-        self.assertEqual(missing['focus'], 'new-file')
+        # The desk's start asks for the title before the document, in its third step.
+        self.assertEqual(missing['focus'], 'new-title')
 
     def test_the_sheet_sends_what_the_wizard_sent(self):
         answers = self.answers(**{'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
                                   **NOT_THERE})
         result = self.run_page(answers, [
-            {'click': 'New deck'}, {'click': 'Redesign an existing deck'},
+            {'click': 'New deck'}, {'click': 'An existing deck'},
             {'attach': 'The deck, as a .pptx',
              'files': [{'name': 'old.pptx', 'bytes': DECK.decode('latin-1')}]},
             {'click': 'Selected changes'}, {'click': 'Polish'},
@@ -374,7 +379,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
 
     def test_cancel_keeps_the_draft_for_the_session(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'click': 'New deck'}, {'click': 'An idea'},
             {'fill': 'A short title', 'value': 'Kept for later'}, {'click': 'Cancel'},
             {'snapshot': 'closed'}, {'click': 'New deck'}, {'snapshot': 'again'}])
         shots = result['snapshots']
@@ -388,7 +393,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
                                state={'screen': 'new', 'path': None})
         opened = result['snapshots']['opened']
         self.assertEqual(opened['heading'], 'Home')
-        self.assertIn('1. How it begins', opened['sheet'])
+        self.assertIn('1. Kind of deck', opened['sheet'])
 
     def test_research_from_is_ticks(self):
         sites = ['blog.example.com/platform', 'docs.example.com']
@@ -396,11 +401,11 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
                                   'POST /api/decks': [ok({'path': '/nowhere', 'id': 'x'})],
                                   **NOT_THERE})
         result = self.run_page(answers, [
-            {'click': 'New deck'}, {'click': 'Start from scratch'},
+            {'click': 'New deck'}, {'click': 'An idea'},
             {'fill': 'A short title', 'value': 'Synthetic deck'},
             {'click': 'Research first'}, {'snapshot': 'research'},
             {'tick': 'your sites'}, {'snapshot': 'sites'},
-            {'tick': 'the public web'}, {'snapshot': 'off'}, {'click': 'Start the deck'}])
+            {'tick': 'the public web'}, {'snapshot': 'off'}, {'click': 'Start'}])
         shots = result['snapshots']
         self.assertEqual(shots['research']['ticked'], ['the public web'])
         self.assertIn('Research from', shots['research']['sheet'])
@@ -430,14 +435,14 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
 
     def test_back_a_step_and_another_way_to_begin_are_gone(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New deck'}, {'snapshot': 'routes'}, {'click': 'Start from a document'},
+            {'click': 'New deck'}, {'snapshot': 'routes'}, {'click': 'A document'},
             {'snapshot': 'document'}])
         for shot in result['snapshots'].values():
             for gone in ('Back a step', 'Another way to begin', 'Continue'):
                 self.assertNotIn(gone, shot['buttons'])
         sheet = result['snapshots']['document']['sheet']
-        self.assertLess(sheet.index('1. How it begins'), sheet.index('Start from scratch'))
-        self.assertLess(sheet.index('Redesign an existing deck'), sheet.index('2. Your document'))
+        self.assertLess(sheet.index('1. Kind of deck'), sheet.index('An idea'))
+        self.assertLess(sheet.index('An existing deck'), sheet.index('2. Sources and settings'))
 
 
     # --- the deck screen, kept light -----------------------------------------------
@@ -581,7 +586,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
             {'snapshot': 'home'}, {'back': True}, {'snapshot': 'opened'}],
             earlier=[{'screen': 'new', 'path': None}], transitions=True)
         opened = result['snapshots']['opened']
-        self.assertIn('1. How it begins', opened['sheet'])
+        self.assertIn('1. Kind of deck', opened['sheet'])
         self.assertEqual(opened['focus'], 'sheet')
 
     def test_a_search_typed_and_not_sent_stays_when_a_choice_changes(self):
@@ -609,7 +614,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
 
     def test_no_two_parts_of_the_new_deck_sheet_share_a_key(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New deck'}, {'click': 'Start from scratch'}, {'click': 'Options'},
+            {'click': 'New deck'}, {'click': 'An idea'}, {'click': 'Options'},
             {'snapshot': 'options'}])
         self.assertEqual(result['snapshots']['options']['keyedTwice'], [])
 
