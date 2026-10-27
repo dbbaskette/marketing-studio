@@ -623,19 +623,9 @@ function settingsAddress() {
 const REVIEW_WORDS = { balanced: 'Balanced', automatic: 'Automatic draft',
   step_by_step: 'Step by step' };
 
-// A phone has the one decision in the toolbar; the rest open from the menu beside it. Which
-// is the lead is the filled button, or else the first.
+// A phone: the page's own width query for the narrow layout matches.
 function narrow() {
   return Boolean(window.matchMedia && window.matchMedia('(max-width: 52rem)').matches);
-}
-
-function foldActions(actions) {
-  actions = list(actions).filter(Boolean);
-  if (!narrow() || actions.length < 2) return actions;
-  const lead = actions.find((node) => node.classList.contains('button-filled')) || actions[0];
-  const rest = actions.filter((node) => node !== lead);
-  for (const node of rest) node.className = 'menu-item';
-  return [lead, moreMenu('More', rest, 'more')];
 }
 
 function moreMenu(label, items, key) {
@@ -1051,7 +1041,30 @@ function toolbar(spec) {
     node.setAttribute('aria-label', 'Back');
     add(lead, add(node, icon('back')));
   }
-  byId('actions').replaceChildren(...list(spec.actions).filter(Boolean));
+  byId('actions').replaceChildren(...ordered(spec.actions));
+}
+
+// A toolbar's actions: the one filled action first, then the rest, each quiet. A screen
+// passes at most one filled action. On a phone they wrap under the title.
+function ordered(actions) {
+  actions = list(actions).filter(Boolean);
+  const filled = (node) => Boolean(node.classList && node.classList.contains('button-filled'));
+  const lead = actions.filter(filled);
+  const rest = actions.filter((node) => !filled(node));
+  for (const node of rest) {
+    const control = node.tagName === 'DETAILS' ? node.querySelector('summary') : node;
+    if (control && control.classList && control.classList.contains('button')
+        && !control.classList.contains('button-danger')) control.classList.add('button-quiet');
+  }
+  return [...lead, ...rest];
+}
+
+// A screen's header: the one sentence that says what the screen is for, and the view's own
+// actions in a bar beside it.
+function pageHead(lede, beside) {
+  const actions = list(beside).filter(Boolean);
+  return add(make('div', 'page-head'), typeof lede === 'string' ? make('p', 'lede', lede) : lede,
+    actions.length ? add(make('div', 'bar'), ...actions) : null);
 }
 
 // Put a screen in place. A screen drawn again, because something changed, keeps the
@@ -5774,7 +5787,7 @@ function paintDeck(fresh) {
   const above = [make('span', '', [route, runs].filter(Boolean).join(' · '))];
   const published = view.issued && view.issued.path === view.path ? view.issued : null;
   const gate = run.gate;
-  placeParts({ title, above, back: true, actions: foldActions(deckActions(run, lead)),
+  placeParts({ title, above, back: true, actions: deckActions(run, lead),
     mark: [title, route, run.state, lead, gate && [gate.name, gate.round, chosenFor(gate).wrong],
       read, driver,
       Boolean(run.question), run.problem,

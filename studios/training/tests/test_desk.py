@@ -2120,7 +2120,7 @@ class PageScriptTests(ScriptedPage, PageCase):
         self.assertEqual(gate_shot['inert'], [])
         self.assertEqual(gate_shot['buttons'][1:6], ['Trainings', 'Status', 'Settings', 'Back',
                                                      'Rolling restarts'])
-        self.assertEqual(gate_shot['buttons'][6:9], ['Ask for changes', 'More', 'Approve'])
+        self.assertEqual(gate_shot['buttons'][6:9], ['Approve', 'Ask for changes', 'More'])
         self.assertEqual(gate_shot['posts'], 0)
         self.assertEqual(gate_shot['current'], ['Trainings'])
         self.assertEqual(set(gate_shot['beads']), {'done', 'review', 'none'})
@@ -2963,7 +2963,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('$0.00', phone['text'])
         self.assertIn('Pause', phone['buttons'], 'the toolbar keeps its lead action')
 
-    def test_a_phone_keeps_one_decision_in_the_toolbar(self):
+    def test_a_phone_wraps_every_toolbar_action_under_the_title(self):
         self.started()
         going = 'Drafting the research questions.'
         working = a_run('working', going, steps=steps('done', 'working'))
@@ -2971,12 +2971,12 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                                   'GET /api/training': [self.detail('working', going)],
                                   'GET /api/run': [working]})
         result = self.run_page(answers, [{'click': 'Open Rolling restarts'},
-                                         {'snapshot': 'phone'}, {'click': 'More'},
-                                         {'snapshot': 'menu'}], narrow=True)
-        phone, menu = result['snapshots']['phone'], result['snapshots']['menu']
+                                         {'snapshot': 'phone'}], narrow=True)
+        phone = result['snapshots']['phone']
+        # No More menu: every action stays in the toolbar, wrapped under the title.
         self.assertIn('Pause', phone['buttons'])
-        self.assertNotIn('Stop', phone['buttons'])
-        self.assertIn('Stop', menu['buttons'])
+        self.assertIn('Stop', phone['buttons'])
+        self.assertNotIn('More', phone['buttons'])
 
     def test_empty_materials_and_missing_yoodli_dependencies_stay_in_the_form(self):
         result = self.run_page(self.answers(), [
@@ -6244,8 +6244,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                          ('What the deck says',
                           '(1) What the deck says · Rolling restarts · Training Studio',
                           ['Trainings'], ['Approve']))
-        self.assertEqual(gate['buttons'][4:8], ['Back', 'Rolling restarts', 'Ask for changes',
-                                                'Approve'])
+        self.assertEqual(gate['buttons'][4:8], ['Back', 'Rolling restarts', 'Approve',
+                                                'Ask for changes'])
         # The slides in order, as something to read: what each is, says, and is for.
         for shown in ('Waiting for your review', '4 slides, in order',
                       'Slide 1 · Cover', 'Rolling restarts',

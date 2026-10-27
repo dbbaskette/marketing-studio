@@ -773,25 +773,9 @@ function settingsAddress() {
 const REVIEW_WORDS = { balanced: 'Balanced', automatic: 'Automatic draft',
   step_by_step: 'Step by step' };
 
-// A phone has the one decision in the toolbar; the rest open from the menu beside it. Which
-// is the lead is the filled button, or else the first.
+// A phone: the page's own width query for the narrow layout matches.
 function narrow() {
   return Boolean(window.matchMedia && window.matchMedia('(max-width: 52rem)').matches);
-}
-
-function foldActions(actions) {
-  actions = list(actions).filter(Boolean);
-  if (!narrow() || actions.length < 2) return actions;
-  const lead = actions.find((node) => node.classList && node.classList.contains('button-filled'))
-    || actions[0];
-  const rest = actions.filter((node) => node !== lead);
-  for (const node of rest) if (node.tagName === 'BUTTON') node.className = 'menu-item';
-  const menu = make('details', 'menu');
-  menu.dataset.key = 'more-actions';
-  const opener = make('summary', 'button button-round shine');
-  opener.dataset.key = 'more-actions';
-  opener.setAttribute('aria-label', 'More');
-  return [lead, add(menu, add(opener, icon('more')), add(make('div', 'menu-list'), ...rest))];
 }
 
 // What it is doing now, in one line: the step, how long it has taken, what it has spent and
@@ -1245,7 +1229,30 @@ function toolbar(spec) {
     node.setAttribute('aria-label', 'Back');
     add(lead, add(node, icon('back')));
   }
-  byId('actions').replaceChildren(...list(spec.actions).filter(Boolean));
+  byId('actions').replaceChildren(...ordered(spec.actions));
+}
+
+// A toolbar's actions: the one filled action first, then the rest, each quiet. A screen
+// passes at most one filled action. On a phone they wrap under the title.
+function ordered(actions) {
+  actions = list(actions).filter(Boolean);
+  const filled = (node) => Boolean(node.classList && node.classList.contains('button-filled'));
+  const lead = actions.filter(filled);
+  const rest = actions.filter((node) => !filled(node));
+  for (const node of rest) {
+    const control = node.tagName === 'DETAILS' ? node.querySelector('summary') : node;
+    if (control && control.classList && control.classList.contains('button')
+        && !control.classList.contains('button-danger')) control.classList.add('button-quiet');
+  }
+  return [...lead, ...rest];
+}
+
+// A screen's header: the one sentence that says what the screen is for, and the view's own
+// actions in a bar beside it.
+function pageHead(lede, beside) {
+  const actions = list(beside).filter(Boolean);
+  return add(make('div', 'page-head'), typeof lede === 'string' ? make('p', 'lede', lede) : lede,
+    actions.length ? add(make('div', 'bar'), ...actions) : null);
 }
 
 // Put a screen in place. A screen drawn again, because something changed, keeps the
@@ -6607,7 +6614,7 @@ function paintRun(fresh) {
   const published = view.issued && view.issued.path === view.path ? view.issued : null;
   const brought = view.adopted && view.adopted.path === view.path ? view.adopted : null;
   placeParts({ title, above, back: true, actions: theirs ? readActions(run, waiting)
-    : foldActions(runActions(run, waiting, lead)),
+    : runActions(run, waiting, lead),
   mark: [title, training.levels, run.state, lead, offered, waiting, outline
     && run.outline.level, theirs, driver, Boolean(run.outline), run.review,
     run.finished] }, [

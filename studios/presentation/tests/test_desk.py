@@ -1046,11 +1046,9 @@ class ScreenTests(ScriptedPage, PageCase):
         shown = self.run_of(path)
         self.assertIs(shown['undo'], True)
         shown['undo'] = False
-        result = self.deck_screen(path, [{'snapshot': 'deck'}, {'click': 'More'},
-                                         {'snapshot': 'menu'}], narrow=True,
+        result = self.deck_screen(path, [{'snapshot': 'deck'}], narrow=True,
                                   **{'GET /api/run': [ok(shown)]})
-        for shot in ('deck', 'menu'):
-            self.assertNotIn('Undo the last step', result['snapshots'][shot]['buttons'])
+        self.assertNotIn('Undo the last step', result['snapshots']['deck']['buttons'])
 
     def test_undo_names_the_last_step_with_its_time_and_cost(self):
         path = self.started()
@@ -1215,16 +1213,16 @@ class ScreenTests(ScriptedPage, PageCase):
                                   **{'GET /api/setup': [self.setup_with(google=True)]})
         self.assertNotIn(said, result['snapshots']['signed']['text'])
 
-    def test_a_phone_keeps_one_decision_in_the_toolbar(self):
+    def test_a_phone_wraps_every_toolbar_action_under_the_title(self):
         path = self.started()
-        result = self.deck_screen(path, [{'snapshot': 'phone'}, {'click': 'More'},
-                                         {'snapshot': 'menu'}], narrow=True)
-        phone, menu = result['snapshots']['phone'], result['snapshots']['menu']
+        result = self.deck_screen(path, [{'snapshot': 'phone'}], narrow=True)
+        phone = result['snapshots']['phone']
         self.assertEqual(phone['filled'], ['Approve'])
-        self.assertNotIn('Ask for changes', phone['buttons'])
-        self.assertNotIn('Undo the last step', phone['buttons'])
-        self.assertIn('Ask for changes', menu['buttons'])
-        self.assertIn('Undo the last step', menu['buttons'])
+        # No More menu: the one decision first, filled, and the rest quiet beside it.
+        self.assertEqual(phone['toolbar'][0]['name'], 'Approve')
+        self.assertIn('Ask for changes', phone['buttons'])
+        self.assertIn('Undo the last step', phone['buttons'])
+        self.assertNotIn('More', phone['buttons'])
 
     def test_every_gate_of_a_deck_from_scratch_is_drawn_and_decided(self):
         path = self.started(research=True)
