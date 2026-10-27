@@ -951,5 +951,65 @@ class SyncTests(WorkspaceCase):
             self.assertNotIn(never, source.split('"""', 2)[2], never)
 
 
+class SavedFilesTests(WorkspaceCase):
+    """What a new workspace writes, byte for byte, as the code wrote it before gitstate moved
+    to the shared runner."""
+
+    README = (b'# Presentations\n'
+              b'\n'
+              b'This folder holds decks made with Presentation Studio, one folder each. Each step that\n'
+              b'was kept and each decision a person made is a commit, so the history says what happened.\n'
+              b'\n'
+              b"- Open a deck's folder to read its slides, sources notes and other files.\n"
+              b'- `hub.json` tells Presentation Studio that this folder is its own. Leave it where it is.\n'
+              b"- Working files, saved sources and lock files stay on each person's computer. The ignore\n"
+              b'  file here keeps them out.\n'
+              b'\n'
+              b'Change a deck through Presentation Studio, not by hand, so its record stays true.\n')
+    IGNORE = (b'# Kept on each computer and never shared. Written by Presentation Studio.\n'
+              b'work/\n'
+              b'sources/\n'
+              b'**/.harness-research/guidance/\n'
+              b'**/.harness-slides/guidance/\n'
+              b'*.lock\n'
+              b'**/.presentation-studio/lock\n')
+    HUB = ('{{\n  "branch": "main",\n  "folder": "presentations",\n  "minimum_runtime": "{version}",\n  "name": "mine",\n  "repository": null,\n  "schema": 1,\n  "tool": "presentation-studio"\n}}\n')
+
+    def test_a_new_workspace_s_files_are_as_before(self):
+        workspace = gitstate.local(self.base / 'mine')
+        self.assertEqual((workspace.root / 'README.md').read_bytes(), self.README)
+        self.assertEqual((workspace.root / '.gitignore').read_bytes(), self.IGNORE)
+        self.assertEqual((workspace.root / 'hub.json').read_text(encoding='utf-8'),
+                         self.HUB.format(version=gitstate.installed()))
+
+    def test_when_to_share_is_written_under_the_lock(self):
+        studios = Path(os.environ['STUDIOS_CONFIG'])
+        self.join()
+        studios.write_text('{"schema": 1, "share": "decision"}')
+        real = studios_config.update
+
+        def meanwhile(changes, *rest, **named):
+            # Another studio chooses the same while this one waits for the lock.
+            studios.write_text('{"schema": 1, "share": "asked"}')
+            os.utime(studios, ns=(1_000_000_000, 1_000_000_000))
+            return real(changes, *rest, **named)
+        with mock.patch.object(gitstate.studios_config, 'update', meanwhile):
+            gitstate.share_when('asked')
+        self.assertEqual(studios.stat().st_mtime_ns, 1_000_000_000, 'nothing is written again')
+        self.assertEqual(json.loads(studios.read_text()), {'schema': 1, 'share': 'asked'})
+
+    def test_an_old_share_without_an_address_is_not_taken(self):
+        gitstate.local(self.base / 'mine')
+        kept = json.loads(gitstate.settings_path().read_text())
+        self.assertIsNone(kept.get('address'))
+        gitstate.settings_path().write_text(json.dumps({**kept, 'share': 'asked'}))
+        self.assertIsNone(gitstate.own_share())
+        workspace = self.join()
+        kept = json.loads(gitstate.settings_path().read_text())
+        gitstate.settings_path().write_text(json.dumps({**kept, 'share': 'asked'}))
+        self.assertEqual(gitstate.own_share(), 'asked')
+        self.assertEqual(gitstate.current(), workspace, 'it is not what is used')
+
+
 if __name__ == '__main__':
     unittest.main()

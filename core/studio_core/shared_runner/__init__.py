@@ -17,7 +17,9 @@ The host contract, what a studio using the shared runner gives it:
 - a `runner` package whose `__init__` puts the studio's scripts folder on the import
   path, as `import runner` does in each studio today;
 - in that scripts folder, the modules `workspace` (with `WorkspaceError`, the refusal a
-  person reads), `home`, `hub`, `sync_guidance` and `studios_config`;
+  person reads), `home`, `hub` and `sync_guidance`;
+- its module for the file every studio shares, `studios_config` (in the scripts folder,
+  or as `runner.studios_config`), passed in by the facade of a module that writes it;
 - the values each module asks for: the full product name as `PRODUCT`, the item words
   as `ITEM` and `ITEMS`, the data folder's environment variable, and any path the studio
   owns (its installer pins, its own installer). Nothing here names a product, an item
@@ -30,5 +32,5 @@ process holds one object per module and a patch on it reaches every caller.
 `WHOLE` and `PARTS` name the modules that live here, filled in as each one arrives.
 """
 
-WHOLE = ('brand_source', 'companion', 'research', 'agents', 'brand', 'team')
+WHOLE = ('brand_source', 'companion', 'research', 'agents', 'brand', 'team', 'gitstate')
 PARTS = ()

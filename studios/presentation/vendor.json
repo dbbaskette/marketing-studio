@@ -74,7 +74,7 @@
       "path": "runner/gitstate.py",
       "from": "runner/gitstate.py",
       "revision": "b19c743673297fa44e245bb76b9e1e36f094223d",
-      "note": "adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): when to share is read from and written to the studios config, not the workspace record"
+      "note": "Original port provenance retained. The implementation now comes from `core/studio_core/shared_runner/gitstate.py`. adapted for issue #70 after Training Studio 01ee5f61 (4620afa, e48240e): when to share is read from and written to the studios config, not the workspace record"
     },
     {
       "path": "runner/team.py",
