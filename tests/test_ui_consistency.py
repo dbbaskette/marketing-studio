@@ -228,12 +228,26 @@ class SharedLookTests(unittest.TestCase):
             for one, block in blog.get(name, []):
                 with self.subTest(placement=one):
                     self.assertEqual([p for p in properties(block) if not LAYOUT.fullmatch(p)], [])
-        # The desk parts only Blog Studio has stay in its stylesheet. So does the aside's gap
-        # list, which Blog Studio's own tests read there (test_blog_runner).
+        # The desk parts only Blog Studio has stay in its stylesheet.
         for name in ('.desk-angles', '.desk-angle', '.desk-angle-picked', '.desk-outline-part',
-                     '.desk-images', '.desk-thumb', '.desk-fold', '.gap-items'):
+                     '.desk-images', '.desk-thumb', '.desk-fold'):
             self.assertIn(name, blog)
             self.assertNotIn(name, drawn)
+        # The kit draws the gap list (a whole-draft note's problem), so ui-kit draws it for
+        # every studio. Blog Studio keeps the same rules too, which its own tests read there
+        # (test_blog_runner): the same selectors with the same declarations.
+        def gap_rules(found):
+            def plain(text):
+                text = re.sub(r'\s*([>+~:;,])\s*', r'\1', ' '.join(text.split()))
+                return re.sub(r'(?<![\d.])0\.', '.', text).strip(';')
+
+            return sorted(
+                (plain(one), sorted(plain(rule) for rule in block.split(';') if rule.strip()))
+                for one, block in found['.gap-items']
+            )
+
+        self.assertEqual(gap_rules(drawn), gap_rules(blog))
+        self.assertEqual(len(gap_rules(drawn)), 4)
 
     def test_a_choice_set_straight_in_a_card_fits_it_at_phone_width(self):
         # Training Studio's "Where this training stops" puts its three levels straight in a

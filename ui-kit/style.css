@@ -3104,3 +3104,20 @@ input.desk-text {
   gap: 0.4rem;
   min-width: 0;
 }
+/* The list of what a whole-draft note left out (the kit's problem notice). */
+.gap-items {
+  margin: 0;
+  padding-left: 1.15rem;
+}
+.gap-items > li {
+  padding: 0.45rem 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+.gap-items > li + li {
+  border-top: 1px solid var(--hair);
+}
+.gap-items > li::marker {
+  color: var(--yours);
+}
