@@ -1079,6 +1079,36 @@ class ParagraphSuggestionTests(unittest.TestCase):
         self.assertEqual(gs.trimmed('isn’t', 'is not'), (0, 0), 'never inside a word')
         self.assertEqual(gs.trimmed('slow', 'slower'), (0, 0))
         self.assertEqual(gs.trimmed('word ', 'word\n'), (4, 0))
+        # Text goes in at the quote's end or its very start, never inside it.
+        self.assertEqual(gs.trimmed('isn’t slow.', 'is not slow.'), (0, 0))
+        self.assertEqual(gs.trimmed('teh.', 'the.'), (0, 0))
+        self.assertEqual(gs.trimmed('Kit', 'new Kit'), (0, 3))
+
+    def test_a_replacement_sharing_its_last_words_reads_back_as_its_quote(self):
+        _, second, _ = self.starts()
+        blocks = self.client.doc['tabs'][0]['documentTab']['body']['content']
+        blocks[3]['paragraph']['elements'][0]['textRun']['content'] = 'Fix teh.\n'
+        reindex(blocks)
+        self.record['google']['baselines']['draft']['document']['format_sha256'] = gs.signature(
+            self.client.doc
+        )
+        studio.persist(self.directory, 'articles', self.record)
+        third = blocks[3]['startIndex']
+        saved = self.plan(
+            [
+                self.edit('formal', 'isn’t slow.', 'is not slow.', second + 8),
+                self.edit('typo', 'teh.', 'the.', third + 4),
+            ]
+        )
+        result = gs.apply(self.client, self.root, saved)
+        self.assertEqual(result['status'], 'verified-pending')
+        self.assertEqual(
+            sorted(c['plainTextQuote'] for c in self.client.comments), ['isn’t slow.', 'teh.']
+        )
+        self.assertEqual(
+            accepted_text(self.client),
+            'The delay is in handoffs.\n😀 This is not slow.\nFix the.\n',
+        )
 
     def test_several_edits_and_a_new_paragraph_land_with_the_right_indexes(self):
         first, second, _ = self.starts()
@@ -1129,6 +1159,22 @@ class ParagraphSuggestionTests(unittest.TestCase):
         self.assertNotIn('empty paragraph', notes['gone'])
         self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-pending')
         self.assertEqual(accepted_text(self.client), 'The delay is in handoffs.\n\n')
+
+    def test_the_last_paragraph_removed_takes_the_break_before_it(self):
+        _, second, third = self.starts()
+        saved = self.plan([self.edit('last', 'Keep this link.', '', third, remove=True)])
+        deleted = [
+            r['deleteContentRange']['range'] for r in saved['requests'] if 'deleteContentRange' in r
+        ]
+        self.assertEqual(
+            [(r['startIndex'], r['endIndex']) for r in deleted], [(third - 1, third + 15)]
+        )
+        self.assertNotIn('empty paragraph', saved['comments'][0]['content'])
+        self.assertTrue(saved['expected_text_sha256'])
+        self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-pending')
+        self.assertEqual(
+            accepted_text(self.client), 'The delay is in handoffs.\n😀 This isn’t slow.\n'
+        )
 
     def test_a_removal_needs_the_whole_paragraph_and_no_replacement(self):
         _, second, _ = self.starts()
