@@ -823,6 +823,15 @@ class Workers:
         spec = tools.job['artifacts']['words']
         self._ok(tools.submit_artifact('words', spec['text'] + ' (fresh)'))
 
+    def speaker_notes(self, tools, job):
+        """Notes for every content slide the job names, each saying which slide it is for."""
+        spec = tools.job['artifacts']['speaker-notes']
+        content = {slide['id'] for slide in self.outline_said['slides']
+                   if slide.get('kind') not in ('cover', 'section', 'closing')}
+        made = [{'slide': ident, 'notes': f'Say why {ident} matters, then lead on.'}
+                for ident in spec['slides'] if ident in content]
+        self._ok(tools.submit_artifact('speaker-notes', json.dumps(made)))
+
     def review(self, tools, job):
         review = tools.job['review']
         listed = review['slides']

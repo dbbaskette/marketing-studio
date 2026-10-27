@@ -7426,7 +7426,7 @@ function deskParts() {
     view, make, add, count, list, series, lower, capital, spoken, given, card, bullets, callout,
     state, button, capsule, chip, field, refuse, choice, explained, segmented, pickCard, oneOf,
     moreMenu, submitButton, alertLine, problemLine, say, outLink, pageHead, focusKey, byId,
-    send, ask, toast, notify, show, refresh, placeParts, tidyPictures, pager, slideName,
+    send, ask, toast, notify, show, refresh, placeParts, fit, tidyPictures, pager, slideName,
     // A slide's picture, fetched with this page's key and held in memory: `image` is what the
     // server names it by, and `mark` changes when a newer one is drawn.
     picture: (image, alt, mark) => pictureAt(pictureOf(view.path, image), alt, mark),
@@ -7435,7 +7435,7 @@ function deskParts() {
     findingItems, routeWords, nameOf, googleReady, createStep, chooseRoute, paintNew,
     paintAgents, readAgents, readModels, researchFromField, researchSummary, researchFromOf,
     brandFields, brandsFound, agentFields, modelFields, draftModelWords, limitsSays,
-    sourceFields, formOf, missingIn, startDeck, deliveryOf,
+    sourceFields, formOf, missingIn, startDeck, deliveryOf, base64Of,
     words: { OUTPUTS, OUTPUT_SAYS, DELIVERIES, AGENT_NAMES, NOT_CONNECTED, ROUTES, KINDS,
       LEVELS, STEERED },
   };

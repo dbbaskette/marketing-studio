@@ -443,6 +443,10 @@ function layout() {
     ticked: document.body.querySelectorAll('input')
       .filter((node) => node.type === 'checkbox' && node.checked && visible(node)).map(name),
     bar: bar ? words(bar).replace(/\n+/g, '\n').trim() : '',
+    // Each desk layout on the screen: its classes, and the classes of what it lays out side
+    // by side.
+    desks: main.querySelectorAll('.desk-layout').filter(visible).map((node) => ({
+      classes: node.classes(), children: node.children.map((child) => child.classes()) })),
   };
 }
 

@@ -32,7 +32,7 @@ import computer
 import home
 import server
 from runner import agents, decks, desk, engine as engines, page, settings
-from runner.steps import deliver
+from runner.steps import deliver, finishing
 from workspace import WorkspaceError
 
 VERSION = (helpers.SKILL / 'VERSION').read_text().strip()
@@ -44,7 +44,8 @@ DESK_POSTS = ('/api/desk-note', '/api/desk-deck-note', '/api/desk-stop', '/api/d
               '/api/desk-draw-here', '/api/desk-outline', '/api/desk-reread', '/api/desk-look',
               '/api/desk-look-again', '/api/desk-words', '/api/desk-notes',
               '/api/desk-selection', '/api/desk-redraw-words', '/api/desk-discard',
-              '/api/desk-restore')
+              '/api/desk-restore', '/api/desk-research-again', '/api/desk-leave-out',
+              '/api/desk-finish', '/api/desk-apply', '/api/desk-skip', '/api/desk-source')
 POSTS = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
          '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
@@ -275,8 +276,14 @@ class RuleTests(PageCase):
         self.assertEqual(page.DECKS_LIMIT, 120_000_000)
         self.assertEqual(self.page.body_limit('/api/decks', without), server.BODY_LIMIT)
         self.assertEqual(self.page.body_limit('/api/decks?x=1', with_key), page.DECKS_LIMIT)
-        for target in set(POSTS) - {'/api/decks', '/api/picture'}:
+        for target in set(POSTS) - {'/api/decks', '/api/picture', '/api/desk-source'}:
             self.assertEqual(self.page.body_limit(target, with_key), server.BODY_LIMIT, target)
+
+    def test_a_source_added_on_the_desk_may_be_large_only_with_the_key(self):
+        with_key, without = self.headers(), self.headers(token=False)
+        self.assertEqual(self.page.body_limit('/api/desk-source', with_key), page.SOURCE_LIMIT)
+        self.assertGreater(page.SOURCE_LIMIT, 8_000_000 * 4 // 3)
+        self.assertEqual(self.page.body_limit('/api/desk-source', without), server.BODY_LIMIT)
 
     def test_a_picture_may_be_large_only_with_the_key(self):
         with_key, without = self.headers(), self.headers(token=False)
@@ -725,6 +732,50 @@ class DeskRouteTests(PageCase):
                 self.assertEqual(status, 403)
                 self.assertIn('needs the key', said['error'])
         self.assertEqual(self.on_disk(), before)
+
+    def test_sources_research_and_finishing_routes_answer_the_view(self):
+        path = self.desk_deck(research=True)
+        shown = self.run_of(path)['desk']
+        added = self.post('desk-source', {'path': path, 'name': 'runbook.md',
+                                          'content': encoded(b'Two batches at a time.')})
+        self.assertEqual([one['title'] for one in added['desk']['sources']], ['runbook'])
+        added = self.post('desk-source', {'path': path, 'text': 'Health checks gate it.',
+                                          'title': 'Pasted notes'})
+        self.assertEqual(len(added['desk']['sources']), 2)
+        said = self.post('desk-source', {'path': path, 'name': 'a.md', 'content': 'not base64!'},
+                         400)
+        self.assertEqual(said['error'], 'The file did not arrive whole. Choose it again.')
+        said = self.post('desk-source', {'path': path, 'name': 'runbook.md',
+                                         'content': encoded(b'Again.')}, 400)
+        self.assertIn('was already added', said['error'])
+        first = shown['research_items'][0]['id']
+        after = self.post('desk-leave-out', {'path': path, 'ids': [first]})
+        self.assertEqual(after['gate']['name'], 'gate:build')
+        after = self.post('desk-research-again', {'path': path,
+                                                  'expected': after['desk']['expected']})
+        self.assertEqual(after['gate']['name'], 'gate:build')
+        after = self.post('desk-finish', {'path': path, 'tool': 'brand', 'again': True})
+        self.assertIn('brand_check', after['desk'])
+        after = self.post('desk-finish', {'path': path, 'tool': 'rehearse'})
+        self.assertTrue(after['desk']['rehearse']['says'])
+        said = self.post('desk-finish', {'path': path, 'tool': 'polish'}, 400)
+        self.assertEqual(said['error'], finishing.NO_TOOL)
+        said = self.post('desk-finish', {'path': path, 'tool': 'brand', 'again': 'yes'}, 400)
+        self.assertIn('true or false', said['error'])
+        after = self.post('desk-finish', {'path': path, 'tool': 'notes'})
+        kept = after['desk']['finishing']['notes']
+        done = self.post('desk-apply', {'path': path, 'set': kept['job'],
+                                        'ids': [kept['items'][0]['id']],
+                                        'seen': after['desk']['seen']})
+        self.assertEqual(done['finished'], {'applied': 1, 'left': []})
+        done = self.post('desk-skip', {'path': path, 'set': kept['job'],
+                                       'ids': [kept['items'][1]['id']]})
+        self.assertEqual(done['finished'], {'skipped': 1})
+        said = self.post('desk-apply', {'path': path, 'set': kept['job'], 'ids': ['p1'],
+                                        'seen': 'one'}, 400)
+        self.assertEqual(said['error'], 'Give seen as a whole number.')
+        said = self.post('desk-skip', {'path': path, 'set': '../x', 'ids': ['p1']}, 400)
+        self.assertIn('Choose a set of suggestions on this deck.', said['error'])
 
     def test_a_desk_note_on_a_gated_deck_is_400_with_its_sentence(self):
         path = self.started()

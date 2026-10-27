@@ -1860,8 +1860,13 @@ def keep_review(root, run: dict, handed) -> list[dict]:
                       'at': home.now(), 'coverage': assessed.get('coverage')}
     back = repair_sections(findings)
     spent = state.get('repaired', 0) >= REPAIRS
-    if spent:
+    on_desk = decks.on_desk(run)
+    if spent or on_desk:
+        # A desk deck sends nothing back: what the review found waits in Finishing, slide by
+        # slide, until the person applies it; and a later note is not reviewed again.
         back = []
+    if on_desk and run.pop('review_requested', None) is not None:
+        decks.write_run(root, run)
     if back:
         state['repaired'] = state.get('repaired', 0) + 1
     state['repair'] = back

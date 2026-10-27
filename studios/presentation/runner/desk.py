@@ -93,6 +93,10 @@ OWN_RESTORE = ('Selected changes keeps no earlier versions of a slide: change it
 PATCH_HERE = 'Draw it here first.'
 PLANNING = 'Planning the changes to your deck again, with your note'
 PATCHING = 'Making the changes to a copy of your deck, picturing and checking it'
+NOTES_DOING = 'Proposing speaker notes for every slide'
+REVIEWING = 'Reviewing the deck'
+REVIEW_HALTED = 'The review stopped. Stop it to give it up, or carry on.'
+JOB_HALTED = 'The change stopped. Stop it to give it up, or carry on.'
 
 
 # --- the stops ----------------------------------------------------------------------------
@@ -215,9 +219,20 @@ def working(root, run: dict, state: dict | None = None) -> dict | None:
     or None while the deck rests, before it reaches the desk and once it stopped."""
     from runner.steps import build
     jobs = run.get('desk_jobs') or []
+    # A job, or a review, that stopped or failed can still be given up with Stop.
+    halted = (run.get('halted') or {}).get('state') in ('stopped', 'failed')
+    if jobs and halted:
+        return {'what': JOB_HALTED, 'done': 0, 'total': 1, 'halted': True}
     if jobs and not run.get('halted'):
+        if jobs[0].get('kind') == 'speaker-notes':
+            return {'what': NOTES_DOING, 'done': 0, 'total': 1}
         return {'what': f"Changing the words of slide {jobs[0].get('number')}", 'done': 0,
                 'total': 1}
+    if run.get('review_requested') and arrived(run) and not decks.delivered(root):
+        if halted:
+            return {'what': REVIEW_HALTED, 'done': 0, 'total': 0, 'halted': True}
+        if not run.get('halted'):
+            return {'what': REVIEWING, 'done': 0, 'total': 0}
     if not arrived(run) or resting(run) or decks.delivered(root):
         return None
     nxt = stages.survey(run).next
@@ -525,6 +540,32 @@ def outline_price(run: dict, state: dict, outline: dict, edited: list) -> dict:
     return {'sections': changed, 'says': says}
 
 
+LEAVE_OUT_SAYS = ('Leaving findings out redraws the outline and the look samples without '
+                  'researching again, and then redraws the slides whose outline changed.')
+LEAVE_OUT_TOOK = ' They last took {cost}.'
+
+
+def leave_out_price(run: dict) -> str:
+    """What leaving research findings out costs on the desk, said before it is asked: the
+    outline and the look samples are made again, and the sections whose slides changed are
+    redrawn, so it is priced from the last try at each of those here, with the last section
+    drawn and the deck put together and rendered."""
+    tried = [attempt for attempt in (_last_try(run, name) for name in (
+        'outline', 'look-preview', 'build-whole', 'build-render')) if attempt]
+    sections = sorted((attempt for name, entry in (run.get('steps') or {}).items()
+                       if name.startswith('build-sections:') and isinstance(entry, dict)
+                       for attempt in entry.get('tries') or ()
+                       if attempt.get('outcome') == 'kept'),
+                      key=lambda attempt: attempt.get('ended_at') or '')
+    if not tried or not sections:
+        return LEAVE_OUT_SAYS + NO_RECORD
+    tried.append(sections[-1])
+    seconds = round(sum(float(attempt.get('seconds') or 0) for attempt in tried), 1)
+    dollars = [attempt['dollars'] for attempt in tried if attempt.get('dollars') is not None]
+    return LEAVE_OUT_SAYS + LEAVE_OUT_TOOK.format(cost=stops.cost(
+        seconds, round(sum(dollars), 4) if dollars else None))
+
+
 def deck_price(last: dict) -> str:
     """What redrawing every section costs, from what the last whole build took
     (`Engine._last_build`)."""
@@ -648,12 +689,20 @@ DRAWINGS = Path('work') / 'desk' / 'versions'   # each slide's drawings: this co
 KEPT_WORDS = (*WORDS, 'notes')
 
 
+PROPOSALS = Path('work') / 'desk' / 'proposals'   # Finishing's waiting sets: this computer's
+
+
 class DeckFolder(DeckStore):
     """The deck's own desk folder, `desk/` beside run.json, which the team shares: the
-    versions of each slide's words are kept there. The deck's path is its ident."""
+    versions of each slide's words are kept there. The deck's path is its ident. Finishing's
+    waiting proposals are kept under work/ instead (`local`), which is never shared, so a
+    team's history records only what Apply does."""
 
     def folder(self, ident):
         return Path(ident) / 'desk'
+
+    def local(self, ident, *names):
+        return Path(ident).joinpath(PROPOSALS, *names)
 
 
 SLIDES = Codec(fixed=(), single=(), part=PART, thing='deck', noun='slide')

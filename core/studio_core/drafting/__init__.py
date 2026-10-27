@@ -10,6 +10,7 @@ each a part with its own versions. The modules here are the rules for keeping th
 - `prompts`: the edit rule and the scope sentences a desk job is asked with;
 - `guards`: whether a rewrite changes a fact or the part's structure;
 - `proposals`: Finishing's suggestions, applied or skipped by the person;
+- `findings`: a review's findings as proposals whose Apply is a note on their part;
 - `proofread`: the in-process mechanical checks.
 
 Core never imports a studio, reads no settings and starts no job: each studio passes its
