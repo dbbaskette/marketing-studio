@@ -1505,14 +1505,20 @@ class PageFileTests(unittest.TestCase):
         # The deck panels are the shared core's, served beside the page from its own origin.
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', page)),
                          ['#main', 'app.js', 'deck-panels.css', 'deck-panels.js',
-                          'markdown.js', 'style.css'])
+                          'lists.js', 'markdown.js', 'style.css'])
+        # The list kit is the shared core's, loaded after the deck panels and before app.js.
+        scripts = re.findall(r'<script src="([^"]+)"', page)
+        self.assertLess(scripts.index('deck-panels.js'), scripts.index('lists.js'))
+        self.assertLess(scripts.index('lists.js'), scripts.index('app.js'))
+        self.assertIn('/lists.js', desk._security.PAGE)
         panels = Path(desk.__file__).resolve().parent / 'studio_core' / 'deck_web'
-        for name in ('deck-panels.js', 'deck-panels.css'):
+        for name in ('deck-panels.js', 'deck-panels.css', 'lists.js'):
             self.assertNotRegex((panels / name).read_text(),
                                 r'(?i)\b(?:https?|wss?|ftp|data|blob):')
         for risky in ('innerHTML', 'outerHTML', 'insertAdjacentHTML', 'eval(', 'cssText',
                       'srcdoc', 'allow-scripts', 'allow-same-origin', '<script'):
             self.assertNotIn(risky, (panels / 'deck-panels.js').read_text())
+            self.assertNotIn(risky, (panels / 'lists.js').read_text())
         # The one frame there is: the deck's draft, sandboxed with nothing allowed, opened at
         # the one framed address with a ticket the page asked for with its key.
         frames = (panels / 'deck-panels.js').read_text()
@@ -1544,7 +1550,7 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(page, r'\son[a-z]+\s*=')
         self.assertNotRegex(page, r'<svg\b')
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', '', ''])
+                         ['', '', '', ''])
 
     def test_the_scripts_never_treat_a_value_as_markup(self):
         for name in ('app.js', 'markdown.js'):
@@ -1898,7 +1904,8 @@ class ScriptedPage:
         return self.captured('GET', f'/api/{endpoint}' + (f'?{urlencode(params)}'
                                                           if params else ''))
 
-    def run_page(self, answers: dict, steps: list, **plan) -> dict:
+    def run_page(self, answers: dict, steps: list, layout: bool = False,
+                 **plan) -> dict:
         file = self.root.parent / 'plan.json'
         file.write_text(json.dumps({'answers': answers, 'steps': steps, **plan}),
                         encoding='utf-8')
@@ -1916,7 +1923,25 @@ class ScriptedPage:
                 self.assertEqual(shot['bareBeads'], 0, 'every bead has words beside it')
                 self.assertLessEqual(len(shot['filled']), 1, 'one filled button on a screen')
                 self.assertNotRegex(shot['text'].replace(MARKUP_TITLE, ''), FORBIDDEN_WORDS)
+        if layout:
+            for name, shot in result['snapshots'].items():
+                with self.subTest(screen=name, rule='layout'):
+                    self.assertLayout(shot)
         return result
+
+    def assertLayout(self, shot: dict):
+        """The layout rules every screen keeps: one lede at most, one heading level in a
+        card, no card inside a card, and a toolbar's filled action first with the rest
+        quiet."""
+        self.assertLessEqual(len(shot['ledes']), 1, f"one lede on a screen: {shot['ledes']}")
+        for tags in shot['cardHeadings']:
+            self.assertLessEqual(len(tags), 1, f'one heading level in a card: {tags}')
+        self.assertEqual(shot['nested'], 0, 'no card inside a card')
+        bar = shot['toolbar']
+        if any(control['filled'] for control in bar):
+            self.assertTrue(bar[0]['filled'], f'the filled action comes first: {bar}')
+            self.assertEqual([control['name'] for control in bar[1:] if not control['quiet']],
+                             [], 'the rest of the toolbar is quiet')
 
 
 @unittest.skipUnless(NODE, 'Node is needed to run the page scripts without a browser')

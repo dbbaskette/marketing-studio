@@ -81,7 +81,7 @@ class PanelServingTests(unittest.TestCase):
         from studio_core import server
         made = server.for_product('_deck_panel_probe', 'Probe', 'X-Probe', Path('/nowhere'),
                                   {'/': ('index.html', 'text/html')}, None, ValueError)
-        for path in ('/deck-panels.js', '/deck-panels.css'):
+        for path in ('/deck-panels.js', '/deck-panels.css', '/lists.js'):
             name, kind = made.PAGE[path]
             self.assertTrue(Path(name).is_file(), name)
             self.assertIn('charset=utf-8', kind)

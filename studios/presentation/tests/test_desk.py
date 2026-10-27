@@ -62,7 +62,7 @@ class PageFileTests(unittest.TestCase):
         # The deck panels are the shared core's, served beside every studio page.
         self.assertEqual(set(server.PAGE), {'/', '/index.html', '/app.js', '/markdown.js',
                                             '/style.css', '/deck.css', '/deck-panels.js',
-                                            '/deck-panels.css'})
+                                            '/deck-panels.css', '/lists.js'})
 
     def test_the_page_has_nothing_its_own_policy_would_block(self):
         page = self.read('index.html')
@@ -72,7 +72,7 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(page, r'<svg\b')
         # markdown.js, the shared deck panels and app.js: each a file, none inline.
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', '', ''])
+                         ['', '', '', ''])
 
     def test_the_shell_names_its_controls_and_its_regions(self):
         page = self.read('index.html')
@@ -154,7 +154,8 @@ class MarkdownTests(unittest.TestCase):
 class ScriptedPage:
     """Runs app.js in the harness, and checks what every screen it shows must hold."""
 
-    def run_page(self, answers: dict, steps: list, **plan) -> dict:
+    def run_page(self, answers: dict, steps: list, layout: bool = False,
+                 **plan) -> dict:
         file = self.base / 'plan.json'
         file.write_text(json.dumps({'answers': answers, 'steps': steps, **plan}),
                         encoding='utf-8')
@@ -172,7 +173,25 @@ class ScriptedPage:
                 self.assertEqual(shot['bareBeads'], 0, 'every bead has words beside it')
                 self.assertLessEqual(len(shot['filled']), 1, 'one filled button on a screen')
                 self.assertNotRegex(shot['text'] + shot['sheet'], FORBIDDEN_WORDS)
+        if layout:
+            for name, shot in result['snapshots'].items():
+                with self.subTest(screen=name, rule='layout'):
+                    self.assertLayout(shot)
         return result
+
+    def assertLayout(self, shot: dict):
+        """The layout rules every screen keeps: one lede at most, one heading level in a
+        card, no card inside a card, and a toolbar's filled action first with the rest
+        quiet."""
+        self.assertLessEqual(len(shot['ledes']), 1, f"one lede on a screen: {shot['ledes']}")
+        for tags in shot['cardHeadings']:
+            self.assertLessEqual(len(tags), 1, f'one heading level in a card: {tags}')
+        self.assertEqual(shot['nested'], 0, 'no card inside a card')
+        bar = shot['toolbar']
+        if any(control['filled'] for control in bar):
+            self.assertTrue(bar[0]['filled'], f'the filled action comes first: {bar}')
+            self.assertEqual([control['name'] for control in bar[1:] if not control['quiet']],
+                             [], 'the rest of the toolbar is quiet')
 
     def posts(self, result: dict) -> list:
         made = [request for request in result['requests'] if request['method'] == 'POST']
