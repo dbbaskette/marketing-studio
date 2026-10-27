@@ -759,7 +759,7 @@ class WordsTests(DeskPageCase):
         self.assertEqual(self.posts(result), [('/api/desk-selection', {
             'path': path, 'number': 3, 'field': 'title', 'start': start,
             'end': start + len('more than one'), 'action': 'shorten',
-            'seen': view['desk']['seen']})])
+            'seen': view['desk']['seen'], 'passage': 'more than one'})])
 
     def test_ask_asks_what_should_change_first(self):
         path = self.desk_deck()
@@ -827,13 +827,81 @@ class WordsTests(DeskPageCase):
         self.assertIn('version', kinds)
         self.assertIn('build', kinds)
         self.assertEqual(self.posts(result), [('/api/desk-restore', {
-            'path': path, 'slide': card['id'], 'index': 0, 'seen': view['desk']['seen']})])
+            'path': path, 'slide': card['id'], 'index': 0, 'seen': view['desk']['seen'],
+            'stamp': found['versions'][0]['stamp']})])
         asked = [request['address'] for request in result['requests']
                  if request['address'].startswith('/api/desk-versions')]
         self.assertTrue(asked)
         # What the page sends is what the server takes.
         after = self.post('desk-restore', self.posts(result)[0][1])
         self.assertEqual(self.card(after, 3)['words']['title'], card['words']['title'])
+
+    def test_restore_is_bound_to_the_version_by_its_stamp(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        card = self.card(view, 3)
+        older = {'at': '2026-10-27T08:00:00Z', 'source': 'save', 'stamp': 'b' * 16,
+                 'words': {**card['words'], 'title': 'An older title', 'notes': card['notes']},
+                 'picture': None}
+        newer = {**older, 'at': '2026-10-27T09:00:00Z', 'stamp': 'a' * 16,
+                 'words': {**older['words'], 'title': 'A newer title'}}
+        result = self.open_deck(path, view, [
+            {'click': 'History of slide 3'}, {'snapshot': 'history'},
+            {'click': 'Restore the version kept'}],
+            **{'GET /api/desk-versions': [ok({'versions': [newer, older]})],
+               'POST /api/desk-restore': [ok(view)]})
+        sheet = result['snapshots']['history']['sheet']
+        self.assertLess(sheet.index('A newer title'), sheet.index('An older title'))
+        self.assertEqual(self.posts(result), [('/api/desk-restore', {
+            'path': path, 'slide': card['id'], 'index': 0, 'seen': view['desk']['seen'],
+            'stamp': 'a' * 16})])
+
+    def test_words_typed_and_not_saved_offer_no_selection_bar(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'fill': 'Title of slide 3', 'value': 'Batches restart in turn'},
+            {'select': 'Title of slide 3', 'start': 0, 'end': 7}, {'snapshot': 'typed'}])
+        self.assertNotIn('Rephrase', result['snapshots']['typed']['buttons'])
+        unfit = copy.deepcopy(view)
+        self.card(unfit, 3)['unfit'] = {
+            'number': 3, 'field': 'title', 'text': 'A much longer title', 'lines': ['Too long.'],
+            'at': '2026-10-27T09:00:00Z', 'says': 'These words do not fit the slide as it is '
+                                                  'drawn.'}
+        result = self.open_deck(path, unfit, [
+            {'select': 'Title of slide 3', 'start': 0, 'end': 6}, {'snapshot': 'unfit'}])
+        self.assertNotIn('Rephrase', result['snapshots']['unfit']['buttons'])
+
+    def test_a_restore_that_does_not_fit_shows_the_version_and_redraws_it(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        unfit = copy.deepcopy(view)
+        card = self.card(unfit, 3)
+        kept = {**card['words'], 'title': 'An older, much longer title',
+                'caveat': 'An older caveat.', 'notes': 'Older notes.'}
+        card['unfit'] = {'number': 3, 'field': 'restore', 'text': '', 'words': kept,
+                         'lines': ['when-capacity-holds: the title runs off the slide.'],
+                         'at': '2026-10-27T09:00:00Z',
+                         'says': 'These words do not fit the slide as it is drawn.'}
+        result = self.open_deck(path, unfit, [
+            {'snapshot': 'unfit'}, {'click': 'Redraw with these words'}],
+            **{'POST /api/desk-redraw-words': [ok(view)]})
+        text = result['snapshots']['unfit']['text']
+        for said in ('These words do not fit the slide as it is drawn.',
+                     'An older, much longer title', 'An older caveat.', 'Older notes.',
+                     kept['points'][0]['text']):
+            self.assertIn(said, text)
+        self.assertNotIn('Your words: “”', text)
+        self.assertEqual(self.posts(result), [('/api/desk-redraw-words', {
+            'path': path, 'number': 3, 'field': 'restore', 'text': '',
+            'expected': view['desk']['expected']})])
+
+    def test_the_boxes_take_as_many_characters_as_the_runner(self):
+        path = self.desk_deck()
+        shot = self.open_deck(path, self.run_of(path), [{'snapshot': 'desk'}])['snapshots']['desk']
+        self.assertEqual(shot['limits']['Speaker notes for slide 3'], 4000)
+        self.assertEqual(shot['limits']['Title of slide 3'], 2000)
+        self.assertEqual(shot['limits']['Point 1 text of slide 3'], 2000)
 
     def test_a_lead_slide_s_words_are_boxes_with_no_points(self):
         path = self.desk_deck()

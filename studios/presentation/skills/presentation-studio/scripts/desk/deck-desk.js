@@ -960,7 +960,11 @@
     while (end > start && /\s/.test(value[end - 1])) end -= 1;
     // The words are kept without the spaces they start with, so the place is counted there.
     const lead = value.length - value.replace(/^\s+/, '').length;
-    if (start >= end || one.busy || (h.view.run.desk && h.view.run.desk.working)) {
+    // Only the saved words can be changed by a words job: not words typed and not saved yet,
+    // nor words kept because they did not fit.
+    const unsaved = Boolean(held.edits[editKey(h.view.path, one.number, field)])
+      || Boolean(one.unfit && fieldKey(one.unfit.field) === fieldKey(field));
+    if (start >= end || unsaved || one.busy || (h.view.run.desk && h.view.run.desk.working)) {
       if (!(held.selection && held.selection.asking)) {
         held.selection = null;
         node.hidden = true;
@@ -968,6 +972,7 @@
       return;
     }
     held.selection = { number: one.number, field, start: start - lead, end: end - lead,
+      passage: value.slice(start, end),
       asking: false };
     barContent();
   }
@@ -980,7 +985,8 @@
       const run = h.view.run;
       act('desk-selection', { path: h.view.path, number: chosen.number, field: chosen.field,
         start: chosen.start, end: chosen.end, action,
-        ...(action === 'ask' ? { instruction } : {}), seen: run.desk.seen }, pressed,
+        ...(action === 'ask' ? { instruction } : {}), seen: run.desk.seen,
+        passage: chosen.passage }, pressed,
       'The selected words are being changed.').then((found) => {
         if (!found) return;
         held.selection = null;
@@ -1036,9 +1042,14 @@
       { path, number: one.number }, discard, 'Your words are let go. The slide is as it was.'),
     'desk-discard ' + one.number);
     redraw.disabled = Boolean(run.desk.working);
+    // A restore that did not fit keeps every word of the version it brings back.
+    const restoring = unfit.field === 'restore';
     return h.callout('late', make('p', '', unfit.says || ''),
-      h.add(make('p', ''), make('strong', '', 'Your words: '), '“' + String(unfit.text || '')
-        + '”'),
+      restoring ? h.add(make('div', ''), make('p', '', 'The words of the version you restored:'),
+        ...wordsText(unfit.words).split('\n').filter(Boolean).map((line) => make('p', 'quiet',
+          line)))
+        : h.add(make('p', ''), make('strong', '', 'Your words: '), '“' + String(unfit.text || '')
+          + '”'),
       h.list(unfit.lines).length ? h.bullets(h.list(unfit.lines).map(String)) : null,
       bar(redraw, discard), one.price ? make('p', 'quiet', one.price) : null);
   }
@@ -1090,7 +1101,8 @@
     shown.versions.forEach((version, index) => {
       const when = typeof Drafting === 'undefined' ? '' : Drafting.age(version.at);
       const restore = h.capsule('Restore', '', () => act('desk-restore', { path: shown.path,
-        slide: shown.slide, index, seen: run.desk.seen }, restore, 'Restored. The words it '
+        slide: shown.slide, index, seen: run.desk.seen, stamp: version.stamp }, restore,
+      'Restored. The words it '
         + 'replaced are in History.', problem).then((found) => {
         if (!found) return;
         h.view.sheet = '';
