@@ -5,6 +5,21 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **A Google Doc with other people's pending suggestions reads like a clean one.** Reading a
+  Doc whose suggestions were still waiting stopped at "Review pull cannot project embedded
+  objects", and **Read Google Doc** looked stuck after it. Now the Doc reads as it is
+  without the suggestions, with its images and their data (as Google's export writes them),
+  smart chips, line breaks, footnotes and tables; page breaks, headers and footers are left
+  out. An image Google does not send stays a visible placeholder, and anything else is named
+  plainly. Reading again after a failure says so as a new answer. On such a Doc a desk
+  change in a paragraph with an image, a chip or someone else's suggestion goes as a comment
+  on that paragraph's plain words, and a teammate's suggestion holds nothing. For
+  maintainers: `google_suggestions.accepted_markdown(value, images=…)` reads every object
+  (projection `blog-studio-objects/1`, re-read from the snapshot with the image data it
+  kept), `google_drive.Client.image` fetches an image's `contentUri` from Google's image host
+  without a token, a comment may now sit on plain words of a paragraph with objects or
+  someone else's suggestion, and `tests/google_model.py` has `objects_doc()` and
+  `teammate()`.
 - **Review suggestions stay independent.** Accepting a fix no longer throws away a
   Humanize rewrite of the same sentence, nor the other way round, and never leaves one that
   would undo it. Each suggestion is read by the words it actually changes. One whose own

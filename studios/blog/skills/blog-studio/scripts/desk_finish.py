@@ -2279,9 +2279,18 @@ def google_changes(baseline, body, title=None):
         comments[k] = found_comments
     found, paragraphs, left = [], {}, 0
     anchorable = [m for m in range(len(before)) if texts[m]]
+    # A comment may also sit on the words of a paragraph that holds an image or a chip.
+    spoken = [
+        texts[m] or ''.join(c for c, _ in (styled[m] or {}).get('chars', [])) or None
+        for m in range(len(before))
+    ]
+    near_by = [m for m in range(len(before)) if spoken[m]]
 
     def nearest(k):
         return sorted(anchorable, key=lambda m: (abs(m - k), m))
+
+    def nearby(k):
+        return [spoken[m] for m in sorted(near_by, key=lambda m: (abs(m - k), m))[:8]]
 
     def same_lines(k):
         return sum(1 for line in before[:k] if line == before[k])
@@ -2334,7 +2343,7 @@ def google_changes(baseline, body, title=None):
                 'needle': needle,
                 'matches': matches,
                 'text': shown,  # The paragraph the change is meant for, as shown.
-                'near': [texts[m] for m in nearest(k)[:8]],
+                'near': nearby(k),
                 'was': shown,
                 'now': now,
             }
@@ -2363,7 +2372,7 @@ def google_changes(baseline, body, title=None):
             found.append(item)
             paragraphs[item['id']] = {
                 'paragraph': studio.digest(before[k].encode()),
-                'near': [texts[m] for m in nearest(k)[:8]],
+                'near': nearby(k),
                 'about': about,
                 'float': True,
             }
@@ -2799,7 +2808,66 @@ def _elsewhere(inline, tabs, texts, group, found, used):
         ):
             used.add(located[1])
             return located[0]
+    # Else on the plain words of the closest paragraph that holds an image, a chip or someone
+    # else's suggestion, words no suggestion touches.
+    for text in found.get('near') or []:
+        wanted = ' '.join(text.split())
+        spots = [spot for spot in _spots(inline, tabs) if spot[2] == wanted]
+        if len(spots) != 1 or spots[0][0] in used or not spots[0][3]:
+            continue
+        key, _, _, (start, words) = spots[0]
+        lead = '' if not about or text == about else 'In the paragraph ' + _quoted(about, 80) + ': '
+        comment = {
+            'id': ident,
+            'kind': 'comment',
+            'before': words,
+            'reason': _note(lead + ' '.join(said), markers),
+            'tab_id': key[0],
+            'start_index': start,
+        }
+        if _fits(inline, tabs, comment):
+            used.add(key)
+            return comment
     return None
+
+
+def _spots(inline, tabs):
+    """[(key, paragraph, its base words, (index, plain words) or None)] for every body
+    paragraph: its words as the Doc had them, without images, and its longest stretch of
+    plain words no suggestion touches, for a comment to sit on."""
+    import google_roundtrip as rt
+    import google_suggestions as suggestions
+    from google_drive import GoogleError
+
+    found = []
+    for key, paragraph in rt.paragraphs(inline).items():
+        if key[0] not in tabs:
+            continue
+        try:
+            text, quiet = suggestions._quiet_text(paragraph, key[1])
+        except GoogleError:
+            continue
+        base = ''.join(
+            element['textRun']['content']
+            for element in paragraph.get('elements', [])
+            if 'textRun' in element and not element['textRun'].get('suggestedInsertionIds')
+        )
+        best, at = (0, 0), None
+        for position, plain in enumerate([*quiet, False]):
+            if plain and text[position] != '\n' and at is None:
+                at = position
+            elif (not plain or text[position] == '\n') and at is not None:
+                if position - at > best[1] - best[0]:
+                    best = (at, position)
+                at = None
+        a, b = best
+        while a < b and text[a].isspace():
+            a += 1
+        while b > a and text[b - 1].isspace():
+            b -= 1
+        spot = (key[1] + rt.utf16(text[:a]), text[a:b]) if b > a else None
+        found.append((key, paragraph, ' '.join(base.split()), spot))
+    return found
 
 
 def _not_pending(inline, document, proposals, expected):
@@ -2816,7 +2884,12 @@ def _not_pending(inline, document, proposals, expected):
 
     tabs = document['tab_ids']
     texts = _paragraph_texts(inline, tabs)
-    held = {' '.join(text.split()) for _, _, text, settled in texts if not settled}
+    # Only this blog's own suggestions hold their paragraphs: a change in a paragraph that
+    # holds only someone else's goes as a comment instead, theirs untouched.
+    mine = _ours(inline, texts)
+    held = {
+        ' '.join(text.split()) for key, _, text, settled in texts if not settled and key in mine
+    }
     groups, floats = {}, []
     for proposal in proposals:
         found = expected.get(proposal['id']) or {}
@@ -2833,7 +2906,7 @@ def _not_pending(inline, document, proposals, expected):
             meant = ' '.join((found.get('text') or '').split())
             where = _where(texts, proposal, found)
             if where is not None and not where[3]:
-                states.append(('wait', proposal))
+                states.append(('wait' if where[1] in mine else 'move', proposal))
             elif (
                 where is None
                 or (meant and ' '.join(_text_of(texts, where[1]).split()) != meant)
@@ -2872,6 +2945,38 @@ def _not_pending(inline, document, proposals, expected):
         else:
             free.append(comment)
     return free, waiting, unplaced, covers, later
+
+
+def _ours(inline, texts):
+    """The Doc paragraphs holding one of this blog's own suggestions still waiting: where an
+    open comment carrying a Blog Studio marker sits, and any paragraph a suggested break
+    splits from it."""
+    import google_roundtrip as rt
+    import google_suggestions as suggestions
+    from google_drive import GoogleError
+
+    anchors = {anchor.get('anchorId'): anchor for anchor in suggestions.native_anchors(inline)}
+    keys = set()
+    for thread in inline.get('comments', []):
+        if '[Blog Studio ' not in thread.get('headPost', {}).get('content', ''):
+            continue
+        if thread.get('status', 'OPEN') != 'OPEN':
+            continue
+        for found in (anchors.get(thread.get('anchorId')) or {}).get('ranges', []):
+            try:
+                key, _ = rt.paragraph_at(
+                    inline,
+                    found.get('tabId') or rt.tabs(inline)[0]['tabProperties']['tabId'],
+                    found['startIndex'],
+                )
+            except (GoogleError, KeyError):
+                continue
+            keys.add(key)
+    order = [key for key, _, _, _ in texts]
+    for at, (key, _, _, settled) in enumerate(texts):
+        if at and not settled and order[at - 1] in keys and not texts[at - 1][3]:
+            keys.add(key)  # Split from one of ours by a suggested break.
+    return keys
 
 
 def _text_of(texts, key):

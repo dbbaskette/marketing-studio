@@ -148,6 +148,7 @@ async function check(){
   await deskPublishKeeps();
   await deskGoogleDoc();
   await deskStartReopensALinkedDoc();
+  await deskStartReadsAGoogleDocAgainAfterAFailure();
   await oldIntakeAddressesOpenTheDeskStart();
   await deskStartRecovery();
   await deskTakeOver();
@@ -4492,6 +4493,30 @@ async function deskStartReopensALinkedDoc(){
     assert.equal(t.requests.some(r=>r.url==='/api/desk-create'),false,'nothing is made again');
     assert.equal(t.requests.some(r=>['/api/google-start','/api/upload'].includes(r.url)),false,'nothing is imported again');
   }
+}
+// A Google Doc read that fails says why, and Read Google Doc reads again: a second failure
+// is said afresh, and a read that then works shows the Doc.
+async function deskStartReadsAGoogleDocAgainAfterAFailure(){
+  const url='https://docs.google.com/document/d/fixture-doc/edit';
+  const preview={status:'preview',preview:'c'.repeat(32),expected:'v1',title:'Synthetic Doc',linked_document:url,content:'Original text.',summary:{structure:{paragraphs:1}}};
+  const answers=[{__http:400,error:'The Doc holds a drawing this reader cannot take.'},{__http:400,error:'The Doc holds a drawing this reader cannot take.'},preview];
+  const t=deskStartFixture(asked=>asked==='/api/google-preview'?answers.shift():null);
+  await t.f.run("sDeskBegin({have:'draft',source:'google'})");
+  t.type('desk-google',url);
+  const problem=()=>t.nodes().find(n=>n.className==='problem'&&n.textContent)?.textContent||'';
+  await t.submit();
+  assert.ok(problem().includes('The Doc holds a drawing this reader cannot take.'),'the failure is said');
+  const reads=()=>t.requests.filter(r=>r.url==='/api/google-preview').length;
+  assert.equal(reads(),1);
+  await t.submit();
+  assert.equal(reads(),2,'Read Google Doc reads again');
+  assert.ok(problem().startsWith('Read again, and still: The Doc holds a drawing'),'a second failure is said as a new answer');
+  const button=t.nodes().find(n=>n.tagName==='button'&&n.textContent==='Read Google Doc');
+  assert.ok(button&&!button.disabled,'the button is ready again');
+  await t.submit();
+  assert.equal(reads(),3);
+  assert.equal(problem(),'','a read that works clears the problem');
+  assert.ok(t.nodes().some(n=>n.textContent==='Original text.'),'the Doc is shown');
 }
 // The old Polish, paste and Google Doc intake addresses open the polishing start.
 async function oldIntakeAddressesOpenTheDeskStart(){

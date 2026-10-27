@@ -12,6 +12,15 @@ words for as comments (see [below](#send-desk-changes-to-the-doc)). Reading send
 Google edits, comments or sharing changes and starts no assistant job. See
 [the page workflow](runner.md#start-from-a-google-doc).
 
+A Doc that already holds other people's pending suggestions reads as it is without them,
+as well as a Doc with none: its images (with their data, as Google's own export writes
+them), smart chips (their text or link), line breaks, footnotes and tables come in, and
+page breaks, headers and footers are left out, since a blog is the body. Their suggestions
+stay in Google for the Doc's owner to accept or reject; Blog Studio never accepts, rejects
+or counts them as its own. An image Google does not send is kept as a visible placeholder.
+Anything else the reader cannot take, such as an equation, is named in a plain message;
+replace it in the Doc and read it again.
+
 | Ask Blog Studio | What happens |
 | --- | --- |
 | “Start from this Google Doc: [link].” | Saves the original, draft and formatted snapshot; links that same Doc for future edits and suggestions. |
@@ -230,7 +239,8 @@ Doc as it was read:
 | A paragraph added, or split | A suggested line break and the new text, after the end of the paragraph before it. The new paragraph takes that paragraph's kind; a different kind (a heading, a list item) is said in a comment. |
 | A paragraph removed, or merged | A suggested deletion of its words and its break. Google cannot delete the break that ends a Doc, so the last paragraph is deleted with the break before it instead, where that paragraph has the same settings, which it keeps; otherwise an empty paragraph is left. Either way the comment says so. |
 | A link's address, bold, italic or code on words already in the Doc, a heading level | A comment on the words, such as "Link changed: “setup guide” now points to …" or "Make “Key Data Patterns” bold." A suggestion changes words, not the look of words it keeps, so that formatting is the Doc owner's to apply. |
-| An image, a table row, a paragraph with an image | A comment on the closest paragraph that can take one, quoting the change. Google takes no suggestion in a paragraph that holds an image. |
+| An image, a table row, a paragraph with an image or a chip | A comment on the closest paragraph that can take one, or on plain words beside the image or chip, quoting the change. Google takes no suggestion in a paragraph that holds an image or a chip. |
+| Words in a paragraph where someone else's suggestion waits | A comment on that paragraph's plain words, quoting the change: theirs is never accepted, rejected or edited, and holds nothing else. |
 | A title other than the Doc's name | A comment: "Suggested title: …". The Doc's name is not body text. |
 
 The plan names how many suggestions and comments go, and nothing is sent until you

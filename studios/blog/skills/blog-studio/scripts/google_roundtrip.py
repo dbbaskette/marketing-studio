@@ -29,6 +29,9 @@ from google_drive import (
 PROJECTION = 'blog-studio/1'
 # Google's Markdown export, used only when the renderer cannot represent a structure and nothing is pending.
 EXPORT_PROJECTION = 'google-export'
+# The Doc without its pending suggestions, read with its images, chips and breaks by Blog
+# Studio itself: Google's export would show the suggestions, so it cannot stand in.
+OBJECTS_PROJECTION = 'blog-studio-objects/1'
 # Version 2 covers tab content only. Version 1 also hashed the Doc and tab titles.
 FORMAT_VERSION = 2
 
@@ -266,14 +269,17 @@ def capture(client, file_id, tab_id, output, include_review=False):
     try:
         markdown = accepted_markdown(accepted)
         projection = PROJECTION
-    except GoogleError as exc:
+    except GoogleError:
         if pending:
-            raise GoogleError(
-                str(exc) + ' Suggestions are pending, so Google’s own export cannot stand in for '
-                'accepted text. Local work is unchanged.'
-            ) from None
-        markdown = client.export(file_id, 'md')
-        projection = EXPORT_PROJECTION
+            # Google's export would show the pending suggestions: Blog Studio reads the Doc
+            # as it is without them itself, images and all.
+            from google_suggestions import image_data
+
+            markdown = accepted_markdown(accepted, images=image_data(client, accepted))
+            projection = OBJECTS_PROJECTION
+        else:
+            markdown = client.export(file_id, 'md')
+            projection = EXPORT_PROJECTION
     word = client.export(file_id, 'docx')
     after_doc = inline_read(client, file_id)
     after = client.metadata(file_id)

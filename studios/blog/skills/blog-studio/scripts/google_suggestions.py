@@ -219,44 +219,177 @@ def render_run(plain, features):
     return leading + text + trailing
 
 
-def render_paragraph(paragraph):
-    """One paragraph's inline Markdown, before any heading or list prefix."""
+class Objects:
+    """What a lenient read of a Doc meets besides text: images numbered in document order with
+    their data (keyed by object id, or a list by number), and footnotes in reference order."""
+
+    def __init__(self, native, images):
+        self.native = native
+        self.images = images
+        self.number = 0
+        self.definitions = []
+        self.footnotes = []
+
+    def image(self, object_id):
+        self.number += 1
+        label = 'image' + str(self.number)
+        found = (self.native.get('inlineObjects') or {}).get(object_id) or {}
+        embedded = (found.get('inlineObjectProperties') or {}).get('embeddedObject') or {}
+        alt = ' '.join(str(embedded.get('description') or embedded.get('title') or '').split())
+        if isinstance(self.images, list):
+            data = self.images[self.number - 1] if self.number <= len(self.images) else None
+        else:
+            data = (self.images or {}).get(object_id)
+        if not data:
+            # Kept visible where it was, so the reader sees an image was there.
+            return (
+                '!['
+                + escape(alt or 'An image Blog Studio could not read from the Doc')
+                + ']['
+                + label
+                + ']'
+            )
+        self.definitions.append('[' + label + ']: <' + data + '>')
+        return '![' + escape(alt) + '][' + label + ']'
+
+    def footnote(self, footnote_id):
+        if footnote_id not in self.footnotes:
+            self.footnotes.append(footnote_id)
+        return '[^' + str(self.footnotes.index(footnote_id) + 1) + ']'
+
+
+# What each kind of element in a Doc is called, for a message that names it.
+NAMED = {
+    'equation': 'an equation',
+    'table': 'a table',
+    'tableOfContents': 'a table of contents',
+    'inlineObjectElement': 'an image',
+    'richLink': 'a smart chip',
+    'person': 'a person chip',
+    'footnoteReference': 'a footnote',
+    'horizontalRule': 'a horizontal line',
+}
+
+
+def _unreadable(kind):
+    return GoogleError(
+        'This Google Doc holds '
+        + NAMED.get(kind, 'something (' + kind + ')')
+        + ' that Blog Studio cannot read yet. Replace it with text or an image in the Doc, '
+        'then read the Doc again.'
+    )
+
+
+def render_paragraph(paragraph, objects=None):
+    """One paragraph's inline Markdown, before any heading or list prefix. Without `objects`
+    only text is read and anything else refuses; with them, images, chips, breaks and
+    footnote markers are read as Google's own export writes them."""
     elements = paragraph.get('elements', [])
+    lenient = objects is not None
     if any('horizontalRule' in element for element in elements):
         rest = ''.join(
             e.get('textRun', {}).get('content', '') for e in elements if 'horizontalRule' not in e
         )
-        if rest.strip() or any(
+        if not rest.strip() and not any(
             set(e) - {'startIndex', 'endIndex', 'textRun', 'horizontalRule'} for e in elements
         ):
+            return '---', True
+        if not lenient:
             raise GoogleError(
                 'Review pull cannot project embedded objects; use a scoped accepted-text conversion.'
             )
-        return '---', True
     plain = rt.paragraph_text(paragraph)
-    if any(c in plain.rstrip('\n') for c in ('\n', '\r', ' ', ' ')):
+    if not lenient and any(c in plain.rstrip('\n') for c in ('\n', '\r', ' ', ' ')):
         raise GoogleError('Embedded line breaks need a scoped accepted-text conversion.')
     merged = []
+
+    def add(text, features):
+        if merged and merged[-1][1] == features and features is not None:
+            merged[-1][0] += text
+        else:
+            merged.append([text, features])
+
+    rule = False
     for element in elements:
-        if set(element) - {'startIndex', 'endIndex', 'textRun'} or 'textRun' not in element:
+        kinds = set(element) - {'startIndex', 'endIndex'}
+        if kinds == {'textRun'}:
+            run = element['textRun']
+            add(run.get('content', ''), run_features(run.get('textStyle', {})))
+            continue
+        if not lenient:
             raise GoogleError(
                 'Review pull cannot project embedded objects; use a scoped accepted-text conversion.'
             )
-        run = element['textRun']
-        features = run_features(run.get('textStyle', {}))
-        if merged and merged[-1][1] == features:
-            merged[-1][0] += run.get('content', '')
+        kind = next(iter(kinds), '')
+        value = element.get(kind) or {}
+        if kind == 'inlineObjectElement':
+            add(objects.image(value.get('inlineObjectId')), None)
+        elif kind == 'richLink':
+            props = value.get('richLinkProperties') or {}
+            title, uri = str(props.get('title') or ''), str(props.get('uri') or '')
+            if uri.startswith(('https://', 'http://')) and not any(
+                c.isspace() or c in '<>' for c in uri
+            ):
+                add('[' + escape(title or uri) + '](<' + uri + '>)', None)
+            else:
+                add(escape(title or uri), None)
+        elif kind == 'person':
+            props = value.get('personProperties') or {}
+            add(escape(str(props.get('name') or props.get('email') or '')), None)
+        elif kind == 'footnoteReference':
+            add(objects.footnote(value.get('footnoteId')), None)
+        elif kind in ('pageBreak', 'columnBreak', 'autoText'):
+            continue  # A blog has no pages or columns, nor page numbers.
+        elif kind == 'horizontalRule':
+            rule = True
         else:
-            merged.append([run.get('content', ''), features])
-    line = ''.join(render_run(text, features) for text, features in merged).rstrip('\n')
-    return escape_line_start(line), False
+            raise _unreadable(kind)
+    pieces = [
+        render_run(text, features) if features is not None else text for text, features in merged
+    ]
+    line = ''.join(pieces).rstrip('\n')
+    # A line break inside a paragraph (Shift+Enter) is a Markdown line break, as Google's
+    # export writes it.
+    lines = re.split('[\x0b\r  \n]', line)
+    line = '  \n'.join([escape_line_start(lines[0]), *lines[1:]])
+    if rule:
+        line = (line.rstrip() + '\n\n---') if line.strip() else '---'
+    return line, False
 
 
-def accepted_markdown(value):
+def _cell(cell, objects):
+    texts = []
+    for block in cell.get('content', []):
+        if 'paragraph' not in block:
+            raise _unreadable(next(iter(set(block) - {'startIndex', 'endIndex'}), 'table'))
+        text, _ = render_paragraph(block['paragraph'], objects)
+        texts.append(text.replace('  \n', ' ').replace('\n', ' '))
+    return ' '.join(t for t in texts if t.strip()).replace('|', '\\|') or ' '
+
+
+def _table(table, objects):
+    """A table as a Markdown pipe table, its first row the header, as Google's export writes
+    it."""
+    rows = [
+        '| ' + ' | '.join(_cell(cell, objects) for cell in row.get('tableCells', [])) + ' |'
+        for row in table.get('tableRows', [])
+    ]
+    if not rows:
+        return ''
+    columns = len(table['tableRows'][0].get('tableCells', []))
+    return '\n'.join([rows[0], '| ' + ' | '.join(['---'] * columns) + ' |', *rows[1:]])
+
+
+def accepted_markdown(value, images=None):
     """The one Markdown projection of accepted text, used with or without pending suggestions.
 
-    DOCX and native structure remain the formatting record. Structures this bounded
-    renderer cannot represent faithfully raise instead of being dropped.
+    DOCX and native structure remain the formatting record. Without `images` this bounded
+    renderer reads only text and raises on anything else, for Google's own export to stand
+    in. With `images` (data URIs by inline object id, or a list by number) it reads what the
+    export would: images as `![alt][imageN]` with their data defined at the end, numbered in
+    document order, smart chips as their text or link, footnotes as Markdown footnotes and
+    tables as pipe tables; page breaks, headers and footers are no part of a blog. Anything
+    else is named in a plain message.
     """
     if rt.suggestions(value):
         raise GoogleError('A suggestions-excluded native preview is required.')
@@ -264,7 +397,8 @@ def accepted_markdown(value):
     if len(selected) != 1:
         raise GoogleError('Review snapshots require a single-tab document.')
     native = selected[0].get('documentTab', {})
-    if any(native.get(k) for k in ('headers', 'footers', 'footnotes')):
+    objects = None if images is None else Objects(native, images)
+    if objects is None and any(native.get(k) for k in ('headers', 'footers', 'footnotes')):
         raise GoogleError(
             'Review pull needs a scoped native conversion for headers, footers or footnotes.'
         )
@@ -274,12 +408,19 @@ def accepted_markdown(value):
     for block in native.get('body', {}).get('content', []):
         if 'sectionBreak' in block:
             continue
+        if objects is not None and 'table' in block:
+            output.append(_table(block['table'], objects))
+            continue
+        if objects is not None and 'tableOfContents' in block:
+            continue  # Made by Google from the headings, which are read as they are.
         if 'paragraph' not in block:
+            if objects is not None:
+                raise _unreadable(next(iter(set(block) - {'startIndex', 'endIndex'}), 'block'))
             raise GoogleError(
                 'Review pull cannot project this structure. Use a scoped accepted-text conversion; preserve DOCX.'
             )
         paragraph = block['paragraph']
-        line, rule = render_paragraph(paragraph)
+        line, rule = render_paragraph(paragraph, objects)
         named = paragraph.get('paragraphStyle', {}).get('namedStyleType', 'NORMAL_TEXT')
         level = {'TITLE': 1, 'SUBTITLE': 2}.get(named)
         if named.startswith('HEADING_') and named[-1:] in '123456':
@@ -290,10 +431,63 @@ def accepted_markdown(value):
         if bullet and not rule:
             line = list_prefix(native, bullet, counters, widths) + line
         output.append(line)
-    result = '\n\n'.join(output).rstrip() + '\n'
+    if objects is not None:
+        for number, footnote_id in enumerate(objects.footnotes, 1):
+            found = (native.get('footnotes') or {}).get(footnote_id) or {}
+            words = ' '.join(
+                render_paragraph(block['paragraph'], objects)[0].replace('  \n', ' ')
+                for block in found.get('content', [])
+                if 'paragraph' in block
+            ).strip()
+            output.append('[^' + str(number) + ']: ' + (words or ' '))
+        output += objects.definitions
+    result = '\n\n'.join(line for line in output if line.strip()).rstrip() + '\n'
     if not result.strip():
         raise GoogleError('No accepted body text to pull.')
     return result.encode()
+
+
+def image_data(client, value):
+    """{inline object id: data URI} for every image a Doc view holds, read through the
+    client; one Google does not send is left out, so the reader shows it as not read."""
+    import base64
+
+    found = {}
+    for tab in rt.tabs(value):
+        for object_id, item in (tab.get('documentTab', {}).get('inlineObjects') or {}).items():
+            embedded = (item.get('inlineObjectProperties') or {}).get('embeddedObject') or {}
+            uri = (embedded.get('imageProperties') or {}).get('contentUri')
+            reader = getattr(client, 'image', None)
+            if not uri or reader is None:
+                continue
+            try:
+                data = reader(uri)
+            except GoogleError:
+                continue
+            kind = (
+                'png'
+                if data.startswith(b'\x89PNG')
+                else 'jpeg'
+                if data.startswith(b'\xff\xd8')
+                else 'gif'
+                if data[:4] == b'GIF8'
+                else 'webp'
+                if data[:4] == b'RIFF' and data[8:12] == b'WEBP'
+                else None
+            )
+            if kind:
+                found[object_id] = (
+                    'data:image/' + kind + ';base64,' + base64.b64encode(data).decode()
+                )
+    return found
+
+
+def images_in(markdown):
+    """The image data a lenient read defined, by number: [data URI or None]."""
+    found = {}
+    for match in re.finditer(r'(?m)^\[image([0-9]+)\]: <(data:[^>]+)>$', markdown):
+        found[int(match[1])] = match[2]
+    return [found.get(number) for number in range(1, max(found, default=0) + 1)]
 
 
 def list_prefix(native, bullet, counters, widths):
@@ -601,6 +795,51 @@ def validate(document_value, findings, selected_tabs):
         elif 'after' in f:
             raise GoogleError('Comments cannot also replace text.')
         (tab, start), paragraph = rt.paragraph_at(document_value, f['tab_id'], f['start_index'])
+        if f['kind'] == 'comment':
+            # A comment changes no words: it may sit beside an image or a chip, or in a
+            # paragraph someone else's suggestion waits in, on words that are all plain text
+            # no suggestion touches.
+            text, quiet = _quiet_text(paragraph, start)
+            a = position(text, f['start_index'] - start)
+            b = a + len(f['before'])
+            if text[a:b] != f['before'] or b >= len(text):
+                if quote_positions(document_value, selected_tabs, f['before']):
+                    raise GoogleError(
+                        'That quote is not at the supplied start_index, although the Doc still '
+                        'contains it. Leave out start_index (add context if the quote repeats) so '
+                        'the helper locates it.'
+                    )
+                raise GoogleError(
+                    'Google wording changed since review. Pull/reconcile and refresh this finding first.'
+                )
+            if not all(quiet[a:b]):
+                raise GoogleError(
+                    'A comment goes on plain words no suggestion touches; no proposal submitted.'
+                )
+            end = f['start_index'] + rt.utf16(f['before'])
+            for left, right in occupied.setdefault(tab, []):
+                if f['start_index'] < right and end > left:
+                    raise GoogleError('Overlapping findings must be combined before submission.')
+            occupied[tab].append((f['start_index'], end))
+            if len(note.encode()) > 2048:
+                raise GoogleError('Comment exceeds Google’s 2048-byte limit.')
+            items.append(
+                {
+                    'finding': f,
+                    'tab': tab,
+                    'paragraph_start': start,
+                    'a': a,
+                    'b': b,
+                    'end': end,
+                    'style': None,
+                    'note': note,
+                    'cut': None,
+                    'deleted': None,
+                    'inserted': '',
+                    'joined': False,
+                }
+            )
+            continue
         if any(
             set(e) - {'startIndex', 'endIndex', 'textRun'} or 'textRun' not in e
             for e in paragraph['elements']
@@ -725,6 +964,30 @@ def validate(document_value, findings, selected_tabs):
             if len(item['note'].encode()) > 2048:
                 raise GoogleError('Comment exceeds Google’s 2048-byte limit.')
     return items
+
+
+def _quiet_text(paragraph, start):
+    """A paragraph's characters as Google indexes them (an object is one character) and, for
+    each, whether it is plain text no suggestion touches."""
+    chars, quiet = [], []
+    offset = start
+    for element in paragraph.get('elements', []):
+        if element.get('startIndex') != offset:
+            raise GoogleError(
+                'Unsupported native run or inconsistent indexes; no proposal submitted.'
+            )
+        run = element.get('textRun')
+        if run is None:
+            chars.append('\ufffc')
+            quiet.append(False)
+        else:
+            plain = not (
+                run.get('suggestedInsertionIds') or run.get('suggestedDeletionIds')
+            ) and not any(key.startswith('suggested') and value for key, value in run.items())
+            chars.extend(run.get('content', ''))
+            quiet.extend([plain] * len(run.get('content', '')))
+        offset = element.get('endIndex', offset)
+    return ''.join(chars), quiet
 
 
 def _body(document_value, tab_id):

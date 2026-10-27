@@ -168,7 +168,9 @@ function sDeskPolish(held){
   sAdd(form,...sDeskDraftIn(held),first,tone,facts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),['saved','upload'].includes(held.source)?null:instead);
   form.addEventListener('submit',async event=>{
     event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
-    await busy(go,reading?'Reading…':'Starting…',async()=>{try{if(reading)await sDeskReadGoogle(held);else await sDeskGo(held);}catch(error){problem.textContent=error.message+' Your choices are kept here.';}});
+    // A read that fails again says so as a new answer, so pressing the button visibly reads.
+    const failed=problem.textContent;problem.textContent='';
+    await busy(go,reading?'Reading…':'Starting…',async()=>{try{if(reading)await sDeskReadGoogle(held);else await sDeskGo(held);}catch(error){problem.textContent=(reading&&failed?'Read again, and still: ':'')+error.message+(reading?' Your link is kept here; change the Doc or try again.':' Your choices are kept here.');}});
   });
   sPage(sNode('p','lede','Bring your draft and choose what happens first. No kind of post needed.'),form);
 }
