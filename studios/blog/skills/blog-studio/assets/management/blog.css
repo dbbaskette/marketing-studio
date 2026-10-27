@@ -146,6 +146,12 @@
 .review-text:hover{background:var(--well)}
 .review-text:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
 .review-old{color:var(--late);text-decoration:line-through}
+/* Suggestions pending in the Google Doc: shown, decided there, in their own colour. */
+.doc-suggestion{border-radius:3px;outline-offset:2px;cursor:help}
+.doc-removed{color:var(--training);text-decoration:line-through;text-decoration-color:var(--training)}
+.doc-inserted{color:var(--training);text-decoration:underline;text-decoration-style:wavy;text-decoration-color:var(--training);text-underline-offset:.2em;background:var(--training-wash)}
+.doc-tag{color:var(--training);border-color:var(--training)}
+.doc-overlap{color:var(--training)}
 .review-new{background:color-mix(in srgb,var(--done) 16%,transparent);color:var(--ink);text-decoration:underline;text-decoration-color:var(--done);text-underline-offset:.18em;border-radius:3px;padding:0 .12em}
 .review-mark.review-human .review-new{background:color-mix(in srgb,var(--link) 13%,transparent);text-decoration-color:var(--link);text-decoration-style:dotted}
 .review-mark.review-flagged .review-new{background:var(--yours-wash);text-decoration-color:var(--yours)}

@@ -149,6 +149,7 @@ async function check(){
   await deskGoogleDoc();
   await deskStartReopensALinkedDoc();
   await deskStartReadsAGoogleDocAgainAfterAFailure();
+  await deskReviewDocSuggestions();
   await oldIntakeAddressesOpenTheDeskStart();
   await deskStartRecovery();
   await deskTakeOver();
@@ -3413,6 +3414,40 @@ const REVIEW_FIXES=[
   {part:'bbbbbbbb',before:'It reads 12 files in 3 seconds.',after:'It reads 14 files in 3 seconds.',note:'Wording.',flag:'Check the facts: this changes a number.'},
   {part:'title',before:'A synthetic agentic post',after:'A Synthetic Agentic Post',note:'Title case.'},
 ];
+// Other people's suggestions pending in the Google Doc, in Review mode and on the full desk:
+// marked where they sit, decided in Google Docs, never accepted, rejected, counted or
+// numbered here; a fix over their words is flagged and left out of Accept all.
+async function deskReviewDocSuggestions(){
+  const sentence='Timing and context is everything.',lead='A workflow coordinate agents.\n\n![][image1]\n\n';
+  // Theirs: "coordinate" for "links" where no fix of ours sits, and "context" under fix 4.
+  const doc={count:3,marks:[{id:'theirs-1',kind:'replacement',part:'aaaaaaaa',at:'A workflow '.length,length:'coordinate'.length,inserted:'links',removed:'coordinate'},{id:'theirs-2',kind:'replacement',part:'aaaaaaaa',at:lead.length+sentence.indexOf('context'),length:7,inserted:'setting',removed:'context'}]};
+  const fixes=REVIEW_FIXES.filter(fix=>fix.before!=='A workflow coordinate agents.');
+  const view={...reviewView(),working:null,jobs:[{id:'c1',kind:'finish-copyedit',status:'ready',applied:true,error:''}],finishing:{copyedit:finishSet('copyedit',fixes)},doc_suggestions:doc};
+  const t=deskStartFixture(url=>url.startsWith('/api/desk?')?view:url.startsWith('/api/desk-images')?{id:'review-blog',images:[{key:'k1',uri:'data:image/png;base64,AAAA'}]}:null);
+  await t.f.run("sRoute('desk','review-blog','review')");
+  const marks=t.nodes().filter(n=>n.className==='doc-suggestion');
+  assert.equal(marks.length,1,'a Doc suggestion is marked where no fix of ours sits');
+  const mark=marks[0];
+  assert.equal(mark.title,'Suggested in the Doc. Decide it in Google Docs.');
+  assert.ok(!descendants(mark).some(n=>n.tagName==='button'),'no Accept or Reject on a Doc suggestion');
+  assert.ok(!descendants(mark).some(n=>/review-num/.test(n.className)),'nor a number');
+  assert.ok(descendants(mark).some(n=>n.tagName==='del'&&n.className==='doc-removed'&&n.textContent==='coordinate'),'their removed words struck through');
+  assert.ok(descendants(mark).some(n=>n.tagName==='ins'&&n.className==='doc-inserted'&&n.textContent==='links'),'their inserted words underlined');
+  assert.equal(t.nodes().find(n=>n.className==='review-count').textContent,'5 fixes to review','theirs never count with ours');
+  assert.ok(t.nodes().some(n=>n.textContent==='Accept all (3)'),'a fix over their words is left out of Accept all, as is the flagged one');
+  assert.ok(t.nodes().some(n=>n.textContent==='3 suggestions are pending in the Google Doc. Decide them there; nothing to do here.'));
+  assert.ok(t.nodes().some(n=>n.textContent==='1 fix changes words a Doc suggestion also changes, so Accept all leaves it for you.'));
+  const flagged=t.nodes().find(n=>/(^| )review-fix( |$)/.test(n.className)&&descendants(n).some(c=>c.textContent==='A plural subject.'));
+  assert.ok(descendants(flagged).some(n=>n.textContent==='A Doc suggestion also changes these words; accepting this makes it moot.'),'the fix says so');
+  assert.ok(descendants(flagged).some(n=>n.textContent==='Accept'&&n.listeners.click),'and may still be accepted');
+  // The full desk lists them too, decided in Google Docs, with nothing to press.
+  await descendants(t.f.get('actions')).find(n=>n.textContent==='Open the full desk').listeners.click();
+  const card=t.nodes().find(n=>/doc-pending-card/.test(n.className));
+  assert.ok(card,'a card on the full desk');
+  assert.equal(descendants(card).filter(n=>n.className==='doc-suggestion').length,2);
+  assert.ok(!descendants(card).some(n=>n.tagName==='button'),'nothing to accept or reject there');
+  assert.ok(descendants(card).some(n=>n.textContent==='1 is on words the desk has changed since, so not marked here.'));
+}
 async function deskReviewMode(){
   let view=reviewView(),sent=0;
   const textOf=(found,part)=>part==='title'||part==='opening'?found[part]:found.sections.find(s=>s.id===part).text;
