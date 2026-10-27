@@ -1015,6 +1015,39 @@ class StudioCase(unittest.TestCase):
         return json.loads((root / 'run.json').read_text())
 
 
+class DeskCase(StudioCase):
+    """A deck started from the desk's start, over a brand that offers looks and an outline
+    the stand-in splits into two sections: slides 2 to 4, and slides 5 to 7, between a cover
+    (slide 1) and a closing (slide 8)."""
+
+    def setUp(self):
+        super().setUp()
+        self.brand.run.offers_looks = True
+        self.brand.run.guides = True
+        self.workers.outline_said = LONG_OUTLINE
+
+    def start_desk(self, uploads=None, engine=None, **changes) -> Path:
+        return self.start(uploads=uploads, engine=engine, **{'flow': 'desk', **changes})
+
+    def pick_look(self, root: Path, choice: str | None = None, engine=None):
+        """Pick a look at the desk's one pause: the first the brand offers, unless named."""
+        engine = engine or self.engine
+        gate = engine.view(root)['gate']
+        assert gate and gate['name'] == 'gate:look', gate
+        offered = (gate.get('offered') or {}).get('looks') or []
+        return engine.desk_look(root, choice or offered[0]['id'])
+
+    def on_desk(self, root: Path) -> dict:
+        """The deck rests on the desk: gate:build waits, and the desk has the deck."""
+        shown = self.view(root)
+        self.assertEqual((shown['gate'] or {}).get('name'), 'gate:build', shown['sentence'])
+        self.assertTrue((self.record(root).get('desk') or {}).get('arrived_at'))
+        return shown
+
+    def desk_view(self, root: Path) -> dict:
+        return self.view(root)['desk']
+
+
 class Notifier:
     """Stands in for the computer's own notifications: `sent` lists each title told."""
 

@@ -651,8 +651,11 @@ class Researching:
 
     def _research_plan(self, root: Path, run: Run, step: stages.Step) -> None:
         record = self._load(root)
+        # Research that reads only the person's documents, and any research of a desk deck,
+        # is planned from the form, with no job: a desk deck has no stop to see a plan at.
         if (record.get('research_contract')
-                and not research_sites.fetches(self._research_from(root, record))
+                and (decks.on_desk(record)
+                     or not research_sites.fetches(self._research_from(root, record)))
                 and not self._request(record, step.name)):
             self._plan_from_form(root, run, step)
             return
@@ -673,15 +676,21 @@ class Researching:
         with self.files:
             record = self._load(root)
             form = record.get('form') or {}
+            looks = self._research_from(root, record)
+            fetches = research_sites.fetches(looks)
+            goal = form.get('goal') or record.get('title') or 'explain this topic'
             asked = form.get('research_questions') or [
-                'What do the supplied documents say that serves this goal: '
-                + (form.get('goal') or record.get('title') or 'explain this topic') + '?']
+                ('What is known that serves this goal: ' if fetches else
+                 'What do the supplied documents say that serves this goal: ') + goal + '?']
             items = []
             for text in asked:
                 ident = marks.new_id(text, [item['id'] for item in items])
                 items.append(dict(id=ident, question=text, public_query=None, claim=None))
+            listed = documents.sources(root)[0] if looks['documents'] and documents.listed(root) \
+                else []
             plan = dict(topic=record.get('title') or form.get('title'), purpose='planning',
-                        scope='supplied-only', sources=documents.sources(root)[0], items=items)
+                        scope=research_sites.plan_scope(looks) if fetches else 'supplied-only',
+                        sources=listed if fetches else documents.sources(root)[0], items=items)
             checked = worker_tools.check_research_plan(plan, most=worker_tools.PLAN_MOST)
             if checked['problems']:
                 raise WorkspaceError(checked['problems'][0])

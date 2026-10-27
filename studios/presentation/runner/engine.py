@@ -137,7 +137,7 @@ import home
 import hub
 from workspace import WorkspaceError, write_atomic
 
-from runner import agents, companion, decks, documents, gitstate, marks, settings, stages
+from runner import agents, companion, decks, desk, documents, gitstate, marks, settings, stages
 from runner import build_progress, team, worker_tools
 from runner import brand as brand_skill
 from runner import brand_source
@@ -146,6 +146,7 @@ from runner import slides as slides_tool
 from runner.jobs import (FED, KEPT_SO_FAR, NEXT_NOTE, Gone as _Gone, Halted as _Halted, Jobs,
                          Run as _Run, Slots as _Slots, attempts, first, gate_state,
                          last_error, spent, text_of, tries, sha256_of)
+from runner.desk_actions import DeskActions
 from runner.research_steps import FROM_FORM, PLAN, PLAN_MD, REPORT, REVIEW, Researching
 from runner.steps import build, deliver as delivering, existing, intake
 from runner.steps import look as looks
@@ -325,7 +326,7 @@ class Elsewhere(WorkspaceError):
     """This computer may not change a deck: someone else drives it, or nobody does."""
 
 
-class Engine(Jobs, Researching):
+class Engine(Jobs, Researching, DeskActions):
     """Drives every deck in this computer's workspace."""
 
     def __init__(self, adapters=None, research=None, slides=None, brand=None, drive=None,
@@ -739,7 +740,9 @@ class Engine(Jobs, Researching):
         space, chosen = self.space(), settings.load()
         gitstate.identity(space.repo)
         checked = decks.check_form(form, self.brands())
-        level, seen, default = decks.review_choice(form)
+        # A desk deck has no review level: its start chose the one pause it has.
+        level, seen, default = (None, None, False) if checked.get('flow') \
+            else decks.review_choice(form)
         given = self._given(form, checked, uploads or {})
         named = isinstance(form, dict) and form.get('agent') not in (None, '')
         agent = settings.check_agent(form['agent']) if named else chosen.agent
@@ -783,12 +786,12 @@ class Engine(Jobs, Researching):
                     target.write_bytes(data)
                 record = self._load(root)
                 record.update(agent=agent, model=model, level_of_effort=effort,
-                              model_profiles=profiles,
-                              review_policy=({'schema': 1, 'level': level} if level
-                                             else review_policy.capture()),
-                              driver=team.claim(space),
+                              model_profiles=profiles, driver=team.claim(space),
                               limits={'step_seconds': chosen.step_seconds,
                                       'dollars': chosen.deck_dollars})
+                if not checked.get('flow'):
+                    record['review_policy'] = ({'schema': 1, 'level': level} if level
+                                               else review_policy.capture())
                 if contract:
                     record['research_contract'] = contract
                 if review_policy.level(record) != 'step_by_step':
@@ -995,7 +998,15 @@ class Engine(Jobs, Researching):
                 step = first(record)
                 if step is None:
                     return
-                if step.kind == 'gate' and not (step.name == 'gate:look' and record.get('look_again')) and self._automatic(
+                if step.kind == 'gate' and decks.on_desk(record):
+                    # A desk deck's stops are met on the desk: those it continues past, and
+                    # the look when the start chose to pick it, and the desk itself.
+                    if desk.passes(record, step.name):
+                        self._desk_gate(root, step)
+                        continue
+                    if gate_state(record, step.name) == 'waiting':
+                        return
+                elif step.kind == 'gate' and not (step.name == 'gate:look' and record.get('look_again')) and self._automatic(
                         record, step.name, holding=self._holding(root, step.name)):
                     self._policy_gate(root, step)
                     continue
@@ -1198,6 +1209,8 @@ class Engine(Jobs, Researching):
                 build_progress.mark(root, (build.read_state(root).get('start') or {}).get('folder'),
                     'first_draft_ready_at' if decks.user_first(record) else 'final_review_ready_at')
                 record = self._load(root)
+                if decks.on_desk(record):
+                    return self._on_desk(root, record)
             else:
                 gate = record['gates'].get(step.name) or {}
                 record['gates'][step.name] = {**gate, 'state': 'waiting',
@@ -1610,6 +1623,14 @@ class Engine(Jobs, Researching):
     # --- the steps a worker does -------------------------------------------------------------
 
     def _classify(self, root: Path, run: _Run, step: stages.Step) -> None:
+        reading = (self._load(root).get('form') or {}).get('reading')
+        if reading and decks.on_desk(self._load(root)):
+            # The start said how the document is read: no job reads it.
+            clock = time.monotonic()
+            with self.files:
+                record = intake.given(root, self._load(root), reading)
+                self._done(root, step, clock, 'read the document as the start said', record)
+            return
         self._agent(root, run, step,
                     lambda record, request, error: intake.classify_work(root, record, request,
                                                                         error),
