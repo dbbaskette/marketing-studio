@@ -1059,6 +1059,12 @@ class DeskActions:
                 # Your own deck at Selected changes keeps no versions of its slides.
                 for slide in build.slides_of(desk._outline(root)):
                     desk.keep_slide(root, slide.get('id'), 'open')
+                # As every desk deck is, it is reviewed only from Finishing: a slide note
+                # runs no review by itself. A review asked for before it was delivered is
+                # long done.
+                record['form'] = {**(record.get('form') or {}), 'initial_review': 'user-first',
+                                  'initial_review_source': 'desk'}
+                record.pop('review_requested', None)
             record['flow'] = 'desk'
             record['opened_on_desk'] = home.now()
             desk.arrive(record)

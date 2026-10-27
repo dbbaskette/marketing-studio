@@ -1253,6 +1253,19 @@ class OpenOnDeskTests(DeskCase):
         self.engine.desk_deliver(root, shown['expected'], shown['blockers_seen'])
         self.assertEqual([one['revision'] for one in self.record(root)['revisions']], [1, 2])
 
+    def test_a_slide_note_on_an_opened_deck_runs_no_review(self):
+        root = self.delivered()   # Step by step: its deck was reviewed before it was delivered
+        self.assertTrue(self.workers.of('review'))
+        expected = self.engine.open_on_desk(root)['desk']['expected']
+        reviews = len(self.workers.of('review'))
+        self.engine.desk_note(root, 3, 'Make the diagram a sequence.', expected)
+        self.on_desk(root)
+        self.assertEqual(len(self.workers.of('review')), reviews)
+        # It is reviewed from Finishing, as every desk deck is.
+        form = self.record(root)['form']
+        self.assertEqual((form.get('initial_review'), form.get('initial_review_source')),
+                         ('user-first', 'desk'))
+
     def test_opening_twice_keeps_one_open_version(self):
         root = self.delivered()
         first = self.engine.open_on_desk(root)
