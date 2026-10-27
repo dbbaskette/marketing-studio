@@ -171,9 +171,21 @@ class JobTests(JobCase):
         with self.assertRaisesRegex(WorkspaceError, 'a temporary folder other programs share'):
             agents.check_folder(self.job)
         for adapter in (Claude('true'), Codex('true')):
-            with self.assertRaisesRegex(WorkspaceError, 'Keep job folders under'):
+            with self.assertRaisesRegex(WorkspaceError, 'so no assistant may work there'):
                 adapter.run(self.a_job())
         self.assertFalse(self.job.exists())
+
+    def test_data_shared_names_this_studio_s_variable(self):
+        import home
+        shared = home.data_root().resolve().parent
+        with mock.patch.object(agents, 'shared_temporary', return_value=[shared]):
+            said = agents.data_shared()
+        self.assertIn('Training Studio', said)
+        self.assertIn('TRAINING_STUDIO_DATA', said)
+        self.assertIn('a temporary folder other programs share', said)
+        self.assertNotIn('Presentation Studio', said)
+        with mock.patch.object(agents, 'shared_temporary', return_value=[]):
+            self.assertIsNone(agents.data_shared())
 
     def test_staging_is_in_the_per_user_data_folder(self):
         import home
