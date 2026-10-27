@@ -1372,6 +1372,7 @@ function drawSheet() {
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
   else if (view.sheet === 'rebrand') body = rebrandSheet();
   else if (view.sheet === 'reclassify') body = reclassifySheet();
+  else if (view.sheet === 'desk-deliver') body = window.deckDesk.deliverSheet();
   else body = undoSheet();
   holder.replaceChildren(...body);
 }
@@ -5990,9 +5991,11 @@ function deckActions(run, lead) {
 
 function paintDeck(fresh) {
   const run = view.run;
-  // A deck started on the desk is drawn by deck-desk.js until it reaches the desk.
-  if (window.deckDesk.opens(run) && !run.desk.arrived) {
-    window.deckDesk.progress(run, fresh);
+  // A deck started on the desk is drawn by deck-desk.js: its progress until it reaches the
+  // desk, and the desk from then on. Every other deck keeps the screen below.
+  if (window.deckDesk.opens(run)) {
+    if (run.desk.arrived) window.deckDesk.desk(run, fresh);
+    else window.deckDesk.progress(run, fresh);
     return;
   }
   const title = run.title || 'Untitled';

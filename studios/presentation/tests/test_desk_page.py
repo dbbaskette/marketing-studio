@@ -7,12 +7,14 @@ Each view the page reads is what the runner's page answers for a real desk deck 
 tests' stand-ins, changed only where a test says so. Nothing starts an agent, looks at the real
 computer or touches the network.
 """
+import copy
+import json
 import unittest
 from datetime import UTC, datetime
 
 import runner_support
 import test_desk
-from test_desk import NODE, ok
+from test_desk import FORBIDDEN_WORDS, NODE, ok
 from test_runner_page import PageCase
 
 NOT_THERE = {'GET /api/run': [{'status': 404, 'body': {'error': 'There is no deck there.'}}]}
@@ -328,6 +330,246 @@ class ProgressTests(DeskPageCase):
         self.assertEqual(shot['filled'], ['Approve'])
         self.assertNotIn(NOTHING_NEEDED, shot['text'])
         self.assertNotIn('Section 1', shot['headings'])
+
+
+class DeskTests(DeskPageCase):
+    """Task 1.14: the desk, with its cards, notes, Stop, the Outline tab and Deliver."""
+
+    def test_the_desk_has_one_filled_button_and_cards_under_section_headings(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [{'snapshot': 'desk'}])
+        shot = result['snapshots']['desk']
+        self.assertEqual(shot['filled'], ['Deliver'])
+        self.assertEqual(shot['toolbar'][0], {'name': 'Deliver', 'filled': True, 'quiet': False})
+        self.assertIn('Download', [control['name'] for control in shot['toolbar']])
+        for tab in ('Slides', 'Outline'):
+            self.assertIn(tab, shot['buttons'])
+        numbered = [part['number'] for part in view['desk']['sections'] if not part['lead']]
+        self.assertEqual(numbered, [1, 2])
+        self.assertEqual([heading for heading in shot['headings']
+                          if heading.startswith('Section')], ['Section 1', 'Section 2'])
+        # A card per slide, and only content slides take a note.
+        cards = cards_of(view['desk'])
+        for card in cards:
+            self.assertIn(f"Slide {card['number']}", ' '.join(shot['parts']))
+        content = [card['number'] for card in cards if not card['lead']]
+        lead = [card['number'] for card in cards if card['lead']]
+        self.assertEqual(lead, [1, 8])
+        redraws = [name for name in shot['buttons'] if name.startswith('Redraw slide')]
+        self.assertEqual(redraws, [f'Redraw slide {number}' for number in content])
+        self.assertEqual(shot['text'].count('How should this slide change?'), len(content))
+        # The section headings sit outside the cards: no card holds another.
+        self.assertEqual(shot['nested'], 0)
+
+    def test_a_slide_note_shows_its_price_and_posts_the_deck_on_screen(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        card = next(card for card in cards_of(view['desk']) if card['number'] == 3)
+        self.assertTrue(card['price'])
+        after = copy.deepcopy(view)
+        result = self.open_deck(path, view, [
+            {'snapshot': 'desk'}, {'click': 'Redraw slide 3'}, {'snapshot': 'empty'},
+            {'fill': 'How should this slide change? Slide 3', 'value': 'Shorter.'},
+            {'click': 'Redraw slide 3'}, {'snapshot': 'sent'}],
+            **{'POST /api/desk-note': [ok(after)]})
+        shots = result['snapshots']
+        self.assertIn(card['price'], shots['desk']['text'])
+        self.assertIn('Say how the slide should change.', shots['empty']['text'])
+        self.assertEqual(self.posts(result), [('/api/desk-note', {
+            'path': path, 'number': 3, 'note': 'Shorter.', 'expected': view['desk']['expected']})])
+        # What the page sends is what the server takes.
+        done = self.post('desk-note', {'path': path, 'number': 3, 'note': 'Shorter.',
+                                       'expected': view['desk']['expected']})
+        noted = next(one for one in cards_of(done['desk']) if one['number'] == 3)
+        self.assertEqual(noted['note']['status'], 'done')
+
+    def test_the_first_pull_request_says_where_words_change(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        shot = self.open_deck(path, view, [{'snapshot': 'desk'}])['snapshots']['desk']
+        content = [card for card in cards_of(view['desk']) if not card['lead']]
+        self.assertEqual(shot['text'].count(WORDS_LINE), len(content))
+        lines = shot['text'].split('\n')
+        self.assertEqual(lines[lines.index(WORDS_LINE) - 1],
+                         content[0]['price'], 'the price comes first, under the button')
+        # The words and the speaker notes are shown, and are not boxes to type in.
+        self.assertIn(content[0]['words']['title'], shot['text'])
+        self.assertIn(content[0]['notes'], shot['text'])
+        self.assertNotIn('Title of slide 2', shot['fields'])
+
+    def test_a_redraw_in_progress_offers_stop(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        busy = copy.deepcopy(view)
+        busy['state'] = 'working'
+        busy['desk']['working'] = {'what': 'Redrawing: 1 of 2 sections', 'done': 1, 'total': 2}
+        for card in cards_of(busy['desk']):
+            card['busy'] = card['section'] == 'section-2'
+        result = self.open_deck(path, busy, [
+            {'snapshot': 'working'}, {'click': 'Stop'}, {'snapshot': 'stopped'}],
+            **{'POST /api/desk-stop': [ok(view)]})
+        shot = result['snapshots']['working']
+        lines = shot['text'].split('\n')
+        self.assertIn('Redrawing: 1 of 2 sections', lines)
+        self.assertLess(lines.index('Redrawing: 1 of 2 sections'), lines.index('Section 1'))
+        self.assertEqual(self.posts(result), [('/api/desk-stop', {'path': path})])
+        # A card whose section is redrawn says so, and its controls wait.
+        self.assertIn('Redrawing…', shot['text'])
+        for number in (5, 6, 7):
+            self.assertIn(f'Redraw slide {number}', shot['off'])
+        self.assertNotIn('Redraw slide 3', shot['off'])
+        self.assertIn('Deliver', shot['off'])
+
+    def test_the_whole_deck_note_says_its_price_and_redraws_every_section(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        result = self.open_deck(path, view, [
+            {'snapshot': 'desk'},
+            {'fill': 'How should the whole deck change?', 'value': 'Fewer words.'},
+            {'click': 'Redraw every section'}],
+            **{'POST /api/desk-deck-note': [ok(view)]})
+        shot = result['snapshots']['desk']
+        self.assertIn(view['desk']['deck_price'], shot['text'])
+        self.assertLess(shot['text'].index('How should the whole deck change?'),
+                        shot['text'].index('Section 1'))
+        self.assertEqual(self.posts(result), [('/api/desk-deck-note', {
+            'path': path, 'note': 'Fewer words.', 'expected': view['desk']['expected']})])
+
+    def test_the_outline_tab_prices_a_save_before_it_posts(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        outline = view['desk']['outline']
+        edited = copy.deepcopy(outline['slides'])
+        edited[2]['title'] = 'Capacity holds with two instances'
+        priced = self.post('desk-outline-price', {'path': path, 'slides': edited})
+        self.assertTrue(priced['says'])
+        result = self.open_deck(path, view, [
+            {'click': 'Outline'}, {'snapshot': 'outline'},
+            {'fill': 'Title of slide 3', 'value': 'Capacity holds with two instances'},
+            {'snapshot': 'priced'}, {'click': 'Save'}, {'snapshot': 'saved'}],
+            **{'POST /api/desk-outline-price': [ok(priced)],
+               'POST /api/desk-outline': [ok(view)]})
+        shots = result['snapshots']
+        self.assertIn('Save', shots['outline']['off'], 'nothing to save until it is edited')
+        self.assertNotIn('How should this slide change?', shots['outline']['text'])
+        self.assertIn(priced['says'], shots['priced']['text'])
+        self.assertNotIn('Save', shots['priced']['off'])
+        posts = self.posts(result)
+        self.assertEqual([address for address, _ in posts],
+                         ['/api/desk-outline-price', '/api/desk-outline'])
+        self.assertEqual(posts[0][1], {'path': path, 'slides': edited})
+        # The slides priced are the slides saved, against the outline the page read; the
+        # price above is the server's own answer for them.
+        self.assertEqual(posts[1][1], {'path': path, 'slides': edited,
+                                       'expected': outline['expected']})
+
+    def test_the_outline_tab_changes_the_look_and_the_reading_at_their_price(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        read = copy.deepcopy(view)
+        read['route'] = 'document'
+        read['desk']['outline']['reading'] = {'kind': 'material',
+                                              'price': 'Redraws every section. Expect minutes.'}
+        result = self.open_deck(path, read, [
+            {'click': 'Outline'}, {'snapshot': 'outline'}, {'click': 'Read it the other way'},
+            {'click': 'Change the look'}],
+            **{'POST /api/desk-reread': [ok(read)], 'POST /api/desk-look-again': [ok(read)]})
+        shot = result['snapshots']['outline']
+        look = view['desk']['outline']['look']
+        self.assertIn('Read as material to build from.', shot['text'])
+        self.assertIn('Redraws every section. Expect minutes.', shot['text'])
+        self.assertIn(look['price'], shot['text'])
+        self.assertIn(look['name'], shot['text'])
+        self.assertEqual(self.posts(result), [('/api/desk-reread', {'path': path, 'kind': 'spec'}),
+                                              ('/api/desk-look-again', {'path': path})])
+
+    def test_deliver_with_a_blocker_asks_first(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        desk = view['desk']
+        blocked = copy.deepcopy(view)
+        blocked['desk']['blockers'] = [{'number': 3, 'says': 'Text runs off the slide.'}]
+        result = self.open_deck(path, blocked, [
+            {'click': 'Deliver'}, {'snapshot': 'sheet'}, {'click': 'Deliver anyway'}],
+            **{'POST /api/desk-deliver': [ok(view)]})
+        sheet = result['snapshots']['sheet']['sheet']
+        self.assertIn('Slide 3: Text runs off the slide.', sheet)
+        self.assertIn('The brand check found 1 problem that blocks delivery. Deliver anyway, or '
+                      'fix them first.', sheet)
+        self.assertIn('This deck has not been reviewed.', sheet)
+        self.assertEqual(result['snapshots']['sheet']['filled'], ['Deliver anyway'])
+        self.assertEqual(self.posts(result), [('/api/desk-deliver', {
+            'path': path, 'expected': desk['expected'],
+            'blockers_seen': blocked['desk']['blockers_seen']})])
+
+    def test_two_blockers_are_problems_and_none_delivers_on_the_deck_on_screen(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        blocked = copy.deepcopy(view)
+        blocked['desk']['blockers'] = [{'number': 3, 'says': 'Text runs off the slide.'},
+                                       {'number': 5, 'says': 'A logo is missing.'}]
+        shot = self.open_deck(path, blocked, [{'click': 'Deliver'}, {'snapshot': 'two'}])
+        self.assertIn('The brand check found 2 problems that block delivery.',
+                      shot['snapshots']['two']['sheet'])
+        clear = copy.deepcopy(view)
+        clear['desk'].update(blockers=[], reviewed=True)
+        result = self.open_deck(path, clear, [
+            {'click': 'Deliver'}, {'snapshot': 'clear'}, {'click': 'Deliver'}],
+            **{'POST /api/desk-deliver': [ok(view)]})
+        sheet = result['snapshots']['clear']['sheet']
+        self.assertIn('The brand check found nothing that blocks delivery.', sheet)
+        self.assertNotIn('Deliver anyway', sheet)
+        self.assertIn('This deck was reviewed.', sheet)
+        self.assertEqual(self.posts(result), [('/api/desk-deliver', {
+            'path': path, 'expected': view['desk']['expected']})])
+
+    def test_a_delivered_deck_says_its_revision_and_what_a_change_makes(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        delivered = self.post('desk-deliver', {'path': path, 'expected': view['desk']['expected'],
+                                               'blockers_seen': view['desk']['blockers_seen']})
+        self.assertEqual(delivered['desk']['delivered']['revision'], 1)
+        shot = self.open_deck(path, delivered, [{'snapshot': 'delivered'}])['snapshots']
+        self.assertIn('Delivered as revision 1.', shot['delivered']['text'])
+        changed = self.post('desk-note', {'path': path, 'number': 3, 'note': 'Shorter.',
+                                          'expected': delivered['desk']['expected']})
+        self.assertTrue(changed['desk']['revision'])
+        shot = self.open_deck(path, changed, [{'snapshot': 'again'}])['snapshots']['again']
+        self.assertIn(changed['desk']['revision'], shot['text'])
+        self.assertEqual(shot['filled'], ['Deliver'])
+
+    def test_a_deck_with_no_drawing_here_offers_to_draw_it(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        away = copy.deepcopy(view)
+        away['desk'].update(drawn_here=False, no_drawing='There is no drawing of this deck on '
+                            'this computer.', draw_here_price='Redraws every section. Expect '
+                            'minutes, not seconds.')
+        result = self.open_deck(path, away, [{'snapshot': 'away'}, {'click': 'Draw it here'}],
+                                **{'POST /api/desk-draw-here': [ok(view)]})
+        shot = result['snapshots']['away']
+        for said in ('There is no drawing of this deck on this computer.',
+                     'Redraws every section. Expect minutes, not seconds.'):
+            self.assertIn(said, shot['text'])
+        self.assertEqual(self.posts(result), [('/api/desk-draw-here', {'path': path})])
+
+    def test_no_word_a_person_should_not_read(self):
+        path = self.desk_deck()
+        view = self.run_of(path)
+        blocked = copy.deepcopy(view)
+        blocked['desk']['blockers'] = [{'number': 3, 'says': 'Text runs off the slide.'}]
+        result = self.open_deck(path, blocked, [
+            {'snapshot': 'desk'}, {'click': 'Outline'}, {'snapshot': 'outline'},
+            {'click': 'Slides'}, {'click': 'Deliver'}, {'snapshot': 'deliver'}])
+        for name, shot in result['snapshots'].items():
+            with self.subTest(name):
+                said = shot['text'] + shot['sheet']
+                self.assertIsNone(FORBIDDEN_WORDS.search(said))
+                self.assertNotIn(view['desk']['expected'], said)
+                self.assertNotIn(view['desk']['expected'][:12], said)
+                self.assertNotIn(view['desk']['blockers_seen'][:12], said)
+        self.assertIn('Section 1', json.dumps(result['snapshots']['desk']['headings']))
 
 
 if __name__ == '__main__':

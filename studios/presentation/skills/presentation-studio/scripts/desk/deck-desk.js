@@ -503,7 +503,459 @@
     }
   }
 
-  window.deckDesk = { init, opens, start, progress };
+  // --- the desk -----------------------------------------------------------------------------
+
+  function desk(run, fresh) {
+    const found = run.desk;
+    const read = h.theirs(run);
+    const path = h.view.path;
+    const title = run.title || 'Untitled';
+    const working = Boolean(found.working);
+    const lead = h.view.sheet || read ? '' : run.question ? 'answer'
+      : run.problem && run.problem.action ? 'problem' : found.delivered ? '' : 'deliver';
+    h.view.lead = lead;
+    const tab = held.tabs[path] === 'outline' ? 'outline' : 'slides';
+    const can = !read && found.drawn_here;
+    h.placeParts({ title, above: above(run), back: true, actions: deskActions(run, lead),
+      mark: ['desk', title, run.state, lead, read, run.driver, working, found.drawn_here,
+        Boolean(found.delivered), found.expected, h.view.downloading] }, [
+      ...interruptions(run, lead, title),
+      working ? ['working', [found.working, read], () => workingPart(run)] : null,
+      !found.drawn_here ? ['away', [found.no_drawing, found.draw_here_price, read, working],
+        () => awayPart(run)] : null,
+      found.delivered ? ['delivered', [found.delivered, title], () => deliveredPart(run)]
+        : null,
+      found.revision ? ['revision', [found.revision], () => make('p', 'quiet', found.revision)]
+        : null,
+      ['head', [tab], () => headPart(tab)],
+      ...(tab === 'outline' ? outlineParts(run, can, working)
+        : slideParts(run, can, working)),
+    ], fresh);
+    h.tidyPictures();
+  }
+
+  // Deliver, the one filled button, then Download and More.
+  function deskActions(run, lead) {
+    if (h.theirs(run)) return [];
+    const found = run.desk;
+    const deliver = found.delivered ? null : h.capsule('Deliver', lead === 'deliver' ? 'filled'
+      : '', h.openSheet('desk-deliver', 'deliver'), 'deliver');
+    if (deliver) deliver.disabled = Boolean(found.working) || !found.drawn_here || !found.expected;
+    const download = found.drawn_here ? h.capsule(h.view.downloading ? 'Downloading…'
+      : 'Download', '', () => h.downloadDeck(run, download), 'download') : null;
+    return [deliver, download, moreFor(run)];
+  }
+
+  // The redraw under way, said above the desk, with Stop.
+  function workingPart(run) {
+    const path = h.view.path;
+    const stop = h.theirs(run) ? null : h.capsule('Stop', '', () => act('desk-stop', { path },
+      stop, 'Stopped. What was redrawn is kept, and the deck is put together from it.'),
+    'desk-stop');
+    return h.callout('', h.add(make('p', 'desk-working-note'), h.state('current',
+      run.desk.working.what)), stop ? make('p', 'quiet', 'Stop keeps what is redrawn so far, '
+      + 'and puts the deck together from it.') : null, stop ? bar(stop) : null);
+  }
+
+  // A deck whose drawing is on another computer: the shared words, and the way to draw it here.
+  function awayPart(run) {
+    const found = run.desk;
+    const path = h.view.path;
+    const go = h.theirs(run) ? null : h.capsule('Draw it here', '', () => act('desk-draw-here',
+      { path }, go, 'The deck is being drawn on this computer.'), 'desk-draw-here');
+    if (go) go.disabled = Boolean(found.working);
+    return h.callout('', make('p', '', found.no_drawing || ''), go ? bar(go) : null,
+      go && found.draw_here_price ? make('p', 'quiet', found.draw_here_price) : null);
+  }
+
+  function deliveredPart(run) {
+    const found = run.desk.delivered;
+    const node = h.card('Delivered');
+    h.add(node, h.state('done', 'Delivered as revision ' + (found.revision || 1) + '.'),
+      found.url ? bar(h.outLink(found.url, 'Open in Google Slides', 'Open ' + (run.title
+        || 'the deck') + ' in Google Slides')) : null,
+      run.desk.reviewed ? null : make('p', 'quiet', 'It was delivered without a review of the '
+        + 'deck.'),
+      make('p', 'quiet', 'A note or an edit here makes the next revision, delivered when you '
+        + 'press Deliver. This one is kept.'));
+    return node;
+  }
+
+  // The one sentence of the desk, and its two tabs.
+  function headPart(tab) {
+    const tabs = h.segmented('The desk', ['Slides', 'Outline'], tab === 'outline' ? 1 : 0,
+      (index) => {
+        held.tabs[h.view.path] = index ? 'outline' : 'slides';
+        h.paintDeck(false);
+      }, 'desk-tab');
+    tabs.classList.add('deck-desk-tabs');
+    return h.pageHead(DESK_LEDE, [tabs]);
+  }
+
+  // --- the Slides tab: the whole-deck note, then each section's cards -------------------------
+
+  function slideParts(run, can, working) {
+    const found = run.desk;
+    return [
+      can ? ['whole', [found.expected, found.deck_price, working],
+        () => wholePart(run, working)] : null,
+      ...h.list(found.sections).map((part, index) => ['section ' + index,
+        [part, found.expected, can, working], () => sectionPart(run, part, can)]),
+    ];
+  }
+
+  function wholePart(run, working) {
+    const path = h.view.path;
+    const kept = held.deck[path] || (held.deck[path] = { note: '' });
+    const id = 'desk-deck-note';
+    const node = h.card('The whole deck');
+    const box = noteField(id, 'How should the whole deck change?', kept, '');
+    const go = h.capsule('Redraw every section', '', async () => {
+      const note = kept.note.trim();
+      if (!note) {
+        h.refuse(id, NO_DECK_NOTE);
+        return;
+      }
+      const done = await act('desk-deck-note', { path, note, expected: run.desk.expected }, go,
+        'Every section is being redrawn with your note.', h.byId(id + '-problem'));
+      if (done) kept.note = '';
+    }, 'desk-deck-redraw');
+    go.disabled = working;
+    box.querySelector('textarea').disabled = working;
+    return h.add(node, box, bar(go), make('p', 'quiet', run.desk.deck_price || ''));
+  }
+
+  function sectionPart(run, part, can) {
+    const node = make('section', 'deck-desk-section');
+    if (!part.lead) {
+      const heading = make('h2', 'deck-desk-section-title', 'Section ' + part.number);
+      heading.id = 'desk-section-' + part.number;
+      node.setAttribute('aria-labelledby', heading.id);
+      h.add(node, heading);
+    }
+    for (const one of h.list(part.slides)) h.add(node, slideCard(run, one, can));
+    return node;
+  }
+
+  function slideCard(run, one, can) {
+    const kind = one.lead && one.kind ? ' · ' + h.capital(h.spoken(one.kind)) : '';
+    const words = one.words || {};
+    const node = make('section', 'card shine deck-desk-slide' + (one.busy ? ' desk-working'
+      : ''));
+    h.add(node, make('h3', 'card-title', 'Slide ' + one.number + kind),
+      h.add(make('div', 'deck-desk-picture'), one.image ? h.picture(one.image,
+        h.slideName({ number: one.number, title: words.title }), run.desk.expected)
+        : make('p', 'quiet', 'There is no picture of this slide on this computer yet.')),
+      wordsPart(words),
+      one.notes ? h.add(make('p', 'quiet'), make('strong', '', 'Speaker notes: '), one.notes)
+        : null,
+      h.list(one.findings).length ? h.findingItems(one.findings) : null,
+      h.list(one.audit).length ? auditPart(one.audit) : null,
+      one.busy ? h.add(make('p', 'desk-working-note'), h.state('current', 'Redrawing…'))
+        : null,
+      one.note ? noteSaid(one.note) : null);
+    if (!one.lead && can) h.add(node, ...noteBox(run, one));
+    return node;
+  }
+
+  // A slide's words, as the outline has them. They are read here, and edited on the Outline
+  // tab.
+  function wordsPart(words) {
+    const points = h.list(words.points).filter((point) => point && (point.label || point.text));
+    return h.add(make('div', 'deck-desk-words'),
+      words.title ? h.add(make('p', ''), make('strong', '', words.title)) : null,
+      words.subtitle ? make('p', '', words.subtitle) : null,
+      words.detail ? make('p', '', words.detail) : null,
+      points.length ? h.bullets(points.map((point) => (point.label && point.text
+        ? point.label + ': ' + point.text : point.label || point.text)), 'outline-points') : null,
+      words.caveat ? make('p', 'quiet', words.caveat) : null,
+      words.source ? make('p', 'quiet', 'Source: ' + words.source) : null);
+  }
+
+  // The brand check on this slide: what blocks delivery first, then what it warns of.
+  function auditPart(audit) {
+    const ordered = audit.slice().sort((one, other) => (one.kind === 'error' ? 0 : 1)
+      - (other.kind === 'error' ? 0 : 1));
+    const items = make('ul', 'plain');
+    for (const one of ordered) {
+      h.add(items, h.add(make('li'), one.kind === 'error'
+        ? h.state('late', 'The brand check: ' + one.says + ' It blocks delivery.')
+        : h.state('none', 'The brand check: ' + one.says)));
+    }
+    return items;
+  }
+
+  function noteSaid(note) {
+    if (note.says) return make('p', 'quiet', note.says);
+    const said = NOTE_SAYS[note.status];
+    if (!said) return null;
+    return make('p', 'quiet', note.status === 'set aside' ? said
+      : said + '“' + String(note.note || '') + '”' + (note.whole ? ' (for the whole deck)' : ''));
+  }
+
+  // The note box of a content slide: Redraw slide N, its price under it, and where words
+  // change.
+  function noteBox(run, one) {
+    const path = h.view.path;
+    const key = path + '\n' + one.number;
+    const kept = held.notes[key] || (held.notes[key] = { note: '' });
+    const id = 'desk-note-' + one.number;
+    const box = noteField(id, 'How should this slide change?', kept, 'Slide ' + one.number);
+    const input = box.querySelector('textarea');
+    const go = h.capsule('Redraw slide ' + one.number, '', async () => {
+      const note = kept.note.trim();
+      if (!note) {
+        h.refuse(id, NO_NOTE);
+        input.focus();
+        return;
+      }
+      const done = await act('desk-note', { path, number: one.number, note,
+        expected: run.desk.expected }, go, 'Slide ' + one.number + ' is being redrawn. Every '
+        + 'other part of the deck stays exactly as it is.', h.byId(id + '-problem'));
+      if (!done) return;
+      kept.note = '';
+      input.value = '';
+    }, 'desk-redraw ' + one.number);
+    input.disabled = Boolean(one.busy);
+    go.disabled = Boolean(one.busy);
+    return [box, bar(go), one.price ? make('p', 'quiet', one.price) : null,
+      make('p', 'quiet', WORDS_LINE)];
+  }
+
+  // --- the Outline tab ----------------------------------------------------------------------
+
+  function outlineParts(run, can, working) {
+    const outline = run.desk.outline;
+    if (!outline) return [];
+    return [
+      ['outline', [outline.expected, outline.slides, outline.editable, can, working],
+        () => outlinePart(run, can && outline.editable)],
+      outline.reading ? ['reading', [outline.reading, can, working],
+        () => readingPart(run, can, working)] : null,
+      outline.look ? ['look', [outline.look, can, working], () => lookPart(run, can, working)]
+        : null,
+    ];
+  }
+
+  // What is being edited on the Outline tab, for the outline it was read from.
+  function outlineEdit(outline) {
+    const path = h.view.path;
+    let edit = held.outlines[path];
+    if (!edit || edit.base !== outline.expected) {
+      edit = { base: outline.expected, work: JSON.parse(JSON.stringify(h.list(outline.slides))),
+        priced: '', says: '', asking: '' };
+      held.outlines[path] = edit;
+    }
+    return edit;
+  }
+
+  function outlinePart(run, editable) {
+    const outline = run.desk.outline;
+    const path = h.view.path;
+    const edit = outlineEdit(outline);
+    const node = h.card('The outline');
+    const rows = make('ol', 'plain deck-desk-outline');
+    rows.id = 'desk-outline';
+    const said = make('p', 'quiet');
+    said.setAttribute('role', 'status');
+    const save = h.capsule('Save', '', () => saveOutline(), 'desk-outline-save');
+    const back = h.capsule('Put it back as it was', 'quiet', () => {
+      edit.work = JSON.parse(JSON.stringify(h.list(outline.slides)));
+      edit.priced = '';
+      edit.says = '';
+      edit.asking = '';
+      paint();
+      h.focusKey('desk-outline-save');
+    }, 'desk-outline-back');
+    const now = () => JSON.stringify(edit.work);
+    const edited = () => now() !== JSON.stringify(h.list(outline.slides));
+    const tell = () => {
+      const changed = edited();
+      said.textContent = !changed ? 'Saving redraws only the sections whose slides change.'
+        : edit.priced === now() ? edit.says : 'Its price is worked out when you leave the box.';
+      save.disabled = !changed || edit.priced !== now();
+      back.hidden = !changed;
+    };
+    // What saving would redraw is asked of the server before Save sends anything.
+    const price = async () => {
+      if (!edited()) {
+        tell();
+        return;
+      }
+      const asked = now();
+      edit.asking = asked;
+      said.textContent = 'Working out what saving redraws…';
+      save.disabled = true;
+      try {
+        const found = await h.send('desk-outline-price', { path, slides: JSON.parse(asked) });
+        if (edit.asking !== asked) return;
+        edit.priced = asked;
+        edit.says = found.says;
+      } catch (failure) {
+        if (edit.asking !== asked) return;
+        edit.priced = '';
+        said.textContent = failure.message;
+        return;
+      }
+      tell();
+    };
+    const saveOutline = async () => {
+      if (edit.priced !== now()) {
+        await price();
+        return;
+      }
+      const done = await act('desk-outline', { path, slides: JSON.parse(now()),
+        expected: outline.expected }, save, 'Saved. Only the sections whose slides changed are '
+        + 'redrawn.', said);
+      if (done) delete held.outlines[path];
+    };
+    const paint = () => {
+      rows.replaceChildren(...edit.work.map((one, index) => outlineRow(edit, one, index,
+        editable, { typed: tell, changed: price, moved: () => {
+          paint();
+          price();
+        } })));
+      tell();
+    };
+    paint();
+    h.add(node, make('p', '', 'Each slide’s words, in order. Saving redraws only the sections '
+      + 'whose slides changed; the rest stay as they are drawn.'), rows);
+    if (editable) h.add(node, said, bar(save, back));
+    return node;
+  }
+
+  function outlineRow(edit, one, index, editable, on) {
+    const title = one.title || 'Untitled slide';
+    const node = make('li', 'outline-slide');
+    h.add(node, make('p', 'outline-top', 'Slide ' + (index + 1)
+      + (one.kind ? ' · ' + h.capital(h.spoken(one.kind)) : '')));
+    if (editable) {
+      h.add(node, h.field('desk-outline-title-' + index, 'Title of slide ' + (index + 1), one,
+        'title', { limit: 300, typed: on.typed, changed: on.changed }));
+    } else {
+      h.add(node, make('p', 'outline-title', title));
+    }
+    h.add(node, wordsPart({ subtitle: one.subtitle, detail: one.detail, points: one.points,
+      caveat: one.caveat, source: one.source }));
+    if (!editable) return node;
+    const move = (by) => () => {
+      const [taken] = edit.work.splice(index, 1);
+      edit.work.splice(index + by, 0, taken);
+      on.moved();
+      h.focusKey('desk-outline ' + (by < 0 ? 'up ' : 'down ') + taken.id);
+    };
+    const up = h.button('Move up', 'menu-item', move(-1), 'desk-outline up ' + one.id);
+    const down = h.button('Move down', 'menu-item', move(1), 'desk-outline down ' + one.id);
+    const remove = h.button('Remove', 'menu-item', () => {
+      edit.work.splice(index, 1);
+      on.moved();
+      h.focusKey('desk-outline-save');
+    }, 'desk-outline remove ' + one.id);
+    up.setAttribute('aria-label', 'Move up: “' + title + '”');
+    down.setAttribute('aria-label', 'Move down: “' + title + '”');
+    remove.setAttribute('aria-label', 'Remove “' + title + '”');
+    up.disabled = index === 0;
+    down.disabled = index === edit.work.length - 1;
+    remove.disabled = edit.work.length < 2;
+    return h.add(node, bar(h.moreMenu('More for “' + title + '”', [up, down, remove],
+      'desk-outline-more ' + one.id)));
+  }
+
+  // How a document is read, and the way to read it the other way, at its price.
+  function readingPart(run, can, working) {
+    const reading = run.desk.outline.reading;
+    const path = h.view.path;
+    const other = reading.kind === 'spec' ? 'material' : 'spec';
+    const node = h.card('How your document is read');
+    h.add(node, make('p', '', READ_AS[reading.kind] || ''));
+    if (!can) return node;
+    const go = h.capsule('Read it the other way', '', () => act('desk-reread', { path,
+      kind: other }, go, 'Your document is read again, ' + h.lower(READ_AS[other])), 'desk-reread');
+    go.disabled = working;
+    return h.add(node, bar(go), reading.price ? make('p', 'quiet', reading.price) : null);
+  }
+
+  // The look the deck is drawn in, and the way to change it, at its price.
+  function lookPart(run, can, working) {
+    const look = run.desk.outline.look;
+    const path = h.view.path;
+    const node = h.card('The look');
+    h.add(node, make('p', '', look.name ? 'Drawn in ' + look.name + '.'
+      : 'Drawn in the brand’s default look.'));
+    if (!can) return node;
+    const go = h.capsule('Change the look', '', () => act('desk-look-again', { path }, go,
+      'The looks are being drawn again. Pick one when they are ready.'), 'desk-look-again');
+    go.disabled = working;
+    return h.add(node, make('p', 'quiet', 'The brand draws its looks again, you pick one, and '
+      + 'every section is drawn again in it.'), bar(go),
+    look.price ? make('p', 'quiet', look.price) : null);
+  }
+
+  // --- Deliver ------------------------------------------------------------------------------
+  // Deliver opens a sheet that says whether the deck was reviewed, lists each blocker the
+  // brand check found with its slide, and is confirmed there. It is bound to the deck on
+  // screen and to the blockers the sheet listed.
+
+  function deliverSheet() {
+    const run = h.view.run;
+    const found = run.desk;
+    const blockers = h.list(found.blockers);
+    const form = make('form', 'create-flow');
+    form.noValidate = true;
+    const problem = h.problemLine();
+    const go = h.submitButton(blockers.length ? 'Deliver anyway' : 'Deliver', 'deliver-confirm');
+    const cancel = h.capsule('Cancel', 'quiet', h.closeSheet, 'cancel');
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      deliver(run, blockers, go, problem);
+    });
+    const google = run.output === 'google';
+    h.add(form,
+      make('p', '', found.reviewed ? 'This deck was reviewed.' : 'This deck has not been '
+        + 'reviewed. Its brand check ran; no review of the deck did.'),
+      blockers.length ? make('p', '', 'The brand check found ' + h.count(blockers.length,
+        'problem that blocks', 'problems that block') + ' delivery. Deliver anyway, or fix '
+        + 'them first.') : make('p', '', 'The brand check found nothing that blocks delivery.'),
+      blockers.length ? h.bullets(blockers.map((one) => 'Slide ' + one.number + ': '
+        + one.says)) : null,
+      make('p', 'quiet', google && h.googleReady() ? 'It goes to Google Slides.'
+        : google ? 'Google is not connected on this computer, so delivering makes a '
+          + 'PowerPoint file. Send it to Google Slides once you are signed in.'
+          : 'It is made a PowerPoint file, to download from here.'),
+      problem, h.add(make('div', 'bar create-foot'), go, cancel));
+    return [h.add(make('div', 'sheet-heading'), h.sheetTitle('Deliver the deck')), form];
+  }
+
+  async function deliver(run, blockers, pressed, problem) {
+    if (h.view.busy) return;
+    const path = run.path || h.view.path;
+    const body = { path, expected: run.desk.expected };
+    if (blockers.length) body.blockers_seen = run.desk.blockers_seen;
+    h.view.busy = true;
+    pressed.disabled = true;
+    h.say(problem, '');
+    let found;
+    try {
+      found = await h.send('desk-deliver', body);
+    } catch (failure) {
+      h.view.busy = false;
+      pressed.disabled = false;
+      h.say(problem, failure.message + ' Nothing was delivered.');
+      return;
+    }
+    h.view.busy = false;
+    h.view.sheet = '';
+    h.drawSheet();
+    h.toast('Delivered.');
+    if (h.view.screen === 'deck' && h.view.path === path) {
+      h.view.run = found;
+      h.view.barred = '';
+      h.paintDeck(false);
+    }
+    h.refresh();
+  }
+
+  window.deckDesk = { init, opens, start, progress, desk, deliverSheet };
   // The page waits for this script before it begins; it begins now.
   if (typeof window.deckDeskWaits === 'function') window.deckDeskWaits();
 }());
