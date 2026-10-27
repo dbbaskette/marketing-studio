@@ -1523,6 +1523,7 @@ function drawSheet() {
     || (view.sheet === 'new' && view.draft) || (view.sheet === 'picture' && view.picture)
     || ['delete', 'bulk-delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
       'update-research', 'stop-run'].includes(view.sheet)
+    || (DESK_SHEETS.includes(view.sheet) && view.run)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
@@ -1548,6 +1549,7 @@ function drawSheet() {
   else if (view.sheet === 'update-research') body = updateResearchSheet();
   else if (view.sheet === 'stop-run') body = stopSheet();
   else if (view.sheet === 'approve-combined') body = combinedConfirm();
+  else if (DESK_SHEETS.includes(view.sheet)) body = deskSheet(view.sheet);
   else if (TEAM_SHEETS.includes(view.sheet)) body = teamSheet(view.sheet);
   else if (FORMS[view.sheet]) body = noteSheet(view.sheet);
   else body = confirmSheet(view.sheet);
@@ -4568,15 +4570,18 @@ function researchProblem(draft) {
 }
 
 // Research from: your documents, your sites and the public web, each on or off. Your sites
-// open into the list, a chip a site, and a box to add one for this training only.
-function researchFields(draft, changed) {
+// open into the list, a chip a site, and a box to add one for this training only. `held`
+// names what is chosen elsewhere and not ticked here: the desk start's documents are the
+// files added above it.
+function researchFields(draft, changed, held) {
   const research = draft.research;
   const node = make('div', 'fields');
+  const offered = RESEARCH_FROM.filter(([id]) => !list(held).includes(id));
   const fill = () => {
     const ticked = research.listed.filter((site) => research.picked.includes(site)).length;
     const row = add(make('fieldset', 'research-choices'), make('legend', 'field-label',
       'Research from'));
-    for (const [id, label] of RESEARCH_FROM) {
+    for (const [id, label] of offered) {
       const words = id === 'sites' ? label + ' (' + ticked + ')' : label;
       row.append(window.StudioLists.tick({ id: 'research-' + id, label: words,
         on: research[id], flip: (on) => {
@@ -4587,7 +4592,7 @@ function researchFields(draft, changed) {
           changed();
         } }));
     }
-    const means = bullets(RESEARCH_FROM.filter(([id]) => research[id])
+    const means = bullets(offered.filter(([id]) => research[id])
       .map(([id]) => RESEARCH_SAYS[id === 'sites' && research.web ? 'sitesAndWeb' : id]),
     'reasons meanings');
     node.replaceChildren();
@@ -4772,6 +4777,9 @@ function materialChoices(draft) {
   return node;
 }
 
+// The desk start's second step: what is made, at which levels. The deck's brand and the
+// copies are settings, asked in the third step (brandOption, copiesOption); a change to the
+// deck is said to them through retell().
 function shapeStep(draft) {
   const toggle = (held) => (value, on) => {
     draft[held] = draft[held].filter((other) => other !== value);
@@ -4780,11 +4788,6 @@ function shapeStep(draft) {
   };
   settleDeck(draft);
   const able = brandsFound().length > 0;
-  const found = (view.setup && view.setup.brand) || {};
-  const brand = able ? trainingOptions('Deck brand', 'deck-brand', brandFields(draft))
-    : make('p', 'quiet', 'A deck needs a brand skill. You can make the other materials now; '
-      + 'Status explains what this computer needs for slides.');
-  brand.hidden = able && DECKS[draft.deck][0] === null;
   // Asked once a training: a talk is presented live, a handout is read on its own.
   const used = choice('How is this deck used?', DELIVERIES.map((kind) => kind[1]),
     draft.delivery || 0, (index) => { draft.delivery = index; }, 'delivery',
@@ -4801,7 +4804,6 @@ function shapeStep(draft) {
   walk.hidden = used.hidden;
   const deck = choice('The slide deck', DECKS.map((kind) => kind[1]), draft.deck, (index) => {
     draft.deck = index;
-    brand.hidden = DECKS[index][0] === null;
     used.hidden = !able || DECKS[index][0] === null;
     walk.hidden = used.hidden;
     retell();
@@ -4812,34 +4814,52 @@ function shapeStep(draft) {
   }
   return [
     make('p', 'quiet', 'Choose only what you need. Research and a blueprint connect every selected material.'),
-    materialChoices(draft),
     chips('Levels', LEVELS.map((level) => [level, level]),
       (level) => draft.levels.includes(level), toggle('levels'), 'level',
       '101 introduces the subject; 201 applies it; 301 handles trade-offs; 401 explores advanced cases. '
         + 'Each selected level gets its own materials, and its own cost. Choose none for one training without levels.'),
-    deck, used, walk, brand,
-    field('new-time', 'How long it should take (optional)', draft, 'time',
-      { typed: retell, hint: 'The learner’s time, including examples and practice: “30 minutes” or “a half-day workshop”.' }),
+    materialChoices(draft),
+    chips('Practice', [['yoodli', 'Make scenarios for Yoodli']], () => draft.yoodli,
+      (value, on) => {
+        if (on && !['brief', 'scenario'].every((id) => draft.materials.includes(id))) {
+          const control = Array.from(byId('sheet').querySelectorAll('.chip')).find((node) => node.dataset.key === 'practice yoodli');
+          if (control) control.setAttribute('aria-pressed', 'false');
+          say(byId('new-problem'), 'Select Reference brief and Practice scenarios first. Yoodli uses both.');
+          draft.yoodli = false;
+          return;
+        }
+        draft.yoodli = on;
+        say(byId('new-problem'), '');
+        retell();
+      }, 'practice', 'Prepares Yoodli scenarios to copy into Yoodli and a reference brief to '
+        + 'upload. It needs the Reference brief and Practice scenarios. Nothing is posted to '
+        + 'Yoodli.'),
+    deck,
+    able ? null : make('p', 'quiet', 'A deck needs a brand skill. You can make the other '
+      + 'materials now; Status explains what this computer needs for slides.'),
+    used, walk,
     trainingOptions('About the reference brief', 'training-depth',
       choice('What the brief is about', ['One product or technology', 'A comparison'],
-        draft.brief, (index) => { draft.brief = index; }, 'brief')),
-    trainingOptions('Extra copies and Yoodli', 'training-copies',
-      chips('Keep a copy of each selected guide and brief', COPIES,
-        (kind) => draft.copies.includes(kind), toggle('copies'), 'copy',
-        'Optional. Original files are kept locally. Google copies require Google access.'),
-      chips('Practice', [['yoodli', 'Make scenarios for Yoodli']], () => draft.yoodli,
-        (value, on) => {
-          if (on && !['brief', 'scenario'].every((id) => draft.materials.includes(id))) {
-            const control = Array.from(byId('sheet').querySelectorAll('.chip')).find((node) => node.dataset.key === 'practice yoodli');
-            if (control) control.setAttribute('aria-pressed', 'false');
-            say(byId('new-problem'), 'Select Reference brief and Practice scenarios first. Yoodli uses both.');
-            draft.yoodli = false;
-            return;
-          }
-          draft.yoodli = on;
-          say(byId('new-problem'), '');
-          retell();
-        }, 'practice', 'Prepares Yoodli scenarios to copy into Yoodli and a reference brief to upload. Nothing is posted to Yoodli.'))];
+        draft.brief, (index) => { draft.brief = index; }, 'brief'))].filter(Boolean);
+}
+
+// The deck's brand, under the start's settings. It shows only while a deck is chosen.
+function brandOption(draft) {
+  if (!brandsFound().length) return null;
+  const node = trainingOptions('Deck brand', 'deck-brand', brandFields(draft));
+  node.hidden = DECKS[draft.deck][0] === null;
+  return node;
+}
+
+// The copies kept of each guide and brief, under the start's settings.
+function copiesOption(draft) {
+  return trainingOptions('Copies of the guide and brief', 'training-copies',
+    chips('Keep a copy of each selected guide and brief', COPIES,
+      (kind) => draft.copies.includes(kind), (value, on) => {
+        draft.copies = draft.copies.filter((other) => other !== value);
+        if (on) draft.copies.push(value);
+      }, 'copy',
+      'Optional. Original files are kept locally. Google copies require Google access.'));
 }
 
 // Where this one training stops for you. The shared level is its default; a level picked
@@ -4963,30 +4983,10 @@ function startStep(draft) {
   };
 }
 
-// The new-training sheet: four numbered steps in the order they are filled in, what it
-// will do, then Start the training and Cancel together. Enter in a box starts it, as the
-// filled button does, after every step is checked.
+// The new-training sheet: the desk's start, in drafts.js's three numbered steps, then Start
+// and Cancel together. Every new training is started on the desk.
 function newSheet() {
-  const draft = view.draft;
-  const problem = alertLine('new-problem');
-  if (draft.start_problem) say(problem, draft.start_problem);
-  const go = submitButton('Start the training', 'continue');
-  const last = startStep(draft);
-  const form = make('form', 'create-flow');
-  form.noValidate = true;
-  form.addEventListener('submit', (event) => {
-    event.preventDefault();
-    startTraining(go);
-  });
-  add(form,
-    createStep(1, STEPS[0], ...topicStep(draft)),
-    createStep(2, STEPS[1], ...shapeStep(draft)),
-    createStep(3, STEPS[2], ...last.research),
-    createStep(4, STEPS[3], ...last.stops),
-    last.ready,
-    problem,
-    add(make('div', 'bar create-foot'), go, capsule('Cancel', 'quiet', closeSheet, 'cancel')));
-  return [add(make('div', 'sheet-heading'), sheetTitle('New training')), form];
+  return deskStart();
 }
 
 // The sheet drawn again in place, from the draft: what was open stays open.
@@ -5052,77 +5052,10 @@ function startReady(draft) {
   return true;
 }
 
-async function startTraining(pressed) {
-  const draft = view.draft;
-  if (draft.starting) return;
-  const turn = view.turn;
-  const problem = byId('new-problem');
-  draft.start_problem = '';
-  say(problem, '');
-  if (!startReady(draft)) return;
-  // Somewhere research may look, or it does not start; the runner refuses the same.
-  const nowhere = researchProblem(draft);
-  if (nowhere) {
-    say(problem, nowhere);
-    focusKey(draft.research.sites ? 'research-sites' : 'research-web');
-    return;
-  }
-  const asked = questionsProblem(draft.researchQuestions);
-  if (asked) {
-    say(problem, asked);
-    refuse('research-questions', asked).focus();
-    return;
-  }
-  const deck = DECKS[settleDeck(draft).deck][0];
-  const body = {
-    title: draft.title.trim(), topic: draft.topic.trim(), audience: draft.audience.trim(),
-    purpose: PURPOSES[draft.purpose],
-    levels: LEVELS.filter((level) => draft.levels.includes(level)),
-    brief_kind: draft.brief ? 'competitive' : 'product',
-    time_limit: draft.time.trim() || null,
-    research_from: researchChoice(draft),
-    research_questions: (draft.researchQuestions || '').split('\n'),
-    deck_target: deck,
-    brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
-    ...(deck ? { delivery: DELIVERIES[draft.delivery || 0][0],
-      walkthrough: Boolean(draft.walkthrough) } : {}),
-    copies: COPIES.map((kind) => kind[0]).filter((kind) => draft.copies.includes(kind)),
-    yoodli: draft.yoodli, materials: draft.materials,
-    agent: draft.agent, model: draft.model.trim() || null, effort: draft.effort || null,
-  };
-  body.review_level = draft.review_level;
-  if (draft.review_seen) body.review_seen = draft.review_seen;
-  if (draft.review_default) body.review_default = true;
-  draft.starting = true;
-  pressed.disabled = true;
-  const form = byId('sheet').querySelector('form');
-  if (form) form.inert = true;
-  say(problem, '');
-  let started;
-  try {
-    started = await send('trainings', body);
-  } catch (failure) {
-    draft.starting = false;
-    if (turn !== view.turn || view.draft !== draft) return;
-    draft.start_problem = failure.message + (failure.kind === 'stopped' ? ''
-      : ' Nothing was started.') + ' Your answers are still here.';
-    // A shared preference may have changed. Reload it before another start, keeping
-    // every answer and making the updated review policy visible in the summary.
-    const setup = await ask('setup').catch(() => null);
-    if (turn !== view.turn || view.draft !== draft) return;
-    if (setup) view.setup = setup;
-    paintNew();
-    focusKey('continue');
-    return;
-  }
-  if (view.draft === draft) view.draft = null;
-  view.sheet = '';
-  if (turn !== view.turn) { refresh(); return; }
-  view.promised = { path: started.path, gates: Number(started.gates) || 0 };
-  toast(!body.research_from.documents ? 'Started. It is working on its own now.'
-    : 'Started. It waits for your documents first.');
-  show('run', { path: started.path }, true);
-  refresh();
+// Start: drafts.js makes the training on the desk, adds the documents held in the sheet, and
+// opens the desk.
+function startTraining(pressed) {
+  return startOnDesk(pressed);
 }
 
 // --- a run -------------------------------------------------------------------------
@@ -6873,6 +6806,11 @@ function combinedReview(run, leads) {
 
 function paintRun(fresh) {
   const run = view.run;
+  // A training started on the desk is drawn by drafts.js. Every other run keeps this screen.
+  if (onTheDesk(run)) {
+    paintDesk(fresh);
+    return;
+  }
   const training = view.training
     || list(view.listing).find((found) => found.path === view.path) || {};
   const title = training.title || 'Untitled';
@@ -6992,6 +6930,12 @@ async function drawRun(fresh) {
     if (training) {
       view.training = training;
       view.recorded = record;
+    }
+    // A training started on the desk opens on its desk, which drafts.js reads and draws.
+    if (onTheDesk(run)) {
+      await drawDesk(first);
+      if (first && turn === view.turn) later();
+      return;
     }
     // Someone is in the middle of leaving the deck out. The run waits until they are done.
     if (!view.busy && !view.sheet) paintRun(first);

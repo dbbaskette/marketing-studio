@@ -46,6 +46,12 @@ class SharedLinkTests(unittest.TestCase):
         self.assertTrue(packaging.shared_link(self.link('style.css', 'style.css')))
         self.assertTrue(packaging.shared_link(self.link('markdown.js', 'markdown.js')))
 
+    def test_training_studio_s_desk_links_the_kit(self):
+        repository = Path(__file__).resolve().parents[1]
+        link = repository / 'studios/training/skills/training-studio/scripts/desk/drafting.js'
+        self.assertTrue(link.is_symlink())
+        self.assertTrue(packaging.shared_link(link))
+
     def test_a_package_walk_carries_the_kit_as_a_file(self):
         self.link('drafting.js', 'drafting.js')
         found = packaging.files(self.assets)

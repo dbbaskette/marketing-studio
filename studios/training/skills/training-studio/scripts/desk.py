@@ -33,6 +33,8 @@ PAGE = {
     '/index.html': ('index.html', 'text/html; charset=utf-8'),
     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
     '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8'),
+    '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8'),
+    '/drafts.js': ('drafts.js', 'text/javascript; charset=utf-8'),
     '/style.css': ('style.css', 'text/css; charset=utf-8'),
 }
 STATUSES = ('approved', 'draft', 'stale', 'not-started', 'skipped', 'unavailable')
