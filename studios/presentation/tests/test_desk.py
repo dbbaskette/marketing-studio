@@ -1992,7 +1992,8 @@ class ScreenTests(ScriptedPage, PageCase):
                                   'GET /api/published': [ok(self.get('published'))]})
         result = self.run_page(answers, [
             {'click': 'Decks'}, {'snapshot': 'decks'},
-            {'fill': 'Find a deck', 'value': 'capacity', 'stay': True}, {'snapshot': 'found'},
+            {'fill': 'Search', 'value': 'capacity', 'stay': True}, {'click': 'Search'},
+            {'snapshot': 'found'},
             {'click': 'Published'}, {'snapshot': 'published'},
             {'click': 'Status'}, {'snapshot': 'status'},
             {'click': 'Settings'}, {'snapshot': 'settings'}])

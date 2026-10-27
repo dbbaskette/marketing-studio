@@ -287,8 +287,13 @@ const view = {
   notifying: false, unnotified: '', downloading: false, delivering: false,
   // The refresh in hand, and whether another was asked for while it was.
   refreshing: null, again: false,
-  // What the decks screen is narrowed to.
-  search: { text: '' },
+  // What each list is narrowed to, and whether its filters are open on a phone.
+  filters: { decks: { text: '', stands: '', began: '', open: false },
+    published: { text: '', delivered: '', by: '', open: false } },
+  // The decks ticked on Decks, by path. Ticks stay while the filters change.
+  ticked: { decks: new Set() },
+  // Several ticked decks to delete: each with what the runner said deleting it would do.
+  bulk: null,
 };
 // Each part of a screen that is drawn in parts, and what it was drawn from.
 const PARTS = new WeakMap();
@@ -1113,7 +1118,7 @@ function setTitle(name) {
 
 // Everything a list screen is drawn from. When none of it has changed, nothing is redrawn.
 function signature() {
-  return JSON.stringify([view.decks, view.search, ...around()]);
+  return JSON.stringify([view.decks, view.filters, [...view.ticked.decks], ...around()]);
 }
 
 // What a list screen's parts are drawn from, apart from the decks themselves.
@@ -1233,6 +1238,7 @@ function closeSheet() {
   view.sheet = '';
   view.doomed = null;
   view.leaving = null;
+  view.bulk = null;
   drawSheet();
   if (view.screen === 'deck' && view.run) paintDeck(false);
   if (!focusKey(opener)) byId('title').focus({ preventScroll: true });
@@ -1328,7 +1334,8 @@ function noteSheet(kind) {
 function drawSheet() {
   const holder = byId('sheet');
   const shown = Boolean(view.sheet && (view.run || ['companions', 'upgrade', 'brand', 'bring']
-    .includes(view.sheet) || (view.sheet === 'delete' && view.doomed)));
+    .includes(view.sheet) || (view.sheet === 'delete' && view.doomed)
+    || (view.sheet === 'bulk-delete' && view.bulk)));
   holder.hidden = !shown;
   // While a sheet is open it holds the one filled button, so the toolbar's are put away.
   byId('actions').hidden = Boolean(shown);
@@ -1341,6 +1348,7 @@ function drawSheet() {
   }
   let body;
   if (view.sheet === 'delete') body = deleteSheet();
+  else if (view.sheet === 'bulk-delete') body = bulkDeleteSheet();
   else if (view.sheet === 'companions') body = updateSheet();
   else if (view.sheet === 'upgrade') body = upgradeSheet();
   else if (view.sheet === 'brand') body = brandSheet();
@@ -1534,13 +1542,29 @@ function drawHome(fresh) {
 }
 
 // --- decks ------------------------------------------------------------------------
-// Every deck in the workspace, narrowed by what is typed in the search box.
+// Every deck in the workspace, narrowed by the filter row, each one that may be deleted with
+// a tick, and what is ticked deleted together from the selection bar.
+
+const DELIVERED = [['', 'Any'], ['yes', 'Delivered'], ['no', 'Not delivered yet']];
+const STANDS = [['', 'Any'], ['needs', 'Needs you'], ['working', 'In progress'],
+  ['finished', 'Finished'], ['elsewhere', 'Run by your teammates']];
+const BEGAN = [['', 'Any'], ['scratch', 'From scratch'], ['document', 'From a document'],
+  ['existing', 'From an existing deck']];
 
 function deckCard(brief) {
   const node = make('li', 'card shine' + (brief.state === 'working' && !elsewhere(brief)
     ? ' working' : ''));
   const title = brief.title || 'Untitled';
-  add(node, make('h2', 'row-title', title));
+  const ticked = view.ticked.decks;
+  if (deletable(brief)) {
+    add(node, StudioLists.tick({ id: 'tick-' + (brief.id || brief.path), label: 'Select ' + title,
+      on: ticked.has(brief.path), flip: (on) => {
+        if (on) ticked.add(brief.path);
+        else ticked.delete(brief.path);
+        draw(false);
+      } }));
+  }
+  add(node, make('h2', 'card-title', title));
   const route = routeWords(brief);
   if (route) add(node, make('p', 'quiet', route));
   add(node, state(...standingOf(brief)), make('p', 'row-says', brief.sentence || ''),
@@ -1551,31 +1575,74 @@ function deckCard(brief) {
   return add(node, add(make('div', 'bar'), go, deleteButton(brief)));
 }
 
+// Every deck with where it stands: the list of the runner's it is in.
+function listed() {
+  const found = view.decks || {};
+  return ['needs', 'working', 'finished', 'elsewhere']
+    .flatMap((kind) => list(found[kind]).map((brief) => [brief, kind]));
+}
+
 function matching() {
-  const words = view.search.text.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  return every().filter((brief) => {
+  const held = view.filters.decks;
+  const words = held.text.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  return listed().filter(([brief, kind]) => {
+    if (held.stands && kind !== held.stands) return false;
+    if (held.began && brief.route !== held.began) return false;
     const said = [brief.title, routeWords(brief), brief.sentence,
-      brief.driver && brief.driver.name].join(' ').toLowerCase();
+      ...standingOf(brief).slice(1), brief.driver && brief.driver.name].join(' ').toLowerCase();
     return words.every((word) => said.includes(word));
-  });
+  }).map(([brief]) => brief);
+}
+
+function decksFilters() {
+  const held = view.filters.decks;
+  return StudioLists.filterRow({ key: 'decks',
+    search: { id: 'text', label: 'Search', value: held.text,
+      hint: 'By its title, how it began, where it stands or who runs it.' },
+    choices: [{ id: 'stands', label: 'Where it stands', options: STANDS, value: held.stands },
+      { id: 'began', label: 'How it began', options: BEGAN, value: held.began }],
+    open: held.open,
+    changed: (name, value) => { held[name] = value; draw(false); },
+    searched: (text) => { held.text = text; draw(false); },
+    toggled: (open) => { held.open = open; } });
 }
 
 function drawDecks(fresh) {
   const all = every();
   const shown = matching();
-  const parts = [];
+  const ticked = view.ticked.decks;
+  // A tick on a deck that has gone, or may no longer be deleted, goes with it.
+  const may = new Set(all.filter(deletable).map((brief) => brief.path));
+  for (const path of [...ticked]) if (!may.has(path)) ticked.delete(path);
+  const offered = shown.filter(deletable).map((brief) => brief.path);
+  const held = view.filters.decks;
+  const tick = (on) => {
+    for (const path of offered) {
+      if (on) ticked.add(path);
+      else ticked.delete(path);
+    }
+    draw(false);
+  };
+  const parts = [['head', [], () => pageHead('Every deck in this workspace, to find, open or '
+    + 'delete.')]];
   if (!all.length) {
     parts.push(['invite', [], invitation]);
   } else {
-    parts.push(['search', [], () => add(make('div', 'narrow'),
-      field('decks-search', 'Find a deck', view.search, 'text', {
-        typed: () => draw(false),
-        hint: 'By its title, how it began, where it stands or who runs it.' }))]);
-    parts.push(['found', [shown.length, all.length], () => make('p', 'quiet',
-      shown.length === all.length ? count(all.length, 'deck', 'decks') + '.'
-        : shown.length + ' of ' + count(all.length, 'deck', 'decks') + ' match.')]);
+    parts.push(['filters', [held.text, held.stands, held.began, held.open], decksFilters]);
+    parts.push(['bar', [[...ticked], offered], () => StudioLists.selectionBar({
+      key: 'decks-selection', ticked, shown: offered, noun: ['deck', 'decks'],
+      actions: [{ label: 'Delete ' + count(ticked.size, 'deck', 'decks'), kind: 'danger',
+        key: 'bulk-delete', run: openBulkDelete }],
+      selectShown: () => tick(true), clear: () => { ticked.clear(); draw(false); } })]);
+    parts.push(['found', [shown.length, all.length, [...ticked], offered], () => add(
+      make('div', 'panel-heading'), make('p', 'quiet', shown.length === all.length
+        ? count(all.length, 'deck', 'decks') + '.'
+        : shown.length + ' of ' + count(all.length, 'deck', 'decks') + ' match.'),
+      offered.length ? StudioLists.selectPage({ id: 'decks-select-page', shown: offered,
+        ticked, flip: tick }) : null)]);
     parts.push(['grid', [], () => make('ul', 'grid'), (node) => fit(node,
-      shown.map((brief) => ['deck ' + brief.path, brief, () => deckCard(brief)]))]);
+      shown.map((brief) => ['deck ' + brief.path, [brief, ticked.has(brief.path)],
+        () => deckCard(brief)]))]);
   }
   placeParts({ title: 'Decks', actions: [newButton('filled'),
     capsule('Bring in a deck', 'quiet', openBring, 'bring'),
@@ -6294,6 +6361,82 @@ async function settleDelete(title, problem, pressed) {
   refresh();
 }
 
+// Several ticked decks: the sheet asks the runner what each would lose, one deck at a time,
+// before anything is sent, and lists each as it will go or, refused, as it stays.
+async function openBulkDelete() {
+  const turn = view.turn;
+  const items = every().filter((brief) => view.ticked.decks.has(brief.path))
+    .map((brief) => ({ path: brief.path, title: brief.title || 'Untitled', found: null }));
+  const bulk = { items, reading: true };
+  view.bulk = bulk;
+  openSheet('bulk-delete', 'bulk-delete')();
+  for (const item of items) {
+    try {
+      item.found = await ask('delete', { path: item.path });
+    } catch (failure) {
+      item.found = { may: false, why: failure.message };
+    }
+    if (turn !== view.turn || view.bulk !== bulk) return;
+  }
+  bulk.reading = false;
+  if (view.sheet !== 'bulk-delete') return;
+  drawSheet();
+  byId('sheet').focus();
+}
+
+function bulkDeleteSheet() {
+  const bulk = view.bulk;
+  const head = sheetTitle('Delete ' + count(bulk.items.length, 'deck', 'decks') + '?');
+  const cancel = capsule('Cancel', 'quiet', closeSheet, 'cancel');
+  if (bulk.reading) {
+    return [head, make('p', 'quiet', 'Reading what would go.'), add(make('div', 'bar'), cancel)];
+  }
+  const going = bulk.items.filter((item) => item.found && item.found.may);
+  const lines = bulk.items.map((item) => (item.found && item.found.may
+    ? item.title + ': its folder and what only this computer kept for it.'
+    : item.title + ': ' + ((item.found && item.found.why) || 'It cannot be deleted from here.')
+      + ' It stays.'));
+  const problem = problemLine();
+  const confirm = going.length ? capsule('Delete ' + count(going.length, 'deck', 'decks'),
+    'danger', () => settleBulkDelete(going, confirm), 'send') : null;
+  return [head, bullets(lines),
+    going.some((item) => item.found.stops) ? state('late', DELETE_STOPS) : null,
+    make('p', '', DELETE_UNDO), problem, add(make('div', 'bar'), confirm, cancel)]
+    .filter(Boolean);
+}
+
+// Each deck is deleted in turn with the runner's own delete. A refusal does not stop the
+// rest; the toast names each one that stayed, in the runner's words.
+async function settleBulkDelete(going, pressed) {
+  if (view.busy) return;
+  const turn = view.turn;
+  view.busy = true;
+  pressed.disabled = true;
+  const stayed = [];
+  let deleted = 0;
+  for (const item of going) {
+    try {
+      await send('delete', { path: item.path, title: item.title });
+      deleted += 1;
+      view.ticked.decks.delete(item.path);
+      for (const kind of Object.keys(view.decks || {})) {
+        view.decks[kind] = list(view.decks[kind]).filter((brief) => brief.path !== item.path);
+      }
+    } catch (failure) {
+      stayed.push(item.title + ': ' + failure.message);
+    }
+  }
+  view.busy = false;
+  if (turn !== view.turn) return;
+  view.sheet = '';
+  view.bulk = null;
+  toast(['Deleted ' + deleted + ' of ' + count(going.length, 'deck', 'decks') + '.', ...stayed]
+    .join(' '));
+  drawSheet();
+  draw(false);
+  refresh();
+}
+
 // --- with a team: every run at once ----------------------------------------------------
 
 async function readStatus() {
@@ -7017,10 +7160,10 @@ async function saveBrand(pressed) {
 // --- with a team: what is published ------------------------------------------------------
 // Each deck the workspace has published, at its latest revision.
 
+// A published deck as a row of the table: what it is, its revision, when and by whom, whether
+// it was delivered, and the one way to open it.
 function publishedRow(found) {
   const title = found.title || 'Untitled';
-  const facts = add(make('p', ''), 'Revision ' + found.revision + ', published ',
-    when(found.at), found.by ? ' by ' + found.by : '', '.');
   const go = capsule('Open', 'quiet', () => show('deck', { path: found.path }),
     'published ' + found.path);
   go.setAttribute('aria-label', 'Open ' + title);
@@ -7030,10 +7173,13 @@ function publishedRow(found) {
     + 'since revision ' + found.revision + ' was published, so what opens is the deck as it '
     + 'stands now, not as it was published. Publish it again to make that the next '
     + 'revision.') : null;
-  return add(make('li', 'row'), add(make('div', 'row-text'),
-    make('h3', 'row-title', title), facts,
-    found.ready ? state('done', 'Delivered when it was published')
-      : state('late', 'Not delivered yet when it was published'), moved), go);
+  const name = make('th');
+  name.scope = 'row';
+  add(name, make('span', 'row-title', title), moved);
+  return add(make('tr'), name, cell('Revision', String(found.revision)),
+    cell('Published', when(found.at), found.by ? ' by ' + found.by : ''),
+    cell('Delivered', found.ready ? state('done', 'Delivered')
+      : state('late', 'Not delivered yet')), cell('', go));
 }
 
 function paintPublished(fresh) {
@@ -7047,13 +7193,41 @@ function paintPublished(fresh) {
         'home')))], fresh);
     return;
   }
-  const items = make('ul', 'rows');
-  for (const entry of found) items.append(publishedRow(entry));
+  const held = view.filters.published;
+  const words = held.text.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = found.filter((entry) => (!held.delivered
+    || (held.delivered === 'yes') === Boolean(entry.ready))
+    && (!held.by || entry.by === held.by)
+    && words.every((word) => [entry.title, entry.by, 'revision ' + entry.revision].join(' ')
+      .toLowerCase().includes(word)));
+  const names = [...new Set(found.map((entry) => entry.by).filter(Boolean))].sort();
+  const again = () => paintPublished(false);
+  const row = StudioLists.filterRow({ key: 'published',
+    search: { id: 'text', label: 'Search', value: held.text,
+      hint: 'By its title or who published it.' },
+    choices: [{ id: 'delivered', label: 'Delivered', options: DELIVERED, value: held.delivered }],
+    more: names.length ? [{ id: 'by', label: 'Published by', value: held.by,
+      options: [['', 'Anyone'], ...names.map((who) => [who, who])] }] : [],
+    open: held.open,
+    changed: (name, value) => { held[name] = value; again(); },
+    searched: (text) => { held.text = text; again(); },
+    toggled: (open) => { held.open = open; } });
+  const table = make('table', 'table');
+  const head = make('tr');
+  for (const title of ['Deck', 'Revision', 'Published', 'Delivered', '']) {
+    const top = make('th', '', title);
+    top.scope = 'col';
+    if (!title) add(top, make('span', 'offscreen', 'Open'));
+    head.append(top);
+  }
+  const body = make('tbody');
+  for (const entry of shown) body.append(publishedRow(entry));
   place({ title: 'Published', back: true },
-    [make('p', 'intro lede', count(found.length, 'deck is', 'decks are')
-      + ' published in this workspace, each shown at its latest revision. A revision is '
-      + 'never moved once it is published.'),
-    add(card('Published decks'), items)], fresh);
+    [pageHead(count(found.length, 'deck is', 'decks are') + ' published in this workspace, '
+      + 'each at its latest revision.'), row,
+    shown.length ? add(make('section', 'card shine'), add(table, add(make('thead'), head), body))
+      : make('p', 'quiet', 'No published deck matches.'),
+    make('p', 'quiet', 'A revision is never moved once it is published.')], fresh);
 }
 
 async function drawPublished(fresh) {
