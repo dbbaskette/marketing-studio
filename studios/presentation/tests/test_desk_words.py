@@ -5,6 +5,7 @@ Every test runs the engine over the stand-ins, with scripted workers, a disposab
 folder, workspace and git identity. Nothing real is started.
 """
 import json
+import secrets
 import unittest
 from pathlib import Path
 
@@ -325,6 +326,102 @@ class SelectionTests(DeskCase):
         guidance = self.workers.jobs[-1][1].guidance
         self.assertTrue(guidance.startswith(briefs.read('words').splitlines()[0]), guidance[:80])
         self.assertIn('Say it as a promise.', job.task)
+
+
+class HistoryTests(DeskCase):
+    """Each slide's earlier words are kept for the team, and its drawings on this computer."""
+
+    SESSION = 'e' * 16
+
+    def deck(self) -> Path:
+        root = self.start_desk(look='default')
+        self.on_desk(root)
+        return root
+
+    def seen(self, root: Path) -> int:
+        return self.desk_view(root)['seen']
+
+    def retitle(self, root: Path, title: str, session=None) -> dict:
+        return self.engine.desk_words(root, 3, 'title', title, self.seen(root),
+                                      session or secrets.token_hex(8))
+
+    def test_a_word_edit_keeps_the_words_before_it_in_the_shared_folder(self):
+        root = self.deck()
+        self.retitle(root, 'Batches restart in turn')
+        relative = root.relative_to(self.space.repo).as_posix()
+        tracked = self.git('ls-files', relative).splitlines()
+        self.assertIn(f"{relative}/desk/versions/{SLIDE['id']}.jsonl", tracked)
+        drawings = root / 'work' / 'desk' / 'versions' / SLIDE['id']
+        self.assertTrue(list(drawings.glob('*.json')))
+        self.assertTrue(list(drawings.glob('*.png')))
+        self.assertFalse([name for name in tracked if '/work/' in name])
+        (kept,) = self.engine.desk_versions(root, SLIDE['id'])
+        self.assertEqual((kept['source'], kept['words']['title']), ('save', SLIDE['title']))
+        self.assertEqual(kept['picture']['kind'], 'version')
+
+    def test_saves_in_one_editing_session_keep_one_version(self):
+        root = self.deck()
+        self.retitle(root, 'Batches restart', self.SESSION)
+        self.retitle(root, 'Batches restart in turn', self.SESSION)
+        self.assertEqual(len(self.engine.desk_versions(root, SLIDE['id'])), 1)
+
+    def test_twenty_versions_are_kept(self):
+        root = self.deck()
+        for number in range(22):
+            self.retitle(root, f'Capacity holds, take {number}')
+        self.assertEqual(len(self.engine.desk_versions(root, SLIDE['id'])), 20)
+
+    def test_restore_with_the_drawing_needs_no_job(self):
+        root = self.deck()
+        self.retitle(root, 'Batches restart in turn')
+        kept = json.loads(next((root / 'work/desk/versions' / SLIDE['id']).glob('*.json'))
+                          .read_text())
+        jobs = len(self.workers.jobs)
+        self.engine.desk_restore(root, SLIDE['id'], 0, self.seen(root))
+        self.assertEqual(len(self.workers.jobs), jobs)
+        state = build.read_state(root)
+        drawn = json.loads((root / state['sections']['section-1']['file']).read_text())
+        self.assertEqual(next(one for one in drawn['slides'] if one['id'] == SLIDE['id']), kept)
+        outline = json.loads((root / 'outline.json').read_text())
+        self.assertEqual(outline['slides'][2]['title'], SLIDE['title'])
+        self.on_desk(root)
+
+    def test_restore_without_the_drawing_uses_the_word_chain(self):
+        import shutil
+        root = self.deck()
+        self.retitle(root, 'Batches restart in turn')
+        shutil.rmtree(root / 'work/desk/versions')
+        self.engine.desk_restore(root, SLIDE['id'], 0, self.seen(root))
+        outline = json.loads((root / 'outline.json').read_text())
+        self.assertEqual(outline['slides'][2]['title'], SLIDE['title'])
+        self.retitle(root, 'Batches restart in turn')
+        shutil.rmtree(root / 'work/desk/versions')
+        self.slides.run.fails['compose compile'] = TOO_LONG
+        shown = self.engine.desk_restore(root, SLIDE['id'], 0, self.seen(root))
+        self.slides.run.fails.pop('compose compile')
+        card = next(card for part in shown['desk']['sections'] for card in part['slides']
+                    if card['number'] == 3)
+        self.assertIn(TOO_LONG, card['unfit']['lines'])
+
+    def test_a_restore_is_itself_a_version(self):
+        root = self.deck()
+        self.retitle(root, 'Batches restart in turn')
+        self.engine.desk_restore(root, SLIDE['id'], 0, self.seen(root))
+        found = self.engine.desk_versions(root, SLIDE['id'])
+        self.assertEqual([one['source'] for one in found], ['restore', 'save'])
+        self.assertEqual(found[0]['words']['title'], 'Batches restart in turn')
+
+    def test_a_version_picture_is_served_only_by_its_kind(self):
+        root = self.deck()
+        self.retitle(root, 'Batches restart in turn')
+        (kept,) = self.engine.desk_versions(root, SLIDE['id'])
+        self.assertTrue(self.engine.picture(root, 'version', kept['picture']['ref'])
+                        .startswith(b'\x89PNG'))
+        for wrong in ('../x', f"{SLIDE['id']}/../../deck", 'x'):
+            with self.assertRaises(OSError) as caught:
+                self.engine.picture(root, 'version', wrong)
+            self.assertEqual(str(caught.exception), 'There is no picture of that slide on this '
+                                                    'computer.')
 
 
 if __name__ == '__main__':

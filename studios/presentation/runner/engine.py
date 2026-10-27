@@ -167,7 +167,7 @@ PAGE_OPEN = 45          # seconds since a page last asked, while one counts as o
 STOP_WAIT = 30          # seconds a run that is being deleted may take to end
 IN_HAND = 'work/step.lock'      # written when a step starts, removed when it ends
 INCOMING = 'sources/incoming'   # what the form brought, until intake-source takes it
-PICTURE_KINDS = ('build', 'look', 'original', 'progress')
+PICTURE_KINDS = ('build', 'look', 'original', 'progress', 'version')
 PICTURE_STARTS = (b'\x89PNG\r\n\x1a\n', b'\xff\xd8\xff')   # a PNG, a JPEG, by their first bytes
 PICTURE_MOST = 20_000_000   # bytes of one picture a person gives a slide
 PICTURE_WORDS = 300         # characters of what a picture shows, and of where it came from
@@ -2530,6 +2530,9 @@ class Engine(Jobs, Researching, DeskActions):
         within, file = (root / 'work').resolve(), None
         if kind == 'build' and ref == SHEET:
             within, file = root.resolve(), root / build.SHEET
+        elif kind == 'version':
+            # A drawing a slide's History kept on this computer, by its version's ref.
+            file = desk.version_picture(root, ref)
         elif kind == 'look':
             shown = looks.shown_looks(root) or {}
             numbers = {str(look['number']) for look in shown.get('looks') or ()}
