@@ -13,29 +13,39 @@ changes for authors first, then what changes for maintainers.
   "Agentic AI". A rewrite of the whole sentence takes a fix in where it kept the fixed
   words ("Here, Agentic AI has arrived." becomes "Here, agentic AI has arrived."). One
   whose own words the accepted one changed says "No longer fits: its words were changed
-  by suggestion #N"; suggestions keep their numbers while you review. Alternatives follow
-  the same rule. Human-sounding suggestions that arrive after fixes were accepted are kept
+  by suggestion #N", as does one that adds words where the accepted one added its own (so
+  "the" is never added twice); suggestions keep their numbers while you review, and later
+  ones are numbered after them. A cut beside a changed word keeps the new word as context
+  ("really use" → "use"), and no double space is left. Alternatives follow the same
+  rule. Human-sounding suggestions that arrive after fixes were accepted are kept
   in step the same way instead of being dropped, and one for words edited by hand
   meanwhile says so. **Accept all** applies what is shown and not flagged, from both
   tools, in reading order, each against the text the ones before it left; it no longer
   leaves out a rewrite over a waiting fix. A flagged or hidden suggestion stays unless its
-  words were changed. Its message counts what was accepted, updated to fit and no longer
-  fits. For maintainers: `desk_finish.apply` no longer retires by overlap (`_retire`,
+  words were changed, and Accept all leaves a suggestion that would retire a flagged one or
+  a fix **Show** hides. Its message counts what was accepted, updated to fit, no longer fits
+  and left for you. For maintainers: `desk_finish.apply` no longer retires by overlap (`_retire`,
   `_flagged_spans`, `_covers` and the `OVERLAP` refusal are gone). Picks land one by one in
   reading order (`_reading`: part, start, Copy edit first, shorter first). After each,
   `_reconcile` checks every other open item from the waiting Copy edit and Humanize sets.
   `_word_edits` aligns words to find what a text change, or an item's own wording, changes.
-  An item the accepted change touched retires when the change meets its own changes; takes
-  it into its `before` and each wording when the change sits among them (`_carry_into`,
-  only where the wording kept those words); and otherwise shrinks to its own change with
-  up to `CONTEXT` words the change left alone, found once as whole words (`_anchor`).
+  Both the accepted change and an item's own wordings are aligned against the whole part
+  (`ALIGN` characters of context), as a three-way merge would. An item the accepted change
+  touched, or added words at its edge, retires when the two meet, including two insertions
+  at one place. Otherwise its own changes move onto the new text: it keeps its sentence
+  when the change sits among them, else it shrinks to its own change with up to `CONTEXT`
+  words of context from the new text and its marks, found once as whole words (`_windows`).
+  A wording left empty retires the item, a cut no longer leaves a double space, and a flag
+  is read again but never dropped. With `all: true`, a pick that would retire an unsent
+  flagged item or an unsent Copy edit item is left out (`_would_retire`, `WAITING`).
+  Applied items record the wording that `landed`, which `_owner` matches.
   A retired item gets `reason` and `retired_by: {job, id}`; an updated one records
   `carried: [{job, id}]`; all stay in the ignored proposal sets. `settle` reads a Humanize
   result against the text its job read (`_earlier`) and reconciles rows for words changed
   since, naming the accepted fix (`_accepted`, `_owner`) or `EDITED`. `desk-apply` items may
   name another waiting sentence set with `job`; `all: true` leaves out a flagged pick; and
   `finished` adds `carried` and `retired` counts when there are any. Review mode sends
-  Accept all as one request, keeps numbers per pair of sets (`numbers`), and shows
+  Accept all as one request, keeps each suggestion's number while its set is shown and numbers a later set after them (`numbers`), and shows
   `carriedBy` and `byNumber`.
 - **Every desk change goes to the Google Doc.** **Send accepted changes to Google Doc** and
   **Send to Google Doc** no longer leave changed paragraphs on the desk. Each separate

@@ -134,16 +134,21 @@ deciding on each fix, with the full desk one click away.
   Each suggestion is read by its own change, the words it actually changes:
   - One whose words the accepted one did not touch stays as it is.
   - One whose own change the accepted one left as it was shrinks to that change and a
-    little context: accept a Humanize rewrite that kept "Agentic AI" in its sentence, and a
-    fix "Agentic AI" → "agentic AI" stays, marked in place on those words. It says which
+    little context from the text as it is now, the accepted words included: accept a
+    Humanize rewrite that kept "Agentic AI" in its sentence, and a fix "Agentic AI" →
+    "agentic AI" stays, marked in place on those words; accept "leverage" → "use", and a
+    fix that cuts "really" before it becomes "really use" → "use". It says which
     suggestion it now fits.
   - A rewrite of the whole sentence takes an accepted fix in only where it kept the fixed
     words: accept "Agentic AI" → "agentic AI", and "Here, Agentic AI has arrived." becomes
     "Here, agentic AI has arrived."
-  - One whose own words the accepted one changed no longer fits: it says "No longer fits:
-    its words were changed by suggestion #N". So a rewrite that reworded the words a fix
-    fixed retires when you accept the fix, and the other way round. Suggestions keep their
-    numbers while you review, so the number still names the one you accepted.
+  - One whose own words the accepted one changed, or that adds words at the same place
+    the accepted one added its own, no longer fits: it says "No longer fits: its words
+    were changed by suggestion #N". So a rewrite that reworded the words a fix fixed
+    retires when you accept the fix, and the other way round, and two that both add "the"
+    before "two files" never both land. Suggestions keep their numbers while you review,
+    and ones that arrive later are numbered after them, so the number still names the one
+    you accepted.
   - Alternatives follow the same rule, and a suggestion is checked again for a changed
     fact, code or shape.
   - Human-sounding suggestions that arrive after you accepted fixes are kept in step the
@@ -153,9 +158,11 @@ deciding on each fix, with the full desk one click away.
   tools, and act on what is shown. A suggestion that changes a fact, code or the shape of a
   part is flagged, and **Accept all** leaves it for you to check. Accept all applies the
   rest in reading order, each against the text the ones before it left, by the same rule:
-  one that no longer fits is left out. Suggestions hidden by **Show** are never accepted;
-  like flagged ones, they stay unless their words were changed. The message counts what
-  was accepted, what was updated to fit and what no longer fits.
+  one that no longer fits is left out. It never retires a flagged suggestion, or a fix
+  hidden by **Show**: a suggestion that would change their words is left for you too
+  (accepting it yourself may retire them). A hidden rewrite still gives way to a fix you
+  accept. The message counts what was accepted, what was updated to fit, what no longer
+  fits and what is left for you.
 - **With human-sounding wording on, Quick check's findings** (dashes, words that often
   read as machine-written, repetition) are a short folded list at the top, labelled
   **Sounds human (quick check)** and read from the latest text with no assistant. **Fix**
