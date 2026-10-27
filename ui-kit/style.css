@@ -684,7 +684,7 @@ summary {
 .seg-option {
   position: relative;
   z-index: 1;
-  min-height: 2.3rem;
+  min-height: 2.75rem;
   padding: 0.3rem 1rem;
   background: none;
   border: 0;
@@ -724,7 +724,7 @@ summary {
 }
 
 .menu-item {
-  min-height: 2.4rem;
+  min-height: 2.75rem;
   padding: 0.35rem 0.75rem;
   background: none;
   border: 0;
@@ -1288,7 +1288,7 @@ select.input {
 .input {
   display: block;
   width: 100%;
-  min-height: 2.7rem;
+  min-height: 2.75rem;
   padding: 0.55rem 0.85rem;
   background: var(--paper);
   color: var(--ink);
@@ -1350,7 +1350,7 @@ textarea.input {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  min-height: 2.4rem;
+  min-height: 2.75rem;
   padding: 0.3rem 1rem;
   background: var(--well);
   color: var(--quiet);
@@ -2152,6 +2152,20 @@ p.fact > .bead {
   animation-duration: 240ms;
 }
 
+@media (pointer: coarse) {
+  /* A link or the file picker's button is as tall as any other control under a thumb; on
+     a desktop a link inside a sentence keeps its line's height. */
+  .link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+
+  .input[type="file"]::file-selector-button {
+    min-height: 2.75rem;
+  }
+}
+
 /* --- room for two columns ----------------------------------------------------------- */
 
 @media (min-width: 70rem) {
@@ -2201,6 +2215,11 @@ p.fact > .bead {
 /* --- a narrow window: the sidebar becomes a bar along the foot ----------------------- */
 
 @media (max-width: 52rem) {
+  /* The height the tab bar takes: fixed and sticky bars sit just above it. */
+  :root {
+    --tab-bar-room: calc(4.4rem + env(safe-area-inset-bottom));
+  }
+
   .window {
     display: block;
   }
@@ -2245,6 +2264,18 @@ p.fact > .bead {
     position: absolute;
     top: 0.2rem;
     left: calc(50% + 0.3rem);
+  }
+
+  /* A link or the file picker's button is as tall as any other control under a thumb; on
+     a desktop a link inside a sentence keeps its line's height. */
+  .link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.75rem;
+  }
+
+  .input[type="file"]::file-selector-button {
+    min-height: 2.75rem;
   }
 
   .content {
@@ -2874,8 +2905,8 @@ a.button {
     top: auto;
     left: max(var(--gutter), env(safe-area-inset-left));
     right: max(var(--gutter), env(safe-area-inset-right));
-    bottom: calc(4.4rem + env(safe-area-inset-bottom));
-    z-index: 6;
+    bottom: var(--tab-bar-room);
+    z-index: 4;
     margin: 0;
     gap: 0.4rem 0.6rem;
     padding: 0.55rem 0.65rem;
@@ -3057,7 +3088,7 @@ a.button {
 }
 .review-bar > * + * { margin-top: 0.6rem; }
 @media (max-width: 52rem) {
-  .review-bar { padding-bottom: 0.9rem; }
+  .review-bar { bottom: var(--tab-bar-room); z-index: 4; padding-bottom: 0.9rem; }
   .review-bar > .bar > .button { flex: 1 1 auto; }
 }
 

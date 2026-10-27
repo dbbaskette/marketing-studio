@@ -23,8 +23,8 @@
   gap: 0.35rem;
   align-content: start;
   padding: 0.5rem;
-  background: var(--paper, #fff);
-  border: 1px solid var(--paper-line, #d8d8dc);
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 10px;
   cursor: pointer;
 }
@@ -36,8 +36,8 @@
 }
 
 .deck-look[aria-checked="true"] {
-  border-color: var(--accent, #6b4fbb);
-  box-shadow: 0 0 0 1px var(--accent, #6b4fbb);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
 }
 
 .deck-look-name {
@@ -55,8 +55,8 @@
 }
 
 .deck-storyboard-holder {
-  background: var(--paper, #fff);
-  border: 1px solid var(--paper-line, #d8d8dc);
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 10px;
   overflow: hidden;
 }

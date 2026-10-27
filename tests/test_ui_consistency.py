@@ -19,7 +19,16 @@ PAGE_STYLES = (
     ROOT / 'core/studio_core/setup_web/home.css',
     ROOT / 'studios/blog/skills/blog-studio/assets/management/blog.css',
     ROOT / 'studios/presentation/skills/presentation-studio/scripts/desk/deck.css',
+    ROOT / 'core/studio_core/deck_web/deck-panels.css',
 )
+# Folders whose style.css and markdown.js are links into ui-kit/, never copies.
+LINKED = (
+    *sorted(ROOT.glob('studios/*/skills/*/scripts/desk')),
+    ROOT / 'studios/blog/skills/blog-studio/assets/management',
+    ROOT / 'core/studio_core/setup_web',
+    ROOT / 'marketing_studio/web',
+)
+PHONE = '(max-width:52rem)'
 APP_PAGES = (
     ROOT / 'core/studio_core/setup_web/index.html',
     ROOT / 'studios/blog/skills/blog-studio/assets/management/index.html',
@@ -96,8 +105,8 @@ MOVED = {
     '(max-width:52rem)': {
         '.selection-bar': 'position:fixed;top:auto;left:max(var(--gutter),env(safe-area-inset-left));'
                           'right:max(var(--gutter),env(safe-area-inset-right));'
-                          'bottom:calc(4.4rem + env(safe-area-inset-bottom));z-index:6;margin:0;'
-                          'gap:.4rem .6rem;padding:.55rem .65rem',
+                          'margin:0;gap:.4rem .6rem;padding:.55rem .65rem',
+        # Its bottom and z-index changed on purpose: test_bars_sit_above_the_tab_bar_on_a_phone.
         '.selection-bar .bar': 'flex:1 1 100%',
         '.selection-bar .selection-actions': 'display:grid;grid-template-columns:1fr 1fr;gap:.4rem',
         '.selection-bar .selection-actions>.button-filled': 'grid-column:1 / -1',
@@ -240,6 +249,15 @@ def declared(css: str) -> dict:
                     name, value = part.split(':', 1)
                     into[name.strip().lower()] = plain(value, True)
     return out
+
+
+def rem(value: str) -> float:
+    """A length in rem: 2.75rem is 2.75 and 44px is 2.75."""
+    if value.endswith('rem'):
+        return float(value[:-3])
+    if value.endswith('px'):
+        return float(value[:-2]) / 16
+    raise ValueError(value)
 
 
 def wanted(text: str) -> dict:
@@ -395,6 +413,44 @@ class SharedLookTests(unittest.TestCase):
         page = re.search(r'<[a-z]+\b[^>]*\bid="studio-page"[^>]*>', html).group(0)
         self.assertEqual(re.search(r'class="([^"]*)"', page).group(1), 'stack')
         self.assertEqual(missing_classes(html, (('page-head', 'view-head'),)), [])
+
+    def test_every_shared_control_is_at_least_44px(self):
+        kit = declared(KIT.read_text())
+        for selector in ('.button', '.nav-item', '.seg-option', '.chip', '.menu-item', '.input',
+                         '.select-page', '.more-filters>summary'):
+            with self.subTest(selector=selector):
+                self.assertGreaterEqual(rem(kit[''][selector]['min-height']), 2.75)
+        for context in (PHONE, '(pointer:coarse)'):
+            for selector in ('.link', '.input[type="file"]::file-selector-button'):
+                with self.subTest(context=context, selector=selector):
+                    self.assertEqual(kit[context][selector].get('min-height'), '2.75rem')
+            self.assertEqual(kit[context]['.link'].get('display'), 'inline-flex')
+
+    def test_bars_sit_above_the_tab_bar_on_a_phone(self):
+        kit = declared(KIT.read_text())
+        phone = kit[PHONE]
+        self.assertEqual(phone[':root'].get('--tab-bar-room'),
+                         'calc(4.4rem + env(safe-area-inset-bottom))')
+        self.assertEqual(phone['.review-bar'].get('bottom'), 'var(--tab-bar-room)')
+        self.assertEqual(phone['.review-bar'].get('z-index'), '4')
+        self.assertEqual(phone['.selection-bar'].get('position'), 'fixed')
+        self.assertEqual(phone['.selection-bar'].get('bottom'), 'var(--tab-bar-room)')
+        tab_bar = int(phone['.sidebar']['z-index'])
+        self.assertEqual(tab_bar, 6)
+        self.assertGreater(tab_bar, int(phone['.review-bar']['z-index']))
+        self.assertGreater(tab_bar, int(phone['.selection-bar']['z-index']))
+
+    def test_studio_pages_link_the_kit(self):
+        found = []
+        for folder in LINKED:
+            for name in ('style.css', 'markdown.js'):
+                path = folder / name
+                if path.exists() or path.is_symlink():
+                    found.append(path)
+                    with self.subTest(path=path.relative_to(ROOT).as_posix()):
+                        self.assertTrue(path.is_symlink())
+                        self.assertEqual(path.resolve(), ROOT / 'ui-kit' / name)
+        self.assertGreaterEqual(len(found), 8)
 
     def test_a_choice_set_straight_in_a_card_fits_it_at_phone_width(self):
         # Training Studio's "Where this training stops" puts its three levels straight in a
