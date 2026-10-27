@@ -1,6 +1,6 @@
 # Development
 
-Working agreements for this repository are in [AGENTS.md](../AGENTS.md). The specification is the [design](superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md) and the build order is the [plan](superpowers/plans/2026-10-12-training-studio-core-pipeline.md).
+Working agreements for this repository are in [AGENTS.md](../AGENTS.md). [The runner](runner.md) and [how it works](how-it-works.md) describe the studio as it is now. The first [design](superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md) and its build order, the [plan](superpowers/plans/2026-10-12-training-studio-core-pipeline.md), are history: they come before review levels, combined reviews, synthesis research and your sites.
 
 ## Layout
 

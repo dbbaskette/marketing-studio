@@ -1,6 +1,6 @@
 # Training Studio
 
-Training Studio turns a topic into training material. You give it a subject, it researches it, and it builds the material with you one stage at a time. New browser runs use the shared review level. Balanced reads the research plan, then **Review the first drafts** for all levels together (the research and what is written so far, with each deck's wireframe draft and the look you pick from the brand's rendered samples), then each drawn deck, then the finished materials. Automatic draft stops at each drawn deck and the finished materials, and uses the brand's default look; Step by step reviews every stage. A drawn deck always comes to you, and no stop is passed while a review or the brand's audit still finds something grave. The last step of the form chooses where this training stops, and Settings chooses where new work stops in every studio. Each run says how many steps are left, where it next stops and what it has spent so far. Existing runs keep their saved level; the research-plan stop applies to any Balanced training that has not reached its research plan yet, including one started earlier, and a run already past it is unaffected.
+Training Studio turns a topic into training material. You give it a subject, it researches it, and it builds the material with you one stage at a time. On the page, its review level decides where it stops for your decision; see [review levels](docs/runner.md#review-levels).
 
 The writing is done by an AI assistant you already have, Claude Code or Codex. Training Studio guides it, checks what it makes, and keeps track of what you have approved.
 
@@ -207,7 +207,7 @@ For each scenario, Training Studio then writes a file under `yoodli/` laid out i
 
 ## Status
 
-Training Studio is early, so expect rough edges and please [report them](https://github.com/dbbaskette/training-studio/issues).
+Training Studio is early, so expect rough edges and please [report them](https://github.com/dbbaskette/marketing-studio/issues).
 
 The programs that track your files, and the runner behind the page, have automated tests. A whole training has been made on the page, from the form to its finished files, and another as far as its slide deck. A full run through every stage in a conversation, a roleplay built in Yoodli, and a team working from two real computers have not been done yet. [Acceptance](docs/acceptance.md) records what has been tried, both ways.
 
@@ -215,13 +215,13 @@ The programs that track your files, and the runner behind the page, have automat
 
 - [Installation](docs/installation.md): what the installer does, how it brings the companion skills, and how to update, roll back or remove.
 - [The runner](docs/runner.md): making a training on the page, from a form to its finished files, the slide deck included. How a team shares one workspace, takes over, hands over and publishes.
-- [The page in a conversation](docs/desk.md): what needs you, every training and this computer's readiness in your browser, and approval that only you can give.
+- [The page](docs/desk.md): what needs you, every training and this computer's readiness in your browser, and approval that only you can give.
 - [How it works](docs/how-it-works.md): the stages, approvals, what "stale" means, and the files in a training folder.
 - [Scenarios and Yoodli](docs/scenarios-and-yoodli.md): the scenario format, and building a roleplay in Yoodli.
 - [Google Docs](docs/google-docs.md): sending the learner guide or the brief to a Google Doc for review, and bringing the edits back.
 - [Team hub](docs/team-hub.md): sharing finished trainings from a conversation, and reusing your team's scenarios, audiences and research.
 - [Development](docs/development.md): the repository, tests, and how to change Training Studio.
-- [Design](docs/superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md) and [the runner's design](docs/superpowers/specs/2026-10-13-studio-runner-design.md): the full specifications.
+- [Design](docs/superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md) and [the runner's design](docs/superpowers/specs/2026-10-13-studio-runner-design.md): the first designs, kept as history. [The runner](docs/runner.md) describes the studio as it is now.
 
 ## Licence
 

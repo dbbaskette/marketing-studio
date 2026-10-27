@@ -6,6 +6,8 @@ There are two ways to make a training, and each is tried on its own. [On the pag
 
 ## In a conversation
 
+A record of runs on 2026-10-12, on Harness Research 0.8.0, before synthesis research; it describes the studio as it was then.
+
 | | |
 | --- | --- |
 | Date | 2026-10-12 |
@@ -23,7 +25,7 @@ Brief kind: product. Copies: Google Docs only. Yoodli: on, turned on after intak
 
 The run stopped at gate 2, waiting on the user. Gates 3 to 7 are still to do.
 
-| Gate | Artifact | Outcome | Notes |
+| Gate | Stage | Outcome | Notes |
 | --- | --- | --- | --- |
 | 1 | research-plan | Approved | 26 questions. The assistant wrote the readable list to a file of its own as well as showing it |
 | 2 | research | Presented, not yet decided | 21 supported, 5 insufficient. The helper read the real `harness-research` record without trouble |

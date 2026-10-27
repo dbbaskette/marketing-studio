@@ -74,13 +74,16 @@ What a caller needs to know
   it began, whatever tool comes. `redesign` draws such a deck again from a design, when the
   person asks and never otherwise: what it was is kept as its history, and only that deck
   is made again.
-- What Harness Slides 0.14.1 lists beyond that is used where the tool lists it, and the
-  way before it where it does not: the tool's own check of what an approved design still
-  wants, icons named by their library IDs and placed by their asset IDs, a review's packets
-  in one call, its render through Drive, sources taken from the slide, intents compared
-  whatever their key order, and a reviewed deck put to the person in the tool's own design
-  session, whose rendered question the person's approval at gate 6 answers through
-  `deck_decided`, which only the page calls.
+- slides.MINIMUM is 0.16.0, the Harness Slides the installer pins: an older tool is
+  refused before any deck call. What the tool lists beyond NEEDED is used where it lists
+  it: the tool's own check of what an approved design still wants, icons named by their
+  library IDs and placed by their asset IDs, a review's packets in one call, its render
+  through Drive, sources taken from the slide, intents compared whatever their key order,
+  and a reviewed deck put to the person in the tool's own design session, whose rendered
+  question the person's approval at gate 6 answers through `deck_decided`, which only the
+  page calls. The way before each, for a tool that does not list it (Harness Slides 0.13.1
+  and 0.14.1 did not), is below that floor; the branches stay, unused by any saved deck,
+  until piece 7 of the cleanup removes them.
 - After the blueprints it goes one level at a time: the guide, the brief, each practice
   scenario, each Yoodli scenario, with the copies the training asked for made after each
   approval. A copy that cannot be made is noted with the reason and never holds it up.
