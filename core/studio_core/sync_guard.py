@@ -155,6 +155,8 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
             return False
         except OSError as error:
             unknown(error)
+        if stat.S_ISLNK(info.st_mode):
+            unknown(ValueError('Linked Studio cache'))
         if not stat.S_ISDIR(info.st_mode):
             return False
         # Only Blog Studio's fixed migration records override structural cache

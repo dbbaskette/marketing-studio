@@ -15,6 +15,71 @@ class SyncGuardTests(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.repo = Path(temporary.name)
 
+    def presentation_item(self):
+        item = self.repo / 'presentation'
+        item.mkdir()
+        (item / 'run.json').write_text(json.dumps({'schema': 1, 'id': item.name,
+            'title': 'Synthetic saved Presentation Studio deck', 'created': '2026-10-28T12:00:00Z',
+            'agent': 'test', 'route': 'scratch', 'form': {
+                'route': 'scratch', 'title': 'Synthetic saved deck', 'output': 'pptx'},
+            'steps': {}, 'gates': {}, 'limits': {}, 'revisions': []}))
+        return item
+
+    def test_recognized_item_linked_cache_roots_refuse_without_traversal(self):
+        item = self.presentation_item()
+        with tempfile.TemporaryDirectory() as outside:
+            target = Path(outside)
+            material = target / 'nested/desk/migration.json'
+            material.parent.mkdir(parents=True)
+            material.write_text('{unknown saved metadata')
+            record = (item / 'run.json').read_bytes()
+            from studio_core import sync_guard
+            walk = sync_guard.os.walk
+            for cache in ('work', 'sources'):
+                for dangling in (False, True):
+                    with self.subTest(cache=cache, dangling=dangling):
+                        link = item / cache
+                        destination = target / 'missing' if dangling else target
+                        link.symlink_to(destination, target_is_directory=True)
+                        walked = []
+                        def tracked(folder, *args, **kwargs):
+                            walked.append(Path(folder))
+                            return walk(folder, *args, **kwargs)
+                        try:
+                            with mock.patch.object(sync_guard.os, 'walk', side_effect=tracked):
+                                with self.assertRaisesRegex(ValueError, 'could not be checked'):
+                                    worker_in_progress(self.repo)
+                            self.assertNotIn(link, walked)
+                            self.assertNotIn(target, walked)
+                            self.assertEqual(link.readlink(), destination)
+                            self.assertEqual((item / 'run.json').read_bytes(), record)
+                            self.assertEqual(material.read_text(), '{unknown saved metadata')
+                        finally:
+                            link.unlink()
+
+    def test_recognized_item_absent_optional_caches_are_idle_but_nested_migration_is_not(self):
+        item = self.presentation_item()
+        self.assertFalse(worker_in_progress(self.repo))
+        for cache in ('work', 'sources'):
+            folder = item / cache
+            folder.mkdir()
+            self.assertFalse(worker_in_progress(self.repo))
+            nested = folder / 'nested/deck'
+            pending = nested / 'work/desk/migration-transaction.json'
+            pending.parent.mkdir(parents=True)
+            pending.write_text('{interrupted')
+            self.assertTrue(worker_in_progress(self.repo))
+            self.assertEqual(pending.read_text(), '{interrupted')
+            pending.unlink()
+            marker = nested / 'desk/migration-origin.json'
+            marker.parent.mkdir()
+            marker.write_text('{unknown')
+            with self.assertRaisesRegex(ValueError, 'could not be checked'):
+                worker_in_progress(self.repo)
+            self.assertEqual(marker.read_text(), '{unknown')
+            marker.unlink()
+            self.assertFalse(worker_in_progress(self.repo))
+
     def test_both_deck_marker_shapes_anywhere_in_repository_and_stale_markers(self):
         for shape in ('work/step.lock', '.training-studio/step.lock'):
             marker = self.repo / 'another' / 'workspace' / 'one' / shape
