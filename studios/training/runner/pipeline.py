@@ -1038,10 +1038,24 @@ def write_built(root: Path, level: str | None, built: dict) -> None:
     home.write_json(place(root, level, BUILT), built)
 
 
+def design_project(root: Path, level: str | None, approved: dict | None = None) -> Path:
+    """The active tool project; older decks keep their original deck/ location."""
+    approved = approved if approved is not None else (read_built(root, level).get('start') or {}).get('design') or {}
+    project = approved.get('project')
+    if project is None:
+        return place(root, level, DESIGNS)
+    if not isinstance(project, str) or not re.fullmatch(r'deck/design-edits/[a-f0-9]{24}', project):
+        raise WorkspaceError('The saved design project cannot be opened safely.')
+    selected = place(root, level, project)
+    if not selected.resolve().is_relative_to(root.resolve()):
+        raise WorkspaceError('The saved design project cannot be opened safely.')
+    return selected
+
+
 def recorded(root: Path, level: str | None) -> dict:
     """The deck's asset manifest, as the slides tool keeps it beside the design: {asset ID:
     entry}. Empty when it records nothing. It is read, and only the tool writes it."""
-    found = home.read_json(place(root, level, ASSETS), {})
+    found = home.read_json(design_project(root, level) / '.harness-slides' / 'assets.json', {})
     listed = found.get('assets') if isinstance(found, dict) else None
     return {entry['assetId']: entry for entry in listed or ()
             if isinstance(entry, dict) and isinstance(entry.get('assetId'), str)} \
@@ -1052,7 +1066,7 @@ def assets_now(root: Path, level: str | None, known: dict | None = None) -> dict
     """What each recorded asset of a deck is now, as {asset ID: fingerprint}: a picture's
     file hash, None when its file is gone; an icon's library ID with the hash of its entry.
     A section and a whole deck are made from these, and are made again when one changes."""
-    project = place(root, level, DESIGNS).resolve()
+    project = design_project(root, level).resolve()
     found = {}
     for ident, entry in (recorded(root, level) if known is None else known).items():
         if entry.get('kind') == 'icon':
@@ -2095,7 +2109,7 @@ def section_work(root: Path, found: Survey, step: Step, section: str, error: str
     whole = home.read_json(folder / 'given' / 'outline.json', {})
     # A deck drawn from its approved design is built against it, a section at a time.
     design = home.read_json(folder / APPROVED_DESIGN, None) if start.get('design') else None
-    bound = {'design': str(place(root, level, DESIGNS)), 'section': True} \
+    bound = {'design': str(design_project(root, level, start.get('design'))), 'section': True} \
         if design is not None else {}
     ids = next(listed['slides'] for listed in start['sections'] if listed['id'] == section)
     # A deck whose tool keeps its assets: what its composer may list, and may ask the tool

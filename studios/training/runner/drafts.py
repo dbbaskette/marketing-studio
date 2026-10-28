@@ -1466,3 +1466,29 @@ def slide_words(outline: dict, slide: str, field: str, text: str) -> tuple[dict,
 
 def slide_speaker_notes(outline: dict, slide: str, text: str) -> tuple[dict, str]:
     return slide_words(outline, slide, 'notes', text)
+
+
+def design_words(plan: dict, slide: str, field: str, old: str, text: str) -> dict:
+    """A person's exact word edit as a proposal, preserving every other design choice."""
+    import copy
+    made = copy.deepcopy(plan)
+    target = next((item for item in made.get('slides', []) if item.get('id') == slide), None)
+    if target is None:
+        raise workspace.WorkspaceError('The approved design has no such slide.')
+    container = target if field == 'title' else target.get('copy')
+    if not isinstance(container, dict):
+        raise workspace.WorkspaceError('The design does not keep these words in an editable field.')
+    wrapped, found = slide_words({'slides': [{'id': slide, **container}]}, slide, field, text)
+    if found != old:
+        raise workspace.WorkspaceError('The design and the outline have different words. Review the design first.')
+    changed = wrapped['slides'][0]
+    changed.pop('id', None)
+    if field == 'title':
+        target['title'] = changed['title']
+    else:
+        target['copy'] = changed
+        target.pop('visibleText', None)  # Harness Slides derives this from its copy.
+        if target.get('qualifications'):
+            target['qualifications'] = [text.strip() if value == old else value
+                                        for value in target['qualifications']]
+    return made

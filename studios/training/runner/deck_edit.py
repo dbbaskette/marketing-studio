@@ -92,7 +92,8 @@ class PreparedEdit:
         # files are left alone. Nothing deleted by rendering the private copy is deleted
         # here; old rounds and previews remain recoverable throughout publication.
         if any(not self.same(self.live / path, digest) for path, digest in self.original.items()) \
-                or any((self.live / path).exists() and owned.get(path) != after[path]
+                or any((self.live / path).exists() and (path not in owned or
+                           not self.same(self.live / path, owned[path]))
                        for path in changed if path not in self.original):
             raise WorkspaceError('This training changed while the slide was being prepared. Try again.')
         journal = self.folder / 'PUBLISHING.txt'
@@ -107,10 +108,11 @@ class PreparedEdit:
         try:
             for path in changed:
                 if path in owned:
-                    if not self.same(self.live / path, after[path]):
+                    if not self.same(self.live / path, owned[path]):
                         raise WorkspaceError('The new drawing changed while the slide was being saved.')
-                    continue
-                if not self.same(self.live / path, self.original.get(path)):
+                    if self.same(self.live / path, after[path]):
+                        continue
+                elif not self.same(self.live / path, self.original.get(path)):
                     raise WorkspaceError('This training changed while the slide was being saved.')
                 written.append(path)
                 write_atomic(self.live / path, (self.root / path).read_bytes())
@@ -118,7 +120,7 @@ class PreparedEdit:
             conflicts = []
             for path in reversed(written):
                 try:
-                    if self.same(self.live / path, self.original.get(path)):
+                    if self.same(self.live / path, self.original.get(path, owned.get(path))):
                         continue
                     if not self.same(self.live / path, after[path]):
                         conflicts.append(path)
@@ -163,3 +165,18 @@ class PreparedEdit:
                     folder.rmdir()
         if not self.recovery:
             shutil.rmtree(self.folder, ignore_errors=True)
+
+
+def proposal_folder(root, token):
+    import re
+    if not isinstance(token, str) or not re.fullmatch(r'[a-f0-9]{24}', token):
+        raise WorkspaceError('Choose the proposed words to approve or cancel.')
+    return storage(root) / 'proposals' / token
+
+
+def read_proposal(root, token):
+    folder = proposal_folder(root, token)
+    kept = home.read_json(folder / 'request.json', None)
+    if not isinstance(kept, dict) or kept.get('root') != str(root):
+        raise WorkspaceError('These proposed words are no longer waiting. Enter them again.')
+    return folder, kept

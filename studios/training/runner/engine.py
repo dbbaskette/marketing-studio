@@ -2480,7 +2480,7 @@ class Engine(Reviewing):
         provider. With `find`, each icon not yet recorded is first found in the brand's
         library and recorded. Returns what each asset is now, or None when the deck waits,
         having said for what, asset by asset, and what to do."""
-        tool, project = self.slides(), pipeline.place(root, level, pipeline.DESIGNS)
+        tool, project = self.slides(), pipeline.design_project(root, level)
         wanted, said = deck.candidates(plan), []
         # A tool that reads every candidate of the approved plan says itself what is not
         # recorded; with an older one, the plan is held to what is recorded here.
@@ -2592,7 +2592,7 @@ class Engine(Reviewing):
         the revision, whether it may be built already, and the question. A tool that takes
         an icon by its library ID checks each against the brand's `contract`. Call it
         holding `files`."""
-        tool, project = self.slides(), pipeline.place(root, level, pipeline.DESIGNS)
+        tool, project = self.slides(), pipeline.design_project(root, level)
         file = pipeline.place(root, level, pipeline.DESIGN)
         try:
             expected = tool.design_status(project)['revision']
@@ -2604,6 +2604,8 @@ class Engine(Reviewing):
                                      contract if tool.has('design-icon-ids') else None)
         question = status.get('question') or None
         return {'sha256': workspace.sha256_file(file), 'revision': status['revision'],
+                **({'project': project.relative_to(pipeline.place(root, level, '')).as_posix()}
+                   if project != pipeline.place(root, level, pipeline.DESIGNS) else {}),
                 'allowed': bool(status.get('buildAllowed')),
                 'question': {key: question.get(key) for key in ('id', 'slides', 'options')}
                 if question else None}
@@ -2652,8 +2654,7 @@ class Engine(Reviewing):
             if not self._sections_bound(root, it, design):
                 return
             try:
-                checked = self.slides().design_check(pipeline.place(root, level,
-                                                                    pipeline.DESIGNS))
+                checked = self.slides().design_check(pipeline.design_project(root, level))
                 if checked.get('revision') != design['revision']:
                     raise WorkspaceError('It holds another revision.')
                 plan = checked['plan']
@@ -2885,7 +2886,7 @@ class Engine(Reviewing):
                 pipeline.contract(root, mine)) is None:
             return
         # A deck drawn from its approved design is checked whole against it.
-        bound = {'design': pipeline.place(prepared.live if prepared else root, level, pipeline.DESIGNS)} \
+        bound = {'design': pipeline.design_project(prepared.live if prepared else root, level, mine.start.get('design'))} \
             if mine.start.get('design') else {}
         judged = mine.start.get('review') == pipeline.JUDGED
         seen = 'review' if judged else 'preview'
@@ -3177,9 +3178,13 @@ class Engine(Reviewing):
         one that refuses leaves gate 6 as it always was. Call it holding `files`."""
         if not last.get('judged') or not self._has('design-present-findings'):
             return None
+        prepared = self._preparing_decks.get(root)
+        preview = base / last['preview']
+        if prepared:
+            preview = prepared.live / preview.relative_to(root)
         try:
             status = self.slides().design_present(
-                pipeline.place(root, level, pipeline.DESIGNS), base / last['preview'],
+                pipeline.design_project(root, level), preview,
                 last['judged']['revision'])
         except WorkspaceError as refusal:
             return {'deck': saved, 'question': None, 'refused': str(refusal), 'at': home.now()}
@@ -3211,7 +3216,7 @@ class Engine(Reviewing):
                  'decision': 'approve', 'feedback': (note or '').strip()
                  or (question['options'] or ['Approve these slides'])[0]}
         try:
-            self.slides().design_respond(pipeline.place(root, level, pipeline.DESIGNS), reply)
+            self.slides().design_respond(pipeline.design_project(root, level), reply)
         except WorkspaceError as refusal:
             raise WorkspaceError('The slides tool did not take your approval of the deck, so '
                                  'nothing was recorded. ' + ' '.join(
@@ -3358,7 +3363,7 @@ class Engine(Reviewing):
                  'decision': decision, 'feedback': note or question['options'][0]}
         try:
             answered = self.slides().design_respond(
-                pipeline.place(root, level, pipeline.DESIGNS), reply)
+                pipeline.design_project(root, level), reply)
         except slides_tool.Refused as refusal:
             if 'design-revision-stale' in refusal.codes:
                 raise WorkspaceError(CHANGED.format(it=workspace.sentence(says)))
@@ -4125,7 +4130,7 @@ class Engine(Reviewing):
             record = self._load(root)
         return root, record
 
-    def slide_words(self, path, level, slide, field, text, seen) -> dict:
+    def slide_words(self, path, level, slide, field, text, seen, *, _approved_words=None) -> dict:
         """Change the outline and its drawing, then render and keep the deck."""
         level = level or None
         with self.files:
@@ -4150,19 +4155,20 @@ class Engine(Reviewing):
             folder = base / start['folder']
             outline_file = pipeline.place(root, level, pipeline.OUTLINE)
             basis = deck_edit.PreparedEdit.files(root)
+            if _approved_words and basis != _approved_words['basis']:
+                raise WorkspaceError('This training changed after these words were proposed. Enter them again.')
             outline = home.read_json(outline_file, {})
             edited, old = drafts.slide_words(outline, slide, field, text)
             if old == text.strip():
                 return {'fits': True}
-            if start.get('design') and (field in ('title', 'caveat', 'source')
-                                        or field.startswith('points[')):
-                raise WorkspaceError('This deck’s approved design keeps these words. '
-                                     'Speaker notes can still be changed.')
             blueprint = pipeline._text(root, session, workspace.qualify('blueprint', level)) or ''
             problems = deck.rules(edited, blueprint, known=pipeline.research_ids(root),
                                   delivery=pipeline.delivery_of(session))
             if problems:
                 raise WorkspaceError(' '.join(problems))
+            if start.get('design') and _approved_words is None and (
+                    field in ('title', 'caveat', 'source') or field.startswith('points[')):
+                return self._propose_slide_words(root, level, slide, field, text, seen, old, basis)
             whole = home.read_json(folder / 'given' / 'outline.json', {})
             updated = next(item for item in deck.slides_of(edited) if item.get('id') == slide)
             whole['slides'] = [updated if item.get('id') == slide else item
@@ -4187,11 +4193,13 @@ class Engine(Reviewing):
                 told = scratch / 'outline.json'
                 home.write_json(told, deck.for_tool(whole, self.slides().knows()))
                 if section:
-                    design = home.read_json(folder / pipeline.APPROVED_DESIGN, None) if start.get('design') else None
+                    design = (_approved_words['plan'] if _approved_words else
+                              home.read_json(folder / pipeline.APPROVED_DESIGN, None)) if start.get('design') else None
                     spec = {**deck.fixed(whole, section['slides'], pipeline.numbered(section['id']), design),
                             'brand': str(pipeline.contract(root, found.decks[level])), 'outline': str(told)}
                     if design is not None:
-                        spec.update(design=str(pipeline.place(root, level, pipeline.DESIGNS)), section=True)
+                        spec.update(design=str(_approved_words['source'] if _approved_words else
+                                               pipeline.design_project(root, level)), section=True)
                     problems, _, _, checked = worker_tools.check_section(
                         json.dumps(patched, ensure_ascii=False), spec, self.slides(), scratch)
                     if not problems:
@@ -4209,10 +4217,15 @@ class Engine(Reviewing):
                         'price': drafts.section_price(record, level, section['id']) if section else ''}
             with deck_edit.PreparedEdit(root, basis) as prepared:
                 staged = prepared.root
+                if _approved_words:
+                    final = prepared.output_folder(pipeline.place(staged, level, _approved_words['project']))
+                    shutil.copytree(_approved_words['source'], final)
+                    prepared.seal_output(final)
+                    shutil.copytree(final, pipeline.place(staged, level, _approved_words['project']))
                 self._preparing_decks[staged] = prepared
                 try:
                     self._save_slide_words(staged, level, name, edited, whole, patched,
-                                           section, drawing_file.relative_to(root))
+                                           section, drawing_file.relative_to(root), _approved_words)
                 finally:
                     self._preparing_decks.pop(staged, None)
                     self._runs.pop(str(staged), None)
@@ -4233,7 +4246,7 @@ class Engine(Reviewing):
             return {'fits': True}
 
     def _save_slide_words(self, root, level, name, edited, whole, patched, section,
-                          drawing_path) -> None:
+                          drawing_path, approved_words=None) -> None:
         """Render and save only in PreparedEdit's private copy; never commit this root."""
         record = self._load(root)
         kept = self._decided(record, level)
@@ -4244,6 +4257,17 @@ class Engine(Reviewing):
         outline_file = pipeline.place(root, level, pipeline.OUTLINE)
         drawing_file = root / drawing_path
         entry = built['sections'][section['id']] if section else None
+        if approved_words:
+            plan = approved_words['plan']
+            design_file = pipeline.place(root, level, pipeline.DESIGN)
+            worker_tools._write(design_file, json.dumps(plan, indent=2, ensure_ascii=False) + '\n')
+            design = {'sha256': workspace.sha256_file(design_file),
+                      'revision': approved_words['revision'], 'project': approved_words['project']}
+            kept['outline']['design'] = design['sha256']
+            kept['approved']['design'] = design
+            start['design'] = design
+            worker_tools._write(folder / pipeline.APPROVED_DESIGN,
+                                json.dumps(plan, indent=2, ensure_ascii=False) + '\n')
         workspace.accept_desk(root, name)
         self._ready_again(root)
         home.write_json(outline_file, edited)
@@ -4287,6 +4311,68 @@ class Engine(Reviewing):
         if saved.get('round') != built['rounds'][-1]['folder']:
             problem = self._load(root).get('problem') or {}
             raise WorkspaceError(problem.get('what') or 'The deck could not be saved.')
+
+    def _propose_slide_words(self, root, level, slide, field, text, seen, old, basis):
+        """Put the tool's actual question to the person; this never answers it."""
+        tool, project = self.slides(), pipeline.design_project(root, level)
+        checked = tool.design_check(project)
+        plan = drafts.design_words(checked['plan'], slide, field, old, text)
+        token = secrets.token_hex(12)
+        folder = deck_edit.proposal_folder(root, token)
+        try:
+            folder.mkdir(parents=True)
+            shutil.copytree(project, folder / 'project', ignore=shutil.ignore_patterns('design-edits'))
+            proposal = folder / 'plan.json'
+            worker_tools._write(proposal, json.dumps(plan, indent=2, ensure_ascii=False) + '\n')
+            mine = self._survey(root, self._load(root)).decks[level]
+            status = tool.design_propose(folder / 'project', proposal, checked['revision'],
+                                         pipeline.contract(root, mine) if tool.has('design-icon-ids') else None)
+            question = status.get('question')
+            if not isinstance(question, dict) or question.get('phase') != 'design':
+                raise WorkspaceError('The slides tool did not provide a design question for these words.')
+            approval = {'token': token, 'revision': status['revision'], 'question': question,
+                        'slide': slide, 'field': field, 'before': old, 'after': text.strip()}
+            home.write_json(folder / 'request.json', {'root': str(root), 'level': level,
+                'seen': seen, 'approval': approval,
+                'basis': {str(path): digest.hex() for path, digest in basis.items()}})
+            return {'fits': None, 'approval': approval}
+        except BaseException:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+
+    def slide_words_decide(self, path, token, decision, seen, *, question=None,
+                           revision=None, response=None) -> dict:
+        """Only a separate explicit answer may approve proposed design-bound words."""
+        with self.files:
+            root, record = self._on_desk(path, decided=True)
+            folder, requested = deck_edit.read_proposal(root, token)
+            if decision == 'cancel':
+                shutil.rmtree(folder)
+                return {'cancelled': True}
+            approval = requested['approval']
+            if decision != 'approve' or question != approval['question']['id'] \
+                    or revision != approval['revision'] or not isinstance(response, str) \
+                    or not response.strip() or len(response) > 4000:
+                raise WorkspaceError('Answer the displayed design question to approve these words.')
+            current = {str(path): digest.hex() for path, digest in deck_edit.PreparedEdit.files(root).items()}
+            if seen != requested['seen'] or current != requested['basis']:
+                raise WorkspaceError('This training changed after these words were proposed. Enter them again.')
+            tool, project = self.slides(), folder / 'project'
+            if not requested.get('answered'):
+                tool.design_respond(project, {'questionId': question, 'planRevision': revision,
+                                             'decision': 'approve', 'feedback': response.strip()})
+                requested['answered'] = True
+                home.write_json(folder / 'request.json', requested)
+            checked = tool.design_check(project)
+            if checked['revision'] != revision:
+                raise WorkspaceError('The design changed after this question was displayed. Enter the words again.')
+            result = self.slide_words(root, requested['level'], approval['slide'], approval['field'],
+                approval['after'], seen, _approved_words={'plan': checked['plan'], 'revision': revision,
+                    'source': project, 'project': f'deck/design-edits/{token}',
+                    'basis': {Path(path): bytes.fromhex(digest) for path, digest in requested['basis'].items()}})
+            if result.get('fits'):
+                shutil.rmtree(folder, ignore_errors=True)
+            return result
 
     def slide_speaker_notes(self, path, level, slide, text, seen) -> dict:
         return self.slide_words(path, level, slide, 'notes', text, seen)
@@ -5063,7 +5149,7 @@ class Engine(Reviewing):
                            and candidate['kind'] in pipeline.SUPPLIED), None)
             if wanted is None:
                 raise WorkspaceError(NOT_SUPPLIED.format(asset=asset))
-            project = pipeline.place(root, level, pipeline.DESIGNS)
+            project = pipeline.design_project(root, level)
             entry = pipeline.recorded(root, level).get(asset) or {}
             target = (project / str(entry['path'])).resolve() if entry.get('path') else None
             if target is not None and project.resolve() not in target.parents:

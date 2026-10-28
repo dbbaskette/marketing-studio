@@ -224,7 +224,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
           '/api/review-level', '/api/research-site', f'{DRAFTS}/open',
-          f'{DRAFTS}/slide-note', f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes',
+          f'{DRAFTS}/slide-note', f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes', f'{DRAFTS}/slide-words-decide',
           f'{DRAFTS}/finding', *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -745,6 +745,16 @@ class RunnerPage(desk.Page):
                 else:
                     result = self.engine.slide_speaker_notes(root, level, desk.text(sent, 'slide'),
                         desk.text(sent, 'text', False), desk.text(sent, 'seen'))
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **result})
+        if path == f'{DRAFTS}/slide-words-decide':
+            root = self.on_desk(desk.text(sent, 'path'))
+            try:
+                result = self.engine.slide_words_decide(root, desk.text(sent, 'proposal'),
+                    desk.text(sent, 'decision'), desk.text(sent, 'seen', False),
+                    question=desk.text(sent, 'question', False), revision=desk.text(sent, 'revision', False),
+                    response=desk.text(sent, 'response', False))
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
             return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **result})

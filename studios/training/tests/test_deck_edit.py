@@ -116,3 +116,47 @@ class PublicationTests(TrainingCase):
         self.assertTrue(edit.root.is_dir())
         with self.assertRaisesRegex(WorkspaceError, 'interrupted slide save needs recovery'):
             deck_edit.check_pending(self.root)
+
+    def test_a_new_design_project_can_be_updated_before_publication(self):
+        with deck_edit.PreparedEdit(self.root) as edit:
+            folder = edit.output_folder(edit.root / 'new-project')
+            folder.mkdir()
+            (folder / 'session.json').write_text('approved design')
+            edit.seal_output(folder)
+            (edit.root / 'new-project').mkdir()
+            (edit.root / 'new-project' / 'session.json').write_text('presented deck')
+            edit.publish()
+        self.assertEqual((folder / 'session.json').read_text(), 'presented deck')
+
+    def test_a_new_design_project_write_failure_restores_the_old_training(self):
+        write = deck_edit.write_atomic
+        with deck_edit.PreparedEdit(self.root) as edit:
+            folder = edit.output_folder(edit.root / 'new-project')
+            folder.mkdir()
+            (folder / 'session.json').write_text('approved design')
+            edit.seal_output(folder)
+            (edit.root / 'new-project').mkdir()
+            (edit.root / 'new-project' / 'session.json').write_text('presented deck')
+            (edit.root / 'a.txt').write_text('new a')
+
+            def fail(path, data):
+                write(path, data)
+                if path.name == 'session.json':
+                    raise OSError('Session write failed after replacement')
+
+            with mock.patch.object(deck_edit, 'write_atomic', side_effect=fail):
+                with self.assertRaisesRegex(OSError, 'Session write failed'):
+                    edit.publish()
+        self.assertEqual((self.root / 'a.txt').read_text(), 'old a')
+        self.assertFalse(folder.exists())
+        deck_edit.check_pending(self.root)
+
+    def test_old_and_levelled_project_paths_keep_their_original_locations(self):
+        from runner import pipeline
+        self.assertEqual(pipeline.design_project(self.root, None), self.root / 'deck')
+        self.assertEqual(pipeline.design_project(self.root, '101'), self.root / '101' / 'deck')
+        project = 'deck/design-edits/' + 'a' * 24
+        selected = pipeline.design_project(self.root, '101', {'project': project})
+        self.assertEqual(selected, self.root / '101' / project)
+        with self.assertRaisesRegex(WorkspaceError, 'cannot be opened safely'):
+            pipeline.design_project(self.root, None, {'project': '../another-training'})

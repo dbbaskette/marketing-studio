@@ -426,13 +426,13 @@ class JudgedSlideWordsTests(JudgedSlideNoteTests):
         built = self.built(root)
         self.slides.review_slide(root / pipeline.WORK / built['rounds'][-1]['preview'], 'check-yourself')
 
-    def test_design_bound_title_names_the_design_refusal_and_changes_nothing(self):
+    def test_design_bound_title_proposes_a_question_and_changes_nothing(self):
         root = self.begin(flow='desk')
         self.to_end(root)
         seen = self.engine._load(root)['deck']['']['saved']['sha256']
         before, commits = self.saved_files(root), self.log()
-        with self.assertRaisesRegex(Exception, 'approved design keeps these words'):
-            self.engine.slide_words(root, None, 'check-yourself', 'title', 'A new title', seen)
+        result = self.engine.slide_words(root, None, 'check-yourself', 'title', 'A new title', seen)
+        self.assertEqual(result['approval']['question']['phase'], 'design')
         self.assertEqual(self.saved_files(root), before)
         self.assertEqual(self.log(), commits)
 
@@ -486,3 +486,181 @@ class SlideWordsPreviewTests(DeckCase):
         self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)
         self.assertEqual(self.slides.files, before)
         self.assertIn(refused.left['url'], [entry['url'] for entry in self.engine.previews_left()])
+
+
+class ApprovedWordsTests(JudgedSlideNoteTests):
+    @staticmethod
+    def files(root):
+        return {path.relative_to(root): path.read_bytes() for path in root.rglob('*') if path.is_file()}
+
+    def propose(self, root, title='A new title'):
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        result = self.engine.slide_words(root, None, 'check-yourself', 'title', title, seen)
+        return seen, result['approval']
+
+    def approve(self, root, seen, proposed, **changes):
+        values = {'question': proposed['question']['id'], 'revision': proposed['revision'],
+                  'response': 'Approve updated words', **changes}
+        return self.engine.slide_words_decide(root, proposed['token'], 'approve', seen, **values)
+
+    def test_row_169_bound_title_requires_an_explicit_current_design_answer(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before, jobs = self.files(root), len(self.workers.jobs)
+        original = pipeline.design_project(root, None)
+        seen, proposed = self.propose(root)
+        self.assertEqual(self.files(root), before)
+        self.assertEqual(proposed['before'], 'Check what you can now explain')
+        self.assertEqual(proposed['after'], 'A new title')
+        with self.assertRaisesRegex(workspace.WorkspaceError, 'question'):
+            self.approve(root, seen, proposed, question='wrong')
+        self.assertEqual(self.files(root), before)
+        self.assertTrue(self.approve(root, seen, proposed)['fits'])
+        self.assertEqual(len(self.workers.jobs), jobs)
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title'], 'A new title')
+        project = pipeline.design_project(root, None)
+        self.assertNotEqual(project, original)
+        self.assertEqual(self.slides.design_check(project)['plan']['slides'][4]['title'], 'A new title')
+        self.assertNotEqual(self.slides.design_check(original)['plan']['slides'][4]['title'], 'A new title')
+        built = self.built(root)
+        self.slides.review_slide(root / pipeline.WORK / built['rounds'][-1]['preview'], 'check-yourself')
+        seen, proposed = self.propose(root, 'Another title')
+        self.assertTrue(self.approve(root, seen, proposed)['fits'])
+        self.assertEqual(self.slides.design_check(pipeline.design_project(root, None))['plan']['slides'][4]['title'], 'Another title')
+
+    def test_cancelled_and_unfit_approved_words_keep_the_previous_deck(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = self.files(root)
+        seen, proposed = self.propose(root)
+        self.engine.slide_words_decide(root, proposed['token'], 'cancel', seen)
+        self.assertEqual(self.files(root), before)
+        seen, proposed = self.propose(root, 'TOO LONG TO FIT')
+        self.assertFalse(self.approve(root, seen, proposed)['fits'])
+        self.assertEqual(self.files(root), before)
+
+    def test_changed_inputs_and_render_failure_do_not_publish_the_proposed_design(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = self.files(root)
+        seen, proposed = self.propose(root)
+        with mock.patch.object(self.engine, '_whole', side_effect=workspace.WorkspaceError('Render failed.')):
+            with self.assertRaisesRegex(workspace.WorkspaceError, 'Render failed'):
+                self.approve(root, seen, proposed)
+        self.assertEqual(self.files(root), before)
+        seen, proposed = self.propose(root)
+        outline = root / pipeline.OUTLINE
+        outline.write_bytes(outline.read_bytes() + b'\n')
+        changed = outline.read_bytes()
+        with self.assertRaisesRegex(workspace.WorkspaceError, 'changed'):
+            self.approve(root, seen, proposed)
+        self.assertEqual(outline.read_bytes(), changed)
+
+    def test_a_change_during_the_explicit_answer_is_preserved(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen, proposed = self.propose(root)
+        answer = self.slides.design_respond
+        document = root / 'my-note.txt'
+
+        def concurrently(*args):
+            result = answer(*args)
+            document.write_text('A concurrent edit.\n', encoding='utf-8')
+            return result
+
+        with mock.patch.object(self.slides, 'design_respond', side_effect=concurrently):
+            with self.assertRaisesRegex(workspace.WorkspaceError, 'changed'):
+                self.approve(root, seen, proposed)
+        self.assertEqual(document.read_text(), 'A concurrent edit.\n')
+        self.assertEqual(self.engine._load(root)['deck']['']['saved']['sha256'], seen)
+
+    def test_presented_review_paths_survive_the_private_copy(self):
+        from pathlib import Path
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen, proposed = self.propose(root)
+        has = self.engine._has
+        with mock.patch.object(self.engine, '_has', side_effect=lambda name:
+                               name == 'design-present-findings' or has(name)):
+            self.assertTrue(self.approve(root, seen, proposed)['fits'])
+        output = Path(self.slides.presented[-1][1])
+        self.assertTrue(output.is_relative_to(root))
+        self.assertTrue((output / 'review.json').is_file())
+
+    def test_approved_words_keep_their_level_and_allow_a_later_slide_note(self):
+        root = self.begin(flow='desk', levels=['101'])
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['101']['saved']['sha256']
+        proposed = self.engine.slide_words(root, '101', 'check-yourself', 'title',
+                                           'A new title', seen)['approval']
+        self.assertTrue(self.approve(root, seen, proposed)['fits'])
+        project = pipeline.design_project(root, '101')
+        self.assertTrue(project.is_relative_to(root / '101' / 'deck' / 'design-edits'))
+        self.assertFalse((root / 'deck').exists())
+        seen = self.engine._load(root)['deck']['101']['saved']['sha256']
+        self.engine.slide_note(root, '101', 'check-yourself', 'Make the diagram larger.', seen)
+        self.to_end(root)
+        self.assertEqual(pipeline.design_project(root, '101'), project)
+
+    def test_approved_words_with_the_current_tool_capabilities(self):
+        from stand_ins import slides as slides_stand_in
+        self.slides.keeps = True
+        self.slides.listed = set(slides_stand_in.CURRENT)
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen, proposed = self.propose(root)
+        self.assertTrue(self.approve(root, seen, proposed)['fits'])
+        self.assertEqual(self.slides.design_check(pipeline.design_project(root, None))[
+            'plan']['slides'][4]['title'], 'A new title')
+
+
+class ApprovedWordsPageTests(PageCase):
+    WALKTHROUGH = True
+
+    def setUp(self):
+        super().setUp()
+        self.slides.design, self.slides.judges = True, True
+        self.slides.have['local'] = True
+
+    def test_words_question_is_answered_only_by_the_explicit_decision_route(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        reply = self.post('drafts/slide-words', {'path': str(root), 'seen': seen,
+            'slide': 'check-yourself', 'field': 'title', 'text': 'A new title'})
+        approval = reply['approval']
+        sent = {'path': str(root), 'seen': seen, 'proposal': approval['token'], 'decision': 'approve',
+                'question': approval['question']['id'], 'revision': approval['revision'],
+                'response': 'Approve updated words'}
+        self.post('drafts/slide-words-decide', {**sent, 'question': 'old'}, expect=409)
+        self.assertTrue(self.post('drafts/slide-words-decide', sent)['fits'])
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title'], 'A new title')
+
+
+class ApprovedWordsAssetTests(DeckCase):
+    WALKTHROUGH = True
+
+    def test_pictures_and_icons_follow_the_approved_project_after_a_word_edit(self):
+        from test_runner_deck import with_assets
+        from runner_support import OUTLINE, designed, png
+        self.slides.design = self.slides.keeps = self.slides.judges = True
+        self.slides.have['local'] = True
+        self.workers.design_said = with_assets(designed(OUTLINE))
+        root = self.begin(flow='desk')
+        self.engine.supply_asset(root, None, 'console_view', png(40), 'The console', 'Course author', '')
+        self.to_end(root)
+        original = pipeline.design_project(root, None)
+        old_assets = pipeline.recorded(root, None)
+        picture = original / old_assets['console_view']['path']
+        old_picture = picture.read_bytes()
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        pending = self.engine.slide_words(root, None, 'check-yourself', 'title', 'A new title', seen)['approval']
+        self.assertTrue(self.engine.slide_words_decide(root, pending['token'], 'approve', seen,
+            question=pending['question']['id'], revision=pending['revision'], response='Approve updated words')['fits'])
+        project = pipeline.design_project(root, None)
+        self.assertNotEqual(project, original)
+        self.assertEqual(pipeline.recorded(root, None), old_assets)
+        self.assertEqual((project / old_assets['console_view']['path']).read_bytes(), old_picture)
+        self.engine.supply_asset(root, None, 'console_view', png(70), 'A new console', 'Course author', '')
+        self.assertEqual(picture.read_bytes(), old_picture)
+        self.assertNotEqual((project / old_assets['console_view']['path']).read_bytes(), old_picture)
