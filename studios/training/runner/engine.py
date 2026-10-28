@@ -225,6 +225,8 @@ from studio_core import brand_guidance, critic, deck_direction, deck_flow, model
 import hub
 import workspace
 from workspace import WorkspaceError
+from studio_core.process_lock import ProcessRLock
+from studio_core.shared_runner.write_markers import defer_share, mark_step
 from studio_core.drafting import basis, guards
 
 from runner import agents, companion, deck, deck_edit, draft_jobs, drafts, gitstate, pipeline, settings, team, worker_tools
@@ -642,7 +644,7 @@ class Engine(Reviewing):
         self.copies = copies or copies_made
         self.index = index or index_written
         self.background, self.at_once = background, at_once
-        self.files = threading.RLock()
+        self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._preparing_decks: dict[Path, deck_edit.PreparedEdit] = {}
         # What was typed on each desk and not committed yet, by the training's folder:
         # {'names': [materials], 'since': when the first of it was saved}. Read and changed
@@ -658,6 +660,8 @@ class Engine(Reviewing):
         self._stalled: str | None = None    # what went wrong picking the trainings up
         self._sharing: threading.Thread | None = None
         self._share_again = False
+        self._active_steps: set[str] = set()
+        self._deferred_share = False
         self._dropped: set[str] = set()     # trainings a fetch brings in deleted elsewhere
         self._ready: dict[str, tuple[float, agents.Readiness]] = {}
         self._models: dict[str, tuple[float, dict]] = {}  # each agent's list, and when
@@ -1301,6 +1305,9 @@ class Engine(Reviewing):
         # one is never written from its form.
         desk = drafts.on_desk(form)
         with self.files:
+            if gitstate.workspace_identity(self.workspace) != gitstate.workspace_identity(space):
+                raise WorkspaceError('The workspace changed while this start was being checked. '
+                                     'Open the current workspace and try again.')
             record = new_record(agent, model, chosen, form['source_scope'], effort,
                                 form.get('research_from'))
             record['research_questions'] = form.get('research_questions') or []
@@ -1389,6 +1396,9 @@ class Engine(Reviewing):
         if space is None:
             return
         with self.files:
+            space = self.workspace
+            if space is None:
+                return
             known = {entry['path'] for entry in home.trainings()}
             for path in sorted(space.root.glob(f'*/{workspace.STATE_DIR}/session.json')):
                 root = path.parent.parent
@@ -1424,33 +1434,34 @@ class Engine(Reviewing):
         ours = []
         for root in self.trainings():
             try:
-                record = self._load(root)
-                if not self._ours(record):
-                    continue
-                found = self._survey(root, record)
-                if found.next.kind != 'done':
-                    research_cli.unlock(root)
                 with self.files:
-                    # What was typed on the desk is never thrown away with a half-made step.
-                    typed = self._typed_here(root) if drafts.on_desk(record) else {}
-                    if (root / IN_HAND).exists() and found.next.kind in WORK \
-                            and not self._resting(record) and not self._away(found):
-                        gitstate.discard(self.space(), root)
-                        (root / IN_HAND).unlink(missing_ok=True)
-                        self._typed_back(root, typed)
-                    else:
-                        (root / IN_HAND).unlink(missing_ok=True)
-                        self._waited(root, typed)
-                    resumed = self._load(root)
-                    interrupted = [job for job in (resumed.get('drafts') or {}).get('jobs', [])
-                                   if drafts.on_desk(resumed) and job.get('status') == 'working']
-                    if interrupted:
-                        for job in interrupted:
-                            job.update(status='stopped', applied=False, settled_at=home.now(),
-                                       problem='This change stopped when Training Studio closed. Try it again.',
-                                       error='This change stopped when Training Studio closed. Try it again.')
-                        self._store(root, resumed)
-                        self._commit(root, 'keep interrupted desk changes ready to try again')
+                    record = self._load(root)
+                    if not self._ours(record):
+                        continue
+                    found = self._survey(root, record)
+                    if found.next.kind != 'done':
+                        research_cli.unlock(root)
+                    with self.files:
+                        # What was typed on the desk is never thrown away with a half-made step.
+                        typed = self._typed_here(root) if drafts.on_desk(record) else {}
+                        if (root / IN_HAND).exists() and found.next.kind in WORK \
+                                and not self._resting(record) and not self._away(found):
+                            gitstate.discard(self.space(), root)
+                            self._step_marker(root)
+                            self._typed_back(root, typed)
+                        else:
+                            self._step_marker(root)
+                            self._waited(root, typed)
+                        resumed = self._load(root)
+                        interrupted = [job for job in (resumed.get('drafts') or {}).get('jobs', [])
+                                       if drafts.on_desk(resumed) and job.get('status') == 'working']
+                        if interrupted:
+                            for job in interrupted:
+                                job.update(status='stopped', applied=False, settled_at=home.now(),
+                                           problem='This change stopped when Training Studio closed. Try it again.',
+                                           error='This change stopped when Training Studio closed. Try it again.')
+                            self._store(root, resumed)
+                            self._commit(root, 'keep interrupted desk changes ready to try again')
             except (WorkspaceError, OSError):
                 continue  # its view says what is wrong; the others still run
             ours.append(root)
@@ -1532,6 +1543,9 @@ class Engine(Reviewing):
     def _resting(record: dict) -> bool:
         """True while a run may start nothing: halted, failed, or waiting for an answer."""
         return bool(record.get('halt') or record.get('problem') or record.get('question'))
+
+    def _step_marker(self, root: Path, step: str | None = None) -> None:
+        mark_step(self, root, IN_HAND, step)
 
     def _work(self, root: Path, run: _Run) -> None:
         """Do one step after another until the training waits, ends or is halted."""
@@ -1615,16 +1629,16 @@ class Engine(Reviewing):
                 last = step.step.id if step.kind == 'code' else None
                 with self.files:   # what was typed on the desk is committed before a job
                     self._edits_first(root)
-                (root / IN_HAND).write_text(f'{step.step.id}\n', encoding='utf-8')
+                self._step_marker(root, step.step.id)
                 with companion.stopping(run.stop):  # a command a step runs ends on Stop
                     self._do(root, run, found, step)
-                (root / IN_HAND).unlink(missing_ok=True)
+                self._step_marker(root)
         except _Gone:   # it is someone else's now: what the step wrote was put back
-            (root / IN_HAND).unlink(missing_ok=True)
+            self._step_marker(root)
         except companion.Stopped:   # ended on purpose; IN_HAND stays for the next start
             pass
         except Exception as failure:  # whatever a step does, the runner keeps serving
-            (root / IN_HAND).unlink(missing_ok=True)
+            self._step_marker(root)
             self._trouble(root, failure)
         finally:
             if held:    # given back before the run counts as ended
@@ -5469,7 +5483,7 @@ class Engine(Reviewing):
         step = pipeline.Step(f"draft:{job['id']}", 'agent', workspace.label(job['name']),
                              ("Checking " if job['kind'] in draft_jobs.FINISHING else "Rewriting ")
                              + workspace.label(job['name']), spec['stage'], job['name'])
-        (root / IN_HAND).write_text(step.id + '\n', encoding='utf-8')
+        self._step_marker(root, step.id)
         try:
             outcome, handed, started_at, folder = self._job(root, run, step, work)
             with self.files:
@@ -5562,7 +5576,7 @@ class Engine(Reviewing):
             if self.space().share == gitstate.SHARE[0]:
                 self.share_soon()
         finally:
-            (root / IN_HAND).unlink(missing_ok=True)
+            self._step_marker(root)
 
     # --- typing on the desk ----------------------------------------------------------------
 
@@ -6148,6 +6162,8 @@ class Engine(Reviewing):
         """Share without making anyone wait for it."""
         space = self.workspace
         if space is None or space.address is None:
+            return
+        if defer_share(self):
             return
         if not self.background:
             self.share()
@@ -6914,6 +6930,7 @@ class Engine(Reviewing):
         if not settings.load().notify or self.page_open():
             return []
         space, sent, told = self.workspace, team.kept('notified'), []
+        updates = {}
         for root in self.trainings():
             try:
                 record = self._load(root)
@@ -6926,10 +6943,13 @@ class Engine(Reviewing):
             if thing is None or sent.get(str(root)) == thing:
                 continue
             if self.notifier.send(found.session['title']):
-                sent[str(root)] = thing
+                updates[str(root)] = thing
                 told.append(found.session['title'])
         if told:
-            team.keep('notified', sent)
+            with self.files:
+                current = team.kept('notified')
+                current.update(updates)
+                team.keep('notified', current)
         return told
 
     def serving(self, every: float = FETCH_EVERY, tick: float = TICK) -> None:

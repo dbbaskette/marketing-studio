@@ -16,5 +16,5 @@
       "note": "Selected Git primitives, Blog paths and version/JSON adapters; hooks disabled."
     }
   },
-  "adaptations": "Relative imports, Blog names, local ignore rules and support adapters. Upstream fetch/replay/push, kept refs, claims and numbered publication tags retained. Blog join can prepare a workspace without remembering it; the adapter activates it only after the guarded shared-config save succeeds."
+  "adaptations": "Relative imports, Blog names, local ignore rules and support adapters. Upstream fetch/replay/push, kept refs, claims and numbered publication tags retained. Blog join can prepare a workspace without remembering it; the adapter activates it only after the guarded shared-config save succeeds. Shared repository writes acquire studios-write.lock before the existing Blog Studio repository/workspace locks. Replay checks shared canonical worker markers and Blog Studio working-status records before reconciliation and after fetch."
 }

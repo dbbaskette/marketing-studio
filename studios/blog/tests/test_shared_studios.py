@@ -717,7 +717,19 @@ class TeamTests(unittest.TestCase):
         runner = blog_runner.engine(self.root)
         runner.current = ident
         runner.keep_local(ident, {'enabled': True, 'status': 'working'})
+        head = support.git(self.root.parent, 'rev-parse', 'HEAD')
+        outline = (self.root / ident / 'OUTLINE.md').read_bytes()
+        deferred = teams.refresh(self.root)
+        self.assertIn('Stop', deferred['notice'])
+        self.assertFalse(runner.stop.is_set())
+        self.assertEqual(runner.local(ident), {'enabled': True, 'status': 'working'})
+        self.assertEqual(support.git(self.root.parent, 'rev-parse', 'HEAD'), head)
+        self.assertEqual((self.root / ident / 'OUTLINE.md').read_bytes(), outline)
+        self.assertFalse(gitstate.kept(teams.space(self.root), ident))
+        # Only after canonical work ends may the original takeover reconciliation run.
+        runner.keep_local(ident, {'enabled': True, 'status': 'stopped'})
         teams.refresh(self.root)
+        self.assertFalse(teams.team.ours(teams.space(self.root), teams.record(self.root, ident)))
         self.assertTrue(runner.stop.is_set())
         self.assertFalse(runner.local(ident)['enabled'])
         runner.current = None
