@@ -2823,10 +2823,17 @@ class DeskPageTests(PageCase):
                             ('update', {'name': 'research-plan'}),
                             ('keep', {'name': 'research-plan', 'reason': 'Fine.',
                                       'seen': 'x'}),
-                            ('send', {'name': 'research-plan'})):
+                            ('send', {'name': 'research-plan'}),
+                            ('save', {'name': 'blueprint', 'part': 'opening', 'seen': 1,
+                                      'text': 'Typed.', 'session': 'ab12'}),
+                            ('restore', {'name': 'blueprint', 'part': 'opening', 'seen': 1,
+                                         'index': 0}),
+                            ('share', {})):
             with self.subTest(route=route):
                 said = self.post(f'drafts/{route}', {'path': saved, **sent}, 409)
                 self.assertEqual(said['error'], drafts.NOT_ON_DESK)
+        said = self.get('drafts/versions', 409, path=saved, name='blueprint', part='opening')
+        self.assertEqual(said['error'], drafts.NOT_ON_DESK)
         self.assertEqual((self.on_disk(), self.log()), (before, commits),
                          'nothing was changed or committed')
         # Each still answers what is its own as it always did.
@@ -3023,6 +3030,70 @@ class DeskPageTests(PageCase):
             for word in FORBIDDEN:
                 self.assertNotIn(word, line.lower())
 
+    def test_a_part_is_typed_restored_and_shared_on_the_page(self):
+        path = self.desk(levels=['101'], materials=['document'])
+        name = 'document@101'
+        card = self.get('drafts', path=path, name=name)
+        self.assertEqual((card['name'], card['state'], card['label']),
+                         (name, 'draft', 'the level 101 learner guide'))
+        self.assertIsInstance(card['revision'], int)
+        self.assertEqual(sorted(card['sections'][0]), ['covers', 'heading', 'id', 'locked',
+                                                       'text'])
+        sources = next(part for part in card['sections'] if part['heading'] == 'Sources')
+        self.assertTrue(sources['locked'])
+        summary = next(part for part in card['sections'] if part['heading'] == 'Summary')
+        first, commits = summary['text'], self.log()
+        sent = {'path': path, 'name': name, 'part': summary['id'], 'session': 'ab12'}
+        saved = self.post('drafts/save', {**sent, 'seen': card['revision'], 'text': 'One.'})
+        self.assertEqual(saved['revision'], card['revision'] + 1)
+        self.assertEqual(next(part for part in saved['sections']
+                              if part['id'] == summary['id'])['text'], 'One.')
+        self.assertTrue(saved['desk']['cards'])
+        # A form opened before the change is told to reload; Sources is never typed in.
+        said = self.post('drafts/save', {**sent, 'seen': card['revision'], 'text': 'Two.',
+                                         'session': 'cd34'}, 409)
+        self.assertEqual(said['error'], 'This draft changed since you opened it. Reload to '
+                                        'see the latest.')
+        said = self.post('drafts/save', {**sent, 'part': sources['id'],
+                                         'seen': saved['revision'], 'text': '1. Nothing.'}, 409)
+        self.assertEqual(said['error'], drafts.LOCKED)
+        self.assertEqual(self.post('drafts/save', {**sent, 'seen': saved['revision'],
+                                                   'text': 7}, 400)['error'],
+                         'Give text as text.')
+        found = self.get('drafts/versions', path=path, name=name, part=summary['id'])
+        self.assertEqual([(one['source'], one['label'], one['text'])
+                          for one in found['versions']], [('save', 'Saved', first)])
+        self.assertEqual(found['sources'], drafts.SOURCE_WORDS)
+        restored = self.post('drafts/restore', {**sent, 'seen': saved['revision'],
+                                                'index': 0})
+        self.assertEqual(next(part for part in restored['sections']
+                              if part['id'] == summary['id'])['text'], first)
+        self.assertEqual(self.log(), commits, 'typing and restoring wait to be committed')
+        self.assertEqual(self.post('drafts/share', {'path': path}), {'committed': True})
+        self.assertEqual(self.log(), [
+            *commits, 'Rolling restarts: edit the level 101 learner guide on the desk'])
+        self.assertEqual(self.post('drafts/share', {'path': path}), {'committed': False})
+        # A long part is one save, beyond what other changes may carry.
+        long = ' '.join(['Capacity'] * 12_000)
+        self.post('drafts/save', {**sent, 'seen': restored['revision'], 'text': long})
+
+    def test_a_save_the_desk_cannot_accept_is_still_saved(self):
+        path = self.desk(levels=['101'], materials=['document'])
+        name = 'document@101'
+        card = self.get('drafts', path=path, name=name)
+        summary = next(part for part in card['sections'] if part['heading'] == 'Summary')
+        with mock.patch.object(workspace, 'accept_desk',
+                               side_effect=WorkspaceError('Approve the plan first.')):
+            saved = self.post('drafts/save', {'path': path, 'name': name,
+                                              'part': summary['id'], 'seen': card['revision'],
+                                              'text': 'Typed.', 'session': 'ab12'})
+        self.assertEqual(saved['said'], 'Approve the plan first.')
+        self.assertEqual(next(part for part in saved['sections']
+                              if part['id'] == summary['id'])['text'], 'Typed.')
+        self.assertIn('\n## Summary\n\nTyped.\n', (Path(path) / '101' / 'document.md')
+                      .read_text(encoding='utf-8'))
+        self.assertIn(Path(path), self.engine.pending_commit)
+
 
 class DeskTeamTests(TeamCase):
     """A teammate reads the desk of a training someone else runs, and changes nothing."""
@@ -3072,10 +3143,54 @@ class DeskTeamTests(TeamCase):
                             ('level-ready', {'level': '101', 'seen': {}}),
                             ('update', {'name': name}),
                             ('keep', {'name': name, 'reason': 'Fine.', 'seen': 'x'}),
-                            ('send', {'name': name})):
+                            ('send', {'name': name}),
+                            ('save', {'name': name, 'part': 'opening', 'seen': 1,
+                                      'text': 'Typed.', 'session': 'ab12'}),
+                            ('restore', {'name': name, 'part': 'opening', 'seen': 1,
+                                         'index': 0})):
             with self.subTest(route=route):
                 said = self.ask(self.blake, f'drafts/{route}', {'path': str(theirs), **sent},
                                 409)
                 self.assertEqual(said['error'], str(caught.exception))
         self.assertEqual(workspace.person_statuses(theirs, workspace.load(theirs))[name],
                          'draft')
+
+    def test_a_finished_desk_training_is_still_its_person_s(self):
+        name = 'document@101'
+        with self.be(self.alex):
+            root = self.start(flow='desk', levels=['101'], materials=['document'])
+            view = self.ask(self.alex, 'drafts', path=str(root))
+            marked = self.ask(self.alex, 'drafts/level-ready', {
+                'path': str(root), 'level': '101',
+                'seen': {card['name']: card['seen'] for card in view['cards']}})
+            self.assertIsNone(marked['stopped'])
+            self.assertTrue((root / pipeline.INDEX).is_file())
+            record = self.record(root)
+            # A finished training has no driver, as always; its desk is still Alex's.
+            self.assertIsNone(record['driver'])
+            self.assertEqual(record['drafts']['finished_by']['name'], 'Alex')
+            self.assertEqual(self.engine.view(root)['mine'], True)
+            self.assertTrue(self.ask(self.alex, 'drafts', path=str(root))['team']['ours'])
+            card = self.ask(self.alex, 'drafts', path=str(root), name=name)
+            summary = next(part for part in card['sections'] if part['heading'] == 'Summary')
+            saved = self.ask(self.alex, 'drafts/save', {
+                'path': str(root), 'name': name, 'part': summary['id'],
+                'seen': card['revision'], 'text': 'Typed after the end.', 'session': 'ab12'})
+            self.assertEqual(saved['state'], 'draft')
+            self.assertEqual(self.ask(self.alex, 'drafts/share', {'path': str(root)}),
+                             {'committed': True})
+            self.assertEqual(self.shared()[0],
+                             'Rolling restarts: edit the level 101 learner guide on the desk')
+            self.assertIsNone(self.record(root)['driver'])
+        self.as_(self.blake, self.blake.engine.fetch)
+        theirs = self.theirs(self.blake, root)
+        self.assertFalse(self.ask(self.blake, 'drafts', path=str(theirs))['team']['ours'])
+        card = self.ask(self.blake, 'drafts', path=str(theirs), name=name)
+        said = self.ask(self.blake, 'drafts/save', {
+            'path': str(theirs), 'name': name, 'part': card['sections'][0]['id'],
+            'seen': card['revision'], 'text': 'Typed by a teammate.'}, 409)
+        self.assertTrue(said['error'].startswith(
+            'Alex has been running this training from another computer since '), said)
+        said = self.ask(self.blake, 'drafts/ready', {'path': str(theirs), 'name': name,
+                                                     'seen': hashed(theirs, name)}, 409)
+        self.assertTrue(said['error'].startswith('Alex has been running this training'))

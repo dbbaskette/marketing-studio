@@ -1062,3 +1062,92 @@ class TrainingDesk(desk_record.Desk):
             raise ValueError(LOCKED)
         with self.store.making(source, session):
             return super().save(ident, seen, part, text, source=source, session=session)
+
+
+# --- a card's parts: typing, History and Restore -----------------------------------------
+#
+# The page types into one part at a time, against the revision its form saw. Each save goes
+# through the desk holding the engine's `files`, so the part ids the page holds are the ones
+# the record keeps, and it is answered with the card's view: the card, its parts as the save
+# left them, and the whole desk, which a save changes too (a Ready card is a draft again, and
+# what is built from it is held). The engine commits the saves together.
+
+PART_KEYS = ('id', 'heading', 'text', 'locked', 'covers', 'findings')
+
+
+def desk_of(engine, root: Path, name) -> TrainingDesk:
+    """The desk over one material of a training, refused for one not written in parts."""
+    root = Path(root)
+    if not isinstance(name, str) or name not in workspace.artifact_names(
+            root, workspace.load(root)):
+        raise ValueError(NO_PARTS)
+    return TrainingDesk(TrainingStore(engine, root), codec_of(name))
+
+
+def parts_of(desk: TrainingDesk, name: str, draft: dict) -> dict:
+    """A material's parts as the page shows them: {'revision', 'opening', 'sections',
+    'versions'}, each section {'id', 'heading', 'text', 'locked'} with its covers or findings
+    note, and `versions` how many versions each part with any has."""
+    return {'revision': draft['revision'], 'opening': draft.get('opening') or '',
+            'sections': [{key: section[key] for key in PART_KEYS if key in section}
+                         for section in draft['sections']],
+            'versions': desk.versions.counts(name)}
+
+
+def card(engine, root, name: str, draft: dict | None = None,
+         desk: TrainingDesk | None = None) -> dict:
+    """One card's view: the desk's card for the material (`view`), its parts (`parts_of`),
+    `working`, the desk job changing it or None, and `desk`, the whole desk's view. Read it
+    holding `files`, so the record that names the parts is the one kept."""
+    root = Path(root)
+    desk = desk if desk is not None else desk_of(engine, root, name)
+    draft = draft if draft is not None else desk.read(name)
+    whole = view(engine, root)
+    found = next((one for one in whole['cards'] if one['name'] == name),
+                 {'name': name, 'label': workspace.label(name)})
+    job = whole['job']
+    return {**found, **parts_of(desk, name, draft),
+            'working': job if job and job.get('name') == name else None, 'desk': whole}
+
+
+def _saved(desk: TrainingDesk, name: str, save) -> tuple[dict, bool, str | None]:
+    """Make one save: (the draft after it, whether the file changed, and why the desk could
+    not accept it, or None). The file is saved before the desk accepts it, so a save the
+    desk refuses afterwards is still made, and said."""
+    root = desk.store.root
+    file = workspace.managed(root, workspace.artifact(root, workspace.load(root), name)['file'])
+    before = workspace.sha256_file(file)
+    try:
+        draft, said = save(), None
+    except workspace.WorkspaceError as refusal:
+        if workspace.sha256_file(file) == before:
+            raise
+        draft, said = desk.read(name), str(refusal)
+    return draft, workspace.sha256_file(file) != before, said
+
+
+def save_part(engine, root, name, part, seen, text, session=None) -> tuple:
+    """Save what was typed into one part, against the revision the form saw (`seen`), as an
+    edit with `via: 'save'` and the page's session. Call it holding `files`. Returns
+    (desk, draft, changed, said): see `_saved`."""
+    desk = desk_of(engine, root, name)
+    return (desk, *_saved(desk, name, lambda: desk.save(name, seen, part, text, 'save',
+                                                        session)))
+
+
+def restore_part(engine, root, name, part, seen, index) -> tuple:
+    """Bring back one of a part's versions (`index`, newest first, as History lists them),
+    saved with `via: 'restore'`; the text it replaces is then a version too. Call it holding
+    `files`. Returns as `save_part` does."""
+    desk = desk_of(engine, root, name)
+    return (desk, *_saved(desk, name, lambda: desk.restore(name, seen, part, index)))
+
+
+def versions_of(engine, root, name, part) -> dict:
+    """A part's History: {'versions': newest first, each {'at', 'source', 'label', 'text',
+    'words'}, `label` the words History shows for it; 'sources': those words by kind of
+    change}, for the page's kit."""
+    found = desk_of(engine, root, name).versions.versions(name, part)
+    return {'versions': [{**one, 'label': SOURCE_WORDS.get(one['source'], SOURCE_WORDS[EARLIER])}
+                         for one in found],
+            'sources': dict(SOURCE_WORDS)}

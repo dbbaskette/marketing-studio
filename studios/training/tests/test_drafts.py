@@ -2,7 +2,7 @@
 which the engine carries past every gate with a desk receipt; and holds, which keep what a
 desk change reaches until the person updates it or keeps it as it is. Scripted workers, the
 stand-in for harness-research and a studios config of the test's own; nothing real is
-started. Tests named row_138 to row_140, row_144 to row_149, row_158 and row_161 cover those
+started. Tests named row_138 to row_141, row_144 to row_149, row_158 and row_161 cover those
 rows of the state-transition matrix in
 docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md."""
 import json  # noqa: I001  the path-setting imports must come before runner
@@ -686,3 +686,186 @@ class DeskReadyTests(DeckCase):
         self.to_end(root)
         self.assertTrue((root / pipeline.INDEX).is_file())
         self.assertEqual(self.state(root), 'done')
+
+
+class DeskTypingTests(DeckCase):
+    """Typing on the desk saves one part of a guide, brief or plan into the material's file,
+    as an edit, and the edits are committed together: at most once a minute while typing,
+    and always before a job, a Mark ready, an Update or a Keep, and when the person leaves
+    the desk. A test named row_141 covers that row of the state-transition matrix."""
+
+    NAME = 'document@101'
+
+    def desk(self, **changes) -> Path:
+        root = self.begin(flow='desk', levels=['101'], **changes)
+        self.assertEqual(self.to_end(root), [])
+        self.assertIsNone(self.record(root)['problem'], self.view(root))
+        return root
+
+    def part(self, root: Path, heading: str, name: str = NAME) -> tuple[dict, dict]:
+        """The card's view as the page reads it, and its part under `heading`."""
+        card = self.engine.draft_card(root, name)
+        return card, next(section for section in card['sections']
+                          if section['heading'] == heading)
+
+    def type(self, root: Path, heading: str, text: str, name: str = NAME,
+             session: str | None = 'ab12') -> dict:
+        card, section = self.part(root, heading, name)
+        return self.engine.draft_save(root, name, section['id'], card['revision'], text,
+                                      session)
+
+    def seen(self, root: Path, name: str) -> str:
+        return workspace.sha256_file(root / workspace.artifact(
+            root, workspace.load(root), name)['file'])
+
+    def text(self, root: Path, name: str = NAME) -> str:
+        return (root / workspace.artifact(root, workspace.load(root), name)['file']) \
+            .read_text(encoding='utf-8')
+
+    def person(self, root: Path) -> dict:
+        return workspace.person_statuses(root, workspace.load(root))
+
+    def held(self, root: Path) -> frozenset:
+        return drafts.held(root, workspace.load(root), self.record(root))
+
+    def test_row_141_a_typed_save_keeps_the_inputs_and_holds_what_is_below(self):
+        root = self.desk()
+        self.engine.mark_ready(root, self.NAME, seen=self.seen(root, self.NAME))
+        self.assertEqual(self.person(root)[self.NAME], 'approved')
+        self.assertEqual(self.held(root), frozenset())
+        built = workspace.load(root)['artifacts'][self.NAME]['built_from']
+        card, section = self.part(root, 'Summary')
+        self.assertEqual(card['state'], 'ready')
+        answer = self.engine.draft_save(root, self.NAME, section['id'], card['revision'],
+                                        'Typed on the desk.', 'ab12')
+        self.assertIn('\n## Summary\n\nTyped on the desk.\n', self.text(root))
+        session = workspace.load(root)
+        event = [event for event in session['events'] if event['event'] == 'save'][-1]
+        self.assertEqual((event['artifact'], event['via'], event['session']),
+                         (self.NAME, 'save', 'ab12'))
+        entry = session['artifacts'][self.NAME]
+        self.assertEqual(entry['built_from'], built, 'an edit keeps what it was built from')
+        # Accepted on the desk again, and no longer what the person marked ready.
+        self.assertEqual(entry['approved']['by'], 'desk')
+        self.assertEqual(workspace.statuses(root, session)[self.NAME], 'approved')
+        self.assertEqual(self.person(root)[self.NAME], 'draft')
+        self.assertEqual(self.held(root), {'deck@101'})
+        # The answer is the card's new view, with its parts as the save left them.
+        self.assertEqual((answer['name'], answer['state'], answer['revision']),
+                         (self.NAME, 'draft', card['revision'] + 1))
+        self.assertEqual(next(part for part in answer['sections']
+                              if part['id'] == section['id'])['text'], 'Typed on the desk.')
+        deck = next(one for one in answer['desk']['cards'] if one['name'] == 'deck@101')
+        self.assertEqual(deck['state'], 'held')
+
+    def test_typed_saves_are_committed_together(self):
+        root = self.desk()
+        commits = self.log()
+        for words in ('One.', 'One. Two.', 'One. Two. Three.'):
+            self.type(root, 'Summary', words)
+        self.assertEqual(self.log(), commits, 'nothing is committed while typing')
+        self.assertIn(root, self.engine.pending_commit)
+        self.assertEqual(self.engine.draft_share(root), {'committed': True})
+        edited = 'Rolling restarts: edit the level 101 learner guide on the desk'
+        self.assertEqual(self.log(), [*commits, edited])
+        self.assertEqual(self.git('status', '--porcelain'), '')
+        self.assertNotIn(root, self.engine.pending_commit)
+        self.assertEqual(self.engine.draft_share(root), {'committed': False})
+        # A Mark ready commits the edits first, in a commit of their own.
+        self.type(root, 'Summary', 'Four.')
+        commits = self.log()
+        self.engine.mark_ready(root, self.NAME, seen=self.seen(root, self.NAME))
+        self.assertEqual(self.log()[len(commits):len(commits) + 2],
+                         [edited, 'Rolling restarts: mark the level 101 learner guide ready'])
+        # So does Keep as it is.
+        self.type(root, 'Summary', 'Five.')
+        commits = self.log()
+        self.engine.keep(root, 'deck@101', 'It still reads right.')
+        self.assertEqual(self.log()[len(commits):len(commits) + 2],
+                         [edited, 'Rolling restarts: keep the level 101 slide deck as it is'])
+        self.assertEqual(self.engine.pending_commit, {})
+
+    def test_typing_is_committed_at_most_once_a_minute(self):
+        root = self.desk()
+        commits = self.log()
+        self.type(root, 'Summary', 'One.')
+        self.assertEqual(self.log(), commits)
+        self.engine.pending_commit[root]['since'] -= engines.DESK_EVERY
+        self.type(root, 'Summary', 'Two.')
+        self.assertEqual(self.log(), [
+            *commits, 'Rolling restarts: edit the level 101 learner guide on the desk'])
+        self.assertNotIn(root, self.engine.pending_commit)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_edits_are_committed_before_a_job(self):
+        self.workers.then('brief', fails(), fails(), fails())
+        root = self.start(flow='desk', levels=['101'], materials=['document', 'brief'])
+        self.assertEqual(self.record(root)['problem']['step'], 'brief@101')
+        self.type(root, 'Summary', 'Typed while the brief waits.')
+        commits = self.log()
+        self.engine.act(root, 'retry')
+        self.assertIsNone(self.record(root)['problem'])
+        self.assertEqual(self.log()[len(commits):len(commits) + 2], [
+            'Rolling restarts: edit the level 101 learner guide on the desk',
+            'Rolling restarts: asked to try again on the page'])
+        brief = root / workspace.artifact(root, workspace.load(root), 'brief@101')['file']
+        self.assertTrue(brief.is_file(), 'and then the brief was written')
+        # Typed while nothing asked for a commit, it is committed before the next job.
+        self.type(root, 'Summary', 'Typed before the next job.')
+        brief.unlink()   # so the brief is to be written again
+        commits = self.log()
+        self.engine.wake(root)
+        self.assertEqual(self.log()[len(commits)],
+                         'Rolling restarts: edit the level 101 learner guide on the desk')
+        self.assertTrue(brief.is_file())
+
+    def test_a_locked_part_cannot_be_typed_in(self):
+        root = self.desk()
+        before, commits = self.text(root), self.log()
+        with self.assertRaisesRegex(WorkspaceError, '^Sources is kept from the findings '
+                                    r'cited\. Change the references in the text instead\.$'):
+            self.type(root, 'Sources', '1. Nothing at all.')
+        self.assertEqual((self.text(root), self.engine.pending_commit), (before, {}))
+        # Only a guide, a brief or a plan is typed in parts; a stale form is told to reload.
+        with self.assertRaisesRegex(WorkspaceError, '^Only a guide, a brief or a plan is '
+                                    r'written in parts\.$'):
+            self.engine.draft_save(root, 'deck@101', 'opening', 1, 'Typed.', None)
+        card, section = self.part(root, 'Summary')
+        self.type(root, 'Summary', 'One.')
+        with self.assertRaisesRegex(WorkspaceError, '^This draft changed since you opened '
+                                    r'it\. Reload to see the latest\.$'):
+            self.engine.draft_save(root, self.NAME, section['id'], card['revision'], 'Two.',
+                                   'cd34')
+        self.assertIn('\n## Summary\n\nOne.\n', self.text(root))
+        self.assertEqual(self.log(), commits)
+        # A material being made again is not typed in.
+        record = self.record(root)
+        record.setdefault('drafts', {}).setdefault('updates', {})[self.NAME] = {
+            'at': home.now(), 'by': 'page', 'scope': None}
+        self.engine._store(root, record)
+        with self.assertRaisesRegex(WorkspaceError, '^A change is already being made'):
+            self.type(root, 'Summary', 'Three.')
+
+    def test_history_and_restore_on_the_desk(self):
+        root = self.desk()
+        first = self.part(root, 'Summary')[1]['text']
+        self.type(root, 'Summary', 'One.', session='ab12')
+        self.type(root, 'Summary', 'Two.', session='cd34')
+        card, section = self.part(root, 'Summary')
+        found = self.engine.draft_versions(root, self.NAME, section['id'])
+        self.assertEqual([(one['source'], one['label'], one['text'])
+                          for one in found['versions']],
+                         [('save', 'Saved', 'One.'), ('save', 'Saved', first)])
+        self.assertEqual(found['sources'], drafts.SOURCE_WORDS)
+        self.assertEqual(card['versions'], {section['id']: 2})
+        answer = self.engine.draft_restore(root, self.NAME, section['id'], card['revision'], 1)
+        self.assertEqual(next(part for part in answer['sections']
+                              if part['id'] == section['id'])['text'], first)
+        event = [event for event in workspace.load(root)['events']
+                 if event['event'] == 'save'][-1]
+        self.assertEqual(event['via'], 'restore')
+        newest = self.engine.draft_versions(root, self.NAME, section['id'])['versions'][0]
+        self.assertEqual((newest['source'], newest['label'], newest['text']),
+                         ('restore', 'Restored', 'Two.'))
+        with self.assertRaisesRegex(WorkspaceError, '^Choose a saved version.$'):
+            self.engine.draft_restore(root, self.NAME, section['id'], answer['revision'], 9)

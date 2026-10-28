@@ -149,8 +149,13 @@ What a caller needs to know
   before any work; `drive` takes one nobody has, takes one over, or hands one over. A
   claim the shared repository refuses is dropped, and the refusal says who has it. Every
   change a person asks for goes through `hold` first, and the engine works on nothing
-  that is not this computer's. A finished training has no driver. A workspace that is a
-  folder on this computer has no drivers at all, and nothing here changes for it.
+  that is not this computer's. A finished training has no driver; a desk training, still
+  changed on the desk once its index is written, stays the computer's that drove it there
+  (`run['drafts']['finished_by']`) until someone takes it. A workspace that is a folder on
+  this computer has no drivers at all, and nothing here changes for it.
+- What is typed on the desk is saved at once and committed together, as "edit <label> on
+  the desk": at most once a minute while typing, and first, in a commit of its own, before
+  a job, a desk decision or an action on the run, and when the person leaves the desk.
 - `share` and `fetch` both learn first what the shared repository now says. A training
   this computer drove that someone else has taken is stopped at once: its commits that
   were never shared are set aside under a ref, nothing more is written to it, and its
@@ -250,6 +255,7 @@ DRIVING = ('take', 'hand-over')
 FETCH_EVERY = 180       # seconds between fetches while the runner serves
 TICK = 15               # seconds between looks at whether to notify
 PAGE_OPEN = 45          # seconds since a page last asked, while one counts as open
+DESK_EVERY = 60         # seconds: what is typed on the desk is committed at most this often
 # What went wrong in the work done in the background while the runner serves, by job.
 BACKGROUND = {'fetch': 'The last look for what your team shared did not work: {said}. It '
                        'is tried again every few minutes.',
@@ -621,6 +627,10 @@ class Engine(Reviewing):
         self.index = index or index_written
         self.background, self.at_once = background, at_once
         self.files = threading.RLock()
+        # What was typed on each desk and not committed yet, by the training's folder:
+        # {'names': [materials], 'since': when the first of it was saved}. Read and changed
+        # holding `files`.
+        self.pending_commit: dict[Path, dict] = {}
         self._lock = threading.RLock()
         self._runs: dict[str, _Run] = {}
         self._slots = _Slots(lambda: settings.load().parallel)
@@ -756,11 +766,36 @@ class Engine(Reviewing):
         step was in hand: what the step wrote is put back, and the step ends."""
         if self._run(root).gone:
             gitstate.discard(self.space(), root)
+            self.pending_commit.pop(root, None)
             raise _Gone('This training is no longer run from this computer.')
         self._updates_made(root)
         self._decision_arrived(root)
         title = workspace.load(root)['title']
         gitstate.commit(self.space(), f'{title}: {what}', [root])
+        # The commit takes the whole folder, so nothing typed on the desk waits any more.
+        self.pending_commit.pop(root, None)
+
+    def _edited(self, root: Path, name: str) -> None:
+        """Remember that a material was typed in on the desk, to be committed with the
+        training's next commit: at once when the first of what waits was saved a minute ago
+        or more. Call it holding `files`."""
+        waiting = self.pending_commit.setdefault(root, {'names': [],
+                                                        'since': time.monotonic()})
+        if name not in waiting['names']:
+            waiting['names'].append(name)
+        if time.monotonic() - waiting['since'] >= DESK_EVERY:
+            self._edits_first(root)
+
+    def _edits_first(self, root: Path) -> bool:
+        """Commit what was typed on the desk, in a commit of its own: before a job, a Mark
+        ready, an Update or a Keep, and when the person leaves the desk. False when nothing
+        waits. Call it holding `files`."""
+        waiting = self.pending_commit.get(root)
+        if not waiting:
+            return False
+        self._commit(root, 'edit ' + ' and '.join(
+            workspace.label(name) for name in waiting['names']) + ' on the desk')
+        return True
 
     def _updates_made(self, root: Path) -> None:
         """Close each desk update whose material is made again, in the commit that lands it."""
@@ -789,9 +824,24 @@ class Engine(Reviewing):
 
     def mine(self, path) -> bool:
         """True when this computer may change a training: always in a workspace with no
-        shared repository, else only while its run record names this computer."""
+        shared repository, else only while its run record names this computer, or, for a
+        desk training whose index is written, while it names this computer as the one
+        that drove it there."""
         root = self.driven(path)
-        return root is not None and team.ours(self.workspace, self._load(root))
+        return root is not None and self._ours(self._load(root))
+
+    def _elsewhere(self, record: dict) -> str | None:
+        """Why this computer may not change a training, in a sentence; None when it may.
+        A finished training has no driver. A desk training stays its person's once its
+        index is written, as it is still changed on the desk: the computer that drove it
+        there may change it, and anyone else is told who ran it, as of a training someone
+        drives."""
+        last = (record.get('drafts') or {}).get('finished_by') \
+            if drafts.on_desk(record) and not record.get('driver') else None
+        return team.elsewhere(self.workspace, {'driver': last} if last else record)
+
+    def _ours(self, record: dict) -> bool:
+        return self._elsewhere(record) is None
 
     def hold(self, path) -> None:
         """Refuse, saying who has it, a change to a training this computer does not
@@ -802,7 +852,7 @@ class Engine(Reviewing):
             return
         if self._checking:  # who drives it may have changed while the runner was closed
             raise WorkspaceError(CHECKING)
-        why = team.elsewhere(self.workspace, self._load(root))
+        why = self._elsewhere(self._load(root))
         if why:
             raise Elsewhere(why)
 
@@ -919,6 +969,7 @@ class Engine(Reviewing):
             self.hold(root)
             name = (record.get('driver') or {}).get('name') or 'Someone'
             record['driver'] = None
+            (record.get('drafts') or {}).pop('finished_by', None)   # nobody's now
             self._store(root, record)
             self._commit(root, f'{name} hands this training over')
             run.gone = True     # a step in hand ends, and keeps nothing
@@ -1184,7 +1235,7 @@ class Engine(Reviewing):
         for root in self.trainings():
             try:
                 record = self._load(root)
-                if not team.ours(self.workspace, record):
+                if not self._ours(record):
                     continue
                 found = self._survey(root, record)
                 if found.next.kind != 'done':
@@ -1279,7 +1330,7 @@ class Engine(Reviewing):
         try:
             while not self._closing:
                 record = self._load(root)
-                if run.gone or not team.ours(self.workspace, record):
+                if run.gone or not self._ours(record):
                     return  # someone else drives it, or nobody does
                 found = self._survey(root, record)
                 step = found.next
@@ -1287,6 +1338,8 @@ class Engine(Reviewing):
                 if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
                                                                'look') \
                         and drafts.on_desk(record):
+                    with self.files:
+                        self._edits_first(root)
                     self._desk_gate(root, found)
                     continue
                 if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
@@ -1330,6 +1383,8 @@ class Engine(Reviewing):
                         f'The runner could not get past this step: {step.step.label}.'),
                         'Everything kept so far is still here.')
                 last = step.step.id if step.kind == 'code' else None
+                with self.files:   # what was typed on the desk is committed before a job
+                    self._edits_first(root)
                 (root / IN_HAND).write_text(f'{step.step.id}\n', encoding='utf-8')
                 with companion.stopping(run.stop):  # a command a step runs ends on Stop
                     self._do(root, run, found, step)
@@ -1542,6 +1597,9 @@ class Engine(Reviewing):
             says = pipeline.finished_says(report, self._survey(root, record, copies))
             workspace.checkpoint(root, stage='done', next_step=says)
             self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
+            if drafts.on_desk(record) and record.get('driver'):
+                # Still changed on the desk, by whoever drove it here (`_elsewhere`).
+                record.setdefault('drafts', {})['finished_by'] = record['driver']
             record['driver'] = None     # a finished training has no driver
             self._store(root, record)
             self._commit(root, 'write the index; ' + (
@@ -3769,13 +3827,16 @@ class Engine(Reviewing):
             self.share_soon()
         self.wake(path)
 
-    def _on_desk(self, path) -> tuple[Path, dict]:
+    def _on_desk(self, path, decided: bool = False) -> tuple[Path, dict]:
         """A desk training's folder and run record, refused for a training not on the desk.
-        Call it holding `files`."""
+        For a decision (`decided`: Mark ready, Update, Keep, Send), what was typed on the
+        desk is committed first, in a commit of its own. Call it holding `files`."""
         root = self._held(path)
         record = self._load(root)
         if not drafts.on_desk(record):
             raise WorkspaceError(drafts.NOT_ON_DESK)
+        if decided and self._edits_first(root):
+            record = self._load(root)
         return root, record
 
     def update(self, path, name, scope=None) -> dict:
@@ -3789,7 +3850,7 @@ class Engine(Reviewing):
         if scope is not None:
             raise WorkspaceError(drafts.NO_SCOPE)
         with self.files:
-            root, record = self._on_desk(path)
+            root, record = self._on_desk(path, decided=True)
             if drafts.busy(record):
                 raise WorkspaceError(drafts.BUSY)
             session = workspace.load(root)
@@ -3822,7 +3883,7 @@ class Engine(Reviewing):
         from becomes what is there now, and nothing is made again. A material being updated
         is left to its update."""
         with self.files:
-            root, record = self._on_desk(path)
+            root, record = self._on_desk(path, decided=True)
             if not isinstance(name, str):
                 raise WorkspaceError(drafts.UP_TO_DATE)
             if name in drafts.updates(record):
@@ -3873,7 +3934,7 @@ class Engine(Reviewing):
         for a held material ("Update it or keep it as it is first."), a deck with something
         that needs the person, and when the version has changed since it was opened."""
         with self.files:
-            root, record = self._on_desk(path)
+            root, record = self._on_desk(path, decided=True)
             self._mark(root, record, name, seen)
             self._ready_again(root)
             self._remember_decision(root, self._load(root), workspace.label(name), 'approve')
@@ -3887,7 +3948,7 @@ class Engine(Reviewing):
         and commits once. Returns {'marked': [names], 'stopped': {'name', 'said'} or None}."""
         marked, stopped = [], None
         with self.files:
-            root = self._on_desk(path)[0]
+            root = self._on_desk(path, decided=True)[0]
             session = workspace.load(root)
             if session['levels'] and level is None:
                 raise WorkspaceError('Choose a level.')
@@ -3918,7 +3979,7 @@ class Engine(Reviewing):
         date, and from then on it is kept so. Returns what `copies.make` made and, for a
         Google Doc that could not be, why."""
         with self.files:
-            root, record = self._on_desk(path)
+            root, record = self._on_desk(path, decided=True)
             if not isinstance(name, str) or not any(
                     entry['artifact'] == name for entry in self._wanted(root, record)):
                 raise WorkspaceError(drafts.NO_COPY.format(
@@ -3947,6 +4008,77 @@ class Engine(Reviewing):
         self.carry_on(root)
         return {'made': made, 'problems': dict(problems or {})}
 
+    # --- typing on the desk ----------------------------------------------------------------
+
+    def draft_card(self, path, name) -> dict:
+        """One card's view with its parts (`drafts.card`), read holding `files` so the part
+        ids it gives are the ones the desk keeps. Anyone may read it."""
+        root = self._desk_root(path)
+        with self.files:
+            try:
+                return drafts.card(self, root, name)
+            except ValueError as refusal:
+                raise WorkspaceError(str(refusal)) from None
+
+    def draft_versions(self, path, name, part) -> dict:
+        """One part's History (`drafts.versions_of`). Anyone may read it."""
+        root = self._desk_root(path)
+        with self.files:
+            try:
+                return drafts.versions_of(self, root, name, part)
+            except ValueError as refusal:
+                raise WorkspaceError(str(refusal)) from None
+
+    def draft_save(self, path, name, part, seen, text, session=None) -> dict:
+        """Save what the person typed into one part (`seen`, the revision their form saw),
+        and answer with the card's new view. It is an edit: what the material was built
+        from is kept, it is accepted on the desk again (a Ready one is a draft), and what
+        is built from it is held. It is committed with the training's next commit, at most
+        once a minute while typing (`_edited`). A save the desk could not accept is still
+        made, and the view's `said` says why."""
+        return self._typed(path, name, lambda root: drafts.save_part(
+            self, root, name, part, seen, text, session))
+
+    def draft_restore(self, path, name, part, seen, index) -> dict:
+        """Bring back one of a part's versions, as a save does, with `via: 'restore'`."""
+        return self._typed(path, name, lambda root: drafts.restore_part(
+            self, root, name, part, seen, index))
+
+    def _typed(self, path, name, save) -> dict:
+        with self.files:
+            root, record = self._on_desk(path)
+            if isinstance(name, str) and name in drafts.updates(record):
+                raise WorkspaceError(drafts.BUSY)   # it is being made again
+            try:
+                desk, draft, changed, said = save(root)
+            except ValueError as refusal:
+                raise WorkspaceError(str(refusal)) from None
+            if changed:
+                self._edited(root, name)
+            shown = drafts.card(self, root, name, draft, desk)
+        return {**shown, 'said': said} if said else shown
+
+    def draft_share(self, path) -> dict:
+        """Commit what was typed on a desk, and share it under the team's share setting, as
+        the page asks when the person leaves the desk. {'committed': False} when nothing
+        waited."""
+        root = self._desk_root(path)
+        with self.files:
+            if root not in self.pending_commit:
+                return {'committed': False}
+            root = self._on_desk(root, decided=True)[0]
+        self.carry_on(root)
+        return {'committed': True}
+
+    def _desk_root(self, path) -> Path:
+        """A desk training's folder, for reading or for what waits to be committed."""
+        root = self.driven(path)
+        if root is None:
+            raise WorkspaceError('No run is driving this training.')
+        if not drafts.on_desk(self._load(root)):
+            raise WorkspaceError(drafts.NOT_ON_DESK)
+        return root
+
     def act(self, path, action: str) -> dict:
         """Pause, resume, stop or try again, as the person asks."""
         root = self._held(path)
@@ -3959,6 +4091,7 @@ class Engine(Reviewing):
         unserved = (research_contract.dry_read(self, root, held)
                     if held and action in ('retry', stops.MORE_TIME) else None)
         with self.files:
+            self._edits_first(root)   # what was typed on the desk, in a commit of its own
             record = self._load(root)
             state = self.view(root)['state']
             problem = record.get('problem') or {}
@@ -4650,7 +4783,7 @@ class Engine(Reviewing):
         drives is `elsewhere`, whatever its files say: only what was last shared is known
         here, so the sentence says that and when, and the last item says it apart."""
         space = self.workspace
-        mine, who = team.ours(space, record), team.driver(space, record)
+        mine, who = self._ours(record), team.driver(space, record)
         if mine:
             return mine, who, state, sentence, None
         if who is None:

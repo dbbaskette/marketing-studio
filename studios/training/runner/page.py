@@ -161,6 +161,16 @@ What a caller needs to know
   and a desk training is 409 with `drafts.ON_DESK` at `/api/decide`, `/api/review`,
   `/api/outline`, `/api/look` and `GET /api/gate`. A teammate reads the desk with only
   Download on each card, and each change is refused with who runs the training.
+- A guide, brief or plan is typed into part by part: `GET /api/drafts?path=&name=` answers
+  the card's view (`drafts.card`: the card, its parts with their revision and version
+  counts, and the whole desk as `desk`); `POST /api/drafts/save` {path, name, part, seen:
+  the revision the form saw, text, session} and `/api/drafts/restore` {path, name, part,
+  seen, index} answer it after the change, with `said` when the desk could not accept a
+  save it made; `GET /api/drafts/versions?path=&name=&part=` answers the part's History
+  with each version's `label` and the words of each kind of change as `sources`. Typing is
+  committed together (`Engine.pending_commit`), and `POST /api/drafts/share` {path}, sent
+  when the person leaves the desk, commits it and shares it under the team's setting:
+  {"committed"}.
 - While a run is driving a training, its decisions cannot be moved back to a conversation:
   a gate the runner waits at would then be one an assistant could pass. They can be moved
   once the run is done as far as it goes, which is how a slide deck gets made. Moving them
@@ -197,15 +207,19 @@ DRAFTS = '/api/drafts'
 # it is, and Send to its copies.
 DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'update', 'keep',
                                                      'send'))
+# Typing into a part, bringing back one of its versions, and committing what was typed.
+TYPED = tuple(f'{DRAFTS}/{action}' for action in ('save', 'restore', 'share'))
+VERSIONS = f'{DRAFTS}/versions'
+PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
-         DRAFTS)
+         DRAFTS, VERSIONS)
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
-          '/api/review-level', '/api/research-site', *DECIDED)
+          '/api/review-level', '/api/research-site', *DECIDED, *TYPED)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -277,8 +291,18 @@ class RunnerPage(desk.Page):
         if path == '/api/delete':
             return desk.as_json(HTTPStatus.OK, self.engine.leaving(self.driving(one('path'))))
         if path == DRAFTS:
-            return desk.as_json(HTTPStatus.OK, drafts.view(self.engine,
-                                                           self.on_desk(one('path'))))
+            root = self.on_desk(one('path'))
+            try:
+                name = one('name')
+            except desk.Refusal:
+                return desk.as_json(HTTPStatus.OK, drafts.view(self.engine, root))
+            return desk.as_json(HTTPStatus.OK, self.typed(lambda: self.engine.draft_card(
+                root, name)))
+        if path == VERSIONS:
+            root = self.on_desk(one('path'))
+            name, part = one('name'), one('part')
+            return desk.as_json(HTTPStatus.OK, self.typed(lambda: self.engine.draft_versions(
+                root, name, part)))
         if path == '/api/gate':
             self.not_on_desk(one('path'))
             return desk.as_json(HTTPStatus.OK, self.gate(one('path'), one('artifact')))
@@ -410,14 +434,16 @@ class RunnerPage(desk.Page):
         return False
 
     def body_limit(self, target: str, headers) -> int:
-        """A document may be sent whole, to its own address, by whoever holds the key.
-        Anyone else's request there is held to the desk's limit, so it is refused unread."""
-        if target.partition('?')[0] in (DOCUMENTS, ASSET):
+        """A document may be sent whole, to its own address, and so may a part typed on the
+        desk, by whoever holds the key. Anyone else's request there is held to the desk's
+        limit, so it is refused unread."""
+        address = target.partition('?')[0]
+        if address in (DOCUMENTS, ASSET, f'{DRAFTS}/save'):
             try:
                 self.check_token(headers)
             except desk.Refusal:
                 return super().body_limit(target, headers)
-            return DOCUMENT_LIMIT
+            return PART_LIMIT if address == f'{DRAFTS}/save' else DOCUMENT_LIMIT
         return super().body_limit(target, headers)
 
     def driving(self, path: str) -> str:
@@ -474,6 +500,32 @@ class RunnerPage(desk.Page):
         except WorkspaceError as refusal:
             raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
         return {**drafts.view(self.engine, root), **added}
+
+    def part(self, path: str, sent: dict) -> dict:
+        """Typing on the desk: save {name, part, seen: the revision the form saw, text,
+        session} and restore {name, part, seen, index}, each answered with the card's new
+        view, and share {}, which commits what was typed and answers {'committed'}."""
+        root = self.on_desk(desk.text(sent, 'path'))
+        if path == f'{DRAFTS}/share':
+            return self.typed(lambda: self.engine.draft_share(root))
+        name, part = desk.text(sent, 'name'), desk.text(sent, 'part')
+        if path == f'{DRAFTS}/restore':
+            return self.typed(lambda: self.engine.draft_restore(
+                root, name, part, sent.get('seen'), sent.get('index')))
+        text = sent.get('text')
+        if not isinstance(text, str):
+            raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give text as text.')
+        return self.typed(lambda: self.engine.draft_save(
+            root, name, part, sent.get('seen'), text, desk.text(sent, 'session', False)))
+
+    @staticmethod
+    def typed(action):
+        """A desk change to one part, or a read of one: its refusal says why, as the
+        desk's decisions do."""
+        try:
+            return action()
+        except WorkspaceError as refusal:
+            raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
 
     def run(self, path: str) -> dict:
         """One training's run, for a training this computer knows."""
@@ -652,6 +704,8 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.asset(sent))
         if path in DECIDED:
             return desk.as_json(HTTPStatus.OK, self.drafted(path, sent))
+        if path in TYPED:
+            return desk.as_json(HTTPStatus.OK, self.part(path, sent))
         if path == '/api/review':
             self.not_on_desk(desk.text(sent, 'path'))
             self.run(desk.text(sent, 'path'))
