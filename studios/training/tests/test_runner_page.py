@@ -1828,6 +1828,20 @@ class ListTests(PageCase):
                          ('needs-you', 'research-plan', 'page'))
         self.assertEqual(self.get('trainings')['needs'], 1)
 
+    def test_list_and_detail_keep_desk_navigation_for_finished_and_desk_runs(self):
+        path = self.started()
+        brief = self.engine.brief(path)
+        for state, flow, can_open in (('done', None, True), ('done', None, False),
+                                      ('working', 'desk', False)):
+            with self.subTest(state=state, flow=flow, can_open=can_open):
+                changed = {**brief, 'state': state, 'flow': flow, 'can_open_desk': can_open}
+                with mock.patch.object(self.engine, 'brief', return_value=changed):
+                    listed = self.listed()['Rolling restarts']['run']
+                    detail = self.get('training', path=path)['run']
+                self.assertEqual(listed, {'state': state, 'sentence': brief['sentence'],
+                                          'flow': flow, 'can_open_desk': can_open})
+                self.assertEqual(detail, listed)
+
     def test_a_run_with_a_question_counts_as_needing_the_person(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))
         path = self.started()

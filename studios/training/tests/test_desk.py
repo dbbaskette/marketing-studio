@@ -7643,7 +7643,7 @@ class DeskKitAdapterTests(unittest.TestCase):
         script = (PAGE / 'drafts.js').read_text(encoding='utf-8')
         code = (
             "const vm = require('vm'); const fs = require('fs'); const made = [];\n"
-            "const context = vm.createContext({ console, URLSearchParams,\n"
+            "const context = vm.createContext({ console, URLSearchParams, TextEncoder,\n"
             "  view: { path: '/somewhere/else' },\n"
             "  ask: (endpoint, params) => made.push(['GET', endpoint, params]),\n"
             "  send: (endpoint, body) => made.push(['POST', endpoint, body]) });\n"

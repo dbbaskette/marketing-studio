@@ -555,9 +555,10 @@ class RunnerPage(desk.Page):
         """Add a training's run to what the desk says about it. A run with a question or
         a problem makes the training one that needs the person."""
         found = self.engine.brief(item['path'])
-        item['run'] = found and {'state': found['state'], 'sentence': found['sentence'],
-                                 'flow': found.get('flow'),
-                                 'can_open_desk': found.get('can_open_desk', False)}
+        item['run'] = found and {'state': found['state'], 'sentence': found['sentence']}
+        if found and (found.get('flow') == 'desk' or found['state'] == 'done'):
+            item['run'].update(flow=found.get('flow'),
+                               can_open_desk=found.get('can_open_desk', False))
         item['driver'] = found and found['driver']
         item['mine'] = None if found is None else found['mine']
         item['notice'] = found and found['notice']
