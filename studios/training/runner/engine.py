@@ -5813,18 +5813,19 @@ class Engine(Reviewing):
         return ([entry for entry in plan if entry.get('file') not in held],
                 [entry for entry in offered if entry.get('file') not in held])
 
+    @staticmethod
+    def _deck_busy(record: dict) -> bool:
+        """A persisted deck change may wait without a registered worker."""
+        return any(kept.get('redrawing') or any(
+            note.get('status') in ('waiting', 'drawing') for note in kept.get('notes') or ())
+            for kept in (record.get('deck') or {}).values())
+
     def add_source(self, path, files) -> dict:
         """The priced desk action: add documents and update only the research."""
         with self.files:
             root, record = self._on_desk(path)
             run = self._run(root)
-            # Deck changes can be persisted before a worker is registered, or remain
-            # pending while a run is paused. Do not hold their input underneath them.
-            decks = (record.get('deck') or {}).values()
-            deck_busy = any(kept.get('redrawing') or any(
-                note.get('status') in ('waiting', 'drawing') for note in kept.get('notes') or ())
-                for kept in decks)
-            if run.workers or run.busy or drafts.busy(record) or deck_busy:
+            if run.workers or run.busy or drafts.busy(record) or self._deck_busy(record):
                 raise WorkspaceError(draft_jobs.BUSY)
             if not workspace.research_record(root):
                 raise WorkspaceError('Wait until the research is written before adding a source.')
@@ -5851,6 +5852,8 @@ class Engine(Reviewing):
             run = self._run(root)
             if run.workers or run.busy:
                 raise WorkspaceError(WORKING)
+            if drafts.on_desk(record) and self._deck_busy(record):
+                raise WorkspaceError(draft_jobs.BUSY)
             self._request_sources(root, record)
         self.carry_on(path)
         return self.view(root)

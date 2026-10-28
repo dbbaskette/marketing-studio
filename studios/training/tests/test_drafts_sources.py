@@ -241,6 +241,46 @@ class SourceTests(DeckCase):
         self.engine.stop_updates(root, chain)
         self.assertFalse(drafts.updates(self.record(root)))
 
+    def saved_with_later_document(self):
+        root = self.begin(source_scope='supplied-only')
+        self.send(root, 'first.txt')
+        self.engine.supply(root, 'done')
+        self.send(root, 'later.txt')
+        self.to_end(root)
+        self.engine.outline(root, None, 'approve')
+        self.to_end(root)
+        self.assertEqual(self.state(root), 'done', self.view(root))
+        return root
+
+    def test_row_182_opened_saved_training_blocks_research_during_deck_notes(self):
+        root = self.saved_with_later_document()
+        self.engine.open_on_desk(root)
+        seen = self.record(root)['deck']['']['saved']['sha256']
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.deck_note(root, None, 'Simplify.', seen)
+        self.assertTrue(any(note['status'] == 'waiting' for note in self.record(root)['deck']['']['notes']))
+        record, session, jobs, commits = self.record(root), workspace.load(root), len(self.workers.jobs), self.log()
+        with self.assertRaisesRegex(WorkspaceError, draft_jobs.BUSY):
+            self.engine.update_research(root)
+        self.assertEqual((self.record(root), workspace.load(root), len(self.workers.jobs), self.log()),
+                         (record, session, jobs, commits))
+        self.engine.carry_on(root)
+        self.to_end(root)
+        self.assertTrue(all(note['status'] == 'done' for note in self.record(root)['deck']['']['notes']))
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.update_research(root)
+        self.assertTrue(any(request.get('artifact') == 'research' and request.get('refresh')
+                            for request in workspace.load(root)['requests']))
+
+    def test_row_182_saved_research_update_keeps_its_original_admission(self):
+        root = self.saved_with_later_document()
+        self.assertFalse(drafts.on_desk(self.record(root)))
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.update_research(root)
+        self.assertTrue(any(request.get('artifact') == 'research' and request.get('refresh')
+                            for request in workspace.load(root)['requests']))
+        self.assertEqual(self.record(root)['documents']['later'], [])
+
     def test_legacy_findings_ignore_recording_timestamps(self):
         root = self.finished()
         old = {'schema': 1, 'results': {'same': {'summary': 'A', 'checked_at': 'before'},
