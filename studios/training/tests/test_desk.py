@@ -7229,6 +7229,68 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             storageFails=True)
         self.assertTrue(failed['closePrevented'])
 
+    def test_a_clean_tab_cannot_remove_another_tabs_recovery(self):
+        desk, card_view = self.editable()
+        answers = self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/save': [{'status': 400, 'body': {'error': 'Close the code block.'}}],
+            'POST /api/drafts/share': [ok({'committed': False})]})
+        first = self.open_desk(answers, [
+            {'fill': 'Text of When capacity holds', 'value': '``` Tab A'}, {'pagehide': True}])
+        self.assertTrue(first['storage'])
+        # Tab B was already open before Tab A's failed write left recovery in their
+        # shared localStorage. Closing B has no pending edit of its own to acknowledge.
+        clean = self.open_desk(answers, [
+            {'storageUpdate': first['storage']}, {'pagehide': True}])
+        self.assertEqual(clean['storage'], first['storage'])
+        reopened = self.open_desk(answers, [{'snapshot': 'recovered'}], storage=clean['storage'])
+        self.assertEqual(reopened['snapshots']['recovered']['fields']['Text of When capacity holds'],
+                         '``` Tab A')
+
+    def test_acknowledging_one_tabs_edit_preserves_another_tabs_recovery(self):
+        desk, card_view = self.editable()
+        answers = self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/save': [ok(card_view)],
+            'POST /api/drafts/share': [ok({'committed': True})]})
+        first = self.open_desk(answers, [
+            {'fill': 'Text of When capacity holds', 'value': 'Tab A draft.'}])
+        second = self.open_desk(answers, [
+            {'storageUpdate': first['storage']},
+            {'fill': 'Text of When capacity holds', 'value': 'Tab B draft.'},
+            {'captureStorage': 'both'}, {'pagehide': True}])
+        self.assertEqual(len(second['storageSnapshots']['both']), 2)
+        self.assertEqual(second['storage'], first['storage'])
+        reopened = self.open_desk(answers, [
+            {'snapshot': 'both'}, {'click': 'Save recovered text'}],
+            storage=second['storageSnapshots']['both'])
+        self.assertEqual(reopened['snapshots']['both']['fields']['Text of When capacity holds'],
+                         'Tab B draft.')
+        self.assertIn('Other recovered text', reopened['snapshots']['both']['text'])
+        self.assertIn('Tab A draft.', reopened['snapshots']['both']['text'])
+        self.assertEqual(reopened['storage'], first['storage'])
+
+    def test_recovering_an_old_snapshot_cannot_delete_a_newer_tab_snapshot(self):
+        desk, card_view = self.editable()
+        answers = self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/save': [ok(card_view)]})
+        author = self.open_desk(answers, [
+            {'fill': 'Text of When capacity holds', 'value': 'Older draft.'},
+            {'captureStorage': 'old'},
+            {'fill': 'Text of When capacity holds', 'value': 'Newer draft.'}])
+        recovering = self.open_desk(answers, [
+            {'storageReplace': author['storage']}, {'click': 'Save recovered text'}],
+            storage=author['storageSnapshots']['old'])
+        self.assertEqual(recovering['storage'], author['storage'])
+        closing = self.open_desk(answers, [
+            {'storageReplace': author['storage']}, {'pagehide': True}],
+            storage=author['storageSnapshots']['old'])
+        self.assertEqual(self.posts(closing), [])
+        self.assertEqual(len(closing['storage']), 2)
+        self.assertIn('Older draft.', json.dumps(closing['storage']))
+        self.assertIn('Newer draft.', json.dumps(closing['storage']))
+
     def test_successful_unload_save_clears_recovery_and_shares(self):
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{

@@ -220,14 +220,27 @@ deskKit.typed = (held, part, text) => {
 };
 
 const RECOVERY_PREFIX = 'training-studio-unsaved:';
-function recoveryKey(path) { return RECOVERY_PREFIX + encodeURIComponent(path); }
+let recoverySequence = 0;
+function recoveryPrefix(path) { return RECOVERY_PREFIX + encodeURIComponent(path) + ':'; }
 function readDeskRecovery(path) {
+  const edits = [];
   try {
-    const found = JSON.parse(window.localStorage.getItem(recoveryKey(path)) || '[]');
-    return list(found).filter((edit) => edit && typeof edit.name === 'string'
-      && typeof edit.part === 'string' && typeof edit.text === 'string'
-      && Number.isInteger(edit.seen) && typeof edit.session === 'string');
-  } catch (_) { return []; }
+    const storage = window.localStorage, prefix = recoveryPrefix(path);
+    for (let index = 0; index < storage.length; index++) {
+      const key = storage.key(index);
+      if (!key?.startsWith(prefix)) continue;
+      // One damaged entry must not hide other sessions' recoverable text.
+      try {
+        const edit = JSON.parse(storage.getItem(key));
+        if (edit && typeof edit.name === 'string' && typeof edit.part === 'string'
+            && typeof edit.text === 'string' && Number.isInteger(edit.seen)
+            && typeof edit.session === 'string' && Number.isFinite(edit.at)) {
+          edits.push({ ...edit, recoveryKey: key });
+        }
+      } catch (_) { /* Keep unreadable entries untouched. */ }
+    }
+  } catch (_) { /* Storage may be unavailable in this browser. */ }
+  return edits.sort((left, right) => left.at - right.at);
 }
 function pendingDeskEdits(path) {
   const held = DESK.held[path];
@@ -241,9 +254,36 @@ function pendingDeskEdits(path) {
 }
 function keepDeskRecovery(path) {
   try {
-    const edits = pendingDeskEdits(path);
-    if (edits.length) window.localStorage.setItem(recoveryKey(path), JSON.stringify(edits));
-    else window.localStorage.removeItem(recoveryKey(path));
+    const held = DESK.held[path], storage = window.localStorage;
+    for (const material of Object.values(held.materials)) {
+      material.recoveryOwn ||= {};
+      material.recoveryFrom ||= {};
+      for (const [part, pending] of Object.entries(material.pending)) {
+        if (material.recovered && material.recoveryFrom[part]
+            && storage.getItem(material.recoveryFrom[part]) !== null) continue;
+        const edit = { ...deskItem(material.id), part, text: pending.text,
+          seen: material.editSeen?.[part] ?? material.view.revision, session: material.session };
+        const serialized = JSON.stringify(edit), previous = material.recoveryOwn[part];
+        if (previous?.serialized === serialized && storage.getItem(previous.key) !== null) continue;
+        // Immutable snapshots let another tab acknowledge exactly what it recovered,
+        // without deleting newer typing from the original session. Write before removing.
+        const key = recoveryPrefix(path) + encodeURIComponent(material.session) + ':'
+          + Date.now() + ':' + (++recoverySequence);
+        storage.setItem(key, JSON.stringify({ ...edit, at: Date.now() }));
+        material.recoveryOwn[part] = { key, serialized };
+        if (previous) storage.removeItem(previous.key);
+      }
+      for (const part of new Set([...Object.keys(material.recoveryOwn),
+        ...Object.keys(material.recoveryFrom)])) {
+        if (material.pending[part]) continue;
+        // Only an acknowledged save or explicit Reload clears this session's entries.
+        const keys = [material.recoveryOwn[part]?.key, material.recoveryFrom[part]].filter(Boolean);
+        for (const key of keys) storage.removeItem(key);
+        held.recovery = held.recovery.filter((edit) => !keys.includes(edit.recoveryKey));
+        delete material.recoveryOwn[part];
+        delete material.recoveryFrom[part];
+      }
+    }
     return true;
   } catch (_) { return false; }
 }
@@ -252,7 +292,7 @@ function recoverDeskMaterial(path, material) {
   for (const edit of deskHeld(path).recovery.filter((edit) => edit.name === name)) {
     material.pending[edit.part] = { text: edit.text };
     material.editSeen = { ...material.editSeen, [edit.part]: edit.seen };
-    material.session = edit.session;
+    material.recoveryFrom = { ...material.recoveryFrom, [edit.part]: edit.recoveryKey };
     material.recovered = true;
     material.saved = 'Recovered unsaved text. Review it before saving.';
   }
@@ -734,6 +774,17 @@ function materialParts(held, found) {
       deskMaterialChanged(held);
     });
     area.append(save);
+  }
+  const item = deskItem(held.id);
+  const otherRecovery = deskHeld(item.path).recovery.filter((edit) => edit.name === item.name
+    && held.recoveryFrom?.[edit.part] !== edit.recoveryKey);
+  if (otherRecovery.length) {
+    const copies = add(make('details', 'card'), make('summary', '', 'Other recovered text'));
+    for (const edit of otherRecovery) copies.append(add(make('section', 'card-part'),
+      make('h3', 'card-title', edit.part === 'opening' ? 'Opening'
+        : list(held.view.sections).find((section) => section.id === edit.part)?.heading || edit.part),
+      make('p', 'desk-plain', edit.text), copyButton('Copy', 'Copied.', edit.text)));
+    area.append(copies);
   }
   if (held.view.opening || held.view.whole) area.append(materialPart(held, 'opening'));
   for (const section of list(held.view.sections)) {

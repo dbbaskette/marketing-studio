@@ -716,6 +716,8 @@ async function app(file) {
     document,
     TextEncoder,
     localStorage: {
+      get length() { return Object.keys(storage).length; },
+      key: index => Object.keys(storage)[index] ?? null,
       getItem: key => storage[key] || null,
       setItem: (key, value) => { if (plan.storageFails) throw new Error('Storage full.'); storage[key] = String(value); },
       removeItem: key => { delete storage[key]; },
@@ -797,6 +799,15 @@ async function app(file) {
   const shots = {};
   for (const step of plan.steps) {
     try {
+      if (step.storageUpdate) Object.assign(storage, step.storageUpdate);
+      if (step.storageReplace) {
+        for (const key of Object.keys(storage)) delete storage[key];
+        Object.assign(storage, step.storageReplace);
+      }
+      if (step.captureStorage) {
+        report.storageSnapshots = report.storageSnapshots || {};
+        report.storageSnapshots[step.captureStorage] = { ...storage };
+      }
       if (step.snapshot) shots[step.snapshot] = snapshot();
       if (step.click) control(step.click, step.index || 0).click();
       if (step.type !== undefined) {
