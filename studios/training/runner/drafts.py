@@ -143,6 +143,19 @@ def touched(codec_draft: dict, objectives) -> list[str]:
                    for cover in part.get('covers', ()))]
 
 
+def scoped_update(root, session, name, change, draft):
+    """Only scope an objective change when every changed objective has coverage."""
+    spec = workspace.artifact(root, session, name)
+    changed = _changed(root, session, name, [*spec['upstream'], *spec['extras']])
+    if (workspace.split(name)[0] != 'document' or not _objective_only(change)
+            or changed != [workspace.qualify('blueprint', workspace.split(name)[1])]):
+        return None
+    objectives = change['objectives'] + change['added'] + change['removed']
+    if any(not touched(draft, [objective]) for objective in objectives):
+        return None
+    return set(touched(draft, objectives))
+
+
 def update_preview(root: Path, name: str) -> dict:
     from studio_core import stops
     session = workspace.load(root)
@@ -151,10 +164,9 @@ def update_preview(root: Path, name: str) -> dict:
     codec = GuideCodec() if kind == 'document' else BriefCodec()
     file = root / workspace.artifact(root, session, name)['file']
     draft = codec.split(file.read_text(encoding='utf-8'))
-    ids = set(touched(draft, change['objectives'] + change['added'] + change['removed']))
+    ids = scoped_update(root, session, name, change, draft)
     sections = draft['sections']
-    if (kind != 'document' or not _objective_only(change)
-            or input_of(root, session, name) != [workspace.qualify('blueprint', workspace.split(name)[1])]):
+    if ids is None:
         ids = {part['id'] for part in sections if not part.get('locked')}
     attempts = ((run_of(root) or {}).get('steps', {}).get(name) or {}).get('attempts') or []
     last = attempts[-1] if attempts else None

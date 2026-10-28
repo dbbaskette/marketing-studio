@@ -1656,17 +1656,37 @@ def _named_by(inputs: dict, naming: str | None) -> bool:
 
 def _update_inputs(root, session, name, inputs, update):
     if not update:
-        return {}
+        return {}, None, False
+    from runner import draft_jobs
     change = drafts.plan_change(root, session, name)
-    inputs['plan change'] = 'Before:\n' + change['before'] + '\nAfter:\n' + change['after']
-    if (workspace.split(name)[0] != 'document' or not drafts._objective_only(change)
-            or drafts.input_of(root, session, name) != [workspace.qualify('blueprint', workspace.split(name)[1])]):
-        return {}
+    plan_changed = bool(change['before']) and change['before'] != change['after']
+    if plan_changed:
+        inputs['plan change'] = 'Before:\n' + change['before'] + '\nAfter:\n' + change['after']
+    spec = workspace.artifact(root, session, name)
+    changed_inputs = list(dict.fromkeys([*drafts.input_of(root, session, name),
+        *drafts._changed(root, session, name, spec['extras'])]))
+    inputs['changed inputs'] = ', '.join(
+        f'the {drafts.what(key)}' if key.startswith('setting:') else workspace.label(key)
+        for key in changed_inputs)
     file = root / workspace.artifact(root, session, name)['file']
-    draft = drafts.GuideCodec().split(file.read_text(encoding='utf-8'))
-    changed = set(drafts.touched(draft, change['objectives'] + change['added'] + change['removed']))
-    return {section['heading']: section['text'] for section in draft['sections']
-            if section['id'] not in changed}
+    material = file.read_text(encoding='utf-8')
+    codec = drafts.codec_of(name)
+    draft = codec.split(material)
+    changed = drafts.scoped_update(root, session, name, change, draft)
+    untouched = ({section['heading']: section['text'] for section in draft['sections']
+                  if section['id'] not in changed} if changed is not None else {})
+    covers = [cover for section in draft['sections'] for cover in section.get('covers', ())]
+    findings = [item for section in draft['sections'] for item in section.get('findings', ())]
+    if changed is None:
+        research = workspace.research_record(root) or {}
+        items = research.get('findings') if research.get('schema') == 2 else research.get('items')
+        findings.extend(items.keys() if isinstance(items, dict) else
+                        (item['id'] for item in (items or ()) if item.get('id')))
+    section = {'covers': covers, 'findings': findings, 'text': material}
+    handed, _ = draft_jobs.references(root, session, draft, section, change['after'])
+    inputs['supplied references'] = json.dumps(handed)
+    return untouched, {'material': material, 'references': handed,
+                       'names': draft_jobs.intake_names(root)}, plan_changed
 
 
 def document_work(root: Path, found: Survey, step: Step, request: dict | None,
@@ -1680,7 +1700,7 @@ def document_work(root: Path, found: Survey, step: Step, request: dict | None,
     earlier = _earlier(root, session, level)
     if earlier:
         inputs['earlier levels'] = earlier
-    untouched = _update_inputs(root, session, step.artifact, inputs, update)
+    untouched, update_check, plan_changed = _update_inputs(root, session, step.artifact, inputs, update)
     named = _named_by(inputs, naming)
     task = (f'Write {workspace.label(step.artifact)} for this training.\n\n'
             f'{_about(root, session)}\n'
@@ -1688,10 +1708,10 @@ def document_work(root: Path, found: Survey, step: Step, request: dict | None,
             + f'\nYour inputs are {_inputs(inputs)}.\n'
             f'Hand the guide back with submit_artifact under the name "{name}".'
             + _again(request, _text(root, session, step.artifact), error, answered,
-                     'the guide', found.state.get(step.artifact) == 'stale', update))
+                     'the guide', found.state.get(step.artifact) == 'stale' or update, plan_changed))
     prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'document', 'blueprint': blueprint,
-                                     **({'untouched': untouched} if update else {})}},
+                                     **({'untouched': untouched, 'update_check': update_check} if update else {})}},
                 'ask': _can_ask(answered)}
     return Work(briefs.guidance('document', level=level, naming=named), task, 'write',
                 prepared, name)
@@ -1705,7 +1725,7 @@ def brief_work(root: Path, found: Survey, step: Step, request: dict | None,
     inputs = {'intake': _read(root / 'intake.md') or '',
               'blueprint': _text(root, session, workspace.qualify('blueprint', level)) or '',
               'research findings': findings_text(root)}
-    untouched = _update_inputs(root, session, step.artifact, inputs, update)
+    untouched, update_check, plan_changed = _update_inputs(root, session, step.artifact, inputs, update)
     named = _named_by(inputs, naming)
     task = (f'Write {workspace.label(step.artifact)} for this training. It is a {kind} '
             f'brief.\n\n{_about(root, session)}\n'
@@ -1713,11 +1733,11 @@ def brief_work(root: Path, found: Survey, step: Step, request: dict | None,
             + f'\nYour inputs are {_inputs(inputs)}.\n'
             f'Hand the brief back with submit_artifact under the name "{name}".'
             + _again(request, _text(root, session, step.artifact), error, answered,
-                     'the brief', found.state.get(step.artifact) == 'stale', update))
+                     'the brief', found.state.get(step.artifact) == 'stale' or update, plan_changed))
     prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'brief', 'brief_kind': kind,
                                      'findings': session.get('findings'),
-                                     **({'untouched': untouched} if update else {})}},
+                                     **({'untouched': untouched, 'update_check': update_check} if update else {})}},
                 'ask': _can_ask(answered)}
     return Work(briefs.guidance('brief', level=level, kind=kind, naming=named), task,
                 'write', prepared, name)

@@ -504,6 +504,88 @@ class DraftJobTests(DeckCase):
         self.assertEqual(drafts.update_preview(root, self.NAME)['price'],
                          'This computer has no record yet of what it costs.')
 
+    def test_update_hands_back_unknown_references_in_changed_sections(self):
+        root = self.desk()
+        self.change_plan(root)
+        before = (root / '101/document.md').read_text()
+        def worker(tools, job):
+            bad = before.replace('## When capacity holds', '## When capacity holds')
+            bad = bad.replace('<!-- covers: O2 K1.2 -->', '<!-- covers: O2 K1.2 -->\n\nInvented fact [999].')
+            bad += '\n999. Invented source\n'
+            result = tools.submit_artifact('document', bad)
+            self.assertFalse(result[0], result)
+            self.assertIn('[999] is not one of them', result[1])
+            unsupported = before.replace('<!-- covers: O2 K1.2 -->',
+                '<!-- covers: O2 K1.2 -->\n\nCapacity improves by 40 percent.')
+            result = tools.submit_artifact('document', unsupported)
+            self.assertFalse(result[0], result)
+            self.assertIn('A claim with no reference', result[1])
+            result = tools.submit_artifact('document', before.replace(
+                '## When capacity holds', '## A different heading'))
+            self.assertFalse(result[0], result)
+            self.assertIn('Keep the section headings', result[1])
+            altered_cover = before.replace('<!-- covers: O3 -->', '<!-- covers: O1 -->')
+            result = tools.submit_artifact('document', altered_cover)
+            self.assertFalse(result[0], result)
+            self.assertIn('Section "Why this matters" is not touched', result[1])
+            result = tools.submit_artifact('document', before)
+            self.assertTrue(result[0], result)
+            tools.submit_review('Kept the guide.')
+        self.workers.then('document', worker)
+        self.engine.update(root, self.NAME)
+        self.assertIsNone(self.record(root)['problem'], self.record(root)['problem'])
+        self.assertNotIn('[999]', (root / '101/document.md').read_text())
+
+    def test_update_adds_only_supplied_references_to_sources(self):
+        text = (helpers.EXAMPLES / 'document.md').read_text()
+        item = {'number': 4, 'id': 'new', 'title': 'Supported finding',
+                'date': '2026-01-01', 'origin': 'https://example.invalid/source'}
+        spec = {'update_check': {'material': text, 'references': [item], 'names': []}}
+        added = text.replace('<!-- covers: O2 K1.2 -->',
+            '<!-- covers: O2 K1.2 -->\n\nNew supported fact [4].')
+        problems, _, kept = worker_tools._check_update(added, spec, drafts.GuideCodec(), 'document')
+        self.assertEqual(problems, [])
+        self.assertIn('4. Supported finding, 2026-01-01, https://example.invalid/source', kept)
+        forged = added.replace('1. Finding', '1. Forged Finding')
+        problems, _, _ = worker_tools._check_update(forged, spec, drafts.GuideCodec(), 'document')
+        self.assertIn('Leave Sources as it is: the studio adds the references you use.', problems)
+
+    def test_research_only_update_describes_its_changed_input(self):
+        from runner import pipeline
+        root = self.desk()
+        found = self.engine._survey(root, self.record(root))
+        step = next(s for s in found.steps if s.artifact == 'brief@101')
+        research = workspace.research_record(root)
+        research['items'].append({'id': 'extra', 'question': 'Extra finding'})
+        research['results']['extra'] = {'status': 'supported', 'summary': 'A supported fact.',
+                                         'evidence': [{'origin': 'https://example.invalid/extra'}]}
+        home.write_json(root / workspace.research_record_file(root), research)
+        self.assertEqual(drafts.input_of(root, found.session, 'brief@101'), ['research'])
+        work = pipeline.brief_work(root, found, step, None, None, [], update=True)
+        self.assertNotIn(drafts.UPDATE_RULE, work.task)
+        self.assertIn('research', work.task.lower())
+        self.assertNotIn('plan change', work.prepared['inputs'])
+        self.assertIn('extra', [item['id'] for item in json.loads(work.prepared['inputs']['supplied references'])])
+
+    def test_missing_coverage_makes_update_conservatively_whole(self):
+        root = self.desk()
+        file = root / '101/document.md'
+        file.write_text(file.read_text().replace('<!-- covers: O2 K1.2 -->', ''))
+        workspace.save(root, self.NAME, edit=True, via='save')
+        self.change_plan(root)
+        card = self.card(root)
+        preview = drafts.update_preview(root, self.NAME)
+        self.assertEqual(preview['parts'], [s['heading'] for s in card['sections'] if not s.get('locked')])
+        def worker(tools, job):
+            self.assertFalse(tools.job['artifacts']['document']['untouched'])
+            result = tools.submit_artifact('document', file.read_text().replace(
+                '## When capacity holds', '## When capacity holds\n\n<!-- covers: O2 K1.2 -->'))
+            self.assertTrue(result[0], result)
+            tools.submit_review('Restored the coverage.')
+        self.workers.then('document', worker)
+        self.engine.update(root, self.NAME)
+        self.assertIsNone(self.record(root)['problem'], self.record(root)['problem'])
+
     def test_saved_runs_do_not_recover_or_run_desk_job_metadata(self):
         root = self.begin()
         with self.engine.files:

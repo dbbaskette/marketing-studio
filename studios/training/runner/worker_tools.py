@@ -226,6 +226,52 @@ def _untouched(text, spec, codec):
             if sections.get(heading) != original]
 
 
+def _check_update(text, spec, codec, kind):
+    """Validate a whole update against the same boundaries as section submissions."""
+    from runner import draft_jobs
+    from studio_core.drafting import basis
+    context = spec.get('update_check')
+    if not context:
+        return [], [], text
+    before = context['material']
+    try:
+        old, new = codec.split(before), codec.split(text)
+        if [s['heading'] for s in old['sections']] != [s['heading'] for s in new['sections']]:
+            raise ValueError('Keep the section headings and their order exactly.')
+        problems = []
+        protected = spec.get('untouched') or {}
+        for old_part, new_part in zip(old['sections'], new['sections']):
+            if old_part['heading'] in protected and any(
+                    old_part.get(key) != new_part.get(key) for key in ('covers', 'findings')):
+                problems.append(f'Section "{old_part["heading"]}" is not touched by the plan change. Copy it exactly.')
+        for part in new['sections']:
+            codec.vet(part['id'], part['text'])
+            if not part.get('locked'):
+                basis.no_heading(part['text'], codec)
+        original_source = next((s for s in old['sections'] if s.get('locked')), None)
+        source = next((s for s in new['sections'] if s.get('locked')), None)
+        if (original_source is None) != (source is None) or (source and source['text'] != original_source['text']):
+            problems.append(draft_jobs.SOURCES)
+        allowed = set(checks._sources(before)[1]) | {f['number'] for f in context['references']}
+        unknown = {int(n) for n in checks.REFERENCE.findall(checks._sources(text)[0])} - allowed
+        problems += [f'Cite only the references you were given: [{n}] is not one of them.'
+                     for n in sorted(unknown)]
+        for part in new['sections']:
+            if not part.get('locked'):
+                draft_jobs.append_sources(new, context['references'], part['text'], kind)
+        kept = codec.join(new)
+        old_words = [old.get('opening', '')] + [s['text'] for s in old['sections'] if not s.get('locked')]
+        new_words = [new.get('opening', '')] + [s['text'] for s in new['sections'] if not s.get('locked')]
+        added = [paragraph for value, prior in zip(new_words, old_words)
+                 for paragraph in re.split(r'\n\s*\n', value)
+                 if paragraph.strip() and paragraph not in prior]
+        outcome = checks.citations(kept, kind, added=added, names=context.get('names') or ())
+        problems += [p for p in held([outcome]) if not p.startswith('Sources entry ')]
+        return problems, [outcome], kept
+    except ValueError as error:
+        return [str(error)], [], text
+
+
 def check_document(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
     """A learner guide, against the core's coverage check and the blueprint it teaches.
     Without the blueprint the check cannot run, which is recorded for the gate."""
@@ -235,7 +281,8 @@ def check_document(text: str, spec: dict) -> tuple[list[str], list[dict], list[s
         outcome = checks.result('document.coverage', [], unavailable=(
             'The blueprint was not given, so coverage could not be checked.'))
     from runner import drafts
-    return held([outcome]) + _untouched(text, spec, drafts.GuideCodec()), [outcome], [], as_kept(text)
+    problems, extra, kept = _check_update(text, spec, drafts.GuideCodec(), 'document')
+    return held([outcome]) + _untouched(text, spec, drafts.GuideCodec()) + problems, [outcome, *extra], [], as_kept(kept)
 
 
 def check_brief(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
@@ -244,7 +291,8 @@ def check_brief(text: str, spec: dict) -> tuple[list[str], list[dict], list[str]
     outcomes = checks.check_brief(text, spec.get('brief_kind') or BRIEF_KINDS[0],
                                   spec.get('findings'))
     from runner import drafts
-    return held(outcomes) + _untouched(text, spec, drafts.BriefCodec()), outcomes, [], as_kept(text)
+    problems, extra, kept = _check_update(text, spec, drafts.BriefCodec(), 'brief')
+    return held(outcomes) + _untouched(text, spec, drafts.BriefCodec()) + problems, [*outcomes, *extra], [], as_kept(kept)
 
 
 def check_part(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
