@@ -49,7 +49,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/review-level', '/api/research-site')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
-RUN_KEYS = ['agent', 'ahead', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
+RUN_KEYS = ['agent', 'ahead', 'can_open_desk', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'flow', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'research_from', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
@@ -1828,6 +1828,20 @@ class ListTests(PageCase):
                          ('needs-you', 'research-plan', 'page'))
         self.assertEqual(self.get('trainings')['needs'], 1)
 
+    def test_list_and_detail_keep_desk_navigation_for_finished_and_desk_runs(self):
+        path = self.started()
+        brief = self.engine.brief(path)
+        for state, flow, can_open in (('done', None, True), ('done', None, False),
+                                      ('working', 'desk', False)):
+            with self.subTest(state=state, flow=flow, can_open=can_open):
+                changed = {**brief, 'state': state, 'flow': flow, 'can_open_desk': can_open}
+                with mock.patch.object(self.engine, 'brief', return_value=changed):
+                    listed = self.listed()['Rolling restarts']['run']
+                    detail = self.get('training', path=path)['run']
+                self.assertEqual(listed, {'state': state, 'sentence': brief['sentence'],
+                                          'flow': flow, 'can_open_desk': can_open})
+                self.assertEqual(detail, listed)
+
     def test_a_run_with_a_question_counts_as_needing_the_person(self):
         self.workers.then('research-plan', asks('Which platform is this about?'))
         path = self.started()
@@ -2823,10 +2837,24 @@ class DeskPageTests(PageCase):
                             ('update', {'name': 'research-plan'}),
                             ('keep', {'name': 'research-plan', 'reason': 'Fine.',
                                       'seen': 'x'}),
-                            ('send', {'name': 'research-plan'})):
+                            ('send', {'name': 'research-plan'}),
+                            ('save', {'name': 'blueprint', 'part': 'opening', 'seen': 1,
+                                      'text': 'Typed.', 'session': 'ab12'}),
+                            ('restore', {'name': 'blueprint', 'part': 'opening', 'seen': 1,
+                                         'index': 0}),
+                            ('share', {}),
+                            ('note', {'name': 'blueprint', 'seen': 1, 'note': 'Change.'}),
+                            ('revise', {'name': 'document', 'seen': 1, 'note': 'Change.'}),
+                            ('selection', {'name': 'document', 'part': 'opening', 'seen': 1,
+                                           'text': 'word', 'start': 0, 'action': 'shorten'}),
+                            ('stop', {'job': 'unknown'}), ('retry', {'job': 'unknown'})):
             with self.subTest(route=route):
                 said = self.post(f'drafts/{route}', {'path': saved, **sent}, 409)
                 self.assertEqual(said['error'], drafts.NOT_ON_DESK)
+        said = self.get('drafts/versions', 409, path=saved, name='blueprint', part='opening')
+        self.assertEqual(said['error'], drafts.NOT_ON_DESK)
+        said = self.get('drafts/card', 409, path=saved, name='blueprint')
+        self.assertEqual(said['error'], drafts.NOT_ON_DESK)
         self.assertEqual((self.on_disk(), self.log()), (before, commits),
                          'nothing was changed or committed')
         # Each still answers what is its own as it always did.
@@ -3018,10 +3046,74 @@ class DeskPageTests(PageCase):
         self.assertFalse((Path(path) / pipeline.INDEX).is_file())
         self.assertEqual({card['state'] for card in marked['cards']}, {'ready'})
         # Nothing is a draft, and still no index: why is said.
-        self.assertEqual(marked['needs'], ['A check failed: brief.sections@101'])
+        self.assertEqual(marked['needs'], ["The level 101 brief's sections need fixing."])
         for line in marked['needs']:
             for word in FORBIDDEN:
                 self.assertNotIn(word, line.lower())
+
+    def test_a_part_is_typed_restored_and_shared_on_the_page(self):
+        path = self.desk(levels=['101'], materials=['document'])
+        name = 'document@101'
+        card = self.get('drafts/card', path=path, name=name)
+        self.assertEqual((card['name'], card['state'], card['label']),
+                         (name, 'draft', 'the level 101 learner guide'))
+        self.assertIsInstance(card['revision'], int)
+        self.assertEqual(sorted(card['sections'][0]), ['covers', 'heading', 'id', 'locked',
+                                                       'text'])
+        sources = next(part for part in card['sections'] if part['heading'] == 'Sources')
+        self.assertTrue(sources['locked'])
+        summary = next(part for part in card['sections'] if part['heading'] == 'Summary')
+        first, commits = summary['text'], self.log()
+        sent = {'path': path, 'name': name, 'part': summary['id'], 'session': 'ab12'}
+        saved = self.post('drafts/save', {**sent, 'seen': card['revision'], 'text': 'One.'})
+        self.assertEqual(saved['revision'], card['revision'] + 1)
+        self.assertEqual(next(part for part in saved['sections']
+                              if part['id'] == summary['id'])['text'], 'One.')
+        self.assertTrue(saved['desk']['cards'])
+        # A form opened before the change is told to reload; Sources is never typed in.
+        said = self.post('drafts/save', {**sent, 'seen': card['revision'], 'text': 'Two.',
+                                         'session': 'cd34'}, 409)
+        self.assertEqual(said['error'], 'This draft changed since you opened it. Reload to '
+                                        'see the latest.')
+        said = self.post('drafts/save', {**sent, 'part': sources['id'],
+                                         'seen': saved['revision'], 'text': '1. Nothing.'}, 409)
+        self.assertEqual(said['error'], drafts.LOCKED)
+        self.assertEqual(self.post('drafts/save', {**sent, 'seen': saved['revision'],
+                                                   'text': 7}, 400)['error'],
+                         'Give text as text.')
+        found = self.get('drafts/versions', path=path, name=name, part=summary['id'])
+        self.assertEqual([(one['source'], one['label'], one['text'])
+                          for one in found['versions']], [('save', 'Saved', first)])
+        self.assertEqual(found['sources'], drafts.SOURCE_WORDS)
+        restored = self.post('drafts/restore', {**sent, 'seen': saved['revision'],
+                                                'index': 0})
+        self.assertEqual(next(part for part in restored['sections']
+                              if part['id'] == summary['id'])['text'], first)
+        self.assertEqual(self.log(), commits, 'typing and restoring wait to be committed')
+        self.assertEqual(self.post('drafts/share', {'path': path}), {'committed': True})
+        self.assertEqual(self.log(), [
+            *commits, 'Rolling restarts: edit the level 101 learner guide on the desk'])
+        self.assertEqual(self.post('drafts/share', {'path': path}), {'committed': False})
+        # A long part is one save, beyond what other changes may carry.
+        long = ' '.join(['Capacity'] * 12_000)
+        self.post('drafts/save', {**sent, 'seen': restored['revision'], 'text': long})
+
+    def test_a_save_the_desk_cannot_accept_is_still_saved(self):
+        path = self.desk(levels=['101'], materials=['document'])
+        name = 'document@101'
+        card = self.get('drafts/card', path=path, name=name)
+        summary = next(part for part in card['sections'] if part['heading'] == 'Summary')
+        with mock.patch.object(workspace, 'accept_desk',
+                               side_effect=WorkspaceError('Approve the plan first.')):
+            saved = self.post('drafts/save', {'path': path, 'name': name,
+                                              'part': summary['id'], 'seen': card['revision'],
+                                              'text': 'Typed.', 'session': 'ab12'})
+        self.assertEqual(saved['said'], 'Approve the plan first.')
+        self.assertEqual(next(part for part in saved['sections']
+                              if part['id'] == summary['id'])['text'], 'Typed.')
+        self.assertIn('\n## Summary\n\nTyped.\n', (Path(path) / '101' / 'document.md')
+                      .read_text(encoding='utf-8'))
+        self.assertIn(Path(path), self.engine.pending_commit)
 
 
 class DeskTeamTests(TeamCase):
@@ -3072,10 +3164,263 @@ class DeskTeamTests(TeamCase):
                             ('level-ready', {'level': '101', 'seen': {}}),
                             ('update', {'name': name}),
                             ('keep', {'name': name, 'reason': 'Fine.', 'seen': 'x'}),
-                            ('send', {'name': name})):
+                            ('send', {'name': name}),
+                            ('save', {'name': name, 'part': 'opening', 'seen': 1,
+                                      'text': 'Typed.', 'session': 'ab12'}),
+                            ('restore', {'name': name, 'part': 'opening', 'seen': 1,
+                                         'index': 0}),
+                            ('note', {'name': name, 'seen': 1, 'note': 'Change.'}),
+                            ('revise', {'name': name, 'seen': 1, 'note': 'Change.'}),
+                            ('selection', {'name': name, 'part': 'opening', 'seen': 1,
+                                           'text': 'word', 'start': 0, 'action': 'shorten'}),
+                            ('stop', {'job': 'unknown'}), ('retry', {'job': 'unknown'})):
             with self.subTest(route=route):
                 said = self.ask(self.blake, f'drafts/{route}', {'path': str(theirs), **sent},
                                 409)
                 self.assertEqual(said['error'], str(caught.exception))
         self.assertEqual(workspace.person_statuses(theirs, workspace.load(theirs))[name],
                          'draft')
+
+    def test_a_finished_desk_training_is_still_its_person_s(self):
+        name = 'document@101'
+        with self.be(self.alex):
+            root = self.start(flow='desk', levels=['101'], materials=['document'])
+            view = self.ask(self.alex, 'drafts', path=str(root))
+            marked = self.ask(self.alex, 'drafts/level-ready', {
+                'path': str(root), 'level': '101',
+                'seen': {card['name']: card['seen'] for card in view['cards']}})
+            self.assertIsNone(marked['stopped'])
+            self.assertTrue((root / pipeline.INDEX).is_file())
+            record = self.record(root)
+            # A finished training has no driver, as always; its desk is still Alex's.
+            self.assertIsNone(record['driver'])
+            self.assertEqual(record['drafts']['finished_by']['name'], 'Alex')
+            self.assertEqual(self.engine.view(root)['mine'], True)
+            self.assertTrue(self.ask(self.alex, 'drafts', path=str(root))['team']['ours'])
+            card = self.ask(self.alex, 'drafts/card', path=str(root), name=name)
+            summary = next(part for part in card['sections'] if part['heading'] == 'Summary')
+            saved = self.ask(self.alex, 'drafts/save', {
+                'path': str(root), 'name': name, 'part': summary['id'],
+                'seen': card['revision'], 'text': 'Typed after the end.', 'session': 'ab12'})
+            self.assertEqual(saved['state'], 'draft')
+            self.assertEqual(self.ask(self.alex, 'drafts/share', {'path': str(root)}),
+                             {'committed': True})
+            self.assertEqual(self.shared()[0],
+                             'Rolling restarts: edit the level 101 learner guide on the desk')
+            self.assertIsNone(self.record(root)['driver'])
+        self.as_(self.blake, self.blake.engine.fetch)
+        theirs = self.theirs(self.blake, root)
+        self.assertFalse(self.ask(self.blake, 'drafts', path=str(theirs))['team']['ours'])
+        card = self.ask(self.blake, 'drafts/card', path=str(theirs), name=name)
+        said = self.ask(self.blake, 'drafts/save', {
+            'path': str(theirs), 'name': name, 'part': card['sections'][0]['id'],
+            'seen': card['revision'], 'text': 'Typed by a teammate.'}, 409)
+        self.assertTrue(said['error'].startswith(
+            'Alex has been running this training from another computer since '), said)
+        said = self.ask(self.blake, 'drafts/ready', {'path': str(theirs), 'name': name,
+                                                     'seen': hashed(theirs, name)}, 409)
+        self.assertTrue(said['error'].startswith('Alex has been running this training'))
+        # Nor may a teammate delete it while it is still its person's.
+        leaving = self.as_(self.blake, self.blake.engine.leaving, theirs)
+        self.assertEqual((leaving['may'], leaving['why']), (False, engines.NOT_YOURS.format(
+            name='Alex')))
+        # Handed over, it is nobody's, and says who handed it over.
+        with self.be(self.alex):
+            self.engine.drive(root, 'hand-over')
+        self.assertEqual(self.shared()[0], 'Rolling restarts: Alex hands this training over')
+        self.assertNotIn('finished_by', self.record(root)['drafts'])
+
+    def finished(self, title='Rolling restarts', materials=None) -> Path:
+        """A desk training of Alex's, every material marked ready and its index written,
+        shared with the team."""
+        with self.be(self.alex):
+            root = self.start(flow='desk', levels=['101'], materials=materials or ['document'],
+                              title=title)
+            view = self.ask(self.alex, 'drafts', path=str(root))
+            self.ask(self.alex, 'drafts/level-ready', {
+                'path': str(root), 'level': '101',
+                'seen': {card['name']: card['seen'] for card in view['cards']}})
+            self.assertTrue((root / pipeline.INDEX).is_file())
+            self.engine.share()
+        return root
+
+    def test_a_finished_desk_training_taken_by_a_teammate_stops_here(self):
+        root, name = self.finished(), 'document@101'
+        with self.be(self.alex):
+            card = self.ask(self.alex, 'drafts/card', path=str(root), name=name)
+            self.ask(self.alex, 'drafts/save', {
+                'path': str(root), 'name': name, 'part': card['sections'][0]['id'],
+                'seen': card['revision'], 'text': 'Typed and never shared.'})
+            self.engine.commit_typing(closing=True)   # committed here, not shared
+            mine = self.git('rev-parse', 'HEAD')
+        self.assertNotEqual(self.shared()[0],
+                            'Rolling restarts: edit the level 101 learner guide on the desk')
+        self.as_(self.blake, self.blake.engine.fetch)
+        with self.be(self.blake):
+            self.assertTrue(self.blake.engine.drive(self.theirs(self.blake, root),
+                                                    'take')['mine'])
+        self.assertEqual(self.shared()[0], 'Rolling restarts: Blake takes this training')
+        self.as_(self.alex, self.engine.fetch)
+        view = self.as_(self.alex, self.engine.view, root)
+        self.assertEqual((view['mine'], view['taken']['by']), (False, 'Blake'))
+        self.assertIn('Blake took this training over', view['notice'])
+        self.assertEqual([self.git('rev-parse', ref) for ref in view['kept']], [mine],
+                         "Alex's unshared work is set aside, not put on top of Blake's")
+        self.assertEqual(self.git('rev-parse', 'HEAD'),
+                         self.git('rev-parse', 'main', repo=self.remote))
+
+    def test_a_card_is_read_by_its_own_route(self):
+        root, name = self.finished(), 'document@101'
+        with self.be(self.alex):
+            self.assertEqual(self.ask(self.alex, 'drafts/card', path=str(root), name=name,
+                                      expect=200)['name'], name)
+            self.assertEqual(self.ask(self.alex, 'drafts/card', path=str(root), name='',
+                                      expect=400)['error'], 'Give one name.')
+            self.assertEqual(self.ask(self.alex, 'drafts/card', path=str(root),
+                                      expect=400)['error'], 'Give one name.')
+            self.assertNotIn('sections', self.ask(self.alex, 'drafts', path=str(root),
+                                                  name=name))
+
+    def test_takeover_sets_aside_uncommitted_typing_with_its_history(self):
+        for earlier_commit in (False, True):
+            with self.subTest(earlier_commit=earlier_commit):
+                root, name = self.finished(title=f'Pending {earlier_commit}'), 'document@101'
+                with self.be(self.alex):
+                    card = self.engine.draft_card(root, name)
+                    part = card['sections'][0]['id']
+                    if earlier_commit:
+                        card = self.engine.draft_save(root, name, part, card['revision'],
+                                                      'An earlier local edit.', 'earlier')
+                        self.engine.commit_typing(closing=True)
+                    self.engine.draft_save(root, name, part, card['revision'],
+                                           'Pending typing belongs to Alex.', 'pending')
+                    session = workspace.load(root)
+                    event = next(event for event in reversed(session['events'])
+                                 if event['event'] == 'save' and event['artifact'] == name)
+                    file = workspace.artifact(root, session, name)['file']
+                self.as_(self.blake, self.blake.engine.fetch)
+                self.as_(self.blake, self.blake.engine.drive, self.theirs(self.blake, root),
+                         'take')
+                with self.be(self.alex):
+                    report = self.engine.fetch()
+                    self.assertTrue(report['reached'], report)
+                    self.engine.commit_typing(closing=True)
+                    view = self.engine.view(root)
+                    self.assertFalse(view['mine'])
+                    self.assertNotIn('Pending typing belongs to Alex.',
+                                     (root / file).read_text(encoding='utf-8'))
+                    self.assertTrue(view['kept'], 'the local edit is recoverable')
+                    kept = view['kept'][-1]
+                    prefix = root.relative_to(self.space.repo)
+                    self.assertIn('Pending typing belongs to Alex.',
+                                  self.git('show', f'{kept}:{prefix / file}'))
+                    saved = json.loads(self.git('show', f'{kept}:{prefix}/.training-studio/session.json'))
+                    self.assertIn(event, saved['events'])
+                # The next fixture starts under Alex again; leave this training Blake's.
+
+    def test_a_finished_saved_training_must_be_claimed_before_opening(self):
+        with self.be(self.alex):
+            root = self.start(levels=['101'], materials=['document'])
+            self.to_end(root)
+            self.assertEqual(self.engine.view(root)['state'], 'done')
+            self.engine.share()
+        self.as_(self.blake, self.blake.engine.fetch)
+        theirs = self.theirs(self.blake, root)
+        detail = self.ask(self.blake, 'training', path=str(theirs))
+        run = self.ask(self.blake, 'run', path=str(theirs))
+        self.assertFalse(detail['run']['can_open_desk'])
+        self.assertFalse(run['can_open_desk'])
+        self.ask(self.blake, 'drafts/open', {'path': str(theirs)}, expect=409)
+        claimed = self.ask(self.blake, 'drive', {'path': str(theirs), 'action': 'take'})
+        self.assertTrue(claimed['can_open_desk'])
+        opened = self.ask(self.blake, 'drafts/open', {'path': str(theirs)})
+        self.assertEqual(opened['flow'], 'desk')
+        self.assertEqual(self.ask(self.blake, 'run', path=str(theirs))['flow'], 'desk')
+
+    def test_a_pr1_finished_training_requires_an_explicit_claim_and_keeps_local_edits(self):
+        root, name = self.finished(), 'document@101'
+        with self.be(self.alex):
+            record = self.record(root)
+            record['drafts'].pop('finished_by')
+            self.engine._store(root, record)
+            self.engine._commit(root, 'a finished training saved before desk ownership')
+            self.engine.share()
+            card = self.engine.draft_card(root, name)
+            with self.assertRaises(WorkspaceError):
+                self.engine.draft_save(root, name, card['sections'][0]['id'],
+                                       card['revision'], 'Unclaimed edit.')
+            self.assertFalse(self.engine.leaving(root)['may'],
+                             'an unclaimed legacy desk also requires a claim before deletion')
+            file = root / workspace.artifact(root, workspace.load(root), name)['file']
+            source = self.base / 'legacy-edit.md'
+            source.write_text(file.read_text(encoding='utf-8') + '\nA saved local edit.\n',
+                              encoding='utf-8')
+            workspace.save(root, name, source=source, edit=True, via='save',
+                           session_token='legacy')
+            event = workspace.load(root)['events'][-1]
+            self.engine.drive(root, 'take')
+            self.assertTrue(self.engine.mine(root))
+            kept = self.engine.view(root)['kept']
+            self.assertTrue(kept, 'the explicit claim preserves earlier local work separately')
+            prefix = root.relative_to(self.space.repo)
+            saved = json.loads(self.git('show', f'{kept[-1]}:{prefix}/.training-studio/session.json'))
+            self.assertIn(event, saved['events'])
+            card = self.engine.draft_card(root, name)
+            self.engine.draft_save(root, name, card['sections'][0]['id'], card['revision'],
+                                   'Explicitly claimed edit.', 'claimed')
+            self.engine.draft_share(root)
+            self.assertIn('Explicitly claimed edit.',
+                          (root / workspace.artifact(root, workspace.load(root), name)['file'])
+                          .read_text(encoding='utf-8'))
+
+    def test_takeover_during_a_step_keeps_typing_and_discards_only_worker_output(self):
+        root, name = self.finished(), 'document@101'
+        with self.be(self.alex):
+            (root / engines.IN_HAND).write_text('brief@101\n', encoding='utf-8')
+            partial = root / 'half-made.md'
+            partial.write_text('Half-made worker output.\n', encoding='utf-8')
+            card = self.engine.draft_card(root, name)
+            self.engine.draft_save(root, name, card['sections'][0]['id'], card['revision'],
+                                   'Typing kept apart from the worker.', 'in-hand')
+            file = workspace.artifact(root, workspace.load(root), name)['file']
+        self.as_(self.blake, self.blake.engine.fetch)
+        self.as_(self.blake, self.blake.engine.drive, self.theirs(self.blake, root), 'take')
+        with self.be(self.alex):
+            report = self.engine.fetch()
+            self.assertTrue(report['reached'], report)
+            view = self.engine.view(root)
+            self.assertEqual(view['taken']['by'], 'Blake')
+            self.assertTrue(view['kept'])
+            prefix = root.relative_to(self.space.repo)
+            self.assertIn('Typing kept apart from the worker.',
+                          self.git('show', f"{view['kept'][-1]}:{prefix / file}"))
+            # A worker returning after the takeover may keep nothing over Blake's files.
+            partial.write_text('Late worker output.\n', encoding='utf-8')
+            with self.assertRaises(engines._Gone):
+                self.engine._commit(root, 'a worker returned after takeover')
+            self.assertFalse(partial.exists())
+            self.assertNotIn('Typing kept apart from the worker.',
+                             (root / file).read_text(encoding='utf-8'))
+            self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_takeover_after_interleaved_saves_keeps_the_entire_audit(self):
+        root = self.finished(materials=['document', 'brief'])
+        with self.be(self.alex):
+            for name, text in (('brief@101', 'First brief edit.'),
+                               ('document@101', 'Guide edit.'),
+                               ('brief@101', 'Second brief edit.')):
+                card = self.engine.draft_card(root, name)
+                self.engine.draft_save(root, name, card['sections'][0]['id'],
+                                       card['revision'], text, text)
+            events = workspace.load(root)['events']
+        self.as_(self.blake, self.blake.engine.fetch)
+        self.as_(self.blake, self.blake.engine.drive, self.theirs(self.blake, root), 'take')
+        with self.be(self.alex):
+            report = self.engine.fetch()
+            self.assertTrue(report['reached'], report)
+            kept = self.engine.view(root)['kept']
+            self.assertTrue(kept)
+            prefix = root.relative_to(self.space.repo)
+            saved = json.loads(self.git('show', f'{kept[-1]}:{prefix}/.training-studio/session.json'))
+            self.assertEqual(saved['events'], events)
+            self.assertEqual(self.git('status', '--porcelain'), '')

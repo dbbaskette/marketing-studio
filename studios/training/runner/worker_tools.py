@@ -149,6 +149,7 @@ import checks  # noqa: E402
 import home  # noqa: E402
 from workspace import BRIEF_KINDS, WorkspaceError  # noqa: E402
 from studio_core import research_sites  # noqa: E402
+from studio_core.research_contract import check_json as check_research_json  # noqa: E402
 
 from runner import deck  # noqa: E402
 
@@ -212,6 +213,65 @@ def check_blueprint(text: str, spec: dict) -> tuple[list[str], list[dict], list[
     return held(report['checks']), report['checks'], report['warnings'], as_kept(text)
 
 
+def _untouched(text, spec, codec):
+    protected = spec.get('untouched') or {}
+    if not protected:
+        return []
+    try:
+        sections = {s['heading']: s['text'] for s in codec.split(text)['sections']}
+    except ValueError:
+        sections = {}
+    return [f'Section "{heading}" is not touched by the plan change. Copy it exactly.'
+            for heading, original in protected.items()
+            if sections.get(heading) != original]
+
+
+def _check_update(text, spec, codec, kind):
+    """Validate a whole update against the same boundaries as section submissions."""
+    from runner import draft_jobs
+    from studio_core.drafting import basis
+    context = spec.get('update_check')
+    if not context:
+        return [], [], text
+    before = context['material']
+    try:
+        old, new = codec.split(before), codec.split(text)
+        if [s['heading'] for s in old['sections']] != [s['heading'] for s in new['sections']]:
+            raise ValueError('Keep the section headings and their order exactly.')
+        problems = []
+        protected = spec.get('untouched') or {}
+        for old_part, new_part in zip(old['sections'], new['sections']):
+            if old_part['heading'] in protected and any(
+                    old_part.get(key) != new_part.get(key) for key in ('covers', 'findings')):
+                problems.append(f'Section "{old_part["heading"]}" is not touched by the plan change. Copy it exactly.')
+        for part in new['sections']:
+            codec.vet(part['id'], part['text'])
+            if not part.get('locked'):
+                basis.no_heading(part['text'], codec)
+        original_source = next((s for s in old['sections'] if s.get('locked')), None)
+        source = next((s for s in new['sections'] if s.get('locked')), None)
+        if (original_source is None) != (source is None) or (source and source['text'] != original_source['text']):
+            problems.append(draft_jobs.SOURCES)
+        allowed = set(checks._sources(before)[1]) | {f['number'] for f in context['references']}
+        unknown = {int(n) for n in checks.REFERENCE.findall(checks._sources(text)[0])} - allowed
+        problems += [f'Cite only the references you were given: [{n}] is not one of them.'
+                     for n in sorted(unknown)]
+        for part in new['sections']:
+            if not part.get('locked'):
+                draft_jobs.append_sources(new, context['references'], part['text'], kind)
+        kept = codec.join(new)
+        old_words = [old.get('opening', '')] + [s['text'] for s in old['sections'] if not s.get('locked')]
+        new_words = [new.get('opening', '')] + [s['text'] for s in new['sections'] if not s.get('locked')]
+        added = [paragraph for value, prior in zip(new_words, old_words)
+                 for paragraph in re.split(r'\n\s*\n', value)
+                 if paragraph.strip() and paragraph not in prior]
+        outcome = checks.citations(kept, kind, added=added, names=context.get('names') or ())
+        problems += [p for p in held([outcome]) if not p.startswith('Sources entry ')]
+        return problems, [outcome], kept
+    except ValueError as error:
+        return [str(error)], [], text
+
+
 def check_document(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
     """A learner guide, against the core's coverage check and the blueprint it teaches.
     Without the blueprint the check cannot run, which is recorded for the gate."""
@@ -220,7 +280,9 @@ def check_document(text: str, spec: dict) -> tuple[list[str], list[dict], list[s
     else:
         outcome = checks.result('document.coverage', [], unavailable=(
             'The blueprint was not given, so coverage could not be checked.'))
-    return held([outcome]), [outcome], [], as_kept(text)
+    from runner import drafts
+    problems, extra, kept = _check_update(text, spec, drafts.GuideCodec(), 'document')
+    return held([outcome]) + _untouched(text, spec, drafts.GuideCodec()) + problems, [outcome, *extra], [], as_kept(kept)
 
 
 def check_brief(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
@@ -228,7 +290,43 @@ def check_brief(text: str, spec: dict) -> tuple[list[str], list[dict], list[str]
     Without the findings the second cannot run, which is recorded for the gate."""
     outcomes = checks.check_brief(text, spec.get('brief_kind') or BRIEF_KINDS[0],
                                   spec.get('findings'))
-    return held(outcomes), outcomes, [], as_kept(text)
+    from runner import drafts
+    problems, extra, kept = _check_update(text, spec, drafts.BriefCodec(), 'brief')
+    return held(outcomes) + _untouched(text, spec, drafts.BriefCodec()) + problems, [*outcomes, *extra], [], as_kept(kept)
+
+
+def check_part(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
+    """Splice a worker's words into the full material before running its checks."""
+    from runner import draft_jobs, drafts
+    from studio_core.drafting import basis
+    heading = spec['heading']
+    problems = []
+    if any(checks.SOURCES_HEADING.match(line) for line in text.splitlines()):
+        problems.append(draft_jobs.SOURCES)
+    first = text.strip().split('\n', 1)[0]
+    kind = spec['name'].partition('@')[0]
+    if kind == 'brief' and first.startswith('## ') and first != '## ' + heading:
+        problems.append(f"Keep this section's heading exactly: {heading}.")
+    cleaned = text.strip() if spec.get('selection') else basis.clean(text, heading)
+    allowed = set(checks._sources(spec['material'])[1]) | {f['number'] for f in spec['findings']}
+    problems += [f'Cite only the references you were given: [{n}] is not one of them.'
+                 for n in sorted({int(n) for n in checks.REFERENCE.findall(cleaned)} - allowed)]
+    try:
+        codec = drafts.codec_of(spec['name'])
+        basis.no_heading(cleaned, codec)
+        codec.vet(spec['part'], cleaned)
+        whole, added_text = draft_jobs.spliced(spec, cleaned)
+    except ValueError as error:
+        return [*problems, str(error)], [], [], text
+    checked_spec = {**spec, 'findings': spec.get('finding_statuses')}
+    _, outcomes, warnings, _ = (check_brief if kind == 'brief' else check_document)(whole, checked_spec)
+    # Dropping a reference is allowed. Unused Sources are reported on the card, while
+    # unknown references and unsupported new claims are handed back for correction.
+    added = [p for p in re.split(r'\n\s*\n', added_text) if p.strip() and p not in spec['before']]
+    cited = checks.citations(whole, kind, added=added, names=spec.get('names') or ())
+    outcomes.append(cited)
+    problems += [p for p in held(outcomes) if not p.startswith('Sources entry ')]
+    return problems, outcomes, warnings, as_kept(cleaned)
 
 
 def check_scenario(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
@@ -402,11 +500,10 @@ def check_section(text: str, spec: dict, slides,
     return held(outcomes), outcomes, [], kept
 
 
-from studio_core.research_contract import check_json as check_research_json
-
 VALIDATORS = {'research-plan': check_plan, 'blueprint': check_blueprint,
               'document': check_document, 'brief': check_brief, 'scenario': check_scenario,
-              'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section}
+              'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section,
+              'part': check_part}
 VALIDATORS['research-json'] = check_research_json
 
 
@@ -638,6 +735,8 @@ class WorkerTools:
             names += ['check_outline', 'submit_outline', 'submit_review']
             if any(spec.get('icons') for spec in job['artifacts'].values()):
                 names.append('search_icons')
+        elif 'part' in kinds:
+            names += ['submit_part']
         elif 'section' in kinds:
             names += ['check_section', 'preview_section', 'search_icons', 'submit_section']
             if any(spec.get('assets') for spec in job['artifacts'].values()):
@@ -712,8 +811,18 @@ class WorkerTools:
                           'that name.')
         if not isinstance(text, str) or not text.strip():
             raise Refusal('The text is empty. Hand back the whole draft.')
+        if wanted[name]['kind'] == 'part':
+            raise Refusal('Hand a part in with submit_part.')
         if wanted[name]['kind'] == 'section':
             raise Refusal('Hand a section in with submit_section.')
+        return self._hand_in(name, text)
+
+    @tool
+    def submit_part(self, text):
+        """Hand back one part or selected passage, checked in its complete material."""
+        name, _ = self._spec('part')
+        if not isinstance(text, str) or not text.strip():
+            raise Refusal('The text is empty. Hand back the requested words.')
         return self._hand_in(name, text)
 
     def _validate(self, spec: dict, text: str) -> tuple[list[str], list[dict], list[str], str]:
@@ -1395,6 +1504,7 @@ TOOLS = [
     _described('submit_artifact', 'Hand back a finished draft under the name your task '
                'gives. It is checked: if anything is wrong you are told what, to fix it '
                'and hand it back again.', {'name': TEXT, 'text': TEXT}, ['name', 'text']),
+    _described('submit_part', 'Hand back only the requested section or passage. The whole material is checked.', {'text': TEXT}, ['text']),
     _described('submit_review', 'After your draft is accepted, give your own honest notes '
                'on it for the person who will review it: where it is weakest, what is '
                'missing, what to look at.', {'text': TEXT}, ['text']),

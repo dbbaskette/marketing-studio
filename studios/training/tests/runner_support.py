@@ -405,6 +405,11 @@ class Workers:
         assert accepted[0], accepted[1]
         tools.submit_review('It is weakest on rollback, which the research did not settle.')
 
+    def part(self, tools, job):
+        spec = tools.job['artifacts']['part']
+        accepted = tools.submit_part(spec['before'] + ' Revised.')
+        assert accepted[0], accepted[1]
+
     def scenario(self, tools, job):
         accepted = tools.submit_artifact('scenario', SCENARIO)
         assert accepted[0], accepted[1]
@@ -759,7 +764,6 @@ class Slides:
 
     def preview(self, compiled, folder, renderer, file_id=None, slide=None, design=None,
                 section=False) -> dict:
-        from runner import slides
         if design is not None:
             self._asked('preview_design', compiled, design, f'section={section}')
             self._bound(self._read(Path(compiled) / 'scene.json')['slides'], design, section)

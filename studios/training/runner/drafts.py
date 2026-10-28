@@ -18,13 +18,19 @@ what is Ready or what the person sent (`copied`).
 """
 from __future__ import annotations
 
+import hashlib
+import re
+from contextlib import contextmanager
 from pathlib import Path
 
+import checks
 import home
 import workspace
 from studio_core import research_view, review_policy, step_times
-from studio_core.drafting import basis
-from studio_core.drafting.store import Store
+from studio_core.drafting import basis, parts
+from studio_core.drafting import record as desk_record
+from studio_core.drafting import versions as desk_versions
+from studio_core.drafting.store import Store, require_held
 
 import runner  # noqa: F401  puts the core on the import path
 
@@ -42,6 +48,8 @@ UNWRITTEN = '{it} has not been written yet.'
 NEEDS_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
                    'here cannot do it. Update Harness Research, then start again.')
 ON_DESK = 'This training is on the desk. Change it there.'
+NOT_FINISHED = 'Open it on the desk once it is finished.'
+NOT_BROUGHT_IN = 'Bring it in first, then open it on the desk once it is finished.'
 # What a desk receipt says was done at a gate: never the person's approval of a material.
 DECISION = 'continued-on-the-desk'
 LOOK = "You chose the brand's default look at the start: {name}."
@@ -74,6 +82,34 @@ def on_desk(record: dict | None) -> bool:
     return (record or {}).get('flow') == FLOW
 
 
+def open_on_desk(root: Path, session: dict, record: dict) -> None:
+    """Keep the person's approvals as ready when a completed run moves to the desk."""
+    from runner import reviews
+
+    final = (record.get('review_decisions') or {}).get('final') or {}
+    reviewed = (final.get('by') == 'page' and
+                final.get('signature') == reviews.signature(root, session, record, 'final'))
+    ready = {}
+    for name in workspace.artifact_names(root, session):
+        entry = session['artifacts'].get(name) or {}
+        approval = entry.get('approved') or {}
+        digest = workspace.sha256_file(root / workspace.artifact(root, session, name)['file'])
+        if digest and approval.get('sha256') == digest and (
+                approval.get('by') == 'page' or
+                approval.get('by') == 'review-policy' and reviewed):
+            ready[name] = digest
+    session['flow'] = FLOW
+    session['desk_ready'] = ready
+    session.pop('practice_inputs', None)
+    for name, entry in session['artifacts'].items():
+        if name.startswith('scenario:'):
+            (entry.get('built_from') or {}).pop('practice', None)
+            ((entry.get('approved') or {}).get('inputs') or {}).pop('practice', None)
+    record['opened_on_desk'] = {'at': home.now(), 'was': {
+        key: record.get(key) for key in ('review_policy', 'review_layout')}}
+    record['flow'] = FLOW
+
+
 def receipt(record: dict, gate: str, evidence, at: str, note: str | None = None) -> None:
     """Record that the desk continued `gate`, bound to what it continued. A desk run has no
     review level, so the receipt names none; `note` says, in words kept as they are, how."""
@@ -94,6 +130,78 @@ def what(key: str) -> str:
 def updates(run: dict | None) -> dict:
     """The updates asked for on a desk run and not yet made, by material."""
     return ((run or {}).get('drafts') or {}).get('updates') or {}
+
+
+UPDATE_RULE = ('The plan changed as "plan change" shows. Change only the sections '
+               'that change needs, and copy every other section exactly, word for word.')
+NO_UPDATE_RECORD = 'This computer has no record yet of what it costs.'
+
+
+def plan_change(root: Path, session: dict, name: str) -> dict:
+    """Compare the plan used to build this material with the current plan."""
+    level = workspace.split(name)[1]
+    plan = workspace.qualify('blueprint', level)
+    digest = (session['artifacts'].get(name, {}).get('built_from') or {}).get(plan)
+    before_file = workspace.history_file(root, plan, digest, '.md') if digest else None
+    before = before_file.read_text(encoding='utf-8') if before_file and before_file.is_file() else ''
+    current = root / workspace.artifact(root, session, plan)['file']
+    after = current.read_text(encoding='utf-8') if current.is_file() else ''
+    def lines(text):
+        return {m.group(1): line for line in text.splitlines()
+                if (m := re.match(r'^### (O[1-9]\d*)\b', line))}
+    old, new = lines(before), lines(after)
+    return {'before': before, 'after': after,
+            'objectives': [key for key in old if key in new and old[key] != new[key]],
+            'added': [key for key in new if key not in old],
+            'removed': [key for key in old if key not in new]}
+
+
+def _objective_only(change: dict) -> bool:
+    def other(text):
+        return [line for line in text.splitlines()
+                if not re.match(r'^### O[1-9]\d*\b', line)]
+    return (bool(change['before']) and bool(change['objectives'] or change['added'] or change['removed'])
+            and other(change['before']) == other(change['after']))
+
+
+def touched(codec_draft: dict, objectives) -> list[str]:
+    """Find sections covering a changed objective or one of its key points."""
+    wanted = set(objectives)
+    return [part['id'] for part in codec_draft.get('sections', ())
+            if any(cover in wanted or (cover.startswith('K') and
+                   'O' + cover[1:].partition('.')[0] in wanted)
+                   for cover in part.get('covers', ()))]
+
+
+def scoped_update(root, session, name, change, draft):
+    """Only scope an objective change when every changed objective has coverage."""
+    spec = workspace.artifact(root, session, name)
+    changed = _changed(root, session, name, [*spec['upstream'], *spec['extras']])
+    if (workspace.split(name)[0] != 'document' or not _objective_only(change)
+            or changed != [workspace.qualify('blueprint', workspace.split(name)[1])]):
+        return None
+    objectives = change['objectives'] + change['added'] + change['removed']
+    if any(not touched(draft, [objective]) for objective in objectives):
+        return None
+    return set(touched(draft, objectives))
+
+
+def update_preview(root: Path, name: str) -> dict:
+    from studio_core import stops
+    session = workspace.load(root)
+    change = plan_change(root, session, name)
+    kind = workspace.split(name)[0]
+    codec = GuideCodec() if kind == 'document' else BriefCodec()
+    file = root / workspace.artifact(root, session, name)['file']
+    draft = codec.split(file.read_text(encoding='utf-8'))
+    ids = scoped_update(root, session, name, change, draft)
+    sections = draft['sections']
+    if ids is None:
+        ids = {part['id'] for part in sections if not part.get('locked')}
+    attempts = ((run_of(root) or {}).get('steps', {}).get(name) or {}).get('attempts') or []
+    last = attempts[-1] if attempts else None
+    price = stops.redone(workspace.label(name), 1, last.get('seconds'), last.get('dollars')) if last else NO_UPDATE_RECORD
+    return {'parts': [part['heading'] for part in sections if part['id'] in ids], 'price': price}
 
 
 def busy(run: dict | None) -> bool:
@@ -477,6 +585,10 @@ def view(engine, root) -> dict:
                     card_actions = ['ready', *(['send'] if name in copied_to
                                                and name not in sent(record) else []),
                                     'download']
+                changed = next((job for job in reversed((record.get('drafts') or {}).get('jobs', []))
+                                if job.get('name') == name), None)
+                if changed and changed.get('dropped'):
+                    says = f"{says} {changed.get('says') or ''}".strip()
                 cards.append({
                     'name': name, 'level': level or '', 'kind': kind,
                     'label': workspace.label(name), 'state': shown, 'says': says,
@@ -494,7 +606,7 @@ def view(engine, root) -> dict:
         # Everything is Ready, and still no index: what else is in the way is said.
         if not needed and not report['ready'] and cards and all(
                 card['state'] in ('ready', 'left-out') for card in cards):
-            needed += [desk.plainly(reason) for reason in report['blocking']]
+            needed += [desk.plainly_on_desk(reason) for reason in report['blocking']]
     running = state == 'working'
     minutes = max(1, start_minutes(root, record, found)) if running else None
     doing = ''
@@ -521,3 +633,712 @@ def view(engine, root) -> dict:
                                   for entry in listed]},
         'job': next((dict(job) for job in reversed(jobs) if basis.busy(job)), None),
         'team': {'ours': mine, 'driver': who, 'last_shared': last}}
+
+
+# --- parts: a training's guide, brief and plan as piece 3's parts ------------------------
+#
+# A material's file stays the one copy of its text. Each codec splits it into an opening
+# (everything before the first `## `, the `# ` title included) and its `## ` sections, and
+# joins them back to the same file byte for byte: each part keeps the blank lines around it
+# as they were written (`layout`), so a changed part goes into the file as it stood. A
+# section's covers or findings note is kept on the section, out of its text.
+
+NO_PARTS = 'Choose an editable text material.'
+BRIEF_SHAPE = 'A brief keeps its eight numbered sections, in order.'
+LOCKED = 'Sources is kept from the findings cited. Change the references in the text instead.'
+UNCLOSED = 'Close the code block in this part.'
+SECTION_LINE = re.compile(r'## +(\S.*?)[ \t\r]*')
+BLANK_LINES = re.compile(r'(?:[ \t\r]*\n)*')
+NUMBERED_HEADING = re.compile(r'(\d+)\. (.+)')
+ANY_SECTION_LINE = re.compile(r'^[ \t]*## ', re.MULTILINE)
+
+
+class _Note:
+    """A section's note: the key it is kept under, how its line reads, and the IDs in it."""
+
+    def __init__(self, key: str, ids: re.Pattern):
+        self.key, self.ids = key, ids
+        self.line = re.compile(r'[ \t]*<!--\s*' + key + r':\s*(.*?)\s*-->[ \t\r]*')
+
+    def read(self, line: str) -> list[str] | None:
+        found = self.line.fullmatch(line)
+        return None if found is None else self.ids.findall(found.group(1))
+
+    def written(self, ids) -> str:
+        return f"<!-- {self.key}: {' '.join(ids)} -->"
+
+
+COVERS_NOTE = _Note('covers', checks.COVERED_ID)
+FINDINGS_NOTE = _Note('findings', checks.FINDING_ID)
+
+
+def _id(seed: str, taken: set) -> str:
+    """A section id made from where the section is in its file, so the same file always
+    gives the same ids: a read holding the lock and one without agree."""
+    count = 0
+    while True:
+        value = hashlib.sha256(f'{seed}:{count}'.encode()).hexdigest()[:8]
+        if value not in taken:
+            taken.add(value)
+            return value
+        count += 1
+
+
+def _cut(body: str, note: _Note | None) -> dict:
+    """A part's written text as the blank lines before it, its note line and the blank lines
+    after that, its words, and what follows them."""
+    lead = BLANK_LINES.match(body).group(0)
+    rest, line, gap, ids = body[len(lead):], None, '', None
+    if note is not None:
+        first, newline, after = rest.partition('\n')
+        ids = note.read(first)
+        if ids is not None:
+            line, rest = first, newline + after
+            if rest:
+                gap = '\n' + BLANK_LINES.match(rest, 1).group(0)
+                rest = rest[len(gap):]
+    embedded = None
+    if note is not None and ids is None:
+        lines = rest.splitlines(keepends=True)
+        for at, (one, outside) in enumerate(parts.free([line.rstrip('\r\n') for line in lines])):
+            found = note.read(one) if outside else None
+            if found is not None:
+                ids = found
+                embedded = {'at': at, 'line': lines.pop(at)}
+                rest = ''.join(lines)
+                break
+    words = rest.rstrip()
+    return {'embedded': embedded, 'lead': lead, 'line': line, 'gap': gap, 'words': words,
+            'tail': rest[len(words):], 'ids': ids}
+
+
+def _starts(lines: list[str], numbered: bool) -> list[int]:
+    """The lines that start a section, outside fenced code: each `## ` line, or for a brief
+    each `## N. Title` line, the only ones its check reads as sections."""
+    return [at for at, (line, outside) in enumerate(parts.free(lines)) if outside and (
+        checks.NUMBERED.match(line) if numbered else SECTION_LINE.fullmatch(line))]
+
+
+def _split(markdown: str, note: _Note | None, numbered: bool, locked) -> dict:
+    """A material's file as its opening and sections, each with how it was written around
+    its words; `locked(heading)` says which section is not typed in."""
+    lines = markdown.split('\n')
+    offsets, at = [], 0
+    for line in lines:
+        offsets.append(at)
+        at += len(line) + 1
+    starts = _starts(lines, numbered)
+    opening = _cut(markdown[:offsets[starts[0]] if starts else len(markdown)], None)
+    draft = {'opening': opening['words'],
+             'layout': {'lead': opening['lead'], 'tail': opening['tail'],
+                        'blank': not opening['words']}}
+    sections, taken = [], set()
+    digest = hashlib.sha256(markdown.encode()).hexdigest()
+    for number, start in enumerate(starts):
+        head = lines[start]
+        heading = SECTION_LINE.fullmatch(head).group(1)
+        end = offsets[starts[number + 1]] if number + 1 < len(starts) else len(markdown)
+        cut = _cut(markdown[offsets[start] + len(head):end], note)
+        section = {'id': _id(f'{digest}:{number}', taken), 'heading': heading, 'brief': '',
+                   'text': cut['words'], 'locked': locked(heading),
+                   'layout': {'head': head, 'lead': cut['lead'], 'line': cut['line'],
+                              'gap': cut['gap'], 'tail': cut['tail'],
+                              'blank': not cut['words'], 'embedded': cut.get('embedded')}}
+        if note is not None:
+            section[note.key] = cut['ids'] or []
+        sections.append(section)
+    draft['sections'] = sections
+    return draft
+
+
+def _join(draft: dict, note: _Note | None) -> str:
+    """The file a draft's parts make: each part as it was written around its words, and a
+    part whose words came or went (or whose note came) written the plain way."""
+    sections = draft['sections']
+    opening, layout = draft.get('opening') or '', draft.get('layout') or {}
+    if layout and layout.get('blank') == (not opening):
+        text = layout['lead'] + opening + layout['tail']
+    else:
+        text = opening + ('\n\n' if sections else '\n') if opening else ''
+    for number, section in enumerate(sections):
+        last = number == len(sections) - 1
+        words, kept = section.get('text') or '', section.get('layout') or {}
+        embedded = kept.get('embedded')
+        if embedded and note is not None:
+            lines = words.splitlines(keepends=True)
+            at = min(embedded['at'], len(lines))
+            if at and not lines[at - 1].endswith('\n'):
+                lines[at - 1] += '\n\n'
+            raw = embedded['line']
+            if note.read(raw.rstrip('\r\n')) != (section.get(note.key) or []):
+                raw = note.written(section.get(note.key) or []) + '\n'
+            lines.insert(at, raw)
+            words = ''.join(lines)
+        head = kept.get('head')
+        if not head or SECTION_LINE.fullmatch(head).group(1) != section['heading']:
+            head = '## ' + section['heading']
+        line, ids = None, section.get(note.key) or [] if note is not None else []
+        if note is not None and kept.get('line') is not None:
+            line = kept['line'] if note.read(kept['line']) == ids else (
+                note.written(ids) if ids else None)
+        elif ids and not embedded:
+            line = note.written(ids)
+        if kept and kept.get('blank') == (not words) and (
+                line is None or kept.get('line') is not None):
+            noted = line + kept['gap'] if line is not None else ''
+            written = head + kept['lead'] + noted + words + kept['tail']
+            text += written if last or written.endswith('\n') else written + '\n'
+        elif line is None and not words:
+            text += head + ('\n' if last else '\n\n')
+        else:
+            noted = line + ('\n\n' if words else '') if line is not None else ''
+            text += head + '\n\n' + noted + words + ('\n' if last else '\n\n')
+    return text
+
+
+def _section_heading(text: str, level: int = 2) -> str:
+    """The marks of a `## ` line a part holds outside code, which would start a section."""
+    lines = text.replace('\r\n', '\n').split('\n')
+    if any(outside and SECTION_LINE.fullmatch(line) for line, outside in parts.free(lines)):
+        return '##'
+    return parts.heading_in(text, 2)
+
+
+def _vet(part: str, text: str) -> None:
+    """Refuse a part that leaves a code block open: every heading after it would be read as
+    code the next time the file is split."""
+    fence = None
+    for line in text.replace('\r\n', '\n').split('\n'):
+        marker = parts.FENCE.match(line)
+        if marker and fence is None:
+            fence = marker.group(1)
+        elif marker and marker.group(1).startswith(fence[0] * len(fence)):
+            fence = None
+    if fence is not None:
+        raise ValueError(UNCLOSED)
+
+
+def _landed(draft: dict, before: str, text: str) -> str:
+    """A job's result as it lands: never in a locked part (Sources), which is kept from the
+    findings cited."""
+    if text.strip() != before.strip() and any(
+            section.get('locked') and section['text'] == before
+            for section in draft.get('sections') or ()):
+        raise ValueError(LOCKED)
+    return text
+
+
+def _sources(heading: str) -> bool:
+    return heading.lower() == 'sources'
+
+
+def _brief_title(heading: str) -> str:
+    found = NUMBERED_HEADING.fullmatch(heading)
+    return found.group(2).strip().lower() if found else ''
+
+
+def _brief_fits(draft: dict, kind: str) -> bool:
+    """Whether a brief has its kind's eight sections, in order, as `checks.check_brief`
+    reads them: by title, other numbered sections between them allowed."""
+    expected = [title.lower() for title in checks.BRIEF_SECTIONS[kind]]
+    titles = [_brief_title(section['heading']) for section in draft.get('sections') or ()]
+    return [title for title in titles if title in expected] == expected
+
+
+def _brief_kind(draft: dict) -> str:
+    """Which brief a draft is: its title says, or else its sections do."""
+    title = (draft.get('opening') or '').lstrip()
+    for kind, start in checks.BRIEF_TITLES.items():
+        if title.startswith(start):
+            return kind
+    for kind in checks.BRIEF_SECTIONS:
+        if _brief_fits(draft, kind):
+            return kind
+    raise ValueError(BRIEF_SHAPE)
+
+
+def _brief_split(markdown: str) -> dict:
+    draft = _split(markdown, FINDINGS_NOTE, True,
+                   lambda heading: _brief_title(heading) == 'sources')
+    draft['kind'] = _brief_kind(draft)
+    if not _brief_fits(draft, draft['kind']):
+        raise ValueError(BRIEF_SHAPE)
+    return draft
+
+
+def _brief_join(draft: dict) -> str:
+    if not _brief_fits(draft, draft.get('kind') or _brief_kind(draft)):
+        raise ValueError(BRIEF_SHAPE)
+    return _join(draft, FINDINGS_NOTE)
+
+
+def _brief_heading(text: str, level: int = 2) -> str:
+    """A brief's part holds no `## ` line at all, in code or not: its check would read a
+    numbered one as a section wherever it is."""
+    return '##' if ANY_SECTION_LINE.search(text) else parts.heading_in(text, 2)
+
+
+def GuideCodec() -> parts.Codec:
+    """A guide: its opening, then each `## ` section with its covers note. Sources, which
+    the references resolve to, is kept from the findings and not typed in."""
+    return parts.Codec(
+        fixed=('opening',), single=(), thing='draft', noun='section',
+        split=lambda markdown: _split(markdown, COVERS_NOTE, False, _sources),
+        join=lambda draft, after=(): _join(draft, COVERS_NOTE),
+        deepest=lambda draft: 2, heading_in=_section_heading, vet=_vet, landed=_landed)
+
+
+def BriefCodec() -> parts.Codec:
+    """A brief: its title, then its eight numbered sections in order, each with its findings
+    note. "8. Sources" is not typed in, and no section is added, taken out or moved."""
+    return parts.Codec(
+        fixed=('opening',), single=(), thing='draft', noun='section', split=_brief_split,
+        join=lambda draft, after=(): _brief_join(draft), deepest=lambda draft: 2,
+        heading_in=_brief_heading, vet=_vet, landed=_landed)
+
+
+def PlanCodec() -> parts.Codec:
+    """A plan: its opening, then the blueprint's `## ` sections, none of them locked."""
+    return parts.Codec(
+        fixed=('opening',), single=(), thing='draft', noun='section',
+        split=lambda markdown: _split(markdown, None, False, lambda heading: False),
+        join=lambda draft, after=(): _join(draft, None),
+        deepest=lambda draft: 2, heading_in=_section_heading, vet=_vet, landed=_landed)
+
+
+class WholeCodec(parts.Codec):
+    """A scenario or Yoodli layout has one editable part and whole-file History."""
+
+    def __init__(self):
+        super().__init__(
+            fixed=('opening',), single=(), part=re.compile(r'(?!)'), thing='draft',
+            split=lambda text: {'opening': text, 'sections': []},
+            join=lambda draft, after=(): draft['opening'],
+            heading_in=lambda text, level: '', vet=_vet,
+            taken=lambda draft, part, text, previous: (text, dict(draft)))
+
+    def set_text(self, draft, part, text):
+        self.section(draft, part)  # Refuse any name other than the whole-file part.
+        draft[part] = text
+
+
+CODECS = {'document': GuideCodec(), 'brief': BriefCodec(), 'blueprint': PlanCodec(),
+          'scenario': WholeCodec(), 'yoodli': WholeCodec()}
+
+
+def codec_of(name: str) -> parts.Codec:
+    """The codec a material's file is read with, by the material's name."""
+    found = CODECS.get(workspace.split(name)[0].partition(':')[0])
+    if found is None:
+        raise ValueError(NO_PARTS)
+    return found
+
+
+def _folder_name(name: str) -> str:
+    return name.replace(':', '-').replace('@', '-')
+
+
+class TrainingStore(Store):
+    """Training Studio's desk store over one training's folder.
+
+    A material's record is `work/drafts/<name>/` in its level folder (never shared: `work/`
+    is ignored), its waiting Finishing proposals are in this computer's data folder, and a
+    write saves the joined parts as the material's file. Every desk write runs holding the
+    engine's `files` lock, and `held()` is whether this thread holds it."""
+
+    product, word = 'Training Studio', 'training'
+
+    def __init__(self, engine, root: Path):
+        self.engine, self.root = engine, Path(root)
+        self._making: tuple[str, str | None] | None = None
+
+    def held(self) -> bool:
+        # `files` is a threading.RLock: `_is_owned` says whether this thread holds it, as
+        # threading.Condition asks it. Another thread holding it is not this one.
+        return self.engine.files._is_owned()
+
+    def folder(self, name: str) -> Path:
+        from runner import pipeline
+        return pipeline.place(self.root, workspace.split(name)[1], 'work/drafts') \
+            / _folder_name(name)
+
+    def local(self, name: str, *names: str) -> Path:
+        return home.data_root().joinpath('draft-proposals', self.root.name, _folder_name(name),
+                                         *names)
+
+    @contextmanager
+    def making(self, via: str, session: str | None):
+        """The kind of change and the page's session that writes made inside are saved
+        with, for a caller (piece 3's desk) that passes neither."""
+        before, self._making = self._making, (via, session)
+        try:
+            yield
+        finally:
+            self._making = before
+
+    def write(self, name: str, draft: dict, changed, via: str | None = None,
+              session: str | None = None) -> dict:
+        """One revision on, then the joined parts saved as the material's file: an edit,
+        which keeps what the material was built from, then accepted on the desk unless it is
+        out of date (an edit never clears that). The record keeps the file's hash."""
+        require_held(self)
+        made_via, made_session = self._making or ('save', None)
+        via = via or made_via
+        session = session if session is not None else made_session
+        text = codec_of(name).join(draft)
+        desk_record.advance(draft, changed, self.now())
+        spec = workspace.artifact(self.root, workspace.load(self.root), name)
+        joined = self.path(name, Path(spec['file']).name)
+        self.atomic(joined, text.encode('utf-8'))
+        try:
+            entry = workspace.save(self.root, name, source=joined, edit=True, via=via,
+                                   session_token=session)
+        finally:
+            joined.unlink(missing_ok=True)
+        draft['file_sha256'] = entry['sha256']
+        self.write_json(self.path(name, 'draft.json'), draft)
+        if workspace.statuses(self.root, workspace.load(self.root)).get(name) != 'stale':
+            workspace.accept_desk(self.root, name)
+        return draft
+
+
+def _noted(section: dict) -> tuple:
+    return tuple(section.get('covers') or section.get('findings') or ())
+
+
+def follow(before: dict | None, after: dict) -> dict:
+    """Give a fresh split the ids of the record it replaces: by heading, then by covers or
+    findings note, then by place. A section none of them matches keeps the id its split gave
+    it, or another when that one is taken."""
+    if not before:
+        return after
+    old = list(before.get('sections') or ())
+    used, ids = set(), [None] * len(after['sections'])
+    for same in (lambda one, other, at: one['heading'] == other['heading'],
+                 lambda one, other, at: bool(_noted(one)) and _noted(one) == _noted(other),
+                 lambda one, other, at: old.index(other) == at):
+        for at, section in enumerate(after['sections']):
+            if ids[at] is None:
+                found = next((other for other in old
+                              if other['id'] not in used and same(section, other, at)), None)
+                if found is not None:
+                    ids[at] = found['id']
+                    used.add(found['id'])
+    for at, section in enumerate(after['sections']):
+        if ids[at] is None:
+            ids[at] = section['id'] if section['id'] not in used else _id(section['id'], used)
+            used.add(ids[at])
+        section['id'] = ids[at]
+    return after
+
+
+def current(store: TrainingStore, codec: parts.Codec, name: str) -> dict:
+    """A material's draft record, following its file. When something else wrote the file (a
+    step, a Google pull, the conversation helper, another computer), it is split again: each
+    part keeps its id where it can (`follow`), the revision goes up by one, and every part
+    is marked changed, so a form opened before is told to reload. The record is kept only
+    holding the engine's `files`; without it, the same file reads the same way."""
+    root = store.root
+    file = workspace.managed(root, workspace.artifact(root, workspace.load(root), name)['file'])
+    digest = workspace.sha256_file(file)
+    if digest is None:
+        raise ValueError(UNWRITTEN.format(it=workspace.sentence(workspace.label(name))))
+    try:
+        before = store.read(name)
+    except ValueError:
+        before = None
+    if before is not None and before.get('file_sha256') == digest:
+        return before
+    draft = follow(before, codec.split(file.read_bytes().decode('utf-8')))
+    revision = (before or {}).get('revision', 0) + 1
+    draft.update(revision=revision, updated_at=store.now(), file_sha256=digest,
+                 changed={} if before is None else {
+                     part: revision for part in (*codec.fixed, *(
+                         section['id'] for section in draft['sections']))})
+    if store.held():
+        store.write_json(store.path(name, 'draft.json'), draft)
+    return draft
+
+
+# What History calls each version, by the change that came after it: a save with no kind of
+# change (one from before the desk) is "Saved", and a history file no save names is "An
+# earlier version".
+EARLIER = 'earlier'
+SOURCE_WORDS = {'save': 'Saved', 'rewrite': 'Rewritten',
+                'revise-all': 'Revised with the whole note', 'selection': 'Selection',
+                'restore': 'Restored', 'google': "Before Google's text", 'finishing': 'Finishing',
+                'update': 'Updated', EARLIER: 'An earlier version'}
+HEX = re.compile(r'[0-9a-f]{64}')
+
+
+class HistoryVersions:
+    """Piece 3's `Versions` over the versions a training already keeps, with no file of its
+    own: each save keeps the whole file by its hash (`workspace.snapshot`) and is an event
+    with its time, and on the desk its kind of change (`via`) and the page's session.
+
+    A part's versions are its texts in those files, newest first: each event's file
+    labelled by the change that came after it, then the history files no event names
+    ("An earlier version", with no time: copies kept before a hand edit outside the
+    desk). Each file is split by the codec and the part followed across them by heading,
+    then note, then place (`follow`). A version whose file is gone is left out, the same
+    text twice running is one version, and saves from one editing session are one, the
+    text before the first of them. At most piece 3's cap are listed per part. Reading
+    writes nothing: `keep` records nothing, `workspace.save` having kept the file."""
+
+    def __init__(self, store: TrainingStore, codec: parts.Codec,
+                 keep: int = desk_versions.KEEP):
+        self.store, self.codec, self.most = store, codec, keep
+        self.sources = workspace.VIA
+
+    def keep(self, ident, part, text, source, session=None, extra=None):
+        """Nothing to keep: the save that follows keeps the file and its event says how."""
+        require_held(self.store)
+        if source not in self.sources:
+            raise ValueError(workspace.NO_VIA)
+
+    def kept(self, ident, part):
+        """A part's versions, newest first, as Restore reads them."""
+        if not self.codec.known(part):
+            raise ValueError('Choose a part of this ' + self.codec.thing + '.')
+        return self._history(ident, part).get(part, [])
+
+    def versions(self, ident, part):
+        """A part's versions, newest first, each as the page shows it."""
+        return [entry if self.codec.shown(entry['text']) == entry['text']
+                else {**entry, 'text': self.codec.shown(entry['text'])}
+                for entry in self.kept(ident, part)]
+
+    def counts(self, ident):
+        """How many versions each part has, for parts that have any."""
+        return {part: len(found) for part, found in self._history(ident).items() if found}
+
+    def _states(self, root: Path, name: str, now: str, suffix: str) -> list[tuple]:
+        """The material's earlier files, newest first, each as (hash, the change that came
+        after it); a run of saves from one session is one change, its first."""
+        events = [event for event in workspace.load(root)['events']
+                  if event.get('event') == 'save' and event.get('artifact') == name
+                  and isinstance(event.get('sha256'), str)]
+        states = []
+        for at, event in enumerate(events):
+            after = events[at + 1] if at + 1 < len(events) else None
+            if after is None:
+                if event['sha256'] != now:   # changed since outside the desk, not saved
+                    states.append((event['sha256'], {'at': None, 'via': EARLIER}))
+                continue
+            if (event.get('session') and event.get('via') == after.get('via') == 'save'
+                    and after.get('session') == event['session']):
+                continue   # partway through one editing session
+            states.append((event['sha256'], after))
+        states.reverse()
+        named = {event['sha256'] for event in events} | {now}
+        folder = workspace.history_file(root, name, now, suffix).parent
+        earlier = [] if folder.is_symlink() or not folder.is_dir() else [
+            path for path in folder.iterdir()
+            if path.suffix == suffix and HEX.fullmatch(path.stem) and path.stem not in named
+            and path.is_file() and not path.is_symlink()]
+        earlier.sort(key=lambda path: (-path.stat().st_mtime, path.name))
+        return states + [(path.stem, {'at': None, 'via': EARLIER, 'unnamed': True})
+                         for path in earlier]
+
+    def _history(self, name: str, only: str | None = None) -> dict:
+        """Every part of the material as it is now, with its versions; with `only`, read
+        as far as that part needs.
+
+        A file no event names is not in the run of saves: its text is listed only where it
+        is neither the part's text now nor a version already listed."""
+        root = self.store.root
+        try:
+            draft = current(self.store, self.codec, name)
+        except ValueError:   # not written yet, or a file its codec cannot read
+            return {}
+        suffix = Path(workspace.artifact(root, workspace.load(root), name)['file']).suffix
+        names = (*self.codec.fixed, *(section['id'] for section in draft['sections']))
+        now = {part: self.codec.text_of(draft, part) for part in names}
+        last, found = dict(now), {part: [] for part in names}
+        wanted = names if only is None else (only,) if only in names else ()
+        for digest, after in self._states(root, name, draft['file_sha256'], suffix):
+            if all(len(found[part]) >= self.most for part in wanted):
+                break
+            path = workspace.history_file(root, name, digest, suffix)
+            if path.is_symlink() or not path.is_file():
+                continue   # a version whose file is gone is left out
+            try:
+                older = follow(draft, self.codec.split(path.read_bytes().decode('utf-8')))
+            except (ValueError, UnicodeDecodeError):
+                continue
+            ids = {section['id'] for section in older['sections']}
+            for part in names:
+                if part not in self.codec.fixed and part not in ids:
+                    continue
+                text = self.codec.text_of(older, part)
+                listed = (text == now[part] or any(
+                    entry['text'] == text for entry in found[part])) if after.get(
+                    'unnamed') else text == last[part]
+                if not listed and len(found[part]) < self.most:
+                    found[part].append({'at': after.get('at'),
+                                        'source': after.get('via') or 'save',
+                                        'text': text, 'words': len(text.split())})
+                last[part] = text
+            draft = older
+        return found
+
+
+class TrainingDesk(desk_record.Desk):
+    """Piece 3's desk over a training's store and one material's codec. A read follows the
+    file (`current`); a save names its kind of change, one of `workspace.VIA`, and the page's
+    session, which go on the material's save event; a locked part (Sources) is never typed
+    in. History is the material's own history files (`HistoryVersions`), with no second
+    store."""
+
+    def __init__(self, store: TrainingStore, codec: parts.Codec, versions=None):
+        super().__init__(store, codec, workspace.VIA,
+                         versions if versions is not None else HistoryVersions(store, codec))
+
+    def read(self, ident: str) -> dict:
+        return current(self.store, self.codec, ident)
+
+    def save(self, ident, seen, part, text, source='save', session=None):
+        require_held(self.store)   # before the kind of change is set on the store
+        if source not in workspace.VIA:
+            raise ValueError(workspace.NO_VIA)
+        if part not in self.codec.fixed and (
+                self.codec.section(self.read(ident), part) or {}).get('locked'):
+            raise ValueError(LOCKED)
+        if isinstance(self.codec, WholeCodec) and self.codec.text_of(self.read(ident), part) == text:
+            return self.read(ident)
+        with self.store.making(source, session):
+            return super().save(ident, seen, part, text, source=source, session=session)
+
+
+# --- a card's parts: typing, History and Restore -----------------------------------------
+#
+# The page types into one part at a time, against the revision its form saw. Each save goes
+# through the desk holding the engine's `files`, so the part ids the page holds are the ones
+# the record keeps, and it is answered with the card's view: the card, its parts as the save
+# left them, and the whole desk, which a save changes too (a Ready card is a draft again, and
+# what is built from it is held). The engine commits the saves together.
+
+PART_KEYS = ('id', 'heading', 'text', 'locked', 'covers', 'findings')
+
+
+def desk_of(engine, root: Path, name) -> TrainingDesk:
+    """The desk over one material of a training, refused for one not written in parts."""
+    root = Path(root)
+    if not isinstance(name, str) or name not in workspace.artifact_names(
+            root, workspace.load(root)):
+        raise ValueError(NO_PARTS)
+    return TrainingDesk(TrainingStore(engine, root), codec_of(name))
+
+
+def parts_of(desk: TrainingDesk, name: str, draft: dict) -> dict:
+    """A material's parts as the page shows them: {'revision', 'opening', 'sections',
+    'versions'}, each section {'id', 'heading', 'text', 'locked'} with its covers or findings
+    note, and `versions` how many versions each part with any has."""
+    return {'revision': draft['revision'], 'opening': draft.get('opening') or '',
+            'sections': [{key: section[key] for key in PART_KEYS if key in section}
+                         for section in draft['sections']],
+            'versions': desk.versions.counts(name)}
+
+
+def card(engine, root, name: str, draft: dict | None = None,
+         desk: TrainingDesk | None = None) -> dict:
+    """One card's view: the desk's card for the material (`view`), its parts (`parts_of`),
+    `working`, the desk job changing it or None, and `desk`, the whole desk's view. Read it
+    holding `files`, so the record that names the parts is the one kept."""
+    root = Path(root)
+    desk = desk if desk is not None else desk_of(engine, root, name)
+    draft = draft if draft is not None else desk.read(name)
+    whole = view(engine, root)
+    found = next((one for one in whole['cards'] if one['name'] == name),
+                 {'name': name, 'label': workspace.label(name)})
+    job = whole['job']
+    run = run_of(root) or {}
+    return {**found, **parts_of(desk, name, draft), **whole_parts(engine, root, name, draft),
+            'working': job if job and job.get('name') == name else None,
+            'jobs': [dict(one) for one in (run.get('drafts') or {}).get('jobs', []) if one.get('name') == name],
+            'chain': _chain(run, name), 'start': _start(whole),
+            'readonly': _reading(engine, root, name), 'desk': whole}
+
+
+def whole_parts(engine, root, name, draft):
+    """Copy fields and limits come from the same parser/profile as the Yoodli checks."""
+    kind = workspace.split(name)[0].partition(':')[0]
+    if kind not in ('scenario', 'yoodli'):
+        return {}
+    fields = []
+    if kind == 'yoodli':
+        parsed, _ = checks.fenced_fields(draft['opening'])
+        limits = (home.read_json(workspace.profile_for(root), {}) or {}).get('limits', {})
+        for heading, text in parsed.items():
+            key = 'context_chars' if heading == ('Context',) else next((key for field, key
+                in checks.YOODLI_GOAL_LIMITS if heading[0] == 'Goals' and heading[-1] == field), None)
+            fields.append({'heading': list(heading), 'text': text,
+                           'limit': (limits.get(key) or {}).get('value')})
+    run = run_of(root) or {}
+    return {'whole': True, 'fields': fields,
+            'own': kind == 'scenario' and name in engine._survey(root, run).own}
+
+
+def _reading(engine, root, name):
+    from runner import draft_jobs
+    return draft_jobs.readonly(engine, root, name)
+
+
+def _chain(run, name):
+    job = next((j for j in reversed((run.get('drafts') or {}).get('jobs', []))
+                if j.get('name') == name and j.get('chain')), None)
+    if job is None:
+        return None
+    return {'working': basis.busy(job), 'total': job['total'], 'revised': len(job['done']),
+            'problems': job.get('problems') or []}
+
+
+def _start(whole):
+    progress = whole['progress']
+    if not progress['running'] or whole['job']:
+        return None
+    return {**progress, 'status': 'working', 'busy': False, 'steps': [], 'step': None,
+            'minutes_left': progress['minutes'], 'phase': progress['doing'], 'problem': None}
+
+
+def _saved(desk: TrainingDesk, name: str, save) -> tuple[dict, bool, str | None]:
+    """Make one save: (the draft after it, whether the file changed, and why the desk could
+    not accept it, or None). The file is saved before the desk accepts it, so a save the
+    desk refuses afterwards is still made, and said."""
+    root = desk.store.root
+    file = workspace.managed(root, workspace.artifact(root, workspace.load(root), name)['file'])
+    before = workspace.sha256_file(file)
+    try:
+        draft, said = save(), None
+    except workspace.WorkspaceError as refusal:
+        if workspace.sha256_file(file) == before:
+            raise
+        draft, said = desk.read(name), str(refusal)
+    return draft, workspace.sha256_file(file) != before, said
+
+
+def save_part(engine, root, name, part, seen, text, session=None) -> tuple:
+    """Save what was typed into one part, against the revision the form saw (`seen`), as an
+    edit with `via: 'save'` and the page's session. Call it holding `files`. Returns
+    (desk, draft, changed, said): see `_saved`."""
+    desk = desk_of(engine, root, name)
+    return (desk, *_saved(desk, name, lambda: desk.save(name, seen, part, text, 'save',
+                                                        session)))
+
+
+def restore_part(engine, root, name, part, seen, index) -> tuple:
+    """Bring back one of a part's versions (`index`, newest first, as History lists them),
+    saved with `via: 'restore'`; the text it replaces is then a version too. Call it holding
+    `files`. Returns as `save_part` does."""
+    desk = desk_of(engine, root, name)
+    return (desk, *_saved(desk, name, lambda: desk.restore(name, seen, part, index)))
+
+
+def versions_of(engine, root, name, part) -> dict:
+    """A part's History: {'versions': newest first, each {'at', 'source', 'label', 'text',
+    'words'}, `label` the words History shows for it; 'sources': those words by kind of
+    change}, for the page's kit."""
+    found = desk_of(engine, root, name).versions.versions(name, part)
+    return {'versions': [{**one, 'label': SOURCE_WORDS.get(one['source'], SOURCE_WORDS[EARLIER])}
+                         for one in found],
+            'sources': dict(SOURCE_WORDS)}

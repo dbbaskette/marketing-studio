@@ -44,7 +44,7 @@ def own(text: str) -> str:
 class BriefTests(JobCase):
     def test_there_is_a_brief_for_each_job_and_no_other(self):
         self.assertEqual(briefs.JOBS, ('research-plan', 'research-plan-queue', 'research-question', 'blueprint',
-                                       'document', 'brief', 'scenario', 'yoodli',
+                                       'document', 'brief', 'scenario', 'yoodli', 'part',
                                        'deck-outline', 'deck-section', 'deck-review'))
         self.assertEqual(sorted(path.name for path in briefs.HERE.glob('*.md')),
                          ['blueprint-level.md', 'blueprint.md', 'brief.md',
@@ -53,7 +53,7 @@ class BriefTests(JobCase):
                           'deck-review-design.md', 'deck-review.md',
                           'deck-section-assets.md', 'deck-section-design.md',
                           'deck-section.md',
-                          'document.md', 'level.md', 'naming.md', 'research-plan-queue.md', 'research-plan.md',
+                          'document.md', 'level.md', 'naming.md', 'part.md', 'research-plan-queue.md', 'research-plan.md',
                           'research-question.md', 'scenario.md', 'yoodli.md'])
         with self.assertRaisesRegex(WorkspaceError, 'There is a brief for: research-plan'):
             briefs.guidance('deck')

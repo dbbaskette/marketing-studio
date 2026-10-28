@@ -464,6 +464,10 @@ function boxes() {
     const box = label.htmlFor ? document.getElementById(label.htmlFor) : null;
     if (box && visible(box)) found.push([name(label), box]);
   }
+  for (const input of document.body.querySelectorAll('input, textarea').filter(visible)) {
+    const label = input.getAttribute('aria-label');
+    if (label && !found.some((entry) => entry[1] === input)) found.push([label, input]);
+  }
   return found;
 }
 
@@ -637,12 +641,12 @@ function enter(held) {
   form.dispatch('submit', event);
 }
 
-function control(label) {
+function control(label, index = 0) {
   const all = document.body.querySelectorAll('button, summary, a').filter(visible);
   const exact = all.filter((node) => name(node) === label);
   const found = exact.length ? exact : all.filter((node) => name(node).startsWith(label));
   if (!found.length) throw new Error('Nothing on the page is named "' + label + '".');
-  return found[0];
+  return found[index];
 }
 
 // The page's own shell, read from index.html. It is the one piece of markup there is, it is
@@ -678,6 +682,8 @@ async function app(file) {
   const plan = JSON.parse(fs.readFileSync(file, 'utf8'));
   const answers = plan.answers;
   const timers = [];
+  const storage = { ...(plan.storage || {}) };
+  report.storage = storage;
   phone = Boolean(plan.narrow);
   build(fs.readFileSync(path.join(PAGE, 'index.html'), 'utf8'));
   // A browser with view transitions draws the next screen after the current task.
@@ -708,6 +714,14 @@ async function app(file) {
 
   const window = {
     document,
+    TextEncoder,
+    localStorage: {
+      get length() { return Object.keys(storage).length; },
+      key: index => Object.keys(storage)[index] ?? null,
+      getItem: key => storage[key] || null,
+      setItem: (key, value) => { if (plan.storageFails) throw new Error('Storage full.'); storage[key] = String(value); },
+      removeItem: key => { delete storage[key]; },
+    },
     Notification,
     location: { hash: plan.hash === undefined ? '#token=the-test-key' : plan.hash,
       reload() { report.reloads += 1; } },
@@ -747,7 +761,7 @@ async function app(file) {
     fetch: async (address, options) => {
       const method = (options && options.method) || 'GET';
       const key = method + ' ' + address.split('?')[0];
-      report.requests.push({ method, address, headers: (options && options.headers) || {},
+      report.requests.push({ method, address, keepalive: !!options?.keepalive, headers: (options && options.headers) || {},
         body: options && options.body ? JSON.parse(options.body) : null });
       // An answer can be kept for one address, query and all, or for every query of it.
       const held = answers[method + ' ' + address] || answers[key];
@@ -785,12 +799,26 @@ async function app(file) {
   const shots = {};
   for (const step of plan.steps) {
     try {
+      if (step.storageUpdate) Object.assign(storage, step.storageUpdate);
+      if (step.storageReplace) {
+        for (const key of Object.keys(storage)) delete storage[key];
+        Object.assign(storage, step.storageReplace);
+      }
+      if (step.captureStorage) {
+        report.storageSnapshots = report.storageSnapshots || {};
+        report.storageSnapshots[step.captureStorage] = { ...storage };
+      }
       if (step.snapshot) shots[step.snapshot] = snapshot();
-      if (step.click) control(step.click).click();
+      if (step.click) control(step.click, step.index || 0).click();
       if (step.type !== undefined) {
         const held = document.getElementById('note-text');
         held.value = step.type;
         held.dispatch('input', { target: held });
+      }
+      if (step.select !== undefined) {
+        const held = box(step.select);
+        held.selectionStart = step.start; held.selectionEnd = step.end;
+        held.dispatch('select', { target: held });
       }
       if (step.enter !== undefined) enter(box(step.enter));
       if (step.notification !== undefined) shown[step.notification].onclick({});
@@ -809,10 +837,21 @@ async function app(file) {
       }
       if (step.see !== undefined) see(step.see);
       if (step.poll) await timers.filter((timer) => timer.name === 'refresh').pop()();
-      if (step.timer) await timers.filter((timer) => timer.name === step.timer).pop()();
+      if (step.timer) {
+        const tick = timers.filter((timer) => timer && (timer.name === step.timer
+          || step.timer === 'save' && /k.save\(held, part\)/.test(String(timer)))).pop()();
+        if (!step.background) await tick;
+      }
       if (step.polls) {
         const refresh = timers.filter((timer) => timer.name === 'refresh').pop();
         await Promise.all(Array.from({ length: step.polls }, () => refresh()));
+      }
+      if (step.beforeunload) {
+        const event = { preventDefault: () => { report.closePrevented = true; } };
+        for (const listener of windowListeners.beforeunload || []) listener(event);
+      }
+      if (step.pagehide) {
+        for (const listener of windowListeners.pagehide || []) listener({});
       }
       if (step.hidden !== undefined) {
         document.hidden = step.hidden;

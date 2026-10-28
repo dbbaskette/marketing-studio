@@ -136,6 +136,36 @@ def plainly(reason: str) -> str:
     return reason
 
 
+# What a check looks at, so that the desk names a check by what it checks, never its ID:
+# "brief.sections@101" is the level 101 brief's sections.
+CHECKED = {'items': 'questions need', 'structure': 'structure needs',
+           'objectives': 'objectives need', 'key-points': 'key points need',
+           'citations': 'references need', 'coverage': 'coverage needs',
+           'sections': 'sections need', 'findings': 'findings need', 'limits': 'lengths need',
+           'fields': 'fields need', 'mapping': 'objective mapping needs'}
+ON_DESK = (
+    _reword(r'(\S+\.\S+) failed', lambda m: f'{_checked(m[1])} fixing.'),
+    _reword(r'(\S+\.\S+) could not run: (.*)',
+            lambda m: f'{_checked(m[1]).rpartition(" ")[0]} could not be checked: {m[2]}'),
+)
+
+
+def _checked(check: str) -> str:
+    """For `brief.sections@101`: "The level 101 brief's sections need"."""
+    part = check.partition('.')[2].partition('@')[0]
+    return f"{named(checks.artifact_of(check))}'s {CHECKED.get(part, 'check needs')}"
+
+
+def plainly_on_desk(reason: str) -> str:
+    """One of the helper's reasons, in the desk's words: a check is named by what it checks.
+    A saved training's page keeps `plainly`'s words."""
+    for pattern, build in ON_DESK:
+        found = pattern.fullmatch(reason)
+        if found:
+            return build(found)
+    return plainly(reason)
+
+
 # --- what the page reads --------------------------------------------------------
 
 def read(root: Path) -> tuple[dict, dict]:

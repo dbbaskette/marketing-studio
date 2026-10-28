@@ -289,6 +289,115 @@ class BriefTests(unittest.TestCase):
         self.assertEqual(result['status'], 'unavailable')
 
 
+class CitationTests(unittest.TestCase):
+    """A desk training's references resolve, and a new claim with no reference is named."""
+
+    def test_the_example_guide_s_references_resolve(self):
+        self.assertEqual(checks.citations(DOCUMENT, 'document'),
+                         {'check': 'document.citations', 'status': 'passed', 'problems': []})
+
+    def test_the_example_briefs_references_resolve(self):
+        for name in ('product-brief.md', 'competitive-brief.md'):
+            self.assertEqual(checks.citations(example(name), 'brief')['status'], 'passed', name)
+        self.assertEqual(checks.citations(example('product-brief.md'), 'brief')['check'],
+                         'brief.citations')
+
+    def test_a_reference_with_no_source_is_named(self):
+        text = DOCUMENT.replace('report healthy [3].', 'report healthy [3][9].')
+        self.assertEqual(checks.citations(text, 'document')['problems'],
+                         ['Reference [9] is not in Sources.'])
+        brief = example('product-brief.md').replace('[1].', '[1][9].', 1)
+        self.assertEqual(checks.citations(brief, 'brief')['problems'],
+                         ['Reference [9] is not in Sources.'])
+
+    def test_an_unused_source_is_named(self):
+        result = checks.citations(DOCUMENT.replace('[3]', ''), 'document')
+        self.assertEqual((result['status'], result['problems']),
+                         ('failed', ['Sources entry 3 is not cited.']))
+
+    def test_a_new_claim_with_no_reference_is_named(self):
+        problems = checks.citations(
+            DOCUMENT, 'document', added=['Restarts take 40 seconds on Tanzu Platform.'])['problems']
+        self.assertEqual(len(problems), 1)
+        self.assertTrue(problems[0].startswith(
+            'A claim with no reference: "Restarts take 40 seconds'), problems)
+
+    def test_what_makes_a_new_paragraph_a_claim(self):
+        long = ('Every rolling restart on Example Platform waits for health checks before it '
+                'moves on to the next batch.')
+
+        def claims(*added, names=()):
+            return [problem for problem in
+                    checks.citations(DOCUMENT, 'document', added=list(added),
+                                     names=names)['problems']]
+
+        self.assertEqual(claims('The platform waits, then moves on.',
+                                'It keeps serving [1]. It took 40 seconds [2].',
+                                '1. They are replaced one batch at a time.',
+                                '<!-- covers: O1 K1.1 -->', '## When capacity holds'), [])
+        self.assertEqual(claims(long), [f'A claim with no reference: "{long[:60].rstrip()}…"'])
+        self.assertEqual(claims('Tanzu restarts apps one batch at a time.'), [])
+        self.assertEqual(len(claims('Tanzu restarts apps one batch at a time.',
+                                    names=['Tanzu'])), 1)
+        # A table row's cells each start afresh, and a bold line is a heading.
+        self.assertEqual(claims('| Step | Wait |', '|---|---|', '**Step 2**'), [])
+        self.assertEqual(len(claims('| Restart | Waits for Example Platform |')), 1)
+
+    def test_a_sources_heading_in_lower_case_is_read(self):
+        brief = example('product-brief.md').replace('## 8. Sources', '## 8. sources')
+        self.assertEqual(checks.citations(brief, 'brief')['status'], 'passed')
+
+    def test_dropped_references_are_listed(self):
+        self.assertEqual(checks.dropped('A [1] and [2].', 'A [1].'), [2])
+        self.assertEqual(checks.dropped('A [3] [1] [3].', 'B.'), [1, 3])
+        self.assertEqual(checks.dropped('A [1].', 'A [1] and [2].'), [])
+
+
+class DeskCitationTests(helpers.TrainingCase):
+    """Only a desk training's guide and brief are checked for their references."""
+
+    def report(self, flow):
+        import assess
+        import workspace
+        workspace.init(self.root, 'Rolling restarts', levels=['101'], flow=flow)
+        self.write('101/blueprint.md', BLUEPRINT)
+        self.write('101/document.md', DOCUMENT.replace('[3]', ''))
+        self.write('101/product-brief.md', example('product-brief.md'))
+        return assess.run_checks(self.root, show_all=True)
+
+    def checked(self, flow):
+        return {outcome['check']: outcome for outcome in self.report(flow)['checks']}
+
+    def test_row_162_a_desk_training_s_references_hold_back_its_readiness(self):
+        import desk
+        report = self.report('desk')
+        self.assertFalse(report['ready'])
+        self.assertIn('document.citations@101 failed', report['blocking'])
+        self.assertNotIn('brief.citations@101 failed', report['blocking'])
+        self.assertIn("The level 101 learner guide's references need fixing.",
+                      [desk.plainly_on_desk(reason) for reason in report['blocking']])
+
+    def test_row_162_a_saved_training_with_the_same_text_is_unaffected(self):
+        report = self.report(None)
+        desk_checks = ('document.citations', 'brief.citations')
+        self.assertFalse([reason for reason in report['blocking']
+                          if reason.startswith(desk_checks)])
+        self.assertFalse([outcome for outcome in report['checks']
+                          if outcome['check'].startswith(desk_checks)])
+
+    def test_saved_trainings_are_not_checked_for_citations(self):
+        found = self.checked(None)
+        self.assertIn('document.coverage@101', found)
+        self.assertNotIn('document.citations@101', found)
+        self.assertNotIn('brief.citations@101', found)
+
+    def test_a_desk_training_s_references_are_checked(self):
+        found = self.checked('desk')
+        self.assertEqual(found['document.citations@101']['problems'],
+                         ['Sources entry 3 is not cited.'])
+        self.assertEqual(found['brief.citations@101']['status'], 'passed')
+
+
 class ScenarioTests(unittest.TestCase):
     def test_the_example_passes(self):
         result = checks.check_scenario(SCENARIO, 'scenario:main')

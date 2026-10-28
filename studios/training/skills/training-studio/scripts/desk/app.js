@@ -920,12 +920,13 @@ async function downloadFile(path, params, fallback, pressed) {
   }
 }
 
-function send(endpoint, body) {
+function send(endpoint, body, options = {}) {
   return call(endpoint, {
     method: 'POST',
     headers: { [TOKEN_HEADER]: view.token, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     cache: 'no-store',
+    ...options,
   });
 }
 
@@ -1158,6 +1159,8 @@ function swap(update) {
 }
 
 function open(next) {
+  if (view.screen === 'run' && view.path && (next.screen !== 'run' || next.path !== view.path)
+      && typeof shareDesk === 'function') shareDesk(view.path);
   view.screen = unset() ? 'setup' : next.screen || 'home';
   view.path = next.path || null;
   view.artifact = next.artifact || null;
@@ -3276,6 +3279,15 @@ function folderCard(training) {
       'copy-sentence')));
 }
 
+function openDeskButton(path, kind) {
+  return capsule('Open on the desk', kind, async () => {
+    try {
+      await send('drafts/open', { path });
+      show('run', { path });
+    } catch (failure) { toast(failure.message); }
+  }, 'open-desk');
+}
+
 function paintTraining(fresh) {
   const training = view.training;
   const above = levelsText(training.levels) ? [make('span', '', levelsText(training.levels))]
@@ -3299,7 +3311,9 @@ function paintTraining(fresh) {
   const known = listed(training.path) || training;
   const watch = training.run || watched(known) ? capsule('Watch the run', '',
     () => show('run', { path: training.path }), 'watch') : null;
-  place({ title: training.title || 'Untitled', above, back: true, actions: [watch, lead] },
+  const openDesk = training.run && training.run.can_open_desk
+    ? openDeskButton(training.path, 'filled') : null;
+  place({ title: training.title || 'Untitled', above, back: true, actions: [watch, lead, openDesk] },
     [add(make('div', 'intro'), state(shape, words), beads(training.stages, false),
       make('p', 'lede', saysOf(training)), whoLine(known)),
     adoptCard(known),
@@ -5948,6 +5962,7 @@ function controlsPart(run) {
 
 function finishedPart(run, lead) {
   const found = run.finished;
+  const desk = run.can_open_desk ? openDeskButton(view.path, '') : null;
   const limits = list(found.limitations);
   const yoodli = list(found.yoodli).map((item) => add(make('div', 'card-part'),
     make('p', 'row-title', item.label || 'Yoodli scenario'), yoodliCopies(item)));
@@ -5962,7 +5977,8 @@ function finishedPart(run, lead) {
     return callout('', make('h2', 'aside-title', 'Ready to use'),
       ...(limited.length ? limited : [make('p', '', 'Nothing was left out or limited.')]),
       found.index ? make('p', 'quiet', 'Open the index for the materials and how to use them, '
-        + 'or open an individual material below.') : null, ...yoodli);
+        + 'or open an individual material below.') : null, ...yoodli,
+      desk ? add(make('div', 'bar'), desk) : null);
   }
   const blocking = list(found.blocking);
   const go = capsule('See what is in the way', lead ? 'filled' : '',
@@ -5972,7 +5988,7 @@ function finishedPart(run, lead) {
       + ' in the way:' : 'Something is in the way, and it was not said what.'),
     blocking.length ? bullets(blocking, 'reasons') : null,
     add(make('p', ''), make('strong', '', 'What was kept: '), 'everything that was made.'),
-    ...limited, ...yoodli, indexed, add(make('div', 'bar'), go, open));
+    ...limited, ...yoodli, indexed, add(make('div', 'bar'), go, open, desk));
 }
 
 async function steer(action, pressed) {
@@ -5982,6 +5998,16 @@ async function steer(action, pressed) {
   view.busy = true;
   pressed.disabled = true;
   try {
+    if (onTheDesk(view.run)) {
+      const path = view.path;
+      if (action === 'stop') {
+        // Stopping must not wait for a refused or stalled save. Its text stays pending.
+        flushDesk(deskHeld(path)).catch(() => {
+          deskHeld(path).said = 'Unsaved text is still on the desk.';
+          if (view.path === path && view.screen === 'run') paintDesk(false);
+        });
+      } else await flushDesk(deskHeld(path));
+    }
     const run = await send('run', { path: view.path, action });
     view.busy = false;
     if (turn !== view.turn) return;
@@ -5992,6 +6018,7 @@ async function steer(action, pressed) {
     view.busy = false;
     if (turn !== view.turn) return;
     view.steered = failure.message + ' Nothing was changed.';
+    if (onTheDesk(view.run)) deskHeld(view.path).said = view.steered;
   }
   view.barred = '';
   paintRun(false);
@@ -6762,7 +6789,7 @@ function paintRun(fresh) {
     ['cost', [run.spent, run.agent, run.model, run.effort, limits.training_dollars],
       () => costCard(run)],
     // Then what is finished.
-    run.finished ? ['finished', [run.finished, lead],
+    run.finished ? ['finished', [run.finished, lead, run.can_open_desk],
       () => finishedPart(run, lead === 'finished')] : null,
     theirs && !driver && run.finished ? ['free', [title], () => finishedFreePart()] : null,
     run.finished ? ['publish', [run.finished.ready, published, teamSpace()],
@@ -8946,8 +8973,16 @@ function begin() {
     view.pushed = Math.max(0, view.pushed - 1);
     open(event.state || { screen: 'home' });
   });
+  window.addEventListener('pagehide', () => {
+    if (view.screen === 'run' && view.path && typeof leaveDesk === 'function') leaveDesk(view.path);
+  });
+  window.addEventListener('beforeunload', (event) => {
+    if (view.screen === 'run' && DESK.held[view.path] && pendingDeskEdits(view.path).length
+        && !keepDeskRecovery(view.path)) { event.preventDefault(); event.returnValue = ''; }
+  });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) refresh();
+    else if (view.screen === 'run' && view.path && typeof shareDesk === 'function') shareDesk(view.path);
   });
   // Escape puts away whatever is open: a menu first, then the sheet.
   document.addEventListener('keydown', (event) => {
