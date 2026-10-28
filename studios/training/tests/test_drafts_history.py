@@ -6,6 +6,7 @@ engine's files lock and a pretend Drive; nothing real is started and nothing rea
 import sys  # noqa: I001  the path-setting imports must come before runner
 import threading
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import helpers
@@ -189,6 +190,39 @@ class SavedTrainingTests(HistoryCase):
         found = self.history.versions('document', self.part('Summary'))
         self.assertEqual(len(found), core_versions.KEEP)
         self.assertEqual(found[0]['text'], f'Summary number {core_versions.KEEP + 1}.')
+
+    def test_a_part_s_current_text_is_never_an_earlier_version(self):
+        text = example('document.md')
+        first = self.codec.split(text)
+        self.saved(text)
+        # A hand edit of the Summary, then a file saved over it that keeps the edit and
+        # changes the Glossary: the hand edit's file has no event, and its Summary is now.
+        typed = summary(text, 'Typed by hand.')
+        self.write('document.md', typed)
+        glossary = headed(first, 'Glossary')['text']
+        incoming = self.write('incoming/document.md',
+                              typed.replace(glossary, 'A shorter glossary.'))
+        workspace.save(self.root, 'document', source=incoming)
+        part = self.part('Summary')
+        self.assertEqual(headed(self.current(), 'Summary')['text'], 'Typed by hand.')
+        self.assertEqual(self.shown(part), [('save', headed(first, 'Summary')['text'])])
+        self.assertEqual(self.shown(self.part('Glossary')), [('save', glossary)],
+                         'a text History already lists is not listed again')
+        self.assertEqual(self.history.counts('document'),
+                         {part: 1, self.part('Glossary'): 1})
+
+    def test_restore_reads_only_as_far_as_the_part_needs(self):
+        text = example('document.md')
+        for number in range(core_versions.KEEP + 5):
+            self.saved(summary(text, f'Summary number {number}.'))
+        part, read = self.part('Summary'), []
+        split = self.codec.split
+        with mock.patch.object(self.codec, 'split',
+                               side_effect=lambda markdown: read.append(1) or split(markdown)):
+            found = self.history.kept('document', part)
+        self.assertEqual(len(found), core_versions.KEEP)
+        self.assertEqual(len(read), core_versions.KEEP + 1,
+                         'the file now, then one file a version: the walk stops at the cap')
 
     def test_a_version_whose_file_is_missing_is_left_out(self):
         text = example('document.md')

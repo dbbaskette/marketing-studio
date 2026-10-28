@@ -956,7 +956,7 @@ class HistoryVersions:
         """A part's versions, newest first, as Restore reads them."""
         if not self.codec.known(part):
             raise ValueError('Choose a part of this ' + self.codec.thing + '.')
-        return self._history(ident).get(part, [])
+        return self._history(ident, part).get(part, [])
 
     def versions(self, ident, part):
         """A part's versions, newest first, each as the page shows it."""
@@ -993,10 +993,15 @@ class HistoryVersions:
             if path.suffix == suffix and HEX.fullmatch(path.stem) and path.stem not in named
             and path.is_file() and not path.is_symlink()]
         earlier.sort(key=lambda path: (-path.stat().st_mtime, path.name))
-        return states + [(path.stem, {'at': None, 'via': EARLIER}) for path in earlier]
+        return states + [(path.stem, {'at': None, 'via': EARLIER, 'unnamed': True})
+                         for path in earlier]
 
-    def _history(self, name: str) -> dict:
-        """Every part of the material as it is now, with its versions."""
+    def _history(self, name: str, only: str | None = None) -> dict:
+        """Every part of the material as it is now, with its versions; with `only`, read
+        as far as that part needs.
+
+        A file no event names is not in the run of saves: its text is listed only where it
+        is neither the part's text now nor a version already listed."""
         root = self.store.root
         try:
             draft = current(self.store, self.codec, name)
@@ -1004,10 +1009,11 @@ class HistoryVersions:
             return {}
         suffix = Path(workspace.artifact(root, workspace.load(root), name)['file']).suffix
         names = (*self.codec.fixed, *(section['id'] for section in draft['sections']))
-        last = {part: self.codec.text_of(draft, part) for part in names}
-        found = {part: [] for part in names}
+        now = {part: self.codec.text_of(draft, part) for part in names}
+        last, found = dict(now), {part: [] for part in names}
+        wanted = names if only is None else (only,) if only in names else ()
         for digest, after in self._states(root, name, draft['file_sha256'], suffix):
-            if all(len(found[part]) >= self.most for part in names):
+            if all(len(found[part]) >= self.most for part in wanted):
                 break
             path = workspace.history_file(root, name, digest, suffix)
             if path.is_symlink() or not path.is_file():
@@ -1021,7 +1027,10 @@ class HistoryVersions:
                 if part not in self.codec.fixed and part not in ids:
                     continue
                 text = self.codec.text_of(older, part)
-                if text != last[part] and len(found[part]) < self.most:
+                listed = (text == now[part] or any(
+                    entry['text'] == text for entry in found[part])) if after.get(
+                    'unnamed') else text == last[part]
+                if not listed and len(found[part]) < self.most:
                     found[part].append({'at': after.get('at'),
                                         'source': after.get('via') or 'save',
                                         'text': text, 'words': len(text.split())})
