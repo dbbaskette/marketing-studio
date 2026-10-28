@@ -6,7 +6,7 @@ python="${1:-python3}"
 results="${2:-$(mktemp -d "${TMPDIR:-/tmp}/marketing-studio-checks.XXXXXX")}"
 mkdir -p "$results"
 "$python" -c 'import sys; assert sys.version_info >= (3, 11), "Python 3.11+ is required"'
-"$python" -m compileall -q marketing_studio core installer
+"$python" -m compileall -q marketing_studio core installer studios/infographic/runner
 node --check marketing_studio/web/app.js
 run() {
   local name="$1"
@@ -21,6 +21,7 @@ run() {
   fi
 }
 run home-and-suite "$python" -m unittest discover -s tests -v
+run infographic-studio-foundations "$python" -m unittest discover -s studios/infographic/tests -v
 run blog-studio bash -c 'cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$1" "$2"' _ "$python" "$results/blog-studio"
 run presentation-studio bash -c 'cd studios/presentation && "$1" scripts/ci/run_tests.py --jobs 4 && "$1" skills/presentation-studio/scripts/validate_package.py' _ "$python"
 run training-studio bash -c 'cd studios/training && bash scripts/ci/check.sh "$1"' _ "$python"

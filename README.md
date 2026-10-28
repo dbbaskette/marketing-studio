@@ -331,6 +331,11 @@ bash scripts/ci/tart-macos.sh
 
 Read the [architecture](docs/architecture.md), [installation guide](docs/installation.md), [testing guide](docs/testing.md),
 [migration plan](docs/migration-plan.md), and [source provenance](docs/provenance.md).
+The proposed [Infographic Studio specification](docs/infographic-studio-spec.md)
+describes a future studio for creating a single-page visual explanation from supplied information.
+Its [implementation plan](docs/infographic-studio-implementation-plan.md) includes
+delivery gates, dependencies, acceptance criteria, and the GitHub epic backlog.
+Track the epics and tasks in [the Infographic Studio roadmap](https://github.com/dbbaskette/marketing-studio/issues/136).
 Use `presentation-studio-package` to regenerate the local Apple Silicon
 Presentation Studio bundle with Tanzu Brand and its tools; the
 [local packaging guide](docs/local-presentation-bundle.md) covers CLI setup and
