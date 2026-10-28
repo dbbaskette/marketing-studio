@@ -43,7 +43,7 @@ class GoogleDeliveryTests(Isolated):
         self.assertNotIn('TargetMode="External"',archive.read('word/_rels/document.xml.rels').decode())
         self.assertEqual(self.send(delivery,client),result);client.create_document.assert_called_once()
         inspected=self.engine.inspect(self.ident)
-        self.assertEqual(len(inspected['google_deliveries']),1);self.assertEqual(inspected['recovery'],[])
+        self.assertEqual(len(inspected['google_deliveries']),1);self.assertTrue(inspected['google_deliveries'][0]['current']);self.assertEqual(inspected['recovery'],[])
 
     def test_uncertain_upload_never_resends_and_reconciles_by_exact_payload(self):
         delivery=self.ready();client=self.client();client.create_document.side_effect=GoogleError('Synthetic timeout',uncertain=True)
@@ -62,6 +62,7 @@ class GoogleDeliveryTests(Isolated):
         client.find_delivery.return_value=[]
         self.assertEqual(self.send(delivery,client,reconcile=True,revision=revision)['state'],'unknown')
         client.create_document.assert_called_once()
+        self.assertFalse(google_delivery.listing(self.store,self.ident)[0]['current'])
 
     def test_destination_conflict_and_multiple_results_refuse(self):
         delivery=self.ready();client=self.client();client.create_document.side_effect=GoogleError('Synthetic timeout',uncertain=True)

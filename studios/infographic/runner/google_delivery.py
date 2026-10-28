@@ -243,7 +243,7 @@ def checked_result(result, intent):
 
 
 def listing(store, ident):
-    store.read(ident)
+    project = store.read(ident)
     jobs = store._project(ident) / "jobs"
     require(not jobs.is_symlink(), "Google delivery jobs cannot be links.")
     found = []
@@ -262,7 +262,17 @@ def listing(store, ident):
                 if (path / "result.json").exists()
                 else {"state": "unknown"}
             )
-            found.append({**intent, **result})
+            found.append(
+                {
+                    **intent,
+                    **result,
+                    "current": project["revision"] == intent["revision"]
+                    and project["approval"] is not None
+                    and visual_review.checked(store, project)
+                    and digest(visual_review.latest(store, project))
+                    == intent["review_digest"],
+                }
+            )
         except (ValueError, OSError):
             continue
     return found
