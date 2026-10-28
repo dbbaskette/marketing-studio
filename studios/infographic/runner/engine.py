@@ -48,8 +48,12 @@ class Engine:
                 except (OSError, ValueError):
                     continue  # Incomplete delivery is never advertised as downloadable.
                 found.append({**manifest, 'current': manifest['basis'] == basis(project)
-                              and manifest['scene_digest'] == digest(project['scene'])})
-        return sorted(found, key=lambda item: item['revision'], reverse=True)
+                              and manifest['scene_digest'] == digest(project['scene']),
+                              'approved_current': not manifest['draft'] and project['approval'] is not None
+                              and manifest['revision'] == project['revision']
+                              and manifest['approval_digest'] == digest(project['approval'])
+                              and manifest['checks_digest'] == digest(project['checks'])})
+        return sorted(found, key=lambda item: (item['revision'], not item['draft']), reverse=True)
 
     def propose(self, ident, *, expected_revision, automatic=False):
         with file_lock(self.store._project(ident) / 'jobs/author.lock'):

@@ -110,7 +110,7 @@ function renderProject() {
   const p=held.project, selected=p.stories.find(s=>s.id===p.selected_story);
   const currentDelivery=held.deliveries.find(d=>d.current), checked=p.checks.length&&p.checks.every(c=>c.status==='passed'), needsArtwork=p.scene?.art_regions?.length&&!p.scene.elements.some(e=>e.kind==='artwork');
   let next=['Find the story',()=>action('suggest')];
-  if(p.stories.length)next=!selected?['Choose a story',()=>document.querySelector('#story-choice').scrollIntoView({behavior:'smooth'})]:!p.scene||needsArtwork?['Build page',compose]:!currentDelivery?['Create preview',()=>action('preview')]:p.approval?(currentDelivery.draft?['Export files',()=>action('export',{draft:false})]:['Downloads',()=>document.querySelector('.ig-page-tools').scrollIntoView({behavior:'smooth'})]):checked?['Approve page',()=>action('approve')]:held.visual_review?.status==='passed'?['Run checks',()=>action('check')]:['Review page',()=>reviewSheet(currentDelivery)];
+  if(p.stories.length)next=!selected?['Choose a story',()=>document.querySelector('#story-choice').scrollIntoView({behavior:'smooth'})]:!p.scene||needsArtwork?['Build page',compose]:!currentDelivery?['Create preview',()=>action('preview')]:p.approval?(!currentDelivery.approved_current?['Export files',()=>action('export',{draft:false})]:['Downloads',()=>document.querySelector('.ig-page-tools').scrollIntoView({behavior:'smooth'})]):checked?['Approve page',()=>action('approve')]:held.visual_review?.status==='passed'?['Run checks',()=>action('check')]:['Review page',()=>reviewSheet(currentDelivery)];
   heading(p.brief.title,button('Infographics',home),button(...next,true));
   const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.')];
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.state+': '+r.message),button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
@@ -123,7 +123,7 @@ function renderProject() {
     const scroll=add(make('div','ig-preview-scroll'),img);
     const tools=add(make('div','ig-page-tools'),button('Fit page',()=>img.classList.remove('ig-preview-actual')),button('Actual pixels',()=>img.classList.add('ig-preview-actual')));
     for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+format.toUpperCase()+(delivery.draft?' draft':''),async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
-    parts.push(card(!delivery.current?'Earlier page — create a new preview':delivery.draft?'Draft page':'Approved delivery',make('p','quiet','Saved revision '+delivery.revision+'. Earlier deliveries stay available through history; edits require a new review.'),scroll,tools));
+    parts.push(card(!delivery.current?'Earlier page — create a new preview':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':'Earlier approval — review the current revision',make('p','quiet','Saved revision '+delivery.revision+'. Earlier deliveries stay available through history; edits require a new review.'),scroll,tools));
     download(delivery,'png',true).then(url=>{if(held?.project.id===p.id && document.body.contains(img)){picture=url;img.src=url;}else URL.revokeObjectURL(url);}).catch(f=>error(f.message));
   }
   if(p.scene) {

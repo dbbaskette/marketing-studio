@@ -29,6 +29,7 @@ def latest(store, project):
 def inspect(engine, ident, *, expected_revision):
     project = engine.store.read(ident)
     engine.store.expect(project, expected_revision)
+    initial_sequence = (latest(engine.store, project) or {}).get('sequence', 0)
     require(engine.assistant is not None, 'Configure an assistant for pixel inspection, or record your own actual-page review.')
     delivery = next((d for d in engine.deliveries(ident) if d['basis'] == basis(project)
                     and d['scene_digest'] == digest(project['scene'])), None)
@@ -66,6 +67,8 @@ def inspect(engine, ident, *, expected_revision):
         current = engine.store.read(ident)
         engine.store.expect(current, expected_revision)
         previous = latest(engine.store, current)
+        require((previous or {}).get('sequence', 0) == initial_sequence,
+                'A newer visual review was recorded while the assistant worked. That decision is kept; the late result was not adopted.')
         record = {**deepcopy(answer), 'observations': [o['kind'] + ' · ' + o['region_id'] + ': ' + o['text'] for o in answer['observations']],
                   'schema': 1, 'by': 'assistant',
                   'sequence': (previous or {}).get('sequence', 0) + 1,

@@ -244,3 +244,26 @@ class DeskEngineTests(Isolated):
             with self.assertRaises(Invalid): self.engine.build(self.ident, expected_revision=6, request_id='second_build')
         self.renderer.assert_not_called()
         self.assertEqual(self.current()['revision'], 6)
+
+    def test_final_delivery_wins_a_same_revision_draft_but_old_approval_is_labeled(self):
+        approved = self.review_and_approve()
+        self.engine.preview(self.ident, expected_revision=approved['revision'], draft=True)
+        self.engine.preview(self.ident, expected_revision=approved['revision'], draft=False)
+        latest = self.engine.deliveries(self.ident)[0]
+        self.assertFalse(latest['draft'])
+        self.assertTrue(latest['approved_current'])
+        self.engine.check(self.ident, expected_revision=approved['revision'])
+        old = self.engine.deliveries(self.ident)[0]
+        self.assertTrue(old['current'], 'The actual scene/content remains the same')
+        self.assertFalse(old['approved_current'], 'Earlier final files must not claim current exact-revision approval')
+
+    def test_late_assistant_inspection_cannot_replace_a_newer_manual_review(self):
+        delivery = self.engine.preview(self.ident, expected_revision=6)
+        assistant = mock.Mock()
+        def inspect(context, images):
+            self.engine.manual_review(self.ident, delivery['id'], ['A newer manual decision on the actual page.'], expected_revision=6)
+            return visual_answer()
+        assistant.inspect_images.side_effect = inspect
+        self.engine.assistant = assistant
+        with self.assertRaises(Invalid): self.engine.inspect_images(self.ident, expected_revision=6)
+        self.assertEqual(self.engine.inspect(self.ident)['visual_review']['by'], 'user')
