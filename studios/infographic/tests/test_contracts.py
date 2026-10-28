@@ -4,11 +4,26 @@ import struct
 
 from helpers import approved_project, project
 from runner.contracts import Invalid, advance, basis, can_land, digest, new_project
-from runner.validation import image_size, validate_project
+from runner.validation import image_size, validate_image_result, validate_project
 from graphics_fixtures import png
 
 
 class ContractTests(unittest.TestCase):
+    def test_provider_handoffs_preserve_unknown_outcomes_and_require_actual_assets(self):
+        result = {'schema': 1, 'provider': 'gemini', 'operation': 'generate', 'attempt_id': 'try1',
+                  'state': 'unknown', 'reason': 'timeout', 'request_id': None, 'assets': [],
+                  'inspection': 'unknown',
+                  'usage': {'cost': None, 'currency': None, 'input_tokens': None, 'output_tokens': None}}
+        validate_image_result(result)
+        with self.assertRaisesRegex(Invalid, 'actual saved assets'):
+            validate_image_result({**result, 'state': 'complete', 'reason': None})
+        for invalid in [{'schema': 2}, {'provider': 'other'}, {'attempt_id': None}, {'api_key': 'sentinel'}]:
+            with self.subTest(invalid=invalid), self.assertRaises(Invalid):
+                validate_image_result({**result, **invalid})
+        result['usage']['cost'] = .02
+        with self.assertRaisesRegex(Invalid, 'currency'):
+            validate_image_result(result)
+
     def test_complete_contract_and_empty_draft_are_valid(self):
         validate_project(new_project('owner1', 'Working title'))
         validate_project(project())

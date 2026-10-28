@@ -58,6 +58,13 @@ silently claims that dependency-aware editing is complete.
 
 ## Provider attempts and approvals
 
+`runner/images/base.py` defines the shared readiness/generate/edit/status/cancel
+protocol. `validate_image_result` checks schema, provider, operation, owned attempt,
+normalized outcome, request identity, returned asset metadata, inspection capability,
+and reported-or-unknown usage. A completed generation/edit must return saved assets;
+an unknown timeout cannot be represented as success. Cost includes a currency or
+both remain unknown. This protocol performs no network operation.
+
 Image attempts name Codex or Gemini and a saved image brief. States are queued,
 running, complete, failed, cancelled, or unknown. A timeout with an uncertain remote
 outcome remains unknown instead of triggering another billable request. Reported

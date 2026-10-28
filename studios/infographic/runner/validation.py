@@ -135,6 +135,60 @@ def bounds(value, *, normalized=False):
                 'Image regions must fit the normalized canvas.')
 
 
+def validate_image_result(result: dict) -> dict:
+    """The same versioned handoff for Codex and Gemini; no provider is executed."""
+    require(isinstance(result, dict) and len(canonical(result)) <= MAX_RECORD_BYTES,
+            'The image-provider result must be a bounded object.')
+    _secrets(result)
+    require(set(result) == {'schema', 'provider', 'operation', 'attempt_id', 'state',
+                            'reason', 'request_id', 'assets', 'usage', 'inspection'},
+            'The image-provider result has missing or unsupported fields.')
+    require(type(result['schema']) is int and result['schema'] == SCHEMA,
+            'The image-provider result version is unsupported.')
+    require(result['provider'] in ('codex', 'gemini') and result['operation'] in
+            ('readiness', 'generate', 'edit', 'status', 'cancel'),
+            'Name the image provider and supported operation.')
+    require(result['attempt_id'] is None and result['operation'] == 'readiness'
+            or identifier(result['attempt_id']), 'Image operations need an owned attempt ID.')
+    require(result['state'] in ('unavailable', 'unverified', 'ready', 'queued', 'running',
+                               'complete', 'failed', 'cancelled', 'unknown'),
+            'Record the exact image-provider result state.')
+    require(result['reason'] is None or result['reason'] in
+            ('assistant-missing', 'sign-in-required', 'gemini-key-required',
+             'image-tool-unavailable', 'image-model-unavailable', 'quota', 'provider-refusal',
+             'timeout', 'stopped', 'invalid-asset', 'inspection-unavailable'),
+            'Use a non-secret normalized image-provider outcome.')
+    require(result['request_id'] is None or text(result['request_id'], limit=512),
+            'The request identity must be bounded text or explicitly unknown.')
+    require(result['inspection'] in ('available', 'unavailable', 'unknown'),
+            'Record image-inspection capability separately from generation success.')
+    usage = result['usage']
+    require(isinstance(usage, dict) and set(usage) == {'cost', 'currency', 'input_tokens', 'output_tokens'},
+            'Record reported or unknown image usage.')
+    require(usage['cost'] is None or number(usage['cost']) and usage['cost'] >= 0,
+            'Image cost must be nonnegative or unknown.')
+    require(usage['currency'] is None or isinstance(usage['currency'], str)
+            and re.fullmatch('[A-Z]{3}', usage['currency']) is not None,
+            'Record the reported currency or leave it unknown.')
+    require((usage['cost'] is None) == (usage['currency'] is None),
+            'A reported image cost must include its currency.')
+    require(all(usage[key] is None or type(usage[key]) is int and usage[key] >= 0
+                for key in ('input_tokens', 'output_tokens')), 'Image token usage must be nonnegative or unknown.')
+    assets = records(result['assets'], 'Returned image assets')
+    for asset in assets.values():
+        require(relative_path(asset.get('file')) and sha(asset.get('sha256'))
+                and asset.get('mime') in ('image/png', 'image/jpeg'),
+                'Returned images need safe owned paths, MIME types, and hashes.')
+        require(type(asset.get('bytes')) is int and 0 < asset['bytes'] <= MAX_ASSET_BYTES
+                and all(type(asset.get(k)) is int and 0 < asset[k] <= MAX_ASSET_EDGE for k in ('width', 'height'))
+                and asset['width'] * asset['height'] <= MAX_ASSET_PIXELS,
+                'Returned image dimensions and sizes must fit the asset limits.')
+    if result['operation'] in ('generate', 'edit') and result['state'] == 'complete':
+        require(bool(assets), 'Successful image work must return actual saved assets.')
+        require(result['reason'] is None, 'A completed image operation cannot also report a refusal.')
+    return result
+
+
 def validate_project(project: dict) -> dict:
     require(isinstance(project, dict), 'An infographic record must be an object.')
     require(len(canonical(project)) <= MAX_RECORD_BYTES, 'The infographic record is too large.')

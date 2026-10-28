@@ -1,4 +1,5 @@
 import os
+import base64
 from pathlib import Path
 import tempfile
 import unittest
@@ -40,6 +41,19 @@ class RenderValidationTests(unittest.TestCase):
 @unittest.skipUnless(os.environ.get('INFOGRAPHIC_STUDIO_TEST_RENDERER'),
                      'Supply an installed headless renderer explicitly for graphics acceptance.')
 class InstalledRendererTests(unittest.TestCase):
+    def test_an_embedded_image_that_cannot_decode_blocks_output(self):
+        executable = Path(os.environ['INFOGRAPHIC_STUDIO_TEST_RENDERER'])
+        # Valid PNG signature/dimensions with no encoded pixels: metadata is not
+        # evidence that the browser can actually render the asset.
+        from graphics_fixtures import png
+        invalid = base64.b64encode(png()[:24]).decode()
+        svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750"><image x="10" y="10" width="20" height="20" href="data:image/png;base64,' + invalid + '"/></svg>'
+        with tempfile.TemporaryDirectory(prefix='infographic-decode-test-') as folder:
+            destination = Path(folder) / 'invalid'
+            with self.assertRaisesRegex(ValueError, 'invalid assets'):
+                render.render(svg, preset='digital', fonts=['Arial'], executable=executable, destination=destination)
+            self.assertFalse(destination.exists())
+
     def test_wrapped_text_spans_are_measured_without_shrinking(self):
         executable = Path(os.environ['INFOGRAPHIC_STUDIO_TEST_RENDERER'])
         svg = '''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 750">

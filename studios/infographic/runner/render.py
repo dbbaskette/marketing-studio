@@ -53,6 +53,8 @@ def safe_svg(text: str) -> str:
     for element in root.iter():
         if not element.tag.startswith('{' + SVG + '}') or element.tag.split('}', 1)[1] not in TAGS:
             raise ValueError('The SVG contains an unsupported element.')
+        if element.tag.endswith('}image') and not element.get('href'):
+            raise ValueError('Every SVG image needs an embedded reference.')
         for key, value in element.attrib.items():
             if key not in ATTRS or any(word in value.lower() for word in ('url(', 'javascript:', 'file:')):
                 raise ValueError('The SVG contains an unsafe attribute or resource.')
@@ -98,13 +100,19 @@ def document(svg: str, preset: str, fonts: list[str]) -> str:
     # have already been refused. local() verifies actual installed font faces.
     script = """
 (async () => {
-  const missing = [], overflow = [], boxes = [];
+  const missing = [], invalidAssets = [], overflow = [], boxes = [];
   for (const [index, name] of FONTS.entries()) {
     try { await new FontFace('verified_' + index, 'local("' + name + '")').load(); }
     catch (_) { missing.push(name); }
   }
   await document.fonts.ready;
   const root = document.querySelector('svg');
+  for (const element of root.querySelectorAll('image')) {
+    const image = new Image();
+    image.src = element.getAttribute('href');
+    try { await image.decode(); if (!image.naturalWidth || !image.naturalHeight) throw Error(); }
+    catch (_) { invalidAssets.push(element.getAttribute('data-id') || element.id || 'unnamed'); }
+  }
   for (const element of root.querySelectorAll('[data-box]')) {
     const allowed = element.getAttribute('data-box').split(/\\s+/).map(Number);
     const box = element.getBBox();
@@ -125,7 +133,7 @@ def document(svg: str, preset: str, fonts: list[str]) -> str:
         box.x + box.width > bounds.x + bounds.width + .1 ||
         box.y + box.height > bounds.y + bounds.height + .1) overflow.push('page-bounds');
   }
-  document.getElementById('metrics').textContent = JSON.stringify({missing_fonts: missing,
+  document.getElementById('metrics').textContent = JSON.stringify({missing_fonts: missing, invalid_assets: invalidAssets,
     overflow, boxes, complete: true});
 })().catch(() => { document.getElementById('metrics').textContent = '{"complete":false}'; });
 """.replace('FONTS', json.dumps(fonts))
@@ -206,8 +214,8 @@ def render(svg: str, *, preset: str, fonts: list[str], executable: Path,
         if match is None:
             raise ValueError('The renderer returned no font or layout measurements.')
         metrics = json.loads(html.unescape(match[1]))
-        if not metrics.get('complete') or metrics.get('missing_fonts') or metrics.get('overflow'):
-            raise ValueError('The page has missing fonts, overflow, or incomplete measurements.')
+        if not metrics.get('complete') or metrics.get('missing_fonts') or metrics.get('invalid_assets') or metrics.get('overflow'):
+            raise ValueError('The page has missing fonts, invalid assets, overflow, or incomplete measurements.')
         png, pdf = work / 'page.png', work / 'page.pdf'
         _run(executable, work, [f"--window-size={d['width_px']},{d['height_px']}",
                                '--screenshot=' + str(png), uri], timeout)
