@@ -1004,3 +1004,76 @@ class DesignedScopedUpdateReviewTests(JudgedSlideNoteTests):
         self.to_end(root)
         self.assertIsNone(self.engine._load(root)['problem'])
         self.assertEqual(len(self.workers.of('section')), count + 1)
+
+
+class ScopedUpdateRetryTests(DeckCase):
+    def _section_failure_then_guide_edit(self, legacy=False):
+        from runner_support import fails
+        from test_drafts import edit
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        original = json.loads((root / pipeline.OUTLINE).read_text())
+        edit(self, root, 'document', lambda text: text.replace(
+            '## Why this matters', '## Why this matters\nChanged first.'))
+        self.workers.outline_said = copy.deepcopy(original)
+        self.workers.outline_said['slides'][3]['notes'] += ' Updated.'
+        self.workers.then('section', *[fails()] * 6)
+        self.engine.update(root, 'deck')
+        self.assertIsNotNone(self.engine._load(root)['problem'])
+        self.assertIn('deck', drafts.updates(self.engine._load(root)))
+        self.assertIsNone(self.engine._load(root)['deck']['']['asked'])
+        if legacy:
+            record = self.engine._load(root)
+            record['drafts']['updates']['deck'].pop('deck_request')
+            self.engine._store(root, record)
+        card = self.engine.draft_card(root, 'document')
+        section = next(part for part in card['sections'] if part['heading'] == 'When capacity holds')
+        self.engine.draft_save(root, 'document', section['id'], card['revision'],
+                               section['text'] + '\nChanged before retry.')
+        self.workers.queued.pop('section', None)
+        refused = []
+
+        def try_wrong_outline(tools, job):
+            spec = tools.job['artifacts']['outline']
+            self.assertIn('what-it-does', spec.get('frozen', {}))
+            changed = copy.deepcopy(self.workers.outline_said)
+            changed['slides'][1]['notes'] += ' Unrelated change.'
+            accepted, message = tools.submit_outline(json.dumps(changed))
+            self.assertFalse(accepted)
+            refused.append(message)
+            self.workers.outline(tools, job)
+
+        self.workers.then('outline', try_wrong_outline)
+        self.engine.act(root, 'retry')
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root)['problem'])
+        self.assertIn('Slide 2 is not one to word again. Copy it exactly.', refused[0])
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][1],
+                         original['slides'][1])
+        self.assertNotIn('deck', drafts.updates(self.engine._load(root)))
+
+    def test_section_failure_then_guide_edit_keeps_the_outline_scope_on_retry(self):
+        self._section_failure_then_guide_edit()
+
+    def test_a_preexisting_pending_update_recovers_scope_on_retry(self):
+        self._section_failure_then_guide_edit(legacy=True)
+
+    def test_retry_without_an_input_change_does_not_reword_the_outline(self):
+        from runner_support import fails
+        from test_drafts import edit
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        self.workers.outline_said = json.loads((root / pipeline.OUTLINE).read_text())
+        self.workers.outline_said['slides'][3]['notes'] += ' Updated.'
+        edit(self, root, 'document', lambda text: text.replace(
+            '## Why this matters', '## Why this matters\nChanged.'))
+        self.workers.then('section', *[fails()] * 6)
+        self.engine.update(root, 'deck')
+        self.assertIsNotNone(self.engine._load(root)['problem'])
+        count = len(self.workers.of('outline'))
+        self.workers.queued.pop('section', None)
+        self.engine.act(root, 'retry')
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root)['problem'])
+        self.assertEqual(len(self.workers.of('outline')), count)
+        self.assertNotIn('deck', drafts.updates(self.engine._load(root)))

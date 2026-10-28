@@ -3722,7 +3722,8 @@ class Engine(Reviewing):
                 basis = workspace.inputs(root, session, it.artifact)
                 if basis != step.request.get('inputs') or session != found.session:
                     record = self._load(root)
-                    asked = self._decided(record, self._level(it)).get('asked') or {}
+                    asked = dict(self._decided(record, self._level(it)).get('asked')
+                                 or step.request or {})
                     refreshed = drafts.deck_update(root, session, self._level(it))
                     if not refreshed['slides']:
                         record['drafts']['updates'].pop(it.artifact, None)
@@ -3731,6 +3732,7 @@ class Engine(Reviewing):
                         return self._problem(root, it.id, 'stopped', drafts.NO_SLIDE, KEPT)
                     asked.update(slides=refreshed['slides'], inputs=basis)
                     self._decided(record, self._level(it))['asked'] = asked
+                    record['drafts']['updates'][it.artifact]['deck_request'] = dict(asked)
                     self._store(root, record)
                     return  # survey the new inputs and request together
         if (it.id == 'research-plan' and record.get('research_contract')
@@ -4535,9 +4537,11 @@ class Engine(Reviewing):
                     'kind': 'revise', 'note': drafts.DECK_UPDATE,
                     'slides': scope_deck['slides'], 'inputs': workspace.inputs(root, session, name),
                     'at': home.now()}
-            record.setdefault('drafts', {}).setdefault('updates', {})[name] = {
-                'at': home.now(), 'by': 'page', 'scope': scope}
             base, level = workspace.split(name)
+            record.setdefault('drafts', {}).setdefault('updates', {})[name] = {
+                'at': home.now(), 'by': 'page', 'scope': scope,
+                **({'deck_request': dict(self._decided(record, level)['asked'])}
+                   if base == 'deck' else {})}
             for step in ([workspace.qualify(step, level) for step in pipeline.DECK_STEPS]
                          if base == 'deck' else [name]):
                 self._fresh(record, step)   # tried from the start again

@@ -1310,13 +1310,14 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
         listed, done = reviews.group(root, session, run, listed, done)
     first = next((step for step in listed if step.id not in done), None)
     return Survey(session, state, listed, done,
-                  _next(first, session, state, asked, found, decks), found, asked, named,
+                  _next(first, session, state, asked, found, decks,
+                        drafts.updates(run) if drafts.on_desk(run) else None), found, asked, named,
                   own, tuple(copies), (given or {}).get('scope') or SCOPE, decks, missing,
                   research_of(run))
 
 
 def _next(first: Step | None, session: dict, state: dict, asked: dict,
-          found: Research, decks: dict | None = None) -> Next:
+          found: Research, decks: dict | None = None, updates: dict | None = None) -> Next:
     if first is None:
         return Next('done')
     if first.kind == 'review':
@@ -1329,7 +1330,13 @@ def _next(first: Step | None, session: dict, state: dict, asked: dict,
         mine = decks[workspace.split(first.artifact)[1]]
         if first.kind == 'gate':  # the runner's own gate: the core has none for it
             return Next('outline' if mine.waiting else 'gate', first)
-        request = mine.kept.get('asked') or asked.get(first.artifact)
+        pending = (updates or {}).get(first.artifact)
+        scoped = None
+        if pending and bare(first.id) == 'deck-outline':
+            scoped = pending.get('deck_request') or {
+                'kind': 'revise', 'note': drafts.DECK_UPDATE, 'slides': [],
+                'inputs': None, 'at': pending.get('at')}
+        request = mine.kept.get('asked') or scoped or asked.get(first.artifact)
         return Next(first.kind, first, request, {
             'deck-sections': mine.todo, 'deck-repair': mine.again}.get(bare(first.id), ()))
     if first.id == 'intake':

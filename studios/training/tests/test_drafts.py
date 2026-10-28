@@ -337,7 +337,8 @@ class DeskHoldTests(DeckCase):
         root = self.desk_deck()
         outlines, sections = self.drawn_count()
         documents = len(self.workers.of('document'))
-        self.guide_edit(root)
+        self.edit(root, 'document@101', lambda text: text.replace(
+            '## When capacity holds', '## When capacity holds\nChanged detail.'))
         self.engine.wake(root)
         with self.assertRaisesRegex(WorkspaceError, '^This is up to date.$'):
             self.engine.update(root, 'document@101')
