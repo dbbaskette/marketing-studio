@@ -7120,6 +7120,193 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         # Each card is marked ready on its own, with the version shown on it.
         self.assertGreaterEqual(shot['buttons'].count('Mark ready'), 5)
 
+    def editable(self, name='document@101', **extra):
+        material = a_card(name.replace('yoodli:', 'scenario:'))
+        if name.startswith('yoodli:'):
+            material.update(name=name, kind='yoodli', label='the Yoodli layout')
+        desk = a_desk(material, levels=('101',), running=False)
+        card_view = {**material, 'revision': 3, 'opening': '', 'sections': [
+            {'id': 'abcd1234', 'heading': 'When capacity holds', 'text': 'Some text.'}],
+            'versions': {'abcd1234': 3}, 'working': None, 'jobs': [],
+            'desk': desk['body'], **extra}
+        return desk, card_view
+
+    def test_typing_saves_a_second_after_the_last_key(self):
+        desk, card_view = self.editable()
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/save': [ok({**card_view, 'revision': 4})],
+            'POST /api/drafts/share': [ok({'committed': True})]}), [
+            {'fill': 'Text of When capacity holds', 'value': 'One'},
+            {'fill': 'Text of When capacity holds', 'value': 'Two'},
+            {'timer': 'save'}, {'click': 'Back'}])
+        posts = self.posts(result)
+        self.assertEqual([route for route, _ in posts],
+                         ['/api/drafts/save', '/api/drafts/share'])
+        self.assertEqual(posts[0][1]['text'], 'Two')
+        self.assertEqual(posts[0][1]['seen'], 3)
+
+    def test_history_compares_and_restores(self):
+        desk, card_view = self.editable()
+        versions = [{'source': source, 'text': text, 'words': 2} for source, text in
+                    [('rewrite', 'First text.'), ('google', 'Second text.'),
+                     ('earlier', 'Earlier text.')]]
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'GET /api/drafts/versions': [ok({'versions': versions})],
+            'POST /api/drafts/restore': [ok(card_view)]}), [
+            {'click': 'History (3)'}, {'snapshot': 'history'},
+            {'click': 'Compare'}, {'snapshot': 'compare'}, {'click': 'Restore', 'index': 1}])
+        for label in ('Rewritten', "Before Google's text", 'An earlier version'):
+            self.assertIn(label, result['snapshots']['history']['text'])
+        self.assertIn('This version compared with now', result['snapshots']['compare']['text'])
+        self.assertEqual(self.posts(result)[0][1]['index'], 1)
+
+    def test_the_selection_bar_offers_five_actions(self):
+        desk, card_view = self.editable()
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/selection': [ok(card_view)]}), [
+            {'select': 'Text of When capacity holds', 'start': 5, 'end': 9},
+            {'snapshot': 'selection'}, {'click': 'Shorten'}])
+        for action in ('Rephrase', 'Shorten', 'Expand', 'Fix', 'Ask…'):
+            self.assertIn(action, result['snapshots']['selection']['buttons'])
+        self.assertEqual(self.posts(result)[0][1], {'path': str(self.root),
+            'name': 'document@101', 'seen': 3, 'part': 'abcd1234',
+            'text': 'text', 'start': 5, 'action': 'shorten'})
+
+    def test_a_dropped_reference_offers_restore(self):
+        desk, card_view = self.editable(jobs=[{'id': 'job1', 'status': 'done',
+            'part': 'abcd1234', 'dropped': [2], 'checks': ['Much shorter.'],
+            'says': 'This change dropped reference [2].', 'applied': True}])
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'GET /api/drafts/versions': [ok({'versions': []})]}),
+            [{'snapshot': 'dropped'}, {'click': 'Restore'}])
+        self.assertIn('This change dropped reference [2].', result['snapshots']['dropped']['text'])
+        self.assertIn('Much shorter.', result['snapshots']['dropped']['text'])
+        self.assertTrue(self.asked(result, 'drafts/versions'))
+
+    def test_desk_jobs_offer_stop_and_retry(self):
+        job = {'id': 'job1', 'part': 'abcd1234', 'status': 'working',
+               'says': 'Rewriting this section.'}
+        desk, card_view = self.editable(working=job, jobs=[job])
+        stopped = {**card_view, 'working': None, 'jobs': [{**job, 'status': 'stopped'}]}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/stop': [ok(stopped)],
+            'POST /api/drafts/retry': [ok(card_view)]}),
+            [{'click': 'Stop change'}, {'click': 'Retry change'}])
+        self.assertEqual([(route, body['job']) for route, body in self.posts(result)],
+                         [('/api/drafts/stop', 'job1'), ('/api/drafts/retry', 'job1')])
+
+    def test_scenario_and_yoodli_have_whole_file_cards(self):
+        self.started('--levels', '101,201')
+        for name, own in [('scenario:main@101', True), ('yoodli:main@101', False)]:
+            with self.subTest(name=name):
+                desk, card_view = self.editable(name, opening='# Practice', sections=[],
+                    whole=True, own=own, fields=[{'heading': ['Context'], 'text': 'Practice.',
+                                                 'limit': 10000}])
+                result = self.open_desk(self.answers(**{'GET /api/trainings': [self.listed('done', 'Done.')],
+                    'GET /api/training': [self.detail('done', 'Done.')],
+                    'GET /api/run': [a_desk_run()], 'GET /api/drafts': [desk],
+                    'GET /api/drafts/card': [ok(card_view)]}), [{'snapshot': 'whole'}])
+                shot = result['snapshots']['whole']
+                self.assertTrue(any('file' in field.lower() for field in shot['fields']))
+                if own:
+                    self.assertIn('Lay out in my words', shot['buttons'])
+                else:
+                    self.assertIn('Copy', shot['buttons'])
+                    self.assertIn('10,000 characters', shot['text'])
+
+    def test_stopping_the_training_flushes_typing_and_keeps_the_run_route(self):
+        desk, card_view = self.editable()
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/save': [ok(card_view)],
+            'POST /api/run': [a_desk_run('stopped', 'Stopped.')]}), [
+            {'fill': 'Text of When capacity holds', 'value': 'Keep my typing.'},
+            {'click': 'Stop training'}, {'click': 'Stop it'}])
+        self.assertEqual([route for route, _ in self.posts(result)],
+                         ['/api/drafts/save', '/api/run'])
+        self.assertEqual(self.posts(result)[1][1]['action'], 'stop')
+
+    def test_a_plan_has_only_a_whole_plan_note(self):
+        desk, card_view = self.editable('blueprint@101')
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/revise': [ok(card_view)]}), [
+            {'snapshot': 'plan'}, {'fill': 'Note for the whole plan', 'value': 'Shorter.'},
+            {'click': 'Revise the plan'}])
+        shot = result['snapshots']['plan']
+        self.assertNotIn('How should When capacity holds change?', shot['fields'])
+        self.assertIn('When capacity holds', shot['fields'])
+        self.assertIn('History (3)', shot['buttons'])
+        self.assertEqual(self.posts(result)[0][1], {'path': str(self.root),
+            'name': 'blueprint@101', 'seen': 3, 'note': 'Shorter.'})
+
+    def test_mark_ready_flushes_typing_and_uses_its_new_revision(self):
+        desk, card_view = self.editable()
+        saved = {**card_view, 'revision': 4, 'seen': 'new-file'}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/save': [ok(saved)], 'POST /api/drafts/ready': [desk]}), [
+            {'fill': 'Text of When capacity holds', 'value': 'Typed.'}, {'click': 'Mark ready'}])
+        self.assertEqual([route for route, _ in self.posts(result)],
+                         ['/api/drafts/save', '/api/drafts/ready'])
+        self.assertEqual(self.posts(result)[1][1]['seen'], 'new-file')
+
+    def test_a_failed_save_keeps_typing_and_does_not_start_a_job(self):
+        desk, card_view = self.editable()
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/save': [{'status': 400, 'body': {'error': 'Close the code block.'}}]}), [
+            {'fill': 'Text of When capacity holds', 'value': '```'},
+            {'fill': 'How should When capacity holds change?', 'value': 'Shorter.'},
+            {'click': 'Rewrite'}, {'snapshot': 'failed'}])
+        self.assertEqual([route for route, _ in self.posts(result)], ['/api/drafts/save'])
+        self.assertIn('Save your text before starting a change.', result['snapshots']['failed']['text'])
+
+    def test_polling_keeps_pending_typing_and_refreshes_settled_cards(self):
+        desk, card_view = self.editable()
+        changed = {**card_view, 'revision': 5, 'sections': [
+            {**card_view['sections'][0], 'text': 'Changed elsewhere.'}]}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view), ok(card_view), ok(changed)],
+            'POST /api/drafts/save': [ok({**card_view, 'revision': 4, 'sections': [
+                {**card_view['sections'][0], 'text': 'My typing.'}]})]}), [
+            {'fill': 'Text of When capacity holds', 'value': 'My typing.'},
+            {'poll': True}, {'snapshot': 'typing'}, {'timer': 'save'}, {'poll': True},
+            {'snapshot': 'updated'}])
+        self.assertEqual(self.posts(result)[0][1]['text'], 'My typing.')
+        self.assertEqual(self.posts(result)[0][1]['seen'], 3)
+        self.assertEqual(result['snapshots']['typing']['fields']['Text of When capacity holds'],
+                         'My typing.')
+        self.assertEqual(result['snapshots']['updated']['fields']['Text of When capacity holds'],
+                         'Changed elsewhere.')
+        self.assertGreaterEqual(len(self.asked(result, 'drafts/card')), 2)
+
+    def test_section_note_and_sources_on_the_card(self):
+        material = a_card('document@101')
+        desk = a_desk(material, levels=('101',))
+        card_view = {**material, 'revision': 3, 'opening': '', 'sections': [
+            {'id': 'abcd1234', 'heading': 'When capacity holds', 'text': 'Some text.',
+             'covers': ['O1', 'K1.1']},
+            {'id': 'abcd5678', 'heading': 'Sources', 'text': 'Finding.', 'locked': True}],
+            'versions': {}, 'working': None, 'jobs': [], 'desk': desk['body']}
+        answers = self.on_desk(desk, **{'GET /api/drafts/card': [ok(card_view)],
+                                       'POST /api/drafts/note': [ok(card_view)]})
+        result = self.open_desk(answers, [{'snapshot': 'card'},
+            {'fill': 'How should When capacity holds change?', 'value': 'Shorter.'},
+            {'click': 'Rewrite'}])
+        self.assertIn('Kept from the findings cited.', result['snapshots']['card']['text'])
+        self.assertNotIn('Text of Sources', result['snapshots']['card']['fields'])
+        self.assertNotIn('How should Sources change?', result['snapshots']['card']['fields'])
+        self.assertIn('Covers O1, K1.1', result['snapshots']['card']['text'])
+        self.assertEqual(self.posts(result), [('/api/drafts/note', {
+            'path': str(self.root), 'name': 'document@101', 'seen': 3,
+            'part': 'abcd1234', 'note': 'Shorter.'})])
+
     def test_the_update_preview_names_what_changes(self):
         held = a_card('document@101', 'held', 'Built from an earlier plan.',
                       ('update', 'keep'))

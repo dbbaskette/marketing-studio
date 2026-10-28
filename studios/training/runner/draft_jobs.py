@@ -14,7 +14,7 @@ from studio_core.drafting import basis, prompts, record
 
 from runner import briefs, drafts, pipeline
 
-KINDS = ('section', 'write-again', 'revise-all', 'selection', 'update')
+KINDS = ('section', 'write-again', 'revise-all', 'selection', 'update', 'layout')
 BUSY = drafts.BUSY
 NEXT = 'Next, after {doing}.'
 SOURCES = 'Leave Sources as it is: the studio adds the references you use.'
@@ -71,7 +71,9 @@ def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None
         if base in WHOLE:
             if part is not None or kind == 'selection':
                 raise workspace.WorkspaceError('Change this material with a whole note.')
-            if name in engine._survey(root, run).own:
+            if kind == 'layout' and (base != 'scenario' or name not in engine._survey(root, run).own):
+                raise workspace.WorkspaceError('Only your own scenario can be laid out in your words.')
+            if kind != 'layout' and name in engine._survey(root, run).own:
                 raise workspace.WorkspaceError('This scenario is your own. Change its words yourself; ask to lay it out from its practice card.')
             text, sections = file_text(root, name), None
             if base == 'blueprint' and type(seen) is int:
@@ -83,6 +85,8 @@ def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None
                 raise workspace.WorkspaceError('This draft changed since you opened it. Reload to see the latest.')
             part = 'whole'
         else:
+            if kind == 'layout':
+                raise workspace.WorkspaceError('Only your own scenario can be laid out in your words.')
             try:
                 codec = drafts.codec_of(name)
                 draft = drafts.desk_of(engine, root, name).read(name)

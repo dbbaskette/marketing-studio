@@ -643,7 +643,7 @@ def view(engine, root) -> dict:
 # as they were written (`layout`), so a changed part goes into the file as it stood. A
 # section's covers or findings note is kept on the section, out of its text.
 
-NO_PARTS = 'Only a guide, a brief or a plan is written in parts.'
+NO_PARTS = 'Choose an editable text material.'
 BRIEF_SHAPE = 'A brief keeps its eight numbered sections, in order.'
 LOCKED = 'Sources is kept from the findings cited. Change the references in the text instead.'
 UNCLOSED = 'Close the code block in this part.'
@@ -906,12 +906,29 @@ def PlanCodec() -> parts.Codec:
         deepest=lambda draft: 2, heading_in=_section_heading, vet=_vet, landed=_landed)
 
 
-CODECS = {'document': GuideCodec(), 'brief': BriefCodec(), 'blueprint': PlanCodec()}
+class WholeCodec(parts.Codec):
+    """A scenario or Yoodli layout has one editable part and whole-file History."""
+
+    def __init__(self):
+        super().__init__(
+            fixed=('opening',), single=(), part=re.compile(r'(?!)'), thing='draft',
+            split=lambda text: {'opening': text, 'sections': []},
+            join=lambda draft, after=(): draft['opening'],
+            heading_in=lambda text, level: '', vet=_vet,
+            taken=lambda draft, part, text, previous: (text, dict(draft)))
+
+    def set_text(self, draft, part, text):
+        self.section(draft, part)  # Refuse any name other than the whole-file part.
+        draft[part] = text
+
+
+CODECS = {'document': GuideCodec(), 'brief': BriefCodec(), 'blueprint': PlanCodec(),
+          'scenario': WholeCodec(), 'yoodli': WholeCodec()}
 
 
 def codec_of(name: str) -> parts.Codec:
     """The codec a material's file is read with, by the material's name."""
-    found = CODECS.get(workspace.split(name)[0])
+    found = CODECS.get(workspace.split(name)[0].partition(':')[0])
     if found is None:
         raise ValueError(NO_PARTS)
     return found
@@ -1187,6 +1204,8 @@ class TrainingDesk(desk_record.Desk):
         if part not in self.codec.fixed and (
                 self.codec.section(self.read(ident), part) or {}).get('locked'):
             raise ValueError(LOCKED)
+        if isinstance(self.codec, WholeCodec) and self.codec.text_of(self.read(ident), part) == text:
+            return self.read(ident)
         with self.store.making(source, session):
             return super().save(ident, seen, part, text, source=source, session=session)
 
@@ -1234,11 +1253,30 @@ def card(engine, root, name: str, draft: dict | None = None,
                  {'name': name, 'label': workspace.label(name)})
     job = whole['job']
     run = run_of(root) or {}
-    return {**found, **parts_of(desk, name, draft),
+    return {**found, **parts_of(desk, name, draft), **whole_parts(engine, root, name, draft),
             'working': job if job and job.get('name') == name else None,
             'jobs': [dict(one) for one in (run.get('drafts') or {}).get('jobs', []) if one.get('name') == name],
             'chain': _chain(run, name), 'start': _start(whole),
             'readonly': _reading(engine, root, name), 'desk': whole}
+
+
+def whole_parts(engine, root, name, draft):
+    """Copy fields and limits come from the same parser/profile as the Yoodli checks."""
+    kind = workspace.split(name)[0].partition(':')[0]
+    if kind not in ('scenario', 'yoodli'):
+        return {}
+    fields = []
+    if kind == 'yoodli':
+        parsed, _ = checks.fenced_fields(draft['opening'])
+        limits = (home.read_json(workspace.profile_for(root), {}) or {}).get('limits', {})
+        for heading, text in parsed.items():
+            key = 'context_chars' if heading == ('Context',) else next((key for field, key
+                in checks.YOODLI_GOAL_LIMITS if heading[0] == 'Goals' and heading[-1] == field), None)
+            fields.append({'heading': list(heading), 'text': text,
+                           'limit': (limits.get(key) or {}).get('value')})
+    run = run_of(root) or {}
+    return {'whole': True, 'fields': fields,
+            'own': kind == 'scenario' and name in engine._survey(root, run).own}
 
 
 def _reading(engine, root, name):

@@ -50,7 +50,7 @@ const DESK = { held: {}, kitSheet: [] };
 function deskHeld(path) {
   if (!DESK.held[path]) {
     DESK.held[path] = { view: null, level: null, sources: false, said: '', unsent: null,
-      drawn: '' };
+      drawn: '', materials: {} };
   }
   return DESK.held[path];
 }
@@ -89,7 +89,11 @@ function deskApi(route, data) {
     return ask(endpoint, { ...rest, ...deskItem(id) });
   }
   const { id, ...rest } = data;
-  return send(endpoint, { ...deskItem(id), ...rest });
+  const item = deskItem(id), material = deskHeld(item.path).materials[item.name];
+  if (material?.view.whole && ['drafts/note', 'drafts/revise', 'drafts/layout'].includes(endpoint)) {
+    rest.seen = material.view.seen;
+  }
+  return send(endpoint, { ...item, ...rest });
 }
 
 // The shared kit is loaded before this script; without it there is no desk to draw.
@@ -100,7 +104,7 @@ if (typeof Drafting === 'undefined') {
 const deskKit = Drafting.kit({
   ui: {
     button: (label, action, kind) => {
-      const node = capsule(label, kind === 'filled' ? 'filled' : 'quiet', () => action(node));
+      const node = capsule(label, kind === 'filled' && view.sheet ? 'filled' : 'quiet', () => action(node));
       return node;
     },
     card: (title, ...nodes) => add(card(title), ...nodes),
@@ -139,30 +143,52 @@ const deskKit = Drafting.kit({
   },
   api: deskApi,
   routes: DESK_ROUTES,
-  share: () => undefined,
-  canEdit: () => deskOurs(),
+  share: (id) => send('drafts/share', { path: deskItem(id).path }),
+  canEdit: (held) => deskOurs() && !held.view.readonly,
   current: (held) => view.screen === 'run' && deskItem(held.id).path === view.path,
   page: () => main(),
   hooks: {
-    render: () => paintDesk(false),
-    refresh: () => paintDesk(false),
-    reload: () => drawDesk(false),
-    beforeJob: () => undefined,
+    saved: (held) => {
+      if (held.view.desk) deskHeld(deskItem(held.id).path).view = held.view.desk;
+    },
+    render: (held) => deskMaterialChanged(held),
+    refresh: (held) => deskMaterialChanged(held),
+    reload: async (held) => {
+      held.view = await ask('drafts/card', deskItem(held.id));
+      held.pending = {}; held.stale = false; held.saved = '';
+      deskMaterialChanged(held);
+    },
+    beforeJob: (held) => {
+      if (Object.keys(held.pending).length) throw new Error('Save your text before starting a change.');
+    },
+    extra: (held, part) => {
+      const section = list(held.view.sections).find((one) => one.id === part);
+      return section && list(section.covers).length
+        ? make('p', 'quiet', 'Covers ' + section.covers.join(', ')) : null;
+    },
   },
   parts: {
-    title: (found, part) => (list(found.sections).find((one) => one.id === part) || {}).heading
-      || '',
-    textOf: (found, part) => (list(found.sections).find((one) => one.id === part) || {}).text
-      || '',
+    title: (found, part) => part === 'opening' ? (found.whole ? 'Whole file' : 'Opening') : part === 'title' ? 'Title'
+      : (list(found.sections).find((one) => one.id === part) || {}).heading || '',
+    textOf: (found, part) => part === 'opening' ? found.opening || '' : part === 'title'
+      ? found.title || '' : (list(found.sections).find((one) => one.id === part) || {}).text || '',
     nameOf: (found, part) => part,
-    single: () => false,
-    noted: () => deskOurs(),
+    single: (part) => part === 'title',
+    noted: (found) => deskOurs() && !found.readonly && !found.whole && found.kind !== 'blueprint',
   },
-  words: () => ({ thing: 'material', sources: {}, doing: {}, steps: {}, named: [],
+  words: () => ({ thing: 'material', sources: { save: 'Saved', rewrite: 'Rewritten',
+    google: "Before Google's text", earlier: 'An earlier version', restore: 'Restored',
+    selection: 'Selection', 'revise-all': 'Revised with the whole note' }, doing: {}, steps: {}, named: [],
     withOpening: [], chain: [], ready: () => 'It is on the desk.' }),
   tools: () => [],
   progress: { stopped: () => null, show: () => paintDesk(false) },
 });
+
+// Plan changes are whole-plan jobs; its parts can be typed but not sent as jobs.
+const selectDeskPart = deskKit.selected;
+deskKit.selected = (held, part, input) => {
+  if (held.view.kind !== 'blueprint' && !held.view.whole) selectDeskPart(held, part, input);
+};
 
 // --- the start ----------------------------------------------------------------------------
 
@@ -422,6 +448,8 @@ async function drawDesk(fresh) {
     const found = await ask('drafts', { path });
     if (turn !== view.turn) return;
     held.view = found;
+    await loadDeskMaterials(path, held, found);
+    if (turn !== view.turn) return;
   } catch (failure) {
     if (turn !== view.turn) return;
     unopened(failure, Boolean(held.view), fresh,
@@ -429,6 +457,47 @@ async function drawDesk(fresh) {
     if (!held.view) return;
   }
   if (!view.busy && !view.sheet) paintDesk(fresh);
+}
+
+// Each editable material keeps its own revision and pending typing across redraws.
+async function loadDeskMaterials(path, held, found) {
+  await Promise.all(list(found.cards).filter((one) =>
+    ['blueprint', 'document', 'brief', 'scenario', 'yoodli'].includes(one.kind) && one.seen)
+    .map(async (one) => {
+      let heldMaterial = held.materials[one.name];
+      // A pending save owns its revision until it succeeds or explicitly reloads.
+      if (heldMaterial && (heldMaterial.saving || Object.keys(heldMaterial.pending).length
+          || heldMaterial.stale)) return;
+      try {
+        const material = await ask('drafts/card', { path, name: one.name });
+        if (!Number.isInteger(material.revision)) return;
+        heldMaterial = held.materials[one.name];
+        if (heldMaterial) {
+          // Typing may have started while this request was in flight.
+          if (heldMaterial.saving || Object.keys(heldMaterial.pending).length
+              || heldMaterial.stale) return;
+          if (JSON.stringify(heldMaterial.view) !== JSON.stringify(material)) held.drawn = '';
+          heldMaterial.view = material;
+        } else held.materials[one.name] = { id: JSON.stringify([path, one.name]), view: material,
+          pending: {}, notes: {}, session: String(Date.now()) + Math.random(), tab: 'draft' };
+      } catch (_) { /* A material still being written has no editor yet. */ }
+    }));
+}
+
+function deskMaterialChanged(material) {
+  const item = deskItem(material.id), held = deskHeld(item.path);
+  if (material.view.desk) held.view = material.view.desk;
+  held.drawn = '';
+  if (view.path === item.path && view.screen === 'run') paintDesk(false);
+}
+
+async function shareDesk(path) {
+  const held = DESK.held[path];
+  if (!held || !Object.keys(held.materials).length) return;
+  try {
+    await flushDesk(held);
+    await send('drafts/share', { path }, { keepalive: true });
+  } catch (_) { /* The next change will share what remains. */ }
 }
 
 // The level a desk shows, and whether a phone shows its Sources in place of the cards.
@@ -511,13 +580,120 @@ function deskCard(found) {
       'desk-send ' + found.name));
   }
   if (actions.includes('download')) bar.append(downloadButton(found));
-  return add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
+  const material = deskHeld(view.path).materials[found.name];
+  const editing = material ? materialParts(material, found) : null;
+  add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
     checkedPart(found.checks), bar.childNodes.length ? bar : null);
+  return editing ? add(make('div', 'desk-material-group stack'), node, editing) : node;
+}
+
+function materialParts(held, found) {
+  const area = make('div', 'desk-material stack');
+  held.area = area;
+  const status = make('p', 'quiet desk-save-state', held.saved || '');
+  status.setAttribute('role', 'status');
+  held.status = status;
+  add(area, status, deskKit.selectionBar(held), held.view.readonly
+    ? make('p', 'quiet', held.view.readonly) : null);
+  if (held.view.opening || held.view.whole) area.append(materialPart(held, 'opening'));
+  for (const section of list(held.view.sections)) {
+    if (section.locked) {
+      area.append(add(make('section', 'card desk-part'), make('h2', 'card-title', section.heading),
+        make('p', 'quiet', 'Kept from the findings cited.'), make('p', 'desk-plain', section.text)));
+    } else area.append(materialPart(held, section.id));
+  }
+  if (deskOurs() && !held.view.readonly) area.append(materialNote(held, found));
+  if (found.kind === 'yoodli') {
+    for (const field of list(held.view.fields)) {
+      const title = list(field.heading).join(' / ');
+      area.append(add(make('section', 'card'), make('h2', 'card-title', title),
+        make('p', 'desk-plain', field.text), field.limit
+          ? make('p', 'quiet', field.text.length + ' of ' + field.limit.toLocaleString('en-US')
+            + ' characters') : null, copyButton('Copy', 'Copied.', field.text)));
+    }
+  }
+  const job = held.view.working || list(held.view.jobs).at(-1);
+  if (job) {
+    const checks = make('div', 'card');
+    add(checks, make('h2', 'card-title', 'Checked for you'));
+    if (job.says) checks.append(make('p', '', job.says));
+    if (job.error) checks.append(make('p', 'notice', job.error));
+    const flags = Array.isArray(job.checks) ? job.checks : job.checks ? [job.checks] : [];
+    for (const flag of flags) checks.append(make('p', 'quiet', String(flag)));
+    if (list(job.dropped).length) {
+      if (!job.says) checks.append(make('p', '', job.dropped.map((number) =>
+        'This change dropped reference [' + number + '].').join(' ')));
+      checks.append(capsule('Restore', 'quiet', () => deskKit.history(held,
+        job.part === 'whole' ? 'opening' : job.part)));
+    }
+    if (deskOurs()) {
+      const working = ['queued', 'working'].includes(job.status);
+      if (working || ['stopped', 'failed'].includes(job.status) || job.applied === false) {
+        const route = working ? 'stop' : 'retry';
+        const go = capsule(working ? 'Stop change' : 'Retry change', 'quiet', () =>
+          deskKit.job(held, go, 'drafts/' + route, { job: job.id }));
+        checks.append(go);
+      }
+    }
+    if (checks.childNodes.length > 1) area.append(checks);
+  }
+  const problem = deskKit.problem(held);
+  if (problem) area.append(problem);
+  if (held.stale) deskKit.stale(held);
+  deskKit.watch(held);
+  return area;
+}
+
+function materialPart(held, part) {
+  const node = deskKit.part(held, part);
+  // A person may keep typing while a rewrite runs; the server compares the part before landing.
+  node.deskInput.dataset.key = held.id + ':' + part + ':text';
+  const note = node.querySelector('.desk-note-text');
+  if (note) note.dataset.key = held.id + ':' + part + ':note';
+  node.deskInput.readOnly = !deskOurs() || !!held.view.readonly;
+  return node;
+}
+
+deskKit.counts = (held) => {
+  for (const node of held.area?.querySelectorAll('.desk-part') || []) {
+    const count = (held.view.versions || {})[node.dataset.part] || 0;
+    const button = node.querySelector('button');
+    if (button) { button.textContent = count ? 'History (' + count + ')' : 'History'; button.disabled = !count; }
+  }
+};
+
+async function flushDesk(held) {
+  await Promise.all(Object.values(held.materials).map((material) => deskKit.flush(material)));
+  if (Object.values(held.materials).some((material) => Object.keys(material.pending).length)) {
+    throw new Error('Save your text before continuing. Your text is kept here.');
+  }
+}
+
+function materialNote(held, found) {
+  const own = held.view.own;
+  const noun = found.kind === 'blueprint' ? 'plan' : found.kind === 'document' ? 'guide'
+    : found.kind === 'yoodli' ? 'Yoodli layout' : found.kind === 'scenario' ? 'scenario' : 'brief';
+  const title = own ? 'Lay out this scenario in your words' : 'Note for the whole ' + noun;
+  const box = make('textarea', 'input'); box.rows = 2; box.maxLength = 4000;
+  box.dataset.key = held.id + ':whole-note';
+  box.setAttribute('aria-label', title); box.value = held.wholeNote || '';
+  box.addEventListener('input', () => { held.wholeNote = box.value; });
+  const go = capsule(own ? 'Lay out in my words' : 'Revise the ' + noun, 'quiet', () => {
+    const note = (held.wholeNote || '').trim();
+    if (!note) { toast('Write a note first.'); return; }
+    return deskKit.job(held, go, own ? 'drafts/layout' : 'drafts/revise',
+      { note, ...(held.view.whole ? { seen: held.view.seen } : {}) },
+      () => { held.wholeNote = ''; });
+  });
+  go.disabled = !!held.view.working;
+  return add(card(title), own ? make('p', 'quiet', 'Your words are kept. Only the layout changes.')
+    : null, box, go);
 }
 
 async function previewUpdate(found) {
   const path = view.path;
   try {
+    await flushDesk(deskHeld(path));
     const preview = await ask('drafts/update-preview', { path, name: found.name });
     if (view.path !== path || view.screen !== 'run') return;
     const update = capsule('Update', 'filled', async () => {
@@ -581,11 +757,21 @@ function needsPart(found, held, run) {
 function progressPart(found, held, lead) {
   if (held.unsent) return unsentPart(held, lead === 'unsent');
   const progress = found.progress || {};
-  if (!progress.running) return null;
+  const run = view.run;
+  const controls = make('div', 'bar');
+  if (deskOurs()) {
+    if (['working', 'waiting', 'paused'].includes(run.state)) controls.append(
+      capsule('Stop training', 'quiet', openSheet('stop-run', 'stop'), 'stop'));
+    if (['paused', 'stopped'].includes(run.state)) {
+      const resume = capsule('Resume training', 'quiet', () => steer('resume', resume), 'resume');
+      controls.append(resume);
+    }
+  }
+  if (!progress.running && !controls.childNodes.length) return null;
   // The line is blank while something on the desk needs the person.
   const line = progress.line ? make('p', '', progress.line) : null;
   if (line) line.setAttribute('role', 'status');
-  return callout('', line, progress.doing ? make('p', 'row-says', progress.doing) : null,
+  return callout('', line, controls.childNodes.length ? controls : null, progress.doing ? make('p', 'row-says', progress.doing) : null,
     progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
       : null);
 }
@@ -668,6 +854,10 @@ function deskLead(run, held, ours) {
 }
 
 function paintDesk(fresh) {
+  const active = document.activeElement;
+  const editing = !fresh && active && ['TEXTAREA', 'INPUT'].includes(active.tagName)
+    && main().contains(active) ? { key: active.dataset.key, start: active.selectionStart,
+      end: active.selectionEnd } : null;
   const run = view.run;
   const held = deskHeld(view.path);
   const found = held.view;
@@ -716,6 +906,10 @@ function paintDesk(fresh) {
     tabs,
     layout,
   ], fresh);
+  if (editing?.key && focusKey(editing.key) && typeof editing.start === 'number') {
+    document.activeElement.selectionStart = editing.start;
+    document.activeElement.selectionEnd = editing.end;
+  }
 }
 
 // One of the person's decisions on the desk, answered with the desk again. What it was
@@ -730,6 +924,16 @@ async function deskDecide(route, sent, pressed) {
   if (pressed) pressed.disabled = true;
   let answer = null;
   try {
+    await flushDesk(held);
+    if (sent.seen && typeof sent.seen === 'string' && held.materials[sent.name]) {
+      sent = { ...sent, seen: held.materials[sent.name].view.seen };
+    }
+    if (route === 'level-ready') {
+      sent = { ...sent, seen: { ...sent.seen } };
+      for (const name of Object.keys(sent.seen)) {
+        if (held.materials[name]) sent.seen[name] = held.materials[name].view.seen;
+      }
+    }
     answer = await send('drafts/' + route, { path, ...sent });
     if (turn === view.turn) held.view = answer;
   } catch (failure) {

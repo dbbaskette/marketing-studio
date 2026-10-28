@@ -920,12 +920,13 @@ async function downloadFile(path, params, fallback, pressed) {
   }
 }
 
-function send(endpoint, body) {
+function send(endpoint, body, options = {}) {
   return call(endpoint, {
     method: 'POST',
     headers: { [TOKEN_HEADER]: view.token, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
     cache: 'no-store',
+    ...options,
   });
 }
 
@@ -1158,6 +1159,8 @@ function swap(update) {
 }
 
 function open(next) {
+  if (view.screen === 'run' && view.path && (next.screen !== 'run' || next.path !== view.path)
+      && typeof shareDesk === 'function') shareDesk(view.path);
   view.screen = unset() ? 'setup' : next.screen || 'home';
   view.path = next.path || null;
   view.artifact = next.artifact || null;
@@ -5995,6 +5998,7 @@ async function steer(action, pressed) {
   view.busy = true;
   pressed.disabled = true;
   try {
+    if (onTheDesk(view.run)) await flushDesk(deskHeld(view.path));
     const run = await send('run', { path: view.path, action });
     view.busy = false;
     if (turn !== view.turn) return;
@@ -6005,6 +6009,7 @@ async function steer(action, pressed) {
     view.busy = false;
     if (turn !== view.turn) return;
     view.steered = failure.message + ' Nothing was changed.';
+    if (onTheDesk(view.run)) deskHeld(view.path).said = view.steered;
   }
   view.barred = '';
   paintRun(false);
@@ -8959,8 +8964,12 @@ function begin() {
     view.pushed = Math.max(0, view.pushed - 1);
     open(event.state || { screen: 'home' });
   });
+  window.addEventListener('pagehide', () => {
+    if (view.screen === 'run' && view.path && typeof shareDesk === 'function') shareDesk(view.path);
+  });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) refresh();
+    else if (view.screen === 'run' && view.path && typeof shareDesk === 'function') shareDesk(view.path);
   });
   // Escape puts away whatever is open: a menu first, then the sheet.
   document.addEventListener('keydown', (event) => {

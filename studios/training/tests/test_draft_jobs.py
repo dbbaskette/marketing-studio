@@ -359,6 +359,45 @@ class DraftJobTests(DeckCase):
         self.assertTrue(self.last(root)['applied'])
         self.assertEqual(self.last(root)['status'], 'stopped')
 
+    def test_whole_file_cards_save_history_and_restore(self):
+        root = self.desk(yoodli=True)
+        for name in ('scenario:main@101', 'yoodli:main@101'):
+            with self.subTest(name=name):
+                card = self.card(root, name)
+                original = card['opening']
+                self.assertTrue(card['whole'])
+                unchanged = self.engine.draft_save(root, name, 'opening', card['revision'],
+                                                   original, 'same-text')
+                self.assertEqual(unchanged['revision'], card['revision'])
+                saved = self.engine.draft_save(root, name, 'opening', card['revision'],
+                                               original + '\n\nA note.', 'whole-session')
+                self.assertIn('A note.', saved['opening'])
+                versions = self.engine.draft_versions(root, name, 'opening')['versions']
+                self.assertEqual(versions[0]['text'].strip(), original.strip())
+                restored = self.engine.draft_restore(root, name, 'opening', saved['revision'], 0)
+                self.assertEqual(restored['opening'], original)
+                if name.startswith('yoodli'):
+                    self.assertTrue(restored['fields'])
+                    context = next(f for f in restored['fields'] if f['heading'] == ['Context'])
+                    self.assertEqual(context['limit'], 10000)
+
+    def test_row_164_own_scenario_layout_uses_existing_words_path(self):
+        root = self.desk()
+        name = 'scenario:main@101'
+        with self.engine.files:
+            run = self.record(root)
+            run['drafted'].remove(name)
+            self.engine._store(root, run)
+            self.engine._commit(root, 'keep the person written scenario')
+        card = self.card(root, name)
+        self.assertTrue(card['own'])
+        with mock.patch.object(self.engine, 'wake'):
+            self.ask(root, route='layout', name=name, note='Keep every word.', seen=card['seen'])
+        work = self.jobs.work_for(root, self.engine._survey(root, self.record(root)), self.last(root))
+        self.assertIn('Keep their wording', work.task)
+        self.assertIn('Keep every word.', work.task)
+        self.assertIn(card['opening'].strip(), work.task)
+
     def test_person_written_scenarios_are_never_rewritten(self):
         root = self.desk()
         name = next(n for n in workspace.artifact_names(root, workspace.load(root)) if n.startswith('scenario:'))

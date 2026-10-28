@@ -966,9 +966,8 @@ class DeskTypingTests(DeckCase):
                                     r'cited\. Change the references in the text instead\.$'):
             self.type(root, 'Sources', '1. Nothing at all.')
         self.assertEqual((self.text(root), self.engine.pending_commit), (before, {}))
-        # Only a guide, a brief or a plan is typed in parts; a stale form is told to reload.
-        with self.assertRaisesRegex(WorkspaceError, '^Only a guide, a brief or a plan is '
-                                    r'written in parts\.$'):
+        # A deck is not a text material; an outdated form is told to reload.
+        with self.assertRaisesRegex(WorkspaceError, r'^Choose an editable text material\.$'):
             self.engine.draft_save(root, 'deck@101', 'opening', 1, 'Typed.', None)
         card, section = self.part(root, 'Summary')
         self.type(root, 'Summary', 'One.')

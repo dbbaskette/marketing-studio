@@ -4224,7 +4224,7 @@ class Engine(Reviewing):
 
     def draft_begin(self, path, kind, name, **values) -> dict:
         draft_jobs.begin(self, path, kind, name, **values)
-        return self.draft_card(path, name) if workspace.split(name)[0] in drafts.CODECS else self.view(path)
+        return self.draft_card(path, name) if workspace.split(name)[0].partition(':')[0] in drafts.CODECS else self.view(path)
 
     def stop_draft(self, path, job) -> dict:
         """Let an active section finish, then stop; a queued request stops immediately."""
@@ -4240,7 +4240,7 @@ class Engine(Reviewing):
                 found.update(status='stopped', settled_at=home.now())
             self._store(root, record)
             self._commit(root, 'stop the change after this section')
-        return self.draft_card(root, found['name']) if workspace.split(found['name'])[0] in drafts.CODECS else self.view(root)
+        return self.draft_card(root, found['name']) if workspace.split(found['name'])[0].partition(':')[0] in drafts.CODECS else self.view(root)
 
     def retry_draft(self, path, job) -> dict:
         with self.files:
@@ -4304,7 +4304,7 @@ class Engine(Reviewing):
                                error=pipeline.why_not(handed, outcome.detail), settled_at=home.now())
                 else:
                     def apply():
-                        via = 'rewrite' if job['kind'] in ('section', 'write-again', 'update') else job['kind']
+                        via = 'rewrite' if job['kind'] in ('section', 'write-again', 'update', 'layout') else job['kind']
                         if job['part'] == 'whole':
                             before = draft_jobs.file_text(root, job['name'])
                             if basis.fingerprint(before) != job['basis']:

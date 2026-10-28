@@ -464,6 +464,10 @@ function boxes() {
     const box = label.htmlFor ? document.getElementById(label.htmlFor) : null;
     if (box && visible(box)) found.push([name(label), box]);
   }
+  for (const input of document.body.querySelectorAll('input, textarea').filter(visible)) {
+    const label = input.getAttribute('aria-label');
+    if (label && !found.some((entry) => entry[1] === input)) found.push([label, input]);
+  }
   return found;
 }
 
@@ -637,12 +641,12 @@ function enter(held) {
   form.dispatch('submit', event);
 }
 
-function control(label) {
+function control(label, index = 0) {
   const all = document.body.querySelectorAll('button, summary, a').filter(visible);
   const exact = all.filter((node) => name(node) === label);
   const found = exact.length ? exact : all.filter((node) => name(node).startsWith(label));
   if (!found.length) throw new Error('Nothing on the page is named "' + label + '".');
-  return found[0];
+  return found[index];
 }
 
 // The page's own shell, read from index.html. It is the one piece of markup there is, it is
@@ -786,11 +790,16 @@ async function app(file) {
   for (const step of plan.steps) {
     try {
       if (step.snapshot) shots[step.snapshot] = snapshot();
-      if (step.click) control(step.click).click();
+      if (step.click) control(step.click, step.index || 0).click();
       if (step.type !== undefined) {
         const held = document.getElementById('note-text');
         held.value = step.type;
         held.dispatch('input', { target: held });
+      }
+      if (step.select !== undefined) {
+        const held = box(step.select);
+        held.selectionStart = step.start; held.selectionEnd = step.end;
+        held.dispatch('select', { target: held });
       }
       if (step.enter !== undefined) enter(box(step.enter));
       if (step.notification !== undefined) shown[step.notification].onclick({});
@@ -809,7 +818,8 @@ async function app(file) {
       }
       if (step.see !== undefined) see(step.see);
       if (step.poll) await timers.filter((timer) => timer.name === 'refresh').pop()();
-      if (step.timer) await timers.filter((timer) => timer.name === step.timer).pop()();
+      if (step.timer) await timers.filter((timer) => timer && (timer.name === step.timer
+        || step.timer === 'save' && /k.save\(held, part\)/.test(String(timer)))).pop()();
       if (step.polls) {
         const refresh = timers.filter((timer) => timer.name === 'refresh').pop();
         await Promise.all(Array.from({ length: step.polls }, () => refresh()));
