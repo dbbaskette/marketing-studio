@@ -343,7 +343,7 @@ def validate_project(project: dict) -> dict:
                 if 'display_values' in element:
                     shown = element['display_values']
                     require(isinstance(shown, list) and len(shown) == len(values)
-                            and all(text(v, limit=100) and re.fullmatch(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?', v)
+                            and all(text(v, limit=100) and re.fullmatch(r'[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?', v)
                                     and Decimal(v) == Decimal(str(value)) for v, value in zip(shown, values)),
                             'Numeric labels must preserve the exact chart values.')
     briefs = records(project['image_briefs'], 'Image briefs')

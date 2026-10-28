@@ -32,7 +32,7 @@ def compose(store, project: dict, *, draft=False) -> str:
         elif element['kind'] == 'chart':
             group = ET.SubElement(root, 'g', common)
             values, size = element['values'], element['font_size']
-            maximum = sum(values) if element['form'] == 'parts' else max(values)
+            maximum = 1 if element['form'] == 'numbers' else sum(values) if element['form'] == 'parts' else max(values)
             require(maximum > 0, 'A numeric chart needs a positive scale; show zero values as text instead.')
             row_height = height / len(values)
             offset = 0
@@ -100,7 +100,7 @@ def accessible_text(project: dict, *, draft=False) -> str:
         if item['kind'] == 'text':
             output.append(item['text'])
         elif item['kind'] == 'chart':
-            output.append('Chart: zero baseline; ' + item['form'])
+            output.append('Exact numeric callouts' if item['form'] == 'numbers' else 'Chart: zero baseline; ' + item['form'])
             output.extend(f'{label}: {value} {item["unit"]}' for label, value in zip(item['labels'], item.get('display_values', item['values'])))
         elif item['kind'] == 'artwork':
             output.append('Raster illustration: ' + item.get('alt', 'Artwork'))

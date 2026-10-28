@@ -11,7 +11,7 @@ from .validation import number, records, require, text, validate_project
 
 CONTEXT = ('period', 'denominator', 'conditions', 'uncertainty')
 UNKNOWN = {'', 'unknown', 'not reported', 'unspecified'}
-NUMBERS = re.compile(r'(?<![\w.])-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?![\w.])')
+NUMBERS = re.compile(r'(?<![\w.])[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?![\w.])')
 
 
 def locate(store, project, proposed):

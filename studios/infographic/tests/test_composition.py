@@ -144,3 +144,26 @@ class CompositionTests(Isolated):
                         fonts=[planned['brand']['font']], executable=TEST_RENDERER, destination=output)
                     self.assertEqual(result['pdf_pages'], 1)
                     self.assertGreater(len((output / 'page.svg').read_text()), 500)
+
+    def test_number_callouts_preserve_negative_zero_and_explicit_positive_literals(self):
+        raw = b'Change -12. Zero 0. Positive +12. Unit requests. Period 2026-01-01. Denominator per second. Conditions same test. Uncertainty not reported.'
+        self.project = sources.capture(self.store, self.ident, raw, expected_revision=self.project['revision'])
+        source = self.project['sources'][-1]
+        facts = []
+        for ident, label, literal in [('f1', 'Change', '-12'), ('f2', 'Zero', '0'), ('f3', 'Positive', '+12')]:
+            start = raw.decode().index(label + ' ' + literal)
+            quote = label + ' ' + literal
+            facts.append({'id': ident, 'statement': label, 'value': int(literal), 'literal': literal,
+                          'unit': 'requests', 'status': 'supplied', 'period': '2026-01-01', 'denominator': 'per second',
+                          'conditions': 'same test', 'uncertainty': 'not reported',
+                          'evidence': [{'source_id': source['id'], 'start': start, 'end': start + len(quote), 'quote': quote}]})
+        self.project = evidence.adopt(self.store, self.ident, facts, expected_revision=self.project['revision'])
+        p = self.prepare('numbers', preset='digital')
+        p['stories'][0]['blocks'][0]['fact_ids'] = ['f1', 'f2', 'f3']
+        p['scene'] = scene.plan(p)
+        encoded = svg.compose(self.store, p)
+        for literal in ('-12 requests', '0 requests', '+12 requests'): self.assertIn(literal, encoded)
+        if TEST_RENDERER:
+            from runner import render
+            render.render(encoded, preset='digital', fonts=['Arial'], executable=TEST_RENDERER, destination=self.temp / 'signed-numbers')
+        with self.assertRaises(Invalid): self.prepare('comparison')

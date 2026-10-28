@@ -8,6 +8,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import shlex
@@ -99,6 +100,8 @@ def main(argv=None):
     with file_lock(data / 'install.lock'), file_lock(data / '.studio-running.lock'):
         statefile = data / 'installation.json'
         if statefile.is_symlink(): raise ValueError('Preserve the unexpected installation record link.')
+        if statefile.exists() and statefile.stat().st_size > 2_000_000:
+            raise ValueError('The native installation record exceeds its limit. Preserve it and restore valid metadata.')
         previous = json.loads(statefile.read_text()) if statefile.exists() else None
         if previous and (previous.get('schema') != 1 or previous.get('product') != 'Infographic Studio'):
             raise ValueError('Restore a valid native installation record before changing this installation.')
@@ -125,7 +128,9 @@ def main(argv=None):
         content = payload()
         hasher = hashlib.sha256()
         for name, source in sorted(content.items()): hasher.update(str(name).encode() + b'\0' + source.read_bytes() + b'\0')
-        key = (ROOT / 'VERSION').read_text().strip() + '-' + hasher.hexdigest()[:16]
+        version = (ROOT / 'VERSION').read_text().strip()
+        if not re.fullmatch(r'\d{1,6}\.\d{1,6}\.\d{1,6}', version): raise ValueError('Use a supported numeric Infographic Studio version.')
+        key = version + '-' + hasher.hexdigest()[:16]
         versions = data / 'versions'; _directory(versions)
         destination = versions / key
         if destination.is_symlink(): raise ValueError('Preserve the unexpected version link.')
@@ -153,8 +158,10 @@ def main(argv=None):
             _atomic(data / 'infographic', helper.encode(), mode=0o755)
             _atomic(data / 'studio', launcher.encode(), mode=0o755)
             _atomic(managed[-1], launcher.encode(), mode=0o755)
+            same = previous and previous['version'] == key and set(previous['original']) == set(before)
             state = {'schema': 1, 'product': 'Infographic Studio', 'version': key,
-                     'original': {**before, **previous['original']} if previous else before, 'previous': before}
+                     'original': {**before, **previous['original']} if previous else before,
+                     'previous': previous['previous'] if same else before}
             _atomic(statefile, (json.dumps(state) + '\n').encode())
         except BaseException:
             restore(before, managed)

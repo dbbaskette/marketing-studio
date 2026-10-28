@@ -23,7 +23,10 @@ class InstallerTests(Isolated):
         (unrelated / 'keep').write_text('Unrelated synthetic skill')
         first = self.invoke('install')
         current = self.home / '.local/share/infographic-studio/current'
+        metadata = (current.parent / 'installation.json').read_bytes()
         self.assertEqual(self.invoke('install')['version'], first['version'])
+        self.assertEqual((current.parent / 'installation.json').read_bytes(), metadata,
+                         'Repeating an identical install must not grow recursive rollback metadata.')
         self.assertFalse(any(p.is_symlink() for p in current.resolve().rglob('*')))
         sentinel = current.parent / 'workspace.json'; sentinel.write_text('{"synthetic":"keep"}')
         self.invoke('uninstall')

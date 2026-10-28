@@ -18,7 +18,7 @@ from .validation import require, text
 KINDS = {'.txt': 'text', '.md': 'markdown', '.csv': 'csv'}
 MAX_ROWS = 20_000
 MAX_COLUMNS = 100
-DECIMAL = re.compile(r'-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\Z')
+DECIMAL = re.compile(r'[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\Z')
 
 
 def read_file(path: Path) -> tuple[str, bytes]:

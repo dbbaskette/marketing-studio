@@ -86,7 +86,7 @@ def plan(project: dict, *, arrangement='stack') -> dict:
             cursor += words(block['id'] + '_context', context, x, cursor, block_width, body,
                             fact_ids=block['fact_ids'], block_id=block['id']) + body * .35
             values = [fact['value'] for fact in used]
-            require(all(v >= 0 for v in values), 'This layout supports nonnegative values only; choose another explanation for signed data.')
+            require(block['kind'] == 'numbers' or all(v >= 0 for v in values), 'This layout supports nonnegative values only; choose another explanation for signed data.')
             available = top + block_height - cursor
             chart_height = min(body * (3.3 if block['kind'] == 'numbers' else 2.7) * len(used), available * (.45 if block['illustration'] else 1))
             require(chart_height >= body * (3 if block['kind'] == 'numbers' else 2) * len(used), 'There is not enough room for readable numeric labels.')
