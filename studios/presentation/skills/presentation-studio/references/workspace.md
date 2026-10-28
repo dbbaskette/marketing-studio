@@ -1,50 +1,33 @@
 # The workspace
 
-Decks live in a `presentations/` folder: in the team's shared repository, beside Training Studio's `trainings/` and Blog Studio's `blogs/`, or in a folder on this computer. `presentations/hub.json` says `{"schema": 1, "tool": "presentation-studio"}`. If there is no such folder, ask where decks are kept before making one. The team repository is `team.repository` in the shared values.
+Presentation Studio keeps decks under the configured `presentations/` folder in a team repository or a local workspace. Shared settings select the workspace. If none is configured, ask where work belongs and use explicit setup; never initialize a different folder implicitly.
 
-## A deck's folder
+## Conversation records
 
-`presentations/<deck-id>/`, the id being the title in lower case with hyphens, numbered when that is taken.
+Use `studio desk create/show/context/submit/save/answer/take/scope/handoff` as [the desk contract](desk.md) describes. They use the existing workspace and repository lock. Never write `run.json`, draw files or mark steps/approvals yourself.
 
-```
-README.md          title, route, where it stands, the delivered link
-run.json           the run record; what marks the folder as a deck
-intake.md          the form, in words
-classify.md        a document's kind, or an existing deck's inventory
-research/plan.md   research/report.md
-outline.json       the outline as harness-slides reads it
-outline.md         each slide's title, key message and notes
-look.md            the brand the deck is made in, and its looks
-brand/             brand-contract.json, DESIGN.md, VOICE.md
-reviews/build-<n>.md    what the review of each round of the build found
-desk/              a desk deck's kept versions of each slide's words
-deliver.json       the Google Slides link or the .pptx name, and the revision
-contact-sheet.png  one small picture of the deck
-sources/           never shared: documents and the original deck
-work/              never shared: harness-slides' workspace, the build plan and what
-                   each section drew (work/build/), previews and renders
-```
+A deck lives at `presentations/<deck-id>/`:
 
-## run.json
+| File or folder | Meaning |
+| --- | --- |
+| run.json, intake.md, README.md | Checked form, saved decisions, ownership and status |
+| classify.json / classify.md | Existing-deck inventory or document classification |
+| outline.json / outline.md | Checked Harness Slides outline and readable words |
+| research/ | Plan, reviewed bundle and evidence |
+| brand/ | Pinned contract and brand reading |
+| desk/ | Shared History of each slide's words |
+| work/ | Local drawings, pictures, checked build state and drawing History |
+| sources/ | Local documents and preserved original deck |
+| deliver.json | The last actual delivery; prior revisions remain in the run record |
 
-Write it in the runner's shape:
+A conversation record keeps `flow: desk`, `execution: conversation`, a finite `conversation_scope` and checked submission dependencies/provenance. Scope and execution changes never alter saved materials or readiness. A material change retains previous decisions as history and holds affected later work for checking; no submission becomes person approval. Original files and Google baselines are preserved.
 
-- `schema` 1, or 2 when `review_policy` is not Step by step (3 is the runner's, for research it started under a research contract), `id`, `title`, `route`, and `form`: `route`, `title`, `audience`, `goal`, `minutes`, `brand`, `variant`, `output`, `research`; for an existing deck also `level`, and `selected` for that level.
-- `classified`: `"spec"` or `"material"` for a document, once decided; else `null`. `look`: `null`.
-- `steps`: each step finished, as `{"done": true, "at": "<time>"}`, by the runner's names, in order: `intake-source`, `classify` (document), `inventory` (existing), `research-plan`, `research`, `research-report`, `extract` (existing, not `selected`), `outline`, `brand`, `look-preview`, `patch` (`selected`), `build-start`, `build-sections`, `build-whole`, `build-review`, `build-repair`, `build-render`, `deliver`. Only those the route and level have.
-- `gates`: each stop, `gate:classify`, `gate:research-plan`, `gate:research`, `gate:outline`, `gate:look` (the look) or `gate:build`, as `{"state": "approved"}`, or `"changes"` with the person's `note`, with `at`, and `by` from `person.name`.
-- `review_policy`: `{"schema": 1, "level": "step_by_step"}`, or `balanced` or `automatic`: the level the person chose, kept when the runner brings the deck in. Without it the deck is read as Step by step.
-- `revisions` `[]`, and `driver`, `halted` as `null`.
-- `flow` `"desk"`, with `desk` and `opened_on_desk`, mark a [desk](desk.md) deck: the runner's alone.
-
-The runner carries on at the first step not done or stop not approved. Work kept in `sources/` and `work/` is not shared, so it redoes a step whose work it lacks.
-
-## What is never shared
-
-`*/sources/`, `*/work/`, lock files, and the guidance caches harness-research and harness-slides keep. `presentations/.gitignore` lists them; keep it so.
+`work/`, `sources/`, locks and companion caches are never shared. Drawings can be missing on another computer even when their outline and History are present. Conversation context reports prerequisites rather than recovering or fetching them implicitly. JSON intake allows `uploads: {"source-name": "/absolute/local/file"}`; the named file is read only when explicitly supplied. A Google link is preserved as input, never silently fetched: explicitly provide a local export if it has not been imported.
 
 ## With a team
 
-- **One computer drives a deck at a time.** A deck whose `run.json` names a driver other than this computer is someone else's: read it, do not change it.
-- **Each decision is a commit**, saying what was decided. Share it when the person asks, or after each decision when `share` in the shared values is `decision`. Never force a push. If the shared version moved on, stop and say so.
-- **The runner** can bring a deck made here into its workspace and carry on from its `run.json`. A deck the runner drives is never also driven from a conversation.
+Only the current driver may change work. Checked saves, execution transfer and scope changes recheck ownership and active canonical workers under the same process lock as page and synchronization writes. Competing old forms are refused. Share through the existing team commands/settings; never force a push or discard someone else's work.
+
+## Supported saved work
+
+Older gated records and review policies retain their readers and real historical decisions. A delivered gated deck can still use the existing **Open on the desk** adoption; it stays delivered until an actual change. Conversation can then explicitly take that desk without a browser. An unfinished old flow needs the supported saved-work/migration path; do not pretend it is finished, rewrite its format or manufacture gates. `studio saved-work [--folder PATH]` inventories declared local scope read-only; it cannot certify other installations or clones.

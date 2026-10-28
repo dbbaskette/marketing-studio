@@ -368,7 +368,7 @@ def outline_work(root, run: dict, request: dict | None, error: str | None, brand
     report = root / REPORT
     if report.exists():
         inputs['Research report'] = report.read_text(encoding='utf-8')
-    if run.get('research_contract'):
+    if run.get('research_contract') or (root / 'research/output.json').is_file():
         from studio_core.research_contract import read_bundle
         facts, manifest = read_bundle(root / 'research')
         inputs['Reviewed research brief'] = (root / 'research/brief.md').read_text()

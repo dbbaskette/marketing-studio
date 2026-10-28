@@ -483,7 +483,7 @@ class Engine(Jobs, Researching, DeskActions):
         root = self.driven(path)
         return root is not None and team.ours(self.workspace, self._load(root))
 
-    def hold(self, path) -> None:
+    def hold(self, path, *, conversation=False) -> None:
         """Refuse, saying who has it, a change to a deck this computer does not drive, and
         any change while the runner that just started is still looking at what was
         shared."""
@@ -492,6 +492,8 @@ class Engine(Jobs, Researching, DeskActions):
             return
         if self._checking:
             raise WorkspaceError(CHECKING)
+        if decks.in_conversation(self._load(root)) and not conversation:
+            raise WorkspaceError('This deck is being worked on in conversation. Use its checked desk commands or explicitly hand execution to the runner.')
         why = team.elsewhere(self.workspace, self._load(root))
         if why:
             raise Elsewhere(why)
@@ -740,9 +742,15 @@ class Engine(Jobs, Researching, DeskActions):
 
     # --- starting and picking up -------------------------------------------------------------
 
-    def start(self, form: dict, uploads: dict | None = None) -> dict:
+    def start(self, form: dict, uploads: dict | None = None, *,
+              execution: str = 'runner', scope=None) -> dict:
         """Make a deck from the form as the page sent it, and start its run. `uploads` maps
         an uploaded file's name to its bytes. Returns {'path', 'id'}."""
+        if execution == 'conversation':
+            from runner import desk_chat
+            return desk_chat._start(self, form, uploads, desk_chat.scope_of(scope))
+        if execution != 'runner':
+            raise WorkspaceError('Choose runner or conversation execution.')
         space, chosen = self.space(), settings.load()
         gitstate.identity(space.repo)
         checked = decks.check_form(form, self.brands())
@@ -908,7 +916,7 @@ class Engine(Jobs, Researching, DeskActions):
                 with gitstate.workspace_locked(space, self.files, configured=True):
                     gitstate.inside(space, root / IN_HAND)
                     record = self._load(root)
-                    if not team.ours(space, record):
+                    if not team.ours(space, record) or decks.in_conversation(record):
                         continue
                     research_cli.unlock(root)
                     if (root / IN_HAND).exists() and not self._resting(record):
@@ -947,6 +955,9 @@ class Engine(Jobs, Researching, DeskActions):
         root = self.driven(path)
         if root is None or self._closing:
             return
+        with self.files:
+            if decks.in_conversation(self._load(root)):
+                return
         if not self.background:
             self._work(root, self._run(root))
             return
@@ -1000,7 +1011,10 @@ class Engine(Jobs, Researching, DeskActions):
         held, last, run.busy, settled = False, None, True, False
         try:
             while not self._closing:
-                record = self._load(root)
+                with self.files:
+                    record = self._load(root)
+                    if decks.in_conversation(record):
+                        return
                 if record.get('research_contract') and (record.get('steps', {}).get('research-report') or {}).get('done'):
                     from studio_core.research_contract import read_bundle
                     read_bundle(root / 'research')
@@ -1053,7 +1067,10 @@ class Engine(Jobs, Researching, DeskActions):
                         f'The runner could not get past this step: {step.label}.'),
                         KEPT_SO_FAR)
                 last = step.name if step.kind != 'agent' else None
-                self._step_marker(root, step.name)
+                with self.files:
+                    if decks.in_conversation(self._load(root)):
+                        return
+                    self._step_marker(root, step.name)
                 with companion.stopping(run.stop):  # a command a step runs ends on Stop
                     getattr(self, RUN[step.name])(root, run, step)
                 self._step_marker(root)
@@ -1087,7 +1104,7 @@ class Engine(Jobs, Researching, DeskActions):
         Returns True when the record changed."""
         with self.files:
             record = self._load(root)
-            if decks.delivered(root) is not None:
+            if decks.in_conversation(record) or decks.delivered(root) is not None:
                 return False
             names = [step.name for step in stages.steps(record)]
             desk_deck = decks.on_desk(record)
@@ -1151,7 +1168,7 @@ class Engine(Jobs, Researching, DeskActions):
         new ones. Nothing shared changes, so nothing is committed."""
         with self.files:
             record = self._load(root)
-            if record.get('route') != 'existing' \
+            if decks.in_conversation(record) or record.get('route') != 'existing' \
                     or gate_state(record, 'gate:classify') != 'approved' \
                     or decks.delivered(root) is not None \
                     or not (root / existing.SOURCE).is_file() \
@@ -1261,6 +1278,8 @@ class Engine(Jobs, Researching, DeskActions):
         """Put what the gate decides on in front of the person, and wait."""
         with self.files:
             record = self._load(root)
+            if decks.in_conversation(record):
+                return
             if step.name == 'gate:build':
                 build.gate_view(root, record)
                 build_progress.mark(root, (build.read_state(root).get('start') or {}).get('folder'),
@@ -2782,6 +2801,8 @@ class Engine(Jobs, Researching, DeskActions):
         halted, nxt = record.get('halted'), first(record)
         if halted:
             return halted.get('state') or 'failed', halted.get('why') or 'It has stopped.'
+        if decks.in_conversation(record) and decks.delivered(root) is None:
+            return 'waiting', 'Work continues in conversation.'
         if record.get('question'):
             return 'waiting', f"A question is waiting for you: {record['question']['text']}"
         if nxt is None:
@@ -3262,6 +3283,7 @@ class Engine(Jobs, Researching, DeskActions):
             root, (build.read_state(root).get('start') or {}).get('folder'))
         return {
             'id': record.get('id') or root.name, 'path': str(root), 'title': record['title'],
+            'execution': record.get('execution', 'runner'),
             'route': record['route'], 'level': (record.get('form') or {}).get('level'),
             'output': (record.get('form') or {}).get('output'),
             'unreviewed': decks.user_first(record),

@@ -69,6 +69,8 @@ class DeskActions:
         the brand's default: it is chosen, in words that say so."""
         with self.files:
             record = self._load(root)
+            if decks.in_conversation(record):
+                return
             if not desk.passes(record, step.name, root):
                 raise WorkspaceError('This step needs your review.')
             evidence = getattr(self, f"_show_{step.name.partition(':')[2].replace('-', '_')}")(
@@ -105,6 +107,8 @@ class DeskActions:
         """gate:build waits on a desk deck: the deck is on the desk. Notes that came while
         the deck was put together, and any its chain did not draw, are drawn now, in one more
         chain, before it rests. Call it holding `files`, from `_gate`."""
+        if decks.in_conversation(record):
+            return
         first = desk.arrive(record)
         if desk.selected(record):
             # Nothing is drawn: a note on a slide was planned and made with the copy now.
@@ -169,7 +173,7 @@ class DeskActions:
         return {**shown, 'arrived': desk.arrived(record), 'seen': desk.revision(record),
                 'progress': None if desk.arrived(record) else {
                     'minutes_left': desk.estimate(record), 'started_at': record.get('created')},
-                'working': desk.working(root, record, state),
+                'working': None if decks.in_conversation(record) else desk.working(root, record, state),
                 'deliverable': desk.deliverable(root, record),
                 'outline': self._desk_outline_view(root, record),
                 **({} if shown['drawn_here'] else {
@@ -707,6 +711,8 @@ class DeskActions:
         is saved as typed words are, while the field is as the job saw it."""
         from runner.steps import Work
         record = self._load(root)
+        if decks.in_conversation(record):
+            return
         job = record['desk_jobs'][0]
         if job.get('kind') == 'speaker-notes':
             return self._desk_notes_job(root, run, job)
@@ -872,6 +878,8 @@ class DeskActions:
         that no longer fit are kept on their card, as typed words that do not fit are."""
         with self.files:
             record = self._load(root)
+            if decks.in_conversation(record):
+                return
             held, also = list((record.get('desk') or {}).get('edits') or ()), ()
             for name in held:
                 file = root / EDITS / f'{name}.json'
@@ -1338,7 +1346,7 @@ class DeskActions:
         again in this chain yet, go into the ask now, so this chain draws them before the
         deck is put together. Call it holding `files`, between the drawing jobs."""
         record = self._load(root)
-        if not decks.on_desk(record) or not desk.waiting(record):
+        if decks.in_conversation(record) or not decks.on_desk(record) or not desk.waiting(record):
             return
         state = build.read_state(root)
         rounds = len(state.get('rounds') or ())

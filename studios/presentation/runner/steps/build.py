@@ -884,6 +884,8 @@ def reading_file(name: str) -> str:
 
 
 def _approval(root: Path, run: dict, outline: dict) -> list[str]:
+    if decks.in_conversation(run):
+        return ['Supplied and checked in conversation; not approved by the person.']
     said = [line for line in outline.get('approval') or () if isinstance(line, str)]
     if said:
         return said

@@ -52,6 +52,11 @@ def on_desk(run: dict) -> bool:
     return isinstance(run, dict) and run.get('flow') == 'desk'
 
 
+def in_conversation(run: dict) -> bool:
+    """Execution is supplied by the current conversation, never runner pickup."""
+    return isinstance(run, dict) and run.get('execution') == 'conversation'
+
+
 def user_first(run: dict) -> bool:
     return (run.get('form') or {}).get('initial_review') == 'user-first' and not run.get('review_requested')
 

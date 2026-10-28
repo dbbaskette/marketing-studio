@@ -150,10 +150,36 @@ update SKILL.md, desk/workspace/route guidance, VERSION and manifest.
 `studio desk create --input FILE`, `studio desk show --folder PATH`,
 `studio desk save --folder PATH --input FILE`. Add explicit conversation execution
 mode to creation; runner scheduling and recovery exclude that mode until explicit handoff.
-Also add a bounded explicit checked scope-change command using existing requested
-material/step selections; it changes scope only after a person requests it, never
-saved materials, approvals, readiness or scheduling. Handoff honors current scope
-or refuses an incompatible remaining plan. Also add
+Conversation scope is an explicit finite material list: `text`, `outline`,
+`research`, `drawing`, `part`; normalize/dedupe and reject unknowns. It permits kinds,
+while exact target, prerequisites and current basis constrain the operation. Never
+add research/drawing to an outline request. `set_scope(engine, path, expected_basis,
+scope)` is exposed as `studio desk scope --folder PATH --input FILE` and used only
+when the person explicitly changes the request; it changes scope/provenance only.
+
+`take(engine, path, expected_basis, scope)` is exposed as `studio desk take`; target
+`ownership` context binds the explicit request to continue an idle existing desk in
+chat. Require finite scope when absent and retain an existing requested scope. Team,
+worker, pending-job and changed-input guards apply; change execution/provenance only,
+leaving materials, History, Google baselines, approvals and readiness untouched.
+Gated saved formats retain their existing adoption/migration paths.
+
+Targets: text is `brief`, `classification` or `research-plan`; outline/research/drawing
+use their named targets; part names a stable current slide ID and known field.
+Drawing accepts bounded section compositions (Selected changes accepts a checked
+patch). Existing checker/compile/native-preview/brand contracts run on disposable
+copies outside the write lock, then publication rechecks current inputs, scope,
+workspace, team and canonical worker state. Context includes absent-target bases.
+`answer(engine, path, request)` / `studio desk answer` accepts explicit targets
+`look` and `design`, both requiring drawing scope, with
+`{target, expected_basis, answer}`. Look context binds current offered IDs and inline
+PNG previews; answer requires its questionId, exact offered choice or explicit
+brand default, and actual person response. Companion design uses canonical `work/`
+with actual design_status question/revision and design_respond four-field reply.
+Missing/changed/closed questions refuse; preparation never publishes. Neither path
+invents approvals, wakes workers or expands scope. Existing words, History and
+pins remain. Explicit look/design answers are never inferred. Handoff honors current scope and
+pinned inputs or refuses an incompatible remaining saved plan. Also add
 `context(engine, path, target) -> dict`, `submit(engine, path, request) -> dict`,
 `handoff(engine, path, expected_basis, scope) -> dict`, exposed under `studio desk`.
 `context` returns `{target, expected_basis, scope, inputs, requirements}`; submit
