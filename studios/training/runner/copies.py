@@ -260,7 +260,7 @@ def pull(root: Path, name: str, google=None, choose=None) -> dict:
             result = 'kept'
         else:
             text = remote_file.read_text(encoding='utf-8')
-            workspace.save(root, name, source=remote_file, edit=True)
+            workspace.save(root, name, source=remote_file, edit=True, via='google')
             gdocs.settle(root, name, entry, text, remote)
             result = 'pulled'
         with workspace.locked(root):

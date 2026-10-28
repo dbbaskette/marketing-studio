@@ -328,7 +328,8 @@ class StoreTests(DeskCase):
         self.assertEqual(saved['file_sha256'], entry['sha256'])
         self.assertEqual(self.current(), saved, 'the file is the record: not split again')
         self.assertEqual(sorted(path.name for path in self.store.folder('document').iterdir()),
-                         ['draft.json', 'versions'], 'the joined copy is not left behind')
+                         ['draft.json'], 'the joined copy is not left behind, and History '
+                                         'is the history files, not a second store')
         # A restore is a save of its own kind.
         with self.engine.files:
             restored = desk.restore('document', saved['revision'], part, 0)

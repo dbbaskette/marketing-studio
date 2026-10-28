@@ -330,8 +330,9 @@ def pull(root: Path, name: str, transport: Transport | None = None,
     with tempfile.TemporaryDirectory() as scratch:
         incoming = Path(scratch) / path.name
         incoming.write_bytes(text.encode('utf-8'))
-        # An edit made in Google is an edit, not a rebuild: it must not clear staleness.
-        workspace.save(root, name, source=incoming, edit=True)
+        # An edit made in Google is an edit, not a rebuild: it must not clear staleness. Its
+        # event says it came from Google, which History names it by.
+        workspace.save(root, name, source=incoming, edit=True, via='google')
     settle(root, name, entry, text, remote)
     after = workspace.statuses(root, workspace.load(root))
     return {'artifact': name, 'result': 'pulled', 'file': spec['file'], 'status': after[name],

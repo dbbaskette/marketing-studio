@@ -29,6 +29,7 @@ import workspace
 from studio_core import research_view, review_policy, step_times
 from studio_core.drafting import basis, parts
 from studio_core.drafting import record as desk_record
+from studio_core.drafting import versions as desk_versions
 from studio_core.drafting.store import Store, require_held
 
 import runner  # noqa: F401  puts the core on the import path
@@ -915,15 +916,130 @@ def current(store: TrainingStore, codec: parts.Codec, name: str) -> dict:
     return draft
 
 
+# What History calls each version, by the change that came after it: a save with no kind of
+# change (one from before the desk) is "Saved", and a history file no save names is "An
+# earlier version".
+EARLIER = 'earlier'
+SOURCE_WORDS = {'save': 'Saved', 'rewrite': 'Rewritten',
+                'revise-all': 'Revised with the whole note', 'selection': 'Selection',
+                'restore': 'Restored', 'google': "Before Google's text", 'finishing': 'Finishing',
+                'update': 'Updated', EARLIER: 'An earlier version'}
+HEX = re.compile(r'[0-9a-f]{64}')
+
+
+class HistoryVersions:
+    """Piece 3's `Versions` over the versions a training already keeps, with no file of its
+    own: each save keeps the whole file by its hash (`workspace.snapshot`) and is an event
+    with its time, and on the desk its kind of change (`via`) and the page's session.
+
+    A part's versions are its texts in those files, newest first: each event's file
+    labelled by the change that came after it, then the history files no event names
+    ("An earlier version", with no time: copies kept before a hand edit outside the
+    desk). Each file is split by the codec and the part followed across them by heading,
+    then note, then place (`follow`). A version whose file is gone is left out, the same
+    text twice running is one version, and saves from one editing session are one, the
+    text before the first of them. At most piece 3's cap are listed per part. Reading
+    writes nothing: `keep` records nothing, `workspace.save` having kept the file."""
+
+    def __init__(self, store: TrainingStore, codec: parts.Codec,
+                 keep: int = desk_versions.KEEP):
+        self.store, self.codec, self.most = store, codec, keep
+        self.sources = workspace.VIA
+
+    def keep(self, ident, part, text, source, session=None, extra=None):
+        """Nothing to keep: the save that follows keeps the file and its event says how."""
+        require_held(self.store)
+        if source not in self.sources:
+            raise ValueError(workspace.NO_VIA)
+
+    def kept(self, ident, part):
+        """A part's versions, newest first, as Restore reads them."""
+        if not self.codec.known(part):
+            raise ValueError('Choose a part of this ' + self.codec.thing + '.')
+        return self._history(ident).get(part, [])
+
+    def versions(self, ident, part):
+        """A part's versions, newest first, each as the page shows it."""
+        return [entry if self.codec.shown(entry['text']) == entry['text']
+                else {**entry, 'text': self.codec.shown(entry['text'])}
+                for entry in self.kept(ident, part)]
+
+    def counts(self, ident):
+        """How many versions each part has, for parts that have any."""
+        return {part: len(found) for part, found in self._history(ident).items() if found}
+
+    def _states(self, root: Path, name: str, now: str, suffix: str) -> list[tuple]:
+        """The material's earlier files, newest first, each as (hash, the change that came
+        after it); a run of saves from one session is one change, its first."""
+        events = [event for event in workspace.load(root)['events']
+                  if event.get('event') == 'save' and event.get('artifact') == name
+                  and isinstance(event.get('sha256'), str)]
+        states = []
+        for at, event in enumerate(events):
+            after = events[at + 1] if at + 1 < len(events) else None
+            if after is None:
+                if event['sha256'] != now:   # changed since outside the desk, not saved
+                    states.append((event['sha256'], {'at': None, 'via': EARLIER}))
+                continue
+            if (event.get('session') and event.get('via') == after.get('via') == 'save'
+                    and after.get('session') == event['session']):
+                continue   # partway through one editing session
+            states.append((event['sha256'], after))
+        states.reverse()
+        named = {event['sha256'] for event in events} | {now}
+        folder = workspace.history_file(root, name, now, suffix).parent
+        earlier = [] if folder.is_symlink() or not folder.is_dir() else [
+            path for path in folder.iterdir()
+            if path.suffix == suffix and HEX.fullmatch(path.stem) and path.stem not in named
+            and path.is_file() and not path.is_symlink()]
+        earlier.sort(key=lambda path: (-path.stat().st_mtime, path.name))
+        return states + [(path.stem, {'at': None, 'via': EARLIER}) for path in earlier]
+
+    def _history(self, name: str) -> dict:
+        """Every part of the material as it is now, with its versions."""
+        root = self.store.root
+        try:
+            draft = current(self.store, self.codec, name)
+        except ValueError:   # not written yet, or a file its codec cannot read
+            return {}
+        suffix = Path(workspace.artifact(root, workspace.load(root), name)['file']).suffix
+        names = (*self.codec.fixed, *(section['id'] for section in draft['sections']))
+        last = {part: self.codec.text_of(draft, part) for part in names}
+        found = {part: [] for part in names}
+        for digest, after in self._states(root, name, draft['file_sha256'], suffix):
+            if all(len(found[part]) >= self.most for part in names):
+                break
+            path = workspace.history_file(root, name, digest, suffix)
+            if path.is_symlink() or not path.is_file():
+                continue   # a version whose file is gone is left out
+            try:
+                older = follow(draft, self.codec.split(path.read_bytes().decode('utf-8')))
+            except (ValueError, UnicodeDecodeError):
+                continue
+            ids = {section['id'] for section in older['sections']}
+            for part in names:
+                if part not in self.codec.fixed and part not in ids:
+                    continue
+                text = self.codec.text_of(older, part)
+                if text != last[part] and len(found[part]) < self.most:
+                    found[part].append({'at': after.get('at'),
+                                        'source': after.get('via') or 'save',
+                                        'text': text, 'words': len(text.split())})
+                last[part] = text
+            draft = older
+        return found
+
+
 class TrainingDesk(desk_record.Desk):
     """Piece 3's desk over a training's store and one material's codec. A read follows the
     file (`current`); a save names its kind of change, one of `workspace.VIA`, and the page's
     session, which go on the material's save event; a locked part (Sources) is never typed
-    in. `versions` keeps the text a save replaces: Task 11 passes the material's own history;
-    until then, piece 3's version files in the record's folder."""
+    in. History is the material's own history files (`HistoryVersions`), with no second
+    store."""
 
     def __init__(self, store: TrainingStore, codec: parts.Codec, versions=None):
-        super().__init__(store, codec, workspace.VIA, versions)
+        super().__init__(store, codec, workspace.VIA,
+                         versions if versions is not None else HistoryVersions(store, codec))
 
     def read(self, ident: str) -> dict:
         return current(self.store, self.codec, ident)
