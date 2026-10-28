@@ -1,5 +1,7 @@
 # The page
 
+New work uses [checked desk commands](conversation.md) for scoped plans and edits. [Design answers](answers.md) must come from the person. Below is the saved-work path; `training.py desk` still serves it.
+
 A page in the user's browser: what needs them, where every training stands and, when `status` shows `approval: page`, the only place a gate is decided.
 
 ## Open it

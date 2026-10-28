@@ -637,6 +637,8 @@ class RunnerPage(desk.Page):
         committed, shared if that is wanted, and the run is woken. A desk training has no
         gates: it is refused, and changed on the desk."""
         self.not_on_desk(path)
+        if self.engine.driven(path) is None:
+            return super().decide(path, target, decision, note, seen, refresh)
         with self.engine.files:
             self.engine.hold(path)
             try:   # a deck the slides tool presented has the approval sent to it first
@@ -644,7 +646,7 @@ class RunnerPage(desk.Page):
                 self.engine.deck_decided(path, target, decision, note, seen)
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
-            reply = super().decide(path, target, decision, note, seen, refresh)
+            reply = super().decide(path, target, decision, note, seen, refresh, held=self.engine.files)
             driven = self.engine.decided(path, reply['decided'], checked=True)
         if not driven:
             return reply
@@ -662,13 +664,15 @@ class RunnerPage(desk.Page):
         """Move a training's decisions as the desk does, except away from the page while a
         run is driving the training. The change is committed for a training a run drove."""
         desk.registered(path)
+        if self.engine.driven(path) is None:
+            return super().move_approval(path, mode)
         self.engine.hold(path)
         found = self.engine.brief(path)
         if found is not None and mode == 'chat' and found['state'] != 'done':
             raise desk.Refusal(HTTPStatus.CONFLICT, RUNNER_DECIDES)
         with self.engine.files:
             self.engine.hold(path)
-            reply = super().move_approval(path, mode)
+            reply = super().move_approval(path, mode, held=self.engine.files)
             driven = self.engine.changed(path, f'decisions are now made '
                                          f'{workspace.WHERE[mode]}')
         if driven:
