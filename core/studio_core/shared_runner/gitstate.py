@@ -703,11 +703,32 @@ def undo(workspace: Workspace, path) -> bool:
     return True
 
 
+WORKSPACE_CHANGED = ('The workspace changed while sharing was being checked. '
+                     'Open the current workspace and try again.')
+
+
+def require_workspace(workspace):
+    if workspace_identity(current()) != workspace_identity(workspace):
+        raise WorkspaceError(WORKSPACE_CHANGED)
+
+
 @contextmanager
-def _sync_locks(held, blog):
+def workspace_locked(workspace, held, *, configured=False):
+    """Check explicit operation scope after acquiring a potentially dynamic lock."""
+    with held:
+        if isinstance(held, ProcessRLock) and not held.protects(
+                workspace_lock_path(workspace.repo, home.data_root())):
+            raise WorkspaceError(WORKSPACE_CHANGED)
+        if configured:
+            require_workspace(workspace)
+        yield
+
+
+@contextmanager
+def _sync_locks(workspace, held, blog):
     # Every Studio now takes the shared repository lock first. Blog Studio
     # retains its repository-before-workspace order within that boundary.
-    with held:
+    with workspace_locked(workspace, held):
         with blog:
             yield
 
@@ -745,7 +766,7 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
         return {**report, 'reached': None, 'notice': (
             'This workspace has no shared repository, so there is nowhere to share it. Your '
             'work is kept on this computer.')}
-    with _sync_locks(held, blog):
+    with _sync_locks(workspace, held, blog):
         if worker_in_progress(repo, WorkspaceError):
             return {**report, 'reached': None, 'notice': SYNC_WAIT}
         if on_branch(repo) != branch:
@@ -760,7 +781,7 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
         if fetched.returncode != 0:
             report['reached'] = False
             break
-        with _sync_locks(held, blog):
+        with _sync_locks(workspace, held, blog):
             if worker_in_progress(repo, WorkspaceError):
                 return {**report, 'notice': SYNC_WAIT}
             # Another fetch may move the ref at any moment, so the commit it names now is
@@ -788,7 +809,7 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
             waiting = 0
             break
     if waiting is None:
-        with _sync_locks(held, blog):
+        with _sync_locks(workspace, held, blog):
             waiting = hub.ahead(repo, track)
     report['unshared'] = waiting
     report['shared'] = bool(report['reached']) and not stuck and not report['unshared']

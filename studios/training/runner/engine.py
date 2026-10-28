@@ -1183,6 +1183,7 @@ class Engine(Reviewing):
         were never shared are set aside, so nothing of this computer's is put on top of
         theirs. `at` is the remote's commit about to be replayed on, which is what is
         read. Call it holding `files`."""
+        gitstate.require_workspace(space)
         arrived = gitstate.arrived(space, at)
         for root in self.trainings():
             try:
@@ -6121,16 +6122,20 @@ class Engine(Reviewing):
         except WorkspaceError as refusal:
             report = {'shared': False, 'reached': False, 'received': 0, 'conflict': [],
                       'notice': str(refusal)}
-        with self.files:
-            self._clashed(space, report)
-            if self._clash:
-                report['notice'] = ' '.join(self._clash.values())
-            if report.get('reached'):
-                self._fetched += 1
-            dropped, self._dropped = self._dropped, set()
-            for name in sorted(dropped):    # gone here too, unless the replay stopped
-                if not (Path(name) / workspace.STATE_DIR / 'session.json').is_file():
-                    self._let_go(Path(name))
+        try:
+            with gitstate.workspace_locked(space, self.files, configured=True):
+                self._clashed(space, report)
+                if self._clash:
+                    report['notice'] = ' '.join(self._clash.values())
+                if report.get('reached'):
+                    self._fetched += 1
+                dropped, self._dropped = self._dropped, set()
+                for name in sorted(dropped):    # gone here too, unless the replay stopped
+                    if not (Path(name) / workspace.STATE_DIR / 'session.json').is_file():
+                        self._let_go(Path(name))
+        except WorkspaceError as refusal:
+            return {'shared': False, 'reached': False, 'received': 0, 'conflict': [],
+                    'notice': str(refusal)}
         if report.get('reached'):
             if not push:
                 team.fetch_tags(space)

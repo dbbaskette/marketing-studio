@@ -620,6 +620,7 @@ class Engine(Jobs, Researching, DeskActions):
         """After a fetch, before anything is replayed: stop every deck this computer drove
         that the shared repository now says is someone else's, setting aside what it never
         shared. Call it holding `files`."""
+        gitstate.require_workspace(space)
         arrived = gitstate.arrived(space, at)
         for root in self.every():
             try:
@@ -2639,16 +2640,20 @@ class Engine(Jobs, Researching, DeskActions):
         except WorkspaceError as refusal:
             report = {'shared': False, 'reached': False, 'received': 0, 'conflict': [],
                       'notice': str(refusal)}
-        with self.files:
-            self._clashed(space, report)
-            if self._clash:
-                report['notice'] = ' '.join(self._clash.values())
-            if report.get('reached'):
-                self._fetched += 1
-            dropped, self._dropped = self._dropped, set()
-            for name in sorted(dropped):
-                if not (Path(name) / decks.RUN).is_file():
-                    self._let_go(Path(name))
+        try:
+            with gitstate.workspace_locked(space, self.files, configured=True):
+                self._clashed(space, report)
+                if self._clash:
+                    report['notice'] = ' '.join(self._clash.values())
+                if report.get('reached'):
+                    self._fetched += 1
+                dropped, self._dropped = self._dropped, set()
+                for name in sorted(dropped):
+                    if not (Path(name) / decks.RUN).is_file():
+                        self._let_go(Path(name))
+        except WorkspaceError as refusal:
+            return {'shared': False, 'reached': False, 'received': 0, 'conflict': [],
+                    'notice': str(refusal)}
         with self._lock:
             woken, self._woken = self._woken, []
         for moved in woken:
@@ -2687,7 +2692,7 @@ class Engine(Jobs, Researching, DeskActions):
         """Write and share the list of decks, now that the workspace is in step. One the
         shared repository would not take is taken back, to be written again next time."""
         index = space.root / 'README.md'
-        with self.files:
+        with gitstate.workspace_locked(space, self.files, configured=True):
             before = text_of(index)
             decks.write_index(space)
             if text_of(index) == before or gitstate.changed(space) != [
@@ -2697,7 +2702,7 @@ class Engine(Jobs, Researching, DeskActions):
             gitstate.commit(space, 'Update the list of decks', [index])
         report = gitstate.sync(space, push=True, held=self.files)
         if not report.get('shared'):
-            with self.files:
+            with gitstate.workspace_locked(space, self.files, configured=True):
                 gitstate.undo(space, index)
 
     def share(self) -> dict:

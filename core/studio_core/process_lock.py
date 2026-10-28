@@ -45,9 +45,14 @@ class ProcessRLock:
         self._thread = threading.RLock()
         self._depth = 0
         self._handle = None
+        self._locked_path = None
 
     def _is_owned(self):
         return self._thread._is_owned()
+
+    def protects(self, path):
+        """Whether this thread holds the OS lock for this explicit scope."""
+        return self._is_owned() and self._locked_path == Path(path).resolve()
 
     def acquire(self, blocking=True, timeout=-1):
         limit = self._timeout if timeout == -1 else timeout
@@ -71,6 +76,7 @@ class ProcessRLock:
                         raise LockPathChanged('The workspace changed while waiting to save. '
                                               'Try again in the current workspace.')
                     self._handle, self._depth = handle, 1
+                    self._locked_path = path.resolve()
                     return True
                 except BlockingIOError:
                     remaining = deadline - time.monotonic()
@@ -92,6 +98,7 @@ class ProcessRLock:
         try:
             if not self._depth:
                 handle, self._handle = self._handle, None
+                self._locked_path = None
                 os.close(handle)
         finally:
             self._thread.release()
