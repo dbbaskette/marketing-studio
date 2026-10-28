@@ -42,7 +42,7 @@ export PATH="$work/tools/bin:$PATH"
 # Real helper contract checks use source only, never an installed skill or provider.
 export STUDIO_TEST_RESEARCH_RUNTIME="$work/research-runtime"
 "$python" scripts/ci/research-runtime.py "$STUDIO_TEST_RESEARCH_RUNTIME" > "$results_dir/research-runtime.log" 2>&1
-if [[ "${1:-full}" == infographic || "${1:-full}" == infographic-finish || "${1:-full}" == infographic-after-root ]]; then
+if [[ "${1:-full}" == infographic || "${1:-full}" == infographic-finish || "${1:-full}" == infographic-after-root || "${1:-full}" == infographic-acceptance ]]; then
   # These are explicit CI preparation steps in the disposable clone, not tests
   # downloading software or touching a signed-in machine.
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
@@ -54,7 +54,15 @@ if [[ "${1:-full}" == infographic || "${1:-full}" == infographic-finish || "${1:
   export NODE_PATH="$work/browser/node_modules"
   export PYTHON="$python"
   export INFOGRAPHIC_UI_RESULTS="$results_dir/infographic-ui"
-  if [[ "${1:-full}" == infographic-after-root ]]; then
+  if [[ "${1:-full}" == infographic-acceptance ]]; then
+    # All application suites passed except the now-corrected takeover fixture.
+    # Reuse unchanged evidence; repeat the changed group in the same guest OS.
+    {
+      (cd studios/training && PYTHONPATH=tests "$python" -m unittest test_runner_page.DeskTeamTests -v)
+      PYTHONPATH=tests "$python" -m unittest test_suite_link -v
+      bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+    } 2>&1 | tee "$results_dir/tests.log"
+  elif [[ "${1:-full}" == infographic-after-root ]]; then
     # Root and Infographic Studio already passed on this unchanged application tree.
     # Continue after repairing formatting in the newly integrated upstream tests.
     {
