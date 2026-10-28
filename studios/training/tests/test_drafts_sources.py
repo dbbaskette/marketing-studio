@@ -1,4 +1,5 @@
 """Sources added on the Training Studio desk use disposable research and documents."""
+import json
 from unittest import mock
 
 import helpers  # noqa: F401
@@ -147,6 +148,50 @@ class SourceTests(DeckCase):
         self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
         self.to_end(root)
         self.assertIsNone(self.record(root)['problem'])
+
+    def test_row_180_pending_source_refresh_refuses_deck_changes_before_writes(self):
+        from runner import pipeline
+
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.record(root)['deck']['']['saved']['sha256']
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        slide = outline['slides'][0]
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
+        self.assertTrue(any(request.get('artifact') == 'research' and request.get('refresh')
+                            for request in workspace.load(root)['requests']))
+        before, session = self.record(root), workspace.load(root)
+        jobs, commits = len(self.workers.jobs), self.log()
+        files = {p.relative_to(root): p.read_bytes() for p in root.rglob('*')
+                 if p.is_file() and '.git' not in p.relative_to(root).parts}
+        actions = [
+            lambda: self.engine.deck_note(root, None, 'Simplify.', seen),
+            lambda: self.engine.slide_note(root, None, slide['id'], 'Simplify.', seen),
+            lambda: self.engine.draw_here(root, None, seen),
+            lambda: self.engine.look_apply(root, None, 'any', seen),
+            lambda: self.engine.look_samples(root, None),
+            lambda: self.engine.deck_outline(root, None, outline['slides'], seen),
+            lambda: self.engine.slide_restore(root, None, slide['id'], 'missing', seen, redraw=True),
+            lambda: self.engine.slide_words_decide(root, 'missing', 'approve', seen),
+            lambda: self.engine.deck_finding(root, None, seen, 'missing', 'apply', []),
+            lambda: self.engine.slide_words(root, None, slide['id'], 'title', 'New title', seen),
+            lambda: self.engine.slide_words(root, None, slide['id'], 'title', 'New title', seen, _redraw=True),
+        ]
+        for action in actions:
+            with self.subTest(action=action), self.assertRaisesRegex(WorkspaceError, draft_jobs.BUSY):
+                action()
+        self.assertEqual(self.record(root), before)
+        self.assertEqual(workspace.load(root), session)
+        self.assertEqual((len(self.workers.jobs), self.log()), (jobs, commits))
+        self.assertEqual({p.relative_to(root): p.read_bytes() for p in root.rglob('*')
+                          if p.is_file() and '.git' not in p.relative_to(root).parts}, files)
+        self.engine.carry_on(root)
+        self.to_end(root)
+        self.assertFalse(any(request.get('artifact') == 'research'
+                             for request in workspace.load(root)['requests']))
+        with self.engine.files:
+            self.engine._on_desk(root, deck_change=True)  # Ordinary held-material rules remain.
 
     def test_legacy_findings_ignore_recording_timestamps(self):
         root = self.finished()

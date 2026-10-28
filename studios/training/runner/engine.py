@@ -4273,20 +4273,24 @@ class Engine(Reviewing):
             self.share_soon()
         self.wake(path)
 
-    def _on_desk(self, path, decided: bool = False) -> tuple[Path, dict]:
+    def _on_desk(self, path, decided: bool = False, deck_change: bool = False) -> tuple[Path, dict]:
         """A desk training's folder and run record, refused for a training not on the desk.
         For a decision (`decided`: Mark ready, Update, Keep, Send), what was typed on the
-        desk is committed first, in a commit of its own. Call it holding `files`."""
+        desk is committed first, in a commit of its own. A deck change also waits for a
+        pending research refresh before committing edits. Call it holding `files`."""
         root = self._held(path)
         record = self._load(root)
         if not drafts.on_desk(record):
             raise WorkspaceError(drafts.NOT_ON_DESK)
+        if deck_change and any(request.get('artifact') == 'research' and request.get('refresh')
+                               for request in workspace.load(root).get('requests', ())):
+            raise WorkspaceError(draft_jobs.BUSY)
         if decided and self._edits_first(root):
             record = self._load(root)
         return root, record
 
     def _deck_change(self, path, level, seen):
-        root, record = self._on_desk(path, decided=True)
+        root, record = self._on_desk(path, decided=True, deck_change=True)
         name = workspace.qualify('deck', level)
         if name not in workspace.artifact_names(root, workspace.load(root)):
             raise WorkspaceError('Choose a level with a slide deck.')
@@ -4324,7 +4328,7 @@ class Engine(Reviewing):
     def look_samples(self, path, level):
         level = level or None
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True, deck_change=True)
             name = workspace.qualify('deck', level)
             seen = drafts.DeckProposalDesk(self, root, level).read(name)['seen']
             root, record, name, kept = self._deck_change(root, level, seen)
@@ -4388,7 +4392,7 @@ class Engine(Reviewing):
         """Change the outline and its drawing, then render and keep the deck."""
         level = level or None
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True, deck_change=True)
             name = workspace.qualify('deck', level)
             session = workspace.load(root)
             if name not in workspace.artifact_names(root, session):
@@ -4675,7 +4679,7 @@ class Engine(Reviewing):
                            revision=None, response=None, redraw=False) -> dict:
         """Only a separate explicit answer may approve proposed design-bound words."""
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True, deck_change=decision != 'cancel')
             folder, requested = deck_edit.read_proposal(root, token)
             if decision == 'cancel':
                 self._settle_selection_token(root, token, {'cancelled': True})
@@ -5023,7 +5027,7 @@ class Engine(Reviewing):
         """Ask to redraw the section containing one slide of a desk deck."""
         level = level or None
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True, deck_change=True)
             name = workspace.qualify('deck', level)
             if name not in workspace.artifact_names(root, workspace.load(root)):
                 raise WorkspaceError('Choose a level with a slide deck.')
@@ -5099,7 +5103,7 @@ class Engine(Reviewing):
     def deck_finding(self, path, level, seen, job, action, ids):
         level = level or None
         with self.files:
-            root, _ = self._on_desk(path, decided=True)
+            root, _ = self._on_desk(path, decided=True, deck_change=action == 'apply')
             name = workspace.qualify('deck', level)
             if name not in workspace.artifact_names(root, workspace.load(root)):
                 raise WorkspaceError('Choose a level with a slide deck.')
