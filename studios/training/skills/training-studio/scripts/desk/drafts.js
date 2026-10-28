@@ -362,7 +362,7 @@ function timeField(draft) {
 
 // The documents, added here before Start and listed with Remove. The page holds the files
 // until the training is made; Start then adds each, and says they are all added.
-function documentsPart(draft) {
+function documentsPart(draft, changed = retell) {
   const node = make('div', 'fields desk-documents');
   const fill = () => {
     const files = list(draft.files);
@@ -371,7 +371,7 @@ function documentsPart(draft) {
       const remove = capsule('Remove', 'quiet', () => {
         draft.files = list(draft.files).filter((one) => one !== file);
         fill();
-        retell();
+        changed();
         focusKey('new-documents');
       }, 'remove ' + file.name);
       remove.setAttribute('aria-label', 'Remove ' + file.name);
@@ -389,7 +389,7 @@ function documentsPart(draft) {
           ...chosen];
         input.value = '';
         fill();
-        retell();
+        changed();
         focusKey('new-documents');
       },
       accept: DESK_TYPES.join(','), hint: DESK_WORDS.documentsHint }),
@@ -1424,6 +1424,51 @@ function unsentPart(held, lead) {
   add(make('div', 'bar'), retry, without));
 }
 
+async function addSource() {
+  const path = view.path;
+  try {
+    const price = await ask('drafts/source-price', { path });
+    if (view.path !== path || view.screen !== 'run') return;
+    const chosen = { files: [] };
+    const status = make('p', 'notice');
+    status.setAttribute('role', 'status');
+    let sending = false;
+    const update = capsule('Update the research', 'filled', async () => {
+      if (sending || !chosen.files.length) return;
+      sending = true;
+      update.disabled = true;
+      say(status, 'Adding documents and updating the research…');
+      try {
+        const files = await Promise.all(chosen.files.map(async (file) =>
+          ({ name: file.name, content: await base64Of(file) })));
+        if (view.path !== path) return;
+        const answer = await deskDecide('source', { files }, update);
+        if (answer) closeSheet();
+        else say(status, deskHeld(path).said || 'The source could not be added. Try again.');
+      } catch (failure) {
+        say(status, failure.message);
+      } finally {
+        sending = false;
+        update.disabled = !chosen.files.length;
+      }
+    });
+    update.disabled = true;
+    DESK.kitSheet = [sheetTitle('Add a source'),
+      make('p', 'quiet', 'Add documents and read what updating the research will change.'),
+      make('h3', 'sheet-part', '1. Add'),
+      documentsPart(chosen, () => { update.disabled = sending || !chosen.files.length; }),
+      make('h3', 'sheet-part', '2. What it changes'), make('p', '', price.words),
+      make('p', '', price.afterwards), price.widened ? make('p', '', price.widened) : null,
+      status, add(make('div', 'bar'), update, capsule('Cancel', 'quiet', () => {
+        if (!sending) closeSheet();
+      }))].filter(Boolean);
+    openSheet('desk-kit', '')();
+  } catch (failure) {
+    deskHeld(path).said = failure.message;
+    paintDesk(false);
+  }
+}
+
 // The Sources, shared by every level: the account of the research, the research plan and
 // the documents.
 function sourcesPart(found) {
@@ -1440,6 +1485,13 @@ function sourcesPart(found) {
   } else {
     add(node, make('p', 'quiet', DESK_WORDS.noResearch));
   }
+  const marks = sources.marked || {};
+  for (const [id, mark] of Object.entries(marks)) {
+    const finding = list(account && account.findings).find((one) => one.id === id);
+    add(node, make('p', 'quiet', (mark === 'new' ? 'New: ' : 'Changed: ')
+      + (finding ? finding.title : id)));
+  }
+  if (deskOurs()) add(node, capsule('Add a source', 'quiet', addSource));
   const plan = list(sources.plan).map((item) => (item && item.question) || String(item || ''))
     .filter(Boolean);
   if (plan.length) {

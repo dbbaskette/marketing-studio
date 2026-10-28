@@ -3956,8 +3956,21 @@ class Engine(Reviewing):
         clock = time.monotonic()
         with self.files:
             try:
-                if self._load(root).get('research_contract'):
+                record = self._load(root)
+                if record.get('research_contract'):
                     status = {'run': 'synthesis'}
+                elif drafts.on_desk(record) and (record.get('research') or {}).get('source_update'):
+                    # Saved desk trainings on the legacy queue must hand the new documents
+                    # to Harness Research's plan as well as to its question workers. Keep
+                    # the person's approved questions and file unchanged.
+                    plan = json.loads((root / pipeline.PLAN).read_text(encoding='utf-8'))
+                    plan.update(scope='supplied-only' if record['documents']['scope'] == 'supplied-only'
+                                else 'public-web',
+                                sources=self._sources(root, record)[0])
+                    with tempfile.TemporaryDirectory(prefix='training-sources-') as folder:
+                        file = Path(folder) / 'plan.json'
+                        file.write_text(json.dumps(plan), encoding='utf-8')
+                        status = self.research().plan(root, file)
                 else:
                     status = self.research().plan(root, root / pipeline.PLAN)
             except WorkspaceError as refusal:
@@ -3966,6 +3979,9 @@ class Engine(Reviewing):
             record = self._load(root)
             record['research'] = {**(record.get('research') or {}), 'run': status.get('run'),
                                   'plan': workspace.sha256_file(root / pipeline.PLAN)}
+            if record['research'].pop('source_update', None) and record['research'].get('again'):
+                record['research']['again']['left'] = list(workspace.findings_index(
+                    workspace.research_record(root) or {}))
             self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
             self._store(root, record)
             workspace.checkpoint(root, stage='research', next_step='Research each question')
@@ -5708,6 +5724,23 @@ class Engine(Reviewing):
         return ([entry for entry in plan if entry.get('file') not in held],
                 [entry for entry in offered if entry.get('file') not in held])
 
+    def add_source(self, path, files) -> dict:
+        """The priced desk action: add documents and update only the research."""
+        with self.files:
+            root, record = self._on_desk(path)
+            run = self._run(root)
+            if run.workers or run.busy or drafts.busy(record):
+                raise WorkspaceError(draft_jobs.BUSY)
+            if not workspace.research_record(root):
+                raise WorkspaceError('Wait until the research is written before adding a source.')
+            self._edits_first(root)
+            record = self._load(root)
+            titles = drafts.add_source(root, record, files, self.documents)
+            self._store(root, record)
+            self._request_sources(root, record, titles=titles)
+        self.carry_on(root)
+        return self.view(root)
+
     def update_research(self, path) -> dict:
         """Read the documents added since the research, as the person asks: a research
         request that brings the evidence up to date, as Bring the evidence up to date does,
@@ -5723,22 +5756,32 @@ class Engine(Reviewing):
             run = self._run(root)
             if run.workers or run.busy:
                 raise WorkspaceError(WORKING)
-            self.refuse_while_reviewing(root, 'revise')
-            note = 'Read the documents added since: ' + ', '.join(names) + '.'
-            outcome = workspace.decide(root, 'research', 'revise', note, by='page',
-                                       refresh=True)
-            with workspace.locked(root):
-                session = workspace.load(root)
-                session['requests'][-1]['added'] = names
-                workspace.store(root, session)
-            outcome['request'] = {**outcome['request'], 'added': names}
-            record = self._load(root)
-            review_layout.uncarry(record)
-            record['documents'] = {**record['documents'], 'later': []}
-            self._store(root, record)
-        self.decided(path, outcome, checked=True)
+            self._request_sources(root, record)
         self.carry_on(path)
         return self.view(root)
+
+    def _request_sources(self, root: Path, record: dict, titles=None) -> None:
+        """Record the existing research refresh, while holding files, for either flow."""
+        names = [entry.get('name') for entry in record['documents'].get('later') or ()
+                 if isinstance(entry, dict)]
+        self.refuse_while_reviewing(root, 'revise')
+        note = ('Sources were added: ' + ', '.join(titles)
+                + '. Read them, and update what they change. Keep everything else.'
+                if titles is not None else 'Read the documents added since: ' + ', '.join(names) + '.')
+        outcome = workspace.decide(root, 'research', 'revise', note, by='page', refresh=True)
+        with workspace.locked(root):
+            session = workspace.load(root)
+            session['requests'][-1]['added'] = names
+            workspace.store(root, session)
+        outcome['request'] = {**outcome['request'], 'added': names}
+        review_layout.uncarry(record)
+        record['documents'] = {**record['documents'], 'later': []}
+        if titles is not None and not record.get('research_contract'):
+            record['research'].update(source_update=True, plan=None)
+        self._store(root, record)
+        if titles is not None:
+            outcome['said'] = f'add {len(titles)} source(s) and update the research'
+        self.decided(root, outcome, checked=True)
 
     def supply_asset(self, path, level: str | None, asset: str, data: bytes, alt: str,
                      source: str, restrictions: str | None = None) -> dict:

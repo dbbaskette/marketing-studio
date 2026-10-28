@@ -2814,6 +2814,29 @@ class DeskPageTests(PageCase):
         return [*(card['says'] for card in view['cards']), *view['needs'],
                 view['progress']['line'], view['progress']['doing']]
 
+    def test_added_sources_have_a_read_only_price_and_authenticated_batch_route(self):
+        path = self.desk(materials=['document', 'brief'])
+        before = self.on_disk()
+        price = self.get('drafts/source-price', path=path)
+        self.assertEqual(price['afterwards'], drafts.AFTERWARDS)
+        self.assertEqual(self.on_disk(), before)
+        sent = {'path': path, 'files': [{'name': 'notes.txt', 'content': base64.b64encode(
+            b'Capacity holds only when more than one instance is running.').decode()}]}
+        self.post('drafts/source', sent, expect=403, token=False)
+        self.assertEqual(self.on_disk(), before)
+        malformed = {**sent, 'files': [sent['files'][0], {'name': 'bad.txt', 'content': '%%%'}]}
+        self.post('drafts/source', malformed, expect=400)
+        self.assertEqual(self.on_disk(), before)
+        added = self.post('drafts/source', sent)
+        self.assertEqual(added['sources']['documents'][0]['name'], 'notes.txt')
+        self.assertTrue(any(card['held'] for card in added['cards']))
+        saved = self.started(title='Saved training')
+        refused = self.post('drafts/source', {**sent, 'path': saved}, expect=409)
+        self.assertEqual(refused['error'], drafts.NOT_ON_DESK)
+        self.get('drafts/source-price', path=saved, expect=409)
+        self.assertEqual(self.page.body_limit('/api/drafts/source', self.headers()), 12_000_000)
+        self.assertEqual(self.page.body_limit('/api/drafts/source', self.headers(token=False)), 64_000)
+
     def test_row_159_desk_and_review_routes_refuse_each_other(self):
         path = self.desk(materials=['document', 'brief'])
         root = Path(path)
@@ -2917,7 +2940,7 @@ class DeskPageTests(PageCase):
         self.assertEqual((view['progress']['line'], view['progress']['minutes']), ('', None))
         self.assertEqual(view['needs'], [], 'a draft never needs the person')
         self.assertTrue(view['team']['ours'])
-        self.assertEqual(sorted(view['sources']), ['account', 'documents', 'plan'])
+        self.assertEqual(sorted(view['sources']), ['account', 'documents', 'marked', 'plan'])
         self.assertEqual(len(view['sources']['plan']), 4)
         self.assertIsNone(view['job'])
         # Each deck's whole time is kept here, for the next start's estimate.
@@ -3162,7 +3185,8 @@ class DeskTeamTests(TeamCase):
         with self.be(self.blake), self.assertRaises(engines.Elsewhere) as caught:
             self.blake.engine.hold(theirs)
         name = 'document@101'
-        for route, sent in (('ready', {'name': name, 'seen': hashed(theirs, name)}),
+        for route, sent in (('source', {'files': [{'name': 'notes.txt', 'content': 'Tm90ZXM='}]}),
+                            ('ready', {'name': name, 'seen': hashed(theirs, name)}),
                             ('level-ready', {'level': '101', 'seen': {}}),
                             ('update', {'name': name}),
                             ('keep', {'name': name, 'reason': 'Fine.', 'seen': 'x'}),

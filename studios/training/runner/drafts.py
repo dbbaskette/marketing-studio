@@ -78,6 +78,76 @@ WHAT = {'blueprint': 'plan', 'document': 'guide', 'brief': 'brief', 'research': 
 NAMED = ('practice', 'profile')
 
 
+AFTERWARDS = ("Afterwards each level's plan and brief, and any deck without a guide, say what "
+              'changed. Nothing else is rewritten until you update it.')
+WIDENED = ('This training is researched from the public web. From now on it reads your '
+           'documents too.')
+
+
+def source_price(root: Path, record: dict) -> dict:
+    """The research's price, with its downstream work held until explicitly updated."""
+    attempts = {name: entry.get('attempts') or []
+                for name, entry in (record.get('steps') or {}).items() if isinstance(entry, dict)}
+    return {'words': research_view.price(attempts, redone=())['words'],
+            'afterwards': AFTERWARDS, 'widened': None if record.get('documents') else WIDENED}
+
+
+def _finding_fingerprints(root: Path) -> dict:
+    """Compare Harness Research's saved findings, without interpreting their evidence."""
+    facts = workspace.research_record(root) or {}
+    findings = ({item['id']: item for item in facts.get('findings') or ()}
+                if facts.get('schema') == 2 else facts.get('results') or {})
+    return {ident: basis.fingerprint({key: value for key, value in finding.items()
+                                     if key not in ('at', 'recorded_at', 'checked_at', 'updated_at')})
+            for ident, finding in findings.items() if isinstance(finding, dict)}
+
+
+def marked(root: Path, record: dict) -> dict:
+    before = (record.get('drafts') or {}).get('findings_before')
+    if before is None:
+        return {}
+    return {ident: 'new' if ident not in before else 'changed'
+            for ident, fingerprint in _finding_fingerprints(root).items()
+            if before.get(ident) != fingerprint}
+
+
+def add_source(root: Path, record: dict, files: list, documents) -> list[str]:
+    """Add documents together and remember the findings before requesting research.
+
+    The engine holds its files lock. A refused batch removes only its own new documents.
+    Research execution remains entirely in Harness Research.
+    """
+    from runner import pipeline
+
+    if not isinstance(files, list) or not files:
+        raise workspace.WorkspaceError('Add at least one document first.')
+    before = _finding_fingerprints(root)
+    added = []
+    try:
+        for file in files:
+            if not isinstance(file, dict):
+                raise workspace.WorkspaceError('Give each document a name and content.')
+            added.append(documents.add(root, file.get('name'), file.get('data')))
+    except Exception:
+        for entry in reversed(added):
+            documents.remove(root, entry['name'])
+        raise
+    now = home.now()
+    if not record.get('documents'):
+        record['research_from'] = {**pipeline.research_of(record), 'documents': True,
+                                   'widened_at': now}
+        record['documents'] = {'scope': pipeline.scope_of(record['research_from'])}
+    readable = [entry for entry in documents.listed(root) if entry.get('readable')]
+    record['documents'].update(done=now, count=len(readable))
+    record['documents']['later'] = [*(record['documents'].get('later') or []),
+                                   *({'name': entry['name'], 'added_at': now} for entry in added)]
+    marker = root / pipeline.ADDED
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(now + '\n', encoding='utf-8')
+    record.setdefault('drafts', {})['findings_before'] = before
+    return [entry.get('title') or entry['name'] for entry in added]
+
+
 def on_desk(record: dict | None) -> bool:
     """Whether a run record, or a form, is a training worked on at the desk."""
     return (record or {}).get('flow') == FLOW
@@ -725,7 +795,7 @@ def view(engine, root) -> dict:
                      if running and not needed else ''},
         'needs': needed, 'cards': cards,
         'sources': {'account': research_view.account(root / 'research', questions),
-                    'plan': questions,
+                    'plan': questions, 'marked': marked(root, record),
                     'documents': [{key: entry.get(key) for key in
                                    ('name', 'bytes', 'readable', 'problem')}
                                   for entry in listed]},

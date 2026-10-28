@@ -6954,6 +6954,44 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         return self.run_page(answers, steps, state={'screen': 'run', 'path': str(self.root)},
                              **plan)
 
+    def test_add_a_source_says_its_price_first(self):
+        afterwards = ("Afterwards each level's plan and brief, and any deck without a guide, say what "
+                      "changed. Nothing else is rewritten until you update it.")
+        widened = ('This training is researched from the public web. From now on it reads your '
+                   'documents too.')
+        answers = self.on_desk(a_desk(running=False), run=a_desk_run('drafts'), **{
+            'GET /api/drafts/source-price': [ok({'words': 'Up to 3 rounds; last time $9.80.',
+                'afterwards': afterwards, 'widened': widened})],
+            'POST /api/drafts/source': [a_desk(running=False)]})
+        steps = [{'click': 'Add a source'},
+                 {'attach': 'Add documents', 'files': [{'name': 'notes.txt', 'text': 'Notes'}]},
+                 {'snapshot': 'price'}]
+        before = self.open_desk(answers, steps)
+        self.assertEqual(self.posts(before), [])
+        shot = before['snapshots']['price']
+        for text in ('1. Add', '2. What it changes', 'last time $9.80', afterwards,
+                     widened):
+            self.assertIn(text, shot['text'])
+        self.assertIn('Cancel', shot['buttons'])
+        result = self.open_desk(answers, steps + [{'click': 'Update the research'}])
+        self.assertEqual(self.posts(result), [('/api/drafts/source', {
+            'path': str(self.root), 'files': [{'name': 'notes.txt', 'content': 'Tm90ZXM='}]})])
+
+    def test_a_refused_source_stays_in_the_sheet_and_cancel_adds_nothing(self):
+        answers = self.on_desk(a_desk(running=False), run=a_desk_run('drafts'), **{
+            'GET /api/drafts/source-price': [ok({'words': 'Research price.', 'afterwards': 'Materials wait.',
+                                                'widened': None})],
+            'POST /api/drafts/source': [{'status': 409, 'body': {'error': 'Wait for the current change.'}}]})
+        steps = [{'click': 'Add a source'},
+                 {'attach': 'Add documents', 'files': [{'name': 'notes.txt', 'text': 'Notes'}]}]
+        cancelled = self.open_desk(answers, steps + [{'click': 'Cancel'}])
+        self.assertEqual(self.posts(cancelled), [])
+        refused = self.open_desk(answers, steps + [{'click': 'Update the research'}, {'snapshot': 'refused'}])
+        shot = refused['snapshots']['refused']
+        self.assertIn('Wait for the current change.', shot['text'])
+        self.assertIn('notes.txt', shot['text'])
+        self.assertIn('Update the research', shot['buttons'])
+
     def slide_card(self):
         found = a_card('deck@101')
         found.update(slides=[{'id': 'check-yourself', 'number': 5, 'title': 'Check yourself',
