@@ -60,7 +60,7 @@ handoff, and image-inspection surface before writing downstream code against it.
 Likewise, the ordinary text-only Claude Code worker cannot be assumed to inspect
 images without a verified multimodal handoff.
 
-Marketing Studio's active [workflow retirement issue #134](https://github.com/dbbaskette/marketing-studio/issues/134)
+Marketing Studio's [workflow retirement issue #134](https://github.com/dbbaskette/marketing-studio/issues/134)
 moves new work to editing desks. Infographic Studio follows that direction:
 story selection and final approval are checkpoints within one desk workflow.
 Do not add Step by step/Balanced/Automatic legacy review-level controls, fork
