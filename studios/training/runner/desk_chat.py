@@ -288,6 +288,24 @@ def _scratch(name):
             shutil.rmtree(deck_edit.storage(stage), ignore_errors=True)
 
 
+def _material_input(root, name, part):
+    session = workspace.load(root)
+    file = workspace.artifact(root, session, name)['file']
+    path = root / file
+    if not path.is_file():
+        return None
+    if workspace.split(name)[0] != 'deck':
+        return path.read_text()
+    outline = home.read_json(pipeline.place(root, workspace.split(name)[1], pipeline.OUTLINE), {})
+    material = {'file': file, 'sha256': workspace.sha256_file(path), 'outline': outline,
+                'metadata': session['artifacts'].get(name)}
+    if part:
+        slide, _, field = part.partition('/')
+        _, text = drafts.slide_words(outline, slide, field, 'Checked replacement')
+        material['selected'] = {'slide': slide, 'field': field, 'text': text}
+    return material
+
+
 @contextmanager
 def _prepared(engine, path, target, change=False, owner=True):
     space = engine.space()
@@ -342,12 +360,10 @@ def _prepared(engine, path, target, change=False, owner=True):
         requirements['brand_contracts'] = contracts
         if workspace.split(target.partition('/')[0])[0] == 'look':
             requirements['questionId'] = _digest(requirements)
-        file = workspace.artifact(stage, workspace.load(stage), name)['file'] if kind else None
         context = {'target': target, 'scope': scope, 'requirements': requirements,
                    'inputs': {'intake': pipeline.answers(stage), 'session': workspace.load(stage),
                               'sources': staged.documents.sources(stage)[1],
-                              'material': (stage / file).read_text() if file and (stage / file).is_file()
-                                          and kind != 'drawing' else None}}
+                              'material': _material_input(stage, name, part) if kind else None}}
         context['expected_basis'] = _digest({'files': {relative: hashlib.sha256(data).hexdigest()
                                            for relative, data in before.items()}, 'target': target,
                                            'scope': scope, 'requirements': requirements})
@@ -752,6 +768,17 @@ def _drawing(engine, root, record, target, payload):
     found = engine._survey(root, record)
     step = next(step for step in found.steps if pipeline.bare(step.id) == 'deck-save' and workspace.split(step.artifact)[1] == level)
     engine._keep(root, engine._run(root), found, pipeline.Next('code', step))
+    record = engine._load(root)
+    if record.get('problem'):
+        raise WorkspaceError(record['problem']['what'])
+    session = workspace.load(root)
+    file = root / workspace.artifact(root, session, mine.name)['file']
+    saved = engine._decided(record, level).get('saved') or {}
+    last = engine._survey(root, record).decks[level].last
+    if (not file.is_file() or saved.get('sha256') != workspace.sha256_file(file)
+            or not last or last.get('stale') or saved.get('deck') != last['deck']
+            or saved.get('round') != last['folder']):
+        raise WorkspaceError('The checked drawing was not saved. Read its current context and try again.')
     engine._ready_again(root)
 
 

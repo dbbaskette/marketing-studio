@@ -10,7 +10,7 @@ Copies and Yoodli are off unless explicitly requested. Google links are not fetc
 
 ## Context and checked submissions
 
-Run `studio desk show --folder PATH`, then `studio desk context --folder PATH --target TARGET`. Context returns `{target, expected_basis, scope, inputs, requirements}` even before a material exists. It includes pinned source text. Follow the returned checks and templates.
+Run `studio desk show --folder PATH`, then `studio desk context --folder PATH --target TARGET`. Context returns `{target, expected_basis, scope, inputs, requirements}`, including pinned source text. Follow its checks and templates.
 
 Submit `{kind, target, expected_basis, payload}` with `studio desk submit --folder PATH --input FILE`. `desk save` is the same checked operation. Use the returned basis; changed inputs refuse. Keep operational metadata out of prose.
 
@@ -24,7 +24,7 @@ Submit `{kind, target, expected_basis, payload}` with `studio desk submit --fold
 | drawing | deck, deck@101 | `{sections}`: exactly the requested IDs and checked compositions |
 | part | document/PART or deck@101/SLIDE/FIELD | `{text}`: current editable part or stable slide/field |
 
-Apply the same @level to every level-specific target. Scenario IDs come from the practice plan; arbitrary names and paths refuse. Sources sections are maintained from citations. Existing part edits use the desk revision and preserve History; they do not clear holds. Initial materials use the normal material checkers and save operations. Acceptance is continuation, never the person's approval or Ready. Drawings compile, preview and receive the brand audit; absent reviews stay absent. Google-target edits keep a separate local PowerPoint draft and preserve the delivered link, baseline and earlier approval. It stays Draft and cannot be marked Ready until explicit delivery. Missing local drafts refuse safely. No copies or delivery follow a submission.
+Apply the same @level to every level-specific target. Scenario IDs come from the practice plan; arbitrary names and paths refuse. Sources sections are maintained from citations. Existing part edits use the desk revision and preserve History; they do not clear holds. Initial materials use the normal material checkers and save operations. Acceptance is continuation, never approval or Ready. Drawings compile, preview and receive the brand audit; absent reviews stay absent. Google-target edits keep a separate local PowerPoint draft and preserve the delivered link, baseline and earlier approval. It stays Draft; Training Studio currently has no page/CLI action to deliver this local draft. Original delivered decks remain usable. Missing drafts refuse safely. Submissions create no copies or delivery.
 
 ## Ownership and scope
 

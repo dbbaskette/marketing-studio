@@ -1,6 +1,7 @@
 """Checked Training Studio conversation journeys; disposable state and fake companions."""
 import io
 import json
+import zipfile
 from pathlib import Path
 from unittest import mock
 
@@ -416,7 +417,7 @@ class ConversationGoogleDraftTests(ConversationDesignTests):
         with self.assertRaises(WorkspaceError):
             workspace.artifact(root, workspace.load(root), 'deck')
 
-    def test_explicit_native_delivery_clears_pending_only_after_successful_save(self):
+    def test_hypothetical_delivered_link_reconciliation_is_atomic(self):
         from runner import pipeline
         root, link, baseline, original = self.google_desk()
         self.proposed(root)
@@ -426,7 +427,8 @@ class ConversationGoogleDraftTests(ConversationDesignTests):
         found = self.engine._survey(root, self.record(root))
         mine = found.decks[None]
         shows = json.loads((root / pipeline.SHOWS).read_bytes())
-        explicit_link = '# Explicit synthetic later delivery\n\nhttps://docs.example.invalid/new\n'
+        # Internal domain reconciliation only: no page/CLI delivery action exists.
+        explicit_link = '# Hypothetical synthetic delivered link\n\nhttps://docs.example.invalid/new\n'
         with mock.patch.object(workspace, 'save', side_effect=WorkspaceError('save failed')):
             with self.assertRaisesRegex(WorkspaceError, 'save failed'):
                 pipeline.keep_deck(root, found, mine, None, explicit_link, shows)
@@ -579,3 +581,147 @@ class ConversationSelectionTests(DeckCase):
             self.assertEqual(studio.desk_command(args, make=lambda: self.engine, out=output), 0)
         self.assertEqual(json.loads(output.getvalue())['session']['settings']['stages'], ['document'])
         self.assertEqual(self.workers.jobs, [])
+
+
+class ConversationReviewFixTests(DeckCase):
+    WALKTHROUGH = True
+    create = ConversationTests.create
+    submit = ConversationTests.submit
+    researched = ConversationTests.researched
+    supply_research = ConversationTests.supply_research
+    proposed = ConversationDesignTests.proposed
+    reply = ConversationDesignTests.reply
+    taken = ConversationDesignTests.taken
+    google_desk = ConversationGoogleDraftTests.google_desk
+
+    def binary_deck(self, root):
+        session = workspace.load(root)
+        file = root / workspace.artifact(root, session, 'deck')['file']
+        with zipfile.ZipFile(file, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr('[Content_Types].xml', '<Types/>')
+            archive.writestr('ppt/media/image1.bin', bytes(range(256)))
+        with self.assertRaises(UnicodeDecodeError):
+            file.read_bytes().decode('utf-8')
+        digest = workspace.sha256_file(file)
+        session['artifacts']['deck']['sha256'] = digest
+        if session.get('pending_local_decks'):
+            session['pending_local_decks']['deck']['sha256'] = digest
+        workspace.store(root, session)
+        record = self.record(root)
+        record['deck']['']['saved']['sha256'] = digest
+        self.engine._store(root, record)
+        return file
+
+    def check_binary_contexts(self, root):
+        from runner import pipeline
+        context = desk_chat.context(self.engine, root, 'scope')
+        desk_chat.set_scope(self.engine, root, context['expected_basis'], list(desk_chat.KINDS))
+        file = self.binary_deck(root)
+        before = desk_chat._files(root)
+        for target in ('deck/check-yourself/title', 'deck-outline'):
+            with self.subTest(target=target):
+                context = desk_chat.context(self.engine, root, target)
+                material = context['inputs']['material']
+                self.assertEqual(material['file'], file.relative_to(root).as_posix())
+                self.assertEqual(material['sha256'], workspace.sha256_file(file))
+                self.assertEqual(material['outline'], json.loads((root / pipeline.OUTLINE).read_bytes()))
+                if '/' in target:
+                    self.assertEqual(material['selected']['text'], material['outline']['slides'][4]['title'])
+                self.assertEqual(desk_chat._files(root), before)
+        self.submit(root, 'deck/check-yourself/title', 'part', {'text': 'A binary title check'})
+        before = desk_chat._files(root)
+        context = desk_chat.context(self.engine, root, 'design')
+        self.assertEqual(context['inputs']['material']['sha256'], workspace.sha256_file(file))
+        self.assertTrue(context['requirements']['question']['id'])
+        self.assertEqual(desk_chat._files(root), before)
+        desk_chat.answer(self.engine, root, self.reply(context))
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['deck'], 'draft')
+
+    def test_binary_zip_deck_part_outline_and_design_contexts(self):
+        self.slides.design, self.slides.judges = True, True
+        self.slides.have['local'] = True
+        self.check_binary_contexts(self.taken())
+
+    def test_binary_zip_pending_local_part_outline_and_design_contexts(self):
+        self.slides.design, self.slides.judges = True, True
+        self.slides.have['local'] = True
+        root, link, baseline, original = self.google_desk()
+        self.proposed(root)
+        context = desk_chat.context(self.engine, root, 'design')
+        desk_chat.answer(self.engine, root, self.reply(context))
+        with mock.patch.object(self.slides, 'drive_import', side_effect=AssertionError('delivery')):
+            self.check_binary_contexts(root)
+        self.assertEqual((link.read_bytes(), baseline.read_bytes()), original[:2])
+
+    def test_google_plugin_writers_refuse_chat_ownership_before_transport(self):
+        import gdocs
+        import training
+        root = self.create(materials=['document'])
+        (root / 'document.md').write_text('# Synthetic document\n')
+        export = self.base / 'synthetic-google-export.md'
+        export.write_text('# Synthetic remote edit\n')
+        gdocs.write_links(root, {'schema': 1, 'docs': {'document': {
+            'file_id': 'synthetic', 'url': 'https://example.invalid/doc', 'anchors': [],
+            'local_sha256': workspace.sha256_file(root / 'document.md'),
+            'remote_sha256': gdocs.digest('# Previous remote text\n')}}})
+        before = desk_chat._files(root)
+        commands = [['unlink', 'document'],
+                    ['record', 'document', '--file-id', 'synthetic', '--url', 'https://example.invalid/doc', '--export', str(export)],
+                    ['pull', 'document', '--from', str(export)],
+                    ['push', 'document', '--prepare', str(self.base / 'must-not-exist.md')]]
+        with mock.patch.object(gdocs, 'GcloudTransport', side_effect=AssertionError('transport')):
+            for command in commands:
+                with self.subTest(command=command[0]), self.assertRaisesRegex(WorkspaceError, 'conversation'):
+                    training.dispatch(training.parser().parse_args(['google', *command]), root)
+                self.assertEqual(desk_chat._files(root), before)
+            shown = training.dispatch(training.parser().parse_args(['google', 'status', '--offline']), root)
+        self.assertIn('document', shown['docs'])
+        self.assertFalse((self.base / 'must-not-exist.md').exists())
+        self.assertEqual(desk_chat._files(root), before)
+
+    def drawing_request(self, existing):
+        from runner_support import OUTLINE, CHOSEN, drawn
+        from runner import pipeline
+        if existing:
+            root = self.begin(flow='desk', title='Existing synthetic drawing')
+            self.to_end(root)
+            context = desk_chat.context(self.engine, root, 'ownership')
+            desk_chat.take(self.engine, root, context['expected_basis'], ['drawing'])
+            if not pipeline.looked(self.record(root)['deck'][''], workspace.sha256_file(root / pipeline.OUTLINE)):
+                context = desk_chat.context(self.engine, root, 'look')
+                desk_chat.answer(self.engine, root, {'target': 'look', 'expected_basis': context['expected_basis'],
+                    'answer': {'questionId': context['requirements']['questionId'], 'choice': 'default', 'response': 'Use the shown default.'}})
+        else:
+            root = self.researched(deck_target='pptx', brand=CHOSEN, materials=[])
+            self.submit(root, 'blueprint', 'outline', {'text': BLUEPRINT})
+            self.submit(root, 'deck-outline', 'outline', {'outline': OUTLINE})
+            context = desk_chat.context(self.engine, root, 'look')
+            desk_chat.answer(self.engine, root, {'target': 'look', 'expected_basis': context['expected_basis'],
+                'answer': {'questionId': context['requirements']['questionId'], 'choice': 'default', 'response': 'Use the shown default.'}})
+        context = desk_chat.context(self.engine, root, 'deck')
+        return root, {'kind': 'drawing', 'target': 'deck', 'expected_basis': context['expected_basis'],
+                      'payload': {'sections': {ident: drawn(spec['artifacts']['section'])
+                          for ident, spec in context['requirements']['sections'].items()}}}
+
+    def check_failed_keep(self, operation):
+        from runner import pipeline
+        import subprocess
+        for existing in (False, True):
+            with self.subTest(existing=existing):
+                root, request = self.drawing_request(existing)
+                before = desk_chat._files(root)
+                repo = self.engine.space().repo
+                head = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo)
+                receiver, name = (self.slides, 'cited') if operation == 'citation' else (pipeline, 'keep_deck')
+                with mock.patch.object(receiver, name, side_effect=WorkspaceError('synthetic final check failed')):
+                    with self.assertRaisesRegex(WorkspaceError, 'synthetic final check failed'):
+                        desk_chat.submit(self.engine, root, request)
+                self.assertEqual(desk_chat._files(root), before)
+                self.assertEqual(subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=repo), head)
+                self.assertEqual((root / 'deck.pptx').is_file(), existing)
+
+    def test_initial_and_existing_drawing_citation_failure_preserves_canonical(self):
+        self.check_failed_keep('citation')
+
+    def test_initial_and_existing_drawing_save_failure_preserves_canonical(self):
+        self.check_failed_keep('save')
