@@ -12,10 +12,11 @@ from pathlib import Path
 import re
 import stat
 
-from .contracts import MAX_SOURCE_BYTES, Invalid, canonical
+from .contracts import MAX_SOURCE_BYTES, Invalid, canonical, digest
 from .validation import require, text
 
-KINDS = {'.txt': 'text', '.md': 'markdown', '.csv': 'csv'}
+KINDS = {'.txt': 'text', '.md': 'markdown', '.csv': 'csv', '.pdf': 'pdf', '.docx': 'docx', '.html': 'html', '.htm': 'html'}
+SOURCE_KINDS = set(KINDS.values()) | {'google-doc', 'url', 'research', 'handoff'}
 MAX_ROWS = 20_000
 MAX_COLUMNS = 100
 DECIMAL = re.compile(r'[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\Z')
@@ -24,14 +25,15 @@ DECIMAL = re.compile(r'[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\Z')
 def read_file(path: Path) -> tuple[str, bytes]:
     path = Path(path)
     kind = KINDS.get(path.suffix.lower())
-    require(kind is not None, 'Use a UTF-8 text, Markdown, or CSV file; supply text for other formats.')
+    require(kind is not None, 'Use text, Markdown, CSV, PDF, Word (.docx), or HTML.')
     # Reject links in every component; never read a device/FIFO as an upload.
     require(not any(p.is_symlink() for p in (path, *path.parents)), 'Source files cannot traverse links.')
     fd = os.open(path, os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
     with os.fdopen(fd, 'rb') as stream:
         require(stat.S_ISREG(os.fstat(stream.fileno()).st_mode), 'Choose a regular source file.')
         raw = stream.read(MAX_SOURCE_BYTES + 1)
-    decoded(raw)
+    require(0 < len(raw) <= MAX_SOURCE_BYTES, 'Supply a nonempty source no larger than 16 MB.')
+    if kind in ('text', 'markdown', 'csv', 'html'): decoded(raw)
     return kind, raw
 
 
@@ -112,16 +114,36 @@ def select_csv(raw: bytes, selection: dict) -> tuple[str, dict]:
 
 
 def capture(store, ident: str, raw: bytes, *, kind='text', name='Pasted information',
-            selection=None, replace_id=None, expected_revision: int) -> dict:
-    require(kind in ('text', 'markdown', 'csv'), 'Use text, Markdown, or confirmed CSV.')
-    require(text(name, limit=200) and '/' not in name and '\\' not in name,
-            'Give a short display name, without a machine path.')
+            selection=None, replace_id=None, expected_revision: int, acknowledge_warnings=False) -> dict:
+    require(kind in KINDS.values(), 'Use a supported supplied file type.')
+    if kind in ('pdf', 'docx', 'html'):
+        from .documents import extract
+        require(selection is None, 'CSV selection applies only to CSV sources.')
+        return capture_extracted(store, ident, raw, extract(raw, kind), kind=kind, name=name,
+                                 replace_id=replace_id, expected_revision=expected_revision,
+                                 acknowledge_warnings=acknowledge_warnings)
     value = decoded(raw)
     selected = None
-    if kind == 'csv':
-        value, selected = select_csv(raw, selection)
-    elif selection is not None:
-        raise Invalid('CSV selection applies only to CSV sources.')
+    if kind == 'csv': value, selected = select_csv(raw, selection)
+    elif selection is not None: raise Invalid('CSV selection applies only to CSV sources.')
+    return capture_extracted(store, ident, raw, {'text': value}, kind=kind, name=name,
+                             replace_id=replace_id, expected_revision=expected_revision, selection=selected)
+
+
+def capture_extracted(store, ident, raw, extracted, *, kind, name, expected_revision,
+                      replace_id=None, acknowledge_warnings=False, selection=None, provenance=None):
+    """Internal capture boundary for deterministic local or explicitly retrieved snapshots."""
+    require(kind in SOURCE_KINDS and type(raw) is bytes and 0 < len(raw) <= MAX_SOURCE_BYTES,
+            'Supply a supported captured source within 16 MB.')
+    require(text(name, limit=200) and '/' not in name and '\\' not in name,
+            'Give a short display name, without a machine path.')
+    value = extracted['text']
+    require(isinstance(value, str) and value.strip() and '\x00' not in value,
+            'No readable text was found. Supply text or another accessible document; no OCR or provider upload was attempted.')
+    require(type(acknowledge_warnings) is bool, 'Confirm readable-only coverage explicitly.')
+    warnings = extracted.get('warnings', [])
+    require(not warnings or acknowledge_warnings,
+            'Review the extraction gaps and confirm using only the readable text before importing.')
     normalized = value.encode('utf-8')
     require(len(normalized) <= MAX_SOURCE_BYTES, 'Selected source text exceeds 16 MB; confirm a smaller explicit selection.')
     raw_hash = hashlib.sha256(raw).hexdigest()
@@ -130,7 +152,14 @@ def capture(store, ident: str, raw: bytes, *, kind='text', name='Pasted informat
               'name': name, 'file': 'sources/' + raw_hash + '.raw', 'sha256': raw_hash,
               'bytes': len(raw), 'characters': len(value),
               'normalized_file': 'sources/' + normalized_hash + '.txt',
-              'normalized_sha256': normalized_hash, 'selection': selected}
+              'normalized_sha256': normalized_hash, 'selection': selection}
+    if 'extractor' in extracted:
+        coverage = {'extractor': extracted['extractor'], 'locations': extracted['locations'],
+                    'warnings': warnings, 'acknowledged': acknowledge_warnings}
+        record.update(coverage=coverage, coverage_sha256=digest(coverage))
+    if provenance:
+        record['provenance'] = provenance
+        record['id'] = 's_' + digest({'original': raw_hash, 'normalized': normalized_hash, 'provenance': provenance})[:24]
     with store.locked():
         project = store.read(ident)
         store.expect(project, expected_revision)
@@ -155,4 +184,12 @@ def read(store, project: dict, source: dict) -> str:
             'The normalized source no longer matches its captured revision.')
     value = normalized.decode('utf-8')
     require(len(value) == source['characters'], 'Source character coverage is inconsistent.')
+    if source.get('coverage') is not None:
+        coverage = source['coverage']
+        require(digest(coverage) == source.get('coverage_sha256')
+                and (not coverage['warnings'] or coverage['acknowledged']),
+                'The captured extraction coverage changed or its gaps were not acknowledged.')
+        require(all(type(point['start']) is int and type(point['end']) is int
+                    and 0 <= point['start'] < point['end'] <= len(value) for point in coverage['locations']),
+                'A document location no longer belongs to the captured text.')
     return value

@@ -215,13 +215,29 @@ def validate_project(project: dict) -> dict:
     require(all(text(v.get('text')) for v in requirements.values()), 'Describe each required idea.')
     sources = records(project['sources'], 'Sources')
     for source in sources.values():
-        require(source.get('kind') in ('text', 'markdown', 'csv') and sha(source.get('sha256')),
+        require(source.get('kind') in ('text', 'markdown', 'csv', 'pdf', 'docx', 'html', 'google-doc', 'url', 'research', 'handoff') and sha(source.get('sha256')),
                 'Sources need a supported type and captured hash.')
         require(relative_path(source.get('file')), 'Source files must be workspace-relative paths.')
         require(type(source.get('bytes')) is int and 0 <= source['bytes'] <= MAX_SOURCE_BYTES,
                 'Source sizes must fit the capture limit.')
         require(type(source.get('characters')) is int and source['characters'] >= 0,
                 'Record the captured source character count.')
+        coverage = source.get('coverage')
+        if source['kind'] in ('pdf', 'docx', 'html', 'google-doc', 'url', 'research', 'handoff'):
+            require(isinstance(coverage, dict), 'Document sources need explicit extraction coverage.')
+        if coverage is not None:
+            require(isinstance(coverage, dict) and set(coverage) == {'extractor', 'locations', 'warnings', 'acknowledged'}
+                    and text(coverage['extractor'], limit=200) and type(coverage['acknowledged']) is bool
+                    and isinstance(coverage['warnings'], list) and len(coverage['warnings']) <= 250
+                    and all(text(w, limit=2000) for w in coverage['warnings'])
+                    and (not coverage['warnings'] or coverage['acknowledged'])
+                    and isinstance(coverage['locations'], list) and len(coverage['locations']) <= 20_000
+                    and source.get('coverage_sha256') == digest(coverage),
+                    'Review and retain valid source coverage before importing document text.')
+            require(all(isinstance(p, dict) and set(p) == {'label', 'start', 'end'} and text(p['label'], limit=500)
+                        and type(p['start']) is int and type(p['end']) is int
+                        and 0 <= p['start'] < p['end'] <= source['characters'] for p in coverage['locations']),
+                    'Source coverage must locate the exact extracted text.')
     facts = records(project['facts'], 'Facts')
     for fact in facts.values():
         require(text(fact.get('statement')), 'Describe each factual assertion.')

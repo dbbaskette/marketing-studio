@@ -58,7 +58,8 @@ def engine(store):
 
 # Unknown fields are refused rather than silently influencing a stage worker.
 FIELDS = {
-    'source': {'data', 'kind', 'name', 'selection', 'replace_id'},
+    'source': {'data', 'kind', 'name', 'selection', 'replace_id', 'acknowledge_warnings'},
+    'source-import': {'capture_id', 'replace_id', 'acknowledge_warnings'},
     'facts': {'data'}, 'stories': {'data'}, 'select': {'story_id'}, 'brand': {'data'},
     'layout': {'arrangement'}, 'image-brief': {'data', 'edit'},
     'image-start': {'brief_id', 'provider', 'request_id', 'operation', 'parent'},
@@ -92,7 +93,12 @@ def action(found, sent):
     if verb == 'source':
         raw = source_bytes(sent.get('data'))
         return sources.capture(store, ident, raw, kind=sent.get('kind', 'text'), name=sent.get('name', 'Pasted information'),
-                               selection=sent.get('selection'), replace_id=sent.get('replace_id'), expected_revision=revision)
+                               selection=sent.get('selection'), replace_id=sent.get('replace_id'), expected_revision=revision,
+                               acknowledge_warnings=sent.get('acknowledge_warnings', False))
+    if verb == 'source-import':
+        from . import intake
+        return intake.adopt(store, ident, sent.get('capture_id'), replace_id=sent.get('replace_id'),
+                            expected_revision=revision, acknowledge_warnings=sent.get('acknowledge_warnings', False))
     if verb == 'facts': return evidence.adopt(store, ident, sent.get('data'), expected_revision=revision)
     if verb == 'stories': return stories.adopt(store, ident, sent.get('data'), expected_revision=revision)
     if verb == 'select': return stories.select(store, ident, sent.get('story_id'), expected_revision=revision)

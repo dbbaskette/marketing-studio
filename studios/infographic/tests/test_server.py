@@ -1,5 +1,6 @@
 from email.message import Message
 import hashlib
+import base64
 import http.client
 import json
 import threading
@@ -47,6 +48,28 @@ class NativeServerTests(Isolated):
         headers['X-Infographic-Studio-Token'] = self.desk.token
         with self.assertRaises(server.shared.Refusal):
             self.desk.page.answer('/api/projects', headers)
+
+    def test_source_preview_import_and_review_are_owned_bounded_and_authenticated(self):
+        text = 'Synthetic source line.\n' * 1200
+        status, _, raw = self.request('POST', '/api/source-preview',
+            {'kind': 'text', 'name': 'synthetic.txt', 'data': base64.b64encode(text.encode()).decode()})
+        self.assertEqual(status, 200)
+        capture = json.loads(raw)
+        self.assertEqual(self.store.listing(), [], 'Preview does not create a project.')
+        project = self.store.create('Review captured source')
+        sent = {'action': 'source-import', 'id': project['id'], 'expected_revision': 0,
+                'capture_id': capture['id']}
+        self.assertEqual(self.request('POST', '/api/action', sent, token=False)[0], 403)
+        status, _, raw = self.request('POST', '/api/action', sent)
+        self.assertEqual(status, 200)
+        project = json.loads(raw)['result']
+        route = '/api/source?id=' + project['id'] + '&source=' + project['sources'][0]['id']
+        self.assertEqual(self.request('GET', route, token=False)[0], 403)
+        first = json.loads(self.request('GET', route + '&start=0')[2])
+        self.assertEqual(first['text'], text[:20_000])
+        second = json.loads(self.request('GET', route + '&start=20000')[2])
+        self.assertEqual(first['text'] + second['text'], text)
+        self.assertEqual(self.request('GET', route + '&start=-1')[0], 409)
 
     def test_create_edit_and_conflict_are_bounded_and_authenticated(self):
         status, headers, raw = self.request('POST', '/api/projects', {'title': 'Synthetic draft'})

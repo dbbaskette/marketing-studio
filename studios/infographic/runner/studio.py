@@ -39,21 +39,26 @@ def parser():
     edit.add_argument('id')
     edit.add_argument('--expected-revision', required=True, type=int)
     edit.add_argument('--file', required=True, type=Path, help='UTF-8 JSON brief, at most 64 KB.')
-    for name in ('action', 'inspect', 'history', 'computer', 'preferences'):
+    for name in ('action', 'inspect', 'history', 'computer', 'preferences', 'source-show'):
         command = commands.add_parser(name, help={
             'action': 'Run a checked desk action from JSON; see the native skill for action fields.',
             'inspect': 'Read current content, findings, deliveries and recovery without provider work.',
             'history': 'List immutable saved revisions.',
             'computer': 'Show non-secret local prerequisites; never generate a test image.',
-            'preferences': 'Read page/image defaults; shared assistant and brand settings stay authoritative.'}[name])
-        if name in ('action', 'inspect', 'history'):
+            'preferences': 'Read page/image defaults; shared assistant and brand settings stay authoritative.',
+            'source-show': 'Read an exact captured source and its extraction coverage without fetching.'}[name])
+        if name in ('action', 'inspect', 'history', 'source-show'):
             command.add_argument('id')
+        if name == 'source-show': command.add_argument('--source-id', required=True)
         if name == 'history': command.add_argument('--before', type=int, help='Read an earlier page of immutable revisions.')
         if name == 'action':
             command.add_argument('--file', required=True, type=Path, help='JSON action with expected_revision and stage data.')
     preview = commands.add_parser('csv-preview', help='Inspect UTF-8 CSV without capturing it or calling a provider.')
     preview.add_argument('--file', required=True, type=Path)
-    for name in ('source', 'facts', 'stories', 'brand', 'image-brief', 'select', 'layout', 'suggest',
+    preview = commands.add_parser('source-preview', help='Capture a local document preview and show readable coverage; no providers.')
+    preview.add_argument('--file', required=True, type=Path)
+    preview.add_argument('--selection', type=Path)
+    for name in ('source', 'source-import', 'facts', 'stories', 'brand', 'image-brief', 'select', 'layout', 'suggest',
                  'build', 'preview', 'check', 'inspect-images', 'approve', 'export', 'restore',
                  'edit-text', 'review', 'image-start', 'image-cancel', 'revise-art', 'revise-story', 'repair'):
         operation = commands.add_parser(name, help='Checked ' + name + ' action; existing work is preserved on failure.')
@@ -64,6 +69,11 @@ def parser():
         if name == 'source':
             operation.add_argument('--selection', type=Path, help='Confirmed CSV scope JSON, after csv-preview.')
             operation.add_argument('--replace-id')
+        if name == 'source-import':
+            operation.add_argument('--capture-id', required=True)
+            operation.add_argument('--replace-id')
+        if name in ('source', 'source-import'):
+            operation.add_argument('--acknowledge-warnings', action='store_true')
         fields = {'select': ('story-id',), 'build': ('request-id',), 'repair': ('request-id',),
                   'restore': ('revision',), 'edit-text': ('element-id', 'text'),
                   'image-start': ('brief-id', 'provider', 'request-id'), 'image-cancel': ('request-id',),
@@ -84,7 +94,12 @@ def parser():
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
-        if args.command == 'csv-preview':
+        if args.command == 'source-preview':
+            from runner import api, intake, sources
+            kind, raw = sources.read_file(args.file)
+            value = intake.prepare(raw, kind=kind, name=args.file.name,
+                                   selection=api.load_json(args.selection) if args.selection else None)
+        elif args.command == 'csv-preview':
             from runner import sources
             kind, raw = sources.read_file(args.file)
             if kind != 'csv':
@@ -140,6 +155,12 @@ def main(argv=None):
                 value = store.create(args.title, preset=args.preset, direction=args.direction)
             elif args.command == 'show':
                 value = store.read(args.id)
+            elif args.command == 'source-show':
+                from runner import sources
+                project = store.read(args.id)
+                source = next((s for s in project['sources'] if s['id'] == args.source_id), None)
+                if source is None: raise Invalid('Choose a captured source from this infographic.')
+                value = {'source': source, 'text': sources.read(store, project, source)}
             elif args.command == 'history':
                 from runner import history
                 value = history.entries(store, args.id, before=args.before)

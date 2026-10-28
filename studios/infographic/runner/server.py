@@ -20,8 +20,8 @@ shared = core.for_product(
      '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
      '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/status', '/api/projects', '/api/project', '/api/asset',
-                         '/api/desk', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request'),
-    writes=('/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/brand-current'))
+                         '/api/desk', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request'),
+    writes=('/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/brand-current'))
 
 
 class Page(shared.Page):
@@ -32,7 +32,7 @@ class Page(shared.Page):
         self.engine = engine or Engine(store)
 
     def body_limit(self, target, headers):
-        return 2_000_000 if target in ('/api/action', '/api/csv-preview', '/api/csv-selection') else super().body_limit(target, headers)
+        return 24_000_000 if target in ('/api/action', '/api/csv-preview', '/api/csv-selection', '/api/source-preview') else super().body_limit(target, headers)
 
     def check_token(self, headers):
         if len(headers.get_all('X-Infographic-Studio-Token') or []) != 1:
@@ -66,6 +66,15 @@ class Page(shared.Page):
             return shared.as_json(HTTPStatus.OK, {'projects': self.store.listing()})
         if path == '/api/project':
             return shared.as_json(HTTPStatus.OK, {'project': self.store.read(one('id'))})
+        if path == '/api/source':
+            project = self.store.read(one('id'))
+            source = next((s for s in project['sources'] if s['id'] == one('source')), None)
+            require(source is not None, 'Choose one captured source from this infographic.')
+            start = int(one('start'))
+            value = sources.read(self.store, project, source)
+            require(0 <= start <= len(value), 'Choose a position within the captured source.')
+            return shared.as_json(200, {'source': source, 'text': value[start:start + 20_000],
+                                      'start': start, 'end': min(start + 20_000, len(value)), 'total': len(value)})
         if path == '/api/asset':
             mime, raw = self.store.read_asset(one('id'), one('asset'))
             return HTTPStatus.OK, mime, raw
@@ -85,6 +94,12 @@ class Page(shared.Page):
         if path == '/api/preferences':
             require(isinstance(sent, dict) and set(sent) == {'changes', 'expected'}, 'Save only the shown native defaults and their revision.')
             return shared.as_json(HTTPStatus.OK, settings.save(sent['changes'], expected=sent['expected']))
+        if path == '/api/source-preview':
+            from . import intake
+            require(isinstance(sent, dict) and set(sent) <= {'data', 'kind', 'name', 'selection'},
+                    'Preview one supplied document and its explicit selection.')
+            return shared.as_json(200, intake.prepare(api.source_bytes(sent.get('data')),
+                kind=sent.get('kind'), name=sent.get('name'), selection=sent.get('selection')))
         if path == '/api/csv-preview':
             import base64
             require(isinstance(sent, dict) and set(sent) == {'data'} and isinstance(sent['data'], str), 'Supply CSV bytes for preview.')
