@@ -1287,6 +1287,93 @@ class DeckCase(StudioCase):
                 if 'deck' in step['id']}
 
 
+class KeptSectionTests(DeckCase):
+    def request_outline(self, root):
+        # Request the outline through the existing workspace decision until the desk's
+        # scoped update action is added.
+        outcome = workspace.decide(root, 'deck', 'revise', 'Change the check slide.',
+                                   by='page')
+        self.engine.decided(root, outcome, checked=True)
+        self.engine.carry_on(root)
+        self.engine.resume()
+
+    def test_a_desk_deck_keeps_its_unchanged_sections(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = self.built(root)
+        work = root / pipeline.WORK
+        original = (work / before['sections']['section-1']['file']).read_bytes()
+        count = len(self.workers.of('section'))
+        self.workers.outline_said = with_slide(4, title='Check what you can explain')
+        self.request_outline(root)
+        self.to_end(root)
+        after = self.built(root)
+        self.assertEqual(len(self.workers.of('section')), count + 1)
+        kept = after['sections']['section-1']
+        self.assertTrue(kept['kept'])
+        self.assertEqual(kept['start'], after['start']['folder'])
+        self.assertEqual((work / kept['file']).read_bytes(), original)
+
+    def test_a_new_brand_or_look_keeps_nothing(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        count = len(self.workers.of('section'))
+        self.brand.revision = 2
+        self.workers.outline_said = with_slide(4, title='Check what you can explain')
+        self.request_outline(root)
+        self.engine.act(root, 'retry')
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('section')), count + 2)
+        self.assertFalse(any(section.get('kept') for section in
+                             self.built(root)['sections'].values()))
+
+    def test_kept_sections_compare_composer_inputs_and_deck_context(self):
+        work = self.base / 'deck-work'
+        old, new = work / 'start-old', work / 'start-new'
+        (old / 'given').mkdir(parents=True)
+        (old / 'drawn').mkdir()
+        (old / 'drawn' / 'section.json').write_text('drawing', encoding='utf-8')
+        slides = [{'id': 'one', 'kind': 'content', 'title': 'Same'}]
+        whole = {'slides': slides, 'direction': 'same', 'approval': ['old']}
+        (old / 'given' / 'outline.json').write_text(json.dumps(whole), encoding='utf-8')
+        section = {'id': 'section-1', 'file': 'section-1.json', 'slides': ['one']}
+        earlier = {'folder': old.name, 'sections': [section], 'brand': 'brand',
+                   'design': None, 'look': 'look'}
+        began = {**earlier, 'folder': new.name}
+        built = {'sections': {'section-1': {'start': old.name, 'round': 2,
+                                            'file': 'start-old/drawn/section.json',
+                                            'assets': {'icon': 'digest'}}}}
+        revised = {**whole, 'approval': ['new']}
+        kept = deck.kept_sections(work, earlier, began, revised, built)['section-1']
+        self.assertEqual(kept['assets'], {'icon': 'digest'})
+        self.assertEqual(kept['sha256'], workspace.sha256_file(work / kept['file']))
+        for field in deck.DRAWN_FROM:
+            with self.subTest(field=field):
+                changed = {**revised, 'slides': [{**slides[0], field: 'changed'}]}
+                self.assertEqual(deck.kept_sections(work, earlier, began, changed, built), {})
+        for field in ('brand', 'design', 'look'):
+            with self.subTest(field=field):
+                self.assertEqual(deck.kept_sections(
+                    work, earlier, {**began, field: 'changed'}, revised, built), {})
+        self.assertEqual(deck.kept_sections(
+            work, earlier, began, {**revised, 'direction': 'changed'}, built), {})
+        self.assertEqual(deck.kept_sections(
+            work, earlier, {**began, 'sections': [{**section, 'file': 'other.json'}]},
+            revised, built), {})
+        (old / 'drawn' / 'section.json').unlink()
+        self.assertEqual(deck.kept_sections(work, earlier, began, revised, built), {})
+
+    def test_saved_decks_draw_every_section_as_before(self):
+        root = self.begin()
+        self.drawn(root)
+        count = len(self.workers.of('section'))
+        self.workers.outline_said = with_slide(4, title='Check what you can explain')
+        self.decide(root, 'deck', 'revise', 'Change the check slide.')
+        self.engine.outline(root, None, 'approve')
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('section')), count + 2)
+
+
 class ChangePriceTests(DeckCase):
     """Change prices follow material dependencies through the real deck pipeline."""
 

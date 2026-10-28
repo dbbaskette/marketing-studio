@@ -84,11 +84,13 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import checks
 from studio_core import critic, deck_copy, deck_direction
-from workspace import WorkspaceError
+from workspace import WorkspaceError, sha256_file
 
 PREVIEWS = 4            # times one composer may render its section
 REPAIRS = 2             # rounds of drawing again after a review
@@ -357,6 +359,51 @@ def slides_of(outline) -> list[dict]:
     found = outline.get('slides') if isinstance(outline, dict) else None
     return [slide for slide in found or () if isinstance(slide, dict)]
 
+
+
+# Every field of a slide that the section composer can read.
+DRAWN_FROM = ('kind', 'title', 'subtitle', 'detail', 'understand', 'focal', 'sources',
+              'points', 'caveat', 'source', 'notes', 'relation', 'rhythm', 'provenance')
+
+
+def kept_sections(work: Path, earlier: dict, began: dict, whole: dict, built: dict) -> dict:
+    """Copy unchanged drawings into the new start before the old start is removed."""
+    if not earlier or any(earlier.get(key) != began.get(key)
+                          for key in ('brand', 'design', 'look')):
+        return {}
+    try:
+        before_whole = json.loads((work / earlier['folder'] / 'given' /
+                                   'outline.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    if not isinstance(before_whole, dict) or {k: v for k, v in before_whole.items()
+                                             if k not in ('slides', 'approval')} != {
+            k: v for k, v in whole.items() if k not in ('slides', 'approval')}:
+        return {}
+    before = {slide['id']: slide for slide in slides_of(before_whole)}
+    now = {slide['id']: slide for slide in slides_of(whole)}
+    was = {section['id']: section for section in earlier.get('sections', ())}
+    kept = {}
+    for section in began['sections']:
+        ident = section['id']
+        old = was.get(ident)
+        drawn = (built.get('sections') or {}).get(ident)
+        if not old or not drawn or old.get('slides') != section['slides'] \
+                or old.get('file') != section.get('file') \
+                or drawn.get('start') != earlier['folder']:
+            continue
+        source = work / drawn['file']
+        if not source.is_file() or any(
+                slide not in before or slide not in now or
+                any(before[slide].get(key) != now[slide].get(key) for key in DRAWN_FROM)
+                for slide in section['slides']):
+            continue
+        file = Path(began['folder']) / 'drawn' / f"{ident}-kept-{began['folder']}.json"
+        (work / file).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, work / file)
+        kept[ident] = {**drawn, 'file': file.as_posix(), 'sha256': sha256_file(work / file),
+                       'round': 0, 'kept': True, 'start': began['folder']}
+    return kept
 
 def rules(outline, blueprint: str, budget: int | None = None, known=(),
           delivery: str = DELIVERY) -> list[str]:

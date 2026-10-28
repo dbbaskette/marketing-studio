@@ -2710,18 +2710,27 @@ class Engine(Reviewing):
         finally:
             source.unlink(missing_ok=True)
         with self.files:
-            for old in (*work.glob('start-*'), pipeline.place(root, level, pipeline.SHOTS),
-                        pipeline.place(root, level, pipeline.DRAWN)):
-                if old != folder:
-                    shutil.rmtree(old, ignore_errors=True)
-            self._note(root, level, sections={}, rounds=[], start={
+            began = {
                 'outline': approved['sha256'], 'brand': mine.built['brand']['sha256'],
                 'design': design, **({'assets': held} if held is not None else {}),
                 'look': (pipeline.looked(self._decided(self._load(root), level), approved['sha256'])
                          or {}).get('id'),
                 **({'icons': 'asset'} if by_asset else {}),
                 **({'review': pipeline.JUDGED} if plan is not None and self._judges() else {}),
-                'folder': folder.name, 'sections': sections, 'at': home.now()})
+                'folder': folder.name, 'sections': sections, 'at': home.now()}
+            kept = deck.kept_sections(work, mine.start, began, whole, mine.built) \
+                if drafts.on_desk(self._load(root)) else {}
+            for old in (*work.glob('start-*'), pipeline.place(root, level, pipeline.SHOTS)):
+                if old != folder:
+                    shutil.rmtree(old, ignore_errors=True)
+            pictures = pipeline.place(root, level, pipeline.DRAWN)
+            if kept:
+                for old in pictures.iterdir() if pictures.is_dir() else ():
+                    if old.name not in kept:
+                        shutil.rmtree(old, ignore_errors=True)
+            else:
+                shutil.rmtree(pictures, ignore_errors=True)
+            self._note(root, level, sections=kept, rounds=[], start=began)
             self._done(root, it, clock, f'split {workspace.label(it.artifact)} into '
                        f"{len(sections)} section{'' if len(sections) == 1 else 's'}")
 
