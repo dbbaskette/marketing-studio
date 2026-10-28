@@ -5,6 +5,15 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Work on the desk directly in conversation.** Checked create, show, save, context
+  and submit commands keep the requested scope and never start another assistant.
+  A version-checked handoff explicitly transfers requested remaining steps. New desk
+  work pins saved author and brand choices while retaining tone-only writing.
+  Proofread also finds editorial notes, source IDs and example carry-over; Finishing
+  offers GEO proposals to preview and apply. New `run create` requests point to the
+  desk commands; saved step-by-step work remains available. Blog Studio and guidance
+  now require runtime 4.8.0.
+
 - **A Google Doc with large images reads, its large images kept in the Doc.** Reading a Doc
   whose images came to more than a blog's shared files hold stopped with "This Doc, with its
   images, comes to more than a blog keeps (1 MiB)". Now its images come in, in document

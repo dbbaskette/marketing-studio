@@ -1,16 +1,17 @@
 # Selected brand and author voice
 
-Use this only when the user explicitly selects a brand or asks for branded visual
+Use the pinned brand for desk work, an explicit brand selection, or requested branded visual
 companions. Resolve that identity through the selected installed brand skill.
 Its companion command exports a task contract with
 `contract export --medium blog --brand ID --variant VARIANT --output NEW_DIR`.
 Read the resulting `VOICE.md` for language and `DESIGN.md` for visual work.
 
 The page's **Settings → Brand skill** accepts its repository and release and
-selects an installed skill, as in Training Studio. Desk blogs carry no brand
-contract. Guided CLI runs accept `--brand ID --variant VARIANT`; `--brand ''`
-opts out of a shared default. Read a guided run's pinned `brand` guides in
-`derived/blog-run.json`; settings changes never replace that saved contract.
+selects an installed skill, as in Training Studio. New desk work pins the saved brand
+default unless creation explicitly supplies `brand` and `variant`; `brand: ""` opts out.
+Read `brand` from `desk context` inputs. Older step-by-step work keeps its contract in
+`derived/blog-run.json`; settings changes never replace either saved contract.
+Desk work uses its described tone, without silently applying a saved author voice.
 
 Keep organization naming/case rules separate from the article's existing author
 voice. A palette, logo or font does not establish company tone. Unspecified tone

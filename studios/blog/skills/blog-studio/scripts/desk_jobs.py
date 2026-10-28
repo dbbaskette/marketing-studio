@@ -40,6 +40,7 @@ KINDS = (
     'finish-headline',
     'finish-feedback',
     'finish-voice',
+    'finish-geo',
 )  # A blog's own desk jobs; desk-angles runs before there is a blog.
 FINISH = (
     'finish-copyedit',
@@ -48,6 +49,7 @@ FINISH = (
     'finish-headline',
     'finish-feedback',
     'finish-voice',
+    'finish-geo',
 )
 # The basis rule and the words a desk job is asked with are the shared desk's
 # (studio_core.drafting.basis and prompts).
@@ -256,9 +258,17 @@ def _context(root, draft, length=False):
         'voice': {'mode': 'tone', 'tone': draft.get('tone', '')},
         'research_policy': 'supplied-only',
     }
-    found = blog_runner.inputs(root, record, {'brief': {}})
+    pinned = studio.item(root, 'articles', draft['id'])[1] if draft.get('id') else {}
+    brand = pinned.get('brand')
+    if draft.get('from_run') and not brand:
+        directory, _ = studio.item(root, 'articles', draft['id'])
+        brand = studio.read_json(studio.inside(directory, blog_runner.STATE)).get('brand')
+    record['author'] = pinned.get('author', '')
+    found = blog_runner.inputs(root, record, {'brief': {}, 'brand': brand})
     extra = {
         'style': style,
+        'author': pinned.get('author', ''),
+        **({'brand': brand} if brand else {}),
         'tone': draft.get('tone', ''),
         'sources': found['sources'],
         'gaps': draft.get('gaps', []),
@@ -1155,8 +1165,16 @@ def _land_research(root, ident, job, result):
     return None
 
 
+def conversation_owned(root, ident):
+    return studio.item(root, 'articles', ident)[1].get('execution') == 'conversation'
+
+
 def _queue_step(root, ident, step):
     """Queue one step of a start and say so on it."""
+    if conversation_owned(root, ident):
+        raise ValueError(
+            'This work belongs to the conversation. Use desk handoff to request runner continuation.'
+        )
     if step == 'research':
         job = research_job(root, ident)
     elif step == 'outline':
@@ -1179,6 +1197,8 @@ def _start_problem(root, ident, problem):
 def begin(root, ident):
     """Queue a new start's first step. A problem queuing it is kept on the start, where the
     page shows it with Retry; the blog is made either way."""
+    if conversation_owned(root, ident):
+        return None
     start = desk.read_start(root, ident)
     if not start or start.get('ended_at') or start.get('job'):
         return None
@@ -1214,7 +1234,7 @@ def stalled_detail(root, ident, start):
     Every value is empty while the step is under way or the start is done."""
     found = dict.fromkeys(('reason', 'said', 'step', 'seconds', 'more'), None)
     found['problem'] = ''
-    if not start or start.get('ended_at'):
+    if not start or start.get('ended_at') or conversation_owned(root, ident):
         return found
     job = None
     if start.get('job'):
@@ -1252,6 +1272,10 @@ def retry(root, ident, seconds=None, skip_research=False):
     with that time limit, at most twice the setting. With `skip_research`, a start stopped
     at its research goes on without it: the step leaves the start, the start records that
     it has no research, and the next step is queued."""
+    if conversation_owned(root, ident):
+        raise ValueError(
+            'This work belongs to the conversation. Use desk handoff to request continuation.'
+        )
     start = desk.read_start(root, ident)
     if not stalled(root, ident, start):
         raise ValueError('Nothing to retry: this start is under way or done.')
@@ -1319,6 +1343,8 @@ def expected_minutes(root, step, length):
 def _advance(root, job):
     """After a start's step settles: the next step, or the end of the start."""
     ident = job['metadata']['article']
+    if conversation_owned(root, ident):
+        return
     start = desk.read_start(root, ident)
     if not start or start.get('job') != job['id'] or start.get('ended_at'):
         return
@@ -1354,7 +1380,7 @@ def _timing(root, ident, start, job):
 
 def _start_view(root, ident, rows):
     start = desk.read_start(root, ident)
-    if not start:
+    if not start or conversation_owned(root, ident):
         return None
     job = next((row for row in rows if row['id'] == start.get('job')), None)
     timing = _timing(root, ident, start, job)
@@ -1701,6 +1727,10 @@ def _settle(root, job):
     ident = (job.get('metadata') or {}).get('article')
     try:
         _guard(root, ident)  # A blog another computer drives settles there, not here.
+        if (job.get('metadata', {}).get('desk') or {}).get('start') and conversation_owned(
+            root, ident
+        ):
+            return None
         draft = desk.read(root, ident)
     except ValueError:
         return None
@@ -1913,6 +1943,8 @@ def view(root, ident):
         ],
         # A start under way: the page shows its progress until the draft (or outline) opens.
         'start': _start_view(root, ident, rows),
+        'execution': record.get('execution', 'runner'),
+        'conversation_scope': record.get('conversation_scope'),
         # Finishing: the newest suggestions from each tool, waiting on this computer.
         'finishing': desk_finish.summary(root, ident, draft),
         # Review mode's check: whether it also suggests human-sounding wording, and how much.

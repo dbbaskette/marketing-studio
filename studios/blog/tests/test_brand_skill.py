@@ -346,23 +346,23 @@ class BrandSkillTests(unittest.TestCase):
             str(Path(studio.__file__)),
             '--root',
             str(self.root),
-            'run',
+            'desk',
             'create',
-            '--title',
-            'CLI brand fixture',
-            '--goal',
-            'A fixture',
-            '--audience',
-            'Authors',
-            '--research',
-            'none',
-            '--brand',
-            'fictional',
-            '--variant',
-            'dark',
+            '--input',
+            '-',
         ]
         done = subprocess.run(
             command,
+            input=json.dumps(
+                {
+                    'title': 'CLI brand fixture',
+                    'way': 'topic',
+                    'point': 'A fixture',
+                    'audience': 'Authors',
+                    'brand': 'fictional',
+                    'variant': 'dark',
+                }
+            ),
             capture_output=True,
             text=True,
             env={**os.environ, 'HOME': str(self.home), 'BRAND_SKILL_RUNTIME': str(folder)},
@@ -370,8 +370,10 @@ class BrandSkillTests(unittest.TestCase):
         )
         self.assertEqual(done.returncode, 0, done.stderr)
         made = json.loads(done.stdout)
-        self.assertEqual(made['brand']['brand'], 'fictional')
-        self.assertEqual(made['brand']['variant'], 'dark')
+        _, record = studio.item(self.root, 'articles', made['id'])
+        self.assertEqual(record['brand']['brand'], 'fictional')
+        self.assertEqual(record['brand']['variant'], 'dark')
+        self.assertEqual(record['voice']['mode'], 'tone')
 
     def test_checks_repository_before_save_and_preserves_previous_on_refusal(self):
         folder, found = self.checked()

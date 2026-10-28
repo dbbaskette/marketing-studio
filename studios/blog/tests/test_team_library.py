@@ -13,6 +13,7 @@ from test_voice_links import Pages, page
 import blog_library as library
 import blog_runner as runner
 import management
+import desk_chat
 import studio
 
 
@@ -1362,8 +1363,18 @@ class LibraryPickTests(RunnerCase):
                 facts,
             ]
         )
-        chat = runner.command(self.root, args)
-        _, record, _ = runner.load(self.root, chat['id'])
+        with self.assertRaisesRegex(ValueError, 'desk create --input'):
+            runner.command(self.root, args)
+        chat = desk_chat.create(
+            self.root,
+            {
+                'title': 'Synthetic',
+                'way': 'topic',
+                'point': 'G',
+                'library': [{'id': facts, 'role': 'example'}],
+            },
+        )
+        _, record = studio.item(self.root, 'articles', chat['id'])
         self.assertEqual(record['sources'][0]['purposes'], ['reference', 'inspiration'])
         # Refusals.
         for chosen, pattern in (
@@ -1408,8 +1419,18 @@ class LibraryPickTests(RunnerCase):
             ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
             + ['--title', 'T', '--research', 'none', '--messaging', facts]
         )
-        chat = runner.command(self.root, args)
-        _, record, _ = runner.load(self.root, chat['id'])
+        with self.assertRaisesRegex(ValueError, 'desk create --input'):
+            runner.command(self.root, args)
+        chat = desk_chat.create(
+            self.root,
+            {
+                'title': 'Synthetic',
+                'way': 'topic',
+                'point': 'G',
+                'library': [{'id': facts, 'role': 'messaging'}],
+            },
+        )
+        _, record = studio.item(self.root, 'articles', chat['id'])
         self.assertEqual(record['sources'][0]['purposes'], ['reference', 'messaging'])
 
 

@@ -4077,9 +4077,9 @@ async function deskFinishing(){
   assert.match(nodes().find(n=>/desk-layout/.test(n.className)).className,/desk-finishing/);
   assert.match(descendants(panel()).find(n=>/desk-finish-head/.test(n.className)).className,/\bglass\b/,'transient chrome uses the material');
   const tools=descendants(panel()).filter(n=>n.className==='pick-card').map(n=>n.textContent);
-  assert.deepEqual(tools,['Copy edit','Humanize','Quick check','Check facts against sources','Headline and opening','Feedback without a rewrite','Apply a voice','Before publishing']);
+  assert.deepEqual(tools,['Copy edit','Humanize','Quick check','Check facts against sources','GEO: retrieval readiness','Headline and opening','Feedback without a rewrite','Apply a voice','Before publishing']);
   assert.ok(!tools.includes('Proofread'),'the mechanical check is Quick check, not Proofread');
-  assert.ok(descendants(panel()).some(n=>n.textContent==='Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'),'Quick check says what it checks');
+  assert.ok(descendants(panel()).some(n=>n.textContent==='Dashes, repetition, source IDs, editorial notes and passages carried over from examples, checked at once with no assistant.'),'Quick check says what it checks');
   assert.equal(descendants(panel()).find(n=>n.textContent==='Apply a voice').disabled,false);
   // 2. Humanize at medium: one job that writes no part, so every card stays editable.
   await inPanel('Humanize').listeners.click();
@@ -4169,7 +4169,7 @@ async function deskFinishing(){
   await inPanel('Quick check').listeners.click();
   assert.ok(requests.some(r=>r.url==='/api/desk-proofread?id=desk-blog'));
   const says=descendants(panel()).find(n=>/Fix rewrites only the sentence/.test(n.textContent)).textContent;
-  assert.ok(says.startsWith('Dashes, words that often read as machine-written, and repetition, checked at once with no assistant.'),says);
+  assert.ok(says.startsWith('Dashes, repetition, source IDs, editorial notes and passages carried over from examples, checked at once with no assistant.'),says);
   assert.doesNotMatch(says,/voice guide/,'Proofread describes Proofread, not Apply a voice');
 assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here'),'the finding is marked in its sentence');
   await inPanel('Fix').listeners.click();
@@ -4199,6 +4199,19 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
   assert.deepEqual(last('/api/desk-apply').items,[{id:'p1',after:'First text, as Notes says.'}]);
   await inItem('p2','Keep it').listeners.click();
   assert.deepEqual(last('/api/desk-skip').items,['p2']);
+  // GEO: an explicit proposal request, previewed before it applies.
+  await inPanel('All tools').listeners.click();await inPanel('GEO: retrieval readiness').listeners.click();
+  await inPanel('Review retrieval readiness').listeners.click();
+  assert.equal(last('/api/desk-finish').tool,'geo');
+  view={...view,working:null,finishing:{...view.finishing,geo:finishSet('geo',[
+    {part:'aaaaaaaa',before:'First text here.',after:'A direct answer.',note:'Lead with the answer.'},
+  ],{summary:'Synthetic retrieval advice.'})}};
+  f.set('next',view);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
+  assert.deepEqual(descendants(item('p1')).filter(n=>n.tagName==='h4').map(n=>n.textContent),['Before','After']);
+  const geoSummary=descendants(panel()).find(n=>n.textContent.includes('Synthetic retrieval advice.'));
+  assert.match(geoSummary.textContent,/Synthetic retrieval advice\.$/,'a complete summary sentence has one terminal full stop');
+  await inItem('p1','Apply').listeners.click();
+  assert.deepEqual(last('/api/desk-apply').items,[{id:'p1'}]);
   // 6. Headline and opening: alternatives to use.
   await inPanel('All tools').listeners.click();await inPanel('Headline and opening').listeners.click();
   view={...view,finishing:{...view.finishing,headline:finishSet('headline',[{part:'title',before:'A synthetic title',after:'A sharper title',whole:true,group:'title'},{part:'opening',before:'An opening paragraph.',after:'A new opening.',whole:true,group:'opening'}])}};

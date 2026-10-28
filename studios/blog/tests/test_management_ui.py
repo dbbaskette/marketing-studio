@@ -15,3 +15,16 @@ class ManagementUITests(unittest.TestCase):
             ['node', 'scripts/ci/check-management.cjs'], cwd=repo, capture_output=True, text=True
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_narrow_toolbar_menu_is_contained_by_full_toolbar_row(self):
+        # The menu used to anchor right to a More button near x=96, clipping its
+        # left edge on a 390px viewport. Its containing block must be the full row.
+        repo = Path(__file__).resolve().parents[1]
+        css = (repo / 'skills/blog-studio/assets/management/blog.css').read_text()
+        narrow = css[css.rindex('@media(max-width:52rem)') :]
+        self.assertRegex(narrow, r'\.toolbar-actions\{[^}]*position:relative;[^}]*width:100%')
+        self.assertRegex(narrow, r'\.toolbar-actions \.menu\{position:static\}')
+        self.assertRegex(
+            narrow,
+            r'\.menu-list\{left:0;right:auto;min-width:0;width:min\(20rem,100%\);box-sizing:border-box\}',
+        )

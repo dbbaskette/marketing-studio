@@ -179,3 +179,10 @@
 .review-editor{width:100%;max-width:none;box-sizing:border-box;resize:vertical;line-height:1.65}
 .review-gone,.review-editing{margin:0}
 @media(max-width:52rem){.review-choice{min-height:44px;align-items:center}.review-choice>input{margin-top:0}.review-fix{display:grid;grid-template-columns:minmax(0,1fr)}.review-fix>.bar{display:grid;grid-template-columns:1fr 1fr}.review-fix .button,.review-tally .button{min-height:44px}.review-tally>.bar{display:grid;grid-template-columns:1fr 1fr;width:100%}}
+
+/* More stays inside the toolbar row even when its button is near the phone's left edge. */
+@media(max-width:52rem){
+  #studio-toolbar .toolbar-actions{position:relative;flex-basis:100%;width:100%;justify-content:flex-start}
+  #studio-toolbar .toolbar-actions .menu{position:static}
+  #studio-toolbar .toolbar-actions .menu-list{left:0;right:auto;min-width:0;width:min(20rem,100%);box-sizing:border-box}
+}

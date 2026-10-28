@@ -79,5 +79,6 @@ research** once when scope is undecided. “Research uploaded sources only” an
 record it with `article research-policy` and reuse it for the current blog.
 Proofreading remains separate.
 
-For “Open the page,” guided stage approvals, or switching a blog between chat
-and the page, use [guided runs](guided-runs.md).
+For new work and checked edits in chat, use [conversation desk commands](conversation-desk.md).
+For saved step-by-step approvals or switching older runs between chat and the page,
+use [saved step-by-step work](guided-runs.md).

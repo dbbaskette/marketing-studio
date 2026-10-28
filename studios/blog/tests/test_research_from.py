@@ -246,7 +246,7 @@ class StartFormTests(SharedSitesCase):
             management.dispatch(self.root, 'research-site', {'site': 'example.org', 'more': 1})
         self.assertEqual(self.shared(), before)
 
-    def test_the_command_line_speaks_the_new_shape_and_keeps_the_old_words(self):
+    def test_saved_run_inputs_keep_the_research_shape_and_old_words(self):
         source = self.source('The gateway retries a failed call once.')
 
         def create(*words):
@@ -267,7 +267,21 @@ class StartFormTests(SharedSitesCase):
                     *words,
                 ]
             )
-            found = runner.command(self.root, args)
+            # The public create command is retired; exercise saved input aliases
+            # with the internal compatibility fixture constructor.
+            data = {
+                'title': 'Synthetic',
+                'audience': 'Authors',
+                'goal': 'Explain',
+                'sources': [source['id']],
+            }
+            if args.research_from is not None or args.site:
+                data['research_from'] = runner.research_from_words(
+                    args.research_from or 'sites', args.site
+                )
+            if args.research is not None:
+                data['research'] = args.research
+            found = runner.create(self.root, data)
             return runner.load(self.root, found['id'])[1]
 
         record = create('--research-from', 'documents,sites')

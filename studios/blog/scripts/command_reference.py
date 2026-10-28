@@ -32,7 +32,7 @@ def main():
     parser.add_argument('--check', action='store_true')
     args = parser.parse_args()
     content = (
-        '# Blog Studio command inventory\n\nGenerated from `studio.py`; use `--help` on a listed command for required inputs and choices. Prefix each with `--root /absolute/workspace`. Optional global `--compact` returns the bounded outcome contract described in [capabilities](capabilities.md).\n\n| Command | Options |\n| --- | --- |\n'
+        '# Blog Studio command inventory\n\nGenerated from `studio.py`; use `--help` on a listed command for required inputs and choices. Prefix each with `--root /absolute/workspace`. New work uses `desk create`; `run create` only explains that replacement. Optional global `--compact` returns the bounded outcome contract described in [capabilities](capabilities.md).\n\n| Command | Options |\n| --- | --- |\n'
         + '\n'.join(commands(studio.parser()))
         + '\n'
     )

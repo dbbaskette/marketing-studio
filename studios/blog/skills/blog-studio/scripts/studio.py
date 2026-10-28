@@ -1045,6 +1045,9 @@ def parser():
     from blog_runner import add_parser as run_parser
 
     run_parser(groups)
+    from desk_chat import add_parser as desk_parser
+
+    desk_parser(groups)
     inventory = groups.add_parser('saved-work', help='inventory local saved-work dependencies')
     inventory.add_argument('--folder', action='append', default=[])
     groups.add_parser('init')
@@ -1270,6 +1273,10 @@ def main():
                 result = compact(result, args)
             print(json.dumps(result, indent=2))
             return 0
+        if args.group == 'run' and args.action == 'create':
+            raise ValueError(
+                'New Blog Studio work starts with studio.py --root PATH desk create --input FILE. Saved run operations remain available.'
+            )
         from team_workspace import before, saved, space
 
         team_mutation = args.group in (
@@ -1308,7 +1315,11 @@ def main():
             from management import main as manage
 
             return manage(root, args.port, args.open, args.harness)
-        if args.group == 'run':
+        if args.group == 'desk':
+            from desk_chat import command
+
+            result = command(root, args)
+        elif args.group == 'run':
             from blog_runner import command
 
             result = command(root, args)

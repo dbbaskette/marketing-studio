@@ -30,6 +30,7 @@ KINDS = {
     'finish-headline',
     'finish-feedback',
     'finish-voice',
+    'finish-geo',
 }
 DESK = (
     'desk-section',
@@ -46,6 +47,7 @@ DESK = (
     'finish-headline',
     'finish-feedback',
     'finish-voice',
+    'finish-geo',
 )
 
 
@@ -169,11 +171,22 @@ def control(root, ident, action, engine):
     return public(saved)
 
 
+def _conversation_start(root, job):
+    meta = job.get('metadata') or {}
+    if not (meta.get('desk') or {}).get('start') or not meta.get('article'):
+        return False
+    import desk_jobs
+
+    return desk_jobs.conversation_owned(root, meta['article'])
+
+
 def recover(root):
     folder = studio.inside(root, '.blog-runs', 'tools')
     for target in folder.glob('*.json'):
         try:
             value = read(root, target.stem)
+            if _conversation_start(root, value):
+                continue
             if value['status'] == 'working':
                 value.update(
                     status='failed',
@@ -196,7 +209,7 @@ def once(engine):
         for target in folder.glob('*.json'):
             try:
                 saved = read(root, target.stem)
-                if saved['status'] == 'queued':
+                if saved['status'] == 'queued' and not _conversation_start(root, saved):
                     values.append(saved)
             except (ValueError, OSError, KeyError):
                 continue

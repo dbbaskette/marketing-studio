@@ -29,6 +29,9 @@ LENGTHS = ('style', 'short', 'deep')  # as blog_runner.LENGTHS: usual, short, in
 CREATE = frozenset(
     {
         'title',
+        'author',
+        'brand',
+        'variant',
         'manuscript',
         'source',
         'article',
@@ -272,13 +275,33 @@ def create(root, data):
         raise ValueError('Choose a listed kind of post.')
     if style:
         studio.style_check(root, style)  # Refused when retired or unknown; writes nothing.
+    import blog_runner
+    import brand_skill
+
+    author = data.get(
+        'author', '' if data.get('article') else blog_runner.settings(root)['defaults']['author']
+    )
+    if author:
+        author = studio.checked_author(author)
+    elif not isinstance(author, str):
+        raise ValueError('Use an author name or an empty string.')
+    if 'variant' in data and 'brand' not in data:
+        raise ValueError('Choose a brand together with its variant.')
+    brand_choice = (
+        {key: data.get(key, '') for key in ('brand', 'variant')}
+        if 'brand' in data
+        else {'brand': '', 'variant': ''}
+        if data.get('article')
+        else brand_skill.defaults()
+    )
+    brand = brand_skill.snapshot(brand_choice['brand'], brand_choice['variant'])
     way = data.get('way', 'draft')
     if way not in WAYS:
         raise ValueError('Choose a topic, an outline or notes, or a draft.')
     if way != 'draft':
         if given:
             raise ValueError('A start from a topic or an outline brings no draft. Choose A draft.')
-        return _start(root, data, way, title.strip(), tone, length, style)
+        return _start(root, data, way, title.strip(), tone, length, style, author, brand)
     if data.get('research_from'):
         raise ValueError('Research runs before new writing. A draft you bring is edited as it is.')
     if data.get('outline') or data.get('outline_source') or data.get('point'):
@@ -326,7 +349,7 @@ def create(root, data):
             title=draft['title'],
             mode='existing',
             profile=None,
-            author=None,
+            author=author or None,
             voice='tone',
             tone=tone,
             audience=None,
@@ -344,6 +367,12 @@ def create(root, data):
     # tone of its own draft whatever the record says.
     if existing is None or (existing.get('voice') or {}).get('mode') != 'profile':
         record['voice'] = {'mode': 'tone', 'tone': tone}  # Tone only, whatever the defaults say.
+    if existing is not None and 'author' in data:
+        record['author'] = author
+    if brand and (existing is None or 'brand' in data):
+        record['brand'] = brand
+    elif existing is not None and 'brand' in data:
+        record.pop('brand', None)
     record['flow'] = 'desk'
     record['title'] = draft['title']
     _attach(root, data, record)
@@ -414,7 +443,7 @@ def _research_choice(root, chosen, record):
     )
 
 
-def _start(root, data, way, title, tone, length, style):
+def _start(root, data, way, title, tone, length, style, author, brand):
     """A new desk blog whose draft is written for the person: from a topic and its point,
     from their outline, or from an outline shaped with them first. The draft record holds
     what is known so far; desk/start.json the steps that write the rest, with no stops."""
@@ -450,7 +479,7 @@ def _start(root, data, way, title, tone, length, style):
         title=title,
         mode='first-draft',
         profile=None,
-        author=None,
+        author=author or None,
         voice='tone',
         tone=tone,
         audience=audience or None,
@@ -463,6 +492,8 @@ def _start(root, data, way, title, tone, length, style):
     record = studio.article_record(root, args, ident)
     record['voice'] = {'mode': 'tone', 'tone': tone}  # Tone only, whatever the defaults say.
     record['flow'] = 'desk'
+    if brand:
+        record['brand'] = brand
     _attach(root, data, record)
     found = _research_choice(root, data.get('research_from'), record)
     record['research_policy'] = 'web-allowed' if found else 'supplied-only'

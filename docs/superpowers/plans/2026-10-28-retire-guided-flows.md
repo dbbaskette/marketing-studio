@@ -92,7 +92,11 @@ Blog Studio exposes `scan(root: Path, folders=()) -> dict` and
 `desk save --article ID --input FILE`; input `-` means stdin. Creation never
 calls desk job scheduling; current harness submits content through checked saves. Also expose
 `context(root, ident, target) -> dict` and `submit(root, ident, request) -> dict`
-as `desk context` / `desk submit --input FILE`, using the envelope below.
+as `desk context` / `desk submit --input FILE`, using the envelope below. Blog Studio
+supports kinds `text`, `outline`, `part`, `research` and targets `draft`, `outline`,
+`research`, or an existing part identifier, with mismatches rejected. Add explicit
+`handoff(root, ident, expected_basis, scope)` before full runner continuation;
+individually requested page tools remain scoped actions with existing guards.
 
 - [ ] Test conversation creation from supplied draft and scoped topic/outline state,
   checked saves/history, same-part conflict, worker/team refusal, no nested jobs,
@@ -103,6 +107,19 @@ as `desk context` / `desk submit --input FILE`, using the envelope below.
 - [ ] Replace public gated `run create` with an actionable desk-command refusal;
   saved-run operations remain. Update guidance/runtime floors with tested commands.
 - [ ] Run focused tests, package validator and `node scripts/ci/check-management.cjs` GREEN; commit.
+
+Task 2 clarification: `set_scope(root, ident, expected_basis, scope)` is exposed as
+`desk scope --article ID --input FILE`. Only a person's explicit new request changes
+the finite conversation scope. It requires current scope-target context, team and
+worker guards under the normal write lock; updates requested scope/provenance only;
+and never schedules work, approves or changes material readiness. This permits a
+later requested draft in the same conversation article without a browser.
+
+Task 2 outline-edit clarification: `outline_save(root, ident, request)` is exposed as
+`desk outline-save --article ID --input FILE` with `{expected_basis, rows}`, using
+current `desk context --target outline`. Reuse `desk.outline_save` under normal
+team/worker/process/basis guards; existing IDs retain text/History and removals
+remain recoverable. Initial outline submission stays restricted to new work.
 
 ### Task 3: Presentation Studio conversation desk
 

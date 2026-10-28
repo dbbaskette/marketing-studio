@@ -1,6 +1,6 @@
 # Blog Studio command inventory
 
-Generated from `studio.py`; use `--help` on a listed command for required inputs and choices. Prefix each with `--root /absolute/workspace`. Optional global `--compact` returns the bounded outcome contract described in [capabilities](capabilities.md).
+Generated from `studio.py`; use `--help` on a listed command for required inputs and choices. Prefix each with `--root /absolute/workspace`. New work uses `desk create`; `run create` only explains that replacement. Optional global `--compact` returns the bounded outcome contract described in [capabilities](capabilities.md).
 
 | Command | Options |
 | --- | --- |
@@ -13,6 +13,15 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | `studio.py run changes` | `--id`, `--expected`, `--request`, `--stage` |
 | `studio.py run handoff` | `--id`, `--expected` |
 | `studio.py run choose` | `--id`, `--expected`, `--angle`, `--note` |
+| `studio.py desk` | — |
+| `studio.py desk create` | `--input` |
+| `studio.py desk show` | `--article` |
+| `studio.py desk save` | `--article`, `--input` |
+| `studio.py desk context` | `--article`, `--target` |
+| `studio.py desk submit` | `--article`, `--input` |
+| `studio.py desk handoff` | `--article`, `--input` |
+| `studio.py desk scope` | `--article`, `--input` |
+| `studio.py desk outline-save` | `--article`, `--input` |
 | `studio.py saved-work` | `--folder` |
 | `studio.py init` | — |
 | `studio.py list` | — |
