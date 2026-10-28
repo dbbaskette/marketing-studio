@@ -7360,6 +7360,22 @@ function suiteHome(hash, here) {
 }
 // Marketing Studio says when it opened this studio in its own tab, as it does on a phone: the
 // way back then stays in this tab, where Marketing Studio still holds its key.
+// The return key stays in a fragment and tab memory, bound to the validated home origin.
+function suiteReturn(home, hash, here) {
+  if (!home || suiteHome('#home=' + encodeURIComponent(home), here) !== home) return '';
+  const offered = suiteHome(hash, here) === home
+    ? new URLSearchParams(String(hash).replace(/^#/, '')).get('homeToken') || '' : '';
+  const valid = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,256}$/.test(value);
+  let key = valid(offered) ? offered : '';
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('marketing-studio-return') || 'null');
+    if (!key && saved?.home === home && valid(saved.token)) key = saved.token;
+    if (key) sessionStorage.setItem('marketing-studio-return', JSON.stringify({home, token: key}));
+  } catch (failure) {
+    // The current private link still works when tab storage is unavailable.
+  }
+  return home + '/' + (key ? '#token=' + encodeURIComponent(key) : '');
+}
 function suiteBack(hash) {
   return new URLSearchParams(String(hash).replace(/^#/, '')).get('back') === 'tab';
 }
@@ -7405,7 +7421,7 @@ function begin() {
     // No tab storage: the address in this link is still used.
   }
   if (suite && home) {
-    suite.href = home + '/';
+    suite.href = suiteReturn(home, window.location.hash, window.location);
     let back = suiteBack(window.location.hash);
     try {
       back = back || sessionStorage.getItem('marketing-studio-back') === 'tab';

@@ -25,7 +25,7 @@ window.addEventListener('hashchange', () => {
 if (!standalone) window.name = 'marketing-studio';
 function withHome(link, tab = false) {
   return link + (link.includes('#') ? '&' : '#') + 'home=' + encodeURIComponent(location.origin)
-    + (tab ? '&back=tab' : '');
+    + '&homeToken=' + encodeURIComponent(token) + (tab ? '&back=tab' : '');
 }
 // A phone cannot bring another tab forward, so a studio opens in this tab there and its way
 // back returns to this tab, which still holds this page's key.

@@ -69,6 +69,7 @@ if [[ "${1:-full}" == infographic || "${1:-full}" == infographic-finish ]]; then
     bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
   fi
   node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-browser.log"
+  node studios/infographic/tests/ui/suite-return.cjs 2>&1 | tee "$results_dir/suite-return-browser.log"
   bundle="$(find dist -maxdepth 1 -name 'infographic-first-release-*-macos-arm64.zip' -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
   "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"

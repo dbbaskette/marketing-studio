@@ -6,9 +6,47 @@ let token = launch.get('token') || '';
 try { if(token)sessionStorage.setItem('infographic-studio-token',token); else token=sessionStorage.getItem('infographic-studio-token')||''; }catch(f){}
 function requestId(){return Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');}
 window.addEventListener('hashchange',()=>{const next=new URLSearchParams(location.hash.slice(1)).get('token');if(next&&next!==token)location.reload();});
-function suiteHome(value){try{const u=new URL(value);return u.protocol===location.protocol&&u.hostname===location.hostname&&!u.username&&!u.password&&u.pathname==='/'&&!u.search&&!u.hash?u.origin:'';}catch(f){return '';}}
-let homeLink=suiteHome(launch.get('home'));
-try{homeLink=homeLink||suiteHome(sessionStorage.getItem('infographic-studio-home'));if(homeLink)sessionStorage.setItem('infographic-studio-home',homeLink);}catch(f){}
+function suiteHome(hash, here) {
+  const named = new URLSearchParams(String(hash).replace(/^#/, '')).get('home') || '';
+  const found = /^(https?:)\/\/([^/:?#@\s]+):(\d{1,5})\/?$/.exec(named);
+  return found && found[1] === here.protocol && found[2] === here.hostname && found[3] !== here.port
+    && Number(found[3]) > 0 && Number(found[3]) < 65536
+    ? found[1] + '//' + found[2] + ':' + found[3] : '';
+}
+// Marketing Studio says when it opened this studio in its own tab, as it does on a phone: the
+// way back then stays in this tab, where Marketing Studio still holds its key.
+// The return key stays in a fragment and tab memory, bound to the validated home origin.
+function suiteReturn(home, hash, here) {
+  if (!home || suiteHome('#home=' + encodeURIComponent(home), here) !== home) return '';
+  const offered = suiteHome(hash, here) === home
+    ? new URLSearchParams(String(hash).replace(/^#/, '')).get('homeToken') || '' : '';
+  const valid = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,256}$/.test(value);
+  let key = valid(offered) ? offered : '';
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('marketing-studio-return') || 'null');
+    if (!key && saved?.home === home && valid(saved.token)) key = saved.token;
+    if (key) sessionStorage.setItem('marketing-studio-return', JSON.stringify({home, token: key}));
+  } catch (failure) {
+    // The current private link still works when tab storage is unavailable.
+  }
+  return home + '/' + (key ? '#token=' + encodeURIComponent(key) : '');
+}
+function suitePort(port, here) {
+  return /^[1-9][0-9]{0,4}$/.test(String(port || ''))
+    ? suiteHome('#home=' + encodeURIComponent(here.protocol + '//' + here.hostname + ':' + port), here) : '';
+}
+function suiteBack(hash) {
+  return new URLSearchParams(String(hash).replace(/^#/, '')).get('back') === 'tab';
+}
+const launchHash = '#' + launch.toString();
+let homeLink = suiteHome(launchHash, location) || suitePort(document.body?.dataset?.suitePort, location);
+let sameTab = suiteBack(launchHash);
+try {
+  homeLink = homeLink || suiteHome('#home=' + encodeURIComponent(sessionStorage.getItem('infographic-studio-home') || ''), location);
+  if (homeLink) sessionStorage.setItem('infographic-studio-home', homeLink);
+  if (launch.has('home')) sessionStorage.setItem('marketing-studio-back', sameTab ? 'tab' : 'window');
+  else sameTab = sessionStorage.getItem('marketing-studio-back') === 'tab';
+} catch (failure) {}
 if(location.hash)history.replaceState(null,'',location.pathname);
 const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
@@ -209,7 +247,11 @@ async function showSettings() {
   } catch (failure) { error(failure.message); }
 }
 $('home').addEventListener('click',home);$('settings').addEventListener('click',showSettings);
-const port=Number(document.body.dataset.suitePort);homeLink=homeLink||(Number.isInteger(port)&&port>0&&port<65536?suiteHome(location.protocol+'//'+location.hostname+':'+port+'/'):'');if(homeLink){$('suite').hidden=false;$('suite').href=homeLink+'/';}
+if (homeLink) {
+  $('go-suite').hidden = false;
+  $('go-suite').href = suiteReturn(homeLink, launchHash, location);
+  if (sameTab) $('go-suite').removeAttribute('target');
+}
 if(!token)error('Open Infographic Studio using the private link printed in your terminal.');else home();
 
 function reviseArtSheet(){const change=field('What should change?','','textarea'),preserve=field('What should stay the same?','Keep all other subjects, relationships, brand, empty label regions and composition.','textarea');sheet('Revise the artwork',make('p','','This sends the saved original as a reference to your selected image provider. It uses provider allowance; the earlier artwork remains in history.'),change.wrap,preserve.wrap,add(make('div','bar'),button('Create referenced revision',()=>action('revise-art',{change:change.input.value,preserve:preserve.input.value,request_id:requestId()}),true),button('Cancel',closeSheet)));}
