@@ -1561,3 +1561,49 @@ def link(made: dict, title: str, rendered: str) -> str:
     return (f"# Slide deck: {title}\n\n- URL: {made.get('url')}\n"
             f"- Title: {made.get('name') or title}\n- ID: {made.get('id')}\n"
             f'- Made from the rendered deck with the SHA-256 {rendered}\n')
+
+
+def patch_section(section: dict, slide: str, field: str, old: str, new: str) -> dict:
+    """Patch one slide's words without changing the supplied drawing."""
+    import copy
+
+    made = copy.deepcopy(section)
+    target = next((item for item in made.get('slides', []) if item.get('id') == slide), None)
+    if target is None:
+        raise WorkspaceError('The words are not found once on the slide.')
+    if field in ('title', 'subtitle', 'caveat', 'source', 'notes'):
+        current = target.get(field) or ''
+        if isinstance(current, dict):
+            current = current.get('text') or ''
+        if current != old:
+            raise WorkspaceError('The words are not found once on the slide.')
+        if field == 'caveat' and isinstance(target.get(field), dict):
+            target[field]['text'] = new
+        elif new:
+            target[field] = new
+        else:
+            target.pop(field, None)
+        return made
+    if not re.fullmatch(r'points\[\d+\]\.(?:label|text)', field):
+        raise WorkspaceError('Choose a part of the slide.')
+    found = []
+
+    def collect(node):
+        if isinstance(node, list):
+            for value in node:
+                collect(value)
+        elif isinstance(node, dict):
+            if node.get('type') != 'badge':
+                for key in TEXTS:
+                    if isinstance(node.get(key), str) and old and old in node[key]:
+                        found.append((node, key))
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    collect(value)
+
+    collect([target.get('canvas'), target.get('connect')])
+    if len(found) != 1 or found[0][0][found[0][1]].count(old) != 1:
+        raise WorkspaceError('The words are not found once on the slide.')
+    node, key = found[0]
+    node[key] = node[key].replace(old, new)
+    return made

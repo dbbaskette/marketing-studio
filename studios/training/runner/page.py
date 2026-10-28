@@ -224,7 +224,8 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
           '/api/review-level', '/api/research-site', f'{DRAFTS}/open',
-          f'{DRAFTS}/slide-note', f'{DRAFTS}/finding', *DECIDED, *TYPED, *JOBS)
+          f'{DRAFTS}/slide-note', f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes',
+          f'{DRAFTS}/finding', *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -731,6 +732,19 @@ class RunnerPage(desk.Page):
                 result = self.engine.deck_finding(root, level, desk.text(sent, 'seen'),
                                                   desk.text(sent, 'job'),
                                                   desk.text(sent, 'action'), ids)
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **result})
+        if path in (f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes'):
+            root = self.on_desk(desk.text(sent, 'path'))
+            level = desk.text(sent, 'level', False) or None
+            try:
+                if path.endswith('slide-words'):
+                    result = self.engine.slide_words(root, level, desk.text(sent, 'slide'),
+                        desk.text(sent, 'field'), desk.text(sent, 'text', False), desk.text(sent, 'seen'))
+                else:
+                    result = self.engine.slide_speaker_notes(root, level, desk.text(sent, 'slide'),
+                        desk.text(sent, 'text', False), desk.text(sent, 'seen'))
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
             return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **result})

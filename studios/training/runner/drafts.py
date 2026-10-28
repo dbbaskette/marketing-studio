@@ -1432,3 +1432,37 @@ def deck_proposals(engine, root, level, note=None):
                           owner='training', present=lambda draft, item:
                           (draft.get('drawn') or {}).get(item.get('part')) == item.get('drawn')
                           and item.get('drawn') is not None)
+
+
+def slide_words(outline: dict, slide: str, field: str, text: str) -> tuple[dict, str]:
+    """Return an edited outline and the previous words, without changing the original."""
+    import copy
+
+    if not isinstance(text, str) or len(text) > (4000 if field == 'notes' else 2000):
+        raise workspace.WorkspaceError('Keep the words to the allowed length.')
+    made = copy.deepcopy(outline)
+    target = next((item for item in made.get('slides', []) if item.get('id') == slide), None)
+    if target is None:
+        raise workspace.WorkspaceError('The deck has no such slide.')
+    match = re.fullmatch(r'points\[(\d+)\]\.(label|text)', field) if isinstance(field, str) else None
+    if match:
+        points = target.get('points') or []
+        index = int(match[1])
+        if index >= len(points):
+            raise workspace.WorkspaceError('Choose a part of the slide.')
+        target, field = points[index], match[2]
+    elif field not in ('title', 'subtitle', 'caveat', 'source', 'notes'):
+        raise workspace.WorkspaceError('Choose a part of the slide.')
+    old = target.get(field) or ''
+    if isinstance(old, dict):
+        old = old.get('text') or ''
+        target[field]['text'] = text.strip()
+    elif text.strip():
+        target[field] = text.strip()
+    else:
+        target.pop(field, None)
+    return made, old
+
+
+def slide_speaker_notes(outline: dict, slide: str, text: str) -> tuple[dict, str]:
+    return slide_words(outline, slide, 'notes', text)

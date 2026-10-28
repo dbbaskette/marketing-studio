@@ -242,3 +242,216 @@ class SlideNotePageTests(PageCase):
         self.post('drafts/slide-note', {'path': str(root), 'level': '', 'seen': seen,
                                        'slide': 'check-yourself', 'note': 'Enlarge it.'})
         self.assertEqual(self.engine._load(root)['deck']['']['notes'][-1]['status'], 'done')
+
+
+class SlideWordsTests(DeckCase):
+    def test_row_167_words_that_fit_are_patched_with_no_worker(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = self.built(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.engine.mark_ready(root, 'deck', seen)
+        jobs = len(self.workers.jobs)
+        self.engine.slide_words(root, None, 'check-yourself', 'title', 'A new title', seen)
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['deck'], 'draft')
+        self.assertEqual(len(self.workers.jobs), jobs)
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        slide = next(s for s in outline['slides'] if s['id'] == 'check-yourself')
+        self.assertEqual(slide['title'], 'A new title')
+        after = self.built(root)
+        section = json.loads((root / pipeline.WORK / after['sections']['section-2']['file']).read_text())
+        self.assertEqual(next(s for s in section['slides'] if s['id'] == 'check-yourself')['title'], 'A new title')
+        self.assertNotEqual(before['rounds'][-1]['folder'], after['rounds'][-1]['folder'])
+        self.assertEqual(self.engine._load(root)['deck']['']['saved']['deck'], after['rounds'][-1]['deck'])
+
+    def test_words_that_do_not_fit_save_nothing(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        outline = (root / pipeline.OUTLINE).read_bytes()
+        built = self.built(root)
+        section = (root / pipeline.WORK / built['sections']['section-2']['file']).read_bytes()
+        result = self.engine.slide_words(root, None, 'check-yourself', 'title', 'TOO LONG TO FIT', seen)
+        self.assertFalse(result['fits'])
+        self.assertEqual(result['said'], 'These words do not fit the slide as it is drawn.')
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), outline)
+        self.assertEqual(self.built(root), built)
+        self.assertEqual((root / pipeline.WORK / built['sections']['section-2']['file']).read_bytes(), section)
+
+    def test_row_168_speaker_notes_need_no_worker(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        count = len(self.workers.jobs)
+        self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New speaker notes.', seen)
+        self.assertEqual(len(self.workers.jobs), count)
+        built = self.built(root)
+        section = json.loads((root / pipeline.WORK / built['sections']['section-2']['file']).read_text())
+        whole = json.loads((root / pipeline.WORK / built['start']['folder'] / 'given' / 'outline.json').read_text())
+        spec = deck.fixed(whole, built['start']['sections'][1]['slides'], 2, None)
+        self.assertEqual(deck.kept(section, spec), [])
+        self.assertEqual(next(s for s in section['slides'] if s['id'] == 'check-yourself')['notes'], 'New speaker notes.')
+
+    def test_words_found_twice_are_refused(self):
+        section = {'slides': [{'id': 'a', 'canvas': [{'text': 'same same'}]}]}
+        with self.assertRaisesRegex(Exception, 'The words are not found once on the slide.'):
+            deck.patch_section(section, 'a', 'points[0].text', 'same', 'new')
+
+    def test_lead_subtitle_and_point_words(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.assertTrue(self.engine.slide_words(root, None, 'cover-restarts', 'subtitle',
+                                                'A new subtitle', seen)['fits'])
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.assertTrue(self.engine.slide_words(root, None, 'check-yourself', 'points[0].label',
+                                                'Tell', seen)['fits'])
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        self.assertEqual(outline['slides'][0]['subtitle'], 'A new subtitle')
+        self.assertEqual(outline['slides'][4]['points'][0]['label'], 'Tell')
+
+    def test_old_form_does_not_change_the_deck(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = (root / pipeline.OUTLINE).read_bytes()
+        with self.assertRaisesRegex(Exception, 'has changed since it was opened'):
+            self.engine.slide_words(root, None, 'check-yourself', 'title', 'New title', 'old')
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), before)
+
+
+class SlideWordsPageTests(PageCase):
+    def test_words_and_notes_routes(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.post('drafts/slide-words', {'path': str(root), 'level': '', 'seen': seen,
+            'slide': 'check-yourself', 'field': 'title', 'text': 'A new title'})
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.post('drafts/slide-speaker-notes', {'path': str(root), 'level': '', 'seen': seen,
+            'slide': 'check-yourself', 'text': 'New notes.'})
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        self.assertEqual(outline['slides'][4]['notes'], 'New notes.')
+
+
+class JudgedSlideWordsTests(JudgedSlideNoteTests):
+    def test_speaker_notes_on_a_design_reviewed_deck(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        result = self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)
+        self.assertTrue(result['fits'])
+        self.assertEqual(self.engine._load(root)['deck']['']['saved']['deck'],
+                         self.built(root)['rounds'][-1]['deck'])
+
+    def test_render_failure_restores_the_previous_deck(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        outline = (root / pipeline.OUTLINE).read_bytes()
+        built = self.built(root)
+        session = workspace.load(root)
+        with mock.patch.object(self.engine, '_whole', side_effect=workspace.WorkspaceError('Render failed.')):
+            with self.assertRaisesRegex(Exception, 'Render failed'):
+                self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), outline)
+        self.assertEqual(self.built(root), built)
+        self.assertEqual(workspace.load(root), session)
+
+    @staticmethod
+    def saved_files(root):
+        return {path.relative_to(root): path.read_bytes() for path in root.rglob('*') if path.is_file()}
+
+    def test_keep_failure_after_saving_leaves_all_live_files_and_commits_unchanged(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        before, commits = self.saved_files(root), self.log()
+        keep = self.engine._keep
+
+        def fail(*args):
+            keep(*args)
+            raise workspace.WorkspaceError('Save failed.')
+
+        with mock.patch.object(self.engine, '_keep', side_effect=fail):
+            with self.assertRaisesRegex(Exception, 'Save failed'):
+                self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)
+        self.assertEqual(self.saved_files(root), before)
+        self.assertEqual(self.log(), commits)
+
+    def test_reported_render_failure_leaves_all_live_files_and_commits_unchanged(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        before, commits = self.saved_files(root), self.log()
+        with mock.patch.object(self.slides, 'merge', side_effect=workspace.WorkspaceError('Merge failed.')):
+            with self.assertRaisesRegex(Exception, 'Merge failed'):
+                self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)
+        self.assertEqual(self.saved_files(root), before)
+        self.assertEqual(self.log(), commits)
+
+    def test_change_during_render_is_preserved_and_refuses_publication(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        before, commits = self.saved_files(root), self.log()
+        whole = self.engine._whole
+        changed = root / 'document.md'
+
+        def concurrently(*args):
+            whole(*args)
+            changed.write_text('A concurrent edit.\n', encoding='utf-8')
+
+        with mock.patch.object(self.engine, '_whole', side_effect=concurrently):
+            with self.assertRaisesRegex(Exception, 'changed while the slide was being prepared'):
+                self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)
+        before[changed.relative_to(root)] = changed.read_bytes()
+        self.assertEqual(self.saved_files(root), before)
+        self.assertEqual(self.log(), commits)
+
+    def test_new_unrelated_file_is_neither_overwritten_nor_committed(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        whole = self.engine._whole
+        added = root / 'my-note.txt'
+
+        def concurrently(*args):
+            whole(*args)
+            added.write_text('A concurrent note.\n', encoding='utf-8')
+
+        with mock.patch.object(self.engine, '_whole', side_effect=concurrently):
+            self.assertTrue(self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)['fits'])
+        self.assertEqual(added.read_text(), 'A concurrent note.\n')
+        self.assertIn('my-note.txt', self.git('status', '--porcelain'))
+        built = self.built(root)
+        self.slides.review_slide(root / pipeline.WORK / built['rounds'][-1]['preview'], 'check-yourself')
+
+    def test_design_bound_title_names_the_design_refusal_and_changes_nothing(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        before, commits = self.saved_files(root), self.log()
+        with self.assertRaisesRegex(Exception, 'approved design keeps these words'):
+            self.engine.slide_words(root, None, 'check-yourself', 'title', 'A new title', seen)
+        self.assertEqual(self.saved_files(root), before)
+        self.assertEqual(self.log(), commits)
+
+    def test_outline_change_during_fit_check_is_not_overwritten(self):
+        from runner import worker_tools
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        file = root / pipeline.OUTLINE
+        newer = json.loads(file.read_text())
+        newer['slides'][0]['title'] = 'A concurrent title'
+        check = worker_tools.check_section
+
+        def concurrently(*args):
+            result = check(*args)
+            file.write_text(json.dumps(newer), encoding='utf-8')
+            return result
+
+        with mock.patch.object(worker_tools, 'check_section', side_effect=concurrently):
+            with self.assertRaisesRegex(Exception, 'changed while the slide'):
+                self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)
+        self.assertEqual(json.loads(file.read_text()), newer)
