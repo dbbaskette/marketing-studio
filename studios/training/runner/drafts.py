@@ -78,6 +78,80 @@ WHAT = {'blueprint': 'plan', 'document': 'guide', 'brief': 'brief', 'research': 
 NAMED = ('practice', 'profile')
 
 
+AFTERWARDS = ("Afterwards each level's plan and brief, and any deck without a guide, say what "
+              'changed. Nothing else is rewritten until you update it.')
+WIDENED = ('This training is researched from the public web. From now on it reads your '
+           'documents too.')
+
+
+def source_price(root: Path, record: dict) -> dict:
+    """The research's price, with its downstream work held until explicitly updated."""
+    attempts = {name: entry.get('attempts') or []
+                for name, entry in (record.get('steps') or {}).items() if isinstance(entry, dict)}
+    return {'words': research_view.price(attempts, redone=())['words'],
+            'afterwards': AFTERWARDS, 'widened': None if record.get('documents') else WIDENED}
+
+
+def _finding_fingerprints(root: Path) -> dict:
+    """Compare Harness Research's saved findings, without interpreting their evidence."""
+    facts = workspace.research_record(root) or {}
+    findings = ({item['id']: item for item in facts.get('findings') or ()}
+                if facts.get('schema') == 2 else facts.get('results') or {})
+    return {ident: basis.fingerprint({key: value for key, value in finding.items()
+                                     if key not in ('at', 'recorded_at', 'checked_at', 'updated_at')})
+            for ident, finding in findings.items() if isinstance(finding, dict)}
+
+
+def marked(root: Path, record: dict) -> dict:
+    before = (record.get('drafts') or {}).get('findings_before')
+    if before is None:
+        return {}
+    return {ident: 'new' if ident not in before else 'changed'
+            for ident, fingerprint in _finding_fingerprints(root).items()
+            if before.get(ident) != fingerprint}
+
+
+def add_source(root: Path, record: dict, files: list, documents) -> list[str]:
+    """Add documents together and remember the findings before requesting research.
+
+    The engine holds its files lock. A refused batch removes only its own new documents.
+    Research execution remains entirely in Harness Research.
+    """
+    from runner import pipeline
+
+    if not isinstance(files, list) or not files:
+        raise workspace.WorkspaceError('Add at least one document first.')
+    before = _finding_fingerprints(root)
+    added = []
+    try:
+        for file in files:
+            if not isinstance(file, dict):
+                raise workspace.WorkspaceError('Give each document a name and content.')
+            entry = documents.add(root, file.get('name'), file.get('data'))
+            added.append(entry)
+            if not entry.get('readable'):
+                problem = entry.get('problem') or 'It could not be read.'
+                raise workspace.WorkspaceError(f'{entry["name"]}: {problem}')
+    except Exception:
+        for entry in reversed(added):
+            documents.remove(root, entry['name'])
+        raise
+    now = home.now()
+    if not record.get('documents'):
+        record['research_from'] = {**pipeline.research_of(record), 'documents': True,
+                                   'widened_at': now}
+        record['documents'] = {'scope': pipeline.scope_of(record['research_from'])}
+    readable = [entry for entry in documents.listed(root) if entry.get('readable')]
+    record['documents'].update(done=now, count=len(readable))
+    record['documents']['later'] = [*(record['documents'].get('later') or []),
+                                   *({'name': entry['name'], 'added_at': now} for entry in added)]
+    marker = root / pipeline.ADDED
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.write_text(now + '\n', encoding='utf-8')
+    record.setdefault('drafts', {})['findings_before'] = before
+    return [entry.get('title') or entry['name'] for entry in added]
+
+
 def on_desk(record: dict | None) -> bool:
     """Whether a run record, or a form, is a training worked on at the desk."""
     return (record or {}).get('flow') == FLOW
@@ -131,6 +205,76 @@ def what(key: str) -> str:
 def updates(run: dict | None) -> dict:
     """The updates asked for on a desk run and not yet made, by material."""
     return ((run or {}).get('drafts') or {}).get('updates') or {}
+
+
+def update_names(root: Path, record: dict, level=None) -> list[str]:
+    """Held, runnable materials in level and pipeline order; never a person's scenario."""
+    session = workspace.load(root)
+    state = workspace.statuses(root, session)
+    holding = held(root, session, record, state)
+    own = set(workspace.scenarios(root, session)['found']) - set(record.get('drafted') or ())
+    names = [name for at in session['levels'] or [None] if level is None or at == level
+            for kind in ORDER for name in workspace.artifact_names(root, session)
+            if name in holding and name not in own and workspace.split(name)[1] == at
+            and workspace.split(name)[0].partition(':')[0] == kind]
+    # A person's scenario (or an input outside this chain) must be settled first,
+    # just as with an individual Update. Otherwise its dependent can never land current.
+    while True:
+        allowed = set(names) | set(updates(record))
+        ready = [name for name in names if not any(
+            state.get(upstream) == 'stale' and upstream not in allowed
+            for upstream in workspace.artifact(root, session, name)['upstream'])]
+        if ready == names:
+            return names
+        names = ready
+
+
+def update_all(root: Path, record: dict) -> list[str]:
+    """Extend the explicitly requested chain with materials newly held by its landings.
+    The engine calls this under its files lock and prepares each newly queued update."""
+    chain = (record.get('drafts') or {}).get('update_chain') or {}
+    if not on_desk(record) or chain.get('status') != 'working':
+        return []
+    names = [name for name in update_names(root, record, chain.get('level'))
+             if name not in chain.get('blocked', [])]
+    asked = record['drafts'].setdefault('updates', {})
+    for name in names:
+        asked[name] = {'at': home.now(), 'by': 'page', 'scope': None, 'chain': chain['id']}
+    levels = workspace.load(root)['levels'] or [None]
+    record['drafts']['updates'] = dict(sorted(asked.items(), key=lambda item: (
+        levels.index(workspace.split(item[0])[1]),
+        ORDER.index(workspace.split(item[0])[0].partition(':')[0]), item[0])))
+    return names
+
+
+def chain_price(root: Path, record: dict, names) -> str:
+    """The last try of every worker for these materials, including deck section jobs."""
+    from runner import pipeline
+    from runner.engine import Engine
+    from studio_core import stops
+
+    session = workspace.load(root)
+    listed = pipeline.steps(session['levels'], pipeline.wanted(session),
+                            pipeline.practice(root, session), deck=True)
+    steps = [step.id for step in listed if step.kind == 'agent' and step.artifact in names
+             and (pipeline.bare(step.id) != 'deck-repair' or any(
+                 key.startswith(step.id + ':') for key in record['steps']))]
+    took = Engine._redo_steps(record, steps) if steps else None
+    return stops.cost(*took) if took else NO_UPDATE_RECORD
+
+
+def update_view(root: Path, record: dict) -> dict:
+    """The priced groups shown on the Plan cards and in Sources; reading starts nothing."""
+    def preview(level=None):
+        names = update_names(root, record, level)
+        return {'names': [workspace.label(name) for name in names],
+                'price': chain_price(root, record, names)} if names else None
+
+    session = workspace.load(root)
+    return {'all': preview(), 'levels': {level or '': preview(level)
+                                       for level in session['levels'] or [None]},
+            'chain': (record.get('drafts') or {}).get('update_chain'),
+            'busy': busy(record)}
 
 
 UPDATE_RULE = ('The plan changed as "plan change" shows. Change only the sections '
@@ -725,7 +869,8 @@ def view(engine, root) -> dict:
                      if running and not needed else ''},
         'needs': needed, 'cards': cards,
         'sources': {'account': research_view.account(root / 'research', questions),
-                    'plan': questions,
+                    'updates': update_view(root, record),
+                    'plan': questions, 'marked': marked(root, record),
                     'documents': [{key: entry.get(key) for key in
                                    ('name', 'bytes', 'readable', 'problem')}
                                   for entry in listed]},

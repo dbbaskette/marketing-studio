@@ -161,6 +161,10 @@ What a caller needs to know
   and a desk training is 409 with `drafts.ON_DESK` at `/api/decide`, `/api/review`,
   `/api/outline`, `/api/look` and `GET /api/gate`. A teammate reads the desk with only
   Download on each card, and each change is refused with who runs the training.
+- Add a source reads `GET /api/drafts/source-price?path=` before sending
+  `POST /api/drafts/source` with {path, files: [{name, content (base64)}]}. It adds the
+  documents and requests only a research update; the desk holds what the research reaches.
+  The authenticated upload has the same body limit as the start's documents route.
 - A guide, brief or plan is typed into part by part; scenarios and Yoodli layouts use one
   whole-file part (`opening`). `GET /api/drafts/card?path=&name=` answers
   the card's view (`drafts.card`: the card, its parts with their revision and version
@@ -208,7 +212,7 @@ DRAFTS = '/api/drafts'
 # The desk's decisions, each under DRAFTS: Mark ready, Mark this level ready, Update, Keep as
 # it is, and Send to its copies.
 DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'update', 'keep',
-                                                     'send'))
+                                                     'send', 'update-all', 'stop-updates'))
 # Typing into a part, bringing back one of its versions, and committing what was typed.
 TYPED = tuple(f'{DRAFTS}/{action}' for action in ('save', 'restore', 'share'))
 JOBS = tuple(f'{DRAFTS}/{action}' for action in ('note', 'revise', 'selection', 'stop', 'retry', 'layout', 'write-whole'))
@@ -217,7 +221,7 @@ CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
-         DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions')
+         DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price')
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
@@ -228,7 +232,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
           f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop',
           f'{DRAFTS}/slide-selection', f'{DRAFTS}/slide-selection-settle', f'{DRAFTS}/deck-outline', f'{DRAFTS}/deck-outline-price',
-          *DECIDED, *TYPED, *JOBS)
+          f'{DRAFTS}/source', *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -315,6 +319,10 @@ class RunnerPage(desk.Page):
                 level = None
             return desk.as_json(HTTPStatus.OK, self.typed(lambda: self.engine.slide_versions(
                 root, level, one('slide'))))
+        if path == f'{DRAFTS}/source-price':
+            root = self.on_desk(one('path'))
+            with self.engine.files:
+                return desk.as_json(HTTPStatus.OK, drafts.source_price(root, drafts.run_of(root)))
         if path == f'{DRAFTS}/update-preview':
             root = self.on_desk(one('path'))
             with self.engine.files:
@@ -461,7 +469,7 @@ class RunnerPage(desk.Page):
         desk, by whoever holds the key. Anyone else's request there is held to the desk's
         limit, so it is refused unread."""
         address = target.partition('?')[0]
-        if address in (DOCUMENTS, ASSET, f'{DRAFTS}/save'):
+        if address in (DOCUMENTS, ASSET, f'{DRAFTS}/save', f'{DRAFTS}/source'):
             try:
                 self.check_token(headers)
             except desk.Refusal:
@@ -501,7 +509,8 @@ class RunnerPage(desk.Page):
         hash}}, which adds `marked` and `stopped`, Update {name}, Keep as it is {name,
         reason, seen}, and Send to its copies {name}, which adds `made` and `problems`."""
         root = self.on_desk(desk.text(sent, 'path'))
-        name = None if path == f'{DRAFTS}/level-ready' else desk.text(sent, 'name')
+        name = None if path in (f'{DRAFTS}/level-ready', f'{DRAFTS}/update-all',
+                                f'{DRAFTS}/stop-updates') else desk.text(sent, 'name')
         added = {}
         try:
             if path == f'{DRAFTS}/ready':
@@ -515,6 +524,10 @@ class RunnerPage(desk.Page):
                 added = self.engine.mark_level_ready(root, level or None, seen or {})
             elif path == f'{DRAFTS}/update':
                 self.engine.update(root, name)
+            elif path == f'{DRAFTS}/update-all':
+                self.engine.update_all(root, desk.text(sent, 'level', False) or None)
+            elif path == f'{DRAFTS}/stop-updates':
+                self.engine.stop_updates(root, desk.text(sent, 'chain'))
             elif path == f'{DRAFTS}/keep':
                 self.engine.keep(root, name, desk.text(sent, 'reason', False),
                                  desk.text(sent, 'seen', False))
@@ -728,6 +741,24 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.engine.share())
         if path == ASSET:
             return desk.as_json(HTTPStatus.OK, self.asset(sent))
+        if path == f'{DRAFTS}/source':
+            root = self.on_desk(desk.text(sent, 'path'))
+            files = sent.get('files')
+            if not isinstance(files, list) or not files:
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Add at least one document first.')
+            decoded = []
+            for file in files:
+                if not isinstance(file, dict):
+                    raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give each document a name and content.')
+                name, content = desk.text(file, 'name'), desk.text(file, 'content')
+                try:
+                    data = base64.b64decode(content, validate=True)
+                except (binascii.Error, ValueError):
+                    raise desk.Refusal(HTTPStatus.BAD_REQUEST,
+                                       'That document did not arrive whole. Add it again.')
+                decoded.append({'name': name, 'data': data})
+            self.typed(lambda: self.engine.add_source(root, decoded))
+            return desk.as_json(HTTPStatus.OK, drafts.view(self.engine, root))
         if path == f'{DRAFTS}/open':
             training = desk.text(sent, 'path')
             desk.registered(training)

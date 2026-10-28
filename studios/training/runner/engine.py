@@ -953,7 +953,33 @@ class Engine(Reviewing):
     def _updates_made(self, root: Path) -> None:
         """Close each desk update whose material is made again, in the commit that lands it."""
         record = self._load(root)
-        if drafts.close_updates(root, workspace.load(root), record):
+        closed = drafts.close_updates(root, workspace.load(root), record)
+        added = drafts.update_all(root, record)
+        for name in added:
+            self._fresh_update(record, name)
+        chain = (record.get('drafts') or {}).get('update_chain') or {}
+        if chain.get('status') == 'working':
+            session = workspace.load(root)
+            state = workspace.statuses(root, session)
+            asked = drafts.updates(record)
+            for name, pending in list(asked.items()):
+                base, level = workspace.split(name)
+                if base != 'deck' or pending.get('chain') != chain['id'] or pending.get('deck_request'):
+                    continue
+                if any(state.get(upstream) == 'stale'
+                       for upstream in workspace.artifact(root, session, name)['upstream']):
+                    continue
+                scope = drafts.deck_update(root, session, level)
+                if not scope['slides']:
+                    del asked[name]
+                    chain.setdefault('blocked', []).append(name)
+                    continue
+                pending['deck_request'] = {
+                    'kind': 'revise', 'note': drafts.DECK_UPDATE, 'slides': scope['slides'],
+                    'inputs': workspace.inputs(root, session, name), 'at': home.now()}
+        if chain.get('status') == 'working' and not drafts.updates(record):
+            chain['status'] = 'done'
+        if closed or added or chain:
             self._store(root, record)
 
     def _decision_arrived(self, root: Path) -> None:
@@ -3645,9 +3671,15 @@ class Engine(Reviewing):
                          record.get('effort'))
         lines, started_at, clock = deque(maxlen=LINES), home.now(), time.monotonic()
         stop, terminated = _WorkerStop(run.stop), threading.Event()
-        with self._lock:
-            run.workers[step.id] = {'label': step.doing, 'started_at': started_at,
-                                    'lines': lines, 'folder': folder, 'stop': stop, 'terminated': terminated}
+        with self.files:
+            current = self._load(root)
+            chain = (current.get('drafts') or {}).get('update_chain') or {}
+            if chain.get('status') == 'stopped' and step.artifact in drafts.held(
+                    root, workspace.load(root), current):
+                stop.set()
+            with self._lock:
+                run.workers[step.id] = {'label': step.doing, 'started_at': started_at,
+                                        'lines': lines, 'folder': folder, 'stop': stop, 'terminated': terminated}
         choice = None
         try:
             if step.id.startswith(('deck-sections', 'deck-repair')):
@@ -3788,7 +3820,10 @@ class Engine(Reviewing):
                                  or step.request or {})
                     refreshed = drafts.deck_update(root, session, self._level(it))
                     if not refreshed['slides']:
-                        record['drafts']['updates'].pop(it.artifact, None)
+                        pending = record['drafts']['updates'].pop(it.artifact, None)
+                        chain = record['drafts'].get('update_chain') or {}
+                        if pending and pending.get('chain') == chain.get('id'):
+                            chain.setdefault('blocked', []).append(it.artifact)
                         self._decided(record, self._level(it))['asked'] = None
                         self._store(root, record)
                         return self._problem(root, it.id, 'stopped', drafts.NO_SLIDE, KEPT)
@@ -3956,8 +3991,21 @@ class Engine(Reviewing):
         clock = time.monotonic()
         with self.files:
             try:
-                if self._load(root).get('research_contract'):
+                record = self._load(root)
+                if record.get('research_contract'):
                     status = {'run': 'synthesis'}
+                elif drafts.on_desk(record) and (record.get('research') or {}).get('source_update'):
+                    # Saved desk trainings on the legacy queue must hand the new documents
+                    # to Harness Research's plan as well as to its question workers. Keep
+                    # the person's approved questions and file unchanged.
+                    plan = json.loads((root / pipeline.PLAN).read_text(encoding='utf-8'))
+                    plan.update(scope='supplied-only' if record['documents']['scope'] == 'supplied-only'
+                                else 'public-web',
+                                sources=self._sources(root, record)[0])
+                    with tempfile.TemporaryDirectory(prefix='training-sources-') as folder:
+                        file = Path(folder) / 'plan.json'
+                        file.write_text(json.dumps(plan), encoding='utf-8')
+                        status = self.research().plan(root, file)
                 else:
                     status = self.research().plan(root, root / pipeline.PLAN)
             except WorkspaceError as refusal:
@@ -3966,6 +4014,9 @@ class Engine(Reviewing):
             record = self._load(root)
             record['research'] = {**(record.get('research') or {}), 'run': status.get('run'),
                                   'plan': workspace.sha256_file(root / pipeline.PLAN)}
+            if record['research'].pop('source_update', None) and record['research'].get('again'):
+                record['research']['again']['left'] = list(workspace.findings_index(
+                    workspace.research_record(root) or {}))
             self._tried(record, step.id, home.now(), time.monotonic() - clock, 'kept')
             self._store(root, record)
             workspace.checkpoint(root, stage='research', next_step='Research each question')
@@ -4222,20 +4273,24 @@ class Engine(Reviewing):
             self.share_soon()
         self.wake(path)
 
-    def _on_desk(self, path, decided: bool = False) -> tuple[Path, dict]:
+    def _on_desk(self, path, decided: bool = False, deck_change: bool = False) -> tuple[Path, dict]:
         """A desk training's folder and run record, refused for a training not on the desk.
         For a decision (`decided`: Mark ready, Update, Keep, Send), what was typed on the
-        desk is committed first, in a commit of its own. Call it holding `files`."""
+        desk is committed first, in a commit of its own. A deck change also waits for a
+        pending research refresh before committing edits. Call it holding `files`."""
         root = self._held(path)
         record = self._load(root)
         if not drafts.on_desk(record):
             raise WorkspaceError(drafts.NOT_ON_DESK)
+        if deck_change and any(request.get('artifact') == 'research' and request.get('refresh')
+                               for request in workspace.load(root).get('requests', ())):
+            raise WorkspaceError(draft_jobs.BUSY)
         if decided and self._edits_first(root):
             record = self._load(root)
         return root, record
 
     def _deck_change(self, path, level, seen):
-        root, record = self._on_desk(path, decided=True)
+        root, record = self._on_desk(path, decided=True, deck_change=True)
         name = workspace.qualify('deck', level)
         if name not in workspace.artifact_names(root, workspace.load(root)):
             raise WorkspaceError('Choose a level with a slide deck.')
@@ -4273,7 +4328,7 @@ class Engine(Reviewing):
     def look_samples(self, path, level):
         level = level or None
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True, deck_change=True)
             name = workspace.qualify('deck', level)
             seen = drafts.DeckProposalDesk(self, root, level).read(name)['seen']
             root, record, name, kept = self._deck_change(root, level, seen)
@@ -4337,7 +4392,7 @@ class Engine(Reviewing):
         """Change the outline and its drawing, then render and keep the deck."""
         level = level or None
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True, deck_change=True)
             name = workspace.qualify('deck', level)
             session = workspace.load(root)
             if name not in workspace.artifact_names(root, session):
@@ -4624,7 +4679,7 @@ class Engine(Reviewing):
                            revision=None, response=None, redraw=False) -> dict:
         """Only a separate explicit answer may approve proposed design-bound words."""
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True, deck_change=decision != 'cancel')
             folder, requested = deck_edit.read_proposal(root, token)
             if decision == 'cancel':
                 self._settle_selection_token(root, token, {'cancelled': True})
@@ -4972,7 +5027,7 @@ class Engine(Reviewing):
         """Ask to redraw the section containing one slide of a desk deck."""
         level = level or None
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True, deck_change=True)
             name = workspace.qualify('deck', level)
             if name not in workspace.artifact_names(root, workspace.load(root)):
                 raise WorkspaceError('Choose a level with a slide deck.')
@@ -5048,7 +5103,7 @@ class Engine(Reviewing):
     def deck_finding(self, path, level, seen, job, action, ids):
         level = level or None
         with self.files:
-            root, _ = self._on_desk(path, decided=True)
+            root, _ = self._on_desk(path, decided=True, deck_change=action == 'apply')
             name = workspace.qualify('deck', level)
             if name not in workspace.artifact_names(root, workspace.load(root)):
                 raise WorkspaceError('Choose a level with a slide deck.')
@@ -5079,7 +5134,8 @@ class Engine(Reviewing):
         if scope is not None:
             raise WorkspaceError(drafts.NO_SCOPE)
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True,
+                                         deck_change=isinstance(name, str) and workspace.split(name)[0] == 'deck')
             if drafts.busy(record):
                 raise WorkspaceError(drafts.BUSY)
             session = workspace.load(root)
@@ -5116,6 +5172,55 @@ class Engine(Reviewing):
             self._commit(root, f'update {workspace.label(name)} from '
                                f'{source or "what it is built from"}')
         self.carry_on(root)
+        return self.view(root)
+
+    def _fresh_update(self, record, name):
+        base, level = workspace.split(name)
+        for step in ([workspace.qualify(step, level) for step in pipeline.DECK_STEPS]
+                     if base == 'deck' else [name]):
+            self._fresh(record, step)
+
+    def update_all(self, path, level=None) -> dict:
+        """Explicitly update held materials, discovering further holds after each landing."""
+        with self.files:
+            root, record = self._on_desk(path, decided=True, deck_change=True)
+            run = self._run(root)
+            if drafts.busy(record) or run.busy or run.workers:
+                raise WorkspaceError(drafts.BUSY)
+            session = workspace.load(root)
+            if level is not None and level not in (session['levels'] or ['']):
+                raise WorkspaceError('Choose a level in this training.')
+            level = level or None
+            if not drafts.update_names(root, record, level):
+                raise WorkspaceError(drafts.UP_TO_DATE)
+            record.setdefault('drafts', {})['update_chain'] = {
+                'id': secrets.token_hex(12), 'level': level, 'status': 'working'}
+            for name in drafts.update_all(root, record):
+                self._fresh_update(record, name)
+            self._store(root, record)
+            self._commit(root, 'update everything held' + (f' in level {level}' if level else ''))
+        self.carry_on(root)
+        return self.view(root)
+
+    def stop_updates(self, path, chain) -> dict:
+        """Drop this chain's waiting updates; a worker already under way may land."""
+        with self.files:
+            root, record = self._on_desk(path)
+            current = (record.get('drafts') or {}).get('update_chain') or {}
+            if not isinstance(chain, str) or current.get('id') != chain:
+                raise WorkspaceError('That update is no longer on the desk.')
+            current['status'] = 'stopped'
+            found = self._survey(root, record)
+            with self._lock:
+                workers = tuple(self._run(root).workers)
+            active = {step.artifact for step in found.steps if any(
+                worker == step.id or worker.startswith(step.id + ':') for worker in workers)}
+            asked = drafts.updates(record)
+            for name in list(asked):
+                if asked[name].get('chain') == chain and name not in active:
+                    del asked[name]
+            self._store(root, record)
+            self._commit(root, 'stop waiting updates; keep the update under way')
         return self.view(root)
 
     def keep(self, path, name, reason=None, seen=None) -> dict:
@@ -5708,6 +5813,34 @@ class Engine(Reviewing):
         return ([entry for entry in plan if entry.get('file') not in held],
                 [entry for entry in offered if entry.get('file') not in held])
 
+    @staticmethod
+    def _deck_busy(record: dict) -> bool:
+        """A persisted deck change may wait without a registered worker."""
+        return any(kept.get('redrawing') or any(
+            note.get('status') in ('waiting', 'drawing') for note in kept.get('notes') or ())
+            for kept in (record.get('deck') or {}).values())
+
+    def _desk_change_busy(self, root: Path, record: dict) -> bool:
+        """Call with files held: include queued work and registered workers."""
+        run = self._run(root)
+        return bool(run.workers or run.busy or drafts.busy(record) or self._deck_busy(record))
+
+    def add_source(self, path, files) -> dict:
+        """The priced desk action: add documents and update only the research."""
+        with self.files:
+            root, record = self._on_desk(path)
+            if self._desk_change_busy(root, record):
+                raise WorkspaceError(draft_jobs.BUSY)
+            if not workspace.research_record(root):
+                raise WorkspaceError('Wait until the research is written before adding a source.')
+            self._edits_first(root)
+            record = self._load(root)
+            titles = drafts.add_source(root, record, files, self.documents)
+            self._store(root, record)
+            self._request_sources(root, record, titles=titles)
+        self.carry_on(root)
+        return self.view(root)
+
     def update_research(self, path) -> dict:
         """Read the documents added since the research, as the person asks: a research
         request that brings the evidence up to date, as Bring the evidence up to date does,
@@ -5720,25 +5853,39 @@ class Engine(Reviewing):
                      if isinstance(entry, dict)]
             if not names:
                 raise WorkspaceError(NO_LATER)
-            run = self._run(root)
-            if run.workers or run.busy:
-                raise WorkspaceError(WORKING)
-            self.refuse_while_reviewing(root, 'revise')
-            note = 'Read the documents added since: ' + ', '.join(names) + '.'
-            outcome = workspace.decide(root, 'research', 'revise', note, by='page',
-                                       refresh=True)
-            with workspace.locked(root):
-                session = workspace.load(root)
-                session['requests'][-1]['added'] = names
-                workspace.store(root, session)
-            outcome['request'] = {**outcome['request'], 'added': names}
-            record = self._load(root)
-            review_layout.uncarry(record)
-            record['documents'] = {**record['documents'], 'later': []}
-            self._store(root, record)
-        self.decided(path, outcome, checked=True)
+            if drafts.on_desk(record):
+                if self._desk_change_busy(root, record):
+                    raise WorkspaceError(draft_jobs.BUSY)
+            else:
+                run = self._run(root)
+                if run.workers or run.busy:
+                    raise WorkspaceError(WORKING)
+            self._request_sources(root, record)
         self.carry_on(path)
         return self.view(root)
+
+    def _request_sources(self, root: Path, record: dict, titles=None) -> None:
+        """Record the existing research refresh, while holding files, for either flow."""
+        names = [entry.get('name') for entry in record['documents'].get('later') or ()
+                 if isinstance(entry, dict)]
+        self.refuse_while_reviewing(root, 'revise')
+        note = ('Sources were added: ' + ', '.join(titles)
+                + '. Read them, and update what they change. Keep everything else.'
+                if titles is not None else 'Read the documents added since: ' + ', '.join(names) + '.')
+        outcome = workspace.decide(root, 'research', 'revise', note, by='page', refresh=True)
+        with workspace.locked(root):
+            session = workspace.load(root)
+            session['requests'][-1]['added'] = names
+            workspace.store(root, session)
+        outcome['request'] = {**outcome['request'], 'added': names}
+        review_layout.uncarry(record)
+        record['documents'] = {**record['documents'], 'later': []}
+        if titles is not None and not record.get('research_contract'):
+            record['research'].update(source_update=True, plan=None)
+        self._store(root, record)
+        if titles is not None:
+            outcome['said'] = f'add {len(titles)} source(s) and update the research'
+        self.decided(root, outcome, checked=True)
 
     def supply_asset(self, path, level: str | None, asset: str, data: bytes, alt: str,
                      source: str, restrictions: str | None = None) -> dict:
