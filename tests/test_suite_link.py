@@ -95,7 +95,7 @@ const restored = suiteReturn(home, '', here);
 const other = suiteReturn('http://127.0.0.1:8792', '', here);
 const external = suiteReturn('http://outside.invalid:8790', initial, here);
 saved = null;
-const invalid = suiteReturn(home, '#home=' + encodeURIComponent(home) + '&homeToken=bad%26query%3Dkey', here);
+const invalid = suiteReturn(home, '#home=' + encodeURIComponent(home) + '&homeToken=' + encodeURIComponent('invalid&query=key'), here);
 '''
                 found = self.evaluate(source, '[first, restored, other, external, invalid]')
                 self.assertEqual(found, ['http://127.0.0.1:8790/#token=synthetic-home-key',
