@@ -108,8 +108,8 @@ separate release gates, never inferred from fixture success.
 
 1. **New infographic → Add information.** Paste text, upload one or more files, or choose
    **Add a Google Doc or public page**. Review the captured text and any extraction gaps.
-   Google reads use the explicitly selected existing gcloud account and stable Drive version;
-   all tabs are included unless you choose tab IDs. Import uses that exact preview, without
+   Google Docs and Slides reads use the existing default gcloud account (like Blog Studio) and stable Drive version;
+   all document tabs or slides are included unless you choose their IDs. Slide text, table text and speaker notes are captured; visual-only content is identified as an extraction gap. Import uses that exact preview, without
    refetching. PDF requires an explicitly installed `pdftotext`; scanned pages need a readable
    text copy. Word means `.docx`, without OCR, linked-resource reads or embedded-object analysis.
 2. Set the audience, takeaway and must-show information. Choose a story, build the page,
@@ -120,8 +120,9 @@ separate release gates, never inferred from fixture success.
    raster; the local SVG retains editable labels/charts. Inspect Google conversion in Docs
    before relying on its layout. The original source Doc is never overwritten or shared.
 
-Native defaults accept a Google account email and optional destination folder ID. The
-account must already be signed in through an explicitly installed gcloud CLI with Drive/Docs
+Google actions use the existing sign-in without an email prompt. Optional account/folder
+overrides remain in advanced defaults. Delivery starts with Marketing Studio’s shared
+Google/local choice. The account must already be signed in through an explicitly installed gcloud CLI with Drive/Docs
 access. Settings/status never read credentials or initiate login. Tokens and resumable upload
 session URLs remain in memory. A saved delivery intent precedes writes; after interruption,
 **Reconcile Google delivery** performs reads only and never blindly creates another Doc.

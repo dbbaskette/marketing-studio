@@ -74,3 +74,13 @@ class SettingsTests(Isolated):
         report = computer.inspect(chosen=settings.snapshot(), command=lambda _: '/synthetic/codex', environ={})
         self.assertFalse(report['credential_required'])
         self.assertNotIn('gemini-key-required', report['problems'])
+
+
+class SharedDeliveryDefaultsTests(Isolated):
+    def test_delivery_follows_marketing_studio_without_private_account_lookup(self):
+        self.settings.write_text('{"output":"google","assistant":{"agent":"codex","model":"selected-model","effort":"high"}}')
+        with mock.patch('studio_core.google_api.active_account',side_effect=AssertionError('No account lookup during settings')):
+            chosen=settings.snapshot()
+        self.assertEqual(chosen['delivery_default'],'google');self.assertEqual(chosen['assistant']['model'],'selected-model');self.assertIsNone(chosen['google']['account'])
+        self.settings.write_text('{"output":"pptx"}')
+        self.assertEqual(settings.snapshot()['delivery_default'],'pdf')

@@ -6,7 +6,7 @@ from runner import intake, remote_sources, sources
 from runner.contracts import Invalid
 from runner.workspace import Store
 from studio_core import public_fetch
-from studio_core.google_api import Client, GoogleError, Response, DOC_MIME
+from studio_core.google_api import Client, GoogleError, Response, DOC_MIME, SLIDES_MIME, active_account, access_token
 
 
 def metadata():
@@ -87,3 +87,41 @@ class RemoteSourcesTests(Isolated):
         self.assertEqual(json.loads(calls[0][-1])['mimeType'],DOC_MIME)
         bad=Client('editor@example.invalid',token_provider=lambda _:'synthetic-memory-only',transport=lambda *a:Response(200,{'location':'https://evil.example/upload'},b''))
         with self.assertRaises(GoogleError):bad.create_document(b'docx',title='Synthetic',request_key='request1',payload_hash='a'*64)
+
+
+    def test_active_account_selected_once_and_token_lookup_deferred_until_explicit_action(self):
+        selected=mock.Mock(return_value='default@example.invalid');token=mock.Mock(return_value='synthetic-memory-only')
+        client=Client(token_provider=token,account_provider=selected,transport=lambda *args:Response(200,{},b'{}'))
+        selected.assert_not_called();token.assert_not_called()
+        client.file('synthetic');client.document('synthetic')
+        selected.assert_called_once();token.assert_called_once_with('default@example.invalid')
+        with self.assertRaises(GoogleError):client.request('https://evil.example/drive/v3/files')
+        selected.assert_called_once()
+
+    def test_gcloud_defaults_require_no_email_or_account_switch(self):
+        run=mock.Mock(return_value=mock.Mock(returncode=0,stdout='default@example.invalid\n'))
+        self.assertEqual(active_account(run=run,which=lambda name:'/synthetic/gcloud'),'default@example.invalid')
+        self.assertNotIn('login',run.call_args.args[0]);self.assertNotIn('--account',run.call_args.args[0])
+        run.return_value.stdout='synthetic-memory-only'
+        self.assertEqual(access_token(run=run,which=lambda name:'/synthetic/gcloud'),'synthetic-memory-only')
+        self.assertNotIn('--account',run.call_args.args[0])
+
+    def test_slides_link_captures_text_tables_groups_and_speaker_notes_without_email(self):
+        def shape(ident,value):return {'objectId':ident,'shape':{'text':{'textElements':[{'textRun':{'content':value}}]}}}
+        slide={'objectId':'slide_a','pageElements':[shape('heading','Synthetic slide.'),{'elementGroup':{'children':[shape('group','Grouped material.')]}},
+            {'image':{'contentUrl':'https://private.invalid/signed-content'}},
+            {'objectId':'table','table':{'tableRows':[{'tableCells':[{'text':{'textElements':[{'textRun':{'content':'Count 12'}}]}}]}]}}],
+            'slideProperties':{'notesPage':{'notesProperties':{'speakerNotesObjectId':'notes'},'pageElements':[shape('notes','Speaker context.')]}}}
+        client=mock.Mock();client.file.return_value={**metadata(),'mimeType':SLIDES_MIME};client.presentation.return_value={'presentationId':'synthetic_doc','slides':[slide]}
+        preview=remote_sources.google('https://docs.google.com/presentation/d/synthetic_doc/edit#slide=id.slide_a',client=client)
+        record,raw,extracted=intake.read(preview['id'])
+        self.assertEqual(record['kind'],'google-slides');self.assertIn('Speaker context.',extracted['text']);self.assertIn('Count 12',extracted['text'])
+        self.assertTrue(extracted['warnings']);self.assertNotIn(b'signed-content',raw);client.document.assert_not_called()
+        store=Store.setup(self.workspace);p=store.create('Synthetic slides import')
+        p=intake.adopt(store,p['id'],preview['id'],expected_revision=0,acknowledge_warnings=True)
+        self.assertEqual(p['sources'][0]['kind'],'google-slides')
+
+    def test_slides_change_or_wrong_mime_refuses_and_keeps_prior_capture(self):
+        client=mock.Mock();client.file.side_effect=[{**metadata(),'mimeType':SLIDES_MIME},{**metadata(),'mimeType':SLIDES_MIME,'version':'new'}]
+        client.presentation.return_value={'presentationId':'synthetic_doc','slides':[{'objectId':'slide_a','pageElements':[]}]}
+        with self.assertRaisesRegex(Invalid,'changed'):remote_sources.google('https://docs.google.com/presentation/d/synthetic_doc/edit',client=client)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -12,6 +13,7 @@ import urllib.parse
 import urllib.request
 
 DOC_MIME = "application/vnd.google-apps.document"
+SLIDES_MIME = "application/vnd.google-apps.presentation"
 DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 LIMIT = 40_000_000
 EMAIL = re.compile(r"[^@\s/]{1,64}@[^@\s/]{1,180}\.[^@\s/]{1,60}\Z")
@@ -24,7 +26,7 @@ class GoogleError(ValueError):
 
 
 def account(value):
-    if not isinstance(value, str) or not EMAIL.fullmatch(value):
+    if not isinstance(value, str) or len(value)>254 or any(ord(c)<32 or ord(c)==127 for c in value) or not EMAIL.fullmatch(value):
         raise GoogleError(
             "Choose the email of your existing Google account before this action."
         )
@@ -37,22 +39,60 @@ def identifier(value):
     return value
 
 
-def access_token(selected, *, run=subprocess.run, which=shutil.which):
-    account(selected)
-    executable = which("gcloud")
-    if not executable:
+def executable(which=shutil.which):
+    found = which("gcloud")
+    if found:
+        return found
+    from pathlib import Path
+
+    for path in (
+        Path("/opt/homebrew/share/google-cloud-sdk/bin/gcloud"),
+        Path("/usr/local/share/google-cloud-sdk/bin/gcloud"),
+        Path.home() / "google-cloud-sdk/bin/gcloud",
+    ):
+        if path.is_file() and os.access(path, os.X_OK):
+            return str(path)
+    raise GoogleError(
+        "Google access needs an explicitly installed gcloud CLI. Local PDF delivery remains available."
+    )
+
+
+def active_account(*, run=subprocess.run, which=shutil.which):
+    """Read only the locally selected gcloud account, on an explicit Google action."""
+    binary = executable(which)
+    try:
+        done = run(
+            [binary, "config", "get-value", "account", "--quiet"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            stdin=subprocess.DEVNULL,
+        )
+        if done.returncode:
+            raise ValueError()
+        return account(done.stdout.strip())
+    except (OSError, subprocess.SubprocessError, ValueError):
+        raise GoogleError(
+            "Google is not signed in with a usable default account. Use the same existing Google sign-in as Blog Studio; no email is needed in this form."
+        ) from None
+
+
+def access_token(selected=None, *, run=subprocess.run, which=shutil.which):
+    if selected:
+        account(selected)
+    selected_executable = executable(which)
+    if not selected_executable:
         raise GoogleError(
             "Google access needs an explicitly installed gcloud CLI. Local PDF delivery remains available."
         )
     try:
         done = run(
             [
-                executable,
+                selected_executable,
                 "auth",
                 "print-access-token",
                 "--quiet",
-                "--account",
-                selected,
+                *(["--account", selected] if selected else []),
             ],
             capture_output=True,
             text=True,
@@ -100,14 +140,21 @@ def fixed_url(value):
     except ValueError:
         raise GoogleError("Use a fixed Google API destination.") from None
     allowed = (
-        parsed.netloc == "www.googleapis.com"
-        and (
-            parsed.path.startswith("/drive/v3/")
-            or parsed.path == "/upload/drive/v3/files"
+        (
+            parsed.netloc == "www.googleapis.com"
+            and (
+                parsed.path.startswith("/drive/v3/")
+                or parsed.path == "/upload/drive/v3/files"
+            )
         )
-    ) or (
-        parsed.netloc == "docs.googleapis.com"
-        and parsed.path.startswith("/v1/documents/")
+        or (
+            parsed.netloc == "docs.googleapis.com"
+            and parsed.path.startswith("/v1/documents/")
+        )
+        or (
+            parsed.netloc == "slides.googleapis.com"
+            and parsed.path.startswith("/v1/presentations/")
+        )
     )
     decoded = urllib.parse.unquote(parsed.path)
     if (
@@ -130,15 +177,28 @@ def fixed_url(value):
 
 class Client:
     def __init__(
-        self, selected_account, *, token_provider=access_token, transport=None
+        self,
+        selected_account=None,
+        *,
+        token_provider=access_token,
+        transport=None,
+        account_provider=active_account,
     ):
-        self.account = account(selected_account)
+        self.account = (
+            account(selected_account) if selected_account not in (None, "") else None
+        )
+        self.account_provider = account_provider
         self.token_provider, self.transport, self._token = (
             token_provider,
             transport,
             None,
         )
         self.opener = urllib.request.build_opener(NoRedirect())
+
+    def selected_account(self):
+        if self.account is None:
+            self.account = account(self.account_provider())
+        return self.account
 
     def request(self, url, *, method="GET", body=None, headers=None, json_result=True):
         fixed_url(url)  # Before even looking up credentials.
@@ -156,7 +216,7 @@ class Client:
         ):
             raise GoogleError("Google transfer exceeds its bounded size.")
         if self._token is None:
-            self._token = self.token_provider(self.account)
+            self._token = self.token_provider(self.selected_account())
         sent = {
             "Content-Type": "application/json",
             **(headers or {}),
@@ -230,6 +290,11 @@ class Client:
             "https://docs.googleapis.com/v1/documents/"
             + identifier(file_id)
             + "?includeTabsContent=true"
+        )
+
+    def presentation(self, file_id):
+        return self.request(
+            "https://slides.googleapis.com/v1/presentations/" + identifier(file_id)
         )
 
     def find_delivery(self, request_key):

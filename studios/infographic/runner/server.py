@@ -129,7 +129,7 @@ class Page(shared.Page):
             from . import remote_sources
             require(isinstance(sent, dict) and set(sent) <= {'kind', 'url', 'account', 'tabs'}, 'Preview one explicitly selected remote source.')
             require(sent.get('kind') in ('google-doc', 'url'), 'Choose Google Doc or public URL.')
-            result = remote_sources.google(sent.get('url'), account=sent.get('account'), tabs=sent.get('tabs')) if sent['kind'] == 'google-doc' else remote_sources.public(sent.get('url'))
+            result = remote_sources.google(sent.get('url'), account=sent.get('account') or settings.snapshot()['google']['account'], tabs=sent.get('tabs')) if sent['kind'] == 'google-doc' else remote_sources.public(sent.get('url'))
             return shared.as_json(200, result)
         if path == '/api/source-preview':
             from . import intake

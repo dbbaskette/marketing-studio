@@ -269,3 +269,20 @@ class SecurityTests(IsolatedHome):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class StudioReadinessTests(IsolatedHome):
+    def test_all_installed_studios_ready_before_launch_without_starting_them(self):
+        shared.update({'local':{'root':str(self.root/'work')},'assistant':{'agent':'codex'}})
+        self.write('/api/setup',{'done':True})
+        with mock.patch('marketing_studio.page.runtime.assistant_command',return_value='/synthetic/codex'),mock.patch('marketing_studio.page.shutil.which',return_value='/synthetic/git'),mock.patch.object(self.launcher,'open',side_effect=AssertionError('No launch')):
+            found=self.page.snapshot()
+        for row in found['studios']:
+            if row['installed']:
+                self.assertEqual(row['readiness']['state'],'done');self.assertEqual(row['readiness']['label'],'Ready to open');self.assertFalse(row['running'])
+
+    def test_missing_shared_setup_and_assistant_do_not_show_green(self):
+        self.assertTrue(all(r['readiness']['state']!='done' for r in self.page.snapshot()['studios']))
+        shared.update({'local':{'root':str(self.root/'work')}});self.write('/api/setup',{'done':True})
+        with mock.patch('marketing_studio.page.runtime.assistant_command',return_value=None):
+            self.assertTrue(all(r['readiness']['state']!='done' for r in self.page.snapshot()['studios']))

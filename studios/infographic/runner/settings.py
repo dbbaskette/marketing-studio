@@ -74,6 +74,8 @@ def snapshot():
     return {'assistant': {'agent': agent, 'model': assistant.get('model'), 'effort': assistant.get('effort')},
             'person': deepcopy(shared.get('person') or {}), 'brand': deepcopy(shared.get('brand') or {}),
             'native': local, 'native_revision': digest(local),
+            'delivery_default': 'google' if shared.get('output') == 'google' else 'pdf',
+            'google': {'account': local.get('google_account') or None, 'folder': local.get('google_folder') or ''},
             'material_folders': {key: str(Path((shared.get('local') or {}).get('root') or '~/Studios').expanduser() / (key+'-workspace') / folder) for key,folder in (('blog','blogs'),('presentation','presentations'),('training','trainings'))},
             'renderer': os.environ.get('INFOGRAPHIC_STUDIO_RENDERER') or local.get('renderer') or packaged_renderer(),
             'image_provider': 'codex' if agent == 'codex' else 'gemini'}

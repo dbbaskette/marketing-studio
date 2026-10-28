@@ -96,9 +96,9 @@ def check(archive):
             source = next(s for s in imported['sources'] if s['kind'] == 'docx')
             assert cli('source-show', ident, '--source-id', source['id'])['text'].strip() == 'Selected Word material.'
             refused = subprocess.run(['/bin/sh', str(helper), 'remote-preview', '--kind', 'google-doc',
-                '--url', 'https://invalid.example/document', '--account', 'editor@example.invalid'],
+                '--url', 'https://invalid.example/document'],
                 env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15)
-            assert refused.returncode == 2 and 'Google document' in json.loads(refused.stderr)['error']
+            assert refused.returncode == 2 and 'Google' in json.loads(refused.stderr)['error']
 
         print(json.dumps({'result': 'PASS', 'archive': archive.name,
                           'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(), 'platform': distribution['platform'],

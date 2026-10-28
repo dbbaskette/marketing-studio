@@ -68,6 +68,8 @@ if [[ "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic
       "$python" -m unittest discover -s studios/infographic/tests -v
       bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
     } 2>&1 | tee "$results_dir/tests.log"
+    node studios/infographic/tests/ui/home-readiness.cjs 2>&1 | tee "$results_dir/home-readiness-browser.log"
+    INFOGRAPHIC_STUDIO_TEST_REMOTE=1 INFOGRAPHIC_STUDIO_TEST_SLIDES=1 node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-slides-browser.log"
     node studios/infographic/tests/ui/intake.cjs 2>&1 | tee "$results_dir/infographic-intake-browser.log"
     INFOGRAPHIC_STUDIO_TEST_REMOTE=1 node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-google-browser.log"
   elif [[ "${1:-full}" == infographic-acceptance ]]; then

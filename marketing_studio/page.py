@@ -1,5 +1,6 @@
 """The home API: shared settings, first-run setup, inventory, and launch."""
 import threading
+import shutil
 from pathlib import Path
 
 from studio_core import preferences as shared_preferences
@@ -45,7 +46,18 @@ class Home(server.Page):
         values, problem = shared.read()
         studios = catalog.describe(preferences.get('paths', {}), self.launcher.running)
         done = not problem and self.configured(values)
+        agent=(values.get('assistant') or {}).get('agent') or runtime.assistant_default(state.data_root())
+        assistant_available=bool(runtime.assistant_command(agent))
+        git_available=bool(shutil.which('git'))
         for row in studios:
+            if not row['installed']:
+                row['readiness']={'state':'off','label':'Not installed','detail':'Install this studio explicitly to open it.'}
+            elif not done:
+                row['readiness']={'state':'review','label':'Needs shared setup','detail':'Finish Marketing Studio setup once for all studios.'}
+            elif not assistant_available or not git_available:
+                row['readiness']={'state':'review','label':'Needs assistant' if not assistant_available else 'Needs Git','detail':'Check this computer for the missing local prerequisite.'}
+            else:
+                row['readiness']={'state':'done','label':'Ready to open','detail':'Shared setup and local launch prerequisites are available. Accounts and task-specific tools are checked when used.'}
             # Read from each studio's own records: never started, never guessed from a folder's name.
             row['workspace'] = workspaces.connection(row['id'], values) if done and row['installed'] else None
         return {'studios': studios,
