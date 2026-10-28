@@ -603,6 +603,50 @@ class ApprovedWordsTests(JudgedSlideNoteTests):
     def test_clearing_the_cover_subtitle_restores_the_approved_title_fallback(self):
         self.change_cover_subtitle('A first subtitle', '')
 
+    def change_title_copy(self, *, subtitle=None, content=False, focal=None):
+        from stand_ins import slides as slides_stand_in
+        self.slides.keeps = True
+        self.slides.listed = set(slides_stand_in.CURRENT)
+        self.workers.outline_said = copy.deepcopy(self.workers.outline_said)
+        index = 4 if content else 0
+        slide = self.workers.outline_said['slides'][index]
+        slide.pop('subtitle', None)
+        if subtitle:
+            slide['subtitle'] = subtitle
+        if content:
+            slide['points'] = []
+            slide.pop('focal', None)
+            if focal:
+                slide['focal'] = focal
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        jobs = len(self.workers.jobs)
+        result = self.engine.slide_words(root, None, slide['id'], 'title', 'A changed title', seen)
+        self.assertTrue(self.approve(root, seen, result['approval'])['fits'])
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        plan = self.slides.design_check(pipeline.design_project(root, None))['plan']
+        self.assertEqual(plan['slides'][index]['copy'], deck._copy(outline['slides'][index]))
+        self.assertEqual(len(self.workers.jobs), jobs)
+        if not content and not subtitle:
+            seen = self.engine._load(root)['deck']['']['saved']['sha256']
+            result = self.engine.slide_words(root, None, slide['id'], 'subtitle', 'A first subtitle', seen)
+            self.assertTrue(self.approve(root, seen, result['approval'])['fits'])
+            plan = self.slides.design_check(pipeline.design_project(root, None))['plan']
+            self.assertEqual(plan['slides'][index]['copy']['focal'], 'A first subtitle')
+
+    def test_row_169_title_fallback_then_first_subtitle_uses_current_approved_copy(self):
+        self.change_title_copy()
+
+    def test_title_edit_preserves_an_independent_subtitle(self):
+        self.change_title_copy(subtitle='An independent subtitle')
+
+    def test_title_edit_preserves_an_independent_content_focal(self):
+        self.change_title_copy(content=True, focal='An independent focal statement')
+
+    def test_title_edit_updates_a_content_title_fallback(self):
+        self.change_title_copy(content=True)
+
     def test_row_169_bound_title_requires_an_explicit_current_design_answer(self):
         root = self.begin(flow='desk')
         self.to_end(root)
@@ -1384,6 +1428,51 @@ class DeckOutlineTests(DeckCase):
         self.assertIsNone(self.engine._load(root).get('problem'))
         self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'], slides)
         self.assertEqual(self.engine.slide_versions(root, None, 'check-yourself')['versions'][0]['source'], 'outline')
+
+    def test_new_slide_ids_follow_the_slides_tool_contract(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        slides = json.loads((root / pipeline.OUTLINE).read_text())['slides']
+        added = {'kind': 'content', 'title': 'Practice again', 'understand': 'Practice again',
+                 'relation': 'none', 'rhythm': 'breathing', 'points': [], 'sources': ['O2'],
+                 'notes': 'Explain your choice.'}
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        for ident in ('a', '12345', 'added-' + 'a' * 45, 'a' * 80, '../escape', 'a/bbb'):
+            with self.subTest(ident=ident), self.assertRaises(workspace.WorkspaceError):
+                self.engine.deck_outline(root, None, [*slides, {**added, 'id': ident}], seen, price=True)
+        for ident in ('abcde', '_Abcd', 'a' * 41):
+            with self.subTest(ident=ident):
+                self.assertTrue(self.engine.deck_outline(root, None,
+                    [*slides, {**added, 'id': ident}], seen, price=True)['price'])
+        ident = 'a' * 41
+        self.engine.deck_outline(root, None, [*slides, {**added, 'id': ident}], seen)
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root).get('problem'))
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.engine.slide_speaker_notes(root, None, ident, 'Explain the new slide.', seen)
+        versions = self.engine.slide_versions(root, None, ident)['versions']
+        self.assertEqual(versions[0]['source'], 'save')
+        self.assertTrue(versions[0]['drawing'])
+
+    def test_row_172_saved_legacy_slide_ids_keep_history_and_notes(self):
+        ids = ('a', '12345', 'added-' + 'a' * 45, 'a' * 80)
+        self.workers.outline_said = copy.deepcopy(self.workers.outline_said)
+        for slide, ident in zip(self.workers.outline_said['slides'][1:5], ids):
+            slide['id'] = ident
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        for ident in ids:
+            with self.subTest(ident=ident):
+                self.assertEqual(self.engine.slide_versions(root, None, ident)['versions'], [])
+                seen = self.engine._load(root)['deck']['']['saved']['sha256']
+                self.engine.slide_speaker_notes(root, None, ident, 'Explain the choice again.', seen)
+                versions = self.engine.slide_versions(root, None, ident)['versions']
+                self.assertEqual(versions[0]['source'], 'save')
+                self.assertTrue(versions[0]['drawing'])
+                self.assertTrue((root / 'deck/versions' / (ident + '.jsonl')).is_file())
+        for ident in ('../escape', '/tmp/escape', 'a/bbb', 'a\\bbb', '.', '..', 'a' * 81):
+            with self.subTest(ident=ident), self.assertRaises((ValueError, workspace.WorkspaceError)):
+                self.engine.slide_versions(root, None, ident)
 
     def test_outline_refuses_removing_the_only_slide_for_an_objective(self):
         root = self.begin(flow='desk')

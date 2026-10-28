@@ -1564,44 +1564,36 @@ def slide_speaker_notes(outline: dict, slide: str, text: str) -> tuple[dict, str
     return slide_words(outline, slide, 'notes', text)
 
 
-def design_words(plan: dict, slide: str, field: str, old: str, text: str) -> dict:
-    """A person's exact word edit as a proposal, preserving every other design choice."""
+def design_words(plan: dict, outline: dict, slide: str, field: str, old: str, text: str) -> dict:
+    """Derive approved copy from the edited outline, including title fallbacks."""
     import copy
     from runner import deck
     made = copy.deepcopy(plan)
     target = next((item for item in made.get('slides', []) if item.get('id') == slide), None)
     if target is None:
         raise workspace.WorkspaceError('The approved design has no such slide.')
-    container = target if field == 'title' else target.get('copy')
-    if not isinstance(container, dict):
-        raise workspace.WorkspaceError('The design does not keep these words in an editable field.')
-    if field == 'subtitle':
-        expected = deck._copy({'title': target['title'], 'subtitle': old})['focal']
-        if container.get('focal') != expected:
-            raise workspace.WorkspaceError('The design and the outline have different words. Review the design first.')
-        container = {**container, 'subtitle': old}
-    wrapped, found = slide_words({'slides': [{'id': slide, **container}]}, slide, field, text)
-    if found != old:
+    original = next((item for item in outline.get('slides', []) if item.get('id') == slide), None)
+    edited, found = slide_words(outline, slide, field, text)
+    if (found != old or original is None or target.get('title') != original.get('title')
+            or target.get('copy') != deck._copy(original)):
         raise workspace.WorkspaceError('The design and the outline have different words. Review the design first.')
-    changed = wrapped['slides'][0]
-    changed.pop('id', None)
-    if field == 'title':
-        target['title'] = changed['title']
-    else:
-        if field == 'subtitle':
-            changed.pop('subtitle', None)
-            changed['focal'] = deck._copy({'title': target['title'], 'subtitle': text.strip()})['focal']
-        target['copy'] = changed
-        target.pop('visibleText', None)  # Harness Slides derives this from its copy.
-        if target.get('qualifications'):
-            target['qualifications'] = [text.strip() if value == old else value
-                                        for value in target['qualifications']]
+    updated = next(item for item in edited['slides'] if item['id'] == slide)
+    target['title'], target['copy'] = updated['title'], deck._copy(updated)
+    target.pop('visibleText', None)  # Harness Slides derives this from its copy.
+    if field != 'title' and target.get('qualifications'):
+        target['qualifications'] = [text.strip() if value == old else value
+                                    for value in target['qualifications']]
     return made
 
 
 SLIDE_SOURCES = ('save', 'selection', 'note', 'redraw', 'restore', 'outline', 'finishing', 'open', 'update')
 SLIDE_WORDS = ('title', 'subtitle', 'points', 'caveat', 'source', 'notes')
-SLIDE_CODEC = parts.Codec(fixed=(), single=(), part=re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]{4,40}$'),
+# Harness Slides outline and composition IDs; new slides must satisfy both.
+SLIDE_ID = re.compile(r'[a-zA-Z_][a-zA-Z0-9_-]{4,40}')
+# Older desk versions accepted short, digit-leading and longer lowercase IDs.
+# Keep their saved History readable without allowing separators or path traversal.
+SLIDE_CODEC = parts.Codec(fixed=(), single=(), part=re.compile(
+    r'(?:[a-zA-Z_][a-zA-Z0-9_-]{4,40}|[a-z0-9][a-z0-9-]{0,79})'),
                           thing='deck', noun='slide')
 
 

@@ -4583,9 +4583,11 @@ class Engine(Reviewing):
             target['copy'] = deck._copy(next(item for item in restored['slides'] if item['id'] == slide))
             target.pop('visibleText', None)
         else:
+            original = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
             for key, previous, new in changes or [(field, old, text)]:
                 if key != 'notes':
-                    plan = drafts.design_words(plan, slide, key, previous, new)
+                    plan = drafts.design_words(plan, original, slide, key, previous, new)
+                    original, _ = drafts.slide_words(original, slide, key, new)
         token = secrets.token_hex(12)
         folder = deck_edit.proposal_folder(root, token)
         try:
@@ -4752,9 +4754,10 @@ class Engine(Reviewing):
             if not isinstance(slides, list) or not slides or any(not isinstance(item, dict) for item in slides):
                 raise WorkspaceError('Keep at least one slide in the outline.')
             ids = [item.get('id') for item in slides]
-            if any(not isinstance(ident, str) or (ident not in known and not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,79}', ident))
-                   for ident in ids) or len(set(ids)) != len(ids):
-                raise WorkspaceError('Give each slide a unique short ID made of lowercase letters, numbers and hyphens.')
+            if any(not drafts.SLIDE_CODEC.known(ident) or (ident not in known and
+                    not drafts.SLIDE_ID.fullmatch(ident)) for ident in ids) or len(set(ids)) != len(ids):
+                raise WorkspaceError('Give each new slide a unique ID of 5 to 41 letters, numbers, '
+                                     'underscores or hyphens, starting with a letter or underscore.')
             for item in slides:
                 original = known.get(item['id'])
                 if original is None:

@@ -7139,6 +7139,24 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(slides[-1]['sources'], ['O2'])
         self.assertEqual(slides[-1]['notes'], 'Ask for another explanation.')
 
+    def test_added_slide_long_titles_and_collisions_keep_valid_ids(self):
+        found = self.slide_card()
+        found['outline'] = {'slides': [{'id': 'check-yourself', 'kind': 'content', 'title': 'Check yourself', 'sources': ['O2']}]}
+        actions = [{'click': 'Outline'}]
+        for title in ('A' * 100, 'A' * 100, '1', '!'):
+            actions += [{'fill': 'A new slide’s title', 'value': title},
+                        {'fill': 'Objectives for the new slide', 'value': 'O2'},
+                        {'fill': 'What the presenter says on it', 'value': 'Explain the choice.'},
+                        {'click': 'Add slide'}]
+        actions.append({'click': 'Save outline'})
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/deck-outline-price': [a_desk(found, price='Redraws a section.')]*4,
+            'POST /api/drafts/deck-outline': [a_desk(found, fits=True)]}), actions)
+        ids = [slide['id'] for slide in self.posts(result)[-1][1]['slides']]
+        self.assertEqual(len(ids), len(set(ids)))
+        for ident in ids:
+            self.assertRegex(ident, r'^[a-zA-Z_][a-zA-Z0-9_-]{4,40}$')
+
     def test_discarding_selected_words_retires_the_review_action(self):
         found = self.slide_card()
         found['selection'] = {'id': 'selection-one', 'status': 'done', 'part': 'check-yourself',

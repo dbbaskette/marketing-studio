@@ -858,9 +858,12 @@ function deckOutline(found) {
         error.textContent = 'Give the new slide a title and the objectives it serves.'; return;
       }
       const base = 'added-' + (title.value.toLowerCase().replace(/[^a-z0-9]+/g, '-')
-        .replace(/^-+|-+$/g, '').slice(0, 45) || 'slide');
+        .replace(/^-+|-+$/g, '').slice(0, 35) || 'slide');
       let id = base, number = 2;
-      while (edit.work.some((slide) => slide.id === id)) id = base + '-' + number++;
+      while (edit.work.some((slide) => slide.id === id)) {
+        const suffix = '-' + number++;
+        id = base.slice(0, 41 - suffix.length) + suffix;
+      }
       const slide = { id, kind: 'content', title: title.value.trim(), understand: title.value.trim(),
         relation: 'none', rhythm: 'breathing', points: [],
         sources: objectives.value.split(',').map((value) => value.trim()).filter(Boolean),

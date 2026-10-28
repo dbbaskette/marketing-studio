@@ -2902,7 +2902,9 @@ class DeskPageTests(PageCase):
                          ['blueprint', 'document', 'brief', 'deck', 'scenario'])
         for card in view['cards']:
             with self.subTest(card=card['name']):
-                self.assertEqual(sorted(card), CARD_KEYS)
+                self.assertEqual(sorted(card), sorted(CARD_KEYS + ([
+                    'change', 'local', 'look', 'look_price', 'outline', 'outline_delivery',
+                    'proposals', 'selection', 'slides'] if card['kind'] == 'deck' else [])))
                 self.assertEqual(card['seen'], hashed(root, card['name']))
                 self.assertEqual((card['state'], card['held'], card['needs']),
                                  ('draft', False, []))
