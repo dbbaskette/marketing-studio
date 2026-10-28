@@ -510,7 +510,8 @@ class ApprovedWordsTests(JudgedSlideNoteTests):
         seen, proposed = self.propose(root)
         self.approve(root, seen, proposed)
         project = pipeline.design_project(root, None)
-        edit(self, root, 'document', lambda text: text + '\nOne line more.\n')
+        edit(self, root, 'document', lambda text: text.replace(
+            '## When capacity holds', '## When capacity holds\nOne line more.'))
         self.engine.update(root, 'deck')
         self.to_end(root)
         self.assertIsNone(self.engine._load(root)['problem'])
@@ -763,3 +764,89 @@ class ApprovedWordsAssetTests(DeckCase):
         self.engine.supply_asset(root, None, 'console_view', png(70), 'A new console', 'Course author', '')
         self.assertEqual(picture.read_bytes(), old_picture)
         self.assertNotEqual((project / old_assets['console_view']['path']).read_bytes(), old_picture)
+
+
+class GuideUpdateTests(DeckCase):
+    def change(self, root, name, change):
+        from test_drafts import edit
+        edit(self, root, name, change)
+
+    def test_row_170_update_from_the_guide_rewords_only_the_slides_that_serve_it(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = json.loads((root / pipeline.OUTLINE).read_text())
+        self.change(root, 'document', lambda text: text.replace(
+            '## When capacity holds', '## When capacity holds\nChanged detail.'))
+        scope = drafts.slides_for(root, workspace.load(root), None, 'document')
+        self.assertEqual(scope['slides'], ['when-capacity-holds', 'check-yourself'])
+        self.assertIn('When capacity holds', scope['sections'])
+        self.workers.outline_said = copy.deepcopy(before)
+        self.workers.outline_said['slides'][2]['notes'] += ' Changed.'
+        self.workers.outline_said['slides'][4]['notes'] += ' Changed.'
+        count = len(self.workers.of('section'))
+        self.engine.update(root, 'deck')
+        self.to_end(root)
+        job = next(spec for kind, _, spec in reversed(self.workers.jobs) if kind == 'outline')
+        self.assertIn('slides to word again', [entry['name'] for entry in job['inputs']])
+        after = json.loads((root / pipeline.OUTLINE).read_text())
+        for index in (0, 1, 3, 5):
+            self.assertEqual(before['slides'][index], after['slides'][index])
+        self.assertEqual(len(self.workers.of('section')), count + 2)
+
+    def test_key_point_without_an_objective_uses_its_module(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        self.change(root, 'document', lambda text: text.replace('covers: O2 K1.2', 'covers: K1.2'))
+        scope = drafts.slides_for(root, workspace.load(root), None, 'document')
+        self.assertEqual(scope['slides'], ['what-it-does', 'when-capacity-holds',
+                                           'the-objection', 'check-yourself'])
+
+    def test_duplicate_guide_headings_do_not_hide_a_change(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        first = {'id': 'one', 'heading': 'Repeated', 'text': 'Before', 'covers': ['O2']}
+        second = {'id': 'two', 'heading': 'Repeated', 'text': 'Same', 'covers': ['O3']}
+        old = {'opening': '', 'sections': [first, second]}
+        new = {'opening': '', 'sections': [{**first, 'text': 'After'}, second]}
+        codec = mock.Mock()
+        codec.split.side_effect = [old, new]
+        with mock.patch.object(drafts, 'GuideCodec', return_value=codec):
+            scope = drafts.slides_for(root, workspace.load(root), None, 'document')
+        self.assertTrue(scope['whole'])
+        self.assertEqual(len(scope['slides']), 6)
+
+    def test_a_glossary_edit_names_no_slide(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        self.change(root, 'document', lambda text: text.replace('## Glossary', '## Glossary\nChanged.'))
+        self.assertEqual(drafts.slides_for(root, workspace.load(root), None, 'document')['slides'], [])
+        self.assertEqual(drafts.update_preview(root, 'deck')['message'], drafts.NO_SLIDE)
+        with self.assertRaisesRegex(workspace.WorkspaceError, 'No slide is built'):
+            self.engine.update(root, 'deck')
+        self.assertFalse(drafts.busy(self.engine._load(root)))
+
+    def test_a_new_objective_rewords_the_whole_outline(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        self.change(root, 'blueprint', lambda text: text.replace(
+            '## M1', '### O4: New objective [explain]\n\n## M1'))
+        scope = drafts.slides_for(root, workspace.load(root), None, 'blueprint')
+        self.assertTrue(scope['whole'])
+        self.assertEqual(len(scope['slides']), 6)
+        preview = drafts.update_preview(root, 'deck')
+        self.assertTrue(preview['whole'])
+        self.assertEqual(preview['parts'], ['The whole outline'])
+        self.assertIn('affected sections and review', preview['price'])
+
+    def test_a_frozen_slide_in_the_outline_is_handed_back(self):
+        from runner import worker_tools
+        from runner_support import OUTLINE
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        outline = copy.deepcopy(OUTLINE)
+        frozen = copy.deepcopy(outline['slides'][2])
+        outline['slides'][2]['notes'] = 'Changed.'
+        spec = {'brand': str(root / 'brand.json'),
+                'frozen': {frozen['id']: frozen}}
+        problems, _, _, _ = worker_tools.check_outline(json.dumps(outline), spec, self.slides, self.base)
+        self.assertIn('Slide 3 is not one to word again. Copy it exactly.', problems)

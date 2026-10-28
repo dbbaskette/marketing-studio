@@ -7560,6 +7560,20 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [('/api/drafts/ready', {
             'path': str(self.root), 'name': 'blueprint@101', 'seen': seen_of('blueprint@101')})])
 
+    def test_a_deck_update_with_no_slide_offers_only_keep(self):
+        held = a_card('deck@101', 'held', 'Built from an earlier guide.', ('update', 'keep'))
+        answers = self.on_desk(a_desk(held, levels=('101',)), **{
+            'GET /api/drafts/update-preview': [ok({'parts': ['Glossary'], 'slides': [],
+                'message': 'No slide is built from the sections that changed.', 'price': ''})],
+            'POST /api/drafts/keep': [a_desk(levels=('101',))]})
+        result = self.open_desk(answers, [{'click': 'Update from the guide'}, {'snapshot': 'preview'},
+                                          {'click': 'Keep as it is'}])
+        shot = result['snapshots']['preview']
+        self.assertIn('No slide is built from the sections that changed.', shot['text'])
+        self.assertNotIn('Update', shot['buttons'])
+        self.assertIn('Keep as it is', shot['buttons'])
+        self.assertEqual(self.posts(result)[0][0], '/api/drafts/keep')
+
     def test_a_held_deck_offers_update_and_keep(self):
         says = 'Built from an earlier guide. 3 sections changed since.'
         held = a_card('deck@101', 'held', says, ('update', 'keep', 'download'))

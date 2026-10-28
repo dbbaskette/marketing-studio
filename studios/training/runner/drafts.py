@@ -19,6 +19,7 @@ what is Ready or what the person sent (`copied`).
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from contextlib import contextmanager
 from pathlib import Path
@@ -62,8 +63,8 @@ UP_TO_DATE = workspace.UP_TO_DATE
 # research plan and the research. It can only be kept as it is.
 NOT_REMADE = '{it} is not made again by the studio. Keep it as it is, or change it yourself.'
 NEVER_REMADE = ('research-plan', 'research')
-# Until the deck's scoped update (Task 20), an update is of the whole material.
-NO_SCOPE = 'An update is of the whole material for now. Leave out what it covers.'
+# The person cannot supply an arbitrary scope to an update.
+NO_SCOPE = 'Leave out the custom scope when updating this material.'
 # What a held card says: what it was built from, and how much of it changed since.
 HELD = 'Built from an earlier {what}.'
 CHANGED = ' {n} {parts} changed since.'
@@ -186,9 +187,103 @@ def scoped_update(root, session, name, change, draft):
     return set(touched(draft, objectives))
 
 
+DECK_UPDATE = ('The guide changed. Word again only the slides in "slides to word again", '
+               'from the guide as it is now, and copy every other slide exactly.')
+NO_SLIDE = 'No slide is built from the sections that changed.'
+
+
+def slides_for(root: Path, session: dict, level: str | None, since: str) -> dict:
+    """Find the slides served by the parts changed since this deck was built."""
+    from runner import pipeline, deck
+    if since not in ('document', 'blueprint'):
+        raise ValueError('Choose the guide or plan.')
+    name = workspace.qualify('deck', level)
+    source = workspace.qualify(since, level)
+    digest = (session['artifacts'].get(name, {}).get('built_from') or {}).get(source)
+    old_file = workspace.history_file(root, source, digest, '.md') if digest else None
+    current_file = root / workspace.artifact(root, session, source)['file']
+    current = current_file.read_text(encoding='utf-8') if current_file.is_file() else ''
+    old = old_file.read_text(encoding='utf-8') if old_file and old_file.is_file() else None
+    outline = json.loads(pipeline.place(root, level, pipeline.OUTLINE).read_text(encoding='utf-8'))
+    slides = deck.slides_of(outline)
+    all_ids = [slide['id'] for slide in slides if slide.get('id')]
+    if old is None:
+        return {'slides': all_ids, 'sections': [], 'whole': True}
+    if since == 'blueprint':
+        before, after = checks.parse_blueprint(old), checks.parse_blueprint(current)
+        a, b = before['objectives'], after['objectives']
+        if set(a) != set(b):
+            return {'slides': all_ids, 'sections': [], 'whole': True}
+        objectives = {key for key in a if a[key] != b[key]}
+        # Other plan edits may affect any slide; do not guess at their scope.
+        if not _objective_only(plan_change(root, session, name)) and old != current:
+            return {'slides': all_ids, 'sections': [], 'whole': True}
+        sections = sorted(objectives)
+    else:
+        codec = GuideCodec()
+        before, after = codec.split(old), codec.split(current)
+        old_parts = {part['heading']: part for part in before['sections']}
+        new_parts = {part['heading']: part for part in after['sections']}
+        if len(old_parts) != len(before['sections']) or len(new_parts) != len(after['sections']):
+            return {'slides': all_ids, 'sections': [], 'whole': True}
+        changed = [part for part in [*before['sections'], *after['sections']]
+                   if ({key: value for key, value in old_parts.get(part['heading'], {}).items() if key != 'id'}
+                       != {key: value for key, value in new_parts.get(part['heading'], {}).items() if key != 'id'})]
+        sections = list(dict.fromkeys(part['heading'] for part in changed))
+        objectives = set()
+        plan_name = workspace.qualify('blueprint', level)
+        plan_file = root / workspace.artifact(root, session, plan_name)['file']
+        modules = checks.parse_blueprint(plan_file.read_text(encoding='utf-8'))['modules']
+        for part in changed:
+            covers = part.get('covers') or []
+            direct = {cover for cover in covers if cover.startswith('O')}
+            objectives.update(direct)
+            if not direct:
+                for cover in covers:
+                    if cover.startswith('K'):
+                        objectives.update(modules.get('M' + cover[1:].partition('.')[0], {}).get('objectives', []))
+        if before.get('opening') != after.get('opening'):
+            return {'slides': all_ids, 'sections': sections, 'whole': True}
+    return {'slides': [slide['id'] for slide in slides
+                       if objectives.intersection(slide.get('sources') or [])],
+            'sections': sections, 'whole': False}
+
+
+def deck_update(root: Path, session: dict, level: str | None) -> dict:
+    """Scope a deck update only when exactly one supported input changed."""
+    from runner import pipeline, deck
+    name = workspace.qualify('deck', level)
+    changed = input_of(root, session, name)
+    supported = [workspace.qualify(key, level) for key in ('document', 'blueprint')]
+    if len(changed) == 1 and changed[0] in supported:
+        return slides_for(root, session, level, workspace.split(changed[0])[0])
+    outline = json.loads(pipeline.place(root, level, pipeline.OUTLINE).read_text(encoding='utf-8'))
+    return {'slides': [slide['id'] for slide in deck.slides_of(outline) if slide.get('id')],
+            'sections': [], 'whole': True}
+
+
 def update_preview(root: Path, name: str) -> dict:
     from studio_core import stops
     session = workspace.load(root)
+    kind, level = workspace.split(name)
+    if kind == 'deck':
+        from runner import pipeline
+        from runner.engine import Engine
+        scoped = deck_update(root, session, level)
+        run = run_of(root) or {'steps': {}}
+        start = pipeline.read_built(root, level).get('start') or {}
+        sections = [part for part in start.get('sections') or ()
+                    if set(part.get('slides') or ()).intersection(scoped['slides'])]
+        names = [workspace.qualify('deck-outline', level)] + [
+            workspace.qualify('deck-sections', level) + ':' + part['id'].rpartition('-')[2]
+            for part in sections] + [workspace.qualify('deck-review', level)]
+        price = Engine._redo_steps(run, names)
+        return {'parts': ['The whole outline'] if scoped['whole'] else scoped['sections'],
+                'slides': scoped['slides'], 'whole': scoped['whole'],
+                'message': NO_SLIDE if not scoped['slides'] else '',
+                'price': stops.redone('the outline', len(names), *price,
+                                      after='the affected sections and review') if price
+                else NO_UPDATE_RECORD}
     change = plan_change(root, session, name)
     kind = workspace.split(name)[0]
     codec = GuideCodec() if kind == 'document' else BriefCodec()

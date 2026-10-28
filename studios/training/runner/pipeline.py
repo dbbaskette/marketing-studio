@@ -2084,11 +2084,19 @@ def outline_work(root: Path, found: Survey, step: Step, request: dict | None,
                   'they say. Put right the ones the person\'s request covers:\n\n')
                + '\n'.join(f"- {finding['slide']}: {finding['note']}" for finding in said)
                if said else ''))
+    frozen, previous = {}, None
+    if request and 'slides' in request and earlier:
+        previous = json.loads(_read(place(root, level, OUTLINE)))
+        selected = set(request['slides'])
+        frozen = {slide['id']: slide for slide in deck.slides_of(previous)
+                  if slide.get('id') not in selected}
+        inputs['slides to word again'] = '\n'.join(request['slides'])
     prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'outline', 'brand': str(contract(root, mine)),
                                      'blueprint': blueprint, 'design': designed,
                                      'delivery': delivery_of(session),
                                      'known': research_ids(root),
+                                     **({'frozen': frozen, 'previous': previous} if previous else {}),
                                      **({'icons': True} if designed and icons else {})}},
                 'ask': _can_ask(answered)}
     return Work(briefs.guidance('deck-outline', design=designed, icons=designed and icons),

@@ -394,8 +394,9 @@ def check_outline(text: str, spec: dict, slides,
         outline, kept = given.get('outline'), as_json(given.get('outline') or {}, 'outline')[1]
         design = given.get('design')
     budget = spec.get('budget')
+    # The tool checks the outline without the short labels a point gives its diagram.
+    known, shown = frozenset(), outline
     try:
-        # The tool checks the outline without the short labels a point gives its diagram.
         known = slides.knows() if hasattr(slides, 'knows') else frozenset()
         shown = deck.for_tool(outline, known)
         told = kept if shown == outline else json.dumps(
@@ -407,6 +408,19 @@ def check_outline(text: str, spec: dict, slides,
         budget = report.get('wordBudget') or budget
         found = [f"{finding.get('slide')}: {finding.get('detail') or finding.get('code')}"
                  for finding in report.get('findings') or ()]
+    frozen = spec.get('frozen') or {}
+    frozen = {slide['id']: slide for slide in deck.slides_of(
+        deck.for_tool({'slides': list(frozen.values())}, known))}
+    actual = deck.slides_of(shown)
+    for number, slide in enumerate(deck.slides_of(spec.get('previous') or {}), 1):
+        ident = slide.get('id')
+        if ident in frozen and (number > len(actual) or actual[number - 1] != frozen[ident]):
+            found.append(f'Slide {number} is not one to word again. Copy it exactly.')
+    if frozen and not spec.get('previous'):
+        for number, slide in enumerate(deck.slides_of(shown), 1):
+            ident = slide.get('id')
+            if ident in frozen and slide != frozen[ident]:
+                found.append(f'Slide {number} is not one to word again. Copy it exactly.')
     outcomes = [checks.result('outline.tool', found),
                 checks.result('outline.rules', deck.rules(outline, spec.get('blueprint') or '',
                                                           budget, spec.get('known') or (),

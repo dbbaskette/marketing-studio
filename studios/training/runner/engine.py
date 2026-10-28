@@ -4490,6 +4490,14 @@ class Engine(Reviewing):
                 if state.get(upstream) == 'stale':
                     raise WorkspaceError(f'Update or keep {workspace.label(upstream)} first.')
             changed = drafts.input_of(root, session, name)
+            if workspace.split(name)[0] == 'deck':
+                level = workspace.split(name)[1]
+                scope_deck = drafts.deck_update(root, session, level)
+                if not scope_deck['slides']:
+                    raise WorkspaceError(drafts.NO_SLIDE)
+                self._decided(record, level)['asked'] = {
+                    'kind': 'revise', 'note': drafts.DECK_UPDATE,
+                    'slides': scope_deck['slides'], 'at': home.now()}
             record.setdefault('drafts', {}).setdefault('updates', {})[name] = {
                 'at': home.now(), 'by': 'page', 'scope': scope}
             base, level = workspace.split(name)

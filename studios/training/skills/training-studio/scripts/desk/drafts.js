@@ -731,7 +731,7 @@ function deskCard(found) {
   }
   if (actions.includes('update')) {
     const update = capsule(updateLabel(found), '', () => {
-      if (['document', 'brief'].includes(found.kind)) previewUpdate(found);
+      if (['document', 'brief', 'deck'].includes(found.kind)) previewUpdate(found);
       else deskDecide('update', { name: found.name }, update);
     }, 'desk-update ' + found.name);
     bar.append(update);
@@ -893,6 +893,16 @@ async function previewUpdate(found) {
     await flushDesk(deskHeld(path));
     const preview = await ask('drafts/update-preview', { path, name: found.name });
     if (view.path !== path || view.screen !== 'run') return;
+    if (preview.message) {
+      const keep = capsule('Keep as it is', 'filled', async () => {
+        const answer = await deskDecide('keep', { name: found.name, seen: found.seen }, keep);
+        if (answer) closeSheet();
+      });
+      DESK.kitSheet = [sheetTitle(updateLabel(found)), make('p', '', preview.message),
+        add(make('div', 'bar'), keep)];
+      openSheet('desk-kit', '')();
+      return;
+    }
     const update = capsule('Update', 'filled', async () => {
       const answer = await deskDecide('update', { name: found.name }, update);
       if (answer) closeSheet();
