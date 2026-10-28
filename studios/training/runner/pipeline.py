@@ -1040,7 +1040,11 @@ def write_built(root: Path, level: str | None, built: dict) -> None:
 
 def design_project(root: Path, level: str | None, approved: dict | None = None) -> Path:
     """The active tool project; older decks keep their original deck/ location."""
-    approved = approved if approved is not None else (read_built(root, level).get('start') or {}).get('design') or {}
+    if approved is None:
+        kept = ((drafts.run_of(root) or {}).get('deck') or {}).get(level or '') or {}
+        approved = (kept.get('approved') or {}).get('design')
+        if approved is None:
+            approved = (read_built(root, level).get('start') or {}).get('design') or {}
     project = approved.get('project')
     if project is None:
         return place(root, level, DESIGNS)

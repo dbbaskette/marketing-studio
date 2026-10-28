@@ -3280,8 +3280,8 @@ class Engine(Reviewing):
                 kept['approved'] = {'sha256': kept['waiting']['sha256'], 'at': home.now(),
                                     'by': 'page', 'note': note}
                 if asked:
-                    kept['approved']['design'] = {'sha256': asked['sha256'],
-                                                  'revision': asked['revision']}
+                    kept['approved']['design'] = {'sha256': asked['sha256'], 'revision': asked['revision'],
+                        **({'project': asked['project']} if 'project' in asked else {})}
                 said = f'{workspace.sentence(says)} was approved on the page.'
             else:
                 kept['asked'] = {'kind': 'revise', 'note': note, 'at': home.now()}
@@ -4167,7 +4167,7 @@ class Engine(Reviewing):
             if problems:
                 raise WorkspaceError(' '.join(problems))
             if start.get('design') and _approved_words is None and (
-                    field in ('title', 'caveat', 'source') or field.startswith('points[')):
+                    field in ('title', 'subtitle', 'caveat', 'source') or field.startswith('points[')):
                 return self._propose_slide_words(root, level, slide, field, text, seen, old, basis)
             whole = home.read_json(folder / 'given' / 'outline.json', {})
             updated = next(item for item in deck.slides_of(edited) if item.get('id') == slide)

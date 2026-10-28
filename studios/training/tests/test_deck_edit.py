@@ -160,3 +160,14 @@ class PublicationTests(TrainingCase):
         self.assertEqual(selected, self.root / '101' / project)
         with self.assertRaisesRegex(WorkspaceError, 'cannot be opened safely'):
             pipeline.design_project(self.root, None, {'project': '../another-training'})
+
+    def test_shared_approval_takes_precedence_over_an_older_local_build(self):
+        from runner import drafts, pipeline
+        old, current = ('deck/design-edits/' + letter * 24 for letter in ('a', 'b'))
+        pipeline.write_built(self.root, '101', {'start': {'design': {'project': old}}})
+        deck_edit.home.write_json(self.root / drafts.RECORD,
+            {'deck': {'101': {'approved': {'design': {'project': current}}}}})
+        self.assertEqual(pipeline.design_project(self.root, '101'), self.root / '101' / current)
+        # Rendering an explicitly selected revision still uses that revision's project.
+        self.assertEqual(pipeline.design_project(self.root, '101', {'project': old}),
+                         self.root / '101' / old)

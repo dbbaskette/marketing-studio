@@ -1478,6 +1478,8 @@ def design_words(plan: dict, slide: str, field: str, old: str, text: str) -> dic
     container = target if field == 'title' else target.get('copy')
     if not isinstance(container, dict):
         raise workspace.WorkspaceError('The design does not keep these words in an editable field.')
+    if field == 'subtitle':
+        container = {**container, 'subtitle': container.get('focal', '')}
     wrapped, found = slide_words({'slides': [{'id': slide, **container}]}, slide, field, text)
     if found != old:
         raise workspace.WorkspaceError('The design and the outline have different words. Review the design first.')
@@ -1486,6 +1488,12 @@ def design_words(plan: dict, slide: str, field: str, old: str, text: str) -> dic
     if field == 'title':
         target['title'] = changed['title']
     else:
+        if field == 'subtitle':
+            changed.pop('subtitle', None)
+            if text.strip():
+                changed['focal'] = text.strip()
+            else:
+                changed.pop('focal', None)
         target['copy'] = changed
         target.pop('visibleText', None)  # Harness Slides derives this from its copy.
         if target.get('qualifications'):

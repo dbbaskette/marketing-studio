@@ -503,6 +503,74 @@ class ApprovedWordsTests(JudgedSlideNoteTests):
                   'response': 'Approve updated words', **changes}
         return self.engine.slide_words_decide(root, proposed['token'], 'approve', seen, **values)
 
+    def test_a_guide_update_keeps_the_approved_word_project(self):
+        from test_drafts import edit
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen, proposed = self.propose(root)
+        self.approve(root, seen, proposed)
+        project = pipeline.design_project(root, None)
+        edit(self, root, 'document', lambda text: text + '\nOne line more.\n')
+        self.engine.update(root, 'deck')
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root)['problem'])
+        self.assertEqual(pipeline.design_project(root, None), project)
+        self.assertEqual(self.engine._load(root)['deck']['']['approved']['design']['project'],
+                         project.relative_to(root).as_posix())
+
+    def test_a_teammate_without_local_drawings_uses_the_shared_design_project(self):
+        import shutil
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen, proposed = self.propose(root)
+        self.approve(root, seen, proposed)
+        project = pipeline.design_project(root, None)
+        shutil.rmtree(root / 'work')
+        before = self.files(root)
+        self.assertEqual(pipeline.design_project(root, None), project)
+        self.assertEqual(self.slides.design_check(pipeline.design_project(root, None))[
+            'plan']['slides'][4]['title'], 'A new title')
+        self.assertEqual(self.files(root), before)
+
+    def test_page_outline_approval_keeps_the_question_project(self):
+        from dataclasses import replace
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen, proposed = self.propose(root)
+        self.approve(root, seen, proposed)
+        record = self.engine._load(root)
+        kept = record['deck']['']
+        expected = copy.deepcopy(kept['approved']['design'])
+        kept['waiting'] = {'sha256': kept['approved']['sha256'], 'design': expected}
+        self.engine._store(root, record)
+        found = self.engine._survey(root, record)
+        step = next(step for step in found.steps if step.id == 'gate:deck-outline')
+        found = replace(found, next=pipeline.Next('outline', step))
+        with mock.patch.object(self.engine, '_survey', return_value=found), \
+                mock.patch.object(self.engine, '_answer'), \
+                mock.patch.object(self.engine, 'carry_on'), mock.patch.object(self.engine, 'view'):
+            self.engine.outline(root, None, 'approve')
+        self.assertEqual(self.engine._load(root)['deck']['']['approved']['design'], expected)
+
+    def test_a_cover_subtitle_requires_approval_of_its_focal_copy(self):
+        from stand_ins import slides as slides_stand_in
+        self.slides.keeps = True
+        self.slides.listed = set(slides_stand_in.CURRENT)
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        before, answers = self.files(root), len(self.slides.replies)
+        result = self.engine.slide_words(root, None, 'cover-restarts', 'subtitle',
+                                         'A clearer explanation', seen)
+        self.assertIn('approval', result)
+        self.assertEqual(self.files(root), before)
+        self.assertEqual(len(self.slides.replies), answers)
+        self.assertTrue(self.approve(root, seen, result['approval'])['fits'])
+        plan = self.slides.design_check(pipeline.design_project(root, None))['plan']
+        self.assertEqual(plan['slides'][0]['copy']['focal'], 'A clearer explanation')
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        self.assertEqual(outline['slides'][0]['subtitle'], 'A clearer explanation')
+
     def test_row_169_bound_title_requires_an_explicit_current_design_answer(self):
         root = self.begin(flow='desk')
         self.to_end(root)

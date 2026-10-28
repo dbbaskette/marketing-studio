@@ -232,7 +232,8 @@ class Reviewing:
                              'the deck direction')
             approved = {'sha256': waiting['sha256'], 'by': by, 'at': home.now()}
             if asked:
-                approved['design'] = {'sha256': asked['sha256'], 'revision': asked['revision']}
+                approved['design'] = {'sha256': asked['sha256'], 'revision': asked['revision'],
+                                      **({'project': asked['project']} if 'project' in asked else {})}
             kept.update(approved=approved, waiting=None)
             (drafts.receipt if desk else review_policy.receipt)(
                 record, found.next.step.id, approved, home.now())
