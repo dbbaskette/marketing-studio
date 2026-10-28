@@ -445,6 +445,65 @@ class DraftJobTests(DeckCase):
         self.assertTrue(self.last(root)['applied'])
         self.assertIn('changes a number', self.last(root)['checks'])
 
+    def change_plan(self, root):
+        file = root / '101/blueprint.md'
+        text = file.read_text()
+        line = next(line for line in text.splitlines() if line.startswith('### O2 '))
+        file.write_text(text.replace(line, line.replace(' [', ' updated [')))
+        workspace.save(root, 'blueprint@101', edit=True, via='save')
+        workspace.accept_desk(root, 'blueprint@101')
+
+    def test_an_update_from_the_plan_keeps_the_person_s_edits(self):
+        root = self.desk()
+        card = self.card(root)
+        part = card['sections'][0]
+        self.engine.draft_save(root, self.NAME, part['id'], card['revision'], 'Person typed this [1].')
+        self.change_plan(root)
+        def update(tools, job):
+            self.assertIn('plan change', [item['name'] for item in tools.job['inputs']])
+            spec = tools.job['artifacts']['document']
+            self.assertEqual(spec['untouched'][part['heading']], 'Person typed this [1].')
+            result = tools.submit_artifact('document', (root / '101/document.md').read_text())
+            self.assertTrue(result[0], result[1])
+            tools.submit_review('The guide keeps the sections that still fit.')
+        self.workers.then('document', update)
+        self.engine.update(root, self.NAME)
+        self.assertIsNone(self.record(root)['problem'], self.record(root)['problem'])
+        self.assertEqual(self.card(root)['sections'][0]['text'], 'Person typed this [1].')
+        self.assertEqual(self.saves(root)[-1]['via'], 'update')
+
+    def test_an_untouched_section_that_changed_is_handed_back(self):
+        text = (helpers.EXAMPLES / 'document.md').read_text()
+        section = drafts.GuideCodec().split(text)['sections'][0]
+        problems, *_ = worker_tools.check_document(text, {'untouched': {section['heading']: 'Different'}})
+        self.assertIn(f'Section "{section["heading"]}" is not touched by the plan change. Copy it exactly.', problems)
+        brief = (helpers.EXAMPLES / 'product-brief.md').read_text()
+        brief_section = drafts.BriefCodec().split(brief)['sections'][0]
+        problems, *_ = worker_tools.check_brief(brief, {'untouched': {brief_section['heading']: 'Different'}})
+        self.assertIn(f'Section "{brief_section["heading"]}" is not touched by the plan change. Copy it exactly.', problems)
+
+    def test_touched_recognizes_objectives_and_their_key_points(self):
+        draft = {'sections': [{'id': 'one', 'covers': ['K2.1']},
+                              {'id': 'two', 'covers': ['O2']},
+                              {'id': 'three', 'covers': ['K1.2']}]}
+        self.assertEqual(drafts.touched(draft, ['O2']), ['one', 'two'])
+
+
+    def test_the_update_preview_names_the_sections_and_the_price(self):
+        root = self.desk()
+        self.change_plan(root)
+        preview = drafts.update_preview(root, self.NAME)
+        self.assertIn('When capacity holds', preview['parts'])
+        response = page.RunnerPage(8765, self.engine).read(
+            '/api/drafts/update-preview', lambda key: {'path': str(root), 'name': self.NAME}[key])
+        self.assertEqual(json.loads(response[2]), preview)
+        self.assertTrue(preview['price'].startswith('Drawn again:'))
+        run = self.record(root)
+        run['steps'].pop(self.NAME, None)
+        home.write_json(root / drafts.RECORD, run)
+        self.assertEqual(drafts.update_preview(root, self.NAME)['price'],
+                         'This computer has no record yet of what it costs.')
+
     def test_saved_runs_do_not_recover_or_run_desk_job_metadata(self):
         root = self.begin()
         with self.engine.files:

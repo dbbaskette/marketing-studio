@@ -3636,7 +3636,8 @@ class Engine(Reviewing):
                              record['answers'].get(it.id, []), sources, naming, designed,
                              bool(designed) and self._has('design-icon-ids'),
                              synthesis=bool(record.get('research_contract')),
-                             asked=record.get('research_questions') or ())
+                             asked=record.get('research_questions') or (),
+                             update=drafts.on_desk(record) and it.artifact in drafts.updates(record))
         outcome, handed, started_at, folder = self._job(root, run, it, work)
         if outcome.reason == 'stopped':
             return self._stopped(root, it, outcome, started_at)
@@ -3654,7 +3655,8 @@ class Engine(Reviewing):
                                                       step.request, designed),
                         asked=None, waiting=None)
                 else:
-                    pipeline.keep_draft(root, it, handed, step.request, found)
+                    pipeline.keep_draft(root, it, handed, step.request, found,
+                                        update=drafts.on_desk(record) and it.artifact in drafts.updates(record))
                 if it.id == 'research-plan' and record.get('research_contract'):
                     record['research'] = {**(record.get('research') or {}), 'plan_from': 'assistant'}
                 self._tried(record, it.id, started_at, outcome.seconds, 'kept',

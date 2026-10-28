@@ -215,7 +215,7 @@ CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
-         DRAFTS, CARD, VERSIONS)
+         DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview')
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
@@ -300,6 +300,10 @@ class RunnerPage(desk.Page):
             name = one('name')
             return desk.as_json(HTTPStatus.OK, self.typed(lambda: self.engine.draft_card(
                 root, name)))
+        if path == f'{DRAFTS}/update-preview':
+            root = self.on_desk(one('path'))
+            with self.engine.files:
+                return desk.as_json(HTTPStatus.OK, drafts.update_preview(root, one('name')))
         if path == VERSIONS:
             root = self.on_desk(one('path'))
             name, part = one('name'), one('part')

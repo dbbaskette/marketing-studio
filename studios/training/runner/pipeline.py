@@ -1399,11 +1399,13 @@ def _about(root: Path, session: dict) -> str:
 
 
 def _again(request: dict | None, earlier: str | None, error: str | None,
-           answered: list[dict], thing: str, dated: bool = False) -> str:
+           answered: list[dict], thing: str, dated: bool = False, update: bool = False) -> str:
     """The part of a task that says why this job is being done again. `dated` says what
     the earlier draft was made from has changed since."""
     parts = []
-    if request and request.get('kind') == 'redesign':
+    if update:
+        parts.append(drafts.UPDATE_RULE)
+    elif request and request.get('kind') == 'redesign':
         parts.append(REDESIGNED)
     elif request and request.get('kind') == 'revise':
         parts.append(f'You are revising an earlier draft. What the person asked for:\n\n'
@@ -1415,7 +1417,7 @@ def _again(request: dict | None, earlier: str | None, error: str | None,
         parts.append(f'What {thing} was made from has changed since the earlier draft, and '
                      'the person approved the change, so it is being made again. Keep what '
                      'still fits what your inputs say now, and change what does not.')
-    if (request or dated) and earlier:
+    if (request or dated or update) and earlier:
         parts.append(f'The earlier draft:\n\n{earlier}')
     if answered:
         asked = '\n\n'.join(f"Question: {item['question']}\nAnswer: {item['answer']}"
@@ -1652,8 +1654,23 @@ def _named_by(inputs: dict, naming: str | None) -> bool:
     return bool(naming)
 
 
+def _update_inputs(root, session, name, inputs, update):
+    if not update:
+        return {}
+    change = drafts.plan_change(root, session, name)
+    inputs['plan change'] = 'Before:\n' + change['before'] + '\nAfter:\n' + change['after']
+    if (workspace.split(name)[0] != 'document' or not drafts._objective_only(change)
+            or drafts.input_of(root, session, name) != [workspace.qualify('blueprint', workspace.split(name)[1])]):
+        return {}
+    file = root / workspace.artifact(root, session, name)['file']
+    draft = drafts.GuideCodec().split(file.read_text(encoding='utf-8'))
+    changed = set(drafts.touched(draft, change['objectives'] + change['added'] + change['removed']))
+    return {section['heading']: section['text'] for section in draft['sections']
+            if section['id'] not in changed}
+
+
 def document_work(root: Path, found: Survey, step: Step, request: dict | None,
-                  error: str | None, answered: list[dict], naming: str | None = None) -> Work:
+                  error: str | None, answered: list[dict], naming: str | None = None, update=False) -> Work:
     """The job of writing one learner guide, from its level's blueprint and the research."""
     session, name = found.session, 'document'
     level = workspace.split(step.artifact)[1]
@@ -1663,6 +1680,7 @@ def document_work(root: Path, found: Survey, step: Step, request: dict | None,
     earlier = _earlier(root, session, level)
     if earlier:
         inputs['earlier levels'] = earlier
+    untouched = _update_inputs(root, session, step.artifact, inputs, update)
     named = _named_by(inputs, naming)
     task = (f'Write {workspace.label(step.artifact)} for this training.\n\n'
             f'{_about(root, session)}\n'
@@ -1670,22 +1688,24 @@ def document_work(root: Path, found: Survey, step: Step, request: dict | None,
             + f'\nYour inputs are {_inputs(inputs)}.\n'
             f'Hand the guide back with submit_artifact under the name "{name}".'
             + _again(request, _text(root, session, step.artifact), error, answered,
-                     'the guide', found.state.get(step.artifact) == 'stale'))
+                     'the guide', found.state.get(step.artifact) == 'stale', update))
     prepared = {'inputs': inputs,
-                'artifacts': {name: {'kind': 'document', 'blueprint': blueprint}},
+                'artifacts': {name: {'kind': 'document', 'blueprint': blueprint,
+                                     **({'untouched': untouched} if update else {})}},
                 'ask': _can_ask(answered)}
     return Work(briefs.guidance('document', level=level, naming=named), task, 'write',
                 prepared, name)
 
 
 def brief_work(root: Path, found: Survey, step: Step, request: dict | None,
-               error: str | None, answered: list[dict], naming: str | None = None) -> Work:
+               error: str | None, answered: list[dict], naming: str | None = None, update=False) -> Work:
     """The job of writing one brief, of the kind the training asks for."""
     session, name = found.session, 'brief'
     level, kind = workspace.split(step.artifact)[1], session['settings']['brief_kind']
     inputs = {'intake': _read(root / 'intake.md') or '',
               'blueprint': _text(root, session, workspace.qualify('blueprint', level)) or '',
               'research findings': findings_text(root)}
+    untouched = _update_inputs(root, session, step.artifact, inputs, update)
     named = _named_by(inputs, naming)
     task = (f'Write {workspace.label(step.artifact)} for this training. It is a {kind} '
             f'brief.\n\n{_about(root, session)}\n'
@@ -1693,10 +1713,11 @@ def brief_work(root: Path, found: Survey, step: Step, request: dict | None,
             + f'\nYour inputs are {_inputs(inputs)}.\n'
             f'Hand the brief back with submit_artifact under the name "{name}".'
             + _again(request, _text(root, session, step.artifact), error, answered,
-                     'the brief', found.state.get(step.artifact) == 'stale'))
+                     'the brief', found.state.get(step.artifact) == 'stale', update))
     prepared = {'inputs': inputs,
                 'artifacts': {name: {'kind': 'brief', 'brief_kind': kind,
-                                     'findings': session.get('findings')}},
+                                     'findings': session.get('findings'),
+                                     **({'untouched': untouched} if update else {})}},
                 'ask': _can_ask(answered)}
     return Work(briefs.guidance('brief', level=level, kind=kind, naming=named), task,
                 'write', prepared, name)
@@ -2171,7 +2192,7 @@ NAMED = ('document', 'brief', 'scenario')   # the writers a brand's naming rules
 
 def work(root: Path, found: Survey, step: Step, request: dict | None, error: str | None,
          answered: list[dict], sources=None, naming: str | None = None,
-         designed: bool = False, icons: bool = False, synthesis=False, asked=()) -> Work:
+         designed: bool = False, icons: bool = False, synthesis=False, asked=(), update=False) -> Work:
     """The job a drafting step gives a worker. `sources` is what `documents.sources`
     returned, which only the research questions are drafted from. `naming` is how the
     training's brand names the organisation and its products, which the writers of the
@@ -2184,6 +2205,8 @@ def work(root: Path, found: Survey, step: Step, request: dict | None, error: str
     if bare(step.id) == 'deck-review':
         return review_work(root, found, step, error)
     kind = workspace.split(step.artifact)[0].partition(':')[0]
+    if kind in ('document', 'brief'):
+        return WORKS[kind](root, found, step, request, error, answered, naming, update)
     if kind in NAMED:
         return WORKS[kind](root, found, step, request, error, answered, naming)
     return WORKS[kind](root, found, step, request, error, answered)
@@ -2325,14 +2348,14 @@ def _practice_note(text: str, session: dict) -> list[str]:
 
 
 def keep_draft(root: Path, step: Step, handed: dict, request: dict | None,
-               found: Survey | None = None) -> None:
+               found: Survey | None = None, update: bool = False) -> None:
     """Save a draft the checks let through, with a review for the gate: what was checked,
     what that gate shows in particular, and the worker's own notes on the draft, labelled
     as its judgment. `found` is the training as it stood before the job."""
     draft = next(iter(handed['artifacts'].values()))
     kind, session = _kind(step.artifact), workspace.load(root)
     dated = found is not None and found.state.get(step.artifact) == 'stale'
-    workspace.save(root, step.artifact, source=draft['path'])
+    workspace.save(root, step.artifact, source=draft['path'], via='update' if update else None)
     lines = _checked(step.artifact, draft['checks'])
     lines += [f'Worth a look: {warning}' for warning in draft['warnings']]
     if kind == 'document':

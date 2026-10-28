@@ -102,6 +102,66 @@ def updates(run: dict | None) -> dict:
     return ((run or {}).get('drafts') or {}).get('updates') or {}
 
 
+UPDATE_RULE = ('The plan changed as "plan change" shows. Change only the sections '
+               'that change needs, and copy every other section exactly, word for word.')
+NO_UPDATE_RECORD = 'This computer has no record yet of what it costs.'
+
+
+def plan_change(root: Path, session: dict, name: str) -> dict:
+    """Compare the plan used to build this material with the current plan."""
+    level = workspace.split(name)[1]
+    plan = workspace.qualify('blueprint', level)
+    digest = (session['artifacts'].get(name, {}).get('built_from') or {}).get(plan)
+    before_file = workspace.history_file(root, plan, digest, '.md') if digest else None
+    before = before_file.read_text(encoding='utf-8') if before_file and before_file.is_file() else ''
+    current = root / workspace.artifact(root, session, plan)['file']
+    after = current.read_text(encoding='utf-8') if current.is_file() else ''
+    def lines(text):
+        return {m.group(1): line for line in text.splitlines()
+                if (m := re.match(r'^### (O[1-9]\d*)\b', line))}
+    old, new = lines(before), lines(after)
+    return {'before': before, 'after': after,
+            'objectives': [key for key in old if key in new and old[key] != new[key]],
+            'added': [key for key in new if key not in old],
+            'removed': [key for key in old if key not in new]}
+
+
+def _objective_only(change: dict) -> bool:
+    def other(text):
+        return [line for line in text.splitlines()
+                if not re.match(r'^### O[1-9]\d*\b', line)]
+    return (bool(change['before']) and bool(change['objectives'] or change['added'] or change['removed'])
+            and other(change['before']) == other(change['after']))
+
+
+def touched(codec_draft: dict, objectives) -> list[str]:
+    """Find sections covering a changed objective or one of its key points."""
+    wanted = set(objectives)
+    return [part['id'] for part in codec_draft.get('sections', ())
+            if any(cover in wanted or (cover.startswith('K') and
+                   'O' + cover[1:].partition('.')[0] in wanted)
+                   for cover in part.get('covers', ()))]
+
+
+def update_preview(root: Path, name: str) -> dict:
+    from studio_core import stops
+    session = workspace.load(root)
+    change = plan_change(root, session, name)
+    kind = workspace.split(name)[0]
+    codec = GuideCodec() if kind == 'document' else BriefCodec()
+    file = root / workspace.artifact(root, session, name)['file']
+    draft = codec.split(file.read_text(encoding='utf-8'))
+    ids = set(touched(draft, change['objectives'] + change['added'] + change['removed']))
+    sections = draft['sections']
+    if (kind != 'document' or not _objective_only(change)
+            or input_of(root, session, name) != [workspace.qualify('blueprint', workspace.split(name)[1])]):
+        ids = {part['id'] for part in sections if not part.get('locked')}
+    attempts = ((run_of(root) or {}).get('steps', {}).get(name) or {}).get('attempts') or []
+    last = attempts[-1] if attempts else None
+    price = stops.redone(workspace.label(name), 1, last.get('seconds'), last.get('dollars')) if last else NO_UPDATE_RECORD
+    return {'parts': [part['heading'] for part in sections if part['id'] in ids], 'price': price}
+
+
 def busy(run: dict | None) -> bool:
     """Whether a change is being made to a desk training: a desk job, or an update asked for
     and not yet made."""

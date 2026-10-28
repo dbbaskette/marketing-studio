@@ -213,6 +213,19 @@ def check_blueprint(text: str, spec: dict) -> tuple[list[str], list[dict], list[
     return held(report['checks']), report['checks'], report['warnings'], as_kept(text)
 
 
+def _untouched(text, spec, codec):
+    protected = spec.get('untouched') or {}
+    if not protected:
+        return []
+    try:
+        sections = {s['heading']: s['text'] for s in codec.split(text)['sections']}
+    except ValueError:
+        sections = {}
+    return [f'Section "{heading}" is not touched by the plan change. Copy it exactly.'
+            for heading, original in protected.items()
+            if sections.get(heading) != original]
+
+
 def check_document(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
     """A learner guide, against the core's coverage check and the blueprint it teaches.
     Without the blueprint the check cannot run, which is recorded for the gate."""
@@ -221,7 +234,8 @@ def check_document(text: str, spec: dict) -> tuple[list[str], list[dict], list[s
     else:
         outcome = checks.result('document.coverage', [], unavailable=(
             'The blueprint was not given, so coverage could not be checked.'))
-    return held([outcome]), [outcome], [], as_kept(text)
+    from runner import drafts
+    return held([outcome]) + _untouched(text, spec, drafts.GuideCodec()), [outcome], [], as_kept(text)
 
 
 def check_brief(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
@@ -229,7 +243,8 @@ def check_brief(text: str, spec: dict) -> tuple[list[str], list[dict], list[str]
     Without the findings the second cannot run, which is recorded for the gate."""
     outcomes = checks.check_brief(text, spec.get('brief_kind') or BRIEF_KINDS[0],
                                   spec.get('findings'))
-    return held(outcomes), outcomes, [], as_kept(text)
+    from runner import drafts
+    return held(outcomes) + _untouched(text, spec, drafts.BriefCodec()), outcomes, [], as_kept(text)
 
 
 def check_part(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
