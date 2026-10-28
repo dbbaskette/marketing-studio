@@ -6954,6 +6954,48 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         return self.run_page(answers, steps, state={'screen': 'run', 'path': str(self.root)},
                              **plan)
 
+    def test_bulk_updates_show_the_price_and_cancel_without_a_request(self):
+        updates = {'all': {'names': ['the level 101 guide', 'the level 201 guide'],
+                           'price': '2 minutes and about $5.00'},
+                   'levels': {'101': {'names': ['the level 101 guide'],
+                                      'price': '1 minute and about $2.00'}}, 'chain': None}
+        answer = a_desk(running=False)
+        answer['body']['sources']['updates'] = updates
+        result = self.open_desk(self.on_desk(answer), [
+            {'click': 'Update everything below'}, {'snapshot': 'level'}, {'click': 'Cancel'},
+            {'click': 'Update every level'}, {'snapshot': 'all'}, {'click': 'Cancel'}])
+        self.assertIn('1 minute and about $2.00', result['snapshots']['level']['text'])
+        self.assertIn('2 minutes and about $5.00', result['snapshots']['all']['text'])
+        self.assertEqual(self.posts(result), [])
+
+    def test_bulk_updates_submit_the_level_and_stop_the_returned_chain(self):
+        answer = a_desk(running=False)
+        answer['body']['sources']['updates'] = {
+            'levels': {'101': {'names': ['the level 101 guide'], 'price': 'About $2.'}},
+            'all': {'names': ['the level 101 guide'], 'price': 'About $2.'}, 'chain': None}
+        working = a_desk(running=True)
+        working['body']['sources']['updates'] = {
+            'chain': {'id': 'chain-1', 'level': '101', 'status': 'working'}}
+        result = self.open_desk(self.on_desk(answer, **{
+            'POST /api/drafts/update-all': [working],
+            'POST /api/drafts/stop-updates': [a_desk(running=False)]}), [
+            {'click': 'Update everything below'}, {'click': 'Update'}, {'click': 'Stop updates'}])
+        self.assertEqual(self.posts(result), [
+            ('/api/drafts/update-all', {'path': str(self.root), 'level': '101'}),
+            ('/api/drafts/stop-updates', {'path': str(self.root), 'chain': 'chain-1'})])
+
+    def test_stop_updates_does_not_wait_for_invalid_pending_text(self):
+        desk, card_view = self.editable()
+        desk['body']['sources']['updates'] = {
+            'chain': {'id': 'chain-1', 'level': None, 'status': 'working'}}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/save': [{'status': 400, 'body': {'error': 'Close the code block.'}}],
+            'POST /api/drafts/stop-updates': [a_desk(running=False)]}), [
+            {'fill': 'Text of When capacity holds', 'value': '```'}, {'click': 'Stop updates'}])
+        self.assertIn(('/api/drafts/stop-updates', {'path': str(self.root), 'chain': 'chain-1'}),
+                      self.posts(result))
+
     def test_add_a_source_says_its_price_first(self):
         afterwards = ("Afterwards each level's plan and brief, and any deck without a guide, say what "
                       "changed. Nothing else is rewritten until you update it.")

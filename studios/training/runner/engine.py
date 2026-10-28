@@ -953,7 +953,33 @@ class Engine(Reviewing):
     def _updates_made(self, root: Path) -> None:
         """Close each desk update whose material is made again, in the commit that lands it."""
         record = self._load(root)
-        if drafts.close_updates(root, workspace.load(root), record):
+        closed = drafts.close_updates(root, workspace.load(root), record)
+        added = drafts.update_all(root, record)
+        for name in added:
+            self._fresh_update(record, name)
+        chain = (record.get('drafts') or {}).get('update_chain') or {}
+        if chain.get('status') == 'working':
+            session = workspace.load(root)
+            state = workspace.statuses(root, session)
+            asked = drafts.updates(record)
+            for name, pending in list(asked.items()):
+                base, level = workspace.split(name)
+                if base != 'deck' or pending.get('chain') != chain['id'] or pending.get('deck_request'):
+                    continue
+                if any(state.get(upstream) == 'stale'
+                       for upstream in workspace.artifact(root, session, name)['upstream']):
+                    continue
+                scope = drafts.deck_update(root, session, level)
+                if not scope['slides']:
+                    del asked[name]
+                    chain.setdefault('blocked', []).append(name)
+                    continue
+                pending['deck_request'] = {
+                    'kind': 'revise', 'note': drafts.DECK_UPDATE, 'slides': scope['slides'],
+                    'inputs': workspace.inputs(root, session, name), 'at': home.now()}
+        if chain.get('status') == 'working' and not drafts.updates(record):
+            chain['status'] = 'done'
+        if closed or added or chain:
             self._store(root, record)
 
     def _decision_arrived(self, root: Path) -> None:
@@ -3645,9 +3671,15 @@ class Engine(Reviewing):
                          record.get('effort'))
         lines, started_at, clock = deque(maxlen=LINES), home.now(), time.monotonic()
         stop, terminated = _WorkerStop(run.stop), threading.Event()
-        with self._lock:
-            run.workers[step.id] = {'label': step.doing, 'started_at': started_at,
-                                    'lines': lines, 'folder': folder, 'stop': stop, 'terminated': terminated}
+        with self.files:
+            current = self._load(root)
+            chain = (current.get('drafts') or {}).get('update_chain') or {}
+            if chain.get('status') == 'stopped' and step.artifact in drafts.held(
+                    root, workspace.load(root), current):
+                stop.set()
+            with self._lock:
+                run.workers[step.id] = {'label': step.doing, 'started_at': started_at,
+                                        'lines': lines, 'folder': folder, 'stop': stop, 'terminated': terminated}
         choice = None
         try:
             if step.id.startswith(('deck-sections', 'deck-repair')):
@@ -3788,7 +3820,10 @@ class Engine(Reviewing):
                                  or step.request or {})
                     refreshed = drafts.deck_update(root, session, self._level(it))
                     if not refreshed['slides']:
-                        record['drafts']['updates'].pop(it.artifact, None)
+                        pending = record['drafts']['updates'].pop(it.artifact, None)
+                        chain = record['drafts'].get('update_chain') or {}
+                        if pending and pending.get('chain') == chain.get('id'):
+                            chain.setdefault('blocked', []).append(it.artifact)
                         self._decided(record, self._level(it))['asked'] = None
                         self._store(root, record)
                         return self._problem(root, it.id, 'stopped', drafts.NO_SLIDE, KEPT)
@@ -5132,6 +5167,55 @@ class Engine(Reviewing):
             self._commit(root, f'update {workspace.label(name)} from '
                                f'{source or "what it is built from"}')
         self.carry_on(root)
+        return self.view(root)
+
+    def _fresh_update(self, record, name):
+        base, level = workspace.split(name)
+        for step in ([workspace.qualify(step, level) for step in pipeline.DECK_STEPS]
+                     if base == 'deck' else [name]):
+            self._fresh(record, step)
+
+    def update_all(self, path, level=None) -> dict:
+        """Explicitly update held materials, discovering further holds after each landing."""
+        with self.files:
+            root, record = self._on_desk(path, decided=True)
+            run = self._run(root)
+            if drafts.busy(record) or run.busy or run.workers:
+                raise WorkspaceError(drafts.BUSY)
+            session = workspace.load(root)
+            if level is not None and level not in (session['levels'] or ['']):
+                raise WorkspaceError('Choose a level in this training.')
+            level = level or None
+            if not drafts.update_names(root, record, level):
+                raise WorkspaceError(drafts.UP_TO_DATE)
+            record.setdefault('drafts', {})['update_chain'] = {
+                'id': secrets.token_hex(12), 'level': level, 'status': 'working'}
+            for name in drafts.update_all(root, record):
+                self._fresh_update(record, name)
+            self._store(root, record)
+            self._commit(root, 'update everything held' + (f' in level {level}' if level else ''))
+        self.carry_on(root)
+        return self.view(root)
+
+    def stop_updates(self, path, chain) -> dict:
+        """Drop this chain's waiting updates; a worker already under way may land."""
+        with self.files:
+            root, record = self._on_desk(path)
+            current = (record.get('drafts') or {}).get('update_chain') or {}
+            if not isinstance(chain, str) or current.get('id') != chain:
+                raise WorkspaceError('That update is no longer on the desk.')
+            current['status'] = 'stopped'
+            found = self._survey(root, record)
+            with self._lock:
+                workers = tuple(self._run(root).workers)
+            active = {step.artifact for step in found.steps if any(
+                worker == step.id or worker.startswith(step.id + ':') for worker in workers)}
+            asked = drafts.updates(record)
+            for name in list(asked):
+                if asked[name].get('chain') == chain and name not in active:
+                    del asked[name]
+            self._store(root, record)
+            self._commit(root, 'stop waiting updates; keep the update under way')
         return self.view(root)
 
     def keep(self, path, name, reason=None, seen=None) -> dict:

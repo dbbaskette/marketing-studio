@@ -197,3 +197,180 @@ class SourceTests(DeckCase):
 
     def test_a_mixed_readable_and_unreadable_batch_rolls_back_only_its_own_documents(self):
         self.unreadable_batch(mixed=True)
+
+
+class UpdateChainTests(DeckCase):
+    finished = SourceTests.finished
+
+    def changed_research(self):
+        root = self.finished(levels=['101', '201'])
+        self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
+        self.workers.blueprint_text += '\nA revised lesson.\n'
+        return root
+
+    def test_row_177_update_every_level_runs_level_by_level(self):
+        root = self.changed_research()
+        before = len(self.workers.jobs)
+        made, job = [], self.engine._job
+
+        def record_job(path, run, step, work):
+            made.append(step.artifact)
+            return job(path, run, step, work)
+
+        with mock.patch.object(self.engine, '_job', side_effect=record_job):
+            self.engine.update_all(root)
+        self.assertIsNone(self.record(root)['problem'])
+        self.assertEqual(made, [f'{kind}@{level}' for level in ('101', '201')
+                          for kind in ('blueprint', 'document', 'brief')])
+        self.assertEqual(len(self.workers.jobs), before + 6)
+        self.assertFalse(drafts.held(root, workspace.load(root), self.record(root)))
+        self.assertFalse(drafts.updates(self.record(root)))
+
+    def test_row_178_stop_leaves_the_rest_held(self):
+        root = self.changed_research()
+        before = len(self.workers.jobs)
+        landed = self.engine._updates_made
+
+        def stop_after_plan(path):
+            landed(path)
+            record = self.record(path)
+            if len(self.workers.of('blueprint')) == 3 and drafts.updates(record):
+                chain = next(iter(drafts.updates(record).values()))['chain']
+                self.engine.stop_updates(path, chain)
+
+        with mock.patch.object(self.engine, '_updates_made', side_effect=stop_after_plan):
+            self.engine.update_all(root)
+        self.assertEqual(len(self.workers.jobs), before + 1)
+        self.assertFalse(drafts.updates(self.record(root)))
+        self.assertIsNone(self.record(root)['problem'])
+        self.assertTrue({'document@101', 'brief@101', 'blueprint@201', 'brief@201'}
+                        <= drafts.held(root, workspace.load(root), self.record(root)))
+        self.engine.wake(root)
+        self.assertEqual(len(self.workers.jobs), before + 1)
+
+    def test_stop_finishes_the_worker_under_way(self):
+        root = self.changed_research()
+        before = len(self.workers.jobs)
+
+        def stop_during_plan(tools, job):
+            asked = drafts.updates(self.record(root))
+            self.assertEqual(len({entry['chain'] for entry in asked.values()}), 1)
+            self.engine.stop_updates(root, asked['blueprint@101']['chain'])
+            self.assertEqual(set(drafts.updates(self.record(root))), {'blueprint@101'})
+            self.workers.blueprint(tools, job)
+
+        self.workers.then('blueprint', stop_during_plan)
+        self.engine.update_all(root)
+        self.assertIsNone(self.record(root)['problem'])
+        self.assertEqual(len(self.workers.jobs), before + 1)
+        self.assertFalse(drafts.updates(self.record(root)))
+        self.assertNotIn('blueprint@101', drafts.held(root, workspace.load(root), self.record(root)))
+
+    def test_one_level_leaves_the_other_level_held(self):
+        root = self.changed_research()
+        self.engine.update_all(root, '101')
+        holding = drafts.held(root, workspace.load(root), self.record(root))
+        self.assertTrue({'blueprint@201', 'brief@201'} <= holding)
+        self.assertFalse(any(name.endswith('@101') for name in holding))
+
+    def test_chain_price_sums_last_tries_only(self):
+        from studio_core import stops
+
+        root = self.finished(levels=['101'])
+        record = self.record(root)
+        for name, dollars in [('document@101', 2), ('brief@101', 3)]:
+            record['steps'][name]['attempts'] = [
+                {'seconds': 999, 'dollars': 999}, {'seconds': 30, 'dollars': dollars}]
+        self.assertEqual(drafts.chain_price(root, record, ['document@101', 'brief@101']),
+                         stops.cost(60, 5))
+
+    def test_stop_before_worker_admission_starts_nothing(self):
+        root = self.changed_research()
+        before = len(self.workers.jobs)
+        noted = self.engine._noted
+
+        def stop_before_registration(path, step, work):
+            chain = self.record(path)['drafts']['update_chain']['id']
+            self.engine.stop_updates(path, chain)
+            return noted(path, step, work)
+
+        with mock.patch.object(self.engine, '_noted', side_effect=stop_before_registration):
+            self.engine.update_all(root)
+        self.assertEqual(len(self.workers.jobs), before)
+        self.assertFalse(drafts.updates(self.record(root)))
+        self.assertIsNone(self.record(root)['problem'])
+
+    def test_failed_update_retries_in_order_without_losing_the_chain(self):
+        from runner_support import fails
+
+        root = self.changed_research()
+        self.workers.then('document', fails(), fails(), fails())
+        self.engine.update_all(root)
+        self.assertIsNotNone(self.record(root)['problem'])
+        self.assertEqual(len(self.workers.of('blueprint')), 3)
+        chain = self.record(root)['drafts']['update_chain']['id']
+        self.engine.act(root, 'retry')
+        self.assertIsNone(self.record(root)['problem'])
+        self.assertEqual(self.record(root)['drafts']['update_chain']['id'], chain)
+        self.assertFalse(drafts.held(root, workspace.load(root), self.record(root)))
+
+    def test_bulk_deck_update_uses_the_existing_slide_scope(self):
+        import json
+        from runner import pipeline
+        from test_drafts import edit
+
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = json.loads((root / pipeline.OUTLINE).read_text())
+        edit(self, root, 'document', lambda text: text.replace(
+            '## Why this matters', '## Why this matters\nChanged detail.'))
+        self.workers.outline_said = json.loads(json.dumps(before))
+        self.workers.outline_said['slides'][3]['notes'] += ' Changed.'
+        count = len(self.workers.of('section'))
+        self.engine.update_all(root)
+        self.assertIsNone(self.record(root)['problem'])
+        job = next(spec for kind, _, spec in reversed(self.workers.jobs) if kind == 'outline')
+        self.assertIn('slides to word again', [entry['name'] for entry in job['inputs']])
+        self.assertEqual(len(self.workers.of('section')), count + 1)
+        self.assertFalse(drafts.held(root, workspace.load(root), self.record(root)))
+
+    def test_a_bulk_deck_update_with_no_served_slide_stays_held(self):
+        from test_drafts import edit
+
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        edit(self, root, 'document', lambda text: text.replace('## Glossary', '## Glossary\nChanged.'))
+        before = len(self.workers.jobs)
+        self.engine.update_all(root)
+        self.assertEqual(len(self.workers.jobs), before)
+        self.assertIsNone(self.record(root)['problem'])
+        self.assertEqual(drafts.held(root, workspace.load(root), self.record(root)), {'deck'})
+        self.assertFalse(drafts.updates(self.record(root)))
+
+    def test_price_includes_materials_that_the_updated_plan_can_hold(self):
+        root = self.changed_research()
+        before = self.record(root)
+        preview = drafts.update_view(root, before)
+        self.assertIn('the level 101 learner guide', preview['all']['names'])
+        self.assertIn('the level 201 learner guide', preview['all']['names'])
+        self.assertEqual(self.record(root), before, 'a price read never starts or records updates')
+
+    def test_bulk_update_leaves_a_persons_held_scenario_and_its_layout_alone(self):
+        from runner_support import fails
+        from test_drafts import edit
+
+        root = self.start(flow='desk', levels=['101'], yoodli=True)
+        self.to_end(root)
+        record = self.record(root)
+        record['drafted'].remove('scenario:main@101')
+        self.engine._store(root, record)
+        plan = (root / '101/blueprint.md').read_text()
+        line = next(line for line in plan.splitlines() if line.startswith('- main:'))
+        edit(self, root, 'blueprint@101', lambda text: text.replace(line, line + ' Discuss cost.'))
+        before = len(self.workers.of('yoodli')), len(self.workers.of('scenario'))
+        # Bound a broken implementation: it must never try to rebuild from this held input.
+        self.workers.then('yoodli', fails(), fails(), fails())
+        self.engine.update_all(root, '101')
+        self.assertEqual((len(self.workers.of('yoodli')), len(self.workers.of('scenario'))), before)
+        self.assertTrue({'scenario:main@101', 'yoodli:main@101'} <= drafts.held(
+            root, workspace.load(root), self.record(root)))

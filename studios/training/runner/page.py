@@ -212,7 +212,7 @@ DRAFTS = '/api/drafts'
 # The desk's decisions, each under DRAFTS: Mark ready, Mark this level ready, Update, Keep as
 # it is, and Send to its copies.
 DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'update', 'keep',
-                                                     'send'))
+                                                     'send', 'update-all', 'stop-updates'))
 # Typing into a part, bringing back one of its versions, and committing what was typed.
 TYPED = tuple(f'{DRAFTS}/{action}' for action in ('save', 'restore', 'share'))
 JOBS = tuple(f'{DRAFTS}/{action}' for action in ('note', 'revise', 'selection', 'stop', 'retry', 'layout', 'write-whole'))
@@ -509,7 +509,8 @@ class RunnerPage(desk.Page):
         hash}}, which adds `marked` and `stopped`, Update {name}, Keep as it is {name,
         reason, seen}, and Send to its copies {name}, which adds `made` and `problems`."""
         root = self.on_desk(desk.text(sent, 'path'))
-        name = None if path == f'{DRAFTS}/level-ready' else desk.text(sent, 'name')
+        name = None if path in (f'{DRAFTS}/level-ready', f'{DRAFTS}/update-all',
+                                f'{DRAFTS}/stop-updates') else desk.text(sent, 'name')
         added = {}
         try:
             if path == f'{DRAFTS}/ready':
@@ -523,6 +524,10 @@ class RunnerPage(desk.Page):
                 added = self.engine.mark_level_ready(root, level or None, seen or {})
             elif path == f'{DRAFTS}/update':
                 self.engine.update(root, name)
+            elif path == f'{DRAFTS}/update-all':
+                self.engine.update_all(root, desk.text(sent, 'level', False) or None)
+            elif path == f'{DRAFTS}/stop-updates':
+                self.engine.stop_updates(root, desk.text(sent, 'chain'))
             elif path == f'{DRAFTS}/keep':
                 self.engine.keep(root, name, desk.text(sent, 'reason', False),
                                  desk.text(sent, 'seen', False))

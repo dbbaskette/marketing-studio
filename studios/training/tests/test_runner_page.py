@@ -25,7 +25,7 @@ from unittest import mock
 from urllib.parse import urlencode
 
 import helpers
-from runner_support import (CHOSEN, FORM, NO_BRAND_SKILL, SCENARIO, Brand, Slides, StudioCase,
+from runner_support import (CHOSEN, FORM, NO_BRAND_SKILL, QUOTE, SCENARIO, Brand, Slides, StudioCase,
                             TeamCase, asks, fails, left)
 
 import computer
@@ -2837,6 +2837,27 @@ class DeskPageTests(PageCase):
         self.assertEqual(self.page.body_limit('/api/drafts/source', self.headers()), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/drafts/source', self.headers(token=False)), 64_000)
 
+    def test_bulk_updates_and_stop_are_authenticated_desk_actions(self):
+        path = self.desk(materials=['document', 'brief'], levels=['101', '201'])
+        root = Path(path)
+        self.engine.add_source(root, [{'name': 'notes.txt', 'data': QUOTE.encode()}])
+        before = self.on_disk()
+        self.post('drafts/update-all', {'path': path}, expect=403, token=False)
+        self.assertEqual(self.on_disk(), before)
+        self.post('drafts/update-all', {'path': path, 'level': '999'}, expect=409)
+        self.post('drafts/update-all', {'path': path, 'level': []}, expect=400)
+        with mock.patch.object(self.engine, 'carry_on'):
+            result = self.post('drafts/update-all', {'path': path, 'level': '101'})
+        chain = result['sources']['updates']['chain']['id']
+        self.post('drafts/stop-updates', {'path': path, 'chain': chain}, expect=403, token=False)
+        stopped = self.post('drafts/stop-updates', {'path': path, 'chain': chain})
+        self.assertEqual(stopped['sources']['updates']['chain']['status'], 'stopped')
+        self.assertFalse(drafts.updates(self.record(root)))
+        saved = self.started(title='Saved training')
+        for route, extra in [('update-all', {}), ('stop-updates', {'chain': chain})]:
+            result = self.post('drafts/' + route, {'path': saved, **extra}, expect=409)
+            self.assertEqual(result['error'], drafts.NOT_ON_DESK)
+
     def test_row_159_desk_and_review_routes_refuse_each_other(self):
         path = self.desk(materials=['document', 'brief'])
         root = Path(path)
@@ -2940,7 +2961,7 @@ class DeskPageTests(PageCase):
         self.assertEqual((view['progress']['line'], view['progress']['minutes']), ('', None))
         self.assertEqual(view['needs'], [], 'a draft never needs the person')
         self.assertTrue(view['team']['ours'])
-        self.assertEqual(sorted(view['sources']), ['account', 'documents', 'marked', 'plan'])
+        self.assertEqual(sorted(view['sources']), ['account', 'documents', 'marked', 'plan', 'updates'])
         self.assertEqual(len(view['sources']['plan']), 4)
         self.assertIsNone(view['job'])
         # Each deck's whole time is kept here, for the next start's estimate.
@@ -3186,6 +3207,8 @@ class DeskTeamTests(TeamCase):
             self.blake.engine.hold(theirs)
         name = 'document@101'
         for route, sent in (('source', {'files': [{'name': 'notes.txt', 'content': 'Tm90ZXM='}]}),
+                            ('update-all', {'level': '101'}),
+                            ('stop-updates', {'chain': 'some-chain'}),
                             ('ready', {'name': name, 'seen': hashed(theirs, name)}),
                             ('level-ready', {'level': '101', 'seen': {}}),
                             ('update', {'name': name}),

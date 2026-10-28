@@ -1290,6 +1290,15 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     if drafts.on_desk(run):
         drafts.close_updates(root, session, run, state)
         holding = drafts.held(root, session, run, state)
+        # New trainings plan all levels first. An explicitly requested desk update
+        # instead finishes each level, including holds discovered when its plan lands.
+        chain = (run.get('drafts') or {}).get('update_chain') or {}
+        pending = [name for name, entry in drafts.updates(run).items()
+                   if entry.get('chain') == chain.get('id')]
+        if pending:
+            level = next(at for at in session['levels'] or [None]
+                         if any(workspace.split(name)[1] == at for name in pending))
+            holding |= frozenset(name for name in pending if workspace.split(name)[1] != level)
         listed = tuple(step for step in listed if step.artifact not in holding)
     decks = {level: stands(root, session, state, asked, run, level)
              for level in session['levels'] or [None]} if drawn else {}

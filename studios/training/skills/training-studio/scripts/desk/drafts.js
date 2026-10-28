@@ -759,7 +759,49 @@ function deskCard(found) {
   const editing = found.kind === 'deck' ? deckParts(found) : material ? materialParts(material, found) : null;
   add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
     checkedPart(found.checks), bar.childNodes.length ? bar : null);
+  if (found.kind === 'blueprint') add(node, updateChainPart(found.level));
   return editing ? add(make('div', 'desk-material-group stack'), node, editing) : node;
+}
+
+function updateChainPart(level) {
+  if (!deskOurs()) return null;
+  const updates = deskHeld(view.path).view?.sources?.updates;
+  if (!updates) return null;
+  const chain = updates.chain;
+  if (chain?.status === 'working' && (level === undefined || chain.level == null || chain.level === level)) {
+    const stop = capsule('Stop updates', 'quiet', () =>
+      deskDecide('stop-updates', { chain: chain.id }, stop, { flush: false }));
+    return add(make('div', 'card-part'),
+      make('p', 'quiet', 'Updating in order. Stop leaves the update under way to finish.'), stop);
+  }
+  const preview = level === undefined ? updates.all : updates.levels?.[level];
+  if (!preview?.names?.length || updates.busy) return null;
+  const label = level === undefined ? 'Update every level' : 'Update everything below';
+  return add(make('div', 'card-part'), bullets(preview.names),
+    make('p', 'quiet', preview.price), capsule(label, 'quiet', async () => {
+      const path = view.path;
+      try {
+        await flushDesk(deskHeld(path));
+        const fresh = await ask('drafts', { path });
+        if (view.path !== path) return;
+        deskHeld(path).view = fresh;
+        const priced = level === undefined ? fresh.sources?.updates?.all
+          : fresh.sources?.updates?.levels?.[level];
+        if (!priced?.names?.length) throw new Error('Nothing needs updating now.');
+        const go = capsule('Update', 'filled', async () => {
+          const result = await deskDecide('update-all', level === undefined ? {} : { level }, go);
+          if (result) closeSheet();
+        });
+        DESK.kitSheet = [sheetTitle(label), make('h3', 'sheet-part', '1. Materials to update'),
+          bullets(priced.names), make('p', 'quiet', 'Newly affected materials follow in order. You can stop the waiting updates.'),
+          make('h3', 'sheet-part', '2. Estimated price'), make('p', '', priced.price),
+          add(make('div', 'bar'), go, capsule('Cancel', 'quiet', () => closeSheet()))];
+        openSheet('desk-kit', '')();
+      } catch (failure) {
+        deskHeld(path).said = failure.message;
+        paintDesk(false);
+      }
+    }));
 }
 
 // Slide cards keep their writing opaque; approval, History and looks use the shared sheet.
@@ -1492,6 +1534,7 @@ function sourcesPart(found) {
       + (finding ? finding.title : id)));
   }
   if (deskOurs()) add(node, capsule('Add a source', 'quiet', addSource));
+  add(node, updateChainPart());
   const plan = list(sources.plan).map((item) => (item && item.question) || String(item || ''))
     .filter(Boolean);
   if (plan.length) {
@@ -1579,7 +1622,7 @@ function paintDesk(fresh) {
 
 // One of the person's decisions on the desk, answered with the desk again. What it was
 // refused for, or where Mark this level ready stopped, is said on the desk.
-async function deskDecide(route, sent, pressed) {
+async function deskDecide(route, sent, pressed, { flush = true } = {}) {
   if (view.busy) return null;
   const turn = view.turn;
   const path = view.path;
@@ -1589,7 +1632,7 @@ async function deskDecide(route, sent, pressed) {
   if (pressed) pressed.disabled = true;
   let answer = null;
   try {
-    await flushDesk(held);
+    if (flush) await flushDesk(held);
     if (sent.seen && typeof sent.seen === 'string' && held.materials[sent.name]) {
       sent = { ...sent, seen: held.materials[sent.name].view.seen };
     }

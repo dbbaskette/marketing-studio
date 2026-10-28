@@ -207,6 +207,76 @@ def updates(run: dict | None) -> dict:
     return ((run or {}).get('drafts') or {}).get('updates') or {}
 
 
+def update_names(root: Path, record: dict, level=None) -> list[str]:
+    """Held, runnable materials in level and pipeline order; never a person's scenario."""
+    session = workspace.load(root)
+    state = workspace.statuses(root, session)
+    holding = held(root, session, record, state)
+    own = set(workspace.scenarios(root, session)['found']) - set(record.get('drafted') or ())
+    names = [name for at in session['levels'] or [None] if level is None or at == level
+            for kind in ORDER for name in workspace.artifact_names(root, session)
+            if name in holding and name not in own and workspace.split(name)[1] == at
+            and workspace.split(name)[0].partition(':')[0] == kind]
+    # A person's scenario (or an input outside this chain) must be settled first,
+    # just as with an individual Update. Otherwise its dependent can never land current.
+    while True:
+        allowed = set(names) | set(updates(record))
+        ready = [name for name in names if not any(
+            state.get(upstream) == 'stale' and upstream not in allowed
+            for upstream in workspace.artifact(root, session, name)['upstream'])]
+        if ready == names:
+            return names
+        names = ready
+
+
+def update_all(root: Path, record: dict) -> list[str]:
+    """Extend the explicitly requested chain with materials newly held by its landings.
+    The engine calls this under its files lock and prepares each newly queued update."""
+    chain = (record.get('drafts') or {}).get('update_chain') or {}
+    if not on_desk(record) or chain.get('status') != 'working':
+        return []
+    names = [name for name in update_names(root, record, chain.get('level'))
+             if name not in chain.get('blocked', [])]
+    asked = record['drafts'].setdefault('updates', {})
+    for name in names:
+        asked[name] = {'at': home.now(), 'by': 'page', 'scope': None, 'chain': chain['id']}
+    levels = workspace.load(root)['levels'] or [None]
+    record['drafts']['updates'] = dict(sorted(asked.items(), key=lambda item: (
+        levels.index(workspace.split(item[0])[1]),
+        ORDER.index(workspace.split(item[0])[0].partition(':')[0]), item[0])))
+    return names
+
+
+def chain_price(root: Path, record: dict, names) -> str:
+    """The last try of every worker for these materials, including deck section jobs."""
+    from runner import pipeline
+    from runner.engine import Engine
+    from studio_core import stops
+
+    session = workspace.load(root)
+    listed = pipeline.steps(session['levels'], pipeline.wanted(session),
+                            pipeline.practice(root, session), deck=True)
+    steps = [step.id for step in listed if step.kind == 'agent' and step.artifact in names
+             and (pipeline.bare(step.id) != 'deck-repair' or any(
+                 key.startswith(step.id + ':') for key in record['steps']))]
+    took = Engine._redo_steps(record, steps) if steps else None
+    return stops.cost(*took) if took else NO_UPDATE_RECORD
+
+
+def update_view(root: Path, record: dict) -> dict:
+    """The priced groups shown on the Plan cards and in Sources; reading starts nothing."""
+    def preview(level=None):
+        names = update_names(root, record, level)
+        return {'names': [workspace.label(name) for name in names],
+                'price': chain_price(root, record, names)} if names else None
+
+    session = workspace.load(root)
+    return {'all': preview(), 'levels': {level or '': preview(level)
+                                       for level in session['levels'] or [None]},
+            'chain': (record.get('drafts') or {}).get('update_chain'),
+            'busy': busy(record)}
+
+
 UPDATE_RULE = ('The plan changed as "plan change" shows. Change only the sections '
                'that change needs, and copy every other section exactly, word for word.')
 NO_UPDATE_RECORD = 'This computer has no record yet of what it costs.'
@@ -799,6 +869,7 @@ def view(engine, root) -> dict:
                      if running and not needed else ''},
         'needs': needed, 'cards': cards,
         'sources': {'account': research_view.account(root / 'research', questions),
+                    'updates': update_view(root, record),
                     'plan': questions, 'marked': marked(root, record),
                     'documents': [{key: entry.get(key) for key in
                                    ('name', 'bytes', 'readable', 'problem')}
