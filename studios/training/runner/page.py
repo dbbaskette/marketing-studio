@@ -644,7 +644,7 @@ class RunnerPage(desk.Page):
                 self.engine.deck_decided(path, target, decision, note, seen)
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
-            reply = super().decide(path, target, decision, note, seen, refresh)
+            reply = super().decide(path, target, decision, note, seen, refresh, held=self.engine.files)
             driven = self.engine.decided(path, reply['decided'], checked=True)
         if not driven:
             return reply
@@ -668,7 +668,7 @@ class RunnerPage(desk.Page):
             raise desk.Refusal(HTTPStatus.CONFLICT, RUNNER_DECIDES)
         with self.engine.files:
             self.engine.hold(path)
-            reply = super().move_approval(path, mode)
+            reply = super().move_approval(path, mode, held=self.engine.files)
             driven = self.engine.changed(path, f'decisions are now made '
                                          f'{workspace.WHERE[mode]}')
         if driven:

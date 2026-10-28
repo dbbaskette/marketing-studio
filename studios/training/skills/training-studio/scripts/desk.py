@@ -591,9 +591,9 @@ def next_up(listed: list[dict] | None = None) -> dict | None:
 # --- what the page changes ------------------------------------------------------
 
 def decide(path: str, target: str, decision: str, note: str | None, seen: str | None,
-           refresh: bool = False) -> dict:
+           refresh: bool = False, *, held=None) -> dict:
     import write_guard
-    with write_guard.admitted(Path(path)):
+    with write_guard.admitted(Path(path), held=held):
         return _decide(path, target, decision, note, seen, refresh)
 
 
@@ -619,9 +619,9 @@ def _decide(path: str, target: str, decision: str, note: str | None, seen: str |
     return {'decided': outcome, 'said': f'{SAID[decision]} {BACK_TO_CHAT}', 'next': next_up()}
 
 
-def move_approval(path: str, mode: str) -> dict:
+def move_approval(path: str, mode: str, *, held=None) -> dict:
     import write_guard
-    with write_guard.admitted(Path(path)):
+    with write_guard.admitted(Path(path), held=held):
         return _move_approval(path, mode)
 
 
@@ -682,11 +682,11 @@ class Page(_security.Page):
         return detail(path)
 
     def decide(self, path: str, target: str, decision: str, note: str | None,
-               seen: str | None, refresh: bool = False) -> dict:
-        return decide(path, target, decision, note, seen, refresh)
+               seen: str | None, refresh: bool = False, *, held=None) -> dict:
+        return decide(path, target, decision, note, seen, refresh, held=held)
 
-    def move_approval(self, path: str, mode: str) -> dict:
-        return move_approval(path, mode)
+    def move_approval(self, path: str, mode: str, *, held=None) -> dict:
+        return move_approval(path, mode, held=held)
 
     def read(self, path: str, one) -> tuple[int, str, bytes]:
         """Answer one GET that passed every rule. `one(name)` is a query value."""

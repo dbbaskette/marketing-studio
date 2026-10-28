@@ -9,10 +9,14 @@ from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 
 
 @contextmanager
-def admitted(root):
+def admitted(root, *, held=None):
     root = Path(root)
     repo = next((folder for folder in (root, *root.parents) if (folder / '.git').exists()), None)
-    with ProcessRLock(lambda: workspace_lock_path(repo, home.data_root()), refusal=workspace.WorkspaceError):
+    scope = workspace_lock_path(repo, home.data_root())
+    if held is not None and not held.protects(scope):
+        raise workspace.WorkspaceError('The held write lock belongs to another workspace. Reload before saving.')
+    lock = held if held is not None else ProcessRLock(lambda: workspace_lock_path(repo, home.data_root()), refusal=workspace.WorkspaceError)
+    with lock:
         if worker_in_progress(repo or root, refusal=workspace.WorkspaceError):
             raise workspace.WorkspaceError(SYNC_WAIT)
         path = root / workspace.STATE_DIR / 'run.json'
