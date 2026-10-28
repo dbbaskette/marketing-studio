@@ -64,6 +64,7 @@ if [[ "${1:-full}" == infographic || "${1:-full}" == infographic-finish ]]; then
       "$python" -m unittest discover -s studios/infographic/tests -v
       PYTHONPATH=tests "$python" -m unittest test_infographic_release test_start_stop.ParserTests -v
     } 2>&1 | tee "$results_dir/tests.log"
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee -a "$results_dir/tests.log"
   else
     bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
   fi

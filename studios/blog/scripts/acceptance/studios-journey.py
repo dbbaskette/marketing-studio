@@ -19,8 +19,10 @@ def main():
     args = parser.parse_args()
     base = args.run_directory.resolve()
     base.mkdir(parents=True, exist_ok=False)
+    (base / 'home').mkdir()
     env = {
-        **os.environ,
+        'PATH': os.environ.get('PATH', ''),
+        'HOME': str(base / 'home'),
         'GIT_CONFIG_GLOBAL': os.devnull,
         'GIT_CONFIG_NOSYSTEM': '1',
         'GIT_AUTHOR_NAME': 'Synthetic Author',
@@ -103,47 +105,25 @@ def main():
         '--sample',
         reference['id'],
     )
-    blog = cli(
-        a,
-        'run',
-        'create',
-        '--title',
-        'Synthetic shared blog',
-        '--audience',
-        'New authors',
-        '--goal',
-        'Explain a fictional gateway',
-        '--research',
-        'none',
-        '--stop',
-        'outline',
-        '--source',
-        reference['id'],
-        '--profile',
-        profile['id'],
+    draft = base / 'draft.md'
+    draft.write_text('# Synthetic shared blog\n\nExplain the fictional gateway.\n')
+    creation = base / 'desk-create.json'
+    creation.write_text(
+        json.dumps(
+            {
+                'title': 'Synthetic shared blog',
+                'manuscript': draft.read_text(),
+                'sources': [reference['id']],
+            }
+        )
     )
+    blog = cli(a, 'desk', 'create', '--input', creation)
     ident = blog['id']
-    draft = base / 'outline.md'
-    draft.write_text('# Synthetic outline\nExplain the fictional gateway.\n')
-    state = cli(a, 'run', 'status', '--id', ident)
-    cli(
-        a,
-        'run',
-        'submit',
-        '--id',
-        ident,
-        '--stage',
-        'outline',
-        '--expected',
-        state['expected'],
-        '--file',
-        draft,
-    )
-    state = cli(a, 'run', 'status', '--id', ident)
-    cli(a, 'run', 'approve', '--id', ident, '--expected', state['expected'])
-    cli(a, 'team', 'publish', '--id', ident)
+    # Desk decisions are saved/shared directly; numbered run publication is legacy.
+    assert cli(a, 'team', 'sync')['shared']
     b = Path(cli(base / 'unused', 'team', 'join', '--repository', remote, home='two')['workspace'])
-    assert (b / ident / 'OUTLINE.md').read_bytes() == draft.read_bytes()
+    assert (b / ident / 'DRAFT.md').read_bytes() == (a / ident / 'DRAFT.md').read_bytes()
+    assert cli(b, 'profile', 'show', '--id', profile['id'], home='two')['id'] == profile['id']
     cli(
         b,
         'article',
@@ -190,13 +170,24 @@ def main():
         '--stop',
         'review',
     )
-    cli(a, 'article', 'save', '--id', ident, '--kind', 'draft', '--file', draft)
+    shown = cli(a, 'desk', 'show', '--article', ident)
+    edit = base / 'desk-save.json'
+    edit.write_text(
+        json.dumps(
+            {
+                'seen': shown['draft']['revision'],
+                'part': 'opening',
+                'text': 'Explain the edited fictional gateway.',
+            }
+        )
+    )
+    cli(a, 'desk', 'save', '--article', ident, '--input', edit)
     cli(a, 'article', 'review', '--id', ident, '--check', 'proofread', '--status', 'unavailable')
-    local = a / ident / 'OUTLINE.md'
+    local = a / ident / 'DRAFT.md'
     local.write_text('Local writing must survive.\n')
     cli(a, 'team', 'sync', fail=True)
     assert local.read_text() == 'Local writing must survive.\n'
-    run(['git', 'add', '--', f'blogs/{ident}/OUTLINE.md'], cwd=a.parent)
+    run(['git', 'add', '--', f'blogs/{ident}/DRAFT.md'], cwd=a.parent)
     run(['git', 'commit', '-m', 'Keep deliberately edited synthetic writing'], cwd=a.parent)
     cli(a, 'team', 'sync')
     if args.training_checkout:
