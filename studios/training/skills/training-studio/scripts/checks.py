@@ -372,9 +372,10 @@ def check_brief(text: str, kind: str, findings: dict | None) -> list[dict]:
 
 REFERENCE = re.compile(r'\[(\d{1,3})\]')
 SOURCES_ENTRY = re.compile(r'^(\d{1,3})\.\s')
-SOURCES_HEADING = re.compile(r'^## (?:\d+\. )?Sources\s*$')
+SOURCES_HEADING = re.compile(r'^## (?:\d+\. )?Sources\s*$', re.IGNORECASE)
 LIST_MARKER = re.compile(r'^\s*(?:[-*+>]|\d+\.)\s+', re.MULTILINE)
-SENTENCE_END = re.compile(r'[.!?:][*_"\'’”)\]]*\s+|\n+')
+SENTENCE_END = re.compile(r'[.!?:][*_"\'’”)\]]*\s+|\n+|\|')
+BOLD_LINE = re.compile(r'^\*\*[^*]+\*\*$')
 WORD = re.compile(r"[A-Za-z][\w'’-]*")
 EXCERPT = 60
 
@@ -393,7 +394,10 @@ def _sources(text: str) -> tuple[str, list[int]]:
 
 
 def _claims(paragraph: str, names) -> bool:
-    """Whether a paragraph states a number, a name or a product from intake."""
+    """Whether a paragraph states a number, a name or a product from intake. A word after a
+    colon, and each table cell's first word, start afresh, so "Note: Tanzu …" is not a
+    claim by its capital; and `citations` takes a paragraph starting "#" (or a bold line)
+    for a heading. The check errs towards naming fewer claims."""
     text = LIST_MARKER.sub('', paragraph)
     if re.search(r'\d', text):
         return True
@@ -417,7 +421,9 @@ def citations(text: str, kind: str, added: list[str] | None = None, names=()) ->
     for paragraph in added or ():
         stripped = COMMENT.sub('', paragraph).strip()
         plain = ' '.join(stripped.split())
-        if not plain or plain.startswith('#') or REFERENCE.search(plain) \
+        # A heading, or a bold line standing in for one, states nothing.
+        if not plain or plain.startswith('#') or BOLD_LINE.match(plain) \
+                or REFERENCE.search(plain) \
                 or not _claims(stripped, names):
             continue
         excerpt = plain[:EXCERPT].rstrip() + ('…' if len(plain) > EXCERPT else '')

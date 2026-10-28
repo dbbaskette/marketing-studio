@@ -339,6 +339,13 @@ class CitationTests(unittest.TestCase):
         self.assertEqual(claims('Tanzu restarts apps one batch at a time.'), [])
         self.assertEqual(len(claims('Tanzu restarts apps one batch at a time.',
                                     names=['Tanzu'])), 1)
+        # A table row's cells each start afresh, and a bold line is a heading.
+        self.assertEqual(claims('| Step | Wait |', '|---|---|', '**Step 2**'), [])
+        self.assertEqual(len(claims('| Restart | Waits for Example Platform |')), 1)
+
+    def test_a_sources_heading_in_lower_case_is_read(self):
+        brief = example('product-brief.md').replace('## 8. Sources', '## 8. sources')
+        self.assertEqual(checks.citations(brief, 'brief')['status'], 'passed')
 
     def test_dropped_references_are_listed(self):
         self.assertEqual(checks.dropped('A [1] and [2].', 'A [1].'), [2])
@@ -349,15 +356,34 @@ class CitationTests(unittest.TestCase):
 class DeskCitationTests(helpers.TrainingCase):
     """Only a desk training's guide and brief are checked for their references."""
 
-    def checked(self, flow):
+    def report(self, flow):
         import assess
         import workspace
         workspace.init(self.root, 'Rolling restarts', levels=['101'], flow=flow)
         self.write('101/blueprint.md', BLUEPRINT)
         self.write('101/document.md', DOCUMENT.replace('[3]', ''))
         self.write('101/product-brief.md', example('product-brief.md'))
-        return {outcome['check']: outcome
-                for outcome in assess.run_checks(self.root, show_all=True)['checks']}
+        return assess.run_checks(self.root, show_all=True)
+
+    def checked(self, flow):
+        return {outcome['check']: outcome for outcome in self.report(flow)['checks']}
+
+    def test_row_162_a_desk_training_s_references_hold_back_its_readiness(self):
+        import desk
+        report = self.report('desk')
+        self.assertFalse(report['ready'])
+        self.assertIn('document.citations@101 failed', report['blocking'])
+        self.assertNotIn('brief.citations@101 failed', report['blocking'])
+        self.assertIn("The level 101 learner guide's references need fixing.",
+                      [desk.plainly_on_desk(reason) for reason in report['blocking']])
+
+    def test_row_162_a_saved_training_with_the_same_text_is_unaffected(self):
+        report = self.report(None)
+        desk_checks = ('document.citations', 'brief.citations')
+        self.assertFalse([reason for reason in report['blocking']
+                          if reason.startswith(desk_checks)])
+        self.assertFalse([outcome for outcome in report['checks']
+                          if outcome['check'].startswith(desk_checks)])
 
     def test_saved_trainings_are_not_checked_for_citations(self):
         found = self.checked(None)
