@@ -6992,6 +6992,28 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('notes.txt', shot['text'])
         self.assertIn('Update the research', shot['buttons'])
 
+    def test_an_unreadable_source_keeps_the_batch_for_a_corrected_retry(self):
+        problem = ('broken.docx: It could not be opened as a Word document. If it has a password, '
+                   'take that off. Then save it again as .docx, or as text, and add that.')
+        answers = self.on_desk(a_desk(running=False), run=a_desk_run('drafts'), **{
+            'GET /api/drafts/source-price': [ok({'words': 'Research price.', 'afterwards': 'Materials wait.',
+                                                'widened': None})],
+            'POST /api/drafts/source': [{'status': 409, 'body': {'error': problem}}, a_desk(running=False)]})
+        result = self.open_desk(answers, [
+            {'click': 'Add a source'}, {'attach': 'Add documents', 'files': [
+                {'name': 'readable.txt', 'text': 'Notes'}, {'name': 'broken.docx', 'text': 'Broken'}]},
+            {'click': 'Update the research'}, {'snapshot': 'refused'},
+            {'attach': 'Add documents', 'files': [{'name': 'broken.docx', 'text': 'Fixed'}]},
+            {'click': 'Update the research'}])
+        shot = result['snapshots']['refused']
+        for text in (problem, 'readable.txt', 'broken.docx'):
+            self.assertIn(text, shot['text'])
+        posts = self.posts(result)
+        self.assertEqual(len(posts), 2)
+        self.assertEqual(posts[1], ('/api/drafts/source', {'path': str(self.root), 'files': [
+            {'name': 'readable.txt', 'content': 'Tm90ZXM='},
+            {'name': 'broken.docx', 'content': 'Rml4ZWQ='}]}))
+
     def slide_card(self):
         found = a_card('deck@101')
         found.update(slides=[{'id': 'check-yourself', 'number': 5, 'title': 'Check yourself',

@@ -159,3 +159,41 @@ class SourceTests(DeckCase):
                              {'instance-min': 'changed', 'new': 'new'})
             self.assertTrue({'blueprint@101', 'brief@101'} <= drafts.held(
                 root, workspace.load(root), self.record(root)))
+
+    def unreadable_batch(self, mixed):
+        from runner import documents
+        from test_runner_documents import paragraph, word
+
+        root = self.finished()
+        with mock.patch.object(self.engine, 'documents', documents):
+            if mixed:
+                documents.add(root, 'existing.txt', QUOTE.encode())
+            before = documents.listed(root)
+            originals = {entry['original']: (root / entry['original']).read_bytes() for entry in before}
+            record, session = self.record(root), workspace.load(root)
+            jobs, commits = len(self.workers.jobs), self.log()
+            files = ([{'name': 'readable.txt', 'data': QUOTE.encode()}] if mixed else [])
+            files.append({'name': 'broken.docx', 'data': b'not a Word archive'})
+            with self.assertRaises(WorkspaceError) as refused:
+                self.engine.add_source(root, files)
+            self.assertEqual(str(refused.exception), 'broken.docx: ' + documents.NOT_WORD)
+            self.assertEqual(documents.listed(root), before)
+            self.assertEqual({file: (root / file).read_bytes() for file in originals}, originals)
+            self.assertEqual(self.record(root), record)
+            self.assertEqual(workspace.load(root), session)
+            self.assertEqual(len(self.workers.jobs), jobs, 'a refused source starts no research')
+            self.assertEqual(self.log(), commits)
+            self.assertFalse((root / 'sources/.all-added').exists())
+            # The same names may be retried after fixing the Word document, without Remove.
+            files[-1]['data'] = word(paragraph(QUOTE))
+            self.engine.add_source(root, files)
+            self.assertIsNone(self.record(root)['problem'])
+            self.assertEqual({entry['name'] for entry in documents.listed(root)},
+                             {entry['name'] for entry in before} | {file['name'] for file in files})
+            self.assertTrue(all(entry['readable'] for entry in documents.listed(root)))
+
+    def test_an_unreadable_source_is_refused_without_starting_research_and_can_be_retried(self):
+        self.unreadable_batch(mixed=False)
+
+    def test_a_mixed_readable_and_unreadable_batch_rolls_back_only_its_own_documents(self):
+        self.unreadable_batch(mixed=True)

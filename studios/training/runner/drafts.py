@@ -127,7 +127,11 @@ def add_source(root: Path, record: dict, files: list, documents) -> list[str]:
         for file in files:
             if not isinstance(file, dict):
                 raise workspace.WorkspaceError('Give each document a name and content.')
-            added.append(documents.add(root, file.get('name'), file.get('data')))
+            entry = documents.add(root, file.get('name'), file.get('data'))
+            added.append(entry)
+            if not entry.get('readable'):
+                problem = entry.get('problem') or 'It could not be read.'
+                raise workspace.WorkspaceError(f'{entry["name"]}: {problem}')
     except Exception:
         for entry in reversed(added):
             documents.remove(root, entry['name'])
