@@ -15,7 +15,7 @@ from studio_core import workspace_setup
 from . import catalog
 
 DATA = {'blog': 'BLOG_STUDIO_DATA', 'training': 'TRAINING_STUDIO_DATA',
-        'presentation': 'PRESENTATION_STUDIO_DATA'}
+        'presentation': 'PRESENTATION_STUDIO_DATA', 'infographic': 'INFOGRAPHIC_STUDIO_DATA'}
 
 
 def data_root(identifier):
@@ -48,6 +48,11 @@ def remembered(identifier):
     """The workspace a studio remembers: {'root', 'repository', 'branch'}, or None."""
     data, tool = data_root(identifier), catalog.STUDIOS[identifier][1]
     kept = _json(data / 'workspace.json')
+    if identifier == 'infographic' and kept and kept.get('schema') == 1 and isinstance(kept.get('root'), str):
+        root = Path(kept['root'])
+        marker = _json(root / '.infographic-studio/workspace.json') if root.is_absolute() and not root.is_symlink() else None
+        if marker and marker.get('product') == 'Infographic Studio' and marker.get('owner') == kept.get('owner'):
+            return {'root': str(root), 'repository': None, 'branch': 'main'}
     if kept and kept.get('schema') == 1 and isinstance(kept.get('repo'), str) \
             and isinstance(kept.get('folder'), str) and Path(kept['repo']).is_absolute():
         root = Path(kept['repo']) / kept['folder']
@@ -76,6 +81,10 @@ def connection(identifier, shared):
     found = remembered(identifier)
     wanted = workspace_setup.target(shared, identifier)
     to = {key: wanted.get(key) for key in ('repository', 'root', 'branch')}
+    if identifier == 'infographic':
+        return {'state': 'local' if found else 'none', 'connect': False, 'workspace': found, 'to': to,
+                'summary': 'Local supplied-information workspace' if found else 'A local workspace is set up when you open Infographic Studio.',
+                'detail': 'Team connection is a follow-up for Infographic Studio. Shared team settings are kept.'}
     if found is None:
         return {'state': 'none', 'connect': False, 'workspace': None, 'to': to,
                 'summary': 'No workspace yet. It is set up when you open the studio.',

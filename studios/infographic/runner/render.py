@@ -22,7 +22,7 @@ import xml.etree.ElementTree as ET
 from .validation import image_size
 
 SVG = 'http://www.w3.org/2000/svg'
-MAX_SVG_BYTES = 4_000_000
+MAX_SVG_BYTES = 46_000_000  # A bounded 32 MB raster expands when embedded as base64.
 TAGS = {'svg', 'g', 'defs', 'clipPath', 'rect', 'circle', 'ellipse', 'line', 'polyline',
         'polygon', 'path', 'text', 'tspan', 'image', 'title', 'desc'}
 ATTRS = {'id', 'viewBox', 'width', 'height', 'x', 'y', 'x1', 'x2', 'y1', 'y2', 'cx', 'cy',
@@ -107,10 +107,18 @@ def document(svg: str, preset: str, fonts: list[str]) -> str:
   }
   await document.fonts.ready;
   const root = document.querySelector('svg');
-  for (const element of root.querySelectorAll('image')) {
-    const image = new Image();
-    image.src = element.getAttribute('href');
-    try { await image.decode(); if (!image.naturalWidth || !image.naturalHeight) throw Error(); }
+  const images = [...document.querySelectorAll('#asset-checks img')];
+  for (const [index, element] of [...root.querySelectorAll('image')].entries()) {
+    const image = images[index];
+    try {
+      if (!image.complete) await new Promise(resolve => { image.onload = resolve; image.onerror = resolve; });
+      if (!image.naturalWidth || !image.naturalHeight) throw Error();
+      // DOM images participate in document load. decode() on an unattached Image
+      // can remain pending after headless virtual time ends on Apple Silicon.
+      const canvas = document.createElement('canvas'); canvas.width = canvas.height = 1;
+      canvas.getContext('2d').drawImage(image, 0, 0, 1, 1);
+      canvas.getContext('2d').getImageData(0, 0, 1, 1);
+    }
     catch (_) { invalidAssets.push(element.getAttribute('data-id') || element.id || 'unnamed'); }
   }
   for (const element of root.querySelectorAll('[data-box]')) {
@@ -137,12 +145,14 @@ def document(svg: str, preset: str, fonts: list[str]) -> str:
     overflow, boxes, complete: true});
 })().catch(() => { document.getElementById('metrics').textContent = '{"complete":false}'; });
 """.replace('FONTS', json.dumps(fonts))
+    staged = ''.join('<img alt="" src="' + html.escape(e.get('href'), quote=True) + '">'
+                     for e in ET.fromstring(svg).iter() if e.tag.endswith('}image'))
     return f'''<!doctype html><html><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'self' data:">
 <style>@page{{size:{d['width_pt']}pt {d['height_pt']}pt;margin:0}}
 html,body{{margin:0;padding:0;overflow:hidden}}svg{{display:block;width:{d['width_px']}px;height:{d['height_px']}px}}
 pre{{display:none}}@media print{{svg{{width:{d['width_pt']}pt;height:{d['height_pt']}pt}}}}</style>
-</head><body>{svg}<pre id="metrics"></pre><script>{script}</script></body></html>'''
+</head><body><div id="asset-checks" hidden>{staged}</div>{svg}<pre id="metrics"></pre><script>{script}</script></body></html>'''
 
 
 def _run(executable: Path, work: Path, arguments: list[str], timeout: int) -> str:
@@ -211,7 +221,7 @@ def render(svg: str, *, preset: str, fonts: list[str], executable: Path,
         uri = source.as_uri()
         output = _run(executable, work, ['--virtual-time-budget=2000', '--dump-dom', uri], timeout)
         match = re.search(r'<pre id="metrics">([^<]*)</pre>', output)
-        if match is None:
+        if match is None or not match[1].strip():
             raise ValueError('The renderer returned no font or layout measurements.')
         metrics = json.loads(html.unescape(match[1]))
         if not metrics.get('complete') or metrics.get('missing_fonts') or metrics.get('invalid_assets') or metrics.get('overflow'):

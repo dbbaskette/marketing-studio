@@ -72,7 +72,7 @@ class Disposable(unittest.TestCase):
 class ParserTests(Disposable):
     def test_every_selection_spelling(self):
         spellings = {'blog': ('--bs', '-bs', '--blog'), 'presentation': ('--ps', '-ps', '--presentation'),
-                     'training': ('--ts', '-ts', '--training')}
+                     'training': ('--ts', '-ts', '--training'), 'infographic': ('--is', '-is', '--infographic')}
         for command in ('start', 'stop', 'restart'):
             for identifier, flags in spellings.items():
                 for flag in flags:
@@ -104,7 +104,7 @@ class ParserTests(Disposable):
         for command in ('stop', 'restart'):
             code, _, errors = self.run_cli([command])
             self.assertEqual(code, 2)
-            self.assertIn(f'Choose --all or the studios to {command}: --bs, --ps, --ts.', errors)
+            self.assertIn(f'Choose --all or the studios to {command}: --bs, --ps, --ts, --is.', errors)
 
     def test_all_with_studio_flags_is_refused(self):
         for arguments in (['stop', '--all', '--bs'], ['start', '-a', '-ts'], ['--all', '--ps', 'restart']):

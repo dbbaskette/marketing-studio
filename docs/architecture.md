@@ -174,3 +174,19 @@ Network mode is HTTP on a trusted LAN; see [the access boundary](local-network.m
 
 All three studios explicitly integrate the purpose-led, independently reviewed
 Harness Research schema-2 bundle. See [the handoff and compatibility contract](research-synthesis.md).
+
+## Infographic Studio
+
+`studios/infographic/` owns supplied-information capture, located evidence, story
+choices, branded one-page composition, scoped image adapters, actual-image review,
+revision history, exact approval and local PNG/PDF/SVG/text delivery. Marketing
+Studio owns shared settings and launch; the native CLI and page also run independently.
+Its native pipeline is Python standard library code with no frontend build or
+Research/Slides runtime. Brand add-ons retain their own optional prerequisites.
+
+Captured bytes, generated images, private job intents and exports live in an owned
+local workspace outside this repository. Image intent precedes external execution;
+uncertain/late/cancelled work cannot silently replace current content or replay.
+Immutable exports bind current inputs/scene/checks/approval; export retries do not
+regenerate images. Team storage, Office/Google inputs, URL fetching and research
+handoffs remain follow-up scope. See the [native guide](../studios/infographic/README.md).

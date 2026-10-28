@@ -1,7 +1,7 @@
 # Golden Gate-inspired studio UIs
 
 Marketing Studio, shared setup, Blog Studio, Presentation Studio and Training
-Studio use one restrained visual language through `ui-kit/style.css`. Use the
+Studio and Infographic Studio use one restrained visual language through `ui-kit/style.css`. Use the
 `macos-golden-gate-design` skill when available and keep the existing web stack.
 This is a CSS approximation, not native system material or physical refraction.
 Navigation and toolbar material use diffuse blur, a soft light edge and a subtle
@@ -9,7 +9,7 @@ cool tint. These highlights belong to the shell; the canvas stays neutral.
 
 Marketing Studio uses blue for selected navigation and the system accent, when
 available, for shared actions. Blog Studio uses
-blue, Presentation Studio uses warm orange and Training Studio uses violet on
+blue, Presentation Studio uses warm orange Training Studio uses violet and Infographic Studio uses teal on
 launch icons and buttons. The same identity follows into each native studio's
 sidebar symbol, navigation, primary actions and selected controls through its
 `data-product` attribute and the linked shared stylesheet. Each identity has

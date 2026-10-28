@@ -1,0 +1,24 @@
+/* Page composition only; shared controls and surfaces come from ui-kit. */
+.ig-preview { display: block; width: min(100%, 34rem); height: auto; margin: 0 auto; }
+.ig-preview-actual { width: auto; max-width: none; }
+.ig-preview-scroll { overflow: auto; max-height: 75vh; }
+.ig-source-input { min-height: 11rem; }
+.ig-story-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: 1.1rem; }
+.ig-sheet { max-width: 44rem; padding: 1.25rem; background: var(--card); }
+.ig-sheet .create-foot { padding-block: .75rem; }
+.ig-sheet pre, .ig-sheet .field, .ig-sheet .card, .page pre { min-width: 0; overflow-wrap: anywhere; }
+.ig-sheet .create-flow { min-width: 0; }
+.ig-sheet .create-flow > * + * { margin-top: .9rem; }
+.ig-sheet form, .ig-fields { display: grid; gap: .75rem; }
+.ig-sheet textarea { width: 100%; box-sizing: border-box; }
+.ig-csv-preview { max-height: 14rem; overflow: auto; }
+.ig-page-tools { display: flex; flex-wrap: wrap; gap: .6rem; }
+.ig-thumbnail { width: 100%; height: 5rem; }
+#sheet { max-height: 90dvh; overflow: auto; width: min(44rem, calc(100% - 2rem)); }
+#notice { position: fixed; bottom: 1rem; left: 1rem; right: 1rem; z-index: 100; }
+@media (max-width: 700px) {
+  .ig-page-tools > * { flex: 1 1 auto; }
+  #notice { bottom: 5rem; }
+}
+.ig-outline-block { fill: var(--solid); stroke: var(--hair); }
+.ig-outline-label { fill: var(--quiet); font: 12px var(--plain); }

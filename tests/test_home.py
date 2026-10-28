@@ -38,7 +38,7 @@ class HomeTests(IsolatedHome):
         self.assertFalse(found['setup']['done'])
         self.assertEqual(found['shared']['person']['name'], 'Author')
         self.assertEqual([s['name'] for s in found['studios']],
-                         ['Blog Studio', 'Presentation Studio', 'Training Studio'])
+                         ['Blog Studio', 'Presentation Studio', 'Training Studio', 'Infographic Studio'])
 
     def test_complete_and_reopen_settings(self):
         self.write('/api/shared', {'changes': {'local': {'root': str(self.root / 'work')}}, 'seen': {}})

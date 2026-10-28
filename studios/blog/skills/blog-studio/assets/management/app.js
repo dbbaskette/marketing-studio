@@ -11,6 +11,31 @@ function suiteHome(hash, here) {
 }
 // Marketing Studio says when it opened this studio in its own tab, as it does on a phone: the
 // way back then stays in this tab, where Marketing Studio still holds its key.
+// The return key stays in a fragment and tab memory, bound to the validated home origin.
+// A phone's network home port can differ from the native server's loopback home port.
+function rememberedSuiteHome(here) {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('marketing-studio-return') || 'null');
+    if (saved && /^[A-Za-z0-9_-]{8,256}$/.test(saved.token || '')
+        && suiteHome('#home=' + encodeURIComponent(saved.home), here) === saved.home) return saved.home;
+  } catch (failure) {}
+  return '';
+}
+function suiteReturn(home, hash, here) {
+  if (!home || suiteHome('#home=' + encodeURIComponent(home), here) !== home) return '';
+  const offered = suiteHome(hash, here) === home
+    ? new URLSearchParams(String(hash).replace(/^#/, '')).get('homeToken') || '' : '';
+  const valid = value => typeof value === 'string' && /^[A-Za-z0-9_-]{8,256}$/.test(value);
+  let key = valid(offered) ? offered : '';
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('marketing-studio-return') || 'null');
+    if (!key && saved?.home === home && valid(saved.token)) key = saved.token;
+    if (key) sessionStorage.setItem('marketing-studio-return', JSON.stringify({home, token: key}));
+  } catch (failure) {
+    // The current private link still works when tab storage is unavailable.
+  }
+  return home + '/' + (key ? '#token=' + encodeURIComponent(key) : '');
+}
 function suiteBack(hash) {
   return new URLSearchParams(String(hash).replace(/^#/, '')).get('back') === 'tab';
 }
@@ -23,10 +48,11 @@ function suitePort(port, here) {
 const token = location.hash.slice(1).split('&')[0] || sessionStorage.getItem('blog-studio-session') || '';
 // The port the server names belongs to the Marketing Studio that started it, so it is preferred
 // to one kept from an earlier session.
-const suite = suiteHome(location.hash, location) || suitePort(document.body?.dataset?.suitePort, location)
+const suite = suiteHome(location.hash, location) || rememberedSuiteHome(location) || suitePort(document.body?.dataset?.suitePort, location)
   || sessionStorage.getItem('marketing-studio-home') || '';
 if(token)sessionStorage.setItem('blog-studio-session',token);
 if(suite)sessionStorage.setItem('marketing-studio-home',suite);
+const suiteReturnLink = suiteReturn(suite, location.hash, location);
 const suiteTab = suiteBack(location.hash) || sessionStorage.getItem('marketing-studio-back') === 'tab';
 if(suiteTab)sessionStorage.setItem('marketing-studio-back','tab');
 history.replaceState(null, '', location.pathname+(location.search||''));

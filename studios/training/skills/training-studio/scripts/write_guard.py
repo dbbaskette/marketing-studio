@@ -9,11 +9,20 @@ from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 
 
 @contextmanager
-def admitted(root):
+def admitted(root, *, held=None):
+    """Standalone helpers wait for workers; runner calls borrow their exact owned lock.
+
+    The runner coordinates its own jobs before calling the helper. Ownership and
+    conversation checks apply to both paths; a JSON request cannot supply `held`.
+    """
     root = Path(root)
     repo = next((folder for folder in (root, *root.parents) if (folder / '.git').exists()), None)
-    with ProcessRLock(lambda: workspace_lock_path(repo, home.data_root()), refusal=workspace.WorkspaceError):
-        if worker_in_progress(repo or root, refusal=workspace.WorkspaceError):
+    scope = workspace_lock_path(repo, home.data_root())
+    if held is not None and not held.protects(scope):
+        raise workspace.WorkspaceError('The held write lock belongs to another workspace. Reload before saving.')
+    lock = held if held is not None else ProcessRLock(lambda: workspace_lock_path(repo, home.data_root()), refusal=workspace.WorkspaceError)
+    with lock:
+        if held is None and worker_in_progress(repo or root, refusal=workspace.WorkspaceError):
             raise workspace.WorkspaceError(SYNC_WAIT)
         path = root / workspace.STATE_DIR / 'run.json'
         if path.exists():
@@ -29,7 +38,7 @@ def admitted(root):
             chain, updates, decks = drafts.get('update_chain', {}), drafts.get('updates', {}), record.get('deck', {})
             if not isinstance(chain, dict) or not isinstance(updates, dict) or not isinstance(decks, dict) or any(not isinstance(item, dict) for item in decks.values()):
                 raise workspace.WorkspaceError('The saved work in progress cannot be read.')
-            if (any(job['status'] in ('queued', 'working') for job in jobs)
+            if held is None and (any(job['status'] in ('queued', 'working') for job in jobs)
                     or chain.get('status') == 'working' or updates
                     or any(item.get('redrawing') or item.get('look_pending') for item in decks.values())):
                 raise workspace.WorkspaceError(SYNC_WAIT)
@@ -39,7 +48,7 @@ def admitted(root):
                 notes = item.get('notes', [])
                 if not isinstance(notes, list) or any(not isinstance(note, dict) or not isinstance(note.get('status'), str) for note in notes):
                     raise workspace.WorkspaceError('The saved deck work cannot be read.')
-                if any(note['status'] in ('waiting', 'drawing') for note in notes):
+                if held is None and any(note['status'] in ('waiting', 'drawing') for note in notes):
                     raise workspace.WorkspaceError(SYNC_WAIT)
             driver = record.get('driver')
             if driver is None:

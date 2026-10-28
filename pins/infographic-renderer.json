@@ -2,17 +2,28 @@
   "schema": 1,
   "name": "Chrome for Testing headless shell",
   "version": "145.0.7632.6",
-  "purpose": "Infographic Studio feasibility baseline; production distribution is enabled only by its packaging milestone.",
+  "purpose": "Pinned Infographic Studio single-page renderer; archives are prepared only by explicit developer builds.",
   "platforms": {
     "macos-x64": {
       "url": "https://storage.googleapis.com/chrome-for-testing-public/145.0.7632.6/mac-x64/chrome-headless-shell-mac-x64.zip",
       "sha256": "4316f7f98213a173e2356406203359cd4ab5b2b2db36cb219b9d99edec746819",
       "executable": "chrome-headless-shell-mac-x64/chrome-headless-shell",
       "executable_sha256": "5271c5decc04f53cb011fec9309d5877807a4783f4f5b09256accfb47b2534b3"
+    },
+    "linux-x64": {
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/145.0.7632.6/linux64/chrome-headless-shell-linux64.zip",
+      "sha256": "2536e97d8f410df0394b3e7c4252e88ce9f239f04f3af4e247a26caf45baf49e",
+      "executable": "chrome-headless-shell-linux64/chrome-headless-shell",
+      "executable_sha256": "27e55cc30e487493b89b663085d6deeb0707be201a568657c922fac9076c317c"
+    },
+    "macos-arm64": {
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/145.0.7632.6/mac-arm64/chrome-headless-shell-mac-arm64.zip",
+      "sha256": "8510b9b1575538aa6a092ed16d981738b2ebf52c5e41ea4c54a7ce16756cdcf5",
+      "executable": "chrome-headless-shell-mac-arm64/chrome-headless-shell",
+      "executable_sha256": "a46b3b1e63163fa2d2437fb6ae967cb5a73b50050bca32f1964e6129b6228244"
     }
   },
   "unverified_platforms": [
-    "macos-arm64",
     "linux-x64"
   ],
   "unsupported_platforms": [

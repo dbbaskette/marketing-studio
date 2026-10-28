@@ -30,6 +30,7 @@ STUDIOS = (
     ROOT / 'studios/blog/skills/blog-studio/assets/management',
     ROOT / 'studios/presentation/skills/presentation-studio/scripts/desk',
     ROOT / 'studios/training/skills/training-studio/scripts/desk',
+    ROOT / 'studios/infographic/runner/web',
 )
 HERE = {'protocol': 'http:', 'hostname': '127.0.0.1', 'port': '8791'}
 CASES = [
@@ -79,6 +80,38 @@ class SuiteLinkTests(unittest.TestCase):
         self.assertEqual(done.returncode, 0, done.stderr)
         return json.loads(done.stdout)
 
+    def test_return_keys_are_fragment_only_and_bound_to_the_validated_home(self):
+        for folder in STUDIOS:
+            with self.subTest(studio=folder.relative_to(ROOT).as_posix()):
+                text = (folder / 'app.js').read_text()
+                source = function(text, 'suiteHome') + '\n' + function(text, 'suiteReturn')
+                source += '\nconst here = ' + json.dumps(HERE) + ''';
+let saved = null;
+const sessionStorage = {getItem: () => saved, setItem: (name, value) => {saved = value;}};
+const home = 'http://127.0.0.1:8790';
+const initial = '#home=' + encodeURIComponent(home) + '&homeToken=synthetic-home-key';
+const first = suiteReturn(home, initial, here);
+const restored = suiteReturn(home, '', here);
+const other = suiteReturn('http://127.0.0.1:8792', '', here);
+const external = suiteReturn('http://outside.invalid:8790', initial, here);
+saved = null;
+const invalid = suiteReturn(home, '#home=' + encodeURIComponent(home) + '&homeToken=' + encodeURIComponent('invalid&query=key'), here);
+'''
+                found = self.evaluate(source, '[first, restored, other, external, invalid]')
+                self.assertEqual(found, ['http://127.0.0.1:8790/#token=synthetic-home-key',
+                                        'http://127.0.0.1:8790/#token=synthetic-home-key',
+                                        'http://127.0.0.1:8792/', '', 'http://127.0.0.1:8790/'])
+
+    def test_return_link_works_without_tab_storage(self):
+        for folder in STUDIOS:
+            text = (folder / 'app.js').read_text()
+            source = function(text, 'suiteHome') + '\n' + function(text, 'suiteReturn')
+            source += '\nconst sessionStorage = {getItem: () => {throw Error("disabled");}};'
+            found = self.evaluate(source, 'suiteReturn("http://127.0.0.1:8790", '
+                                  '"#home=http%3A%2F%2F127.0.0.1%3A8790&homeToken=synthetic-home-key", '
+                                  + json.dumps(HERE) + ')')
+            self.assertEqual(found, 'http://127.0.0.1:8790/#token=synthetic-home-key')
+
     def test_studios_accept_only_marketing_studio_on_the_same_host(self):
         for folder in STUDIOS:
             with self.subTest(studio=folder.relative_to(ROOT).as_posix()):
@@ -101,25 +134,27 @@ class SuiteLinkTests(unittest.TestCase):
                                  'http://192.168.1.20:8790')
                 # The link's own address comes first, then the page's port, then the tab's memory.
                 wiring = text[text.index('suiteHome(', text.index('function suitePort(') + 1):]
-                wiring = wiring[:wiring.index("sessionStorage.getItem('marketing-studio-home')")]
+                key = 'infographic-studio-home' if folder.name == 'web' else 'marketing-studio-home'
+                wiring = wiring[:wiring.index("sessionStorage.getItem('" + key + "')")]
                 self.assertIn('suitePort(document.body?.dataset?.suitePort, ', wiring)
+                self.assertIn('rememberedSuiteHome(', wiring)
 
     def test_marketing_studio_names_itself_in_studio_links(self):
         text = HOME.read_text()
         self.assertIn("if (!standalone) window.name = 'marketing-studio';", text)
-        source = 'const location = {origin: "http://127.0.0.1:8790"};\n' + function(text, 'withHome')
+        source = 'const location = {origin: "http://127.0.0.1:8790"}; const token = "home-fixture-token";\n' + function(text, 'withHome')
         found = self.evaluate(source, '[withHome("http://127.0.0.1:8791/#token=abc"), '
                                       'withHome("http://127.0.0.1:8792/#abc")]')
-        self.assertEqual(found, ['http://127.0.0.1:8791/#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790',
-                                 'http://127.0.0.1:8792/#abc&home=http%3A%2F%2F127.0.0.1%3A8790'])
+        self.assertEqual(found, ['http://127.0.0.1:8791/#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790&homeToken=home-fixture-token',
+                                 'http://127.0.0.1:8792/#abc&home=http%3A%2F%2F127.0.0.1%3A8790&homeToken=home-fixture-token'])
 
     def test_a_phone_opens_a_studio_in_the_same_tab_and_says_so(self):
         text = HOME.read_text()
-        source = 'const location = {origin: "http://127.0.0.1:8790"};\n' + function(text, 'withHome')
+        source = 'const location = {origin: "http://127.0.0.1:8790"}; const token = "home-fixture-token";\n' + function(text, 'withHome')
         found = self.evaluate(source, '[withHome("http://127.0.0.1:8791/#token=abc", true), '
                                       'withHome("http://127.0.0.1:8791/#token=abc", false)]')
-        self.assertEqual(found, ['http://127.0.0.1:8791/#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790&back=tab',
-                                 'http://127.0.0.1:8791/#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790'])
+        self.assertEqual(found, ['http://127.0.0.1:8791/#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790&homeToken=home-fixture-token&back=tab',
+                                 'http://127.0.0.1:8791/#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790&homeToken=home-fixture-token'])
         chosen = self.evaluate(function(text, 'inThisTab'), json.dumps([
             ['(pointer: coarse)'], ['(max-width: 52rem)'], [], ['(hover: hover)']])
             + '.map((matching) => inThisTab((query) => matching.some((m) => query.includes(m))))')
@@ -127,8 +162,8 @@ class SuiteLinkTests(unittest.TestCase):
         self.assertIn('if (inThisTab(', text)
 
     def test_studios_leave_in_the_same_tab_when_opened_in_it(self):
-        hashes = ['#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790&back=tab',
-                  '#abc&home=http%3A%2F%2F127.0.0.1%3A8790&back=tab',
+        hashes = ['#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790&homeToken=home-fixture-token&back=tab',
+                  '#abc&home=http%3A%2F%2F127.0.0.1%3A8790&homeToken=home-fixture-token&back=tab',
                   '#token=abc&home=http%3A%2F%2F127.0.0.1%3A8790', '#token=abc&back=other', '']
         for folder in STUDIOS:
             with self.subTest(studio=folder.relative_to(ROOT).as_posix()):

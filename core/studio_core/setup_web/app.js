@@ -25,7 +25,7 @@ window.addEventListener('hashchange', () => {
 if (!standalone) window.name = 'marketing-studio';
 function withHome(link, tab = false) {
   return link + (link.includes('#') ? '&' : '#') + 'home=' + encodeURIComponent(location.origin)
-    + (tab ? '&back=tab' : '');
+    + '&homeToken=' + encodeURIComponent(token) + (tab ? '&back=tab' : '');
 }
 // A phone cannot bring another tab forward, so a studio opens in this tab there and its way
 // back returns to this tab, which still holds this page's key.
@@ -35,7 +35,7 @@ function inThisTab(media) {
 let snapshot, setup = false, step = 0, view = 'home', profileAgent;
 const labels = ['You and your assistant', 'Your workspace', 'Brand and delivery'];  // announced
 // Blog Studio's own setup: a blog on the writing desk has no stops and no slides.
-const blogAlone = () => setup && standalone && product === 'Blog Studio';
+const blogAlone = () => setup && standalone && ['Blog Studio', 'Infographic Studio'].includes(product);
 const form = $('#settings-form');
 const modelPickers = new Map(), catalogs = {};
 const customModel = '__manual model__';
@@ -303,7 +303,8 @@ $('#confirm-profiles').addEventListener('click', () => { profileAgent = form.ele
 const drawings = {
   blog: 'M5 4h10l4 4v14H5zM14 4v5h5M8 13h8M8 17h6',
   presentation: 'M3 5h20v14H3zM13 19v5M8 24h10M7 14l4-4 4 3 4-5',
-  training: 'm2 9 11-5 11 5-11 5zM6 12v7c4 3 10 3 14 0v-7M24 9v10'
+  training: 'm2 9 11-5 11 5-11 5zM6 12v7c4 3 10 3 14 0v-7M24 9v10',
+  infographic: 'M4 3h18v22H4zM8 8h10M8 13h4M8 18h10M15 12v4h4v-4z'
 };
 // A studio's tile: ui-kit's .studio-symbol, in the card's studio colours, its drawing an svg.
 function studioSymbol(id) {

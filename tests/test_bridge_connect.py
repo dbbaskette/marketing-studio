@@ -96,7 +96,7 @@ class BridgeConnectTests(unittest.TestCase):
 
     def test_local_workspaces_connect_to_an_empty_repository_side_by_side_with_their_work(self):
         prepared = self.launcher.prepare(self.preferences, self.settings(self.local))
-        self.assertEqual(set(prepared), set(STUDIOS))
+        self.assertEqual(set(prepared), set(STUDIOS) | {'infographic'})
         for identifier, report in prepared.items():
             with self.subTest(identifier=identifier):
                 self.assertNotIn('connect', report)
@@ -108,7 +108,7 @@ class BridgeConnectTests(unittest.TestCase):
 
         # The shared settings now name the repository: nothing moves by itself.
         prepared = self.launcher.prepare(self.preferences, self.settings(self.team))
-        self.assertEqual({identifier: report['connect']['carry'] for identifier, report in prepared.items()},
+        self.assertEqual({identifier: report['connect']['carry'] for identifier, report in prepared.items() if identifier in STUDIOS},
                          {'blog': {'blogs': 1, 'references': 1, 'voices': 1},
                           'training': {'trainings': 1}, 'presentation': {'decks': 1}})
         for identifier in STUDIOS:

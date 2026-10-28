@@ -450,6 +450,16 @@ class DistinctTests(Supplied):
 
 
 class ListTests(Supplied):
+    def test_a_folder_created_during_listing_is_not_mistaken_for_an_unsafe_file(self):
+        original = type(self.root).is_dir
+        def appearing(path):
+            found = original(path)
+            if path == self.root / 'sources' and not found:
+                path.mkdir(parents=True, exist_ok=True)
+            return found
+        with mock.patch.object(type(self.root), 'is_dir', appearing):
+            self.assertEqual(documents.listed(self.root), [])
+
     def test_a_deck_with_no_documents_lists_none_and_writes_nothing(self):
         self.assertEqual(documents.listed(self.root), [])
         self.assertEqual(documents.sources(self.root), ([], []))

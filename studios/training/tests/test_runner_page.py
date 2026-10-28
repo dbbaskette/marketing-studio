@@ -3451,7 +3451,7 @@ class DeskTeamTests(TeamCase):
                           (root / workspace.artifact(root, workspace.load(root), name)['file'])
                           .read_text(encoding='utf-8'))
 
-    def test_takeover_during_a_step_keeps_typing_and_discards_only_worker_output(self):
+    def test_takeover_waits_for_a_step_then_keeps_typing_and_discards_only_worker_output(self):
         root, name = self.finished(), 'document@101'
         with self.be(self.alex):
             (root / engines.IN_HAND).write_text('brief@101\n', encoding='utf-8')
@@ -3464,6 +3464,13 @@ class DeskTeamTests(TeamCase):
         self.as_(self.blake, self.blake.engine.fetch)
         self.as_(self.blake, self.blake.engine.drive, self.theirs(self.blake, root), 'take')
         with self.be(self.alex):
+            report = self.engine.fetch()
+            self.assertFalse(report['reached'], report)
+            self.assertTrue(partial.is_file(), 'Sync cannot replace an active worker output tree.')
+            # The fixture has no live worker. Recover its validated typing, then
+            # remove the known synthetic half-made output as that worker stops.
+            self.engine._tidy()
+            partial.unlink()
             report = self.engine.fetch()
             self.assertTrue(report['reached'], report)
             view = self.engine.view(root)
