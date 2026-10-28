@@ -1009,3 +1009,85 @@ class DeskTypingTests(DeckCase):
                          ('restore', 'Restored', 'Two.'))
         with self.assertRaisesRegex(WorkspaceError, '^Choose a saved version.$'):
             self.engine.draft_restore(root, self.NAME, section['id'], answer['revision'], 9)
+
+
+class OpenSavedTrainingTests(DeckCase):
+    def finished(self, mode='step_by_step'):
+        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': mode}):
+            root = self.start(levels=['101'], title='Training ' + mode)
+        if mode == 'step_by_step':
+            self.to_end(root)
+        else:
+            shown = self.view(root)
+            if shown.get('review'):
+                self.engine.review_decide(root, shown['review']['expected'], 'approve')
+        self.assertEqual(self.state(root), 'done')
+        return root
+
+    def test_row_157_a_finished_training_opens_on_the_desk_as_it_was(self):
+        for mode in ('step_by_step', 'automatic'):
+            with self.subTest(mode=mode):
+                root = self.finished(mode)
+                before = self.record(root)
+                view = self.engine.open_on_desk(root)
+                self.assertTrue(view['cards'])
+                self.assertTrue(all(card['state'] == 'ready' for card in view['cards']), view['cards'])
+                record = self.record(root)
+                self.assertEqual(record['schema'], before['schema'])
+                self.assertEqual(record['opened_on_desk']['was'], {key: before.get(key) for key in ('review_policy', 'review_layout')})
+                self.assertEqual(workspace.load(root)['flow'], 'desk')
+
+    def test_policy_approval_without_final_review_is_a_draft(self):
+        root = self.finished('automatic')
+        record = self.record(root)
+        record.pop('review_decisions', None)
+        record['review_policy'] = {'schema': 1, 'level': 'step_by_step'}
+        self.engine._store(root, record)
+        shown = self.engine.open_on_desk(root)
+        self.assertTrue(shown['cards'])
+        self.assertTrue(all(card['state'] == 'draft' for card in shown['cards']), shown['cards'])
+
+    def test_policy_approval_needs_a_matching_final_signature(self):
+        root = self.finished('automatic')
+        record, session = self.record(root), workspace.load(root)
+        record['review_decisions']['final']['signature'] = 'different'
+        drafts.open_on_desk(root, session, record)
+        for name in workspace.artifact_names(root, session):
+            approval = (session['artifacts'].get(name) or {}).get('approved') or {}
+            if approval.get('by') == 'review-policy':
+                self.assertNotIn(name, session['desk_ready'])
+
+    def test_training_without_run_must_be_brought_in(self):
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.open_on_desk(self.base / 'no-run')
+        self.assertEqual(str(caught.exception), drafts.NOT_BROUGHT_IN)
+
+    def test_a_training_still_waiting_cannot_be_opened(self):
+        root = self.start(levels=['101'])
+        self.to_gate(root, 'document@101')
+        file = root / '.training-studio/run.json'
+        before = file.read_bytes()
+        with self.assertRaises(WorkspaceError) as caught:
+            self.engine.open_on_desk(root)
+        self.assertEqual(str(caught.exception), drafts.NOT_FINISHED)
+        self.assertEqual(file.read_bytes(), before)
+
+    def test_opening_twice_writes_nothing_more(self):
+        root = self.finished()
+        first = self.engine.open_on_desk(root)
+        before = self.log()
+        files = [root / '.training-studio/run.json', root / '.training-studio/session.json']
+        saved = [file.read_bytes() for file in files]
+        self.assertEqual(self.engine.open_on_desk(root), first)
+        self.assertEqual([file.read_bytes() for file in files], saved)
+        self.assertEqual(self.log(), before)
+        self.assertEqual(sum('open the training on the desk' in line for line in before), 1)
+
+    def test_an_opened_training_s_scenarios_are_not_held(self):
+        root = self.finished()
+        self.engine.open_on_desk(root)
+        session = workspace.load(root)
+        self.assertFalse(drafts.held(root, session, self.record(root)))
+        for name in workspace.artifact_names(root, session):
+            if name.startswith('scenario:'):
+                self.assertNotIn('practice', workspace.artifact(root, session, name)['extras'])

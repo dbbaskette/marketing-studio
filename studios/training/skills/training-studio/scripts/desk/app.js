@@ -3299,7 +3299,14 @@ function paintTraining(fresh) {
   const known = listed(training.path) || training;
   const watch = training.run || watched(known) ? capsule('Watch the run', '',
     () => show('run', { path: training.path }), 'watch') : null;
-  place({ title: training.title || 'Untitled', above, back: true, actions: [watch, lead] },
+  const openDesk = training.run && training.run.can_open_desk
+    ? capsule('Open on the desk', 'filled', async () => {
+      try {
+        await send('drafts/open', { path: training.path });
+        show('run', { path: training.path });
+      } catch (failure) { toast(failure.message); }
+    }, 'open-desk') : null;
+  place({ title: training.title || 'Untitled', above, back: true, actions: [watch, lead, openDesk] },
     [add(make('div', 'intro'), state(shape, words), beads(training.stages, false),
       make('p', 'lede', saysOf(training)), whoLine(known)),
     adoptCard(known),

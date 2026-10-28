@@ -4120,6 +4120,26 @@ class Engine(Reviewing):
         if workspace.load(root)['stage'] == 'done':
             workspace.checkpoint(root, stage='package')
 
+    def open_on_desk(self, path) -> dict:
+        """Open a finished saved run on the desk, preserving the person's approvals."""
+        with self.files:
+            root = self.driven(path)
+            if root is None:
+                raise WorkspaceError(drafts.NOT_BROUGHT_IN)
+            record = self._load(root)
+            if not drafts.on_desk(record):
+                self.hold(root)
+                found = self._survey(root, record, self._wanted(root, record))
+                state, _ = self._state(record, found, self._run(root))
+                if state != 'done' or found.next.kind != 'done' or workspace.status(root)['gate']:
+                    raise WorkspaceError(drafts.NOT_FINISHED)
+                session = workspace.load(root)
+                drafts.open_on_desk(root, session, record)
+                workspace.store(root, session)
+                self._store(root, record)
+                self._commit(root, 'open the training on the desk')
+            return drafts.view(self, root)
+
     def mark_ready(self, path, name, seen) -> dict:
         """Mark one material ready on the desk, as the person asked: their approval of the
         version they were shown (`seen`, its hash). The desk's acceptance never is. Refused
@@ -5259,7 +5279,11 @@ class Engine(Reviewing):
         # When the worker now in hand began: the run's last activity, while it works.
         with self._lock:
             began = [worker['started_at'] for worker in run.workers.values()]
-        return {'state': state, 'sentence': sentence, 'needs': needs and mine,
+        return {'state': state, 'sentence': sentence, 'flow': record.get('flow'),
+                'can_open_desk': (not drafts.on_desk(record) and state == 'done'
+                                  and found.next.kind == 'done'
+                                  and not found.session.get('gate')),
+                'needs': needs and mine,
                 'question': asked['text'] if asked and mine else None, 'mine': mine,
                 'driver': who, 'last_shared': last, 'notice': self._notice(root, record),
                 'busy_since': max(began) if began and mine else None}

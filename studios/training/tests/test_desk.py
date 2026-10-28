@@ -7016,6 +7016,23 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('/api/drafts?' + urlencode({'path': str(self.root)}),
                       self.asked(result, 'drafts'))
 
+    def test_a_finished_training_offers_open_on_the_desk(self):
+        self.started()
+        detail = self.detail('done', 'Finished.')
+        detail['body']['run']['can_open_desk'] = True
+        answers = self.answers(**{
+            'GET /api/trainings': [self.listed('done', 'Finished.')],
+            'GET /api/training': [detail],
+            'GET /api/run': [a_desk_run()],
+            'POST /api/drafts/open': [a_desk()],
+            'GET /api/drafts': [a_desk()]})
+        result = self.run_page(answers, [
+            {'snapshot': 'finished'}, {'click': 'Open on the desk'}, {'snapshot': 'desk'}],
+            state={'screen': 'training', 'path': str(self.root)})
+        self.assertIn('Open on the desk', result['snapshots']['finished']['buttons'])
+        self.assertEqual(self.posts(result), [('/api/drafts/open', {'path': str(self.root)})])
+        self.assertEqual(result['snapshots']['desk']['ledes'], [DESK_LEDE])
+
     def test_a_failed_document_says_so_and_offers_both_ways(self):
         refused_add = {'status': 400, 'body': {'error': 'It could not be read.'}}
         result = self.run_page(self.start_answers(ok({}), refused_add, ok({})),

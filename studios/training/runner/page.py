@@ -221,7 +221,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
-          '/api/review-level', '/api/research-site', *DECIDED, *TYPED, *JOBS)
+          '/api/review-level', '/api/research-site', f'{DRAFTS}/open', *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -553,7 +553,9 @@ class RunnerPage(desk.Page):
         """Add a training's run to what the desk says about it. A run with a question or
         a problem makes the training one that needs the person."""
         found = self.engine.brief(item['path'])
-        item['run'] = found and {'state': found['state'], 'sentence': found['sentence']}
+        item['run'] = found and {'state': found['state'], 'sentence': found['sentence'],
+                                 'flow': found.get('flow'),
+                                 'can_open_desk': found.get('can_open_desk', False)}
         item['driver'] = found and found['driver']
         item['mine'] = None if found is None else found['mine']
         item['notice'] = found and found['notice']
@@ -708,6 +710,13 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.engine.share())
         if path == ASSET:
             return desk.as_json(HTTPStatus.OK, self.asset(sent))
+        if path == f'{DRAFTS}/open':
+            training = desk.text(sent, 'path')
+            desk.registered(training)
+            try:
+                return desk.as_json(HTTPStatus.OK, self.engine.open_on_desk(training))
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
         if path in DECIDED:
             return desk.as_json(HTTPStatus.OK, self.drafted(path, sent))
         if path in JOBS:

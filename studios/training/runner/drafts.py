@@ -48,6 +48,8 @@ UNWRITTEN = '{it} has not been written yet.'
 NEEDS_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
                    'here cannot do it. Update Harness Research, then start again.')
 ON_DESK = 'This training is on the desk. Change it there.'
+NOT_FINISHED = 'Open it on the desk once it is finished.'
+NOT_BROUGHT_IN = 'Bring it in first, then open it on the desk once it is finished.'
 # What a desk receipt says was done at a gate: never the person's approval of a material.
 DECISION = 'continued-on-the-desk'
 LOOK = "You chose the brand's default look at the start: {name}."
@@ -78,6 +80,34 @@ NAMED = ('practice', 'profile')
 def on_desk(record: dict | None) -> bool:
     """Whether a run record, or a form, is a training worked on at the desk."""
     return (record or {}).get('flow') == FLOW
+
+
+def open_on_desk(root: Path, session: dict, record: dict) -> None:
+    """Keep the person's approvals as ready when a completed run moves to the desk."""
+    from runner import reviews
+
+    final = (record.get('review_decisions') or {}).get('final') or {}
+    reviewed = (final.get('by') == 'page' and
+                final.get('signature') == reviews.signature(root, session, record, 'final'))
+    ready = {}
+    for name in workspace.artifact_names(root, session):
+        entry = session['artifacts'].get(name) or {}
+        approval = entry.get('approved') or {}
+        digest = workspace.sha256_file(root / workspace.artifact(root, session, name)['file'])
+        if digest and approval.get('sha256') == digest and (
+                approval.get('by') == 'page' or
+                approval.get('by') == 'review-policy' and reviewed):
+            ready[name] = digest
+    session['flow'] = FLOW
+    session['desk_ready'] = ready
+    session.pop('practice_inputs', None)
+    for name, entry in session['artifacts'].items():
+        if name.startswith('scenario:'):
+            (entry.get('built_from') or {}).pop('practice', None)
+            ((entry.get('approved') or {}).get('inputs') or {}).pop('practice', None)
+    record['opened_on_desk'] = {'at': home.now(), 'was': {
+        key: record.get(key) for key in ('review_policy', 'review_layout')}}
+    record['flow'] = FLOW
 
 
 def receipt(record: dict, gate: str, evidence, at: str, note: str | None = None) -> None:
