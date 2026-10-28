@@ -5134,7 +5134,8 @@ class Engine(Reviewing):
         if scope is not None:
             raise WorkspaceError(drafts.NO_SCOPE)
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True,
+                                         deck_change=isinstance(name, str) and workspace.split(name)[0] == 'deck')
             if drafts.busy(record):
                 raise WorkspaceError(drafts.BUSY)
             session = workspace.load(root)
@@ -5182,7 +5183,7 @@ class Engine(Reviewing):
     def update_all(self, path, level=None) -> dict:
         """Explicitly update held materials, discovering further holds after each landing."""
         with self.files:
-            root, record = self._on_desk(path, decided=True)
+            root, record = self._on_desk(path, decided=True, deck_change=True)
             run = self._run(root)
             if drafts.busy(record) or run.busy or run.workers:
                 raise WorkspaceError(drafts.BUSY)

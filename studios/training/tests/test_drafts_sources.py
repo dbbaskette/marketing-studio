@@ -193,6 +193,54 @@ class SourceTests(DeckCase):
         with self.engine.files:
             self.engine._on_desk(root, deck_change=True)  # Ordinary held-material rules remain.
 
+    def test_row_181_research_refresh_blocks_deck_and_bulk_updates_until_retry(self):
+        from runner_support import fails
+
+        root = self.begin(flow='desk', levels=['101'])
+        self.to_end(root)
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
+        card = self.engine.draft_card(root, 'document@101')
+        section = next(part for part in card['sections'] if part['heading'] == 'Summary')
+        self.engine.draft_save(root, 'document@101', section['id'], card['revision'],
+                               'Pending learner guide edit.', 'ab12')
+        self.assertIn(root, self.engine.pending_commit)
+
+        def refuse():
+            before, session, commits, jobs = self.record(root), workspace.load(root), self.log(), len(self.workers.jobs)
+            for action in (lambda: self.engine.update(root, 'deck@101'),
+                           lambda: self.engine.update_all(root),
+                           lambda: self.engine.update_all(root, '101')):
+                with self.assertRaisesRegex(WorkspaceError, draft_jobs.BUSY):
+                    action()
+            self.assertEqual((self.record(root), workspace.load(root), self.log(), len(self.workers.jobs)),
+                             (before, session, commits, jobs))
+            self.assertIn(root, self.engine.pending_commit)
+        refuse()
+        self.workers.then('question:instance-min', fails('Not signed in.', 'unavailable'))
+        self.engine.carry_on(root)
+        self.assertIsNotNone(self.record(root)['problem'])
+        self.assertTrue(any(item.get('artifact') == 'research' and item.get('refresh')
+                            for item in workspace.load(root)['requests']))
+        card = self.engine.draft_card(root, 'document@101')
+        section = next(part for part in card['sections'] if part['heading'] == 'Summary')
+        self.engine.draft_save(root, 'document@101', section['id'], card['revision'],
+                               'Another pending guide edit.', 'ab12')
+        refuse()
+        self.engine.act(root, 'retry')
+        self.to_end(root)
+        self.assertIsNone(self.record(root)['problem'])
+        self.assertFalse(any(item.get('artifact') == 'research' for item in workspace.load(root)['requests']))
+        with self.assertRaises(WorkspaceError) as held:
+            self.engine.update(root, 'deck@101')
+        self.assertNotEqual(str(held.exception), draft_jobs.BUSY)
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.update_all(root)
+        self.assertTrue(drafts.updates(self.record(root)))
+        chain = self.record(root)['drafts']['update_chain']['id']
+        self.engine.stop_updates(root, chain)
+        self.assertFalse(drafts.updates(self.record(root)))
+
     def test_legacy_findings_ignore_recording_timestamps(self):
         root = self.finished()
         old = {'schema': 1, 'results': {'same': {'summary': 'A', 'checked_at': 'before'},
