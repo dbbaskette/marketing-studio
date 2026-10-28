@@ -5820,12 +5820,16 @@ class Engine(Reviewing):
             note.get('status') in ('waiting', 'drawing') for note in kept.get('notes') or ())
             for kept in (record.get('deck') or {}).values())
 
+    def _desk_change_busy(self, root: Path, record: dict) -> bool:
+        """Call with files held: include queued work and registered workers."""
+        run = self._run(root)
+        return bool(run.workers or run.busy or drafts.busy(record) or self._deck_busy(record))
+
     def add_source(self, path, files) -> dict:
         """The priced desk action: add documents and update only the research."""
         with self.files:
             root, record = self._on_desk(path)
-            run = self._run(root)
-            if run.workers or run.busy or drafts.busy(record) or self._deck_busy(record):
+            if self._desk_change_busy(root, record):
                 raise WorkspaceError(draft_jobs.BUSY)
             if not workspace.research_record(root):
                 raise WorkspaceError('Wait until the research is written before adding a source.')
@@ -5849,11 +5853,13 @@ class Engine(Reviewing):
                      if isinstance(entry, dict)]
             if not names:
                 raise WorkspaceError(NO_LATER)
-            run = self._run(root)
-            if run.workers or run.busy:
-                raise WorkspaceError(WORKING)
-            if drafts.on_desk(record) and self._deck_busy(record):
-                raise WorkspaceError(draft_jobs.BUSY)
+            if drafts.on_desk(record):
+                if self._desk_change_busy(root, record):
+                    raise WorkspaceError(draft_jobs.BUSY)
+            else:
+                run = self._run(root)
+                if run.workers or run.busy:
+                    raise WorkspaceError(WORKING)
             self._request_sources(root, record)
         self.carry_on(path)
         return self.view(root)

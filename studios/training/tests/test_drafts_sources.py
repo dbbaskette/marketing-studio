@@ -281,6 +281,88 @@ class SourceTests(DeckCase):
                             for request in workspace.load(root)['requests']))
         self.assertEqual(self.record(root)['documents']['later'], [])
 
+    def assert_research_admission_blocked(self, root):
+        record, session, jobs, commits = self.record(root), workspace.load(root), len(self.workers.jobs), self.log()
+        documents = self.engine.documents.listed(root)
+        for action in (lambda: self.engine.update_research(root),
+                       lambda: self.engine.add_source(root, [{'name': 'another.txt', 'data': QUOTE.encode()}])):
+            with self.assertRaisesRegex(WorkspaceError, draft_jobs.BUSY):
+                action()
+        self.assertEqual((self.record(root), workspace.load(root), len(self.workers.jobs), self.log()),
+                         (record, session, jobs, commits))
+        self.assertEqual(self.engine.documents.listed(root), documents)
+
+    def test_row_183_research_waits_for_queued_deck_update(self):
+        from test_drafts import edit
+        from runner import pipeline
+
+        root = self.saved_with_later_document()
+        self.engine.open_on_desk(root)
+        edit(self, root, 'document', lambda text: text.replace(
+            '## When capacity holds', '## When capacity holds\nChanged detail.'))
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        self.workers.outline_said = outline
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.update(root, 'deck')
+        self.assertIn('deck', drafts.updates(self.record(root)))
+        self.assert_research_admission_blocked(root)
+        self.engine.carry_on(root)
+        self.to_end(root)
+        self.assertFalse(drafts.busy(self.record(root)))
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.update_research(root)
+        self.assertEqual(self.record(root)['documents']['later'], [])
+
+    def test_row_183_research_waits_for_queued_bulk_updates(self):
+        from test_drafts import edit
+
+        root = self.saved_with_later_document()
+        self.engine.open_on_desk(root)
+        edit(self, root, 'document', lambda text: text.replace(
+            '## When capacity holds', '## When capacity holds\nChanged detail.'))
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.update_all(root)
+        self.assertTrue(drafts.updates(self.record(root)))
+        self.assert_research_admission_blocked(root)
+        chain = self.record(root)['drafts']['update_chain']['id']
+        self.engine.stop_updates(root, chain)
+        self.assertFalse(drafts.busy(self.record(root)))
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.update_research(root)
+        self.assertEqual(self.record(root)['documents']['later'], [])
+
+    def test_row_183_research_waits_for_queued_desk_job(self):
+        from runner import pipeline
+
+        root = self.saved_with_later_document()
+        self.engine.open_on_desk(root)
+        title = json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title']
+        seen = self.record(root)['deck']['']['saved']['sha256']
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.slide_selection(root, None, 'check-yourself', 'title', 'fix', 0, title, title, seen)
+        job = self.record(root)['drafts']['jobs'][-1]
+        self.assertEqual(job['status'], 'queued')
+        self.assert_research_admission_blocked(root)
+        self.engine.stop_draft(root, job['id'])
+        self.assertFalse(drafts.busy(self.record(root)))
+        card = self.engine.draft_card(root, 'document')
+        section = next(part for part in card['sections'] if part['heading'] == 'Summary')
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.draft_begin(root, 'section', 'document', part=section['id'],
+                                    seen=card['revision'], note='Simplify.')
+        draft_job = self.record(root)['drafts']['jobs'][-1]
+        self.assert_research_admission_blocked(root)
+        self.engine.stop_draft(root, draft_job['id'])
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.retry_draft(root, draft_job['id'])
+        retried = self.record(root)['drafts']['jobs'][-1]
+        self.assertEqual(retried['status'], 'queued')
+        self.assert_research_admission_blocked(root)
+        self.engine.stop_draft(root, retried['id'])
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.update_research(root)
+        self.assertEqual(self.record(root)['documents']['later'], [])
+
     def test_legacy_findings_ignore_recording_timestamps(self):
         root = self.finished()
         old = {'schema': 1, 'results': {'same': {'summary': 'A', 'checked_at': 'before'},
