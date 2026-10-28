@@ -244,6 +244,146 @@ class FinishingTests(DeckCase):
         self.assertEqual(result['finishing']['proofread']['items'][0]['state'], 'skipped')
         self.assertEqual((root / '101/document.md').read_bytes(), before)
 
+    def stopped_proof(self, root):
+        found, part = self.proof(root)
+        with mock.patch.object(self.engine, 'wake'):
+            self.ask(root, 'apply', job=found['job'], seen=self.card(root)['revision'],
+                     items=[{'id': found['items'][0]['id']}])
+        job = self.record(root)['drafts']['jobs'][-1]
+        self.engine.stop_draft(root, job['id'])
+        return found, part, job
+
+    def test_row_184_retried_proofread_blocks_skip_and_keeps_finishing_history(self):
+        root = self.desk()
+        found, part, job = self.stopped_proof(root)
+        before = self.card(root)['sections'][0]['text']
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.retry_draft(root, job['id'])
+        with self.assertRaisesRegex(page.desk.Refusal, 'desk job is working'):
+            self.ask(root, 'skip', job=found['job'], ids=[found['items'][0]['id']])
+
+        def working(tools, worker):
+            with self.assertRaisesRegex(page.desk.Refusal, 'desk job is working'):
+                self.ask(root, 'skip', job=found['job'], ids=[found['items'][0]['id']])
+            tools.submit_part('Try this, then pause.')
+        self.workers.then('part', working)
+        self.engine.wake(root)
+        last = self.record(root)['drafts']['jobs'][-1]
+        self.assertEqual(last['finishing'], job['finishing'])
+        self.assertTrue(last['applied'])
+        self.assertEqual(self.card(root)['finishing']['proofread']['items'][0]['state'], 'applied')
+        self.assertEqual(self.card(root)['sections'][0]['text'], 'Try this, then pause. Keep this -- too.')
+        self.assertEqual([e for e in workspace.load(root)['events'] if e['event'] == 'save'][-1]['via'], 'finishing')
+        self.assertEqual(self.engine.draft_versions(root, self.NAME, part)['versions'][0]['text'], before)
+        with self.assertRaisesRegex((ValueError, workspace.WorkspaceError), 'open suggestion'):
+            self.engine.retry_draft(root, last['id'])
+
+    def refuse_proofread_retry(self, change):
+        root = self.desk()
+        found, part, job = self.stopped_proof(root)
+        if change == 'skip':
+            self.ask(root, 'skip', job=found['job'], ids=[found['items'][0]['id']])
+        elif change == 'typing':
+            self.engine.draft_save(root, self.NAME, part, self.card(root)['revision'],
+                                   self.card(root)['sections'][0]['text'] + ' Person typed.')
+        else:
+            with self.engine.files:
+                sets = self.finish.proposals(self.engine, root, self.NAME)
+                sets.path(self.NAME, found['job']).unlink()
+        before = (root / '101/document.md').read_bytes()
+        count = len(self.record(root)['drafts']['jobs'])
+        with mock.patch.object(self.engine, 'wake') as wake:
+            with self.assertRaises((ValueError, workspace.WorkspaceError)):
+                self.engine.retry_draft(root, job['id'])
+        wake.assert_not_called()
+        self.assertEqual(len(self.record(root)['drafts']['jobs']), count)
+        self.assertEqual((root / '101/document.md').read_bytes(), before)
+
+    def test_retry_refuses_a_skipped_proofread_suggestion(self):
+        self.refuse_proofread_retry('skip')
+
+    def test_retry_refuses_a_changed_proofread_suggestion(self):
+        self.refuse_proofread_retry('typing')
+
+    def test_retry_refuses_a_missing_proofread_suggestion(self):
+        self.refuse_proofread_retry('missing')
+
+    def test_skip_between_retry_validation_and_admission_refuses_the_retry(self):
+        root = self.desk()
+        found, _, job = self.stopped_proof(root)
+        begin = self.engine.draft_begin
+        count = len(self.record(root)['drafts']['jobs'])
+        def skipped(*args, **kwargs):
+            self.ask(root, 'skip', job=found['job'], ids=[found['items'][0]['id']])
+            return begin(*args, **kwargs)
+        with mock.patch.object(self.engine, 'draft_begin', side_effect=skipped):
+            with self.assertRaisesRegex(workspace.WorkspaceError, 'open suggestion'):
+                self.engine.retry_draft(root, job['id'])
+        self.assertEqual(len(self.record(root)['drafts']['jobs']), count)
+        self.assertEqual(self.card(root)['finishing']['proofread']['items'][0]['state'], 'skipped')
+
+    def test_cancelled_retry_allows_skip_without_landing(self):
+        root = self.desk()
+        found, _, job = self.stopped_proof(root)
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.retry_draft(root, job['id'])
+        retry = self.record(root)['drafts']['jobs'][-1]
+        self.engine.stop_draft(root, retry['id'])
+        before, workers = (root / '101/document.md').read_bytes(), len(self.workers.jobs)
+        self.ask(root, 'skip', job=found['job'], ids=[found['items'][0]['id']])
+        self.engine.wake(root)
+        self.assertEqual((root / '101/document.md').read_bytes(), before)
+        self.assertEqual(len(self.workers.jobs), workers)
+        self.assertEqual(self.card(root)['finishing']['proofread']['items'][0]['state'], 'skipped')
+
+    def test_typing_after_retry_sets_aside_the_fix_and_leaves_its_proposal_open(self):
+        root = self.desk()
+        found, part, job = self.stopped_proof(root)
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.retry_draft(root, job['id'])
+        self.engine.draft_save(root, self.NAME, part, self.card(root)['revision'], 'Person typed.')
+        self.engine.draft_share(root)
+        before = workspace.load(root)['events']
+        self.workers.then('part', lambda tools, worker: tools.submit_part('Try this, then pause.'))
+        self.engine.wake(root)
+        self.assertEqual(self.card(root)['sections'][0]['text'], 'Person typed.')
+        self.assertEqual(self.card(root)['finishing']['proofread']['items'][0]['state'], 'open')
+        self.assertFalse(self.record(root)['drafts']['jobs'][-1]['applied'])
+        self.assertEqual(workspace.load(root)['events'], before)
+
+    def test_missing_proposal_before_retry_landing_does_not_change_text(self):
+        root = self.desk()
+        found, _, job = self.stopped_proof(root)
+        before = (root / '101/document.md').read_bytes()
+        def removed(tools, worker):
+            with self.engine.files:
+                sets = self.finish.proposals(self.engine, root, self.NAME)
+                sets.path(self.NAME, found['job']).unlink()
+            tools.submit_part('Try this, then pause.')
+        self.workers.then('part', removed)
+        self.engine.retry_draft(root, job['id'])
+        self.assertFalse(self.record(root)['drafts']['jobs'][-1]['applied'])
+        self.assertEqual((root / '101/document.md').read_bytes(), before)
+
+    def test_failed_proofread_retry_preserves_unicode_position(self):
+        root = self.desk()
+        card = self.card(root)
+        part = card['sections'][0]['id']
+        self.engine.draft_save(root, self.NAME, part, card['revision'], '😀 Pause. Try this -- then pause.')
+        found = self.ask(root, 'finish', tool='proofread')['finishing']['proofread']
+        item = next(p for p in found['items'] if p['part'] == part)
+        def broken(tools, worker):
+            raise RuntimeError('Synthetic worker failure')
+        self.workers.then('part', broken)
+        self.ask(root, 'apply', job=found['job'], seen=self.card(root)['revision'], items=[{'id': item['id']}])
+        job = self.record(root)['drafts']['jobs'][-1]
+        self.assertEqual(job['status'], 'failed')
+        self.assertEqual(self.card(root)['finishing']['proofread']['items'][0]['state'], 'open')
+        self.workers.then('part', lambda tools, worker: tools.submit_part('Try this, then pause.'))
+        self.engine.retry_draft(root, job['id'])
+        self.assertEqual(self.card(root)['sections'][0]['text'], '😀 Pause. Try this, then pause.')
+        self.assertEqual(self.card(root)['finishing']['proofread']['items'][0]['state'], 'applied')
+
 
 class FinishingJobTests(DeckCase):
     NAME = FinishingTests.NAME

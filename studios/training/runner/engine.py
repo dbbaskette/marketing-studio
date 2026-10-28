@@ -5420,6 +5420,15 @@ class Engine(Reviewing):
             if found is None or found.get('status') not in ('stopped', 'failed', 'done'):
                 raise WorkspaceError('Choose a finished change to try again.')
             values = {key: found.get(key) for key in ('note', 'action', 'passage', 'start', 'level')}
+            if found.get('finishing'):
+                from runner import draft_finish
+                try:
+                    text = draft_finish.selection_link(self, root, found)
+                except ValueError as error:
+                    raise WorkspaceError(str(error)) from None
+                values['finishing'] = found['finishing']
+                # Stored jobs use Unicode characters; admission accepts browser units.
+                values['start'] = len(text[:found['start']].encode('utf-16-le')) // 2
             name, kind = found['name'], found['kind']
             if found['part'] == 'whole':
                 seen = workspace.sha256_file(root / workspace.artifact(root, workspace.load(root), name)['file'])
@@ -5484,6 +5493,8 @@ class Engine(Reviewing):
                     def apply():
                         via = 'rewrite' if job['kind'] in ('section', 'write-again', 'update', 'layout', 'write-whole') else job['kind']
                         if job.get('finishing'):
+                            from runner import draft_finish
+                            draft_finish.selection_link(self, root, job)
                             via = 'finishing'
                         if job['part'] == 'whole':
                             before = draft_jobs.file_text(root, job['name'])

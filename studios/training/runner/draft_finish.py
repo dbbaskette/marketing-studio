@@ -237,6 +237,27 @@ def remove(sets, name, seen, found, item, draft):
     return {'applied': 1, 'left': []}
 
 
+def selection_link(engine, root, job):
+    """Validate a proofread request under files, at admission and before its write."""
+    link = job.get('finishing')
+    if not isinstance(link, dict) or set(link) != {'job', 'item'}:
+        raise ValueError(shared.GONE_SET)
+    sets = proposals(engine, root, job['name'])
+    found = sets.read(job['name'], link['job'])
+    item = next((p for p in found['items'] if p['id'] == link['item']), None)
+    if item is None or item['state'] != 'open':
+        raise ValueError('Choose an open suggestion from this set.')
+    if (found['kind'] != 'finish-proofread' or job['kind'] != 'selection'
+            or job.get('action') != 'fix' or job.get('part') != item['part']
+            or job.get('passage') != item['before'] or job.get('start') != item['start']
+            or job.get('basis') != item['basis']):
+        raise ValueError(shared.GONE)
+    draft = sets.desk.read(job['name'])
+    if not sets.present(draft, item):
+        raise ValueError(shared.GONE)
+    return sets.codec.text_of(draft, item['part'])
+
+
 def landed(engine, root, job):
     """Called under files only after the selection was written successfully."""
     if not job.get('finishing'):

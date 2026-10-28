@@ -145,6 +145,11 @@ def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None
             job['level'] = level or 'medium'
         if finishing:
             job['finishing'] = finishing
+            from runner import draft_finish
+            try:
+                draft_finish.selection_link(engine, root, job)
+            except ValueError as error:
+                raise workspace.WorkspaceError(str(error)) from None
         if sections is not None:
             job.update(sections=sections, done=[], bases={s: basis.fingerprint(
                 codec.text_of(draft, s)) for s in sections}, total=len(sections), index=0, chain=True)

@@ -61,7 +61,7 @@ class PrepareTests(JobCase):
             worker_tools.prepare(self.job, artifacts={'brief': {'kind': 'brief',
                                                                 'brief_kind': 'sales'}})
         self.assertEqual(list(worker_tools.VALIDATORS), [
-            'research-plan', 'blueprint', 'document', 'brief', 'scenario', 'yoodli', 'outline',
+            'finishing', 'research-plan', 'blueprint', 'document', 'brief', 'scenario', 'yoodli', 'outline',
             'section', 'part', 'slide-words', 'research-json'])
 
     def test_a_finding_needs_a_question_id(self):

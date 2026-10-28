@@ -210,7 +210,7 @@ const FINISHING_TOOLS = [
     says: 'Explain why each answer is right and a plausible alternative is wrong.' },
   { key: 'humanize', name: 'Humanize', kinds: ['document', 'brief'], run: 'Humanize wording',
     says: 'Make the wording natural while keeping facts and references.', start: { level: 'medium' },
-    data: (f) => ({ level: f.level }) },
+    data(f) { return { level: f.level }; } },
   { key: 'level', name: 'Level check', kinds: ['document', 'brief'], run: 'Check the level',
     says: 'Find passages that teach what an earlier level already taught.' },
   { key: 'proofread', name: 'Proofread', kinds: ['document', 'brief'], run: 'Proofread',
