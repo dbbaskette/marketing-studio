@@ -62,7 +62,7 @@ def subcommand(args: tuple[str, ...]) -> str | None:
 
 
 def run(repo: Path, *args: str, input: str | None = None,
-        timeout: float = TIMEOUT) -> subprocess.CompletedProcess:
+        timeout: float = TIMEOUT, index: Path | None = None) -> subprocess.CompletedProcess:
     """Run git in `repo` without prompting, and without reaching a repository above it.
 
     git has no terminal to ask on: it runs in a session of its own, and ssh is told not
@@ -74,6 +74,8 @@ def run(repo: Path, *args: str, input: str | None = None,
     env = {key: value for key, value in os.environ.items() if key not in INHERITED}
     env.update(GIT_TERMINAL_PROMPT='0', GIT_EDITOR='true',
                GIT_CEILING_DIRECTORIES=str(repo.parent))
+    if index is not None:
+        env['GIT_INDEX_FILE'] = str(index.resolve())
     if subcommand(args) in REMOTE and not own_ssh(repo, env):
         env['GIT_SSH_COMMAND'] = BATCH_SSH
     try:

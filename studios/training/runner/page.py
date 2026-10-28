@@ -161,7 +161,7 @@ What a caller needs to know
   and a desk training is 409 with `drafts.ON_DESK` at `/api/decide`, `/api/review`,
   `/api/outline`, `/api/look` and `GET /api/gate`. A teammate reads the desk with only
   Download on each card, and each change is refused with who runs the training.
-- A guide, brief or plan is typed into part by part: `GET /api/drafts?path=&name=` answers
+- A guide, brief or plan is typed into part by part: `GET /api/drafts/card?path=&name=` answers
   the card's view (`drafts.card`: the card, its parts with their revision and version
   counts, and the whole desk as `desk`); `POST /api/drafts/save` {path, name, part, seen:
   the revision the form saw, text, session} and `/api/drafts/restore` {path, name, part,
@@ -210,10 +210,11 @@ DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'upd
 # Typing into a part, bringing back one of its versions, and committing what was typed.
 TYPED = tuple(f'{DRAFTS}/{action}' for action in ('save', 'restore', 'share'))
 VERSIONS = f'{DRAFTS}/versions'
+CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
-         DRAFTS, VERSIONS)
+         DRAFTS, CARD, VERSIONS)
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
@@ -291,11 +292,11 @@ class RunnerPage(desk.Page):
         if path == '/api/delete':
             return desk.as_json(HTTPStatus.OK, self.engine.leaving(self.driving(one('path'))))
         if path == DRAFTS:
+            return desk.as_json(HTTPStatus.OK, drafts.view(self.engine,
+                                                           self.on_desk(one('path'))))
+        if path == CARD:
             root = self.on_desk(one('path'))
-            try:
-                name = one('name')
-            except desk.Refusal:
-                return desk.as_json(HTTPStatus.OK, drafts.view(self.engine, root))
+            name = one('name')
             return desk.as_json(HTTPStatus.OK, self.typed(lambda: self.engine.draft_card(
                 root, name)))
         if path == VERSIONS:

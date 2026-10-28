@@ -208,9 +208,10 @@ import json
 import re
 import secrets
 import shutil
+import tempfile
 import threading
 import time
-from collections import deque
+from collections import Counter, deque
 from dataclasses import replace
 from datetime import datetime, timezone
 from concurrent.futures import ThreadPoolExecutor
@@ -260,7 +261,9 @@ DESK_EVERY = 60         # seconds: what is typed on the desk is committed at mos
 BACKGROUND = {'fetch': 'The last look for what your team shared did not work: {said}. It '
                        'is tried again every few minutes.',
               'tell': "The last try at telling you through this computer's notifications "
-                      'did not work: {said}. It is tried again in a few seconds.'}
+                      'did not work: {said}. It is tried again in a few seconds.',
+              'desk': 'What was typed on the desk could not be committed: {said}. It is '
+                      'kept on this computer and tried again in a few seconds.'}
 NO_DRIVERS = ('This workspace is a folder on this computer, so its trainings are not taken '
               'or handed over.')
 TAKEN = '{name} took this training over on {when}. This computer stopped working on it.'
@@ -631,6 +634,7 @@ class Engine(Reviewing):
         # {'names': [materials], 'since': when the first of it was saved}. Read and changed
         # holding `files`.
         self.pending_commit: dict[Path, dict] = {}
+        self.clock = time.monotonic          # what `since` and DESK_EVERY are read with
         self._lock = threading.RLock()
         self._runs: dict[str, _Run] = {}
         self._slots = _Slots(lambda: settings.load().parallel)
@@ -768,6 +772,8 @@ class Engine(Reviewing):
             gitstate.discard(self.space(), root)
             self.pending_commit.pop(root, None)
             raise _Gone('This training is no longer run from this computer.')
+        if root in self.pending_commit:
+            self._edits_first(root)
         self._updates_made(root)
         self._decision_arrived(root)
         title = workspace.load(root)['title']
@@ -779,22 +785,152 @@ class Engine(Reviewing):
         """Remember that a material was typed in on the desk, to be committed with the
         training's next commit: at once when the first of what waits was saved a minute ago
         or more. Call it holding `files`."""
-        waiting = self.pending_commit.setdefault(root, {'names': [],
-                                                        'since': time.monotonic()})
+        waiting = self.pending_commit.setdefault(root, {'names': [], 'since': self.clock()})
         if name not in waiting['names']:
             waiting['names'].append(name)
-        if time.monotonic() - waiting['since'] >= DESK_EVERY:
+        if self.clock() - waiting['since'] >= DESK_EVERY:
+            self._edits_first(root)
+
+    def commit_typing(self, closing: bool = False) -> list[Path]:
+        """Commit what was typed on each desk once the first of it waited a minute, or all
+        of it when the runner closes. Only the saved materials and their record are
+        committed, even while a step is in hand. The runner's look every few
+        seconds calls it, and so does `close`."""
+        done = []
+        if not self.pending_commit:
+            return done
+        with self.files:
+            for root, waiting in list(self.pending_commit.items()):
+                if not closing and self.clock() - waiting['since'] < DESK_EVERY:
+                    continue
+                try:
+                    if self._edits_first(root):
+                        done.append(root)
+                except (WorkspaceError, OSError):
+                    if not closing:
+                        raise
+        return done
+
+    def _committed_session(self, root: Path) -> dict:
+        path = gitstate.inside(self.space(), root / workspace.STATE_DIR / 'session.json')
+        return json.loads(hub.git(self.space().repo, 'show', f'HEAD:{path}'))
+
+    def _typed_here(self, root: Path) -> dict:
+        """Validated desk saves not yet committed, including their History and audit.
+        Compare events too: a restore can leave the file identical to HEAD. Call under files.
+        """
+        session, before = workspace.load(root), self._committed_session(root)
+        step = (root / IN_HAND).read_text(encoding='utf-8').strip() \
+            if (root / IN_HAND).is_file() else None
+        last = {event.get('artifact'): event for event in session['events']
+                if event.get('event') == 'save'}
+        pending = (self.pending_commit.get(root) or {}).get('names', [])
+        typed = {}
+        for name in workspace.artifact_names(root, session):
+            event = last.get(name) or {}
+            events = [item for item in session['events'] if item.get('artifact') == name]
+            earlier = [item for item in before['events'] if item.get('artifact') == name]
+            if name == step or events == earlier or (name not in pending and
+                    event.get('via') not in ('save', 'restore')):
+                continue
+            spec = workspace.artifact(root, session, name)
+            file = review_layout.contained(root, spec['file'])
+            if not file.is_file():
+                continue
+            history = workspace.history_file(root, name, 'unused', file.suffix).parent
+            if history.is_symlink():
+                raise WorkspaceError('History must stay in real files in this training.')
+            versions = {str(path.relative_to(root)): path.read_bytes()
+                        for path in history.iterdir() if path.is_file() and not path.is_symlink()
+                        and path.suffix == file.suffix and drafts.HEX.fullmatch(path.stem)}
+            typed[name] = {'file': spec['file'], 'text': file.read_bytes(),
+                           'entry': session['artifacts'][name], 'events': events,
+                           'all_events': session['events'],
+                           'history': versions,
+                           'sizing': session.get('sizing', {}).get(workspace.split(name)[1] or '')}
+        return typed
+
+    @staticmethod
+    def _typing_into(session: dict, typed: dict) -> None:
+        """Merge validated materials and their events in original global order, including
+        duplicate occurrences. Events from an unfinished worker are not taken with them.
+        """
+        for name, kept in typed.items():
+            session['artifacts'][name] = kept['entry']
+            if workspace.split(name)[0] == 'blueprint' and kept['sizing'] is not None:
+                session['sizing'][workspace.split(name)[1] or ''] = kept['sizing']
+        if not typed:
+            return
+        earlier = Counter(json.dumps(event, sort_keys=True) for event in session['events'])
+        for event in next(iter(typed.values()))['all_events']:
+            if event.get('artifact') not in typed:
+                continue
+            key = json.dumps(event, sort_keys=True)
+            if earlier[key]:
+                earlier[key] -= 1
+            else:
+                session['events'].append(event)
+
+    def _typed_back(self, root: Path, typed: dict) -> None:
+        """Restore validated saves after discarding an interrupted step, without inventing
+        a new save, session identity, timestamp, input pin or approval."""
+        session = workspace.load(root)
+        self._typing_into(session, typed)
+        for kept in typed.values():
+            workspace.write_atomic(workspace.managed(root, kept['file']), kept['text'])
+            for path, text in kept['history'].items():
+                workspace.write_atomic(workspace.managed(root, path), text)
+        workspace.store(root, session)
+        self._waited(root, typed)
+
+    def _waited(self, root: Path, typed) -> None:
+        """Commit typing a runner that ended before committing it left behind."""
+        if typed:
+            self.pending_commit[root] = {'names': list(typed), 'since': self.clock()}
             self._edits_first(root)
 
     def _edits_first(self, root: Path) -> bool:
-        """Commit what was typed on the desk, in a commit of its own: before a job, a Mark
-        ready, an Update or a Keep, and when the person leaves the desk. False when nothing
-        waits. Call it holding `files`."""
+        """Commit only validated desk edits, using a temporary index based on HEAD.
+        The live files and index retain a step's unfinished work; no discard is needed.
+        """
         waiting = self.pending_commit.get(root)
         if not waiting:
             return False
-        self._commit(root, 'edit ' + ' and '.join(
-            workspace.label(name) for name in waiting['names']) + ' on the desk')
+        typed = self._typed_here(root)
+        if not typed:
+            self.pending_commit.pop(root, None)
+            return False
+        space = self.space()
+        session = self._committed_session(root)
+        self._typing_into(session, typed)
+        content = {str(root / workspace.STATE_DIR / 'session.json'):
+                   (json.dumps(session, indent=2, sort_keys=True) + '\n').encode()}
+        for kept in typed.values():
+            content[str(root / kept['file'])] = kept['text']
+            content.update({str(root / path): text for path, text in kept['history'].items()})
+        message = workspace.load(root)['title'] + ': edit ' + ' and '.join(
+            workspace.label(name) for name in typed) + ' on the desk'
+        staged = []
+        # The engine's files lock serializes all commits in this workspace. This index is
+        # private and never stages or consumes another training's changes.
+        with tempfile.TemporaryDirectory(prefix='training-typing-') as folder:
+            index = Path(folder) / 'index'
+            def git(*args, input=None):
+                done = hub.run(space.repo, *args, input=input, index=index)
+                if done.returncode:
+                    raise hub.GitError(hub.reason(done))
+                return done.stdout.strip()
+            git('read-tree', 'HEAD')
+            for path, text in content.items():
+                relative = gitstate.inside(space, path)
+                digest = git('hash-object', '-w', '--stdin', input=text.decode('utf-8'))
+                git('update-index', '--add', '--cacheinfo', '100644', digest, relative)
+                staged.append((relative, digest))
+            git('commit', '--quiet', '-m', message)
+        # Align just these paths in the real index, leaving every worktree byte alone.
+        for path, digest in staged:
+            hub.git(space.repo, 'update-index', '--add', '--cacheinfo', '100644', digest, path)
+        self.pending_commit.pop(root, None)
         return True
 
     def _updates_made(self, root: Path) -> None:
@@ -895,7 +1031,10 @@ class Engine(Reviewing):
         aside of this computer's own to do it, when anything was."""
         run, kept = self._run(root), (team.kept('taken').get(str(root)) or {}).get('kept')
         with self.files:
-            was = (self._load(root).get('driver') or {}).get('computer')
+            record = self._load(root)
+            if drafts.on_desk(record):
+                self._waited(root, self._typed_here(root))
+            was = (record.get('driver') or {}).get('computer')
             report = self._step(space, push=False)
             if not report.get('reached'):
                 raise WorkspaceError(UNREACHED)
@@ -967,7 +1106,8 @@ class Engine(Reviewing):
         with self.files:
             record = self._load(root)
             self.hold(root)
-            name = (record.get('driver') or {}).get('name') or 'Someone'
+            last = record.get('driver') or (record.get('drafts') or {}).get('finished_by')
+            name = (last or {}).get('name') or 'Someone'
             record['driver'] = None
             (record.get('drafts') or {}).pop('finished_by', None)   # nobody's now
             self._store(root, record)
@@ -1000,20 +1140,27 @@ class Engine(Reviewing):
         for root in self.trainings():
             try:
                 record = read_record(root)
-                if not record or not team.ours(space, record) \
+                if not record or not self._ours(record) \
                         or gitstate.inside(space, root / RECORD) not in arrived:
                     continue
                 theirs = json.loads(gitstate.theirs(space, root / RECORD, at) or 'null')
             except (WorkspaceError, ValueError):
                 continue
-            if not isinstance(theirs, dict) or team.ours(space, theirs):
+            if not isinstance(theirs, dict) or self._ours(theirs):
                 continue    # changed on both sides under our name: the replay reports it
+            if drafts.on_desk(record):
+                self._waited(root, self._typed_here(root))
             run = self._run(root)
             run.gone = True
             run.stop.set()
+            if drafts.on_desk(record) and (root / IN_HAND).exists():
+                # Typing is now in its own commit. Only the unfinished step remains
+                # dirty; stop it before replaying the new driver's claim.
+                gitstate.discard(space, root)
+            kept = gitstate.set_aside(space, root, at)
             who = team.driver(space, theirs)
             by = gitstate.last_by(space, root / RECORD, at) or ('Someone', home.now())
-            self._aside(root, space, gitstate.set_aside(space, root, at),
+            self._aside(root, space, kept,
                         who['name'] if who else by[0], who['since'] if who else by[1])
         self._deleted(space, arrived, at)
 
@@ -1071,7 +1218,7 @@ class Engine(Reviewing):
         where the caller has just read it."""
         if root.name in self._clash:
             return self._clash[root.name]
-        if self.mine(root) if record is None else team.ours(self.workspace, record):
+        if self.mine(root) if record is None else self._ours(record):
             return self._stalled
         lost = team.kept('taken').get(str(root))
         if not lost:
@@ -1240,11 +1387,17 @@ class Engine(Reviewing):
                 found = self._survey(root, record)
                 if found.next.kind != 'done':
                     research_cli.unlock(root)
-                if (root / IN_HAND).exists() and found.next.kind in WORK \
-                        and not self._resting(record) and not self._away(found):
-                    with self.files:
+                with self.files:
+                    # What was typed on the desk is never thrown away with a half-made step.
+                    typed = self._typed_here(root) if drafts.on_desk(record) else {}
+                    if (root / IN_HAND).exists() and found.next.kind in WORK \
+                            and not self._resting(record) and not self._away(found):
                         gitstate.discard(self.space(), root)
-                (root / IN_HAND).unlink(missing_ok=True)
+                        (root / IN_HAND).unlink(missing_ok=True)
+                        self._typed_back(root, typed)
+                    else:
+                        (root / IN_HAND).unlink(missing_ok=True)
+                        self._waited(root, typed)
             except (WorkspaceError, OSError):
                 continue  # its view says what is wrong; the others still run
             ours.append(root)
@@ -1302,7 +1455,12 @@ class Engine(Reviewing):
                 return
 
     def close(self) -> None:
-        """End every worker and wait for the runs to notice. Nothing half-made is kept."""
+        """End every worker and wait for the runs to notice. Nothing half-made is kept;
+        what was typed on the desk is committed first."""
+        try:
+            self.commit_typing(closing=True)
+        except Exception:  # noqa: BLE001  closing never fails; the next start commits it
+            pass
         self._closing = True
         self._ending.set()
         if self.upkeep is not None:
@@ -5223,7 +5381,7 @@ class Engine(Reviewing):
         """What the status screen shows: every run on this computer with what it is doing
         and what it has cost, and apart from those the trainings teammates drive. `limit`
         is how many trainings work at once."""
-        space, runs, elsewhere = self.workspace, [], []
+        runs, elsewhere = [], []
         for root in self.trainings():
             # The record is read once, and the title is taken from the survey's own reading
             # of the training. Only where the survey cannot be made is it read on its own.
@@ -5340,6 +5498,7 @@ class Engine(Reviewing):
                 if not self._kept('fetch', self.fetch):
                     continue
             self._kept('tell', self.tell)
+            self._kept('desk', self.commit_typing)
 
     def _kept(self, job: str, action) -> bool:
         """Do one piece of the work done in the background. What goes wrong never ends the
@@ -5407,11 +5566,12 @@ class Engine(Reviewing):
         nobody runs it, by anyone."""
         if self._checking:
             return CHECKING
-        if team.ours(space, record):
+        if self._ours(record):
             return None
-        who = team.driver(space, record)
+        who = team.driver(space, record) or team.driver(space, {'driver': (
+            record.get('drafts') or {}).get('finished_by')} if drafts.on_desk(record) else None)
         if who is None:
-            return None if state == 'done' else NOT_TAKEN
+            return None if state == 'done' and not drafts.on_desk(record) else NOT_TAKEN
         return NOT_YOURS.format(name=who['name'])
 
     def _drive_files(self, root: Path, copies: list[dict]) -> list[dict]:

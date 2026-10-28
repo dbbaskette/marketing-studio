@@ -797,6 +797,146 @@ class DeskTypingTests(DeckCase):
         self.assertNotIn(root, self.engine.pending_commit)
         self.assertEqual(self.git('status', '--porcelain'), '')
 
+    def test_a_lone_edit_is_committed_within_a_minute(self):
+        root = self.desk()
+        clock = [1000.0]
+        self.engine.clock = lambda: clock[0]
+        commits = self.log()
+        self.type(root, 'Summary', 'Typed once, then nothing more.')
+        self.assertEqual(self.engine.commit_typing(), [], 'not a minute yet')
+        clock[0] += engines.DESK_EVERY
+        self.assertEqual(self.engine.commit_typing(), [root])
+        self.assertEqual(self.log(), [
+            *commits, 'Rolling restarts: edit the level 101 learner guide on the desk'])
+        self.assertEqual(self.engine.pending_commit, {})
+        # The runner's look every few seconds does it.
+        self.type(root, 'Summary', 'Typed again.')
+        clock[0] += engines.DESK_EVERY
+        with mock.patch.object(self.engine, 'tell', return_value=[]):
+            self.engine._ending.clear()
+            looks = iter([False, True])
+            with mock.patch.object(self.engine._ending, 'wait', lambda tick: next(looks)):
+                self.engine._serve(every=10 ** 6, tick=0)
+        self.assertEqual(self.engine.pending_commit, {})
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_what_waits_is_committed_on_closing_and_after_a_restart(self):
+        root = self.desk()
+        commits = self.log()
+        self.type(root, 'Summary', 'Typed before closing.')
+        self.engine.close()
+        edited = 'Rolling restarts: edit the level 101 learner guide on the desk'
+        self.assertEqual(self.log(), [*commits, edited])
+        # A runner that ended without closing forgets what waited; the next start commits it.
+        self.engine = self.make()
+        self.type(root, 'Summary', 'Typed before the runner stopped.')
+        self.engine = self.make()
+        self.engine.resume()
+        self.assertEqual(self.log(), [*commits, edited, edited])
+        self.assertIn('\n## Summary\n\nTyped before the runner stopped.\n', self.text(root))
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_typing_during_a_step_is_kept_when_the_runner_stops_in_it(self):
+        root = self.start(flow='desk', levels=['101'], materials=['document', 'brief'])
+        self.assertEqual(self.to_end(root), [])
+        brief = root / workspace.artifact(root, workspace.load(root), 'brief@101')['file']
+        # A step is in hand, half-made, when the person types into the guide.
+        brief.unlink()
+        (root / engines.IN_HAND).write_text('brief@101\n', encoding='utf-8')
+        half = brief.with_name('half-made.md')
+        half.write_text('Half made.\n', encoding='utf-8')
+        self.type(root, 'Summary', 'Typed while the brief was written.')
+        commits = self.log()
+        self.engine.close()
+        self.assertEqual(self.log(), [*commits,
+            'Rolling restarts: edit the level 101 learner guide on the desk'],
+            'closing commits typing without committing the unfinished step')
+        self.engine = self.make()
+        self.engine.resume()
+        self.assertFalse(half.exists(), 'what the step left half-made is put back')
+        self.assertTrue(brief.is_file())
+        self.assertIn('\n## Summary\n\nTyped while the brief was written.\n', self.text(root))
+        self.assertIn('Rolling restarts: edit the level 101 learner guide on the desk',
+                      self.log()[len(commits):])
+        event = [event for event in workspace.load(root)['events']
+                 if event['event'] == 'save' and event['artifact'] == self.NAME][-1]
+        self.assertEqual(event['via'], 'save')
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+    def test_recovery_keeps_each_edit_s_history_and_identity(self):
+        root = self.start(flow='desk', levels=['101'], materials=['document', 'brief'])
+        self.assertEqual(self.to_end(root), [])
+        brief = root / workspace.artifact(root, workspace.load(root), 'brief@101')['file']
+        brief.unlink()
+        (root / engines.IN_HAND).write_text('brief@101\n', encoding='utf-8')
+        self.type(root, 'Summary', 'First edit while the brief runs.', session='first')
+        self.type(root, 'Summary', 'Second edit while the brief runs.', session='second')
+        card, part = self.part(root, 'Summary')
+        self.engine.draft_restore(root, self.NAME, part['id'], card['revision'], 0)
+        before = workspace.load(root)
+        events = [event for event in before['events'] if event.get('artifact') == self.NAME]
+        versions = self.engine.draft_versions(root, self.NAME, part['id'])
+        entry = before['artifacts'][self.NAME]
+        # Simulate interruption without close: recovery must preserve the entire record.
+        self.engine = self.make()
+        self.engine.resume()
+        after = workspace.load(root)
+        self.assertEqual([event for event in after['events']
+                          if event.get('artifact') == self.NAME], events)
+        self.assertEqual(after['artifacts'][self.NAME], entry)
+        self.assertEqual(self.engine.draft_versions(root, self.NAME, part['id']), versions)
+
+    def test_typing_flushes_during_a_step_keep_half_made_output_out_of_commits(self):
+        for action in ('timer', 'second-save', 'share', 'close'):
+            with self.subTest(action=action):
+                root = self.desk(title='Flush ' + action)
+                clock = [1000.0]
+                self.engine.clock = lambda: clock[0]
+                partial = root / 'partial.md'
+                partial.write_text('Unfinished worker output.\n', encoding='utf-8')
+                (root / engines.IN_HAND).write_text('brief@101\n', encoding='utf-8')
+                self.type(root, 'Summary', 'A durable edit.')
+                clock[0] += engines.DESK_EVERY
+                if action == 'timer':
+                    self.engine.commit_typing()
+                elif action == 'second-save':
+                    self.type(root, 'Summary', 'A second durable edit.')
+                elif action == 'share':
+                    self.engine.draft_share(root)
+                else:
+                    self.engine.close()
+                file = workspace.artifact(root, workspace.load(root), self.NAME)['file']
+                committed = self.git('show', f'HEAD:{root.relative_to(self.space.repo) / file}')
+                self.assertIn('durable edit.', committed)
+                tree = self.git('ls-tree', '-r', '--name-only', 'HEAD', '--',
+                                str(partial.relative_to(self.space.repo)))
+                self.assertEqual(tree, '', 'unfinished worker output is never committed')
+                self.assertNotIn(root, self.engine.pending_commit)
+                self.engine = self.make()
+
+    def test_interleaved_saves_keep_the_global_audit_order_across_flush_and_restart(self):
+        for action in ('share', 'restart'):
+            with self.subTest(action=action):
+                root = self.start(flow='desk', levels=['101'], materials=['document', 'brief'],
+                                  title='Interleaved ' + action)
+                self.assertEqual(self.to_end(root), [])
+                self.type(root, '1. Executive summary', 'The first brief edit.',
+                          name='brief@101', session='brief-1')
+                self.type(root, 'Summary', 'The guide edit.', session='guide')
+                self.type(root, '1. Executive summary', 'The second brief edit.',
+                          name='brief@101', session='brief-2')
+                before = workspace.load(root)
+                if action == 'share':
+                    self.engine.draft_share(root)
+                else:
+                    self.engine = self.make()
+                    self.engine.resume()
+                committed = self.engine._committed_session(root)
+                self.assertEqual(committed['events'], before['events'])
+                self.assertEqual(committed['artifacts'], before['artifacts'])
+                self.assertEqual(workspace.load(root), before)
+                self.assertEqual(self.git('status', '--porcelain'), '')
+
     def test_edits_are_committed_before_a_job(self):
         self.workers.then('brief', fails(), fails(), fails())
         root = self.start(flow='desk', levels=['101'], materials=['document', 'brief'])

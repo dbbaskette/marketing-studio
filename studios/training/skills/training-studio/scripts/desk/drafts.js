@@ -32,9 +32,10 @@ const DESK_WORDS = {
 const DESK_SHEETS = ['desk-download', 'desk-copies', 'desk-kit'];
 // The files the runner reads as documents (runner/documents.py).
 const DESK_TYPES = ['.txt', '.md', '.html', '.htm', '.docx'];
-// The desk's routes, as the shared kit names them. Those after `view` are served once the
-// desk's part cards, History and Finishing come.
-const DESK_ROUTES = { view: 'drafts', save: 'drafts/save', versions: 'drafts/versions',
+// The desk's routes, as the shared kit names them: `view` is one card with its parts (the
+// whole desk is `drafts`). Note, revise, selection and the rest are served once their jobs
+// and Finishing come.
+const DESK_ROUTES = { view: 'drafts/card', save: 'drafts/save', versions: 'drafts/versions',
   restore: 'drafts/restore', note: 'drafts/note', revise: 'drafts/revise',
   selection: 'drafts/selection', stop: 'drafts/stop', retry: 'drafts/retry',
   finish: 'drafts/finish', apply: 'drafts/apply', skip: 'drafts/skip',
