@@ -5463,6 +5463,8 @@ class Engine(Reviewing):
                 else:
                     def apply():
                         via = 'rewrite' if job['kind'] in ('section', 'write-again', 'update', 'layout', 'write-whole') else job['kind']
+                        if job.get('finishing'):
+                            via = 'finishing'
                         if job['part'] == 'whole':
                             before = draft_jobs.file_text(root, job['name'])
                             if basis.fingerprint(before) != job['basis']:
@@ -5495,6 +5497,9 @@ class Engine(Reviewing):
                             draft_jobs.append_sources(draft, work.prepared['artifacts']['part']['findings'], after,
                                                       workspace.split(job['name'])[0])
                             desk.store.write(job['name'], draft, [part], via=via)
+                        if job.get('finishing'):
+                            from runner import draft_finish
+                            draft_finish.landed(self, root, job)
                         job['dropped'] = checks.dropped(before, after)
                         job['checks'] = guards.flags(before, after)
                         job['says'] = ' '.join(f'This change dropped reference [{n}].' for n in job['dropped'])

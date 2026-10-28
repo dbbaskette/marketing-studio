@@ -6954,6 +6954,36 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         return self.run_page(answers, steps, state={'screen': 'run', 'path': str(self.root)},
                              **plan)
 
+    def test_finishing_toolbar_opens_tools_and_applies_a_note_without_a_job(self):
+        desk, card_view = self.editable()
+        proposal = {'job': 'a' * 32, 'kind': 'finish-coverage', 'items': [
+            {'id': 'p1', 'part': 'abcd1234', 'before': 'Some text.',
+             'note': 'O2 is not taught by any section.', 'instruction': 'Teach O2 here.',
+             'state': 'open', 'present': True}]}
+        checked = {**card_view, 'finishing': {'coverage': proposal}}
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/finish': [ok(checked)],
+            'POST /api/drafts/apply': [ok({**checked,
+                'note': {'part': 'abcd1234', 'text': 'Teach O2 here.'}})]}), [
+            {'click': 'Finishing'}, {'click': 'Coverage'}, {'click': 'Check coverage'},
+            {'click': 'Apply'}, {'snapshot': 'note'}])
+        self.assertEqual(result['snapshots']['note']['fields']['How should When capacity holds change?'],
+                         'Teach O2 here.')
+        self.assertEqual([route for route, body in self.posts(result)],
+                         ['/api/drafts/finish', '/api/drafts/apply'])
+
+    def test_finishing_flush_refusal_keeps_pending_text_and_starts_nothing(self):
+        desk, card_view = self.editable()
+        result = self.open_desk(self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'POST /api/drafts/save': [{'status': 400, 'body': {'error': 'Close the code block.'}}]}), [
+            {'fill': 'Text of When capacity holds', 'value': '```'},
+            {'click': 'Finishing'}, {'click': 'Coverage'}, {'click': 'Check coverage'},
+            {'snapshot': 'kept'}])
+        self.assertNotIn('/api/drafts/finish', [route for route, body in self.posts(result)])
+        self.assertEqual(result['snapshots']['kept']['fields']['Text of When capacity holds'], '```')
+
     def test_bulk_updates_show_the_price_and_cancel_without_a_request(self):
         updates = {'all': {'names': ['the level 101 guide', 'the level 201 guide'],
                            'price': '2 minutes and about $5.00'},
@@ -7438,7 +7468,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Sources', shot['parts'])
         self.assertEqual(shot['filled'], ['Mark this level ready'])
         self.assertEqual([control['name'] for control in shot['toolbar']],
-                         ['Mark this level ready', 'Download', 'Google Doc'])
+                         ['Mark this level ready', 'Download', 'Google Doc', 'Finishing'])
         self.assertIn('Back', shot['buttons'])
         self.assertEqual(shot['heading'], 'Rolling restarts')
         for name in ('blueprint@101', 'deck@201'):

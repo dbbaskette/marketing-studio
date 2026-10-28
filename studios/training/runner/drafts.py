@@ -1488,6 +1488,7 @@ def card(engine, root, name: str, draft: dict | None = None,
     """One card's view: the desk's card for the material (`view`), its parts (`parts_of`),
     `working`, the desk job changing it or None, and `desk`, the whole desk's view. Read it
     holding `files`, so the record that names the parts is the one kept."""
+    from runner import draft_finish
     root = Path(root)
     desk = desk if desk is not None else desk_of(engine, root, name)
     draft = draft if draft is not None else desk.read(name)
@@ -1497,6 +1498,7 @@ def card(engine, root, name: str, draft: dict | None = None,
     job = whole['job']
     run = run_of(root) or {}
     return {**found, **parts_of(desk, name, draft), **whole_parts(engine, root, name, draft),
+            'finishing': draft_finish.proposals(engine, root, name).summary(name, draft),
             'working': job if job and job.get('name') == name else None,
             'jobs': [dict(one) for one in (run.get('drafts') or {}).get('jobs', []) if one.get('name') == name],
             'chain': _chain(run, name), 'start': _start(whole),

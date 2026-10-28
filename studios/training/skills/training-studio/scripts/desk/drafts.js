@@ -194,11 +194,100 @@ const deskKit = Drafting.kit({
   },
   words: () => ({ thing: 'material', sources: { save: 'Saved', rewrite: 'Rewritten',
     google: "Before Google's text", earlier: 'An earlier version', restore: 'Restored',
-    selection: 'Selection', 'revise-all': 'Revised with the whole note' }, doing: {}, steps: {}, named: [],
+    selection: 'Selection', finishing: 'Finishing', 'revise-all': 'Revised with the whole note' }, doing: {}, steps: {}, named: [],
     withOpening: [], chain: [], ready: () => 'It is on the desk.' }),
-  tools: () => [],
+  tools: () => finishingTools(),
   progress: { stopped: () => null, show: () => paintDesk(false) },
 });
+
+const FINISHING_TOOLS = [
+  { key: 'proofread', name: 'Proofread', kinds: ['document', 'brief'], run: 'Proofread',
+    says: 'Mechanical checks, sentence by sentence. Fix rewrites only that sentence.' },
+  { key: 'coverage', name: 'Coverage', kinds: ['document'], run: 'Check coverage',
+    says: 'Objectives and key points no section teaches.' },
+  { key: 'claims', name: 'Claims with no reference', kinds: ['document', 'brief'], run: 'Check references',
+    says: 'Sentences that state a fact with no reference.' },
+  { key: 'practice', name: 'Scenario format', kinds: ['scenario'], run: 'Check scenario format',
+    says: 'What each scenario is missing for Yoodli.' },
+  { key: 'yoodli', name: 'Yoodli limits', kinds: ['yoodli'], run: 'Check Yoodli limits',
+    says: 'Fields over Yoodli’s limits.' },
+].map((tool) => ({ ...tool, doing: 'Checking…', empty: 'Nothing found by this check.' }));
+
+function finishingMaterial() {
+  const held = deskHeld(view.path);
+  return Object.values(held.materials).find((material) => material.finish
+    && (material.view.level || '') === held.level);
+}
+
+function finishingTools() {
+  const kind = finishingMaterial()?.view.kind;
+  return FINISHING_TOOLS.filter((tool) => !kind || tool.kinds.includes(kind));
+}
+
+function openFinishing() {
+  const held = deskHeld(view.path);
+  const choices = Object.values(held.materials).filter((material) =>
+    (material.view.level || '') === held.level && !material.view.readonly
+      && FINISHING_TOOLS.some((tool) => tool.kinds.includes(material.view.kind)));
+  const open = (material) => {
+    for (const other of Object.values(held.materials)) other.finish = null;
+    held.sources = false;
+    closeSheet(); deskKit.finishOpen(material);
+  };
+  if (choices.length === 1) { open(choices[0]); return; }
+  DESK.kitSheet = [sheetTitle('Finishing'), make('p', 'lede', 'Choose the material to check.'),
+    make('h3', 'sheet-part', '1. Choose a material'),
+    ...choices.map((material) => capsule(cardTitle(material.view), 'quiet', () => open(material))),
+    choices.length ? null : make('p', '', 'A guide, brief, practice or Yoodli layout opens here once it is written.'),
+    capsule('Cancel', 'quiet', () => closeSheet())].filter(Boolean);
+  openSheet('desk-kit', '')();
+}
+
+const finishingProposal = deskKit.proposal;
+deskKit.proposal = (held, set, item, key) => {
+  if (!item.instruction) {
+    const card = finishingProposal(held, set, item, key);
+    if (item.state === 'open' && item.present && held.finish.editing[item.id] === undefined) {
+      const apply = capsule('Apply', 'quiet', () => deskKit.apply(held, set, [{ id: item.id }], apply));
+      apply.disabled = !deskOurs() || !!held.view.working || !!held.view.readonly;
+      card.append(add(make('div', 'bar'), apply));
+    }
+    return card;
+  }
+  const card = add(make('section', 'card desk-proposal'),
+    make('h3', 'card-title', item.note), make('p', 'quiet', item.instruction));
+  if (item.state !== 'open') return add(card, make('p', 'quiet', 'Skipped.'));
+  const apply = capsule('Apply', 'quiet', () => deskKit.apply(held, set, [{ id: item.id }], apply));
+  apply.disabled = !deskOurs() || !!held.view.working || !!held.view.readonly || !item.present;
+  const skip = capsule('Skip', 'quiet', () => deskKit.skip(held, set, [item.id], skip));
+  skip.disabled = !deskOurs();
+  return add(card, !item.present ? make('p', 'quiet', 'This part changed since the check. Check again.') : null,
+    add(make('div', 'bar'), apply, skip));
+};
+
+deskKit.apply = async (held, set, items, control) => {
+  control.disabled = true;
+  try {
+    await deskKit.flush(held);
+    if (held.stale || Object.keys(held.pending).length) throw new Error('Save your text before applying a suggestion.');
+    held.view = await deskApi('drafts/apply', { id: held.id, seen: held.view.revision, job: set.job, items });
+    for (const item of items) delete held.finish.editing[item.id];
+    const note = held.view.note;
+    if (note) {
+      // Existing author notes survive a proposal handoff, just as pending text does.
+      if (held.view.whole) held.wholeNote = [held.wholeNote, note.text].filter(Boolean).join('\n');
+      else held.notes[note.part] = [held.notes[note.part], note.text].filter(Boolean).join('\n');
+      held.finish = null;
+      toast('The note is ready to edit. Rewrite when you are ready.');
+    } else toast(held.view.queued ? 'The sentence fix was requested.' : 'Applied. The earlier text is in History.');
+    deskMaterialChanged(held);
+    if (note) focusKey(held.id + ':' + (held.view.whole ? 'whole-note' : note.part + ':note'));
+    deskKit.watch(held);
+  } catch (error) {
+    deskHeld(view.path).said = error.message;
+    deskHeld(view.path).drawn = ''; paintDesk(false);
+  } finally { control.disabled = false; }
+};
 
 // Plan changes are whole-plan jobs; its parts can be typed but not sent as jobs.
 const selectDeskPart = deskKit.selected;
@@ -1593,13 +1682,16 @@ function paintDesk(fresh) {
   if (ours) {
     actions.push(capsule('Google Doc', '', openSheet('desk-copies', 'desk-copies'),
       'desk-copies'));
+    actions.push(capsule('Finishing', '', openFinishing, 'desk-finishing'));
   }
   const notice = held.said ? make('p', 'notice', held.said) : null;
   if (notice) notice.setAttribute('role', 'alert');
   const column = add(make('div', 'desk-column'), ...shown.map(deskCard));
   if (!shown.length) column.append(make('p', 'quiet', 'Nothing is made at this level.'));
+  const finishing = finishingMaterial();
+  if (finishing) { finishing.panel = deskKit.panel(finishing); finishing.panelKey = deskKit.panelKey(finishing); }
   const layout = held.sources ? add(make('div', 'desk-layout'), sourcesPart(found))
-    : add(make('div', 'desk-layout'), column, narrow() ? null : sourcesPart(found));
+    : add(make('div', 'desk-layout'), column, finishing ? finishing.panel : narrow() ? null : sourcesPart(found));
   place({ title: found.title || 'Untitled', back: true,
     above: named.length ? [make('span', '', levelsText(named))] : [], actions }, [
     pageHead(DESK_WORDS.lede),

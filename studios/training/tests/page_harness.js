@@ -208,6 +208,13 @@ class FakeElement extends FakeNode {
     return node;
   }
 
+  replaceWith(...nodes) {
+    const parent = this.parentNode;
+    if (!parent) return;
+    for (const node of nodes) parent.insertBefore(node, this);
+    this.remove();
+  }
+
   replaceChildren(...nodes) {
     for (const child of this.childNodes.slice()) child.remove();
     this.append(...nodes);

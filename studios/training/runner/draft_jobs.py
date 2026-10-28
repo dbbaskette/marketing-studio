@@ -63,7 +63,7 @@ def browser_offset(text, offset):
 
 
 def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None,
-          passage=None, start=None):
+          passage=None, start=None, finishing=None, wake=True):
     """Validate and persist a request. Waking schedules work; the caller never calls a provider."""
     with engine.files:
         root, run = engine._on_desk(root, decided=True)
@@ -131,6 +131,8 @@ def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None
         job = {'id': secrets.token_hex(6), 'kind': kind, 'name': name, 'part': part,
                'note': note or '', 'action': action, 'passage': passage, 'selection': passage,
                'start': start, 'basis': basis.fingerprint(text), 'status': 'queued', 'at': home.now()}
+        if finishing:
+            job['finishing'] = finishing
         if sections is not None:
             job.update(sections=sections, done=[], bases={s: basis.fingerprint(
                 codec.text_of(draft, s)) for s in sections}, total=len(sections), index=0, chain=True)
@@ -143,7 +145,8 @@ def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None
         run['drafts']['jobs'] = run['drafts']['jobs'][-20:]
         engine._store(root, run)
         engine._commit(root, f'ask for a change to {workspace.label(name)}')
-    engine.wake(root)
+    if wake:
+        engine.wake(root)
     return dict(job)
 
 
