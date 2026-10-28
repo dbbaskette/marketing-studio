@@ -10,7 +10,7 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-PRODUCTS = ('blog', 'presentation', 'training')
+PRODUCTS = ('blog', 'presentation', 'training', 'infographic')
 
 
 @contextlib.contextmanager
@@ -27,6 +27,10 @@ if identifier == 'blog':
     sys.path.insert(0, str(scripts))
     sys.argv = [str(scripts / 'start_studio.py'), '--no-open', '--json']
     runpy.run_path(sys.argv[0], run_name='__main__')
+elif identifier == 'infographic':
+    sys.path.insert(0, str(native))
+    from runner import studio
+    raise SystemExit(studio.main(['serve']))
 else:
     sys.path.insert(0, str(native))
     from runner import engine, studio, upkeep
@@ -84,6 +88,8 @@ def assert_native(link, identifier):
     assert status == 200 and b'data-standalone="true"' not in html
     if identifier == 'blog':
         status, body = request(link, identifier, '/api/run-settings')
+    elif identifier == 'infographic':
+        status, body = request(link, identifier, '/api/status')
     else:
         status, body = request(link, identifier, '/api/setup')
     assert status == 200 and json.loads(body)['configured'], (identifier, status, body[:1000])
@@ -142,4 +148,4 @@ def journey(starter):
 if __name__ == '__main__':
     for starter in PRODUCTS:
         journey(starter)
-    print('PASS: setup from every independent studio carries through to all three')
+    print('PASS: setup from every independent studio carries through to all four')

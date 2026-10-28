@@ -63,7 +63,7 @@ while [ "$#" -gt 0 ]; do
     --help|-h) help=1; inspect=1; args+=("$1") ;;
     --dry-run) inspect=1; args+=("$1") ;;
     check|rollback|uninstall) action="$1"; args+=("$1") ;;
-    install|--json|--studios|blog|presentation|training) args+=("$1") ;;
+    install|--json|--studios|blog|presentation|training|infographic) args+=("$1") ;;
     *) echo "Unknown setup argument: $1. Run bash install.sh --help." >&2; exit 2 ;;
   esac
   shift
@@ -128,7 +128,7 @@ if [ "$inspect" = 1 ]; then
       'Platform downloads include Python, Node, and prepared research/slide tools.' \
       'Setup reuses your selected assistant. Git is required; Google tools are optional.' '' \
       '  bash install.sh [install|check|rollback|uninstall] [options]' \
-      '  --studios blog presentation training    Choose one or more studios' \
+      '  --studios blog presentation training infographic  Choose studios' \
       '  --target auto|codex|claude|both         Assistant integration (default: detect one)' \
       '  --companions ask|install|skip           Shared research/slide tools' \
       '  --assistants ask|install|skip           Source installer only (default: skip)' \

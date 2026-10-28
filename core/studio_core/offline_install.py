@@ -30,7 +30,10 @@ def record(source):
 
 
 def names(studios):
-    return ['harness-research'] if studios == ['blog'] else ['harness-research', 'harness-slides']
+    # Infographic Studio's native pipeline does not use either companion.
+    if not set(studios) - {'infographic'}:
+        return []
+    return ['harness-research', *(['harness-slides'] if set(studios) & {'presentation', 'training'} else [])]
 
 
 def shared_root(home, name):
@@ -95,7 +98,7 @@ def plan(source, home, studios, target):
         if current.exists() or current.is_symlink():
             if not current.is_symlink() or not re.fullmatch(r'versions/[\w.-]+', os.readlink(current)):
                 raise ValueError('Preserve the unrecognized companion installation: ' + str(current))
-        links = managed_paths(home, [studios[0]] if studios == ['blog'] else ['presentation'], target)
+        links = managed_paths(home, studios, target)
         links = [path for path in links if path.name == name and path != current]
         for path in links:
             if (path.exists() or path.is_symlink()) and (not path.is_symlink() or os.readlink(path) != str(current)):

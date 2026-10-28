@@ -89,7 +89,7 @@ class SuiteTests(unittest.TestCase):
 
     def test_archives_are_reproducible_and_contain_only_regular_files(self):
         self.assertEqual(bundles.build(ROOT, self.case / 'again'), self.digests)
-        self.assertEqual(len(self.digests), 4)
+        self.assertEqual(len(self.digests), 5)
         for name, digest in self.digests.items():
             path = self.archives / name
             self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), digest)
@@ -98,15 +98,16 @@ class SuiteTests(unittest.TestCase):
                 self.assertTrue(all((entry.external_attr >> 16) & 0o170000 == 0o100000 for entry in archive.infolist()))
 
     def test_each_subset_installs_and_runs_without_the_source_checkout(self):
-        for identifier in ('blog', 'presentation', 'training'):
+        for identifier in ('blog', 'presentation', 'training', 'infographic'):
             with self.subTest(studio=identifier):
                 source = self.unpack(identifier + '-studio')
                 result = self.run_setup(source)
                 self.assertIn(identifier, result['studios'])
                 current = self.home / '.local/share' / (identifier + '-studio') / 'current'
-                self.assertTrue((current / 'scripts/studio_core/server.py').is_file())
+                scripts = 'runner' if identifier == 'infographic' else 'scripts'
+                self.assertTrue((current / scripts / 'studio_core/server.py').is_file())
                 for asset in ('index.html', 'app.js', 'home.css', 'style.css'):
-                    self.assertTrue((current / 'scripts/studio_core/setup_web' / asset).is_file())
+                    self.assertTrue((current / scripts / 'studio_core/setup_web' / asset).is_file())
                 self.assertFalse(any(path.is_symlink() for path in current.resolve().rglob('*')))
                 shutil.rmtree(source)
                 native = current / ('scripts/start_studio.py' if identifier == 'blog' else 'runner/studio.py')
@@ -117,7 +118,7 @@ class SuiteTests(unittest.TestCase):
         done = subprocess.run([str(command), 'status', '--json'], env=self.env,
                               capture_output=True, text=True, timeout=20)
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(len(json.loads(done.stdout)['studios']), 3)
+        self.assertEqual(len(json.loads(done.stdout)['studios']), 4)
 
     def test_repeat_install_and_uninstall_preserve_native_settings_and_studios(self):
         source = self.unpack('marketing-studio')

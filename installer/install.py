@@ -24,7 +24,7 @@ from studio_core.bundles import content_key, inventory, materialize
 from studio_core import offline_install
 from studio_core.runtime import assistant_target, shell_path
 
-STUDIOS = ('blog', 'presentation', 'training')
+STUDIOS = ('blog', 'presentation', 'training', 'infographic')
 
 
 class InstallError(ValueError):
@@ -229,8 +229,7 @@ def install_locked(source, home, data, studios, target, companions, distribution
         elif companions == 'install' and not distribution:
             from studio_core.companions import bring_companions, read_pins
             pins = read_pins(destination / 'pins/companions.json')
-            if studios == ['blog']:
-                pins = {name: pin for name, pin in pins.items() if name == 'harness-research'}
+            pins = {name: pin for name, pin in pins.items() if name in offline_install.names(studios)}
             harnesses = ['claude', 'codex'] if target == 'both' else [target]
             outcomes = bring_companions(home, data, harnesses, pins,
                                          lambda *args: True, {})

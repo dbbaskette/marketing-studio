@@ -154,6 +154,10 @@ def python_notices(pin, cache, destination):
 def prepare(root, destination, target, cache, studios, companion_sources=None):
     """A developer build; never uses installed skills, credentials, or a real HOME."""
     root, destination, cache = Path(root).resolve(), Path(destination).resolve(), Path(cache).resolve()
+    if 'infographic' in studios:
+        renderer_pins = json.loads((root / 'pins/infographic-renderer.json').read_text())
+        if target not in renderer_pins['platforms']:
+            raise ValueError('Infographic Studio has no pinned renderer for ' + target + '. Choose a supported platform or a subset without Infographic Studio.')
     companions = read_pins((destination if companion_sources is not None else root) / 'pins/companions.json')
     sources = companion_sources or {}
     if set(sources) - set(companions):
@@ -169,11 +173,14 @@ def prepare(root, destination, target, cache, studios, companion_sources=None):
         unpack(download(selected[name], cache / 'downloads'), runtime / name, node=name == 'node')
     python_notices(pins['python_notices'], cache, runtime / 'python/licenses')
     (runtime / 'platform').write_text(target + '\n')
-    if studios == ['blog']:
-        companions = {name: pin for name, pin in companions.items() if name == 'harness-research'}
+    from .offline_install import names
+    companions = {name: pin for name, pin in companions.items() if name in names(studios)}
     record = {'schema': 1, 'platform': target,
               'python_notices': pins['python_notices'],
               'runtimes': {name: selected[name] for name in ('python', 'node')}, 'companions': {}}
+    if 'infographic' in studios:
+        from .infographic_renderer import prepare as prepare_renderer
+        record['infographic_renderer'] = prepare_renderer(root, runtime, target, cache)
     with tempfile.TemporaryDirectory(prefix='marketing-release-build-') as temporary:
         work = Path(temporary)
         home = work / 'home'

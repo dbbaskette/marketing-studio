@@ -20,6 +20,7 @@ PAGE_STYLES = (
     ROOT / 'studios/blog/skills/blog-studio/assets/management/blog.css',
     ROOT / 'studios/presentation/skills/presentation-studio/scripts/desk/deck.css',
     ROOT / 'core/studio_core/deck_web/deck-panels.css',
+    ROOT / 'studios/infographic/runner/web/infographic.css',
 )
 # Folders whose style.css and markdown.js are links into ui-kit/, never copies.
 LINKED = (
@@ -27,6 +28,7 @@ LINKED = (
     ROOT / 'studios/blog/skills/blog-studio/assets/management',
     ROOT / 'core/studio_core/setup_web',
     ROOT / 'marketing_studio/web',
+    ROOT / 'studios/infographic/runner/web',
 )
 PHONE = '(max-width:52rem)'
 APP_PAGES = (
@@ -34,6 +36,7 @@ APP_PAGES = (
     ROOT / 'studios/blog/skills/blog-studio/assets/management/index.html',
     ROOT / 'studios/presentation/skills/presentation-studio/scripts/desk/index.html',
     ROOT / 'studios/training/skills/training-studio/scripts/desk/index.html',
+    ROOT / 'studios/infographic/runner/web/index.html',
 )
 # Each static page and the folder it is served from. Its stylesheet must be inside that folder.
 STATIC_PAGES = {

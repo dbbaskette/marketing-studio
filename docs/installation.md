@@ -205,3 +205,11 @@ does not change existing workspaces, Git configuration, or studio settings. Its
 private report goes beside the installation logs. A passing check establishes
 that Git can start, initialize, and commit; it does not check an existing
 workspace's hooks, signing setup, identity, or repository permissions.
+
+Infographic Studio is the fourth native selection (`--studios infographic`, `--is`
+for start/stop/restart, or `open infographic`). Its standalone launch opens shared
+setup when needed and preserves existing workspaces. It uses local supplied-information
+storage in this release, even when the other studios share a team repository.
+Prepared supported-platform packages include its pinned renderer. Its own pipeline
+installs no image SDK or Research/Slides companion; an explicitly selected brand
+add-on can have separate prerequisites. See its [setup and usage guide](../studios/infographic/README.md).

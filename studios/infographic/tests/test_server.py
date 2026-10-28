@@ -97,3 +97,24 @@ class NativeServerTests(Isolated):
         (folder / 'marker.png').unlink()
         (folder / 'marker.png').symlink_to(self.settings)
         self.assertEqual(self.request('GET', path)[0], 409)
+
+    def test_creation_request_is_idempotent_and_cannot_replace_another_brief(self):
+        sent = {'title': 'Synthetic repeat', 'request_id': 'owned_create1'}
+        first = json.loads(self.request('POST', '/api/projects', sent)[2])['project']
+        second = json.loads(self.request('POST', '/api/projects', sent)[2])['project']
+        self.assertEqual(first, second)
+        self.assertEqual(len(self.store.listing()), 1)
+        self.assertEqual(self.request('POST', '/api/projects', {**sent, 'title': 'Changed request'})[0], 409)
+        self.assertEqual(self.store.read(first['id']), first)
+
+    def test_typed_csv_is_checked_before_a_project_is_created(self):
+        import base64
+        encoded = base64.b64encode(b'Count\n"1,200"\n').decode()
+        preview = json.loads(self.request('POST', '/api/csv-preview', {'data': encoded})[2])
+        sent = {'data': encoded, 'selection': {'confirmed': True, 'sha256': preview['sha256'], 'rows': [1],
+                    'columns': [{'name': 'Count', 'type': 'number', 'unit': 'requests'}]}}
+        self.assertEqual(self.request('POST', '/api/csv-selection', sent)[0], 409)
+        sent['selection']['columns'][0]['type'] = 'text'
+        self.assertEqual(self.request('POST', '/api/csv-selection', sent)[0], 200)
+        self.assertEqual(self.store.listing(), [])
+        self.assertEqual(self.request('POST', '/api/csv-preview', {'data': 'not-base64'})[0], 409)

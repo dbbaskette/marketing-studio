@@ -1,21 +1,14 @@
 <!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Infographic Studio</title>
-  <link rel="stylesheet" href="/style.css">
-</head>
-<body class="content">
-  <main class="page stack">
-    <h1 class="large-title">Infographic Studio</h1>
-    <p class="lede">The local foundation is running. Image generation and the editing desk are being built.</p>
-    <section class="card">
-      <h2 class="card-title">Your workspace is ready</h2>
-      <p>Native commands can save and revise briefs. Sources, generated graphics,
-      and exports stay in your separate workspace.</p>
-      <p>This foundation page starts no assistant or image-generation jobs.</p>
-    </section>
-  </main>
-</body>
-</html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Infographic Studio</title><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/infographic.css">
+<script src="/drafting.js" defer></script><script src="/app.js" defer></script></head>
+<body data-product="Infographic Studio" data-studio="infographic">
+<a class="skip" href="#main">Skip to the page</a><div class="backdrop"></div>
+<div class="window"><nav class="sidebar glass" aria-label="Screens"><strong class="brand">Infographic Studio</strong>
+<button class="nav-item" id="home">Infographics</button><button class="nav-item" id="settings">Settings</button>
+<a id="go-suite" class="nav-item suite-link" target="marketing-studio" hidden><span class="nav-label">Marketing Studio</span></a></nav>
+<div class="content"><header class="toolbar-wrap"><div class="toolbar glass"><h1 class="title toolbar-title" id="title" tabindex="-1">Infographics</h1><div class="toolbar-actions" id="actions"></div></div></header>
+<main class="page stack" id="main"></main></div></div>
+<div class="notice" id="notice" role="alert" hidden></div><div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+<dialog class="dialog" id="sheet" aria-labelledby="sheet-title"><div id="sheet-body"></div></dialog>
+</body></html>

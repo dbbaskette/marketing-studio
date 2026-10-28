@@ -93,9 +93,15 @@ def locked(path):
         # Existing callers may already hold this repository lock when syncing.
         # Always establish shared -> Blog repository -> workspace order here.
         from studio_core.process_lock import ProcessRLock
-        shared = _STUDIO_LOCKS.setdefault(key, ProcessRLock(
-            lambda: path.parent / 'studios-write.lock', timeout=lock_wait_seconds(),
-            refusal=WorkspaceError))
+
+        shared = _STUDIO_LOCKS.setdefault(
+            key,
+            ProcessRLock(
+                lambda: path.parent / 'studios-write.lock',
+                timeout=lock_wait_seconds(),
+                refusal=WorkspaceError,
+            ),
+        )
     with shared:
         lock = _LOCKS.setdefault(key, threading.RLock())
         if not lock.acquire(timeout=30):

@@ -1,0 +1,152 @@
+# Infographic Studio conversation and CLI contract
+
+The same validators power the browser and native commands. Application code is
+Python 3.11+ with the standard library. Commands print JSON, exit 2 on a refused
+request and preserve saved work. Use the current revision from `show`/`inspect`;
+never assume it stays unchanged after another tab or assistant action.
+
+## Start with supplied information
+
+```sh
+python3 runner/studio.py status
+python3 runner/studio.py computer
+python3 runner/studio.py setup --workspace /absolute/empty/infographic-workspace
+python3 runner/studio.py create 'Restart one instance' --direction direct --preset digital
+python3 runner/studio.py source PROJECT_ID --file /absolute/notes.txt --expected-revision 0
+python3 runner/studio.py inspect PROJECT_ID
+```
+
+Paths above are examples; choose an explicit content folder outside this application.
+`serve --open` uses the same saved workspace. `status` does not initialize anything.
+Text, Markdown and CSV are UTF-8; URLs remain references. Source bytes and normalized
+text are immutable, hash-identified local files. Browser upload is limited to 1 MB;
+native source capture allows 16 MB. CSV is never automatically typed:
+
+```sh
+python3 runner/studio.py csv-preview --file /absolute/table.csv
+python3 runner/studio.py source PROJECT_ID --file /absolute/table.csv \
+  --selection /absolute/confirmed-selection.json --expected-revision REVISION
+```
+
+Selection JSON is exactly `{"confirmed":true,"sha256":"PREVIEW_HASH","rows":[1,2],
+"columns":[{"name":"Count","type":"number","unit":"requests"}]}`. Row numbers
+refer to data rows after the header. Types are `text`, `number` or ISO `date`.
+Choose exact rows/columns with the user; don't infer types, units or missing values.
+
+`edit-brief ID --file brief.json --expected-revision N` edits the complete existing
+brief. Preserve its fields; change title, audience, purpose, must_show `[{id,text}]`,
+locked_words, exclusions, direction or preset explicitly. Sources, facts and story
+choices are invalidated when their inputs change, while all earlier revisions remain.
+
+## Author directly in this conversation
+
+`facts ID --file facts.json --expected-revision N` accepts an array such as:
+
+```json
+[{"id":"f1","statement":"One instance restarts while others serve.",
+  "value":"One instance restarts while others serve.","unit":"","status":"supplied",
+  "evidence":[{"source_id":"CAPTURED_ID","start":0,"end":46,
+               "quote":"One instance restarts while others serve."}]}]
+```
+
+Offsets above are illustrative: calculate exact Python Unicode character positions
+in the captured normalized text; do not copy guessed offsets. Numeric facts retain
+literal `value`, explicit `unit`, `period`, `denominator`, `conditions`, `uncertainty`
+and located evidence. Unknown context is an empty string. Derived values use
+`calculation:{operator,operands}` with `sum`, `difference`, `ratio` or `percent_change`;
+all operand IDs, units and exact arithmetic are checked. Supplied-only facts have
+`status:"supplied"`. Missing numeric context blocks misleading charts.
+
+`stories ID --file stories.json --expected-revision N` accepts one directed or
+one to three suggested/hybrid stories. Each has `id`, `headline`, `takeaway`,
+`rationale`, `qualifications:[]`, `omissions:[]` and one to five `blocks`:
+
+```json
+{"id":"b1","kind":"concept","title":"One at a time",
+ "text":"The other instances continue serving.","fact_ids":["f1"],
+ "required_ids":[],"illustration":true,
+ "illustration_role":"Show one restarting instance beside two serving instances."}
+```
+
+Kinds are `comparison`, `process`, `timeline`, `numbers`, `parts`, `concept`.
+Preserve user-required ideas and exact wording. Hybrid cannot omit requirements.
+The browser's `suggest` asks a confined assistant to author the same two arrays;
+a conversation authors them directly, avoiding a nested planning job.
+`--automatic` selects the first valid recommendation; it never approves a page.
+
+## Compose and edit
+
+```sh
+python3 runner/studio.py select ID --story-id STORY --expected-revision N
+python3 runner/studio.py brand ID --file /absolute/shared-brand-contract.json --expected-revision N
+python3 runner/studio.py layout ID --arrangement stack --expected-revision N
+python3 runner/studio.py preview ID --expected-revision N
+```
+
+Brand input is the selected installed brand's shared schema-1 contract with explicit
+font family and hexadecimal canvas/text/heading colors, not a slide template.
+The browser can pin the shared Marketing Studio selection explicitly. Missing fonts
+block output. No font, brand or companion is automatically installed.
+
+`build ID --request-id UNIQUE_ID --expected-revision N` performs explicit layout,
+renderer preflight, precise art direction and selected-provider generation when the
+story calls for artwork. This can consume the selected assistant/provider allowance;
+read `computer` and disclose that boundary first. Artwork-free stories make no image
+call. Shared Codex uses its built-in image generation; shared Claude Code uses the
+Gemini API with an explicit model and adapter-only environment key.
+
+`edit-text ID --element-id ELEMENT --text 'Replacement' --expected-revision N` changes
+one named editable label and preserves every other element. It refuses unreadable
+fit and changed locked wording. `revise-story` takes `--story-id`, optional `--block-id`
+and `--instruction`; a named-block revision refuses any outside-scope change.
+
+`revise-art ID --change 'Exact correction' --preserve 'What stays' --request-id UNIQUE
+--expected-revision N` sends the original owned image as a reference. Text/chart
+marks remain compositor-owned. The advanced `action` endpoint also accepts
+`image-brief` with self-contained direction and optional `edit:{asset_id,change,preserve}`,
+`image-start` with provider/brief_id/request_id/operation/parent, `compose-image`
+with asset_id, and `art-direct`. Read `runner/image_brief.py` only when authoring a
+precise image brief directly: include style, reading_order, acceptance and objects
+with id/region_id/count/description/relationships/preserve. Never use inaccessible
+file paths or generic decorative prompts.
+
+## Review, approve, export and recover
+
+```sh
+python3 runner/studio.py inspect-images ID --expected-revision N
+python3 runner/studio.py check ID --expected-revision N
+python3 runner/studio.py review ID --export-id EXPORT \
+  --observation 'Inspected the actual page at intended size and verified the relationships.' \
+  --expected-revision N
+python3 runner/studio.py check ID --expected-revision N
+python3 runner/studio.py approve ID --expected-revision N
+python3 runner/studio.py export ID --expected-revision N
+```
+
+Image inspection stages actual composed PNG and original artwork; it returns
+located observations and corrections, never approval. If multimodal capability is
+unavailable, the user can inspect the actual page and record a manual review.
+Checks require current coverage, facts, actual font/layout/asset measurements,
+visual review and brand/accessibility. Only explicit user approval authorizes the
+`approve` action; assistant tool success is not authorization. Final exports bind
+that exact approved revision. `export --draft` is explicitly labeled unapproved.
+
+Exports are immutable PNG, exactly one-page PDF, editable SVG and accessible text.
+Embedded artwork remains raster, with exact text and chart marks editable. Font
+licenses/availability affect portability; no font binaries are exported. Export
+retry reads the existing verified delivery and never regenerates an image.
+
+`history ID` lists immutable versions. `restore ID --revision OLD --sha256 HASH
+--expected-revision CURRENT` creates a new revision without restoring approval.
+`action ID --file action.json` provides the full checked API. JSON always contains
+`action`, `expected_revision` and only that action's fields (see `runner/api.py`).
+A `compare` action takes `before` and `after` revision numbers.
+
+`inspect ID` reports pending/unknown image intents even if later content edits
+invalidated the visible attempt array. It never resubmits. Cancel with
+`image-cancel ID --request-id REQUEST --expected-revision N`; local adoption is
+revoked, while remote cancellation and charges can remain unknown. A repeated
+request identity cannot spend again. A new explicit attempt needs a new identity.
+`repair ID --request-id UNIQUE --expected-revision N` applies a specific recorded
+art correction or a layout alternative, within a shared two-attempt automatic
+repair budget. Smaller/manual revisions remain possible afterward.
