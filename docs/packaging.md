@@ -119,3 +119,22 @@ attempt may already have rewritten caches, so retrying in that same folder is
 not sufficient. Regenerated bundles omit runtime bytecode caches and disable
 cache writes during installation. Integrity checks still verify every packaged
 file; use a fresh download for other checksum failures.
+
+## Infographic Studio subsets
+
+`--studios infographic` prepares the fourth native studio with no Research/Slides
+companion or npm application dependency. Mixed subsets include only the companions
+the other selected pipelines need. The pinned renderer is included only in subsets
+containing Infographic Studio; unsupported renderer platforms fail before runtime
+downloads. Native versions materialize approved core/UI links as ordinary files and
+retain their own renderer. Marketing Studio removal preserves independently runnable
+native installs and immutable private runtime versions.
+
+```sh
+python3 scripts/build_bundles.py --platform macos-arm64 --studios infographic --output /absolute/build/output
+python3 scripts/ci/infographic_bundle_acceptance.py /absolute/build/output/marketing-studio-VERSION-macos-arm64.zip
+```
+
+This acceptance removes the unpacked download, exercises actual local exports,
+removes Marketing Studio and verifies native reuse without providers/provisioning.
+See the [platform and release gates](../studios/infographic/docs/acceptance.md).

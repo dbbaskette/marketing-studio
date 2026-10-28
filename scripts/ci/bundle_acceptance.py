@@ -48,19 +48,20 @@ def check(archive):
         install = source / 'installer/install.sh'
         run(['/bin/bash', str(install), '--yes', '--prerequisites', 'check', '--target', 'codex'], env)
         distribution = json.loads((source / 'distribution.json').read_text())
+        selected = json.loads((source / 'bundle-manifest.json').read_text())['studios']
         shutil.rmtree(unpacked)
         data = home / '.local/share/marketing-studio'
         current = (data / 'current').resolve()
         python = current / 'runtime/python/bin/python3'
         node = current / 'runtime/node/bin/node'
         report = json.loads(run([str(home / '.local/bin/marketing-studio'), 'status', '--json'], env))
-        assert all(studio['installed'] for studio in report['studios']), report
-        for identifier in ('blog', 'presentation', 'training'):
+        assert all(studio['installed'] for studio in report['studios'] if studio['id'] in selected), report
+        for identifier in selected:
             helper = home / '.local/share' / (identifier + '-studio') / identifier
             run(['/bin/sh', str(helper), '--help'], env)
             assert 'runtime/node/bin' in helper.read_text(), helper
         skills = home / '.agents/skills'
-        for name in ('harness-research', 'harness-slides'):
+        for name in distribution['companions']:
             runtime = skills / name
             assert runtime.is_dir(), runtime
             if name == 'harness-research':
@@ -68,34 +69,36 @@ def check(archive):
             else:
                 result = run([str(node), str(runtime / 'scripts' / (name + '.mjs')), 'version'], env)
             assert distribution['companions'][name]['version'] in result, result
-        # Exercise the shipped Research CLI contract without launching a worker.
-        research = (skills / 'harness-research').resolve()
-        project = root / 'synthetic-research'
-        project.mkdir()
-        plan = root / 'research-plan.json'
-        plan.write_text(json.dumps({'topic': 'Synthetic offline contract', 'purpose': 'planning',
-            'scope': 'supplied-only', 'sources': [], 'items': [{'id': 'availability',
-            'question': 'What do the selected documents establish?', 'public_query': None, 'claim': None}]}))
-        planned = json.loads(run([str(node), str(research / 'scripts/harness-research.mjs'),
-            'plan', '--project', str(project), '--file', str(plan)], env))
-        status = json.loads(run([str(node), str(research / 'scripts/harness-research.mjs'),
-            'status', '--project', str(project)], env))
-        assert planned['run'] == status['run'] and status['scope'] == 'supplied-only'
-        assert status['pending'] == ['availability'] and status['completed'] == 0
-        slides = (skills / 'harness-slides').resolve()
-        output = root / 'synthetic.pptx'
-        program = '''import PptxGenJS from './node_modules/pptxgenjs/dist/pptxgen.cjs.js';
-import fontkit from './node_modules/fontkit/dist/main.cjs';
-const p=new PptxGenJS();p.addSlide().addText('Offline bundle check',{x:1,y:1,w:5,h:1});
-await p.writeFile({fileName:process.argv[1]});'''
-        run([str(node), '--input-type=module', '-e', program, str(output)], env, cwd=slides)
-        assert output.stat().st_size > 1000
+        if 'harness-research' in distribution['companions']:
+            # Exercise the shipped Research CLI contract without launching a worker.
+            research = (skills / 'harness-research').resolve()
+            project = root / 'synthetic-research'
+            project.mkdir()
+            plan = root / 'research-plan.json'
+            plan.write_text(json.dumps({'topic': 'Synthetic offline contract', 'purpose': 'planning',
+                'scope': 'supplied-only', 'sources': [], 'items': [{'id': 'availability',
+                'question': 'What do the selected documents establish?', 'public_query': None, 'claim': None}]}))
+            planned = json.loads(run([str(node), str(research / 'scripts/harness-research.mjs'),
+                'plan', '--project', str(project), '--file', str(plan)], env))
+            status = json.loads(run([str(node), str(research / 'scripts/harness-research.mjs'),
+                'status', '--project', str(project)], env))
+            assert planned['run'] == status['run'] and status['scope'] == 'supplied-only'
+            assert status['pending'] == ['availability'] and status['completed'] == 0
+        if 'harness-slides' in distribution['companions']:
+            slides = (skills / 'harness-slides').resolve()
+            output = root / 'synthetic.pptx'
+            program = '''import PptxGenJS from './node_modules/pptxgenjs/dist/pptxgen.cjs.js';
+    import fontkit from './node_modules/fontkit/dist/main.cjs';
+    const p=new PptxGenJS();p.addSlide().addText('Offline bundle check',{x:1,y:1,w:5,h:1});
+    await p.writeFile({fileName:process.argv[1]});'''
+            run([str(node), '--input-type=module', '-e', program, str(output)], env, cwd=slides)
+            assert output.stat().st_size > 1000
         run([str(python), '-c', 'import ssl,sqlite3,ctypes; print("Private standard library ready")'], env)
         print(json.dumps({'result': 'PASS', 'archive': archive.name,
                           'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(),
                           'platform': distribution['platform'], 'private_python': distribution['runtimes']['python']['version'],
                           'private_node': distribution['runtimes']['node']['version'],
-                          'studios': 3, 'providers_called': False, 'download_removed': True}))
+                          'studios': len(selected), 'providers_called': False, 'download_removed': True}))
 
 
 if __name__ == '__main__':

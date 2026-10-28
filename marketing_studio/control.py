@@ -14,7 +14,7 @@ import stat
 import threading
 
 COMMANDS = ('open', 'setup', 'state', 'start', 'stop', 'shutdown')
-STUDIOS = (None, 'blog', 'presentation', 'training')
+STUDIOS = (None, 'blog', 'presentation', 'training', 'infographic')
 FIELDS = frozenset(('command', 'studio', 'force'))
 
 

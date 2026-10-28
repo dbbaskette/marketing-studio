@@ -16,7 +16,8 @@ from .page import Home
 
 ROOT = Path(__file__).resolve().parents[1]
 CHOICES = ((('--bs', '-bs', '--blog'), 'blog'), (('--ps', '-ps', '--presentation'), 'presentation'),
-           (('--ts', '-ts', '--training'), 'training'))
+           (('--ts', '-ts', '--training'), 'training'),
+           (('--is', '-is', '--infographic'), 'infographic'))
 LEADING = frozenset(('-a', '--all', '--force', '--json', *(spelling for flags, _ in CHOICES for spelling in flags)))
 MANAGING = ('start', 'stop', 'restart')
 EARLIER = ('Marketing Studio is running an earlier version; stop it with Ctrl-C in its terminal '
@@ -445,9 +446,9 @@ def main(argv=None):
     if args.command in MANAGING:
         chosen = list(dict.fromkeys(args.selected or ()))
         if args.everything and chosen:
-            top.commands[args.command].error('Use --all by itself, or choose studios: --bs, --ps, --ts.')
+            top.commands[args.command].error('Use --all by itself, or choose studios: --bs, --ps, --ts, --is.')
         if args.command != 'start' and not args.everything and not chosen:
-            top.commands[args.command].error(f'Choose --all or the studios to {args.command}: --bs, --ps, --ts.')
+            top.commands[args.command].error(f'Choose --all or the studios to {args.command}: --bs, --ps, --ts, --is.')
         if args.command == 'restart' and not args.everything and (args.lan or args.port):
             top.commands[args.command].error('--lan and --port change Marketing Studio itself: use them with restart --all.')
         try:

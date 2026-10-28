@@ -17,3 +17,19 @@ Marketing Studio 4.5.0 ships Blog Studio 4.7.0, Presentation Studio 4.5.0 and Tr
 Download `marketing-studio-installer.zip` for the whole suite, or one studio's installer ZIP. Each has a `.sha256` file for checking the download. Unzip it, then run `bash install.sh` in the unpacked folder, or open `installer/Install Marketing Studio.command` on macOS. Close running studios before you update. Your existing workspaces and settings are kept.
 
 Signing in to an assistant, your organisation's brands and fonts, and optional Google setup are still your choices. Installing starts no provider job.
+
+## Unreleased: Infographic Studio 0.1.0
+
+Adds the fourth independent editing desk for supplied text, Markdown and selected
+CSV: source-backed story choices, six one-page forms, explicit brand snapshots,
+Codex/Gemini image adapters, precise art direction and reference edits, actual-pixel
+review, focused copy/story edits, immutable history/restore, exact user approval and
+PNG/PDF/editable SVG/accessible-text delivery. Marketing Studio adds shared setup,
+native discovery, lifecycle/CLI flags and protected phone/LAN launch.
+
+The pipeline uses Python's standard library and no frontend build or image SDK.
+Infographic Studio-only packages omit Research/Slides companions; unrelated subsets
+omit its renderer. Its initial acceptance target is macOS ARM64. Live generation,
+reference editing and inspection for both provider routes, owner illustration
+acceptance and publication remain separate gates. See the
+[release acceptance checklist](../studios/infographic/docs/acceptance.md).

@@ -79,3 +79,9 @@ def approved_project():
     p['approval'] = {'revision': p['revision'], 'owner': p['owner'],
                      'basis': basis(p), 'scene_digest': digest(p['scene'])}
     return deepcopy(p)
+
+
+def visual_answer():
+    return {'capability': 'inspected', 'observations': [
+        {'kind': kind, 'region_id': 'page', 'text': 'Synthetic fixture observer received the actual composed PNG; no live provider was used.'}
+        for kind in ('counts', 'relationships', 'crop', 'resolution', 'label_clearance', 'brand', 'factual_implications')], 'findings': []}

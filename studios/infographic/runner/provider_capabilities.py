@@ -122,8 +122,8 @@ def claude_inspection_command(folder: Path, mcp_config: Path) -> list[str]:
     import json
     if json.loads(config.read_text(encoding='utf-8')) != {'mcpServers': {}}:
         raise ValueError('The inspection job requires an empty MCP configuration.')
-    return ['claude', '-p', '--restricted', '--strict-mcp-config', '--mcp-config', str(config),
-            '--tools', 'Read', '--allowedTools', 'Read', '--permission-prompts', 'none',
+    return ['claude', '-p', '--restricted', '--setting-sources', '', '--strict-mcp-config', '--mcp-config', str(config),
+            '--tools', 'Read', '--allowedTools', 'Read(./inspection-*.png)', '--permission-prompts', 'none',
             '--permission-mode', 'dontAsk', '--no-session-persistence',
             '--output-format', 'stream-json', '--verbose']
 

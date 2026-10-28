@@ -17,7 +17,7 @@
     <button type="button" data-view="home" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span class="nav-label">Studios</span></button>
     <button type="button" data-view="settings" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7.5h7"/><path d="M16.5 7.5h3"/><path d="M14 5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/><path d="M4.5 16.5h3"/><path d="M12.5 16.5h7"/><path d="M10 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg><span class="nav-label">Shared settings</span></button>
     <button type="button" data-view="computer" class="nav-item"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4.5h18v13H3z"/><path d="M8 21h8"/><path d="M12 17.5V21"/></svg><span class="nav-label">This computer</span></button>
-    <p class="sidebar-foot">One place to get ready.<br>Three places to create.</p>
+    <p class="sidebar-foot">One place to get ready.<br>Four places to create.</p>
   </nav>
   <div class="content">
     <div class="toolbar-wrap"><header class="toolbar glass"><div class="toolbar-title"><h1 id="view-title" class="title" tabindex="-1">Studios</h1></div><div class="toolbar-actions"><button type="button" id="back-to-studio" class="button button-quiet" hidden>Back</button><span id="where" class="tag">On this computer</span><button id="check" type="button" class="button button-filled" hidden>Check computer</button></div></header></div>
@@ -47,7 +47,7 @@
             <div class="field-grid">
               <div class="field"><label class="field-label" for="person-name">Your name</label><input id="person-name" class="input" name="person.name" autocomplete="name" maxlength="100"></div>
               <div class="field"><label class="field-label" for="assistant-agent">Assistant</label><select id="assistant-agent" class="input" name="assistant.agent"><option value="claude">Claude Code</option><option value="codex">Codex</option></select></div>
-              <div class="field"><label class="field-label" for="assistant-model">Model <span class="quiet">(optional)</span></label><input id="assistant-model" class="input" name="assistant.model" maxlength="100" placeholder="Use the assistant’s default" autocomplete="off" aria-describedby="assistant-model-hint"><p id="assistant-model-hint" class="field-hint quiet">Use an ID available in your account. All three studios use these choices for the selected assistant.</p></div>
+              <div class="field"><label class="field-label" for="assistant-model">Model <span class="quiet">(optional)</span></label><input id="assistant-model" class="input" name="assistant.model" maxlength="100" placeholder="Use the assistant’s default" autocomplete="off" aria-describedby="assistant-model-hint"><p id="assistant-model-hint" class="field-hint quiet">Use an ID available in your account. All four studios use these choices for the selected assistant.</p></div>
               <div class="field"><label class="field-label" for="assistant-effort">Reasoning</label><select id="assistant-effort" class="input" name="assistant.effort"></select></div>
             </div>
             <div class="model-catalog-bar"><p id="model-catalog-status" class="field-hint quiet" role="status">Loading model choices…</p><button type="button" id="refresh-models" class="button">Refresh models</button></div>

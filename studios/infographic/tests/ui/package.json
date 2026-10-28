@@ -1,0 +1,8 @@
+{
+  "name": "infographic-studio-browser-tests",
+  "private": true,
+  "devDependencies": {
+    "playwright": "1.62.1"
+  },
+  "version": "0.1.0"
+}
