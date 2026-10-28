@@ -5813,7 +5813,13 @@ class Engine(Reviewing):
         with self.files:
             root, record = self._on_desk(path)
             run = self._run(root)
-            if run.workers or run.busy or drafts.busy(record):
+            # Deck changes can be persisted before a worker is registered, or remain
+            # pending while a run is paused. Do not hold their input underneath them.
+            decks = (record.get('deck') or {}).values()
+            deck_busy = any(kept.get('redrawing') or any(
+                note.get('status') in ('waiting', 'drawing') for note in kept.get('notes') or ())
+                for kept in decks)
+            if run.workers or run.busy or drafts.busy(record) or deck_busy:
                 raise WorkspaceError(draft_jobs.BUSY)
             if not workspace.research_record(root):
                 raise WorkspaceError('Wait until the research is written before adding a source.')

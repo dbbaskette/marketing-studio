@@ -80,6 +80,74 @@ class SourceTests(DeckCase):
             self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
         self.assertEqual(self.engine.documents.listed(root), before)
 
+    def test_row_179_a_paused_deck_change_refuses_a_source_until_finished(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.record(root)['deck']['']['saved']['sha256']
+        original = self.engine._section
+        def pause_after_first(*args, **kwargs):
+            result = original(*args, **kwargs)
+            self.engine.act(root, 'pause')
+            return result
+        with mock.patch.object(self.engine, '_section', side_effect=pause_after_first):
+            self.engine.deck_note(root, None, 'Make it simpler.', seen)
+        notes = self.record(root)['deck']['']['notes']
+        self.assertIn('done', [note['status'] for note in notes])
+        self.assertIn('waiting', [note['status'] for note in notes])
+        self.assertEqual(self.view(root)['state'], 'paused')
+        before, session = self.record(root), workspace.load(root)
+        documents, jobs, commits = self.engine.documents.listed(root), len(self.workers.jobs), self.log()
+        with self.assertRaisesRegex(WorkspaceError, draft_jobs.BUSY):
+            self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
+        self.assertEqual(self.record(root), before)
+        self.assertEqual(workspace.load(root), session)
+        self.assertEqual(self.engine.documents.listed(root), documents)
+        self.assertEqual((len(self.workers.jobs), self.log()), (jobs, commits))
+        self.engine.act(root, 'resume')
+        self.to_end(root)
+        self.assertTrue(all(note['status'] == 'done' for note in self.record(root)['deck']['']['notes']))
+        self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
+        self.to_end(root)
+        self.assertIsNone(self.record(root)['problem'])
+
+    def test_row_179_queued_deck_changes_refuse_before_worker_registration(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.record(root)['deck']['']['saved']['sha256']
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.deck_note(root, None, 'Make it simpler.', seen)
+        self.assertTrue(all(note['status'] == 'waiting' for note in self.record(root)['deck']['']['notes']))
+        before, documents = self.record(root), self.engine.documents.listed(root)
+        with self.assertRaisesRegex(WorkspaceError, draft_jobs.BUSY):
+            self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
+        self.assertEqual(self.record(root), before)
+        self.assertEqual(self.engine.documents.listed(root), documents)
+        self.engine.deck_note_stop(root, None)
+        self.to_end(root)
+        self.assertEqual(self.record(root)['deck']['']['note_chain']['status'], 'stopped')
+        self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
+        self.to_end(root)
+        self.assertIsNone(self.record(root)['problem'])
+
+    def test_a_queued_redraw_without_notes_refuses_a_source(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.record(root)['deck']['']['saved']['sha256']
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.draw_here(root, None, seen)
+        self.assertTrue(self.record(root)['deck']['']['redrawing'])
+        self.assertFalse(self.record(root)['deck'][''].get('notes'))
+        before = self.record(root)
+        with self.assertRaisesRegex(WorkspaceError, draft_jobs.BUSY):
+            self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
+        self.assertEqual(self.record(root), before)
+        self.assertEqual(self.engine.documents.listed(root), [])
+        self.engine.carry_on(root)
+        self.to_end(root)
+        self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
+        self.to_end(root)
+        self.assertIsNone(self.record(root)['problem'])
+
     def test_legacy_findings_ignore_recording_timestamps(self):
         root = self.finished()
         old = {'schema': 1, 'results': {'same': {'summary': 'A', 'checked_at': 'before'},
