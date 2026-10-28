@@ -7291,6 +7291,37 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Older draft.', json.dumps(closing['storage']))
         self.assertIn('Newer draft.', json.dumps(closing['storage']))
 
+    def test_editing_one_recovered_part_does_not_review_the_others(self):
+        desk, card_view = self.editable(opening='An opening.')
+        answers = self.on_desk(desk, **{
+            'GET /api/drafts/card': [ok(card_view)],
+            'GET /api/drafts/versions': [ok({'versions': []})],
+            'POST /api/drafts/save': [ok(card_view)],
+            'POST /api/drafts/share': [ok({'committed': True})]})
+        original = self.open_desk(answers, [
+            {'fill': 'Text of Opening', 'value': 'Unreviewed opening.'},
+            {'fill': 'Text of When capacity holds', 'value': 'Recovered section.'}])
+        for action in ({'pagehide': True}, {'click': 'History (3)'}):
+            with self.subTest(action=action):
+                recovered = self.open_desk(answers, [
+                    {'fill': 'Text of When capacity holds', 'value': 'Reviewed section.'},
+                    action, {'snapshot': 'kept'}], storage=original['storage'])
+                saves = [body for route, body in self.posts(recovered)
+                         if route == '/api/drafts/save']
+                self.assertEqual([body['part'] for body in saves], ['abcd1234'])
+                self.assertEqual(len(recovered['storage']), 1)
+                self.assertIn('Unreviewed opening.', json.dumps(recovered['storage']))
+                reopened = self.open_desk(answers, [
+                    {'snapshot': 'recovered'}, {'pagehide': True}], storage=recovered['storage'])
+                self.assertEqual(reopened['snapshots']['recovered']['fields']['Text of Opening'],
+                                 'Unreviewed opening.')
+                self.assertEqual(self.posts(reopened), [])
+        reviewed = self.open_desk(answers, [{'click': 'Save recovered text'}],
+                                  storage=original['storage'])
+        self.assertEqual([body['part'] for route, body in self.posts(reviewed)
+                          if route == '/api/drafts/save'], ['opening', 'abcd1234'])
+        self.assertEqual(reviewed['storage'], {})
+
     def test_successful_unload_save_clears_recovery_and_shares(self):
         desk, card_view = self.editable()
         result = self.open_desk(self.on_desk(desk, **{

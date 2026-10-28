@@ -160,7 +160,7 @@ const deskKit = Drafting.kit({
       // Only an acknowledged save of our text advances an outstanding edit's basis.
       if (held.pending[part]) held.editSeen[part] = held.view.revision;
       else if (held.editSeen) delete held.editSeen[part];
-      if (!Object.keys(held.pending).length) held.recovered = false;
+      if (!held.pending[part] && held.recoveredParts) delete held.recoveredParts[part];
       keepDeskRecovery(deskItem(held.id).path);
       if (held.view.desk) deskHeld(deskItem(held.id).path).view = held.view.desk;
     },
@@ -168,7 +168,7 @@ const deskKit = Drafting.kit({
     refresh: (held) => deskMaterialChanged(held),
     reload: async (held) => {
       held.view = await ask('drafts/card', deskItem(held.id));
-      held.pending = {}; held.editSeen = {}; held.recovered = false;
+      held.pending = {}; held.editSeen = {}; held.recoveredParts = {};
       keepDeskRecovery(deskItem(held.id).path);
       held.stale = false; held.saved = '';
       deskMaterialChanged(held);
@@ -208,13 +208,17 @@ deskKit.selected = (held, part, input) => {
 
 // A pending edit keeps the revision of the text the person actually saw. Job polling
 // may replace the card view, but must never rebase text whose save was refused.
-const flushDeskPart = deskKit.flush;
-deskKit.flush = (held) => held.recovered ? Promise.resolve() : flushDeskPart(held);
+// Recovery is reviewed part by part. Every kit save path (timer, flush, History and
+// polling) goes through this guard; typing one part never authorizes another.
+function hasDeskRecovery(held) { return Object.keys(held.recoveredParts || {}).length > 0; }
+const saveDeskPart = deskKit.save;
+deskKit.save = (held, part) => held.recoveredParts?.[part]
+  ? Promise.resolve() : saveDeskPart(held, part);
 const typeDeskPart = deskKit.typed;
 deskKit.typed = (held, part, text) => {
   held.editSeen = held.editSeen || {};
   if (held.editSeen[part] === undefined) held.editSeen[part] = held.view.revision;
-  held.recovered = false;
+  if (held.recoveredParts) delete held.recoveredParts[part];
   typeDeskPart(held, part, text);
   keepDeskRecovery(deskItem(held.id).path);
 };
@@ -259,7 +263,7 @@ function keepDeskRecovery(path) {
       material.recoveryOwn ||= {};
       material.recoveryFrom ||= {};
       for (const [part, pending] of Object.entries(material.pending)) {
-        if (material.recovered && material.recoveryFrom[part]
+        if (material.recoveredParts?.[part] && material.recoveryFrom[part]
             && storage.getItem(material.recoveryFrom[part]) !== null) continue;
         const edit = { ...deskItem(material.id), part, text: pending.text,
           seen: material.editSeen?.[part] ?? material.view.revision, session: material.session };
@@ -293,7 +297,7 @@ function recoverDeskMaterial(path, material) {
     material.pending[edit.part] = { text: edit.text };
     material.editSeen = { ...material.editSeen, [edit.part]: edit.seen };
     material.recoveryFrom = { ...material.recoveryFrom, [edit.part]: edit.recoveryKey };
-    material.recovered = true;
+    material.recoveredParts = { ...material.recoveredParts, [edit.part]: true };
     material.saved = 'Recovered unsaved text. Review it before saving.';
   }
 }
@@ -312,7 +316,7 @@ function leaveDesk(path) {
   const edits = pendingDeskEdits(path);
   const requests = edits.map((edit) => {
     const material = held.materials[edit.name];
-    if (!material || material.recovered) return Promise.reject(
+    if (!material || material.recoveredParts?.[edit.part]) return Promise.reject(
       new Error('Review recovered text before saving it.'));
     if (material?.pending[edit.part]?.timer) clearTimeout(material.pending[edit.part].timer);
     const body = { ...edit, path };
@@ -767,9 +771,9 @@ function materialParts(held, found) {
   add(area, status, deskKit.selectionBar(held), held.view.readonly
     ? make('p', 'quiet', held.view.readonly) : null);
   if (deskOurs() && !held.view.readonly) area.append(materialNote(held, found));
-  if (held.recovered && deskOurs() && !held.view.readonly) {
+  if (hasDeskRecovery(held) && deskOurs() && !held.view.readonly) {
     const save = capsule('Save recovered text', 'quiet', async () => {
-      held.recovered = false;
+      held.recoveredParts = {};
       await deskKit.flush(held);
       deskMaterialChanged(held);
     });
@@ -833,7 +837,7 @@ function materialParts(held, found) {
   const problem = deskKit.problem(held);
   if (problem) area.append(problem);
   if (held.stale) deskKit.stale(held);
-  if (!held.recovered) deskKit.watch(held);
+  if (!hasDeskRecovery(held)) deskKit.watch(held);
   return area;
 }
 
