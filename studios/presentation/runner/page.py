@@ -154,7 +154,7 @@ modules.bind(globals(), _shared, _shared.NAMES)
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
          '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
          '/api/delete', '/api/file', '/api/known-decks', '/api/storyboard',
-         '/api/desk-outline-price', '/api/desk-versions')
+         '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview', '/api/desk-ready-context')
 # The desk's changes: each is an engine method by the same name, with what it is sent.
 DESK = {'/api/desk-note': ('desk_note', ('number', 'note', 'expected')),
         '/api/desk-deck-note': ('desk_deck_note', ('note', 'expected')),
@@ -191,6 +191,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/deci
           '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
           '/api/note', '/api/review-level', '/api/research-site', '/api/picture',
           '/api/picture-remove', '/api/desk-outline-price', SOURCE, *DESK)
+WRITES = (*WRITES, '/api/desk-migrate', '/api/desk-ready')
 PPTX = 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
 DECKS = '/api/decks'
 DRAFT = '/api/deck-draft'   # a deck's storyboard, framed by the page and opened with a ticket
@@ -223,6 +224,12 @@ class RunnerPage(server.Page):
     # --- reads ---------------------------------------------------------------------------
 
     def read(self, path: str, one):
+        if path in ('/api/desk-migration-preview', '/api/desk-ready-context'):
+            from runner import desk_chat
+            folder = self.deck(one('path'))
+            value = desk_chat.migration_preview(self.engine, folder) if path.endswith('migration-preview') \
+                else desk_chat.context(self.engine, folder, 'ready')
+            return server.as_json(HTTPStatus.OK, value)
         self.engine.seen()
         if path == '/api/capabilities':
             return server.as_json(HTTPStatus.OK, {'runner': True,
@@ -392,6 +399,13 @@ class RunnerPage(server.Page):
 
     def write(self, path: str, sent: dict):
         self.engine.seen()
+        if path in ('/api/desk-migrate', '/api/desk-ready'):
+            from runner import desk_chat
+            root = self.deck(server.text(sent, 'path'))
+            value = desk_chat.migrate(self.engine, root, server.text(sent, 'expected')) \
+                if path.endswith('migrate') else desk_chat.ready(
+                    self.engine, root, {key: value for key, value in sent.items() if key != 'path'})
+            return server.as_json(HTTPStatus.OK, value)
         if path == '/api/setup/check':
             return server.as_json(HTTPStatus.OK, shaped(setup.check, sent))
         if path == '/api/setup':

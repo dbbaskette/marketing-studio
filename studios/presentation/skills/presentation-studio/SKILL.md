@@ -17,9 +17,9 @@ Use the checked `studio desk` commands for conversation work. No browser or nest
 
 ## Start or continue
 
-1. Read shared defaults from `~/.config/studios-config.json`, or `STUDIOS_CONFIG`: workspace, person, brand/variant and output. Do not write shared settings from conversation. An unconfigured workspace needs explicit setup first; never install or update anything automatically.
+1. Read workspace, person, brand/variant and output from `STUDIOS_CONFIG` or `~/.config/studios-config.json`. Never change shared settings implicitly. Unconfigured work needs explicit setup; never install or update automatically.
 2. Follow [the routes](references/routes.md). Prepare the normal checked form, plus `scope`, then `studio desk create --input FILE` (or `--input -` for stdin). Creation returns the folder, checks no assistant readiness and starts no jobs. Uploads are explicit; Google is never fetched silently.
-3. For a saved desk, inspect `studio desk show --folder PATH`. To continue its work in chat at the person's request, read `studio desk context --folder PATH --target ownership`, then `studio desk take --folder PATH --input FILE` with that basis and explicit scope. It changes ownership only. Gated decks keep their [saved path](references/workspace.md).
+3. Inspect `studio desk show --folder PATH`. To continue in chat explicitly, read target `ownership`, then `studio desk take --folder PATH --input FILE` with current basis/scope. This changes ownership only. Unfinished decks use [preview/migration](references/migration.md) or their [saved path](references/workspace.md).
 
 ## Work in this conversation
 
@@ -33,4 +33,6 @@ Read `studio desk context --folder PATH --target TARGET`. It returns pinned inpu
 
 For a later explicit change in requested work, read target `scope`, then `desk scope` with `{expected_basis, scope}`. For explicit runner execution, read target `handoff`, then use `desk handoff` with the same fields. Incompatible scope is refused; finish focused work in conversation.
 
-See [explicit answers](references/answers.md), [research](references/research.md), [existing-deck levels](references/levels.md) and [workspace records](references/workspace.md).
+See [answers](references/answers.md), [research](references/research.md), [levels](references/levels.md) and [records](references/workspace.md).
+
+Only the person's actual response permits `desk ready` using current context: [Ready without jobs or delivery](references/migration.md).

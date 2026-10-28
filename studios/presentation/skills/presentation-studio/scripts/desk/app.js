@@ -58,6 +58,7 @@ const RUN_WORDS = {
   stopped: ['off', 'Stopped'],
   failed: ['late', 'Stopped: something went wrong'],
   finished: ['done', 'Finished'],
+  ready: ['done', 'Ready'],
   // A deck a teammate's computer runs: only what was last shared is known here.
   elsewhere: ['none', 'Run from another computer'],
 };
@@ -1368,6 +1369,8 @@ function drawSheet() {
   else if (view.sheet === 'reclassify') body = reclassifySheet();
   else if (view.sheet === 'desk-deliver') body = window.deckDesk.deliverSheet();
   else if (view.sheet === 'desk-history') body = window.deckDesk.historySheet();
+  else if (view.sheet === 'desk-migration') body = migrationSheet();
+  else if (view.sheet === 'desk-ready') body = readySheet();
   else body = undoSheet();
   holder.replaceChildren(...body);
 }
@@ -3503,7 +3506,90 @@ function deckIntro(run) {
     problem.setAttribute('role', 'alert');
     add(node, problem);
   }
+  if (!run.desk && !run.deliver && !theirs(run)) {
+    add(node, make('p', 'quiet', 'Preview opening the saved slide parts for editing in conversation.'),
+      add(make('div', 'bar'), capsule('Open on the desk', '', () => openDeskPreview(run, 'migration'),
+        'unfinished-desk-open')));
+  }
   return node;
+}
+
+async function openDeskPreview(run, kind) {
+  view.deskPreview = null;
+  view.deskPreviewError = '';
+  openSheet(kind === 'ready' ? 'desk-ready' : 'desk-migration', kind === 'ready' ? 'mark-ready' : 'unfinished-desk-open')();
+  const sheet = view.sheet;
+  try {
+    const found = await ask(kind === 'ready' ? 'desk-ready-context' : 'desk-migration-preview', { path: run.path });
+    if (view.path === run.path && view.sheet === sheet) {
+      view.deskPreview = found;
+      drawSheet();
+    }
+  } catch (error) {
+    if (view.sheet === sheet) { view.deskPreviewError = error.message; drawSheet(); }
+  }
+}
+
+function migrationSheet() {
+  const found = view.deskPreview;
+  const node = make('form', 'create-flow card');
+  const problem = problemLine();
+  add(node, make('p', '', 'Keep the saved slide parts and continue editing in conversation.'));
+  if (!found) add(node, make('p', 'quiet', view.deskPreviewError || 'Reading saved work…'));
+  else {
+    add(node, make('p', '', found.consequences), bullets(found.retained || []));
+    if (list(found.blockers).length) add(node, make('p', 'problem', 'Before opening:'), bullets(found.blockers));
+  }
+  const apply = submitButton('Apply', 'migration-apply');
+  apply.disabled = !found || !found.expected || list(found.blockers).length > 0;
+  add(node, problem, add(make('div', 'bar create-foot'), apply,
+    capsule('Cancel', 'quiet', closeSheet, 'cancel')));
+  node.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (apply.disabled) return;
+    apply.disabled = true;
+    try {
+      view.run = await send('desk-migrate', { path: view.path, expected: found.expected });
+      closeSheet(); paintDeck(true);
+    } catch (error) { say(problem, error.message); apply.disabled = false; }
+  });
+  return [add(make('div', 'sheet-heading'), sheetTitle('Open on the desk')), node];
+}
+
+function readySheet() {
+  const found = view.deskPreview;
+  const node = make('form', 'create-flow card');
+  const problem = problemLine();
+  add(node, make('p', '', 'Approve the checked deck as it is shown. Delivery is a separate action.'));
+  const requirements = found && found.requirements;
+  if (!requirements) add(node, make('p', 'quiet', view.deskPreviewError || 'Reading the current deck…'));
+  else {
+    add(node, make('p', '', requirements.reviewed ? 'The deck was reviewed.' : 'The deck has not been reviewed.'),
+      make('p', '', requirements.consequences));
+    if (list(requirements.blockers).length) add(node,
+      make('p', 'problem', 'Your approval includes these brand blockers:'),
+      bullets(requirements.blockers.map((one) => (one.number ? 'Slide ' + one.number + ': ' : '') + one.says)));
+  }
+  const label = make('label', 'field-label', 'Your approval');
+  label.htmlFor = 'ready-response';
+  const response = make('textarea', 'input');
+  response.id = 'ready-response'; response.maxLength = 4000; response.rows = 3;
+  const go = submitButton('Mark ready', 'ready-confirm');
+  go.disabled = true;
+  response.addEventListener('input', () => { go.disabled = !requirements || !response.value.trim(); });
+  add(node, label, response, problem, add(make('div', 'bar create-foot'), go,
+    capsule('Cancel', 'quiet', closeSheet, 'cancel')));
+  node.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (go.disabled) return;
+    go.disabled = true;
+    try {
+      view.run = await send('desk-ready', { path: view.path, expected_basis: found.expected_basis,
+        seen: requirements.seen, response: response.value.trim() });
+      closeSheet(); paintDeck(true);
+    } catch (error) { say(problem, error.message); go.disabled = false; }
+  });
+  return [add(make('div', 'sheet-heading'), sheetTitle('Mark ready')), node];
 }
 
 // --- one deck: a note for the next step ----------------------------------------------------
@@ -5799,7 +5885,7 @@ function paintDeck(fresh) {
   // A deck started on the desk is drawn by deck-desk.js: its progress until it reaches the
   // desk, and the desk from then on. Every other deck keeps the screen below.
   if (window.deckDesk.opens(run)) {
-    if (run.desk.arrived) window.deckDesk.desk(run, fresh);
+    if (run.desk.arrived || run.desk.migrated) window.deckDesk.desk(run, fresh);
     else window.deckDesk.progress(run, fresh);
     return;
   }

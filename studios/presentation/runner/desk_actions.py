@@ -168,9 +168,12 @@ class DeskActions:
         """What the page's desk shows of a desk deck: its cards, whether it has reached the
         desk, what desk work is under way, and what Deliver is bound to."""
         state = build.read_state(root)
+        from runner.desk_ready import status as ready_status
         shown = desk.cards(root, record, lambda section: desk.section_price(
             record, state, section)['says'])
-        return {**shown, 'arrived': desk.arrived(record), 'seen': desk.revision(record),
+        return {**shown, **ready_status(root, record), 'migrated': bool(record.get('unfinished_migration')),
+                'saved_status': record.get('migration_saved_status'),
+                'arrived': desk.arrived(record), 'seen': desk.revision(record),
                 'progress': None if desk.arrived(record) else {
                     'minutes_left': desk.estimate(record), 'started_at': record.get('created')},
                 'working': None if decks.in_conversation(record) else desk.working(root, record, state),

@@ -246,7 +246,7 @@ class Desk:
 
     def read(self, ident):
         root = Path(ident)
-        run = home.read_json(root / decks.RUN, {}) or {}
+        run = decks.read_run(root)
         held = run.get('desk') or {}
         return {'revision': int(held.get('revision') or 1), 'changed': held.get('changed') or {},
                 'slides': {slide.get('id'): slide.get('notes') or ''

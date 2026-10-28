@@ -394,7 +394,7 @@
 
   function above(run) {
     const route = h.routeWords(run);
-    const runs = h.theirs(run) ? (run.driver ? 'Run by ' + h.nameOf(run.driver)
+    const runs = run.execution === 'conversation' ? 'In conversation' : h.theirs(run) ? (run.driver ? 'Run by ' + h.nameOf(run.driver)
       : 'Nobody is running it') : run.driver ? 'Runs on this computer' : '';
     return [make('span', '', [route, 'On the desk', runs].filter(Boolean).join(' · '))];
   }
@@ -616,11 +616,12 @@
     const pause = pausedAtLook(run);
     const lead = h.view.sheet || read ? '' : run.question ? 'answer'
       : run.problem && run.problem.action ? 'problem' : pause ? 'look'
-        : found.delivered || found.deliverable === false ? '' : 'deliver';
+        : run.execution === 'conversation' ? (found.can_mark_ready ? 'ready' : '')
+          : found.delivered || found.deliverable === false ? '' : 'deliver';
     h.view.lead = lead;
     const own = found.level === 'selected';
     const tab = !own && held.tabs[path] === 'outline' ? 'outline' : 'slides';
-    const can = !read && found.drawn_here;
+    const can = !read && found.drawn_here && run.execution !== 'conversation';
     const finish = can && !own && kit && finishing();
     h.placeParts({ title, above: above(run), back: true, actions: deskActions(run, lead),
       mark: ['desk', title, run.state, lead, read, run.driver, working, found.drawn_here,
@@ -629,12 +630,21 @@
       pause ? ['look-pause', [run.gate, lead], () => lookPause(run, lead === 'look')] : null,
       working ? ['working', [found.working, read], () => workingPart(run)] : null,
       !found.drawn_here ? ['away', [found.no_drawing, found.draw_here_price, read, working],
-        () => awayPart(run)] : null,
+        () => run.execution === 'conversation' ? h.add(h.card('Drawing'),
+          make('p', '', 'No checked drawing is available here. Continue the focused work in conversation.')) : awayPart(run)] : null,
       found.delivered ? ['delivered', [found.delivered, title], () => deliveredPart(run)]
         : null,
+      run.execution === 'conversation' ? ['conversation', [found.ready, found.ready_problem],
+        () => h.add(make('div', 'intro'), make('p', '', found.ready
+          ? 'Ready. Your approval is recorded; nothing has been delivered.'
+          : 'Work continues in conversation. Mark ready after reviewing the checked deck.'),
+        found.ready_problem ? make('p', 'quiet', found.ready_problem) : null)] : null,
+      found.saved_status ? ['saved-status', [found.saved_status], () => h.add(h.card('Saved runner history'),
+        make('p', '', found.saved_status.why || 'The previous runner stopped.'),
+        make('p', 'quiet', 'That stop is retained in History. Conversation editing will not resume that runner.'))] : null,
       found.revision ? ['revision', [found.revision], () => make('p', 'quiet', found.revision)]
         : null,
-      ['head', [tab, own], () => headPart(tab, own)],
+      ['head', [tab, own, run.execution], () => headPart(tab, own, run.execution === 'conversation')],
       can && tab === 'slides' && !found.words_locked ? ['selection-bar', [path],
         () => selectionBar()] : null,
       layoutPart(run, tab, own, can, working, finish, fresh),
@@ -671,7 +681,7 @@
   function deskActions(run, lead) {
     if (h.theirs(run)) return [];
     const found = run.desk;
-    const deliver = found.delivered ? null : h.capsule('Deliver', lead === 'deliver' ? 'filled'
+    const deliver = found.delivered || run.execution === 'conversation' ? null : h.capsule('Deliver', lead === 'deliver' ? 'filled'
       : '', h.openSheet('desk-deliver', 'deliver'), 'deliver');
     if (deliver) {
       deliver.disabled = !deliverableNow(found);
@@ -680,10 +690,14 @@
       : 'Download', '', () => h.downloadDeck(run, download), 'download') : null;
     // Finishing opens as a panel beside the slides: the brand check, the review, speaker
     // notes and rehearse.
-    const finish = found.drawn_here && kit && found.level !== 'selected'
+    const finish = run.execution !== 'conversation' && found.drawn_here && kit && found.level !== 'selected'
       ? h.capsule(finishing() ? 'Close Finishing' : 'Finishing', '', toggleFinishing,
         'desk-finishing') : null;
-    return [deliver, download, finish, moreFor(run)];
+    const ready = run.execution === 'conversation' && !found.ready && !found.delivered
+      ? h.capsule('Mark ready', lead === 'ready' ? 'filled' : '',
+        () => openDeskPreview(run, 'ready'), 'mark-ready') : null;
+    if (ready) ready.disabled = !found.can_mark_ready;
+    return [ready, deliver, download, finish, moreFor(run)];
   }
 
   // The redraw under way, said above the desk, with Stop.
@@ -731,7 +745,8 @@
 
   // The one sentence of the desk, and its two tabs. Your own deck at Selected changes has no
   // outline: its slides are the deck's.
-  function headPart(tab, own) {
+  function headPart(tab, own, conversation) {
+    if (conversation) return h.pageHead('Inspect saved slide parts and edit through checked conversation commands, then explicitly mark the checked deck ready.', []);
     if (own) return h.pageHead(OWN_LEDE, []);
     const tabs = h.segmented('The desk', ['Slides', 'Outline'], tab === 'outline' ? 1 : 0,
       (index) => {

@@ -169,6 +169,29 @@ Partial-write failure must roll back the migration metadata without losing prior
 files. Repeating an applied preview returns the same result or a safe changed-state
 refusal, never a second copy.
 
+Presentation Studio preserves the original `run.json` byte-for-byte. Its fixed shared
+writes are `desk/migration.json`, immutable `desk/migration-origin.json` and the existing
+Presentation Studio workspace `hub.json` minimum runtime, raised to at least 4.8.0 without
+lowering a higher value or changing unrelated settings. A local
+`work/desk/migration-transaction.json` protects partial publication and explicit recovery.
+Effective readers, writes, team ownership and replay validate the paired records against
+the original; missing/unknown metadata fails closed. Shared replay requires original and
+outline/inventory metadata, while private sources/drawings are verified locally before
+migration or Ready, since they are intentionally not shared. If every migration trace is
+externally deleted, immutable old records alone cannot establish that migration occurred.
+
+Presentation Studio eligibility is a supported schema 1–3 with usable outline, or Selected
+changes with verified inventory/original deck and required dependencies. Early, unsupported
+or marker-bearing work retains its saved flow. Scope initially permits existing slide-part
+edits only. A prior stopped/failed runner status may become historical in the effective
+desk while its exact original remains; no worker resumes or material becomes complete.
+Explicit `desk ready`/page **Mark ready** records only the person's final approval of the
+actual checked deck, binds current inputs/drawing/brand blockers and actual response, and
+keeps conversation execution. Ready is distinct from Delivered and starts no jobs/copies/
+uploads. Submissions never approve. Compatible setup/join and current locked writers check
+the workspace floor; already configured old runtimes may ignore it and must be closed
+before migration. No retroactive old-process exclusion or automatic update is claimed.
+
 ## Retirement and compatibility evidence
 
 After replacements work, remove current gated-create entry points and review-level

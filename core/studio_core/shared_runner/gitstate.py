@@ -710,6 +710,8 @@ WORKSPACE_CHANGED = ('The workspace changed while sharing was being checked. '
 def require_workspace(workspace):
     if workspace_identity(current()) != workspace_identity(workspace):
         raise WorkspaceError(WORKSPACE_CHANGED)
+    if TOOL == 'presentation-studio' and marker(workspace.repo, workspace.folder) is None:
+        raise WorkspaceError(WORKSPACE_CHANGED)
 
 
 @contextmanager

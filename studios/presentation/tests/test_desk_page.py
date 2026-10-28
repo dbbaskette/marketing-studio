@@ -1382,5 +1382,50 @@ class OpenOnDeskPageTests(DeskPageCase):
         self.assertNotIn('Open on the desk', shot['buttons'])
 
 
+class MigrationPageTests(DeskPageCase):
+    def saved(self):
+        root = runner_support.DeskCase.gated(self)
+        return str(root), self.run_of(str(root))
+
+    def test_preview_cancel_preserves_saved_screen_and_has_no_apply(self):
+        path, view = self.saved()
+        preview = self.get('desk-migration-preview', path=path)
+        result = self.open_deck(path, view, [
+            {'click': 'Open on the desk'}, {'snapshot': 'preview'}, {'click': 'Cancel'},
+            {'snapshot': 'saved'}], **{'GET /api/desk-migration-preview': [ok(preview)]})
+        shot = result['snapshots']['preview']
+        self.assertIn('existing slide parts', shot['sheet'])
+        self.assertIn('Apply', shot['filled'])
+        self.assertEqual(shot['sheetCards'], 1)
+        self.assertNotIn(preview['expected'], shot['sheet'])
+        self.assertEqual(self.posts(result), [])
+
+    def test_apply_then_explicit_ready_without_delivery(self):
+        path, view = self.saved()
+        preview = self.get('desk-migration-preview', path=path)
+        opened = self.post('desk-migrate', {'path': path, 'expected': preview['expected']})
+        context = self.get('desk-ready-context', path=path)
+        response = 'I reviewed these slides and approve them as ready.'
+        approved = self.post('desk-ready', {'path': path, 'expected_basis': context['expected_basis'],
+            'seen': context['requirements']['seen'], 'response': response})
+        self.assertEqual(approved['state'], 'ready')
+        self.assertIsNone(approved['deliver'])
+        result = self.open_deck(path, view, [
+            {'click': 'Open on the desk'}, {'click': 'Apply'}, {'snapshot': 'desk'},
+            {'click': 'Mark ready'}, {'snapshot': 'approval'},
+            {'fill': 'Your approval', 'value': response}, {'click': 'Mark ready'},
+            {'snapshot': 'ready'}], **{
+                'GET /api/desk-migration-preview': [ok(preview)],
+                'POST /api/desk-migrate': [ok(opened)],
+                'GET /api/desk-ready-context': [ok(context)],
+                'POST /api/desk-ready': [ok(approved)],
+                'GET /api/run': [ok(view), ok(view), ok(opened), ok(approved)]})
+        self.assertNotIn('Deliver', result['snapshots']['desk']['buttons'])
+        self.assertEqual(result['snapshots']['approval']['sheetCards'], 1)
+        self.assertIn('nothing has been delivered', result['snapshots']['ready']['text'])
+        self.assertEqual([address for address, _ in self.posts(result)],
+                         ['/api/desk-migrate', '/api/desk-ready'])
+
+
 if __name__ == '__main__':
     unittest.main()
