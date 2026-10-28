@@ -57,6 +57,33 @@ class DraftJobTests(DeckCase):
         self.assertEqual(history['versions'][0]['text'], before['sections'][0]['text'])
         self.assertTrue(self.last(root).get('applied'), (self.last(root), self.record(root)['problem']))
 
+    def test_opening_result_is_saved_as_validated_for_guide_and_brief(self):
+        root = self.desk()
+        for name in (self.NAME, 'brief@101'):
+            with self.subTest(name=name):
+                before = self.card(root, name)
+                original = before['opening']
+                self.assertTrue(original.startswith('# '))
+                self.workers.then('part', lambda tools, job: tools.submit_part(
+                    tools.job['artifacts']['part']['before']))
+                self.ask(root, name=name, part='opening', seen=before['revision'])
+                self.assertTrue(self.last(root)['applied'], self.last(root))
+                self.assertEqual(self.card(root, name)['opening'], original)
+
+    def test_row_163_stop_after_queue_selection_prevents_worker_start(self):
+        root = self.desk()
+        with mock.patch.object(self.engine, 'wake'):
+            self.queue(root)
+        original = self.engine._draft_job
+        def stop_before_lock(root, run, job):
+            self.engine.stop_draft(root, job['id'])
+            return original(root, run, job)
+        with mock.patch.object(self.engine, '_draft_job', side_effect=stop_before_lock):
+            self.engine.wake(root)
+        self.assertEqual(self.last(root)['status'], 'stopped')
+        self.assertEqual(self.workers.of('part'), [])
+        self.assertFalse(any(e.get('via') == 'rewrite' for e in self.saves(root)))
+
     def test_a_result_for_a_changed_part_is_set_aside(self):
         root = self.desk()
         def typing(tools, job):

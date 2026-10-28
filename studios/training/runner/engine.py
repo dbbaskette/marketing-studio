@@ -4257,6 +4257,8 @@ class Engine(Reviewing):
             self._edits_first(root)
             record = self._load(root)
             job = next(j for j in record['drafts']['jobs'] if j['id'] == job['id'])
+            if job.get('status') != 'queued':
+                return  # It may have been stopped after the runner selected it.
             found = self._survey(root, record)
             job.update(status='working', started_at=home.now(), says='Writing this section.')
             self._store(root, record)
@@ -4302,7 +4304,11 @@ class Engine(Reviewing):
                                 raise ValueError(draft_jobs.SOURCES)
                             # Locked identity was checked above; a different section with the
                             # same words as Sources is still editable.
-                            landing = codec.replace(landed=lambda draft, before, text: text)
+                            # Training Studio's opening includes its title, unlike the
+                            # shared Markdown codec's separate title and opening parts.
+                            landing = codec.replace(landed=lambda draft, before, text:
+                                basis.clean(accepted['text']) if job['part'] in codec.fixed
+                                and job['kind'] != 'selection' else text)
                             land = basis.land_selection if job['kind'] == 'selection' else basis.land_part
                             part, before, after, _ = land(draft, job, accepted['text'], landing)
                             codec.set_text(draft, part, after)
