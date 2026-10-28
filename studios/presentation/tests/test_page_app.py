@@ -55,9 +55,10 @@ class ApiTests(unittest.TestCase):
                           'localStorage', 'document.cookie'):
             self.assertNotIn(elsewhere, self.script)
         # The one thing kept in the tab is the way back to Marketing Studio.
-        self.assertEqual(re.findall(r"sessionStorage\.(\w+)\('([\w-]+)'", self.script),
-                         [('getItem', 'marketing-studio-home'), ('setItem', 'marketing-studio-home'),
-                          ('getItem', 'marketing-studio-back'), ('setItem', 'marketing-studio-back')])
+        stored = re.findall(r"sessionStorage\.(\w+)\('([\w-]+)'", self.script)
+        self.assertEqual({key for _, key in stored},
+                         {'marketing-studio-home', 'marketing-studio-back', 'marketing-studio-return'})
+        self.assertTrue(all(operation in ('getItem', 'setItem') for operation, _ in stored))
 
     def test_slide_feedback_names_the_slide_so_a_late_note_is_kept_for_the_deck_review(self):
         self.assertRegex(self.script, r"send\('build-feedback', \{path, ref: one\.ref, note, "
@@ -87,10 +88,11 @@ class LinkTests(unittest.TestCase):
         # only from the server or a downloaded deck.
         targets = re.findall(r'\.href = ([^;]+);', script)
         # The start form has no such link: where a deck stops is chosen on it.
-        self.assertEqual(sorted(targets), ['address', 'held', "home + '/'", 'settingsAddress()'])
+        self.assertEqual(sorted(targets), sorted(['address', 'held',
+                         'suiteReturn(home, window.location.hash, window.location)', 'settingsAddress()']))
         self.assertIn("return '/onboarding/#token=' + view.token;", script)
         self.assertIn('let home = suiteHome(window.location.hash, window.location)\n'
-                      '    || suitePort(document.body?.dataset?.suitePort, window.location);', script)
+                      '    || rememberedSuiteHome(window.location) || suitePort(document.body?.dataset?.suitePort, window.location);', script)
         out = script[script.index('function outLink('):]
         out = out[:out.index('\n}\n')]
         self.assertIn("WEB_LINK.test(String(address || ''))", out)

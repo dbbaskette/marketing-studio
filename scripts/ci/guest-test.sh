@@ -64,14 +64,15 @@ if [[ "${1:-full}" == infographic || "${1:-full}" == infographic-finish || "${1:
       bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
     } 2>&1 | tee "$results_dir/tests.log"
   elif [[ "${1:-full}" == infographic-finish ]]; then
-    # Reuse passing full suite evidence for unchanged shared/other-studio code.
-    # Verify the final review/approval repair with the full native suite and the
-    # same browser + source-independent prepared package journeys.
+    # Reuse passing Blog Studio evidence. Verify shared folder concurrency and
+    # return navigation against root/native and both affected deck studios.
     {
       "$python" -m compileall -q studios/infographic/runner
       node --check studios/infographic/runner/web/app.js
       "$python" -m unittest discover -s studios/infographic/tests -v
-      PYTHONPATH=tests "$python" -m unittest test_infographic_release test_start_stop.ParserTests -v
+      "$python" -m unittest discover -s tests -v
+      (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+      (cd studios/training && bash scripts/ci/check.sh "$python")
     } 2>&1 | tee "$results_dir/tests.log"
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee -a "$results_dir/tests.log"
   else

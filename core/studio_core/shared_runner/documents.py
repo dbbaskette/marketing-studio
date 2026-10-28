@@ -54,6 +54,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import threading
 import unicodedata
 import zipfile
@@ -211,8 +212,20 @@ def _folder(root: Path) -> Path:
     if not IS_ITEM(root):
         raise WorkspaceError(f'There is no {ITEM} in that folder, so it has no documents.')
     folder = root / FOLDER
-    real = all(not part.is_symlink() and (part.is_dir() or not part.exists())
-               for part in (folder.parent, folder))
+    # One observation per component: a missing folder may appear concurrently.
+    # Separate is_dir()/exists() calls can mistake that normal creation for a file.
+    real = True
+    for part in (folder.parent, folder):
+        try:
+            mode = part.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        except OSError:
+            real = False
+            break
+        if not stat.S_ISDIR(mode):
+            real = False
+            break
     if not real or root.resolve() not in folder.resolve().parents:
         raise WorkspaceError(f'{FOLDER} in this {ITEM} is not a real folder of its own, so '
                              'no document was read or kept. Move what is there out of the '
