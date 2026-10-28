@@ -57,11 +57,12 @@ result still has a basis. Submit the exact envelope below with `... desk submit
 | Kind | Target | Payload |
 | --- | --- | --- |
 | `text` | `draft` | `content`: Markdown, up to 200,000 characters; optional `notes` and `gaps` kept outside the writing |
-| `outline` | `outline` | `title`, `opening_brief`, `sections`: rows with `heading` and `brief`; initial outline only, preserving any written sections |
+| `outline` | `outline` | `title`, `opening_brief`, `sections`: rows with `heading` and `brief`; initial outline only, with no existing prose or part History |
 | `part` | `title`, `opening` or an existing section ID | `text`, checked for the part's shape |
 | `research` | `research` | `case`: absolute local Harness Research case directory containing its complete independently reviewed `research/` bundle |
 
-Kinds and targets must match. Research uses the existing bundle checker; raw
+Kinds and targets must match. Clearing prose does not reset existing work to an
+initial outline; use the checked outline editor to retain its sections and History. Research uses the existing bundle checker; raw
 assistant-written research is refused. Use the existing Harness Research contract
 when the person requested research, then submit its checked output. Source IDs,
 editorial notes and publishing gaps stay outside reader-facing prose. Examples

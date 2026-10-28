@@ -164,7 +164,7 @@ def _context(root, ident, target):
             'opening_brief': 'Outline introduction',
             'sections': '1 to '
             + str(desk.SECTIONS)
-            + ' rows with heading and brief, no written sections',
+            + ' rows with heading and brief; new outline start only, without prose or part History',
         },
         'part': {'text': 'Checked text for this existing part only'},
         'research': {
@@ -229,9 +229,19 @@ def submit(root, ident, request):
         elif kind == 'outline':
             if set(payload) - {'title', 'opening_brief', 'sections'}:
                 raise ValueError('An outline takes title, opening_brief and sections.')
-            if draft['opening'].strip() or any(s['text'].strip() for s in draft['sections']):
+            start = desk.read_start(root, ident)
+            prose_parts = ['opening'] + [section['id'] for section in draft['sections']]
+            if (
+                not start
+                or start.get('step') != 'outline'
+                or draft['opening'].strip()
+                or any(section['text'].strip() for section in draft['sections'])
+                or any(desk.versions(root, ident, part) for part in prose_parts)
+                or desk.removed(root, ident)
+            ):
                 raise ValueError(
-                    'Edit an existing outline with checked desk saves; preserve written sections.'
+                    'An initial outline is only for a new unwritten start without part History. '
+                    'Use the checked outline editor to preserve existing sections and History.'
                 )
             job = {'metadata': {'desk': {'basis': desk_jobs._outline_basis(draft)}}}
             desk_jobs._apply_outline(root, ident, draft, job, {'content': json.dumps(payload)})

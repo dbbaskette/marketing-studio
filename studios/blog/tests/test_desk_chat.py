@@ -528,3 +528,63 @@ class ConversationTests(DeskCase):
             begin.assert_called_once_with(self.root, ident)
         self.assertEqual(result['execution'], 'runner')
         self.assertEqual(desk.read_start(self.root, ident)['steps'], ['outline'])
+
+    def test_outline_submission_cannot_hide_history_after_supplied_prose_is_cleared(self):
+        made = self.create()
+        ident = made['id']
+        parts = ['opening'] + [section['id'] for section in made['draft']['sections']]
+        for part in parts:
+            current = desk_chat.read(self.root, ident)
+            desk_chat.save(self.root, ident, current['draft']['revision'], part, '')
+        before = desk_chat.read(self.root, ident)
+        self.assertTrue(all(before['history'][part] for part in parts))
+        files = {
+            str(path.relative_to(self.folder(ident))): path.read_bytes()
+            for path in self.folder(ident).rglob('*')
+            if path.is_file()
+        }
+        context = desk_chat.context(self.root, ident, 'outline')
+        with self.assertRaisesRegex(ValueError, 'initial outline'):
+            desk_chat.submit(
+                self.root,
+                ident,
+                {
+                    'kind': 'outline',
+                    'target': 'outline',
+                    'expected_basis': context['expected_basis'],
+                    'payload': {'sections': [{'heading': 'Replacement', 'brief': 'A new plan.'}]},
+                },
+            )
+        self.assertEqual(desk_chat.read(self.root, ident), before)
+        self.assertEqual(
+            {
+                str(path.relative_to(self.folder(ident))): path.read_bytes()
+                for path in self.folder(ident).rglob('*')
+                if path.is_file()
+            },
+            files,
+        )
+        self.assertEqual(desk.removed(self.root, ident), [])
+
+    def test_cleared_topic_prose_does_not_reset_initial_outline_eligibility(self):
+        made = desk_chat.create(
+            self.root, {'title': 'Synthetic', 'way': 'topic', 'point': 'Retry.'}
+        )
+        ident = made['id']
+        for text in ('A saved opening.', ''):
+            current = desk_chat.read(self.root, ident)
+            desk_chat.save(self.root, ident, current['draft']['revision'], 'opening', text)
+        current = desk_chat.read(self.root, ident)
+        context = desk_chat.context(self.root, ident, 'outline')
+        with self.assertRaisesRegex(ValueError, 'initial outline'):
+            desk_chat.submit(
+                self.root,
+                ident,
+                {
+                    'kind': 'outline',
+                    'target': 'outline',
+                    'expected_basis': context['expected_basis'],
+                    'payload': {'sections': [{'heading': 'Replacement', 'brief': 'A new plan.'}]},
+                },
+            )
+        self.assertEqual(desk_chat.read(self.root, ident), current)
