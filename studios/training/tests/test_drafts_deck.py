@@ -1,6 +1,7 @@
 """The Training Studio desk's scoped deck changes."""
 import copy
 import json
+from unittest import mock
 
 from test_runner_deck import DeckCase, MAJOR, PageCase
 from runner_support import drawn
@@ -73,6 +74,41 @@ class SlideNoteTests(DeckCase):
         self.workers.then('section', compose)
         self.engine.slide_note(root, None, 'check-yourself', 'Make the diagram larger.', seen)
         self.assertIn('this slide has no requested repair. Keep its drawing unchanged.', refusals[0])
+
+    def test_a_note_arriving_after_survey_is_handed_in_before_it_is_done(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.engine.slide_note(root, None, 'check-yourself', 'FIRST NOTE', seen, _defer=True)
+        original_section = self.engine._section
+        original_work = pipeline.section_work
+        captured = []
+        injected = False
+
+        def before_section(root, run, found, step, section, how):
+            nonlocal injected
+            if not injected:
+                injected = True
+                self.engine.slide_note(root, None, 'the-objection', 'SECOND NOTE', seen,
+                                       _defer=True)
+            return original_section(root, run, found, step, section, how)
+
+        def capture_work(*args, **kwargs):
+            work = original_work(*args, **kwargs)
+            captured.append(work.prepared)
+            return work
+
+        with mock.patch.object(self.engine, '_section', side_effect=before_section), \
+                mock.patch.object(pipeline, 'section_work', side_effect=capture_work):
+            self.engine.carry_on(root)
+        self.to_end(root)
+        notes = self.engine._load(root)['deck']['']['notes']
+        self.assertEqual([note['status'] for note in notes], ['done', 'done'])
+        self.assertIn('FIRST NOTE', captured[0]['inputs']['what the person asked'])
+        self.assertIn('SECOND NOTE', captured[0]['inputs']['what the person asked'])
+        self.assertNotIn('the-objection', captured[0]['artifacts']['section']['frozen'])
+        self.assertEqual(set(self.built(root)['rounds'][-1]['review_slides']),
+                         {'the-objection', 'check-yourself'})
 
     def test_a_note_on_a_section_being_drawn_waits(self):
         root = self.begin(flow='desk')

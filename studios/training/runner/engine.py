@@ -2773,12 +2773,19 @@ class Engine(Reviewing):
                            f'Draw section {number} of {workspace.label(whole.artifact)}{again}',
                            f'Drawing section {number} of {workspace.label(whole.artifact)}'
                            f'{again}', 'deck', whole.artifact)
+        note_ids = set()
         if drafts.on_desk(self._load(root)):
             with self.files:
                 record = self._load(root)
-                for note in self._decided(record, level).get('notes') or ():
-                    if note.get('section') == section and note.get('status') == 'waiting':
+                kept = self._decided(record, level)
+                for note in kept.get('notes') or ():
+                    if note.get('section') == section and note.get('status') in ('waiting', 'drawing'):
+                        note_ids.add(note['id'])
                         note['status'] = 'drawing'
+                # Bind the job to the same notes admitted under this lock, including any
+                # that arrived after the survey. A later note cannot join this drawing.
+                mine = replace(found.decks[level], kept=kept)
+                found = replace(found, decks={**found.decks, level: mine})
                 self._store(root, record)
         work = pipeline.section_work(root, found, whole, section,
                                      last_error(self._load(root), it.id), how)
@@ -2788,7 +2795,7 @@ class Engine(Reviewing):
                 record = self._load(root)
                 if drafts.on_desk(record):
                     for note in self._decided(record, level).get('notes') or ():
-                        if note.get('section') == section and note.get('status') == 'drawing':
+                        if note.get('id') in note_ids and note.get('status') == 'drawing':
                             note['status'] = 'waiting'
                     self._store(root, record)
             if outcome.reason == 'stopped':
@@ -2824,7 +2831,7 @@ class Engine(Reviewing):
             record = self._load(root)
             if drafts.on_desk(record):
                 for note in self._decided(record, level).get('notes') or ():
-                    if note.get('section') == section and note.get('status') == 'drawing':
+                    if note.get('id') in note_ids and note.get('status') == 'drawing':
                         note['status'] = 'done'
             self._tried(record, it.id, started_at, outcome.seconds, 'kept',
                         **self._cost(outcome))
