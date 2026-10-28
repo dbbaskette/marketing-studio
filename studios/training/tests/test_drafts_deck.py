@@ -455,3 +455,34 @@ class JudgedSlideWordsTests(JudgedSlideNoteTests):
             with self.assertRaisesRegex(Exception, 'changed while the slide'):
                 self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)
         self.assertEqual(json.loads(file.read_text()), newer)
+
+
+class SlideWordsPreviewTests(DeckCase):
+    def test_two_successful_edits_reuse_the_discoverable_drive_preview(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        left, files = self.engine.previews_left(), list(self.slides.files)
+        self.assertTrue(left)
+        for notes in ('First notes.', 'Second notes.'):
+            seen = self.engine._load(root)['deck']['']['saved']['sha256']
+            self.engine.slide_speaker_notes(root, None, 'check-yourself', notes, seen)
+            self.assertEqual(self.slides.files, files)
+            self.assertEqual(self.engine.previews_left(), left)
+
+    def test_failed_render_keeps_its_remote_receipt_and_retry_reuses_it(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        # Simulate a fresh upload whose rendering failed, as Harness Slides reports it.
+        self.slides.files.append('file-9')
+        refused = workspace.WorkspaceError('Render failed after upload.')
+        refused.left = {'fileId': 'file-9',
+                        'url': 'https://docs.example.com/presentation/d/file-9/edit'}
+        with mock.patch.object(self.slides, 'preview', side_effect=refused):
+            with self.assertRaisesRegex(workspace.WorkspaceError, 'Render failed after upload'):
+                self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)
+        self.assertIn(refused.left['url'], [entry['url'] for entry in self.engine.previews_left()])
+        before = list(self.slides.files)
+        self.engine.slide_speaker_notes(root, None, 'check-yourself', 'New notes.', seen)
+        self.assertEqual(self.slides.files, before)
+        self.assertIn(refused.left['url'], [entry['url'] for entry in self.engine.previews_left()])

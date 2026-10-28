@@ -2006,12 +2006,13 @@ class Engine(Reviewing):
     def _how(self, root: Path, found: pipeline.Survey, level: str | None) -> dict:
         """How one deck's previews are taken, as `worker_tools.render` takes it."""
         title = found.session['title'] + (f', level {level}' if level else '')
+        prepared = self._preparing_decks.get(root)
+        root = prepared.live if prepared else root
         folder, space = self._previews(), self.space()
         folder.mkdir(parents=True, exist_ok=True)
         name = folder_name(f"{space.name}-{root.name}-{level or ''}")
         return {'renderer': self.deck_needs()['how'], 'lock': str(folder / 'render.lock'),
-                'kept': str(root.parent / 'preview.json' if root in self._preparing_decks
-                            else folder / f'{name}.json'),
+                'kept': str(folder / f'{name}.json'),
                 'named': {'name': f'Preview: {title}', 'training': title, 'path': str(root)}}
 
     def _naming(self, root: Path, session: dict) -> str | None:

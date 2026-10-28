@@ -88,3 +88,31 @@ class PublicationTests(TrainingCase):
                 with self.assertRaisesRegex(WorkspaceError, 'Another Training Studio command'):
                     edit.publish()
         self.assertEqual((self.root / 'a.txt').read_text(), 'old a')
+
+    def test_journal_cleanup_failure_retains_published_round_and_recovery(self):
+        from pathlib import Path
+        unlink = Path.unlink
+        with self.assertRaises((OSError, WorkspaceError)):
+            with deck_edit.PreparedEdit(self.root) as edit:
+                (edit.root / 'a.txt').write_text('new a')
+                drawn = edit.output_folder(edit.root / 'whole-new')
+                drawn.mkdir()
+                (drawn / 'deck.pptx').write_bytes(b'new deck')
+                edit.seal_output(drawn)
+                (edit.root / 'whole-new').mkdir()
+                (edit.root / 'whole-new' / 'deck.pptx').write_bytes(b'new deck')
+
+                def fail(file, *args, **kwargs):
+                    if file.name == 'PUBLISHING.txt':
+                        raise PermissionError('Cannot remove the journal')
+                    return unlink(file, *args, **kwargs)
+
+                with mock.patch.object(Path, 'unlink', fail):
+                    edit.publish()
+        self.assertEqual((self.root / 'a.txt').read_text(), 'new a')
+        self.assertEqual((drawn / 'deck.pptx').read_bytes(), b'new deck')
+        self.assertTrue((edit.folder / 'PUBLISHING.txt').is_file())
+        self.assertTrue(edit.before.is_dir())
+        self.assertTrue(edit.root.is_dir())
+        with self.assertRaisesRegex(WorkspaceError, 'interrupted slide save needs recovery'):
+            deck_edit.check_pending(self.root)

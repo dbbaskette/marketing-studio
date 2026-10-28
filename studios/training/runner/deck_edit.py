@@ -132,11 +132,22 @@ class PreparedEdit:
                 self.recovery = True
                 raise WorkspaceError('The slide could not be saved completely. Later changes were '
                                      f'left alone; the original and prepared files are kept at {self.folder}.') from refusal
-            journal.unlink()
+            self._clear_journal(journal)
             raise
-        journal.unlink()
         self.published = True
+        self._clear_journal(journal)
         return changed
+
+    def _clear_journal(self, journal):
+        # Cleanup is fallible too. Once publication finished, its new round belongs to
+        # the live deck. A failed cleanup keeps both copies and blocks further work.
+        self.recovery = True
+        try:
+            journal.unlink()
+        except OSError as refusal:
+            raise WorkspaceError('The slide save could not finish its recovery record. '
+                                 f'The original and prepared files are kept at {self.folder}.') from refusal
+        self.recovery = False
 
     def __exit__(self, *unused):
         if not self.published and not self.recovery:
