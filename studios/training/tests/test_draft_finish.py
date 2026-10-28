@@ -443,3 +443,118 @@ class FinishingJobTests(DeckCase):
         result = self.finish.finish(self.engine, root, name, 'level', card['revision'])
         self.assertEqual(len(result['finishing']['level']['items']), 1)
         self.assertEqual(len(self.workers.of('question')), research)
+
+
+class FinishingRemovalTests(DeckCase):
+    NAME = FinishingTests.NAME
+    desk, card, ask = FinishingTests.desk, FinishingTests.card, FinishingTests.ask
+
+    def cut(self, root, text, quote, tool='sources', start=None):
+        card = self.card(root)
+        part = card['sections'][0]['id']
+        self.engine.draft_save(root, self.NAME, part, card['revision'], text)
+        card = self.card(root)
+        row = {'part': part, 'quote': quote, 'replacement': '', 'reason': 'Cut this passage.'}
+        if tool == 'sources':
+            row.update(verdict='contradicted', finding='zero-downtime')
+        if start is not None:
+            row['start'] = start
+        def answer(tools, job):
+            ok, said = tools.submit_artifact('finish-' + tool, json.dumps([row]))
+            self.assertTrue(ok, said)
+        self.workers.then('finish-' + tool, answer)
+        checked = self.ask(root, 'finish', tool=tool, seen=card['revision'])
+        return card, checked['finishing'][tool]
+
+    def test_source_removal_applies_only_the_claim_and_keeps_history(self):
+        root = self.desk()
+        text = 'Keep this introduction. The claim is contradicted [1]. Keep the explanation [2].'
+        before, found = self.cut(root, text, 'The claim is contradicted [1]. ')
+        workers = len(self.workers.jobs)
+        original = (root / '101/document.md').read_text()
+        result = self.ask(root, 'apply', job=found['job'], items=[{'id': 'p1'}], seen=before['revision'])
+        self.assertEqual((root / '101/document.md').read_text(),
+                         original.replace('The claim is contradicted [1]. ', '', 1))
+        self.assertEqual(result['sections'][0]['text'], 'Keep this introduction. Keep the explanation [2].')
+        self.assertEqual(result['sections'][1:], before['sections'][1:])
+        self.assertEqual(result['finishing']['sources']['items'][0]['state'], 'applied')
+        self.assertEqual(found['items'][0]['dropped'], [1])
+        history = self.engine.draft_versions(root, self.NAME, before['sections'][0]['id'])
+        self.assertEqual(history['versions'][0]['text'], text)
+        self.assertEqual([e for e in workspace.load(root)['events'] if e['event'] == 'save'][-1]['via'], 'finishing')
+        self.assertEqual(len(self.workers.jobs), workers)
+
+    def test_repeated_cut_uses_the_recorded_character_position(self):
+        root = self.desk()
+        text = '🙂 Keep this. Repeat this. Middle stays. Repeat this. End stays.'
+        quote = 'Repeat this. '
+        before, found = self.cut(root, text, quote, 'level', text.rindex(quote))
+        result = self.ask(root, 'apply', job=found['job'], items=[{'id': 'p1'}], seen=before['revision'])
+        self.assertEqual(result['sections'][0]['text'], '🙂 Keep this. Repeat this. Middle stays. End stays.')
+
+    def test_removal_refuses_a_changed_part(self):
+        root = self.desk()
+        before, found = self.cut(root, 'Keep this. Remove this.', 'Remove this.', 'time')
+        self.engine.draft_save(root, self.NAME, before['sections'][0]['id'], before['revision'],
+                               'Keep my typing. Remove this.')
+        snapshot = (root / '101/document.md').read_bytes()
+        events = workspace.load(root)['events']
+        with self.assertRaisesRegex(page.desk.Refusal, GONE):
+            self.ask(root, 'apply', job=found['job'], items=[{'id': 'p1'}], seen=self.card(root)['revision'])
+        self.assertEqual((root / '101/document.md').read_bytes(), snapshot)
+        self.assertEqual(workspace.load(root)['events'], events)
+        self.assertEqual(self.card(root)['finishing']['time']['items'][0]['state'], 'open')
+
+    def test_cut_cannot_break_a_fence_or_create_an_unknown_reference(self):
+        root = self.desk()
+        for text, quote, reason in [('Keep this.\n\n```text\ncode\n```', '```text\n', 'code block'),
+                                    ('Keep this [1][2].', '][', '12')]:
+            with self.subTest(text=text):
+                before, found = self.cut(root, text, quote, 'time')
+                snapshot = (root / '101/document.md').read_bytes()
+                with self.assertRaisesRegex(page.desk.Refusal, reason):
+                    self.ask(root, 'apply', job=found['job'], items=[{'id': 'p1'}], seen=before['revision'])
+                self.assertEqual((root / '101/document.md').read_bytes(), snapshot)
+
+    def test_deck_cut_keeps_the_remaining_words_and_slide_history(self):
+        root = self.desk()
+        name = 'deck@101'
+        card = self.engine.draft_card(root, name)
+        part = next(p for p in card['sections'] if p['slide'] == 'check-yourself' and p['field'] == 'title')
+        quote = part['text'].split()[0] + ' '
+        def answer(tools, job):
+            self.assertTrue(tools.submit_artifact('finish-time', json.dumps([{
+                'part': part['id'], 'quote': quote, 'replacement': '', 'reason': 'Shorter title.'}]))[0])
+        self.workers.then('finish-time', answer)
+        result = self.finish.finish(self.engine, root, name, 'time', card['revision'])
+        found = result['finishing']['time']
+        result = self.finish.apply(self.engine, root, name, found['job'], [{'id': 'p1'}], result['revision'])
+        self.assertTrue(result['slide_result']['fits'])
+        self.assertEqual(next(p for p in result['sections'] if p['id'] == part['id'])['text'], part['text'][len(quote):])
+        self.assertEqual(result['finishing']['time']['items'][0]['state'], 'applied')
+        self.assertEqual(self.engine.slide_versions(root, '101', 'check-yourself')['versions'][0]['source'], 'finishing')
+
+    def test_ambiguous_or_invalid_cut_positions_are_not_guessed(self):
+        from runner import draft_finish
+        text = 'Repeat this. Repeat this.'
+        spec = {'parts': [{'part': 'one', 'text': text}], 'findings': [], 'finish_kind': 'finish-time'}
+        base = {'part': 'one', 'quote': 'Repeat this.', 'replacement': '', 'reason': 'Cut.'}
+        for extra in ({}, {'start': None}, {'start': -1}, {'start': True}, {'start': 2}, {'start': len(text)}):
+            with self.subTest(extra=extra), self.assertRaisesRegex(ValueError, 'character position'):
+                draft_finish.result(json.dumps([{**base, **extra}]), spec)
+
+    def test_removal_cannot_target_locked_sources(self):
+        root = self.desk()
+        card = self.card(root)
+        source = next(p for p in card['sections'] if p.get('locked'))
+        with self.engine.files:
+            sets = self.finish.proposals(self.engine, root, self.NAME)
+            found = sets.keep(self.NAME, 'c' * 32, 'finish-sources', [{
+                'part': source['id'], 'before': source['text'], 'after': '', 'start': 0,
+                'basis': basis.fingerprint(source['text']), 'note': 'Invalid Sources cut.'}])
+        before = (root / '101/document.md').read_bytes()
+        events = workspace.load(root)['events']
+        with self.assertRaisesRegex(page.desk.Refusal, GONE):
+            self.ask(root, 'apply', job=found['job'], items=[{'id': 'p1'}], seen=card['revision'])
+        self.assertEqual((root / '101/document.md').read_bytes(), before)
+        self.assertEqual(workspace.load(root)['events'], events)

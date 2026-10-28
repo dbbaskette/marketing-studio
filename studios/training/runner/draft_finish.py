@@ -3,6 +3,7 @@
 Jobs read saved context only. Nothing changes until Apply; text and slide edits retain
 their existing basis, History and approval rules.
 """
+import copy
 import json
 import re
 import secrets
@@ -192,7 +193,9 @@ def apply(engine, root, name, job, items, seen):
         if 'after' in chosen or 'after' in item:
             engine._edits_first(root)
             with sets.store.making('finishing', None):
-                done = sets.apply(name, seen, job, items)
+                after = chosen.get('after', item.get('after'))
+                done = (remove(sets, name, seen, found, item, draft) if after == ''
+                        else sets.apply(name, seen, job, items))
             # The private typing index excludes output another start worker may still
             # be writing. An edited proposal is the person's saved text, too.
             engine._edited(root, name)
@@ -207,6 +210,31 @@ def apply(engine, root, name, job, items, seen):
     engine.wake(root)
     with engine.files:
         return {**drafts.card(engine, root, name), 'queued': queued['id']}
+
+
+def remove(sets, name, seen, found, item, draft):
+    """Cut one checked passage; the shared proposal API deliberately refuses empty text."""
+    part, codec = item['part'], sets.codec
+    before = codec.text_of(draft, part)
+    updated = sets.fit(draft, item, '', before)
+    sets.desk.checked_text(part, updated, codec.deepest(draft))
+    candidate = copy.deepcopy(draft)
+    codec.set_text(candidate, part, updated)
+    old, new = codec.join(draft), codec.join(candidate)
+    # A cut may leave an unused Sources entry (shown by normal readiness checks),
+    # but must not create another reference, for example by joining [1] and [2].
+    kind = workspace.split(name)[0]
+    previous = set(checks.citations(old, kind)['problems'])
+    problems = [p for p in checks.citations(new, kind)['problems']
+                if p not in previous and not p.startswith('Sources entry ')]
+    if problems:
+        raise ValueError(problems[0])
+    # The normal desk save preserves metadata, locks Sources by identity and records
+    # the earlier part in History. Settlement follows only a successful write.
+    sets.desk.save(name, seen, part, updated, source='finishing')
+    item['state'] = 'applied'
+    sets.store.write_json(sets.path(name, found['job']), found)
+    return {'applied': 1, 'left': []}
 
 
 def landed(engine, root, job):
@@ -296,9 +324,15 @@ def result(content, spec):
             raise ValueError(UNREADABLE)
         part, before, after = row['part'], row['quote'], row['replacement']
         text = texts.get(part)
-        if text is None or not shared.once(text, before):
-            raise ValueError('Each suggestion must quote one passage in a supplied part. Leave Sources alone.')
+        start = row.get('start')
+        if 'start' not in row and text is not None and shared.once(text, before):
+            start = text.index(before)
+        if (text is None or not before or type(start) is not int or start < 0
+                or text[start:start + len(before)] != before):
+            raise ValueError('Each suggestion must quote one passage in a supplied part. '
+                             'Give its character position when repeated. Leave Sources alone.')
         item = {'part': part, 'before': before, 'after': after, 'note': row['reason'],
+                'start': start,
                 'basis': basis.fingerprint(text), 'flag': guards.flags(before, after),
                 'dropped': checks.dropped(before, after)}
         if spec['finish_kind'] == 'finish-sources':
