@@ -253,10 +253,15 @@ def submit(root, ident, request):
             if set(payload) - {'title', 'opening_brief', 'sections'}:
                 raise ValueError('An outline takes title, opening_brief and sections.')
             start = desk.read_start(root, ident)
+            initial_outline = bool(start and start.get('step') == 'outline')
+            if start and current['scope'] == 'outline' and start.get('step') == 'research':
+                steps = start.get('steps') or []
+                initial_outline = (
+                    'research' in steps and 'outline' in steps[steps.index('research') + 1 :]
+                )
             prose_parts = ['opening'] + [section['id'] for section in draft['sections']]
             if (
-                not start
-                or start.get('step') != 'outline'
+                not initial_outline
                 or draft['opening'].strip()
                 or any(section['text'].strip() for section in draft['sections'])
                 or any(desk.versions(root, ident, part) for part in prose_parts)
@@ -465,7 +470,9 @@ def handoff(root, ident, expected_basis, scope):
         }[requested]
         if any(step not in allowed for step in scope):
             raise ValueError('Handoff scope exceeds the currently requested conversation scope.')
-        target = start['step']
+        # A scope change can exclude the old pending step without changing the
+        # saved plan. Bind the explicit handoff to a context the current scope permits.
+        target = start['step'] if start['step'] in allowed else requested
         current = _context(root, ident, target)
         if expected_basis != current['expected_basis']:
             raise ValueError(CHANGED)

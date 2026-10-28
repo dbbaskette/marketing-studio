@@ -696,3 +696,94 @@ class ConversationTests(DeskCase):
             self.assertEqual(
                 json.loads(result.stdout)['draft']['sections'][0]['brief'], rows[0]['brief']
             )
+
+    def test_research_start_narrowed_to_outline_hands_off_with_accessible_current_basis(self):
+        made = desk_chat.create(
+            self.root,
+            {
+                'title': 'Synthetic',
+                'way': 'topic',
+                'point': 'Retry.',
+                'research_from': {'sites': [], 'web': True},
+            },
+        )
+        ident = made['id']
+        self.assertEqual(made['start']['steps'], ['research', 'outline', 'draft'])
+        research = desk_chat.context(self.root, ident, 'research')
+        draft = desk_chat.context(self.root, ident, 'draft')
+        with patch('desk_jobs.begin') as begin:
+            with self.assertRaisesRegex(ValueError, 'order'):
+                desk_chat.handoff(
+                    self.root, ident, research['expected_basis'], ['draft', 'outline']
+                )
+            begin.assert_not_called()
+            desk_chat.set_scope(self.root, ident, draft['expected_basis'], 'outline')
+            current = desk_chat.context(self.root, ident, 'outline')
+            before = desk_chat.read(self.root, ident)
+            with self.assertRaisesRegex(ValueError, 'changed'):
+                desk_chat.handoff(self.root, ident, draft['expected_basis'], ['outline'])
+            self.assertEqual(desk_chat.read(self.root, ident), before)
+            with self.assertRaisesRegex(ValueError, 'scope'):
+                desk_chat.handoff(self.root, ident, current['expected_basis'], ['outline', 'draft'])
+            self.assertEqual(desk_chat.read(self.root, ident), before)
+            begin.assert_not_called()
+            handed = desk_chat.handoff(self.root, ident, current['expected_basis'], ['outline'])
+            begin.assert_called_once_with(self.root, ident)
+        self.assertEqual(handed['execution'], 'runner')
+        self.assertEqual(handed['start']['steps'], ['outline'])
+        self.assertEqual(handed['start']['step'], 'outline')
+        self.assertEqual(desk_jobs.jobs(self.root, ident), [])
+
+    def test_explicit_outline_narrowing_allows_only_unwritten_initial_submission(self):
+        for with_history in (False, True):
+            with self.subTest(with_history=with_history):
+                made = desk_chat.create(
+                    self.root,
+                    {
+                        'title': 'Synthetic',
+                        'way': 'topic',
+                        'point': 'Retry.',
+                        'research_from': {'sites': [], 'web': True},
+                    },
+                )
+                ident = made['id']
+                if with_history:
+                    for text in ('A prior opening.', ''):
+                        current = desk_chat.read(self.root, ident)
+                        desk_chat.save(
+                            self.root, ident, current['draft']['revision'], 'opening', text
+                        )
+                outline = desk_chat.context(self.root, ident, 'outline')
+                payload = {'sections': [{'heading': 'A focused outline', 'brief': 'Keep work.'}]}
+                # An unchanged draft request still cannot skip pending research.
+                with self.assertRaisesRegex(ValueError, 'initial outline'):
+                    desk_chat.submit(
+                        self.root,
+                        ident,
+                        {
+                            'kind': 'outline',
+                            'target': 'outline',
+                            'expected_basis': outline['expected_basis'],
+                            'payload': payload,
+                        },
+                    )
+                draft = desk_chat.context(self.root, ident, 'draft')
+                desk_chat.set_scope(self.root, ident, draft['expected_basis'], 'outline')
+                outline = desk_chat.context(self.root, ident, 'outline')
+                before = desk_chat.read(self.root, ident)
+                request = {
+                    'kind': 'outline',
+                    'target': 'outline',
+                    'expected_basis': outline['expected_basis'],
+                    'payload': payload,
+                }
+                if with_history:
+                    with self.assertRaisesRegex(ValueError, 'initial outline'):
+                        desk_chat.submit(self.root, ident, request)
+                    self.assertEqual(desk_chat.read(self.root, ident), before)
+                else:
+                    result = desk_chat.submit(self.root, ident, request)
+                    self.assertEqual(result['draft']['sections'][0]['heading'], 'A focused outline')
+                    self.assertEqual(result['scope'], 'outline')
+                    self.assertEqual(result['execution'], 'conversation')
+                self.assertEqual(desk_jobs.jobs(self.root, ident), [])

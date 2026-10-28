@@ -108,7 +108,8 @@ tool; its existing version, team and worker checks still apply. Automatic begin,
 retry and continuation remain blocked for conversation work.
 
 Only when the person asks the runner to continue, read context for the current
-remaining step (`research`, `outline` or `draft`), then run:
+remaining step (`research`, `outline` or `draft`). If a scope change excludes
+that step, read context for the current scope target instead. Then run:
 
 ```sh
 ... desk handoff --article ID --input handoff.json

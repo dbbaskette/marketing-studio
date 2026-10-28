@@ -4208,7 +4208,8 @@ assert.ok(descendants(panel()).some(n=>n.tagName==='mark'&&n.textContent==='here
   ],{summary:'Synthetic retrieval advice.'})}};
   f.set('next',view);await f.run('studio.desk.view=next;sDeskPanelShow(studio.desk)');
   assert.deepEqual(descendants(item('p1')).filter(n=>n.tagName==='h4').map(n=>n.textContent),['Before','After']);
-  assert.ok(descendants(panel()).some(n=>n.textContent.includes('Synthetic retrieval advice.')));
+  const geoSummary=descendants(panel()).find(n=>n.textContent.includes('Synthetic retrieval advice.'));
+  assert.match(geoSummary.textContent,/Synthetic retrieval advice\.$/,'a complete summary sentence has one terminal full stop');
   await inItem('p1','Apply').listeners.click();
   assert.deepEqual(last('/api/desk-apply').items,[{id:'p1'}]);
   // 6. Headline and opening: alternatives to use.
