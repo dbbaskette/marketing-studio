@@ -213,6 +213,49 @@ class SavedWorkTests(StudioCase):
         self.assertEqual(next(entry['status'] for entry in said['paths']
                               if entry['id'] == 'gated-flow'), 'needed')
 
+    def test_inventory_excludes_session_and_material_links_before_reading(self):
+        for conversation in (False, True):
+            for linked in ('session', 'material', 'dangling-run'):
+                with self.subTest(conversation=conversation, linked=linked):
+                    root = self.chat(f'linked-chat-{linked}') if conversation else self.saved(f'linked-run-{linked}')
+                    outside = self.base / f'outside-{conversation}-{linked}'
+                    outside.mkdir()
+                    if linked == 'session':
+                        session = root / workspace.STATE_DIR / 'session.json'
+                        target = outside / 'session.json'
+                        target.write_bytes(session.read_bytes())
+                        session.unlink()
+                        session.symlink_to(target)
+                    elif linked == 'material':
+                        (outside / 'report.md').write_text('Synthetic private material')
+                        material = root / 'research'
+                        if material.exists():
+                            import shutil
+                            shutil.rmtree(material)
+                        material.symlink_to(outside, target_is_directory=True)
+                    else:
+                        run = root / '.training-studio/run.json'
+                        run.unlink(missing_ok=True)
+                        run.symlink_to(outside / 'missing.json')
+                    before = {path: path.read_bytes() for path in outside.iterdir() if path.is_file()}
+                    original = Path.read_text
+                    def guarded(path, *args, **kwargs):
+                        if path.resolve().is_relative_to(outside.resolve()):
+                            raise AssertionError('Inventory read excluded bytes')
+                        return original(path, *args, **kwargs)
+                    original_load = workspace.load
+                    def guarded_load(folder):
+                        if folder == root:
+                            raise AssertionError('Linked candidate reached a material reader')
+                        return original_load(folder)
+                    with mock.patch.object(Path, 'read_text', guarded), \
+                            mock.patch.object(workspace, 'load', guarded_load):
+                        said = self.engine.saved_work()
+                    self.assertFalse(said['complete'])
+                    self.assertEqual(said['unused'], [])
+                    self.assertTrue(any(entry['path'] == str(root) for entry in said['issues']))
+                    self.assertEqual({path: path.read_bytes() for path in outside.iterdir() if path.is_file()}, before)
+
     QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
     CHAT = 'A conversation training whose research has not started.'
     LAYOUT = 'It began before the current review layout, and its final review is still to come.'

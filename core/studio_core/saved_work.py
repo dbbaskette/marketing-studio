@@ -141,3 +141,21 @@ def registered_roots(registry: Path, key: str, issues: list) -> list[Path]:
     except (OSError, ValueError, TypeError) as exc:
         issue(issues, registry, str(exc))
         return []
+
+
+def checked_tree(root: Path) -> None:
+    """Refuse linked or unenumerable material before a broad saved-work reader runs.
+
+    Callers validate a required record's ancestors first. Inspect directory entries only;
+    never descend through a link, including a dangling link.
+    """
+    import stat
+
+    pending = [root]
+    while pending:
+        path = pending.pop()
+        mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            raise ValueError(f'Symbolic link excluded: {path}')
+        if stat.S_ISDIR(mode):
+            pending.extend(path.iterdir())

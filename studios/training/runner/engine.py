@@ -7285,6 +7285,8 @@ class Engine(Reviewing):
                 continue
             seen.add(root.absolute())
             try:
+                saved_work.checked_path(root / workspace.STATE_DIR / 'session.json')
+                saved_work.checked_tree(root)
                 if not (root / RECORD).exists() and (root / workspace.STATE_DIR / 'session.json').exists():
                     saved_work.checked_path(root / workspace.STATE_DIR / 'session.json')
                     session = workspace.load(root)

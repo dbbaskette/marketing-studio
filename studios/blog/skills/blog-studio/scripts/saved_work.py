@@ -53,10 +53,11 @@ def scan(root: Path, folders=()) -> dict:
             title = record.get('title') or directory.name
             draft = directory / 'desk' / 'draft.json'
             if draft.exists() or draft.is_symlink():
-                inventory.checked_path(draft)
-                if studio.read_json(draft).get('schema') != 1:
-                    raise ValueError('Unsupported desk record schema.')
-                continue
+                try:
+                    inventory.checked_path(draft)
+                    _check_desk(studio.read_json(draft))
+                except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
+                    inventory.issue(issues, draft, str(exc))
             run_path = directory / 'derived' / 'blog-run.json'
             if not run_path.exists() and not run_path.is_symlink():
                 continue  # A conversation article has no guided run.
@@ -96,3 +97,23 @@ def scan(root: Path, folders=()) -> dict:
         },
         issues=issues,
     )
+
+
+def _check_desk(draft):
+    """Check the supported saved shape without desk.read's cleanup writes."""
+    if not isinstance(draft, dict) or draft.get('schema') != 1:
+        raise ValueError('Unsupported desk record schema.')
+    for key, kind in (
+        ('id', str),
+        ('title', str),
+        ('revision', int),
+        ('opening', str),
+        ('sections', list),
+    ):
+        if not isinstance(draft.get(key), kind):
+            raise ValueError(f'Desk record has no usable {key}.')
+    for section in draft['sections']:
+        if not isinstance(section, dict) or any(
+            not isinstance(section.get(key), str) for key in ('id', 'heading', 'text')
+        ):
+            raise ValueError('Desk record has an unreadable section.')

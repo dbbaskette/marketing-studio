@@ -75,6 +75,56 @@ class SavedWorkTests(unittest.TestCase):
                 self.assertEqual(said['scope']['roots'][0], str(declared))
                 self.assertEqual(list((target / 'nested').iterdir()), [])
 
+    def test_malformed_desk_and_retained_unreadable_run_are_unknown(self):
+        directory = self.root / 'articles' / 'saved'
+        self.write(
+            directory / 'session.json', {'id': 'saved', 'title': 'Synthetic', 'mode': 'first-draft'}
+        )
+        for draft in (
+            {'schema': 1},
+            {
+                'schema': 1,
+                'id': 'saved',
+                'revision': 1,
+                'title': 'Synthetic',
+                'opening': '',
+                'sections': [],
+            },
+        ):
+            self.write(directory / 'desk' / 'draft.json', draft)
+            run = directory / 'derived' / 'blog-run.json'
+            if draft.get('sections') is not None:
+                self.write(run, {'schema': 999})
+            else:
+                run.unlink(missing_ok=True)
+            before = self.snapshot()
+            said = saved_work.scan(self.root)
+            self.assertFalse(said['complete'])
+            self.assertEqual(said['unused'], [])
+            self.assertEqual(self.snapshot(), before)
+
+    def test_valid_desk_and_malformed_desk_with_known_retained_run(self):
+        directory = self.root / 'articles' / 'saved'
+        self.write(
+            directory / 'session.json', {'id': 'saved', 'title': 'Synthetic', 'mode': 'first-draft'}
+        )
+        draft = {
+            'schema': 1,
+            'id': 'saved',
+            'revision': 1,
+            'title': 'Synthetic',
+            'opening': '',
+            'sections': [{'id': 'section-1', 'heading': 'Example', 'text': ''}],
+        }
+        self.write(directory / 'desk' / 'draft.json', draft)
+        self.assertTrue(saved_work.scan(self.root)['complete'])
+        self.write(directory / 'desk' / 'draft.json', {'schema': 1})
+        self.write(directory / 'derived' / 'blog-run.json', {'schema': 1, 'approval': 'page'})
+        said = saved_work.scan(self.root)
+        self.assertFalse(said['complete'])
+        gated = next(entry for entry in said['paths'] if entry['id'] == 'gated-flow')
+        self.assertEqual(gated['status'], 'needed')
+
     def test_clean_local_scope(self):
         said = saved_work.scan(self.root)
         self.assertTrue(said['complete'])
