@@ -72,8 +72,9 @@ Blog Studio exposes `scan(root: Path, folders=()) -> dict` and
   recoverable deleted Blog Studio record. Assert no files/bytes changed, no expiry,
   no worker/network call, `complete == False` and no false unused on unknowns.
 - [ ] Run focused tests RED: root `PYTHONPATH=.:tests "$PYTHON" -m unittest test_saved_work -v`;
-  each Studio `"$PYTHON" scripts/ci/run_tests.py --jobs 2 test_saved_work`
-  (deck tests live in existing scanner modules named above).
+  Blog Studio `PYTHONPATH=tests "$PYTHON" -m unittest test_saved_work -v`;
+  deck Studios `"$PYTHON" scripts/ci/run_tests.py --jobs 2` with the existing
+  scanner module names above as positional arguments.
 - [ ] Implement schema and enumeration using the existing readers, without
   `catalog()` cleanup side effects or silently filtering unreadable candidates.
 - [ ] Run root saved-work and deck scanner/CLI tests plus Blog Studio inventory tests GREEN.
@@ -89,12 +90,14 @@ Blog Studio exposes `scan(root: Path, folders=()) -> dict` and
 `save(root, ident, seen, part, text) -> dict` reuse locked desk functions. Expose
 `studio.py --root PATH desk create --input FILE`, `desk show --article ID`,
 `desk save --article ID --input FILE`; input `-` means stdin. Creation never
-calls desk job scheduling; current harness submits content through checked saves.
+calls desk job scheduling; current harness submits content through checked saves. Also expose
+`context(root, ident, target) -> dict` and `submit(root, ident, request) -> dict`
+as `desk context` / `desk submit --input FILE`, using the envelope below.
 
 - [ ] Test conversation creation from supplied draft and scoped topic/outline state,
   checked saves/history, same-part conflict, worker/team refusal, no nested jobs,
   saved author/brand context, Proofread notes/example checks, GEO preview/apply.
-- [ ] Run `"$PYTHON" scripts/ci/run_tests.py --jobs 2 test_desk_chat test_desk_finish test_desk_start` RED.
+- [ ] Run `PYTHONPATH=tests "$PYTHON" -m unittest test_desk_chat test_desk_finish test_desk_start -v` RED.
 - [ ] Add the CLI adapter, retain focused scope, pin defaults at creation, carry brand
   through desk context, port safeguards to Proofread and GEO to Finishing.
 - [ ] Replace public gated `run create` with an actionable desk-command refusal;
@@ -111,11 +114,34 @@ update SKILL.md, desk/workspace/route guidance, VERSION and manifest.
 `show(engine, path) -> dict`, `save(engine, path, request) -> dict` exposed as
 `studio desk create --input FILE`, `studio desk show --folder PATH`,
 `studio desk save --folder PATH --input FILE`. Add explicit conversation execution
-mode to creation; runner scheduling excludes that mode until explicit handoff.
+mode to creation; runner scheduling and recovery exclude that mode until explicit handoff.
+Also add `context(engine, path, target) -> dict`, `submit(engine, path, request) -> dict`,
+`handoff(engine, path, expected_basis, scope) -> dict`, exposed under `studio desk`.
+`context` returns `{target, expected_basis, scope, inputs, requirements}`; submit
+consumes `{kind, target, expected_basis, payload}`. Kinds are `text`, `outline`,
+`research`, `drawing`, and `part`; each dispatches to the existing Studio checker
+and storage, never arbitrary paths. A missing target still has a basis over its
+pinned inputs and requested scope. Submission records dependencies/provenance,
+never approval. Task 2 uses the same envelope with Blog Studio's supported kinds.
+
+Add `core/studio_core/process_lock.py: ProcessRLock(path)` where `path` is a
+zero-argument callable returning the current lock Path. It supports `with`,
+`acquire`, `release`, and `_is_owned` for existing store contracts. Acquire thread
+RLock then persistent OS process lock, bounded wait, reentrant per owning thread;
+release process lock at outermost exit. Lock location is the workspace's resolved
+Git directory / `studios-write.lock`, or product data / `studios-write.lock` when
+unconfigured. Wire both deck Engine.files instances and competing synchronization
+writers; validate lock call sites for mutations outside existing `with files`.
+Use the standard-library OS lock already used by studios-config. Tests belong in
+`tests/test_process_lock.py` and each engine's concurrent-write tests. Read-only
+inventory must remain lock-free. Task 4 consumes this shared contract.
 
 - [ ] Test idea/document/existing-deck creation, original preservation, no assistant
   readiness or wake, no duplicate page pickup, checked outline/notes/word edits,
   team and active-worker refusal, unchanged-section preservation and design answers.
+  Add a complete synthetic conversation from absent outline through usable checked
+  drawing, and reject an upstream change between context and submission. Add real
+  two-process competing writes and page recovery while conversation owns work.
 - [ ] Run `"$PYTHON" scripts/ci/run_tests.py --jobs 2 test_desk_chat` RED.
 - [ ] Reuse validated creation and desk actions with a no-worker execution branch;
   do not bypass drawing/companion checks or delivery approvals. Support local uploads
@@ -131,12 +157,15 @@ mode to creation; runner scheduling excludes that mode until explicit handoff.
 
 **Interfaces:** Same `runner/desk_chat.py` signatures and `studio desk` CLI verbs as
 Task 3, using Training Studio forms/material identifiers and `draft_card/draft_save`.
-Existing `training.py desk` continues to serve the page. Current harness saves
+Existing `training.py desk` continues to serve the page. Add `context` and `submit`
+with the same envelope defined for Task 3. Current harness saves
 initial materials through checked domain submissions, never hand-editing session.json.
 
 - [ ] Test no-worker creation for requested levels/materials, focused work, checked
   initial and subsequent text saves, holds and history, team/worker conflicts,
-  no Ready on acceptance, explicit design answers, no copies or delivery.
+  no Ready on acceptance, explicit design answers, no copies or delivery. Complete
+  a synthetic conversation from absent materials through checked usable outputs;
+  reject changed upstream inputs, and test page recovery leaves chat-owned work alone.
 - [ ] Run `"$PYTHON" scripts/ci/run_tests.py --jobs 2 test_desk_chat` RED.
 - [ ] Implement conversation execution and shared checked submissions; runner cannot
   silently consume the conversation queue. Preserve citations, pins and Google baselines.
@@ -153,14 +182,19 @@ create per-Studio `tests/test_desk_migration.py` and extend fake page journeys.
 and `migrate(..., ident/path, expected: str) -> dict`. CLI verbs
 `desk migration-preview` and `desk migrate --expected TOKEN`; page offers
 **Open on the desk** with preview then apply. Tokens are opaque machine values,
-not displayed hashes. Existing finished adoption remains available.
+not displayed hashes. Existing finished adoption remains available. Add pure
+`prepare_migration(record, saved_inputs) -> dict` producing `{blockers, retained,
+writes}`; writes are a bounded Studio-defined set, not user-supplied paths. Store
+old approval/input records unchanged and desk interpretation separately. Apply
+under the process lock with rollback/recovery, including failure between session
+and run writes; assign conversation execution before registering migrated work.
 
 - [ ] Test interrupted stages with/without usable materials, unchanged file bytes,
   original record/history preservation, real versus automatic approvals, Google
   baselines, cancel, repeated apply, and rollback after a write failure.
 - [ ] Test preview invalidation by teammate, worker, content, source and record
   changes, plus unsupported/missing data refusal leaving original flow usable.
-- [ ] Run per-Studio `test_desk_migration` RED; implement preview and atomic guarded
+- [ ] Run per-Studio `PYTHONPATH=tests "$PYTHON" -m unittest test_desk_migration -v` RED; implement preview and atomic guarded
   metadata changes using the Studio's existing write lock and ownership checks.
 - [ ] Add Training Studio matrix rows 190–193; run migration and finished-adoption
   regressions plus desktop/phone fake journeys GREEN; commit per Studio if needed.

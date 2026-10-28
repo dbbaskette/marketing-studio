@@ -88,6 +88,28 @@ and cross-process locking apply before mutation. A running page cannot pick up
 conversation work and launch a duplicate job; handing execution to the runner is
 an explicit action with known scope.
 
+The concrete submission envelope is `{kind, target, expected_basis, payload}`.
+Context returns pinned inputs, requested scope, validation requirements and a basis
+for an absent target as well as an existing target. Submission supports initial
+text/outline, existing-part edits, and companion-produced research/drawing results;
+these are checked domain operations, never an arbitrary file-write API. A synthetic
+conversation must reach usable materials without falling back to handwritten run
+records or a nested assistant.
+
+The deck engines currently use a thread-only RLock. Add a shared reentrant process
+lock around competing mutations, scoped to the workspace Git directory for Git
+operations (a private persistent `studios-write.lock`), with a product-data lock
+when no repository exists. Acquire the thread lock before the process lock; nested
+acquisitions in one thread reuse the same handle. Recheck state after acquisition.
+All participating page, CLI, worker-settlement and synchronization writers follow
+that order. Blog Studio retains its existing repository/workspace lock order.
+Read-only inventory never acquires a writing lock. Exercise real two-process races.
+
+Conversation execution ownership is checked before recovery cleanup (`_tidy`),
+worker acquisition, wake, queued continuation and interrupted-work repair, not
+only at start. Explicit handoff takes a current basis and requested scope before
+atomically transferring execution; it never interprets a page visit as handoff.
+
 Read and save expose existing text parts and slide operations, including History,
 source checks and readiness invalidation. Training Studio drawing-bound word edits
 continue to require the person's explicit Harness Slides design answers. The caller
@@ -117,6 +139,12 @@ Do not mark a half-finished step complete to make a desk appear. Incomplete mate
 remain incomplete or Draft; no new work is scheduled. Existing finished adoption
 remains supported and idempotent. Missing/unsupported content gets an actionable
 refusal with its original saved flow still available. Cancellation changes nothing.
+Unfinished migration does not call the finished-adoption transform unchanged:
+Training Studio's finished transform intentionally changes practice dependency
+interpretation. Prepare a pure bounded write set, keep the original approvals and
+input records intact, and store desk-specific interpretation separately. Assign
+conversation execution so restart does not resume the older worker. Applying the
+write set is recoverable across a failure between session and run record writes.
 Partial-write failure must roll back the migration metadata without losing prior
 files. Repeating an applied preview returns the same result or a safe changed-state
 refusal, never a second copy.
