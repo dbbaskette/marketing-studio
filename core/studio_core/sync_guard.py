@@ -1,6 +1,7 @@
 """Conservative exclusion of canonical Studio workers during repository replay."""
 import json
 import os
+import stat
 from pathlib import Path
 
 from .blog_migration import dependencies, migration_supported
@@ -138,6 +139,16 @@ def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
         return False
 
     def migration_in_cache(cache):
+        # Recognized items need not have both caches. Inspect the entry once;
+        # absent caches contain no migration and linked roots are never traversed.
+        try:
+            info = cache.lstat()
+        except FileNotFoundError:
+            return False
+        except OSError as error:
+            unknown(error)
+        if not stat.S_ISDIR(info.st_mode):
+            return False
         # Only Blog Studio's fixed migration records override structural cache
         # pruning. Bound this uncertainty check; never silently skip an oversized
         # or unreadable candidate tree and declare replay safe.
