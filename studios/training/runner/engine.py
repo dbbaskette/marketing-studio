@@ -423,10 +423,9 @@ DRIVE = {'preview': 'Preview presentation', 'slides': 'Google Slides deck',
 
 def read_record(root: Path) -> dict | None:
     """A training's run record, or None when no run is driving it."""
-    path = root / RECORD
-    if not path.is_file():
+    record = workspace.read_run(root)
+    if record is None:
         return None
-    record = home.read_json(path, None)
     if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA) \
             or not isinstance(record.get('steps'), dict):
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
@@ -679,6 +678,8 @@ class Engine(Reviewing):
         if found is None:
             raise WorkspaceError('No workspace is set up on this computer yet. Set one up '
                                  'first.')
+        if gitstate.marker(found.repo, found.folder) is None:
+            raise WorkspaceError('The existing Training Studio workspace record is required.')
         return found
 
     def driven(self, path) -> Path | None:
@@ -736,6 +737,7 @@ class Engine(Reviewing):
             return self._runs.setdefault(str(root), _Run())
 
     def _load(self, root: Path) -> dict:
+        self.space()  # enforce the configured workspace's native runtime floor
         deck_edit.check_pending(root)
         record = read_record(root)
         if record is None:
@@ -743,7 +745,7 @@ class Engine(Reviewing):
         return record
 
     def _store(self, root: Path, record: dict) -> None:
-        home.write_json(root / RECORD, record)
+        workspace.write_run(root, record)
 
     def _wanted(self, root: Path, record: dict) -> list[dict]:
         """Every copy the training asks for, with why one could not be made."""
@@ -752,6 +754,12 @@ class Engine(Reviewing):
     def _survey(self, root: Path, record: dict, copies=None) -> pipeline.Survey:
         """Where a training is, with its copies and the person's documents looked at.
         `copies` saves looking at the copies again when the caller just has."""
+        if record.get('unfinished_migration') and drafts.in_conversation(record):
+            # Retained saved inputs only; reading a migrated conversation never probes tools
+            # or repairs the canonical document index. Explicit content checks use scratch.
+            source_index = home.read_json(root / documents_kept.INDEX, {}) if record.get('documents') else {}
+            supplied = source_index.get('documents', [])
+            return pipeline.survey(root, record, self._wanted(root, record) if copies is None else copies, supplied, None)
         supplied = self.documents.listed(root) if record.get('documents') else ()
         copies = self._wanted(root, record) if copies is None else copies
         return pipeline.survey(root, record, copies, supplied, self._deck_here(root, record))
@@ -834,8 +842,19 @@ class Engine(Reviewing):
         return done
 
     def _committed_session(self, root: Path) -> dict:
-        path = gitstate.inside(self.space(), root / workspace.STATE_DIR / 'session.json')
-        return json.loads(hub.git(self.space().repo, 'show', f'HEAD:{path}'))
+        import migration_records
+        from studio_core import training_migration as migration
+        files = {}
+        for name in (migration.SESSION, migration.RUN, *migration.WRITES):
+            result = hub.run(self.space().repo, 'show', f'HEAD:{gitstate.inside(self.space(), root / name)}')
+            if result.returncode == 0:
+                files[name] = result.stdout.encode()
+        # A local-only migration may preserve uncommitted originals. Its immutable
+        # receipt still proves those current bytes; no peer interprets the older HEAD.
+        if not self.space().address and migration.ORIGIN in files and migration_records.pair(root):
+            for name in (migration.SESSION, migration.RUN):
+                files[name] = migration_records._bytes(root / name)
+        return migration_records.from_snapshot(files, migration.SESSION, root.name)
 
     def _typed_here(self, root: Path) -> dict:
         """Validated desk saves not yet committed, including their History and audit.
@@ -925,8 +944,13 @@ class Engine(Reviewing):
         space = self.space()
         session = self._committed_session(root)
         self._typing_into(session, typed)
-        content = {str(root / workspace.STATE_DIR / 'session.json'):
-                   (json.dumps(session, indent=2, sort_keys=True) + '\n').encode()}
+        import migration_records
+        from studio_core import training_migration as migration
+        pair = migration_records.pair(root)
+        session_file = migration.DESK_SESSION if pair else migration.SESSION
+        stored_session = {'origin': pair[0], 'record': session} if pair else session
+        content = {str(root / session_file):
+                   (json.dumps(stored_session, indent=2, sort_keys=True) + '\n').encode()}
         for kept in typed.values():
             content[str(root / kept['file'])] = kept['text']
             content.update({str(root / path): text for path, text in kept['history'].items()})
@@ -1181,6 +1205,33 @@ class Engine(Reviewing):
                             **({'deleted': True} if deleted else {})}
         team.keep('taken', taken)
 
+    def _remote_record(self, space, root, at=None):
+        """Remote original identity plus validated current migration ownership."""
+        import migration_records
+        from studio_core import training_migration as migration
+        files = {}
+        for name in (migration.SESSION, migration.RUN, *migration.WRITES):
+            data = gitstate.theirs(space, root / name, at)
+            if data is not None:
+                files[name] = data.encode()
+        if migration.RUN not in files and not any(name in files for name in migration.WRITES):
+            return None
+        try:
+            record = migration_records.from_snapshot(files, migration.RUN, root.name)
+            if migration.ORIGIN in files:
+                origin = json.loads(files[migration.ORIGIN])
+                for name in (*migration.WRITES, *origin['required']):
+                    relative = gitstate.inside(space, root / name)
+                    mode = hub.run(space.repo, 'ls-tree', '--format=%(objectmode)', at or gitstate.tracking(space), '--', relative)
+                    if mode.returncode or mode.stdout.strip() not in ('100644', '100755'):
+                        raise ValueError('Missing or linked shared migration input')
+                    if name in origin['required']:
+                        data = gitstate.theirs(space, root / name, at)
+                        migration.shared_material(name, data.encode() if data is not None else None)
+            return record
+        except (ValueError, KeyError, TypeError) as error:
+            raise WorkspaceError('The shared Training Studio migration cannot be read. Keep its saved records.') from error
+
     def _learn(self, space: gitstate.Workspace, at: str | None = None) -> None:
         """After a fetch, before anything is replayed: stop every training this computer
         drove that the shared repository now says is someone else's. Its commits that
@@ -1192,13 +1243,16 @@ class Engine(Reviewing):
         for root in self.trainings():
             try:
                 record = read_record(root)
-                if not record or not self._ours(record) \
-                        or gitstate.inside(space, root / RECORD) not in arrived:
+                from studio_core import training_migration as migration
+                import migration_records
+                pair = migration_records.pair(root)
+                paths = (RECORD, *migration.WRITES, *(pair[0]['required'] if pair else ()))
+                if not record or not any(gitstate.inside(space, root / name) in arrived for name in paths):
                     continue
-                theirs = json.loads(gitstate.theirs(space, root / RECORD, at) or 'null')
             except (WorkspaceError, ValueError):
                 continue
-            if not isinstance(theirs, dict) or self._ours(theirs):
+            theirs = self._remote_record(space, root, at)
+            if not self._ours(record) or not isinstance(theirs, dict) or self._ours(theirs):
                 continue    # changed on both sides under our name: the replay reports it
             if drafts.on_desk(record):
                 self._waited(root, self._typed_here(root))
@@ -1241,7 +1295,7 @@ class Engine(Reviewing):
                 theirs = gitstate.theirs(space, root / RECORD, at)
                 if theirs is None or not gitstate.unshared(space, root, at):
                     continue
-                record = json.loads(theirs)
+                record = self._remote_record(space, root, at)
             except (WorkspaceError, ValueError):
                 continue
             who = team.driver(space, record if isinstance(record, dict) else None)
@@ -1387,6 +1441,9 @@ class Engine(Reviewing):
         if space.address is None:
             return
         report = self._pushed(root, space)
+        import migration_records
+        if root.name in self._clash and migration_records.pair(root) is not None:
+            raise WorkspaceError('This migrated training conflicts with another saved training. Resolve the shared versions explicitly.')
         if root.name in self._clash or not team.ours(space, read_record(root) or {}):
             self._clash.pop(root.name, None)
             self._forget(root, space)
@@ -6359,6 +6416,8 @@ class Engine(Reviewing):
                               else 'Paused. Nothing new starts until you resume.')
         if record.get('question'):
             return 'waiting', f"A question is waiting for you: {record['question']['text']}"
+        if drafts.in_conversation(record):
+            return 'waiting', 'Being worked on in conversation. Incomplete materials remain incomplete.'
         if step.kind == 'review':
             return 'waiting', step.step.doing + '.'
         if step.kind == 'wait':
@@ -6590,6 +6649,7 @@ class Engine(Reviewing):
             began = [worker['started_at'] for worker in run.workers.values()]
         return {'state': state, 'sentence': sentence, 'flow': record.get('flow'),
                 'can_open_desk': self._can_open_desk(record, found, state, mine),
+                'can_migrate_desk': bool(mine and not drafts.on_desk(record) and state != 'done'),
                 'needs': needs and mine,
                 'question': asked['text'] if asked and mine else None, 'mine': mine,
                 'driver': who, 'last_shared': last, 'notice': self._notice(root, record),
@@ -6723,7 +6783,9 @@ class Engine(Reviewing):
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
             # A desk run opens on the desk; a saved run keeps its own screens.
             'flow': drafts.FLOW if drafts.on_desk(record) else None,
+            **({'migration_saved_status': record['migration_saved_status']} if record.get('migration_saved_status') else {}),
             'can_open_desk': self._can_open_desk(record, found, state, mine),
+            'can_migrate_desk': bool(mine and not drafts.on_desk(record) and state != 'done'),
             # A desk run has none: a run without one reads as Step by step everywhere else.
             'review_level': None if drafts.on_desk(record) else review_policy.level(record),
             'review': self._review_view(root, record, found),
@@ -7375,7 +7437,8 @@ class Engine(Reviewing):
                             'A conversation training whose research has not started.'))
                     continue
                 saved_work.checked_path(root / RECORD)
-                record = read_record(root)
+                read_record(root)  # validate effective migration state without erasing raw compatibility
+                record = json.loads((root / RECORD).read_bytes())
                 if record is None:
                     raise ValueError('Saved run record is missing.')
                 survey = self._survey_files(root, record)

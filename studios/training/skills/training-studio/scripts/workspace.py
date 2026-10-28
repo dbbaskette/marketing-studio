@@ -138,11 +138,19 @@ def session_path(root: Path) -> Path:
 def load(root: Path) -> dict:
     path = session_path(root)
     if not path.is_file():
+        import migration_records
+        try:
+            migration_records.pair(root)
+        except (ValueError, OSError, KeyError) as error:
+            raise WorkspaceError(str(error)) from error
         raise WorkspaceError('No training in this directory. Run init first.')
     try:
-        session = json.loads(path.read_text(encoding='utf-8'))
-    except ValueError:
-        raise WorkspaceError('The session record is not valid JSON; refusing to change it.')
+        import migration_records
+        session = migration_records.record(root, f'{STATE_DIR}/session.json')
+    except json.JSONDecodeError as error:
+        raise WorkspaceError('The session record is not valid JSON; refusing to change it.') from error
+    except (ValueError, OSError, KeyError) as error:
+        raise WorkspaceError(str(error) or 'The session record cannot be read.') from error
     if not isinstance(session, dict) or session.get('schema') != SCHEMA:
         found = session.get('schema') if isinstance(session, dict) else None
         raise WorkspaceError(f'Unrecognised session schema {found!r}; refusing to change it.')
@@ -179,8 +187,28 @@ def load(root: Path) -> dict:
 
 
 def store(root: Path, session: dict) -> None:
-    text = json.dumps(session, indent=2, sort_keys=True) + '\n'
-    write_atomic(session_path(root), text.encode('utf-8'))
+    import migration_records
+    try:
+        migration_records.write(root, f'{STATE_DIR}/session.json', session, write_atomic)
+    except (ValueError, OSError, KeyError) as error:
+        raise WorkspaceError(str(error)) from error
+
+
+
+def read_run(root):
+    import migration_records
+    try:
+        return migration_records.record(root, f'{STATE_DIR}/run.json')
+    except (ValueError, OSError, KeyError) as error:
+        raise WorkspaceError(str(error)) from error
+
+
+def write_run(root, record):
+    import migration_records
+    try:
+        migration_records.write(root, f'{STATE_DIR}/run.json', record, write_atomic)
+    except (ValueError, OSError, KeyError) as error:
+        raise WorkspaceError(str(error)) from error
 
 
 def log(session: dict, event: str, /, **details) -> None:
@@ -672,7 +700,7 @@ def save(root: Path, name: str, source: Path | None = None, built: bool = False,
     session = load(root)
     spec = artifact(root, session, name)
     if unprovided:
-        run = json.loads((root / STATE_DIR / 'run.json').read_bytes())
+        run = read_run(root)
         if not on_desk(session) or run.get('execution') != 'conversation' or split(name)[0] != 'blueprint' or tuple(unprovided) != ('research',):
             raise WorkspaceError('Only a focused conversation plan may record research that was not supplied.')
         session['artifacts'].setdefault(name, {})['unprovided_inputs'] = list(unprovided)

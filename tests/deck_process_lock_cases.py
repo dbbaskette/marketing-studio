@@ -27,6 +27,9 @@ class EngineProcessLockCases:
             record.parent.mkdir(parents=True, exist_ok=True)
             record.write_text(json.dumps({'schema': 1, 'steps': {}, 'count': 0,
                                          'unrelated': {'original': True}}))
+            (repo / 'items/hub.json').write_text(json.dumps({
+                'schema': 1, 'tool': self.gitstate.TOOL, 'name': 'Disposable Test',
+                'folder': 'items', 'branch': 'main', 'minimum_runtime': self.gitstate.installed()}))
             (repo / 'unrelated.txt').write_text('preserve me')
             git('add', '.')
             git('commit', '--quiet', '-m', 'initial')

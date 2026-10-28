@@ -1,18 +1,19 @@
 """Conservative exclusion of canonical Studio workers during repository replay."""
 import json
+import base64
 import os
 import stat
 from pathlib import Path
 
 from .blog_migration import dependencies, migration_supported
-from . import presentation_migration
+from . import presentation_migration, training_migration
 
 SYNC_WAIT = ('A Studio step is still in progress in this repository. Stop it or wait for it '
              'to finish, then share again. A stopped or interrupted step can leave a marker; '
              'if sharing still waits, reopen the Studio to recover the saved work first.')
 
 
-def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentation=None) -> bool:
+def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentation=None, recovering_training=None) -> bool:
     """Check known canonical worker records without following directory links.
 
     A missing marker is idle; unreadable scope or a malformed Blog Studio worker
@@ -55,7 +56,7 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
                 unknown(error)
         return False
 
-    def small_bytes(path):
+    def small_bytes(path, limit=1_000_000):
         try:
             # Metadata reached through a link cannot prove this folder owns caches.
             # Stop at the scanned root; ancestors outside it are not scan evidence.
@@ -65,13 +66,13 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
                 if candidate == repo:
                     break
             with path.open('rb') as handle:
-                text = handle.read(1_000_001)
-            return text if len(text) <= 1_000_000 else None
+                text = handle.read(limit + 1)
+            return text if len(text) <= limit else None
         except (OSError, ValueError):
             return None
 
-    def small_record(path):
-        raw = small_bytes(path)
+    def small_record(path, limit=1_000_000):
+        raw = small_bytes(path, limit)
         try:
             return json.loads(raw) if raw is not None else None
         except (ValueError, UnicodeError):
@@ -173,6 +174,8 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
                 unknown(ValueError('Migration scope too large'))
             if blog_migration(Path(folder)):
                 return True
+            if training_busy(Path(folder)):
+                return True
             if presentation_busy(Path(folder)):
                 return True
             if any(present(Path(folder) / name) for name in ('.harness-slides/design/.lock', '.studio-research/lock')):
@@ -181,8 +184,32 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
                               and not (Path(folder) / name).is_symlink()]
         return False
 
+    def training_recovery(folder, pending):
+        value = small_record(pending, 8_000_000)
+        if not (isinstance(value, dict) and type(value.get('schema')) is int and value['schema'] == 1
+                and value.get('product') == 'Training Studio' and value.get('id') == folder.name
+                and isinstance(value.get('expected'), str) and value['expected'].startswith('tm1.')
+                and isinstance(value.get('after'), dict) and set(value['after']) ==
+                    {*training_migration.WRITES, '@training-workspace/hub.json'}):
+            return False
+        try:
+            after = {name: base64.b64decode(data, validate=True) for name, data in value['after'].items()}
+            if any(len(data) > 1_000_000 for data in after.values()):
+                return False
+            origin = json.loads(after[training_migration.ORIGIN])
+            training_migration.validated(origin, json.loads(after[training_migration.DESK_SESSION]),
+                json.loads(after[training_migration.DESK_RUN]), small_bytes(folder / training_migration.SESSION),
+                small_bytes(folder / training_migration.RUN), folder.name)
+            return origin['expected'] == value['expected']
+        except (ValueError, TypeError, KeyError):
+            return False
+
     def presentation_busy(folder):
         pending = folder / presentation_migration.PENDING
+        if pending == recovering_training and present(folder / training_migration.RUN):
+            if not training_recovery(folder, pending):
+                return True
+            return False  # verified product/id; domain verifies the exact locked journal
         if present(pending) and pending != recovering_presentation:
             return True
         marker, origin = folder / presentation_migration.RECORD, folder / presentation_migration.ORIGIN
@@ -206,8 +233,35 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
                 unknown(error)
         return False
 
+    def training_busy(folder):
+        pending = folder / training_migration.PENDING
+        if pending == recovering_presentation and present(folder / 'run.json'):
+            value = small_record(pending)
+            if isinstance(value, dict) and set(value) == {'schema', 'expected', 'original', 'after', 'before_workspace', 'index_before'} and str(value.get('expected', '')).startswith('pm1.'):
+                return False  # its exact product format is validated under the caller lock
+            return True
+        if present(pending) and pending != recovering_training:
+            return True
+        if pending == recovering_training:
+            return not training_recovery(folder, pending)
+        if any(present(folder / name) for name in training_migration.WRITES):
+            try:
+                origin = small_record(folder / training_migration.ORIGIN)
+                training_migration.validated(origin,
+                    small_record(folder / training_migration.DESK_SESSION),
+                    small_record(folder / training_migration.DESK_RUN),
+                    small_bytes(folder / training_migration.SESSION),
+                    small_bytes(folder / training_migration.RUN), folder.name)
+                for name in origin['required']:
+                    training_migration.shared_material(name, small_bytes(folder / name))
+            except (ValueError, TypeError, KeyError, OSError) as error:
+                unknown(error)
+        return False
+
     for folder, directories, _ in os.walk(repo, followlinks=False, onerror=unknown):
         here = Path(folder)
+        if training_busy(here):
+            return True
         if presentation_busy(here):
             return True
         if blog_migration(here):

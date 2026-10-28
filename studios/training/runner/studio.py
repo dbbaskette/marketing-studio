@@ -212,11 +212,15 @@ def desk_command(args, make=engines.Engine, out=None):
                     raise WorkspaceError('The upload must be a local file of at most 64 MB.')
                 uploads[name] = source.read_bytes()
             result = desk_chat.create(engine, data, uploads)
+        elif action == 'migration-preview':
+            result = desk_chat.migration_preview(engine, args.folder)
+        elif action == 'migrate':
+            result = desk_chat.migrate(engine, args.folder, args.expected)
         elif action == 'show':
             result = desk_chat.show(engine, args.folder)
         elif action == 'context':
             result = desk_chat.context(engine, args.folder, args.target)
-        elif action in ('save', 'submit', 'answer', 'ready', 'return-delivered'):
+        elif action in ('save', 'submit', 'answer', 'ready', 'return-delivered', 'migration-preview', 'migrate'):
             result = getattr(desk_chat, action.replace('-', '_'))(engine, args.folder, data)
         else:
             required = {'expected_basis', 'scope'}
@@ -250,12 +254,14 @@ def parser() -> argparse.ArgumentParser:
     saving.set_defaults(handler=saved_work)
     conversation = commands.add_parser('desk', help='checked conversation work as JSON')
     actions = conversation.add_subparsers(dest='desk_action', required=True)
-    for name in ('create', 'show', 'save', 'context', 'submit', 'scope', 'handoff', 'take', 'answer', 'ready', 'return-delivered'):
+    for name in ('create', 'show', 'save', 'context', 'submit', 'scope', 'handoff', 'take', 'answer', 'ready', 'return-delivered', 'migration-preview', 'migrate'):
         action = actions.add_parser(name)
         if name != 'create':
             action.add_argument('--folder', required=True, type=Path)
-        if name not in ('show', 'context'):
+        if name not in ('show', 'context', 'migration-preview', 'migrate'):
             action.add_argument('--input', required=True, help='JSON file, or - for stdin')
+        if name == 'migrate':
+            action.add_argument('--expected', required=True)
         if name == 'context':
             action.add_argument('--target', required=True)
         action.set_defaults(handler=desk_command)

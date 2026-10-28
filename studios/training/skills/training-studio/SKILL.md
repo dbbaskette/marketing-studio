@@ -11,7 +11,7 @@ Use checked `studio desk` commands for new work: [conversation](references/conve
 
 In a configured workspace, use `studio desk create --input FILE` with intake and scope. Inspect with `studio desk show --folder PATH`; only a person request authorizes `desk take`. Never edit records or History by hand. Preserve pins, practice metadata, sources, Google baselines and readiness.
 
-**Saved work:** `training.py status` keeps the original saved flow. The helper is the bootstrap entry's helper command. Report title, stage, level and what needs attention; follow the stage map, [saved intake](references/intake.md) and [saved gates](references/gates.md). A saved research pin keeps its original Harness Research workflow. For stage `done`, check completeness with `training.py check --complete`. Show other refusals as they are. `training.py desk` still serves the page.
+**Saved work:** `training.py status` keeps the saved flow; [explicit migration](references/migration.md) previews unfinished work. Report title, stage, level and what needs attention; follow the stage map, [saved intake](references/intake.md) and [saved gates](references/gates.md). A saved research pin keeps its original Harness Research workflow. For stage `done`, check completeness with `training.py check --complete`. Show other refusals as they are. `training.py desk` still serves the page.
 
 ## Loading map
 

@@ -241,6 +241,14 @@ Training Studio uses finite kinds with native material/level targets, checked in
 
 ### Task 5: Explicit guarded unfinished migration
 
+Training Studio retains a usable saved teaching plan and checked existing material parts.
+Its original session/run pair stays byte-identical; an immutable receipt and paired desk
+records carry conversation interpretation. Apply rechecks the exact preview under the
+existing lock and raises only the existing workspace floor to 4.7.0, with exact metadata/
+index rollback or explicit crash recovery. Early/unsupported/missing/worker-marked work
+keeps its saved flow; old configured instances must be closed. No work or person approval
+is inferred. Training Studio matrix rows 190–193 cover this boundary.
+
 Blog Studio increment eligibility: supported saved `DRAFT.md`/`ORIGINAL.md` or a
 losslessly round-tripping Markdown outline with at least two heading sections.
 Brief-only work and early research/angles without these materials, list outlines

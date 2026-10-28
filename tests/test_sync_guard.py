@@ -224,3 +224,57 @@ class SyncGuardTests(unittest.TestCase):
                         self.assertTrue(worker_in_progress(self.repo))
                         marker.unlink()
                         path.unlink()
+
+    def test_training_receipt_half_pair_and_product_bound_recovery(self):
+        import base64
+        from studio_core import training_migration as migration
+        item = self.repo / 'training'
+        item.mkdir()
+        session = {'schema': 1, 'id': item.name, 'title': 'Synthetic Training Studio',
+            'levels': [], 'sizing': {}, 'stage': 'blueprint', 'settings': {
+                'deck_target': None, 'brand': None, 'brief_kind': 'product', 'stages': []},
+            'unavailable': {}, 'pins': {}, 'artifacts': {}, 'exports': {}, 'decisions': [], 'events': []}
+        run = {'schema': 1, 'agent': 'test', 'steps': {}, 'limits': {}, 'answers': {},
+               'copies': {}, 'deck': {}, 'driver': None, 'halt': None}
+        raw_session, raw_run = json.dumps(session).encode(), json.dumps(run).encode()
+        for name, data in ((migration.SESSION, raw_session), (migration.RUN, raw_run)):
+            file = item / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(data)
+        plan = b'# Plan\n## M1 - Basics\n### O1 - Explain\n'
+        (item / 'blueprint.md').write_bytes(plan)
+        token = 'tm1.' + 'A' * 43
+        origin = migration.receipt(raw_session, raw_run, item.name, token, [migration.SESSION, migration.RUN, 'blueprint.md'])
+        session.update(flow='desk')
+        run.update(flow='desk', execution='conversation', conversation_scope=['part'], migration_targets=['deck'], unfinished_migration=True)
+        after = {migration.ORIGIN: json.dumps(origin).encode(),
+                 migration.DESK_SESSION: json.dumps({'origin': origin, 'record': session}).encode(),
+                 migration.DESK_RUN: json.dumps({'origin': origin, 'record': run}).encode(),
+                 '@training-workspace/hub.json': b'{}'}
+        for name in migration.WRITES:
+            file = item / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(after[name])
+        self.assertFalse(worker_in_progress(self.repo))
+        for name in migration.WRITES:
+            file = item / name
+            file.unlink()
+            with self.assertRaises(ValueError):
+                worker_in_progress(self.repo)
+            file.write_bytes(after[name])
+        pending = item / migration.PENDING
+        pending.parent.mkdir(parents=True)
+        journal = {'schema': 1, 'product': 'Training Studio', 'id': item.name,
+                   'expected': token, 'after': {name: base64.b64encode(data).decode() for name, data in after.items()}}
+        pending.write_text(json.dumps(journal))
+        self.assertTrue(worker_in_progress(self.repo))
+        self.assertFalse(worker_in_progress(self.repo, recovering_training=pending))
+        for key, value in (('product', 'Presentation Studio'), ('id', 'other')):
+            changed = {**journal, key: value}
+            pending.write_text(json.dumps(changed))
+            self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
+        pending.write_text(json.dumps(journal))
+        other = self.repo / 'other/work/step.lock'
+        other.parent.mkdir(parents=True)
+        other.write_text('drawing')
+        self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
