@@ -712,3 +712,79 @@ class ConversationAnswerTests(runner_support.DeskCase):
         args = studio.parser().parse_args(['desk', 'answer', '--folder', '/synthetic/deck', '--input', '-'])
         self.assertEqual(args.desk_action, 'answer')
         self.assertEqual(desk_chat.KINDS, ('text', 'outline', 'research', 'drawing', 'part'))
+
+
+class ConversationPartHandoffTests(runner_support.DeskCase):
+    def take(self, scope):
+        root = self.start_desk(look='default')
+        self.on_desk(root)
+        context = desk_chat.context(self.engine, root, 'ownership')
+        desk_chat.take(self.engine, root, context['expected_basis'], scope)
+        return root
+
+    def edit_then_handoff(self, field, text):
+        from runner import desk, stages
+        root = self.take(['part'])
+        before = desk_chat.show(self.engine, root)
+        jobs = {name: len(self.workers.of(name)) for name in ('section', 'outline', 'review')}
+        decisions = copy.deepcopy(self.record(root)['gates'])
+        ident = runner_support.LONG_OUTLINE['slides'][1]['id']
+        context = desk_chat.context(self.engine, root, ident + '/' + field)
+        with mock.patch.object(self.engine, 'wake', side_effect=AssertionError('implicit wake')), \
+                mock.patch.object(self.slides, 'drive_import', side_effect=AssertionError('Google write')):
+            desk_chat.save(self.engine, root, {'kind': 'part', 'target': context['target'],
+                'expected_basis': context['expected_basis'], 'payload': {'text': text}})
+        record = self.record(root)
+        self.assertTrue(desk.resting(record))
+        self.assertEqual(stages.survey(record).next.name, 'gate:build')
+        self.assertTrue(all(record['steps'][name]['done'] for name in
+            ('build-sections', 'build-whole', 'build-review', 'build-repair', 'build-render')))
+        self.assertEqual(build.to_draw(root), [])
+        self.assertFalse(self.engine._needs_whole(root))
+        self.assertTrue(build.read_state(root)['audit'])
+        self.assertTrue((root / build.DECK).is_file())
+        self.assertIsNone(decks.delivered(root))
+        self.assertEqual(record['conversation_submissions'][-1]['previous_decisions'], decisions)
+        self.assertNotEqual(record['gates']['gate:build']['state'], 'approved')
+        after = desk_chat.show(self.engine, root)
+        slide = next(s for s in after['outline']['slides'] if s['id'] == ident)
+        self.assertEqual(slide[field], text)
+        self.assertGreater(len(after['history'][ident]), len(before['history'][ident]))
+        context = desk_chat.context(self.engine, root, 'handoff')
+        with mock.patch.object(self.engine, 'wake') as wake:
+            desk_chat.handoff(self.engine, root, context['expected_basis'], ['part'])
+        wake.assert_called_once_with(root)
+        record = self.record(root)
+        self.assertTrue(desk.resting(record))
+        self.assertEqual(stages.survey(record).next.name, 'gate:build')
+        self.assertFalse(record.get('desk_jobs'))
+        self.assertFalse((record.get('desk') or {}).get('edits'))
+        self.assertEqual({name: len(self.workers.of(name)) for name in jobs}, jobs)
+
+    def test_existing_idle_undelivered_desk_notes_edit_handoff_stays_at_person_gate(self):
+        self.edit_then_handoff('notes', 'A supplied note for the current revision.')
+
+    def test_existing_idle_undelivered_desk_word_edit_handoff_stays_at_person_gate(self):
+        self.edit_then_handoff('title', 'Short revised heading')
+
+    def test_exact_current_scope_refuses_gate_reopened_feeder_despite_done_flags(self):
+        for gate, scope in (('gate:build', ['part']), ('gate:outline', ['drawing'])):
+            with self.subTest(gate=gate):
+                root = self.take(scope)
+                record = self.record(root)
+                record['gates'][gate].update(state='changes', note='Person requests another pass.')
+                decks.write_run(root, record)
+                # A saved gate can reopen its feeder even when its old done flag remains.
+                from runner import stages
+                feeder = stages.feeder(record, gate)
+                self.assertTrue(record['steps'][feeder]['done'])
+                self.assertEqual(stages.survey(record).next.name, feeder)
+                context = desk_chat.context(self.engine, root, 'handoff')
+                before = desk_chat._files(root)
+                with mock.patch.object(self.engine, 'wake') as wake, \
+                        mock.patch.object(self.engine, 'ready', side_effect=AssertionError('readiness')):
+                    with self.assertRaisesRegex(WorkspaceError, 'scope'):
+                        desk_chat.handoff(self.engine, root, context['expected_basis'], scope)
+                wake.assert_not_called()
+                self.assertEqual(desk_chat._files(root), before)
+                self.assertEqual(self.record(root)['execution'], 'conversation')

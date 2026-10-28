@@ -564,15 +564,32 @@ def _part_save(engine, root, record, target, payload):
                 if section else words.lead_fits(patched, root / build.CONTRACT, engine.slides())
             if problems:
                 raise WorkspaceError(' '.join(problems))
-            engine._desk_land(root, record, {'slide': ident, 'number': number, 'section': section,
+            record, _ = engine._desk_land(root, record, {'slide': ident, 'number': number, 'section': section,
                 'field': field, 'text': text, 'old': old, 'source': 'save'}, patched, None)
             # The checked native file must match the edited drawing; no composer is started.
             build.whole(root, record, engine.slides(), 'local')
             build.render(root, record, engine.slides(), engine.brand(), 'local')
+            if not build.to_draw(root) and not engine._needs_whole(root):
+                # _desk_land reopened the chain. These local operations completed it;
+                # desk review/repair are deferred by the existing user-first policy.
+                completed = ['build-sections', 'build-whole', 'build-render']
+                if decks.user_first(record):
+                    completed += ['build-review', 'build-repair']
+                for name in completed:
+                    engine._finish(record, name)
+                    record['steps'][name]['source'] = 'conversation'
+                    if name in ('build-review', 'build-repair'):
+                        record['steps'][name]['disposition'] = 'deferred-to-person'
+                if all((record['steps'].get(name) or {}).get('done') for name in
+                       ('build-sections', 'build-whole', 'build-review',
+                        'build-repair', 'build-render')):
+                    record['gates']['gate:build'] = {
+                        **record['gates'].get('gate:build', {}), 'state': 'waiting'}
         else:
             desk.keep_slide(root, ident, 'save')
             outlines._write(root, edited)
         desk.advance(record, ident)
+    return record
 
 
 def _write(path, data):
@@ -656,7 +673,7 @@ def submit(engine, path, request):
         elif kind == 'drawing':
             _drawing(engine, stage, record, payload)
         elif kind == 'part':
-            _part_save(engine, stage, record, target, payload)
+            record = _part_save(engine, stage, record, target, payload)
         else:
             if set(payload) != {'case'} or not isinstance(payload['case'], str) \
                     or not Path(payload['case']).is_absolute():
@@ -717,8 +734,15 @@ def handoff(engine, path, expected_basis, scope):
         mapping = {'intake-source': 'text', 'classify': 'text', 'inventory': 'text',
                    'research-plan': 'research', 'research': 'research', 'research-report': 'research',
                    'outline': 'outline', 'extract': 'outline'}
-        remaining = [s for s in stages.steps(record) if s.kind != 'gate' and s.name != 'deliver'
-                     and not (record.get('steps', {}).get(s.name) or {}).get('done')]
+        # A gate's change request reopens its feeder and downstream work even if
+        # an older record still carries their previous done flags. Validate that
+        # effective plan without changing saved decisions or claiming completion.
+        effective = record
+        for step in stages.steps(record):
+            if step.kind == 'gate' and (record.get('gates', {}).get(step.name) or {}).get('state') == 'changes':
+                effective = stages.reopen(effective, step.name)
+        remaining = [s for s in stages.steps(effective) if s.kind != 'gate' and s.name != 'deliver'
+                     and not (effective.get('steps', {}).get(s.name) or {}).get('done')]
         if any(mapping.get(s.name, 'drawing') not in scope for s in remaining):
             raise WorkspaceError('The remaining runner plan exceeds this scope. Continue the focused work in conversation, or explicitly change scope.')
         if (record.get('research') or {}).get('contract') == 2 and not record.get('research_contract'):
