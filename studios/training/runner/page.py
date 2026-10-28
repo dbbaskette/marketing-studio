@@ -227,7 +227,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           f'{DRAFTS}/slide-note', f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes', f'{DRAFTS}/slide-words-decide',
           f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
           f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop',
-          f'{DRAFTS}/slide-selection', f'{DRAFTS}/deck-outline', f'{DRAFTS}/deck-outline-price',
+          f'{DRAFTS}/slide-selection', f'{DRAFTS}/slide-selection-settle', f'{DRAFTS}/deck-outline', f'{DRAFTS}/deck-outline-price',
           *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
@@ -763,6 +763,13 @@ class RunnerPage(desk.Page):
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
             return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **result})
+        if path == f'{DRAFTS}/slide-selection-settle':
+            root = self.on_desk(desk.text(sent, 'path'))
+            try:
+                result = self.engine.slide_selection_settle(root, desk.text(sent, 'job'), desk.text(sent, 'action'))
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, result)
         if path == f'{DRAFTS}/slide-selection':
             root = self.on_desk(desk.text(sent, 'path'))
             try:

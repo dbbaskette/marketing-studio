@@ -1754,5 +1754,36 @@ def deck_card(engine, root, level, found):
                for section in chain.get('sections', []))
     return {'slides': slides, 'local': bool(drawn), 'look_price': price,
             'change': {**chain, 'done': done, 'total': len(chain.get('sections', []))} if chain else None,
-            'outline': outline, 'selection': selection,
+            'outline': outline, 'outline_delivery': pipeline.delivery_of(found.session), 'selection': selection,
             'look': (mine.kept.get('look_pending') or None)}
+
+
+def check_added_slide(slide, delivery):
+    allowed = {'id', 'kind', 'title', 'understand', 'relation', 'rhythm', 'points', 'sources', 'notes'}
+    if set(slide) - allowed or slide.get('kind') != 'content' or slide.get('points') != [] \
+            or slide.get('relation') != 'none' or slide.get('rhythm') != 'breathing' \
+            or slide.get('understand') != slide.get('title'):
+        raise workspace.WorkspaceError('Add a content slide with its title, objectives and speaker notes.')
+    if not isinstance(slide.get('sources'), list) or not slide['sources'] \
+            or any(not isinstance(item, str) for item in slide['sources']):
+        raise workspace.WorkspaceError('Choose the objectives the new slide serves.')
+    notes = slide.get('notes', '')
+    if not isinstance(notes, str) or len(notes) > 2000 or (delivery == 'live' and not notes.strip()):
+        raise workspace.WorkspaceError('A live slide needs speaker notes, up to 2,000 characters.')
+
+
+def added_slide_design(slide):
+    """A transparent, text-only proposal for a person's added slide; still needs approval."""
+    from runner import deck
+    return {'id': slide['id'], 'title': slide['title'], 'copy': deck._copy(slide),
+            'sources': slide['sources'], 'objectives': slide['sources'],
+            **({'notes': slide['notes']} if slide.get('notes') else {}),
+            'composition': 'Show the requested title as a single native text block with generous space.',
+            'intent': {'takeaway': slide['title'], 'audienceQuestion': 'What should I practise next?',
+                       'relationship': 'none', 'evidence': slide['sources'],
+                       'rationale': 'This added slide states the person’s requested topic without adding claims.',
+                       'alternative': {'treatment': 'An illustration',
+                                       'reason': 'No illustration was requested or supplied for this topic.'},
+                       'visual': {'family': 'text', 'purpose': 'Name the requested topic clearly.'}},
+            'asset': {'description': 'No asset.', 'disposition': 'not-needed',
+                      'reason': 'The requested title is the slide; no picture is needed to state it.'}}

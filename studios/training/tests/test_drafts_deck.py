@@ -1474,3 +1474,211 @@ class DeckControlRoutesTests(PageCase):
         self.to_end(root)
         card = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')
         self.assertEqual(card['change']['status'], 'done')
+
+
+class DeckReviewLifecycleTests(JudgedSlideNoteTests):
+    approve = ApprovedWordsTests.approve
+
+    def selected(self, root):
+        title = json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title']
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.workers.then('words', lambda tools, job: tools.submit_artifact('words', 'Review'))
+        self.engine.slide_selection(root, None, 'check-yourself', 'title', 'shorten', 0, title, title, seen)
+        card = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')
+        return seen, card['selection']
+
+    def test_added_slide_waits_for_design_approval_and_keeps_existing_sections(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = (root / pipeline.OUTLINE).read_bytes()
+        section = self.built(root)['sections']['section-1']['sha256']
+        slides = json.loads(before)['slides']
+        slides.append({'id': 'added-practice', 'kind': 'content', 'title': 'Practice again',
+            'understand': 'Practice again', 'relation': 'none', 'rhythm': 'breathing',
+            'points': [], 'sources': ['O2'], 'notes': 'Ask the learner to explain the choice.'})
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.assertTrue(self.engine.deck_outline(root, None, slides, seen, price=True)['price'])
+        result = self.engine.deck_outline(root, None, slides, seen)
+        self.assertIn('approval', result)
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), before)
+        self.approve(root, seen, result['approval'])
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root).get('problem'))
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'], slides)
+        self.assertEqual(self.built(root)['sections']['section-1']['sha256'], section)
+
+    def test_selection_result_settles_after_approval_and_cancellation(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen, job = self.selected(root)
+        self.approve(root, seen, job['result']['approval'])
+        result = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')['selection']['result']
+        self.assertNotIn('approval', result)
+        self.assertTrue(result['fits'])
+        self.engine.slide_words(root, None, 'check-yourself', 'notes', 'A note.', self.engine._load(root)['deck']['']['saved']['sha256'])
+        # A different selection avoids a no-op wording result.
+        self.workers.then('words', lambda tools, job: tools.submit_artifact('words', 'Another title'))
+        title = json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title']
+        self.engine.slide_selection(root, None, 'check-yourself', 'title', 'rephrase', 0, title, title,
+            self.engine._load(root)['deck']['']['saved']['sha256'])
+        job = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')['selection']
+        self.engine.slide_words_decide(root, job['result']['approval']['token'], 'cancel', None)
+        result = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')['selection']['result']
+        self.assertNotIn('approval', result)
+        self.assertTrue(result['cancelled'])
+
+
+class DeckReviewConflictTests(DeckCase):
+    def test_outline_cannot_remove_a_queued_selection_target(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        slides = json.loads((root / pipeline.OUTLINE).read_text())['slides']
+        title = slides[4]['title']
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        with mock.patch.object(self.engine, 'wake'):
+            self.engine.slide_selection(root, None, 'check-yourself', 'title', 'fix', 0, title, title, seen)
+        with self.assertRaisesRegex(workspace.WorkspaceError, 'selection|selected words'):
+            self.engine.deck_outline(root, None, slides[:4], seen)
+
+    def test_outline_can_price_and_add_a_slide_without_redrawing_unchanged_sections(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        slides = json.loads((root / pipeline.OUTLINE).read_text())['slides']
+        slides.append({'id': 'added-practice', 'kind': 'content', 'title': 'Practice again',
+            'understand': 'Practice again', 'relation': 'none', 'rhythm': 'breathing',
+            'points': [], 'sources': ['O2'], 'notes': 'Ask the learner to explain the choice.'})
+        before = self.built(root)['sections']['section-1']['sha256']
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.assertTrue(self.engine.deck_outline(root, None, slides, seen, price=True)['price'])
+        self.engine.deck_outline(root, None, slides, seen)
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root).get('problem'))
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'], slides)
+        self.assertEqual(self.built(root)['sections']['section-1']['sha256'], before)
+
+
+class DeckActiveStopTests(DeckCase):
+    def test_stop_terminates_a_composer_companion_command(self):
+        import sys
+        from runner import companion
+        from runner_support import written, still_running
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        pids = self.base / 'composer-pids'
+        def command(tools, job):
+            companion.run_command([sys.executable, '-c',
+                'import os,sys,time; open(sys.argv[1], "w").write(str(os.getpid()) + "\\n"); time.sleep(20)',
+                str(pids)], None, 30, 'A stand-in composer command')
+        self.workers.then('section', command)
+        self.engine.background = True
+        self.engine.deck_note(root, None, 'Make it simpler.',
+            self.engine._load(root)['deck']['']['saved']['sha256'])
+        processes = written(pids)
+        self.engine.deck_note_stop(root, None)
+        self.assertEqual(still_running(processes), [])
+        thread = self.engine._run(root).thread
+        if thread:
+            thread.join(timeout=10)
+            self.assertFalse(thread.is_alive())
+        self.assertIsNone(self.engine._load(root).get('problem'))
+
+    def test_stop_terminates_the_active_composer_and_keeps_only_completed_sections(self):
+        import subprocess
+        import sys
+        import threading
+        from runner import agents, worker_tools
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = copy.deepcopy(self.built(root)['sections'])
+        adapter = self.engine.adapter(self.engine._load(root)['agent'])
+        original = adapter.run
+        started, terminated = threading.Event(), threading.Event()
+        calls, processes = [], []
+        def run(job, activity=None, stop=None):
+            spec = worker_tools.WorkerTools(job.folder).job
+            if 'section' not in spec['artifacts']:
+                return original(job, activity=activity, stop=stop)
+            calls.append(True)
+            if len(calls) == 1:
+                return original(job, activity=activity, stop=stop)
+            child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(20)'])
+            processes.append(child)
+            started.set()
+            try:
+                while not stop.is_set():
+                    try:
+                        child.wait(timeout=0.03)
+                        break
+                    except subprocess.TimeoutExpired:
+                        pass
+                child.terminate()
+                child.wait(timeout=5)
+                terminated.set()
+                return agents.Outcome(False, 'stopped', 'Stopped by the person.')
+            finally:
+                if child.poll() is None:
+                    child.kill()
+                    child.wait()
+        self.engine.background = True
+        try:
+            with mock.patch.object(adapter, 'run', side_effect=run):
+                self.engine.deck_note(root, None, 'Use simpler diagrams.',
+                    self.engine._load(root)['deck']['']['saved']['sha256'])
+                self.assertTrue(started.wait(10), 'The second composer did not start.')
+                self.engine.deck_note_stop(root, None)
+                self.assertTrue(terminated.is_set(), 'Stop returned before the active process terminated.')
+                thread = self.engine._run(root).thread
+                if thread:
+                    thread.join(timeout=10)
+                    self.assertFalse(thread.is_alive())
+        finally:
+            self.engine._run(root).stop.set()
+            for child in processes:
+                if child.poll() is None:
+                    child.terminate()
+                    child.wait(timeout=5)
+            thread = self.engine._run(root).thread
+            if thread:
+                thread.join(timeout=10)
+        after = self.built(root)['sections']
+        self.assertNotEqual(after['section-1']['file'], before['section-1']['file'])
+        self.assertEqual(after['section-2'], before['section-2'])
+        self.assertEqual(len(calls), 2)
+        chain = self.engine._load(root)['deck']['']['note_chain']
+        self.assertEqual(chain['status'], 'stopped')
+
+
+class SelectionSettlementRoutesTests(PageCase):
+    def test_fit_refused_selection_can_be_discarded_without_changing_the_slide(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = (root / pipeline.OUTLINE).read_bytes()
+        title = json.loads(before)['slides'][4]['title']
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.workers.then('words', lambda tools, job: tools.submit_artifact('words', 'TOO LONG TO FIT'))
+        self.post('drafts/slide-selection', {'path': str(root), 'level': '', 'slide': 'check-yourself',
+            'field': 'title', 'action': 'expand', 'start': 0, 'passage': title, 'text': title, 'seen': seen})
+        job = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')['selection']
+        self.assertFalse(job['result']['fits'])
+        self.post('drafts/slide-selection-settle', {'path': str(root), 'job': job['id'], 'action': 'discard'})
+        result = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')['selection']['result']
+        self.assertTrue(result['cancelled'])
+        self.assertNotIn('fits', result)
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), before)
+
+    def test_selection_result_can_only_be_marked_saved_after_publication(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        title = json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title']
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.workers.then('words', lambda tools, job: tools.submit_artifact('words', 'TOO LONG TO FIT'))
+        self.engine.slide_selection(root, None, 'check-yourself', 'title', 'expand', 0, title, title, seen)
+        job = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')['selection']
+        with self.assertRaisesRegex(workspace.WorkspaceError, 'not been saved'):
+            self.engine.slide_selection_settle(root, job['id'], 'saved')
+        self.engine.slide_words(root, None, 'check-yourself', 'title', 'TOO LONG TO FIT', seen, _redraw=True)
+        self.to_end(root)
+        self.engine.slide_selection_settle(root, job['id'], 'saved')
+        result = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')['selection']['result']
+        self.assertTrue(result['fits'])
+        self.assertNotIn('approval', result)

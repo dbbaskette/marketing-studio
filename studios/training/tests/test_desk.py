@@ -7123,6 +7123,35 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('This version cannot fit.', result['snapshots']['failed']['sheetAlerts'])
         self.assertIn('Struck words', result['snapshots']['failed']['text'])
 
+    def test_outline_adds_a_slide_then_prices_before_saving(self):
+        found = self.slide_card()
+        found['outline'] = {'slides': [{'id': 'check-yourself', 'kind': 'content', 'title': 'Check yourself', 'sources': ['O2']}]}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/deck-outline-price': [a_desk(found, price='Redraws section 2, about $1.')],
+            'POST /api/drafts/deck-outline': [a_desk(found, fits=True)]}), [
+            {'click': 'Outline'}, {'fill': 'A new slide’s title', 'value': 'Practice again'},
+            {'fill': 'Objectives for the new slide', 'value': 'O2'},
+            {'fill': 'What the presenter says on it', 'value': 'Ask for another explanation.'},
+            {'click': 'Add slide'}, {'snapshot': 'priced'}, {'click': 'Save outline'}])
+        self.assertIn('Redraws section 2, about $1.', result['snapshots']['priced']['text'])
+        slides = self.posts(result)[-1][1]['slides']
+        self.assertEqual(slides[-1]['title'], 'Practice again')
+        self.assertEqual(slides[-1]['sources'], ['O2'])
+        self.assertEqual(slides[-1]['notes'], 'Ask for another explanation.')
+
+    def test_discarding_selected_words_retires_the_review_action(self):
+        found = self.slide_card()
+        found['selection'] = {'id': 'selection-one', 'status': 'done', 'part': 'check-yourself',
+            'result': {'fits': False, 'said': 'Too long.', 'price': 'About $1.',
+                       'sent': {'text': 'Longer words', 'seen': 'saved'}}}
+        settled = json.loads(json.dumps(found))
+        settled['selection']['result'] = {'cancelled': True}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/slide-selection-settle': [a_desk(settled)]}), [
+            {'click': 'Review selected words'}, {'click': 'Discard'}, {'snapshot': 'settled'}])
+        self.assertNotIn('Review selected words', result['snapshots']['settled']['buttons'])
+        self.assertIn('Selected words discarded.', result['snapshots']['settled']['text'])
+
     def test_failed_look_samples_offer_retry_and_default(self):
         found = self.slide_card()
         result = self.open_desk(self.on_desk(a_desk(found), **{

@@ -814,7 +814,9 @@ function deckOutline(found) {
       if (editable) {
         const box = make('input', 'input'); box.value = slide.title; box.maxLength = 300;
         box.setAttribute('aria-label', 'Outline title of slide ' + (index + 1));
-        box.addEventListener('input', () => { slide.title = box.value; save.disabled = true; });
+        box.addEventListener('input', () => { slide.title = box.value;
+          if (!original.some((item) => item.id === slide.id)) slide.understand = box.value;
+          save.disabled = true; });
         box.addEventListener('change', price);
         row.append(add(make('label', 'field'), make('span', 'field-label', 'Title'), box));
       } else row.append(make('p', 'row-title', slide.title));
@@ -836,9 +838,41 @@ function deckOutline(found) {
       rows.append(row);
     });
   };
+  const adding = make('div', 'paper stack');
+  if (editable) {
+    const title = make('input', 'input'); title.maxLength = 300;
+    const objectives = make('input', 'input');
+    const notes = make('textarea', 'input'); notes.rows = 3; notes.maxLength = 2000;
+    const field = (label, box) => { box.setAttribute('aria-label', label);
+      adding.append(add(make('label', 'field'), make('span', 'field-label', label), box)); };
+    field('A new slide’s title', title); field('Objectives for the new slide', objectives);
+    adding.append(make('p', 'quiet', 'Choose objectives separated by commas: '
+      + [...new Set(original.flatMap((slide) => list(slide.sources)))].join(', ')));
+    field('What the presenter says on it', notes);
+    adding.append(make('p', 'quiet', 'Speaker notes are required for a deck presented live.'));
+    adding.append(capsule('Add slide', 'quiet', () => {
+      if (found.outline_delivery === 'live' && !notes.value.trim()) {
+        error.textContent = 'Write what the presenter says on this slide.'; return;
+      }
+      if (!title.value.trim() || !objectives.value.trim()) {
+        error.textContent = 'Give the new slide a title and the objectives it serves.'; return;
+      }
+      const base = 'added-' + (title.value.toLowerCase().replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '').slice(0, 45) || 'slide');
+      let id = base, number = 2;
+      while (edit.work.some((slide) => slide.id === id)) id = base + '-' + number++;
+      const slide = { id, kind: 'content', title: title.value.trim(), understand: title.value.trim(),
+        relation: 'none', rhythm: 'breathing', points: [],
+        sources: objectives.value.split(',').map((value) => value.trim()).filter(Boolean),
+        ...(notes.value.trim() ? { notes: notes.value.trim() } : {}) };
+      const closing = edit.work.findIndex((item) => item.kind === 'closing');
+      edit.work.splice(closing < 0 ? edit.work.length : closing, 0, slide);
+      title.value = ''; objectives.value = ''; notes.value = ''; paint(); price();
+    }));
+  }
   paint();
   DESK.kitSheet = [sheetTitle('Outline'), make('p', '', 'Each slide’s words, in order. Saving redraws only changed sections.'),
-    rows, said, error, add(make('div', 'bar'), editable ? save : null,
+    rows, adding, said, error, add(make('div', 'bar'), editable ? save : null,
       editable ? capsule('Put it back as it was', 'quiet', () => { edit.work = JSON.parse(JSON.stringify(original));
         edit.priced = ''; said.textContent = ''; error.textContent = ''; paint(); }) : null,
       capsule('Close', 'quiet', () => closeSheet()))];
@@ -903,11 +937,14 @@ function deckParts(found) {
   if (found.selection) {
     const job = found.selection, result = job.result;
     const status = make('p', 'quiet', job.error || (['queued', 'working'].includes(job.status)
-      ? job.says : result?.error || (result?.fits ? 'Selected words saved.' : 'Selected words are ready to review.')));
+      ? job.says : result?.error || (result?.cancelled ? 'Selected words discarded.' : result?.fits
+        ? 'Selected words saved.' : result?.approval || result?.fits === false
+          ? 'Selected words are ready to review.' : 'This selection did not finish. Select the words again.')));
     status.setAttribute('role', job.error || result?.error ? 'alert' : 'status'); area.append(status);
     if (ours && result && (result.approval || result.fits === false)) area.append(
       capsule('Review selected words', 'quiet', () => slideWordResult(found,
-        list(found.slides).find((slide) => slide.id === job.part), result.sent, result, () => {})));
+        list(found.slides).find((slide) => slide.id === job.part),
+        { ...result.sent, selection: job.id }, result, () => {})));
   }
   if (ours && list(found.slides).length) {
     const again = capsule(found.local ? 'Try another look' : 'Draw it here', 'quiet', async () => {
@@ -991,7 +1028,9 @@ function deckParts(found) {
   return area;
 }
 
-function slideWordResult(found, slide, sent, answer, saved) {
+async function slideWordResult(found, slide, sent, answer, saved) {
+  const settle = async (action) => !sent.selection || deskDecide(
+    'slide-selection-settle', { job: sent.selection, action });
   if (answer.approval) { slideApproval(found, slide, sent, answer.approval, saved); return; }
   if (answer.fits === false) {
     const error = make('p', 'notice'); error.setAttribute('role', 'alert');
@@ -999,7 +1038,7 @@ function slideWordResult(found, slide, sent, answer, saved) {
       const route = sent.approval ? 'slide-words-decide' : sent.stamp ? 'slide-restore' : 'slide-words';
       const { approval, ...words } = sent;
       const result = await deskDecide(route, { ...(approval || words), redraw: true }, redraw);
-      if (result) { saved(); closeSheet(); }
+      if (result && await settle('saved')) { saved(); closeSheet(); }
       else error.textContent = deskHeld(view.path).said;
     });
     DESK.kitSheet = [sheetTitle('These words need another drawing'),
@@ -1013,10 +1052,11 @@ function slideWordResult(found, slide, sent, answer, saved) {
             const result = await deskDecide('slide-words-decide', { proposal: sent.approval.proposal, decision: 'cancel' });
             if (!result) { error.textContent = deskHeld(view.path).said; return; }
           }
+          if (!await settle('discard')) { error.textContent = deskHeld(view.path).said; return; }
           saved(); closeSheet();
         }))].filter(Boolean);
     openSheet('desk-kit', '')();
-  } else { saved(); closeSheet(); }
+  } else if (await settle('saved')) { saved(); closeSheet(); }
 }
 
 function slideApproval(found, slide, sent, approval, saved) {

@@ -588,6 +588,17 @@ class _Slots:
             self.changed.notify_all()
 
 
+class _WorkerStop(threading.Event):
+    """One worker can stop without ending unrelated work in the training."""
+
+    def __init__(self, parent):
+        super().__init__()
+        self.parent = parent
+
+    def is_set(self):
+        return super().is_set() or self.parent.is_set()
+
+
 class _Run:
     """What the engine holds for one training while it serves: nothing that is needed to
     resume it."""
@@ -2808,6 +2819,11 @@ class Engine(Reviewing):
         work = pipeline.section_work(root, found, whole, section,
                                      last_error(self._load(root), it.id), how)
         outcome, handed, started_at, folder = self._job(root, run, it, work)
+        with self.files:
+            current = self._decided(self._load(root), level)
+            chain = current.get('note_chain') or {}
+            if chain.get('status') == 'stopped' and note_ids.intersection(chain.get('ids', [])):
+                outcome = replace(outcome, finished=False, reason='stopped')
         if outcome.reason == 'stopped' or not handed['artifacts'] or not handed['shown']:
             with self.files:
                 record = self._load(root)
@@ -2822,6 +2838,9 @@ class Engine(Reviewing):
                                 pipeline.why_not(handed, outcome.detail))
         mine, base = found.decks[level], pipeline.place(root, level, pipeline.WORK)
         with self.files:
+            chain = self._decided(self._load(root), level).get('note_chain') or {}
+            if chain.get('status') == 'stopped' and note_ids.intersection(chain.get('ids', [])):
+                return self._stopped(root, it, replace(outcome, finished=False, reason='stopped'), started_at)
             turn = len(mine.rounds) if again else 0
             file = Path(mine.start['folder']) / 'drawn' / f'{section}-{turn}.json'
             draft = next(iter(handed['artifacts'].values()))
@@ -3625,23 +3644,42 @@ class Engine(Reviewing):
                          tuple(worker_tools.command(folder)), limits, record.get('model'),
                          record.get('effort'))
         lines, started_at, clock = deque(maxlen=LINES), home.now(), time.monotonic()
+        stop, terminated = _WorkerStop(run.stop), threading.Event()
         with self._lock:
             run.workers[step.id] = {'label': step.doing, 'started_at': started_at,
-                                    'lines': lines, 'folder': folder}
+                                    'lines': lines, 'folder': folder, 'stop': stop, 'terminated': terminated}
         choice = None
         try:
+            if step.id.startswith(('deck-sections', 'deck-repair')):
+                with self.files:
+                    current = self._decided(self._load(root), self._level(step))
+                    chain = current.get('note_chain') or {}
+                    section = 'section-' + step.id.rsplit(':', 1)[-1]
+                    if chain.get('status') == 'stopped' and chain.get('start') == pipeline.read_built(
+                            root, self._level(step)).get('start', {}).get('folder') and section in chain.get('sections', []) and not any(
+                                note.get('section') == section and note.get('status') in ('waiting', 'drawing')
+                                for note in current.get('notes', [])):
+                        stop.set()
             choice = model_profiles.route(record, 'Training Studio', step.id,
                                           purpose='review' if 'review' in work.prepared else None)
             settings.check_effort(choice['effort'], record['agent'], choice['model'])
             job = replace(job, model=choice['model'], effort=choice['effort'])
-            outcome = self.adapter(record['agent']).run(job, activity=lines.append,
-                                                        stop=run.stop)
+            scoped = step.id.startswith(('deck-sections', 'deck-repair'))
+            with companion.stopping(stop if scoped else run.stop):
+                outcome = (agents.Outcome(False, 'stopped', 'Stopped before this worker started.')
+                           if stop.is_set() else self.adapter(record['agent']).run(
+                               job, activity=lines.append, stop=stop))
+        except companion.Stopped:
+            if run.stop.is_set():
+                raise
+            outcome = agents.Outcome(False, 'stopped', 'The person stopped this composer.')
         except (WorkspaceError, ValueError) as refusal:  # refuse invalid saved choices
             outcome = agents.Outcome(False, 'failed', str(refusal))
         finally:
             with self._lock:
                 run.workers.pop(step.id, None)
-        if run.stop.is_set() and outcome.reason != 'stopped':
+                terminated.set()
+        if stop.is_set() and outcome.reason != 'stopped':
             outcome = replace(outcome, finished=False, reason='stopped')
         if not outcome.seconds:
             outcome = replace(outcome, seconds=round(time.monotonic() - clock, 1))
@@ -4529,7 +4567,8 @@ class Engine(Reviewing):
         if outline is not None:
             plan = json.loads(json.dumps(plan))
             existing = {item['id']: item for item in plan['slides']}
-            plan['slides'] = [existing[item['id']] for item in outline['slides']]
+            plan['slides'] = [existing[item['id']] if item['id'] in existing else
+                              drafts.added_slide_design(item) for item in outline['slides']]
             for item, drawn in zip(outline['slides'], plan['slides']):
                 if drawn.get('title') != item['title']:
                     drawn['title'] = item['title']
@@ -4586,6 +4625,7 @@ class Engine(Reviewing):
             root, record = self._on_desk(path, decided=True)
             folder, requested = deck_edit.read_proposal(root, token)
             if decision == 'cancel':
+                self._settle_selection_token(root, token, {'cancelled': True})
                 shutil.rmtree(folder)
                 return {'cancelled': True}
             approval = requested['approval']
@@ -4616,8 +4656,42 @@ class Engine(Reviewing):
                     requested.get('text', approval['after']), seen, _restore=requested.get('restore'),
                     _redraw=redraw, _source=requested.get('source', 'save'), _approved_words=approved)
             if result.get('fits'):
+                self._settle_selection_token(root, token, {'fits': True})
                 shutil.rmtree(folder, ignore_errors=True)
             return result
+
+    def _settle_selection_token(self, root, token, result):
+        for file in deck_edit.storage(root).glob('selection-*.json'):
+            kept = home.read_json(file, {})
+            if (kept.get('approval') or {}).get('token') == token:
+                home.write_json(file, {'sent': kept['sent'], 'settled_at': home.now(), **result})
+
+    def slide_selection_settle(self, path, ident, action):
+        with self.files:
+            root, record = self._on_desk(path, decided=True)
+            job = next((one for one in record.get('drafts', {}).get('jobs', [])
+                        if one['id'] == ident and one.get('kind') == 'slide-selection'), None)
+            if job is None or action not in ('saved', 'discard'):
+                raise WorkspaceError('Choose a selected-word result to settle.')
+            file = deck_edit.storage(root) / f'selection-{ident}.json'
+            result = home.read_json(file, {})
+            if not result.get('sent'):
+                raise WorkspaceError('These selected words have no result to settle.')
+            if action == 'saved':
+                level = workspace.split(job['name'])[1]
+                _, words = drafts.slide_words(home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {}),
+                                             job['part'], job['field'], '')
+                if words != result['sent']['text'].strip():
+                    raise WorkspaceError('These selected words have not been saved.')
+                settled = {'fits': True}
+            else:
+                approval = result.get('approval')
+                if approval:
+                    folder, _ = deck_edit.read_proposal(root, approval['token'])
+                    shutil.rmtree(folder)
+                settled = {'cancelled': True}
+            home.write_json(file, {'sent': result['sent'], 'settled_at': home.now(), **settled})
+        return drafts.view(self, root)
 
     def slide_speaker_notes(self, path, level, slide, text, seen) -> dict:
         return self.slide_words(path, level, slide, 'notes', text, seen)
@@ -4633,7 +4707,7 @@ class Engine(Reviewing):
         old = {item['id']: item for item in mine.outline['slides']}
         now = {item['id']: item for item in edited['slides']}
         previous = {item['id']: item['slides'] for item in mine.start['sections']}
-        changed = []
+        changed, sizes = [], {}
         with tempfile.TemporaryDirectory(prefix='training-outline-price-') as scratch:
             scratch = Path(scratch)
             source = scratch / 'outline.json'
@@ -4645,9 +4719,10 @@ class Engine(Reviewing):
                 if not pipeline.SECTION.match(ident):
                     continue
                 ids = deck.named_in((folder / 'briefs' / f'{ident}.md').read_text(), whole)
-                if ids != previous.get(ident) or any(any(old[item].get(key) != now[item].get(key)
+                if ids != previous.get(ident) or any(item not in old or any(old[item].get(key) != now[item].get(key)
                     for key in deck.DRAWN_FROM) for item in ids):
                     changed.append(ident)
+                    sizes[ident] = len(ids)
         names = [workspace.qualify('deck-sections', level) + ':' + str(pipeline.numbered(item))
                  for item in changed]
         cost = self._redo_steps(record, [*names, workspace.qualify('deck-whole', level),
@@ -4658,7 +4733,7 @@ class Engine(Reviewing):
         if cost:
             says += ' Last time this took ' + stops.cost(*cost) + '.'
         else:
-            estimate = deck.before(sum(len(previous.get(item, [])) for item in changed))
+            estimate = deck.before(sum(sizes.values()))
             says += ' Expect about ' + stops.cost(estimate['minutes'] * 60, estimate['dollars']) + '.'
         return {'price': says, 'sections': changed}
 
@@ -4668,16 +4743,23 @@ class Engine(Reviewing):
         with self.files:
             root, record, name, kept = self._deck_change(path, level, seen)
             outline = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
+            if any(job.get('kind') == 'slide-selection' and job.get('name') == name
+                   and job.get('status') in ('queued', 'working')
+                   for job in record.get('drafts', {}).get('jobs', [])):
+                raise WorkspaceError('Wait for the selected words to finish before changing the outline.')
             before = outline['slides']
             known = {item['id']: item for item in before}
             if not isinstance(slides, list) or not slides or any(not isinstance(item, dict) for item in slides):
                 raise WorkspaceError('Keep at least one slide in the outline.')
             ids = [item.get('id') for item in slides]
-            if any(not isinstance(ident, str) or ident not in known for ident in ids) or len(set(ids)) != len(ids):
-                raise WorkspaceError('The outline must name each existing slide at most once.')
+            if any(not isinstance(ident, str) or (ident not in known and not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,79}', ident))
+                   for ident in ids) or len(set(ids)) != len(ids):
+                raise WorkspaceError('Give each slide a unique short ID made of lowercase letters, numbers and hyphens.')
             for item in slides:
-                original = known[item['id']]
-                if ({key: value for key, value in item.items() if key != 'title'} !=
+                original = known.get(item['id'])
+                if original is None:
+                    drafts.check_added_slide(item, pipeline.delivery_of(workspace.load(root)))
+                elif ({key: value for key, value in item.items() if key != 'title'} !=
                         {key: value for key, value in original.items() if key != 'title'}):
                     raise WorkspaceError('Edit the slide’s words on its card; the outline changes titles and order.')
                 if not isinstance(item.get('title'), str) or not item['title'].strip() or len(item['title']) > 300:
@@ -4776,7 +4858,13 @@ class Engine(Reviewing):
             self._store(root, record)
             level = workspace.split(job['name'])[1]
             outline = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
-            slide = next(item for item in outline['slides'] if item['id'] == job['part'])
+            slide = next((item for item in outline['slides'] if item['id'] == job['part']), None)
+            if slide is None:
+                job.update(status='failed', applied=False, settled_at=home.now(),
+                           error='This slide was removed. Select words on an existing slide to try again.')
+                self._store(root, record)
+                self._commit(root, 'settle selected words whose slide was removed')
+                return
             task = prompts.passage_task(prompts.ACTIONS.get(job['action'], prompts.ASK))
             if job['note']:
                 task += prompts.request('INSTRUCTION', job['note'], prompts.ONLY_PASSAGE, 'Training Studio')
@@ -4810,7 +4898,7 @@ class Engine(Reviewing):
                 if error or job.get('stop'):
                     return
                 text = current[:job['start']] + accepted['text'].strip() + current[job['start'] + len(job['passage']):]
-                sent = {'level': level or '', 'slide': job['part'], 'field': job['field'], 'text': text, 'seen': job['seen']}
+                sent = {'selection': job['id'], 'level': level or '', 'slide': job['part'], 'field': job['field'], 'text': text, 'seen': job['seen']}
                 try:
                     result = self.slide_words(root, level, job['part'], job['field'], text, job['seen'], _source='selection')
                 except WorkspaceError as refusal:
@@ -4854,11 +4942,26 @@ class Engine(Reviewing):
             if chain.get('status') != 'working':
                 raise WorkspaceError('There is no whole-deck note to stop.')
             chain['status'] = 'stopped'
+            active = {note['section'] for note in kept.get('notes') or []
+                      if note['id'] in chain['ids'] and note['status'] == 'drawing'}
             for note in kept.get('notes') or []:
-                if note['id'] in chain['ids'] and note['status'] == 'waiting':
+                if note['id'] in chain['ids'] and note['status'] in ('waiting', 'drawing'):
                     note['status'] = 'stopped'
+            waiting = []
+            with self._lock:
+                run = self._run(root)
+                for section in active:
+                    for kind in ('deck-sections', 'deck-repair'):
+                        worker = run.workers.get(workspace.qualify(kind, level or None)
+                                                 + ':' + str(pipeline.numbered(section)))
+                        if worker:
+                            worker['stop'].set()
+                            waiting.append(worker['terminated'])
             self._store(root, record)
-            self._commit(root, 'stop the whole-deck note after this section')
+            self._commit(root, 'cancel the whole-deck note and keep completed sections')
+        for terminated in waiting:
+            if not terminated.wait(timeout=15):
+                raise WorkspaceError('The composer is still stopping. Wait for it to end before changing the deck.')
         self.carry_on(root)
         return drafts.view(self, root)
 
