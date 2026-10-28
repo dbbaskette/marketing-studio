@@ -150,6 +150,14 @@ Charts retain units, baselines, dates, denominators, and relevant uncertainty;
 differences in units or periods are resolved before comparison. Derived values
 store the calculation and its source operands.
 
+Use illustration where it helps explain the selected story: a central conceptual
+illustration, illustrated process steps, an annotated object or system, or an
+illustration alongside a chart. Story suggestions state the illustration's role
+and why it helps; a chart-only page is appropriate when it communicates best.
+Illustrations must carry relevant meaning, follow one coherent brand and style,
+and leave room for readable labels. Avoid forcing decorative artwork into every
+page or implying unsupported quantities, causality, or relationships.
+
 **Rendering decision:** retain text, values, chart marks, and connectors as
 structured elements. Generate an editable SVG from a validated scene description.
 Generated artwork is a first-class part of composition, using the required Codex
@@ -405,6 +413,13 @@ contradictory inputs; refusal of unreadable required content; and a targeted edi
 that preserves unaffected wording and facts. Reconnect, interruption, stale edits,
 missing renderer, source changes, and export retry must preserve the last good work.
 The digital and print presets must retain their exact dimensions and one-page rule.
+Visual acceptance also covers an illustration-led conceptual page, an illustrated
+process, and a mixed chart-and-illustration page. Surface the actual artwork and
+composed exports to the user at intended viewing size; check explanatory value,
+style consistency, cropping, aspect ratio, image resolution, and label clearance.
+Basic renderer samples and placeholder assets establish rendering mechanics only;
+they do not establish illustration quality. Provider-generated illustration quality
+is reviewed separately when live provider acceptance is explicitly requested.
 Provider coverage must include both supported configurations, missing Gemini key,
 Codex without an available image tool, invalid credentials, exhausted quota,
 generation and edit failures, cancellation, and stale image results. Verify that

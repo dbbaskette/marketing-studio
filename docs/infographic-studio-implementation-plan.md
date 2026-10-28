@@ -23,6 +23,14 @@ server-side Gemini API key. Claude Code authors an extremely specific visual
 description before Gemini renders. Codex records the same explicit art direction.
 Image generation and editing are first-release capabilities, not a later add-on.
 
+Illustrations are part of the first release wherever they improve explanation:
+conceptual artwork, illustrated process steps, annotated objects/systems, and mixed
+chart-and-illustration pages. Story selection records the purpose of each planned
+illustration; chart-only layouts remain valid when they communicate best. The
+renderer feasibility samples establish rendering mechanics and readability only.
+Illustration quality requires separate actual-artwork and composed-page visual
+review, surfaced to the owner, including live provider acceptance when requested.
+
 The first release accepts pasted text, text/Markdown files, and selected CSV
 data. It supports directed, suggested, and hybrid story modes; A4, US Letter,
 and 1080 × 1350 digital portrait; the selected brand; scoped edits; immutable
@@ -457,6 +465,7 @@ Work:
 
 - Implement I know what to show, Suggest the story, and Build on my ideas as distinct input modes.
 - Produce up to three meaningfully different explanations, with takeaway, visual plan, source-backed blocks, thumbnail plan, and rationale.
+- Record whether an illustration helps each story and its explanatory role; recommend illustration-led or mixed approaches where useful without requiring decorative artwork on chart-only pages.
 - Preserve exact wording, required content, exclusions, source qualifications, and recorded omissions.
 - Enforce content-fit planning and ask for prioritization when must-show material cannot fit; do not fill a quota of suggestions.
 
@@ -516,6 +525,7 @@ Make Claude Code or Codex author a precise image brief, generate and edit throug
 Work:
 
 - Have Claude Code act as art director and write a self-contained provider-ready description; Codex records the same explicit visual intent.
+- Specify each illustration's explanatory role, subjects, coherent style, focal point, and reserved label regions; support conceptual artwork, illustrated steps, and artwork alongside charts.
 - Specify audience/takeaway, canvas, normalized regions, every object and relationship, scale, spacing, reading order, style, brand values, exact text/data ownership, references, exclusions, and acceptance requirements.
 - Save image-brief.json and the exact sent prompt per attempt, bound to story/scene/brand/reference hashes.
 - Resolve design ambiguities before submitting; forbid generic prompts, inaccessible local references, unrelated sources, and secret interpolation.
@@ -525,6 +535,7 @@ Acceptance criteria:
 - [ ] The provider can understand the requested image without the conversation or repository.
 - [ ] Required objects and relationships map to approved story blocks; labels and numbers match locked content.
 - [ ] Artwork prompts explicitly reserve compositor-owned regions and prohibit unwanted text or chart marks.
+- [ ] Illustration briefs describe meaningful subjects and relationships without introducing unsupported quantities or causality; chart-only stories need no decorative image request.
 - [ ] Edits specify the exact requested change and what must remain unchanged; changed pinned inputs invalidate the brief.
 
 **Verification:** Schema and semantic fixture checks for missing composition details, changed facts, conflicting bounds, exact wording, unsupported references, and deliberate secret sentinels.
@@ -621,6 +632,7 @@ Work:
 
 - Expose the actual returned asset and composed page to the directing assistant using the verified image-inspection surface.
 - Compare required objects, connections, reading order, brand, exclusions, and any visible words against the saved image brief.
+- Inspect explanatory value, illustration style consistency, crop, aspect ratio, effective resolution, and clearance around compositor-owned labels on the actual composed page.
 - Create an edit request naming observed mismatches, exact changes, and preserved elements, referencing the prior asset.
 - Share the global two-attempt repair budget and leave unresolved findings visible; unavailable inspection requires manual review.
 
@@ -655,12 +667,14 @@ Work:
 
 - Plan comparison, process, timeline, key-number, part-to-whole, and conceptual/system visual forms with stable scene element IDs.
 - Use one dominant explanation, clear reading order, evidence references, accessible labels, and artwork reservations.
+- Plan illustration-led concepts, illustrated processes, and mixed chart-and-illustration pages when they improve the story; record the illustration's role and preserve clear label regions.
 - Support A4, US Letter, and digital portrait with the specified type floors and content-budget rules.
 - Keep numeric encodings faithful to units/baselines and conceptual arrows distinct from measured quantities.
 
 Acceptance criteria:
 
 - [ ] Each visual relationship has a deterministic synthetic layout case, including a conceptual page with no metrics.
+- [ ] Illustration-led, illustrated-process, and mixed chart-and-illustration cases have meaningful artwork regions and readable labels; chart-only layouts remain supported.
 - [ ] Required content cannot disappear or shrink below floors to force a fit.
 - [ ] Selected dimensions, safe bounds, source footer, and art regions are explicit in the scene.
 - [ ] Unsupported or overfull scenes produce actionable findings before rendering.
@@ -681,6 +695,7 @@ Work:
 
 - Compose scene elements into SVG using the standard library; preserve editable text, chart marks, connectors, and source markers.
 - Embed validated generated raster artwork while retaining distinct compositor-owned exact text and numeric geometry.
+- Preserve illustration aspect ratio and explicit crop/fit intent; check effective resolution and label clearance at intended export sizes.
 - Use verified font metrics, wrapping, clipping bounds, asset licensing constraints, and deterministic rendering input.
 - Disallow executable SVG, external resource fetches, unexpected file references, and unsupported image types.
 
@@ -1019,6 +1034,7 @@ Work:
 - Inspect intake, story choice, full-page zoom, image-brief detail, targeted edit, blockers, history, and download flows.
 - Check dark/light, reduced transparency/motion, keyboard focus, semantic labels, contrast, readable text, and 44 px targets.
 - Inspect actual rendered comparison, process, and conceptual exports at intended viewing size, not only scene coordinates.
+- Surface an illustration-led conceptual page, an illustrated process, and a mixed chart-and-illustration page for owner review, showing actual artwork and composed exports.
 
 Acceptance criteria:
 
@@ -1026,6 +1042,7 @@ Acceptance criteria:
 - [ ] Critical actions and findings are usable without hover or color alone.
 - [ ] Every preset remains one page with legible labels and correct chart semantics.
 - [ ] Visual verification evidence distinguishes stubbed workflow acceptance from live provider quality.
+- [ ] Illustration review covers explanatory value, coherent style, crop/aspect ratio, resolution, and label clearance; basic renderer samples or placeholder assets cannot count as illustration-quality acceptance.
 
 **Verification:** Repository-supported browser journeys and rendered-output inspection with disposable data; no personal browser session or provider jobs.
 

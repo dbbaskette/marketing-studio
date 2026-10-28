@@ -76,6 +76,15 @@ This evidence does not establish branded layout quality, image-provider quality,
 or every font's portability. User visual confirmation of the surfaced synthetic
 outputs is separate from automated geometry checks.
 
+The owner confirmed that the three synthetic samples look readable. That feedback
+establishes sample readability only. Their simple shapes and embedded raster marker
+do not demonstrate illustration quality. First-release composition and visual
+acceptance must separately cover an illustration-led concept, an illustrated
+process, and a mixed chart-and-illustration page, surfacing actual artwork and
+composed exports for owner review. Review explanatory value, coherent style,
+crop/aspect ratio, effective resolution, and label clearance. Offline checks use
+synthetic stand-ins; live provider artwork acceptance remains a separate action.
+
 ## Reproduce and inspect the actual graphics
 
 From the repository root, with Python 3.11+:
