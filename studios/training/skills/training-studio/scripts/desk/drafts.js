@@ -773,9 +773,142 @@ function slideWordsText(value) {
   return typeof value === 'object' && value ? value.text || '' : value || '';
 }
 
+function slideWordsLines(words) {
+  return [words.title, words.subtitle,
+    ...list(words.points).map((point) => [point.label, point.text].filter(Boolean).join(': ')),
+    slideWordsText(words.caveat), slideWordsText(words.source), words.notes].filter(Boolean).join('\n');
+}
+
+function deckOutline(found) {
+  const held = deskHeld(view.path); held.outlines ||= {};
+  const original = list(found.outline?.slides || found.slides);
+  let edit = held.outlines[found.name];
+  if (!edit || edit.seen !== found.seen) edit = held.outlines[found.name] = {
+    seen: found.seen, work: JSON.parse(JSON.stringify(original)), priced: '' };
+  const editable = !held.view.readonly && found.local && found.change?.status !== 'working';
+  const rows = make('ol', 'plain');
+  const said = make('p', 'quiet'); said.setAttribute('role', 'status');
+  const error = make('p', 'notice'); error.setAttribute('role', 'alert');
+  const now = () => JSON.stringify(edit.work);
+  const save = capsule('Save outline', 'filled', async () => {
+    const sent = { level: found.level, slides: edit.work, seen: found.seen };
+    const result = await deskDecide('deck-outline', sent, save);
+    if (!result) { error.textContent = held.said; return; }
+    slideWordResult(found, {}, sent, result, () => { delete held.outlines[found.name]; });
+  });
+  const price = async () => {
+    save.disabled = true; error.textContent = '';
+    const asked = now(); edit.asking = asked;
+    const result = await deskDecide('deck-outline-price', { level: found.level,
+      slides: JSON.parse(asked), seen: found.seen });
+    if (edit.asking !== asked) return;
+    if (!result) { error.textContent = held.said; return; }
+    edit.priced = asked; said.textContent = result.price;
+    save.disabled = !editable || now() !== asked || asked === JSON.stringify(original);
+  };
+  const paint = () => {
+    rows.replaceChildren(); save.disabled = true;
+    edit.work.forEach((slide, index) => {
+      const row = make('li', 'outline-slide');
+      row.append(make('p', 'quiet', 'Slide ' + (index + 1)));
+      if (editable) {
+        const box = make('input', 'input'); box.value = slide.title; box.maxLength = 300;
+        box.setAttribute('aria-label', 'Outline title of slide ' + (index + 1));
+        box.addEventListener('input', () => { slide.title = box.value; save.disabled = true; });
+        box.addEventListener('change', price);
+        row.append(add(make('label', 'field'), make('span', 'field-label', 'Title'), box));
+      } else row.append(make('p', 'row-title', slide.title));
+      add(row, make('p', 'desk-plain', slideWordsLines({ ...slide, title: '' })),
+        make('p', '', slide.understand || ''),
+        make('p', 'quiet', 'Serves: ' + list(slide.sources || slide.serves).join(', ')));
+      if (editable) {
+        const move = (by) => { const [one] = edit.work.splice(index, 1);
+          edit.work.splice(index + by, 0, one); paint(); price(); };
+        const up = capsule('Move up', 'quiet', () => move(-1)); up.disabled = index === 0;
+        const down = capsule('Move down', 'quiet', () => move(1)); down.disabled = index === edit.work.length - 1;
+        const remove = capsule('Remove slide', 'quiet', () => { edit.work.splice(index, 1); paint(); price(); });
+        remove.disabled = edit.work.length < 2;
+        up.setAttribute('aria-label', 'Move up: ' + slide.title);
+        down.setAttribute('aria-label', 'Move down: ' + slide.title);
+        remove.setAttribute('aria-label', 'Remove slide: ' + slide.title);
+        row.append(add(make('div', 'bar'), up, down, remove));
+      }
+      rows.append(row);
+    });
+  };
+  paint();
+  DESK.kitSheet = [sheetTitle('Outline'), make('p', '', 'Each slide’s words, in order. Saving redraws only changed sections.'),
+    rows, said, error, add(make('div', 'bar'), editable ? save : null,
+      editable ? capsule('Put it back as it was', 'quiet', () => { edit.work = JSON.parse(JSON.stringify(original));
+        edit.priced = ''; said.textContent = ''; error.textContent = ''; paint(); }) : null,
+      capsule('Close', 'quiet', () => closeSheet()))];
+  openSheet('desk-kit', '')();
+}
+
+function wholeDeckNote(found) {
+  const held = deskHeld(view.path); held.deckNotes ||= {};
+  const box = make('textarea', 'input'); box.rows = 3; box.maxLength = 4000;
+  box.setAttribute('aria-label', 'Note for the whole deck'); box.value = held.deckNotes[found.name] || '';
+  box.dataset.key = found.name + ':whole-note';
+  box.addEventListener('input', () => { held.deckNotes[found.name] = box.value; });
+  const go = capsule('Revise the whole deck', 'quiet', async () => {
+    const result = await deskDecide('deck-note', { level: found.level, seen: found.seen, note: box.value }, go);
+    if (result) delete held.deckNotes[found.name];
+  });
+  go.disabled = found.change?.status === 'working';
+  const node = add(card('Note for the whole deck'), box, make('p', 'quiet', found.look_price), go);
+  if (found.change) {
+    const progress = make('p', '', found.change.done + ' of ' + found.change.total + ' sections'
+      + (found.change.status === 'stopped' ? ' · Stopped' : found.change.status === 'done' ? ' · Done' : ''));
+    progress.setAttribute('role', 'status'); node.append(progress);
+    if (found.change.status === 'working') node.append(capsule('Stop deck change', 'quiet', () =>
+      deskDecide('deck-stop', { level: found.level })));
+  }
+  return node;
+}
+
+function slideSelectionBar(found) {
+  const bar = make('div', 'desk-selection glass'); bar.hidden = true;
+  bar.setAttribute('role', 'toolbar'); bar.setAttribute('aria-label', 'Change selected slide words');
+  const selected = (slide, field, box, savedText) => {
+    const start = box.selectionStart, end = box.selectionEnd;
+    if (start === end) { bar.hidden = true; return; }
+    const passage = box.value.slice(start, end);
+    const run = async (action, instruction = '') => {
+      if (box.value !== savedText) { toast('Save this field before changing a selection.'); return; }
+      const answer = await deskDecide('slide-selection', { level: found.level, slide: slide.id,
+        field, action, start, passage, text: box.value, seen: found.seen, instruction });
+      if (answer) bar.hidden = true;
+    };
+    bar.replaceChildren(...[['rephrase', 'Rephrase'], ['shorten', 'Shorten'], ['expand', 'Expand'],
+      ['fix', 'Fix']].map(([action, label]) => capsule(label, 'quiet', () => run(action))),
+      capsule('Ask…', 'quiet', () => {
+        const question = make('textarea', 'input'); question.rows = 2;
+        question.setAttribute('aria-label', 'What should change in the selected text?');
+        bar.replaceChildren(question, capsule('Go', 'quiet', () => run('ask', question.value)),
+          capsule('Cancel', 'quiet', () => { bar.hidden = true; }));
+      }));
+    bar.hidden = false;
+  };
+  return { bar, selected };
+}
+
 function deckParts(found) {
   const area = make('div', 'stack desk-slide-cards');
   const ours = deskOurs();
+  const selection = slideSelectionBar(found);
+  if (ours) area.append(selection.bar);
+  if (list(found.slides).length) area.append(capsule('Outline', 'quiet', () => deckOutline(found)));
+  if (ours && found.local && list(found.slides).length) area.append(wholeDeckNote(found));
+  if (found.selection) {
+    const job = found.selection, result = job.result;
+    const status = make('p', 'quiet', job.error || (['queued', 'working'].includes(job.status)
+      ? job.says : result?.error || (result?.fits ? 'Selected words saved.' : 'Selected words are ready to review.')));
+    status.setAttribute('role', job.error || result?.error ? 'alert' : 'status'); area.append(status);
+    if (ours && result && (result.approval || result.fits === false)) area.append(
+      capsule('Review selected words', 'quiet', () => slideWordResult(found,
+        list(found.slides).find((slide) => slide.id === job.part), result.sent, result, () => {})));
+  }
   if (ours && list(found.slides).length) {
     const again = capsule(found.local ? 'Try another look' : 'Draw it here', 'quiet', async () => {
       if (!found.local) return deskDecide('draw-here', { level: found.level, seen: found.seen }, again);
@@ -814,6 +947,8 @@ function deckParts(found) {
       saved.slideText ||= {};
       if (saved.slideText[box.dataset.key] !== undefined) box.value = saved.slideText[box.dataset.key];
       box.addEventListener('input', () => { saved.slideText[box.dataset.key] = box.value; });
+      for (const event of ['select', 'mouseup', 'keyup']) box.addEventListener(event,
+        () => selection.selected(slide, field, box, text));
       const go = capsule('Save ' + label.toLowerCase(), 'quiet', async () => {
         const sent = { level: found.level, slide: slide.id, seen: found.seen, field, text: box.value };
         const answer = await deskDecide(field === 'notes' ? 'slide-speaker-notes' : 'slide-words', sent, go);
@@ -859,22 +994,24 @@ function deckParts(found) {
 function slideWordResult(found, slide, sent, answer, saved) {
   if (answer.approval) { slideApproval(found, slide, sent, answer.approval, saved); return; }
   if (answer.fits === false) {
+    const error = make('p', 'notice'); error.setAttribute('role', 'alert');
     const redraw = capsule('Redraw with these words', 'filled', async () => {
       const route = sent.approval ? 'slide-words-decide' : sent.stamp ? 'slide-restore' : 'slide-words';
       const { approval, ...words } = sent;
       const result = await deskDecide(route, { ...(approval || words), redraw: true }, redraw);
       if (result) { saved(); closeSheet(); }
+      else error.textContent = deskHeld(view.path).said;
     });
     DESK.kitSheet = [sheetTitle('These words need another drawing'),
       make('h3', 'sheet-part', '1. Your words'), make('p', 'desk-plain', sent.text),
       make('p', '', answer.said), make('h3', 'sheet-part', '2. Redraw this section'),
       make('p', 'quiet', answer.price || slide.price),
       answer.can_redraw === false ? make('p', '', 'This slide uses a fixed layout. Shorten its words before saving.') : null,
-      add(make('div', 'bar'), answer.can_redraw === false ? null : redraw,
+      error, add(make('div', 'bar'), answer.can_redraw === false ? null : redraw,
         capsule('Discard', 'quiet', async () => {
           if (sent.approval) {
             const result = await deskDecide('slide-words-decide', { proposal: sent.approval.proposal, decision: 'cancel' });
-            if (!result) return;
+            if (!result) { error.textContent = deskHeld(view.path).said; return; }
           }
           saved(); closeSheet();
         }))].filter(Boolean);
@@ -921,6 +1058,7 @@ async function slideHistory(found, slide) {
   try {
     const answer = await ask('drafts/slide-versions', { path: view.path, level: found.level, slide: slide.id });
     const rows = make('div', 'stack');
+    const error = make('p', 'notice'); error.setAttribute('role', 'alert');
     for (const version of list(answer.versions)) {
       const row = add(make('section', 'card'), make('h3', 'card-title', version.at),
         make('p', 'quiet', ({save: 'Saved', selection: 'Selection', note: 'Slide note',
@@ -935,17 +1073,23 @@ async function slideHistory(found, slide) {
           ? list(value).map((point) => [point.label, point.text].filter(Boolean).join(': ')).join('\n')
           : slideWordsText(value)));
       }
+      const comparison = make('div');
+      row.append(capsule('Compare', 'quiet', () => comparison.replaceChildren(
+        make('p', 'quiet', 'Struck words are in this version only; marked words were added since.'),
+        deskKit.compare(slideWordsLines(version.words), slideWordsLines(slide)))));
+      row.append(comparison);
       if (deskOurs()) {
         const restore = capsule('Restore', 'quiet', async () => {
           const sent = { level: found.level, slide: slide.id, stamp: version.stamp, seen: found.seen };
           const result = await deskDecide('slide-restore', sent, restore);
           if (result) slideWordResult(found, slide, { ...sent, text: JSON.stringify(version.words) }, result, () => {});
+          else error.textContent = deskHeld(view.path).said;
         });
         row.append(restore);
       }
       rows.append(row);
     }
-    DESK.kitSheet = [sheetTitle('Slide ' + slide.number + ' History'), rows,
+    DESK.kitSheet = [sheetTitle('Slide ' + slide.number + ' History'), error, rows,
       add(make('div', 'bar'), capsule('Close', 'quiet', () => closeSheet()))];
     openSheet('desk-kit', '')();
   } catch (failure) { deskHeld(view.path).said = failure.message; paintDesk(false); }
@@ -958,7 +1102,15 @@ function lookSheet(found, look) {
     picked, changed: (now) => Object.assign(picked, now),
     picture: (number, alt) => pictureAt({ path: view.path, artifact: found.name,
       section: 'look', number }, alt, look?.at || found.seen, { again: true }) });
-  const error = make('p', 'notice');
+  const error = make('p', 'notice'); error.setAttribute('role', 'alert');
+  const retry = capsule('Try again', 'quiet', async () => {
+    const answer = await deskDecide('look-samples', { level: found.level }, retry);
+    if (answer) lookSheet(found, answer.look); else error.textContent = deskHeld(view.path).said;
+  });
+  const fallback = capsule('Carry on in the brand’s default look', 'quiet', async () => {
+    const answer = await deskDecide('look', { level: found.level, choice: 'default', seen: found.seen }, fallback);
+    if (answer) closeSheet(); else error.textContent = deskHeld(view.path).said;
+  });
   const apply = capsule('Use this look', 'filled', async () => {
     if (!picked.choice) { error.textContent = 'Choose a look first.'; return; }
     const answer = await deskDecide('look', { level: found.level, choice: picked.choice,
@@ -968,6 +1120,7 @@ function lookSheet(found, look) {
   DESK.kitSheet = [sheetTitle('Try another look'), make('h3', 'sheet-part', '1. Choose a look'),
     make('p', '', look?.message), options, make('h3', 'sheet-part', '2. Redraw the whole deck'),
     make('p', '', found.look_price), error, add(make('div', 'bar'), list(look?.looks).length ? apply : null,
+      look?.failed ? retry : null, look?.default_available ? fallback : null,
       capsule('Cancel', 'quiet', () => closeSheet()))];
   openSheet('desk-kit', '')();
 }

@@ -1249,3 +1249,228 @@ class SlideHistoryRoutesTests(PageCase):
             'choice': result['look']['looks'][-1]['id'],
             'seen': self.engine._load(root)['deck']['']['saved']['sha256']})
         self.assertIsNone(self.engine._load(root).get('problem'))
+
+
+class SlideReviewFixTests(DeckCase):
+    def test_restore_kept_drawing_can_change_the_number_of_points(self):
+        from test_drafts import edit
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        original = json.loads((root / pipeline.OUTLINE).read_text())
+        before = drafts.deck_drawings(root, None)['check-yourself']
+        self.workers.outline_said = copy.deepcopy(original)
+        self.workers.outline_said['slides'][4]['points'].append({'label': 'Added', 'text': 'Another point.'})
+        edit(self, root, 'document', lambda text: text.replace('## When capacity holds', '## When capacity holds\nMore.'))
+        self.engine.update(root, 'deck')
+        self.to_end(root)
+        version = self.engine.slide_versions(root, None, 'check-yourself')['versions'][0]
+        count = len(self.workers.jobs)
+        self.engine.slide_restore(root, None, 'check-yourself', version['stamp'],
+                                  self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.assertEqual(drafts.deck_drawings(root, None)['check-yourself'], before)
+        self.assertEqual(len(self.workers.jobs), count)
+
+    def test_whole_price_uses_the_recorded_cost_words(self):
+        from studio_core import stops
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        with mock.patch.object(self.engine, '_redo_steps', return_value=(90, 0.42)):
+            card = next(one for one in drafts.view(self.engine, root)['cards'] if one['kind'] == 'deck')
+        self.assertIn(stops.cost(90, 0.42), card['look_price'])
+        self.assertNotIn('(90,', card['look_price'])
+
+    def test_failed_look_samples_offer_the_explicit_default(self):
+        self.brand.offers_looks = True
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        self.brand.cannot_render = True
+        look = self.engine.look_samples(root, None)
+        self.assertTrue(look['failed'])
+        self.assertTrue(look['default_available'])
+        count = len(self.workers.of('section'))
+        self.engine.look_apply(root, None, pipeline.DEFAULT_LOOK,
+                              self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('section')), count + 2)
+
+    def test_whole_deck_note_finishes_every_section(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        count = len(self.workers.of('section'))
+        self.engine.deck_note(root, None, 'Use simpler diagrams.',
+            self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('section')), count + 2)
+        card = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')
+        self.assertEqual((card['change']['status'], card['change']['done']), ('done', 2))
+
+    def test_whole_deck_note_draws_all_sections_and_stop_keeps_the_rest(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        count = len(self.workers.of('section'))
+        original = self.engine._section
+        calls = []
+        def stop_after_one(*args):
+            result = original(*args)
+            calls.append(True)
+            self.engine.deck_note_stop(root, None)
+            return result
+        with mock.patch.object(self.engine, '_section', side_effect=stop_after_one):
+            self.engine.deck_note(root, None, 'Use a simpler drawing.',
+                                  self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('section')), count + 1)
+        card = next(one for one in drafts.view(self.engine, root)['cards'] if one['kind'] == 'deck')
+        self.assertEqual(card['change']['status'], 'stopped')
+        self.assertEqual(card['change']['done'], 1)
+        self.assertEqual(card['change']['total'], 2)
+        self.engine.look_samples(root, None)
+        self.engine.look_apply(root, None, pipeline.DEFAULT_LOOK,
+            self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root).get('problem'))
+        self.assertEqual(len(self.workers.of('section')), count + 3)
+
+
+class SlideSelectionTests(DeckCase):
+    def test_selection_changes_only_its_passage_and_keeps_history(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        old = json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title']
+        count = len(self.workers.of('section'))
+        self.workers.then('words', lambda tools, job: tools.submit_artifact('words', 'Review'))
+        self.engine.slide_selection(root, None, 'check-yourself', 'title', 'rephrase', 0,
+            old.split()[0], old, self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.to_end(root)
+        self.assertFalse(self.engine._load(root)['drafts']['jobs'][-1].get('error'), self.engine._load(root)['drafts']['jobs'][-1])
+        new = json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title']
+        self.assertEqual(new, 'Review' + old[len(old.split()[0]):])
+        self.assertEqual(len(self.workers.of('section')), count)
+        self.assertEqual(self.engine.slide_versions(root, None, 'check-yourself')['versions'][0]['source'], 'selection')
+
+    def test_selection_does_not_replace_concurrently_edited_words(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        old = json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title']
+        def during(tools, job):
+            path = root / pipeline.OUTLINE
+            outline = json.loads(path.read_text())
+            outline['slides'][4]['title'] = 'Later typing'
+            path.write_text(json.dumps(outline))
+            return tools.submit_artifact('words', 'Review')
+        self.workers.then('words', during)
+        self.engine.slide_selection(root, None, 'check-yourself', 'title', 'fix', 0,
+            old, old, self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title'], 'Later typing')
+        self.assertFalse(self.engine._load(root)['drafts']['jobs'][-1]['applied'])
+
+
+class DeckOutlineTests(DeckCase):
+    def test_outline_prices_then_saves_titles_and_order_with_history(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = json.loads((root / pipeline.OUTLINE).read_text())
+        slides = copy.deepcopy(before['slides'])
+        slides[4]['title'] = 'Review your choice'
+        slides[2], slides[4] = slides[4], slides[2]
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        count = len(self.workers.jobs)
+        priced = self.engine.deck_outline(root, None, slides, seen, price=True)
+        self.assertTrue(priced['price'])
+        self.assertEqual(len(self.workers.jobs), count)
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text()), before)
+        self.engine.deck_outline(root, None, slides, seen)
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root).get('problem'))
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'], slides)
+        self.assertEqual(self.engine.slide_versions(root, None, 'check-yourself')['versions'][0]['source'], 'outline')
+
+    def test_outline_refuses_removing_the_only_slide_for_an_objective(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = json.loads((root / pipeline.OUTLINE).read_text())
+        with self.assertRaises(workspace.WorkspaceError):
+            self.engine.deck_outline(root, None, before['slides'][:2],
+                self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text()), before)
+
+
+class ApprovedReviewFixTests(JudgedSlideNoteTests):
+    approve = ApprovedWordsTests.approve
+
+    def test_selection_waits_for_the_actual_design_answer(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = (root / pipeline.OUTLINE).read_bytes()
+        title = json.loads(before)['slides'][4]['title']
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.workers.then('words', lambda tools, job: tools.submit_artifact('words', 'Review'))
+        self.engine.slide_selection(root, None, 'check-yourself', 'title', 'shorten', 0,
+            title, title, seen)
+        card = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')
+        result = card['selection']['result']
+        self.assertIn('approval', result)
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), before)
+        self.approve(root, seen, result['approval'])
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title'], 'Review')
+
+    def test_outline_waits_for_design_approval_before_saving(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = (root / pipeline.OUTLINE).read_bytes()
+        slides = json.loads(before)['slides']
+        slides[4]['title'] = 'Review your choice'
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        result = self.engine.deck_outline(root, None, slides, seen)
+        self.assertIn('approval', result)
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), before)
+        self.approve(root, seen, result['approval'])
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root).get('problem'))
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'], slides)
+
+    def test_restore_different_point_count_waits_for_design_approval(self):
+        from test_drafts import edit
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        original = json.loads((root / pipeline.OUTLINE).read_text())
+        self.workers.outline_said = copy.deepcopy(original)
+        self.workers.outline_said['slides'][4]['points'].append({'label': 'Added', 'text': 'Another point.'})
+        edit(self, root, 'document', lambda text: text.replace('## When capacity holds', '## When capacity holds\nMore.'))
+        self.engine.update(root, 'deck')
+        self.to_end(root)
+        version = self.engine.slide_versions(root, None, 'check-yourself')['versions'][0]
+        before = (root / pipeline.OUTLINE).read_bytes()
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        result = self.engine.slide_restore(root, None, 'check-yourself', version['stamp'], seen)
+        self.assertIn('approval', result)
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), before)
+        count = len(self.workers.jobs)
+        self.approve(root, seen, result['approval'])
+        self.assertEqual(len(self.workers.jobs), count)
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['points'],
+                         original['slides'][4]['points'])
+
+
+class DeckControlRoutesTests(PageCase):
+    def test_selection_outline_and_whole_note_routes(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        slides = json.loads((root / pipeline.OUTLINE).read_text())['slides']
+        slides[4]['title'] = 'Review your choice'
+        sent = {'path': str(root), 'level': '', 'seen': seen, 'slides': slides}
+        self.assertTrue(self.post('drafts/deck-outline-price', sent)['price'])
+        self.post('drafts/deck-outline', sent)
+        self.to_end(root)
+        self.workers.then('words', lambda tools, job: tools.submit_artifact('words', 'Check'))
+        self.post('drafts/slide-selection', {'path': str(root), 'level': '', 'slide': 'check-yourself',
+            'field': 'title', 'action': 'rephrase', 'start': 0, 'passage': 'Review',
+            'text': slides[4]['title'], 'seen': self.engine._load(root)['deck']['']['saved']['sha256']})
+        self.to_end(root)
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title'], 'Check your choice')
+        self.post('drafts/deck-note', {'path': str(root), 'level': '', 'note': 'Use a simpler diagram.',
+            'seen': self.engine._load(root)['deck']['']['saved']['sha256']})
+        self.to_end(root)
+        card = next(item for item in drafts.view(self.engine, root)['cards'] if item['kind'] == 'deck')
+        self.assertEqual(card['change']['status'], 'done')

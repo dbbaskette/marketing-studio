@@ -7078,6 +7078,62 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result)[1][1]['redraw'], True)
         self.assertEqual(self.posts(result)[1][1]['text'], 'Longer title')
 
+    def test_slide_selection_outline_and_whole_note_controls(self):
+        found = self.slide_card()
+        found['outline'] = {'slides': [{'id': 'check-yourself', 'title': 'Check yourself', 'serves': ['O2']}]}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/slide-selection': [a_desk(found)]}), [
+            {'select': 'Slide 5 title', 'start': 0, 'end': 5}, {'snapshot': 'selection'},
+            {'click': 'Shorten'}, {'click': 'Outline'}, {'snapshot': 'outline'}])
+        for label in ('Rephrase', 'Shorten', 'Expand', 'Fix', 'Ask…'):
+            self.assertIn(label, result['snapshots']['selection']['buttons'])
+        self.assertIn('Note for the whole deck', result['snapshots']['selection']['text'])
+        self.assertIn('O2', result['snapshots']['outline']['text'])
+        self.assertEqual(self.posts(result)[0][0], '/api/drafts/slide-selection')
+
+    def test_outline_prices_edits_and_preserves_them_when_saving_fails(self):
+        found = self.slide_card()
+        found['outline'] = {'slides': [{'id': 'check-yourself', 'title': 'Check yourself', 'sources': ['O2']}]}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/deck-outline-price': [a_desk(found, price='Redraws one section, about $1.')],
+            'POST /api/drafts/deck-outline': [{'status': 409, 'body': {'error': 'The deck changed.'}}]}), [
+            {'click': 'Outline'}, {'fill': 'Outline title of slide 1', 'value': 'Review your choice'},
+            {'snapshot': 'priced'}, {'click': 'Save outline'}, {'snapshot': 'failed'}])
+        self.assertIn('Redraws one section, about $1.', result['snapshots']['priced']['text'])
+        self.assertIn('The deck changed.', result['snapshots']['failed']['sheetAlerts'])
+        self.assertEqual(self.posts(result)[-1][1]['slides'][0]['title'], 'Review your choice')
+
+    def test_fit_refusal_errors_stay_in_the_active_sheet(self):
+        found = self.slide_card()
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/slide-words': [a_desk(found, fits=False, said='Too long.', price='About $1.'),
+                {'status': 409, 'body': {'error': 'Changed; enter these words again.'}}]}), [
+            {'fill': 'Slide 5 title', 'value': 'Longer words'}, {'click': 'Save title'},
+            {'click': 'Redraw with these words'}, {'snapshot': 'failed'}])
+        self.assertIn('Changed; enter these words again.', result['snapshots']['failed']['sheetAlerts'])
+
+    def test_history_compare_and_restore_errors_stay_in_the_sheet(self):
+        found = self.slide_card()
+        found['slides'][0]['history'] = 1
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'GET /api/drafts/slide-versions': [ok({'versions': [{'stamp': 'old', 'at': '2030',
+                'source': 'save', 'words': {'title': 'Prior words'}, 'drawing': True, 'picture': False}]})],
+            'POST /api/drafts/slide-restore': [{'status': 409, 'body': {'error': 'This version cannot fit.'}}]}), [
+            {'click': 'History (1)'}, {'click': 'Compare'}, {'click': 'Restore'}, {'snapshot': 'failed'}])
+        self.assertIn('This version cannot fit.', result['snapshots']['failed']['sheetAlerts'])
+        self.assertIn('Struck words', result['snapshots']['failed']['text'])
+
+    def test_failed_look_samples_offer_retry_and_default(self):
+        found = self.slide_card()
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/look-samples': [a_desk(found, look={'failed': True,
+                'default_available': True, 'message': 'Rendering failed.', 'looks': []})],
+            'POST /api/drafts/look': [a_desk(found)]}), [
+            {'click': 'Try another look'}, {'snapshot': 'failed'},
+            {'click': 'Carry on in the brand’s default look'}])
+        self.assertIn('Try again', result['snapshots']['failed']['buttons'])
+        self.assertEqual(self.posts(result)[-1][1]['choice'], 'default')
+
     def start_steps(self, *more) -> list:
         return [{'click': 'New training'},
                 {'fill': 'A short title', 'value': 'Rolling restarts'},

@@ -226,7 +226,9 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/review-level', '/api/research-site', f'{DRAFTS}/open',
           f'{DRAFTS}/slide-note', f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes', f'{DRAFTS}/slide-words-decide',
           f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
-          f'{DRAFTS}/look', f'{DRAFTS}/draw-here', *DECIDED, *TYPED, *JOBS)
+          f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop',
+          f'{DRAFTS}/slide-selection', f'{DRAFTS}/deck-outline', f'{DRAFTS}/deck-outline-price',
+          *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -753,6 +755,33 @@ class RunnerPage(desk.Page):
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
             return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **result})
+        if path in (f'{DRAFTS}/deck-outline', f'{DRAFTS}/deck-outline-price'):
+            root = self.on_desk(desk.text(sent, 'path'))
+            try:
+                result = self.engine.deck_outline(root, desk.text(sent, 'level', False) or None,
+                    sent.get('slides'), desk.text(sent, 'seen'), price=path.endswith('-price'))
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **result})
+        if path == f'{DRAFTS}/slide-selection':
+            root = self.on_desk(desk.text(sent, 'path'))
+            try:
+                result = self.engine.slide_selection(root, desk.text(sent, 'level', False) or None,
+                    desk.text(sent, 'slide'), desk.text(sent, 'field'), desk.text(sent, 'action'),
+                    sent.get('start'), desk.text(sent, 'passage'), desk.text(sent, 'text', False),
+                    desk.text(sent, 'seen'), desk.text(sent, 'instruction', False) or '')
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, result)
+        if path in (f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop'):
+            root = self.on_desk(desk.text(sent, 'path'))
+            level = desk.text(sent, 'level', False) or None
+            try:
+                result = self.engine.deck_note_stop(root, level) if path.endswith('/deck-stop') else self.engine.deck_note(
+                    root, level, desk.text(sent, 'note'), desk.text(sent, 'seen'))
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, result)
         if path == f'{DRAFTS}/finding':
             root = self.on_desk(desk.text(sent, 'path'))
             level = desk.text(sent, 'level', False) or None

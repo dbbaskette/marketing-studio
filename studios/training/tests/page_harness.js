@@ -549,6 +549,7 @@ function snapshot() {
     heading: document.getElementById('title').textContent,
     tip: document.getElementById('title').title || '',
     text: words(document.body).replace(/\n+/g, '\n'),
+    sheetAlerts: sheet.querySelectorAll('[role="alert"]').filter(visible).map((node) => node.textContent),
     buttons: controls.filter((node) => node.tagName !== 'A' && visible(node)).map(name),
     toolbarButtons: document.getElementById('actions').querySelectorAll('button')
       .filter(visible).map(name),

@@ -1635,6 +1635,17 @@ def words_of(slide):
     return {key: slide.get(key) for key in SLIDE_WORDS}
 
 
+def with_slide_words(outline, slide, wanted):
+    made = json.loads(json.dumps(outline))
+    target = next(item for item in made['slides'] if item['id'] == slide)
+    for key in SLIDE_WORDS:
+        if wanted.get(key) is None:
+            target.pop(key, None)
+        else:
+            target[key] = wanted[key]
+    return made
+
+
 def word_changes(now, wanted):
     """Individual editable fields, including each point's text."""
     if len(now.get('points') or []) != len(wanted.get('points') or []):
@@ -1729,7 +1740,19 @@ def deck_card(engine, root, level, found):
     estimate = deck.before(len(slides))
     cost = engine._redo_steps(record, [workspace.qualify(kind, level)
         for kind in ('deck-sections', 'deck-whole', 'deck-review')])
-    price = ('Redraws the whole deck. ' + (f'Last time this took {cost}.' if cost else
+    price = ('Redraws the whole deck. ' + (f'Last time this took {stops.cost(*cost)}.' if cost else
              'Expect about ' + stops.cost(estimate['minutes'] * 60, estimate['dollars']) + '.'))
+    from runner import deck_edit
+    selection = next((job for job in reversed((record.get('drafts') or {}).get('jobs', []))
+                      if job.get('name') == mine.name and job.get('kind') == 'slide-selection'), None)
+    if selection:
+        selection = {**selection, 'result': home.read_json(
+            deck_edit.storage(root) / f"selection-{selection['id']}.json", None)}
+    chain = mine.kept.get('note_chain') or {}
+    notes = [note for note in mine.kept.get('notes') or [] if note['id'] in chain.get('ids', [])]
+    done = sum(all(note['status'] == 'done' for note in notes if note['section'] == section)
+               for section in chain.get('sections', []))
     return {'slides': slides, 'local': bool(drawn), 'look_price': price,
+            'change': {**chain, 'done': done, 'total': len(chain.get('sections', []))} if chain else None,
+            'outline': outline, 'selection': selection,
             'look': (mine.kept.get('look_pending') or None)}

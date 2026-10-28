@@ -512,10 +512,20 @@ def check_section(text: str, spec: dict, slides,
     return held(outcomes), outcomes, [], kept
 
 
+def check_slide_words(text: str, spec: dict) -> tuple:
+    """A replacement passage; the complete slide is checked by its normal word chain."""
+    problems = []
+    if not text.strip() or len(text) > spec['limit']:
+        problems.append('Return a nonempty passage within the slide field length.')
+    if '\x00' in text:
+        problems.append('Return plain text.')
+    return problems, [], [], text.strip()
+
+
 VALIDATORS = {'research-plan': check_plan, 'blueprint': check_blueprint,
               'document': check_document, 'brief': check_brief, 'scenario': check_scenario,
               'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section,
-              'part': check_part}
+              'part': check_part, 'slide-words': check_slide_words}
 VALIDATORS['research-json'] = check_research_json
 
 

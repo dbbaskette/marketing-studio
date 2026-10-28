@@ -2762,10 +2762,17 @@ class Engine(Reviewing):
         how = self._how(root, found, level)
 
         def one(section: str) -> None:
+            with self.files:
+                kept = self._decided(self._load(root), level)
+                if ((kept.get('note_chain') or {}).get('status') == 'stopped'
+                        and kept['note_chain'].get('start') == mine.start.get('folder')) and not any(
+                        note.get('section') == section and note.get('status') in ('waiting', 'drawing')
+                        for note in kept.get('notes') or []):
+                    return
             if self._may_go(root):
                 self._section(root, run, found, step.step, section, how)
 
-        if self.at_once <= 1 or len(step.questions) == 1:
+        if self.at_once <= 1 or len(step.questions) == 1 or mine.kept.get('note_chain'):
             for section in step.questions:
                 one(section)
             return
@@ -3171,6 +3178,8 @@ class Engine(Reviewing):
             kept.pop('redesign', None)
             kept.pop('redrawing', None)
             kept.pop('draw_all', None)
+            if (kept.get('note_chain') or {}).get('status') == 'working':
+                kept['note_chain']['status'] = 'done'
             self._store(root, record)
             self._done(root, it, clock, f'keep {workspace.label(it.artifact)}')
 
@@ -4242,7 +4251,9 @@ class Engine(Reviewing):
                        'looks': [{key: look.get(key) for key in ('id', 'name', 'useWhen', 'number')}
                                  for look in shown.get('looks') or []],
                        'message': shown.get('unavailable') or shown.get('failed') or '',
-                       'failed': bool(shown.get('failed')), 'default': shown.get('default'),
+                       'failed': bool(shown.get('failed')),
+                       'default_available': bool(shown.get('failed')),
+                       'default': shown.get('default') or (shown.get('unseen') or {}).get('default'),
                        'sheet': bool(shown.get('sheet')), 'at': shown.get('at')}
 
             self._decided(record, level)['look_pending'] = pending
@@ -4284,7 +4295,7 @@ class Engine(Reviewing):
         self.carry_on(root)
         return drafts.view(self, root)
 
-    def slide_words(self, path, level, slide, field, text, seen, *, _approved_words=None, _restore=None, _redraw=False) -> dict:
+    def slide_words(self, path, level, slide, field, text, seen, *, _approved_words=None, _restore=None, _redraw=False, _source='save') -> dict:
         """Change the outline and its drawing, then render and keep the deck."""
         level = level or None
         with self.files:
@@ -4316,10 +4327,13 @@ class Engine(Reviewing):
             changes = [(field, old, text.strip())]
             if _restore:
                 current = next(item for item in outline['slides'] if item['id'] == slide)
-                changes = drafts.word_changes(current, _restore['words'])
-                edited = json.loads(json.dumps(outline))
-                for changed_field, _, new in changes:
-                    edited, _ = drafts.slide_words(edited, slide, changed_field, new)
+                edited = drafts.with_slide_words(outline, slide, _restore['words'])
+                changes = [('points', current.get('points'), _restore['words'].get('points'))]
+                if not _restore.get('drawing') and not _redraw:
+                    try:
+                        changes = drafts.word_changes(current, _restore['words'])
+                    except WorkspaceError:
+                        changes = [('points', current.get('points'), _restore['words'].get('points'))]
             if not _restore and old == text.strip():
                 return {'fits': True}
             blueprint = pipeline._text(root, session, workspace.qualify('blueprint', level)) or ''
@@ -4327,11 +4341,13 @@ class Engine(Reviewing):
                                   delivery=pipeline.delivery_of(session))
             if problems:
                 raise WorkspaceError(' '.join(problems))
-            if start.get('design') and _approved_words is None and (
+            if start.get('design') and _approved_words is None and ((_restore and any(
+                    current.get(key) != _restore['words'].get(key) for key in drafts.SLIDE_WORDS
+                    if key != 'notes')) or
                     any(key in ('title', 'subtitle', 'caveat', 'source') or key.startswith('points[')
                         for key, _, _ in changes)):
                 return self._propose_slide_words(root, level, slide, field, text, seen, old, basis,
-                                                changes=changes, restore=_restore)
+                                                changes=changes, restore=_restore, source=_source)
             whole = home.read_json(folder / 'given' / 'outline.json', {})
             updated = next(item for item in deck.slides_of(edited) if item.get('id') == slide)
             whole['slides'] = [updated if item.get('id') == slide else item
@@ -4349,6 +4365,11 @@ class Engine(Reviewing):
                         home.read_json(folder / part, {}).get('slides', []))), None)
                 if drawing_file is None:
                     raise WorkspaceError('The deck has no such drawn slide.')
+            if _restore and not _restore.get('drawing') and not _redraw and any(
+                    key == 'points' for key, _, _ in changes):
+                return {'fits': False, 'said': 'These words need another drawing.',
+                        'can_redraw': section is not None,
+                        'price': drafts.section_price(record, level, section['id']) if section else ''}
             patched = home.read_json(drawing_file, {})
             if _restore and _restore.get('drawing'):
                 patched['slides'] = [_restore['drawing'] if item.get('id') == slide else item
@@ -4397,7 +4418,7 @@ class Engine(Reviewing):
                 try:
                     self._save_slide_words(staged, level, name, edited, whole, patched,
                                            section, drawing_file.relative_to(root), _approved_words,
-                                           history=(slide, 'restore' if _restore else 'save'), redraw=_redraw)
+                                           history=(slide, 'restore' if _restore else _source), redraw=_redraw)
                 finally:
                     self._preparing_decks.pop(staged, None)
                     self._runs.pop(str(staged), None)
@@ -4500,14 +4521,32 @@ class Engine(Reviewing):
             raise WorkspaceError(problem.get('what') or 'The deck could not be saved.')
 
     def _propose_slide_words(self, root, level, slide, field, text, seen, old, basis,
-                            *, changes=None, restore=None):
+                            *, changes=None, restore=None, source='save', outline=None):
         """Put the tool's actual question to the person; this never answers it."""
         tool, project = self.slides(), pipeline.design_project(root, level)
         checked = tool.design_check(project)
         plan = checked['plan']
-        for key, previous, new in changes or [(field, old, text)]:
-            if key != 'notes':
-                plan = drafts.design_words(plan, slide, key, previous, new)
+        if outline is not None:
+            plan = json.loads(json.dumps(plan))
+            existing = {item['id']: item for item in plan['slides']}
+            plan['slides'] = [existing[item['id']] for item in outline['slides']]
+            for item, drawn in zip(outline['slides'], plan['slides']):
+                if drawn.get('title') != item['title']:
+                    drawn['title'] = item['title']
+                    drawn['copy'] = deck._copy(item)
+                    drawn.pop('visibleText', None)
+        elif restore:
+            outline = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
+            restored = drafts.with_slide_words(outline, slide, restore['words'])
+            plan = json.loads(json.dumps(plan))
+            target = next(item for item in plan['slides'] if item['id'] == slide)
+            target['title'] = restore['words']['title']
+            target['copy'] = deck._copy(next(item for item in restored['slides'] if item['id'] == slide))
+            target.pop('visibleText', None)
+        else:
+            for key, previous, new in changes or [(field, old, text)]:
+                if key != 'notes':
+                    plan = drafts.design_words(plan, slide, key, previous, new)
         token = secrets.token_hex(12)
         folder = deck_edit.proposal_folder(root, token)
         try:
@@ -4523,13 +4562,16 @@ class Engine(Reviewing):
                 raise WorkspaceError('The slides tool did not provide a design question for these words.')
             approval = {'token': token, 'revision': status['revision'], 'question': question,
                         'slide': slide, 'field': field, 'before': old, 'after': text.strip()}
+            if source == 'outline':
+                approval.update(before=old, after=json.dumps(outline['slides'], ensure_ascii=False))
             if restore:
                 approval.update(before=json.dumps(drafts.words_of(next(
                     item for item in home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})['slides']
                     if item['id'] == slide)), ensure_ascii=False),
                     after=json.dumps(restore['words'], ensure_ascii=False))
             home.write_json(folder / 'request.json', {'root': str(root), 'level': level,
-                'restore': restore, 'text': text,
+                'restore': restore, 'text': text, 'source': source,
+                'outline': outline if source == 'outline' else None,
                 'seen': seen, 'approval': approval,
                 'basis': {str(path): digest.hex() for path, digest in basis.items()}})
             return {'fits': None, 'approval': approval}
@@ -4563,17 +4605,262 @@ class Engine(Reviewing):
             checked = tool.design_check(project)
             if checked['revision'] != revision:
                 raise WorkspaceError('The design changed after this question was displayed. Enter the words again.')
-            result = self.slide_words(root, requested['level'], approval['slide'], approval['field'],
-                requested.get('text', approval['after']), seen, _restore=requested.get('restore'),
-                _redraw=redraw, _approved_words={'plan': checked['plan'], 'revision': revision,
-                    'source': project, 'project': f'deck/design-edits/{token}',
-                    'basis': {Path(path): bytes.fromhex(digest) for path, digest in requested['basis'].items()}})
+            approved = {'plan': checked['plan'], 'revision': revision,
+                'source': project, 'project': f'deck/design-edits/{token}',
+                'basis': {Path(path): bytes.fromhex(digest) for path, digest in requested['basis'].items()}}
+            if requested.get('outline') is not None:
+                result = self.deck_outline(root, requested['level'], requested['outline']['slides'],
+                                           seen, _approved=approved)
+            else:
+                result = self.slide_words(root, requested['level'], approval['slide'], approval['field'],
+                    requested.get('text', approval['after']), seen, _restore=requested.get('restore'),
+                    _redraw=redraw, _source=requested.get('source', 'save'), _approved_words=approved)
             if result.get('fits'):
                 shutil.rmtree(folder, ignore_errors=True)
             return result
 
     def slide_speaker_notes(self, path, level, slide, text, seen) -> dict:
         return self.slide_words(path, level, slide, 'notes', text, seen)
+
+    def _outline_price(self, root, level, edited, record):
+        from studio_core import stops
+        mine = self._survey(root, record).decks[level]
+        work = pipeline.place(root, level, pipeline.WORK)
+        listed = home.read_json(work / mine.built['brand']['told'] / 'layouts.json', {})
+        known = self.slides().knows()
+        whole = deck.complete(edited, listed.get('layouts'), [], designed=bool(mine.start.get('design')),
+            look=pipeline.look_of(root, mine), knows=known, delivery=pipeline.delivery_of(workspace.load(root)))
+        old = {item['id']: item for item in mine.outline['slides']}
+        now = {item['id']: item for item in edited['slides']}
+        previous = {item['id']: item['slides'] for item in mine.start['sections']}
+        changed = []
+        with tempfile.TemporaryDirectory(prefix='training-outline-price-') as scratch:
+            scratch = Path(scratch)
+            source = scratch / 'outline.json'
+            home.write_json(source, deck.for_tool(whole, known))
+            self.slides().outline_start(source, pipeline.contract(root, mine), scratch / 'split')
+            folder = scratch / 'split'
+            for part in home.read_json(folder / 'parts.json', {})['parts']:
+                ident = Path(part).stem
+                if not pipeline.SECTION.match(ident):
+                    continue
+                ids = deck.named_in((folder / 'briefs' / f'{ident}.md').read_text(), whole)
+                if ids != previous.get(ident) or any(any(old[item].get(key) != now[item].get(key)
+                    for key in deck.DRAWN_FROM) for item in ids):
+                    changed.append(ident)
+        names = [workspace.qualify('deck-sections', level) + ':' + str(pipeline.numbered(item))
+                 for item in changed]
+        cost = self._redo_steps(record, [*names, workspace.qualify('deck-whole', level),
+                                        workspace.qualify('deck-review', level)])
+        says = ('Redraws sections ' + ', '.join(str(pipeline.numbered(item)) for item in changed) + '.'
+                if changed else 'Keeps every section as drawn.')
+        says += ' Then puts the deck together, renders and checks it.'
+        if cost:
+            says += ' Last time this took ' + stops.cost(*cost) + '.'
+        else:
+            estimate = deck.before(sum(len(previous.get(item, [])) for item in changed))
+            says += ' Expect about ' + stops.cost(estimate['minutes'] * 60, estimate['dollars']) + '.'
+        return {'price': says, 'sections': changed}
+
+    def deck_outline(self, path, level, slides, seen, *, price=False, _approved=None):
+        """Price, then save the person's ordered titles; a design asks its own question."""
+        level = level or None
+        with self.files:
+            root, record, name, kept = self._deck_change(path, level, seen)
+            outline = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
+            before = outline['slides']
+            known = {item['id']: item for item in before}
+            if not isinstance(slides, list) or not slides or any(not isinstance(item, dict) for item in slides):
+                raise WorkspaceError('Keep at least one slide in the outline.')
+            ids = [item.get('id') for item in slides]
+            if any(not isinstance(ident, str) or ident not in known for ident in ids) or len(set(ids)) != len(ids):
+                raise WorkspaceError('The outline must name each existing slide at most once.')
+            for item in slides:
+                original = known[item['id']]
+                if ({key: value for key, value in item.items() if key != 'title'} !=
+                        {key: value for key, value in original.items() if key != 'title'}):
+                    raise WorkspaceError('Edit the slide’s words on its card; the outline changes titles and order.')
+                if not isinstance(item.get('title'), str) or not item['title'].strip() or len(item['title']) > 300:
+                    raise WorkspaceError('Give each slide a title under 300 characters.')
+            edited = {**outline, 'slides': slides}
+            session = workspace.load(root)
+            problems = deck.rules(edited, pipeline._text(root, session, workspace.qualify('blueprint', level)) or '',
+                known=pipeline.research_ids(root), delivery=pipeline.delivery_of(session))
+            if problems:
+                raise WorkspaceError(' '.join(problems))
+            if price:
+                return self._outline_price(root, level, edited, record)
+            if slides == before:
+                return {'fits': True}
+            basis = deck_edit.PreparedEdit.files(root)
+            if _approved and basis != _approved['basis']:
+                raise WorkspaceError('This training changed after this outline was proposed. Try again.')
+            built = pipeline.read_built(root, level)
+            if built['start'].get('design') and _approved is None:
+                return self._propose_slide_words(root, level, slides[0]['id'], 'title', slides[0]['title'],
+                    seen, json.dumps(before, ensure_ascii=False), basis, source='outline', outline=edited)
+            with deck_edit.PreparedEdit(root, basis) as prepared:
+                staged = prepared.root
+                updated = self._load(staged)
+                saved = self._decided(updated, level)
+                for item in before:
+                    drafts.keep_slide(self, staged, level, item['id'], 'outline')
+                outline_file = pipeline.place(staged, level, pipeline.OUTLINE)
+                home.write_json(outline_file, edited)
+                digest = workspace.sha256_file(outline_file)
+                for item in (saved.get('outline'), saved.get('approved')):
+                    if item:
+                        item['sha256'] = digest
+                if _approved:
+                    project = pipeline.place(staged, level, _approved['project'])
+                    shutil.copytree(_approved['source'], project)
+                    design_file = pipeline.place(staged, level, pipeline.DESIGN)
+                    home.write_json(design_file, _approved['plan'])
+                    design = {'sha256': workspace.sha256_file(design_file), 'revision': _approved['revision'],
+                              'project': _approved['project']}
+                    saved['outline']['design'] = design['sha256']
+                    saved['approved']['design'] = design
+                chosen = (saved.get('look') or {}).get('chosen')
+                if chosen:
+                    chosen['outline'] = digest
+                staged_built = pipeline.read_built(staged, level)
+                if staged_built.get('look'):
+                    staged_built['look']['outline'] = digest
+                pipeline.write_built(staged, level, staged_built)
+                saved['redrawing'] = True
+                saved.pop('note_chain', None)
+                self._store(staged, updated)
+                workspace.accept_desk(staged, name)
+                self._ready_again(staged)
+                prepared.publish()
+            self._commit(root, 'save the deck outline and redraw only changed sections')
+        self.carry_on(root)
+        return {'fits': True}
+
+    def slide_selection(self, path, level, slide, field, action, start, passage, text, seen, instruction=''):
+        from studio_core.drafting import prompts
+        level = level or None
+        with self.files:
+            root, record, name, _ = self._deck_change(path, level, seen)
+            if drafts.busy(record):
+                raise WorkspaceError(drafts.BUSY)
+            outline = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
+            _, current = drafts.slide_words(outline, slide, field, '')
+            offset = draft_jobs.browser_offset(current, start)
+            if current != text or offset is None or not isinstance(passage, str) or not passage \
+                    or current[offset:offset + len(passage)] != passage:
+                raise WorkspaceError('Select the passage again in the saved words.')
+            if action not in (*prompts.ACTIONS, 'ask') or (action == 'ask' and not instruction.strip()):
+                raise WorkspaceError('Choose a change and say what to do when asking.')
+            if len(instruction) > 4000:
+                raise WorkspaceError('Keep the instruction under 4,000 characters.')
+            job = {'id': secrets.token_hex(6), 'kind': 'slide-selection', 'name': name,
+                   'part': slide, 'field': field, 'text': current, 'start': offset,
+                   'passage': passage, 'action': action, 'note': instruction, 'seen': seen,
+                   'status': 'queued', 'at': home.now(), 'says': 'Waiting to change the selected words.'}
+            record.setdefault('drafts', {}).setdefault('jobs', []).append(job)
+            self._store(root, record)
+            self._commit(root, 'ask to change selected slide words')
+        self.wake(root)
+        return drafts.view(self, root)
+
+    def _slide_selection_job(self, root, run, requested):
+        from runner import briefs
+        from studio_core.drafting import prompts
+        with self.files:
+            record = self._load(root)
+            job = next(one for one in record['drafts']['jobs'] if one['id'] == requested['id'])
+            if job['status'] != 'queued':
+                return
+            job.update(status='working', says='Changing the selected words.')
+            self._store(root, record)
+            level = workspace.split(job['name'])[1]
+            outline = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
+            slide = next(item for item in outline['slides'] if item['id'] == job['part'])
+            task = prompts.passage_task(prompts.ACTIONS.get(job['action'], prompts.ASK))
+            if job['note']:
+                task += prompts.request('INSTRUCTION', job['note'], prompts.ONLY_PASSAGE, 'Training Studio')
+            task += '\nHand back only the replacement passage with submit_artifact under the name words.'
+            work = pipeline.Work(briefs.guidance('part') + '\n' + prompts.edit_rule('slide'), task,
+                'write', {'inputs': {'passage': job['passage'], 'around': job['text'],
+                    'slide': json.dumps(slide, ensure_ascii=False),
+                    'guide': pipeline._text(root, workspace.load(root), workspace.qualify('document', level)) or '',
+                    'research': pipeline._text(root, workspace.load(root), 'research') or ''},
+                    'artifacts': {'words': {'kind': 'slide-words', 'limit': 4000 if job['field'] == 'notes' else 2000}},
+                    'ask': False}, 'words')
+            step = pipeline.Step(f"draft:{job['id']}", 'agent', 'Change selected slide words',
+                                 'Changing selected slide words', 'deck', job['name'])
+        outcome, handed, started_at, folder = self._job(root, run, step, work)
+        try:
+            with self.files:
+                record = self._load(root)
+                job = next(one for one in record['drafts']['jobs'] if one['id'] == requested['id'])
+                if run.gone or not self._ours(record):
+                    raise _Gone('This training is no longer run from this computer.')
+                accepted = (handed.get('artifacts') or {}).get('words')
+                _, current = drafts.slide_words(home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {}),
+                                                job['part'], job['field'], '')
+                error = ('These words changed while the selection was being written. Select them again.'
+                         if current != job['text'] else pipeline.why_not(handed, outcome.detail) if not accepted else '')
+                job.update(status='stopped' if job.get('stop') else 'failed' if error else 'done',
+                           applied=False, error=error, settled_at=home.now())
+                self._tried(record, step.id, started_at, outcome.seconds, 'failed' if error else 'kept', **self._cost(outcome))
+                self._store(root, record)
+                self._commit(root, 'keep the selected slide wording result')
+                if error or job.get('stop'):
+                    return
+                text = current[:job['start']] + accepted['text'].strip() + current[job['start'] + len(job['passage']):]
+                sent = {'level': level or '', 'slide': job['part'], 'field': job['field'], 'text': text, 'seen': job['seen']}
+                try:
+                    result = self.slide_words(root, level, job['part'], job['field'], text, job['seen'], _source='selection')
+                except WorkspaceError as refusal:
+                    result = {'error': str(refusal)}
+                # The approval fingerprint covers the training. Keep its UI response outside
+                # that fingerprint, alongside the existing private proposal storage.
+                home.write_json(deck_edit.storage(root) / f"selection-{job['id']}.json", {'sent': sent, **result})
+        finally:
+            shutil.rmtree(folder, ignore_errors=True)
+
+    def deck_note(self, path, level, note, seen):
+        level = level or None
+        with self.files:
+            root, record, name, kept = self._deck_change(path, level, seen)
+            built = pipeline.read_built(root, level)
+            sections = (built.get('start') or {}).get('sections') or []
+            if not sections:
+                raise WorkspaceError('Draw this deck here before leaving a whole-deck note.')
+            if not isinstance(note, str) or not note.strip() or len(note) > 4000:
+                raise WorkspaceError('Write a note under 4,000 characters.')
+            previous = {item['id'] for item in kept.get('notes') or []}
+            for section in sections:
+                for slide in section['slides']:
+                    self.slide_note(root, level, slide, note, seen, _defer=True)
+            record = self._load(root)
+            kept = self._decided(record, level)
+            ids = [item['id'] for item in kept['notes'] if item['id'] not in previous]
+            kept['note_chain'] = {'ids': ids, 'sections': [part['id'] for part in sections],
+                                  'status': 'working', 'at': home.now(), 'note': note.strip(),
+                                  'start': built['start']['folder']}
+            self._store(root, record)
+            self._commit(root, 'ask to redraw every section with the whole-deck note')
+        self.carry_on(root)
+        return drafts.view(self, root)
+
+    def deck_note_stop(self, path, level):
+        with self.files:
+            root, record = self._on_desk(path, decided=True)
+            kept = self._decided(record, level or None)
+            chain = kept.get('note_chain') or {}
+            if chain.get('status') != 'working':
+                raise WorkspaceError('There is no whole-deck note to stop.')
+            chain['status'] = 'stopped'
+            for note in kept.get('notes') or []:
+                if note['id'] in chain['ids'] and note['status'] == 'waiting':
+                    note['status'] = 'stopped'
+            self._store(root, record)
+            self._commit(root, 'stop the whole-deck note after this section')
+        self.carry_on(root)
+        return drafts.view(self, root)
 
     def slide_note(self, path, level, slide, note, seen, *, _defer=False) -> dict:
         """Ask to redraw the section containing one slide of a desk deck."""
@@ -4933,6 +5220,8 @@ class Engine(Reviewing):
 
     def _draft_job(self, root: Path, run: _Run, job: dict) -> None:
         """One worker per section, in the normal runner loop, with a protected landing."""
+        if job.get('kind') == 'slide-selection':
+            return self._slide_selection_job(root, run, job)
         with self.files:
             self._edits_first(root)
             record = self._load(root)
