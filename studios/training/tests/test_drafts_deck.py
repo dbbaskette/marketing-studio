@@ -571,6 +571,37 @@ class ApprovedWordsTests(JudgedSlideNoteTests):
         outline = json.loads((root / pipeline.OUTLINE).read_text())
         self.assertEqual(outline['slides'][0]['subtitle'], 'A clearer explanation')
 
+    def change_cover_subtitle(self, initial, text):
+        from stand_ins import slides as slides_stand_in
+        self.slides.keeps = True
+        self.slides.listed = set(slides_stand_in.CURRENT)
+        self.workers.outline_said = copy.deepcopy(self.workers.outline_said)
+        cover = self.workers.outline_said['slides'][0]
+        if initial:
+            cover['subtitle'] = initial
+        else:
+            cover.pop('subtitle', None)
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        before, answers, jobs = self.files(root), len(self.slides.replies), len(self.workers.jobs)
+        result = self.engine.slide_words(root, None, 'cover-restarts', 'subtitle', text, seen)
+        self.assertIn('approval', result)
+        self.assertEqual(self.files(root), before)
+        self.assertEqual(len(self.slides.replies), answers)
+        self.assertTrue(self.approve(root, seen, result['approval'])['fits'])
+        self.assertEqual(len(self.workers.jobs), jobs)
+        plan = self.slides.design_check(pipeline.design_project(root, None))['plan']
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        self.assertEqual(outline['slides'][0].get('subtitle', ''), text)
+        self.assertEqual(plan['slides'][0]['copy'], deck._copy(outline['slides'][0]))
+
+    def test_adding_the_first_cover_subtitle_replaces_the_approved_title_fallback(self):
+        self.change_cover_subtitle(None, 'A first subtitle')
+
+    def test_clearing_the_cover_subtitle_restores_the_approved_title_fallback(self):
+        self.change_cover_subtitle('A first subtitle', '')
+
     def test_row_169_bound_title_requires_an_explicit_current_design_answer(self):
         root = self.begin(flow='desk')
         self.to_end(root)

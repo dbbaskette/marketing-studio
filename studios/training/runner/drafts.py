@@ -1471,6 +1471,7 @@ def slide_speaker_notes(outline: dict, slide: str, text: str) -> tuple[dict, str
 def design_words(plan: dict, slide: str, field: str, old: str, text: str) -> dict:
     """A person's exact word edit as a proposal, preserving every other design choice."""
     import copy
+    from runner import deck
     made = copy.deepcopy(plan)
     target = next((item for item in made.get('slides', []) if item.get('id') == slide), None)
     if target is None:
@@ -1479,7 +1480,10 @@ def design_words(plan: dict, slide: str, field: str, old: str, text: str) -> dic
     if not isinstance(container, dict):
         raise workspace.WorkspaceError('The design does not keep these words in an editable field.')
     if field == 'subtitle':
-        container = {**container, 'subtitle': container.get('focal', '')}
+        expected = deck._copy({'title': target['title'], 'subtitle': old})['focal']
+        if container.get('focal') != expected:
+            raise workspace.WorkspaceError('The design and the outline have different words. Review the design first.')
+        container = {**container, 'subtitle': old}
     wrapped, found = slide_words({'slides': [{'id': slide, **container}]}, slide, field, text)
     if found != old:
         raise workspace.WorkspaceError('The design and the outline have different words. Review the design first.')
@@ -1490,10 +1494,7 @@ def design_words(plan: dict, slide: str, field: str, old: str, text: str) -> dic
     else:
         if field == 'subtitle':
             changed.pop('subtitle', None)
-            if text.strip():
-                changed['focal'] = text.strip()
-            else:
-                changed.pop('focal', None)
+            changed['focal'] = deck._copy({'title': target['title'], 'subtitle': text.strip()})['focal']
         target['copy'] = changed
         target.pop('visibleText', None)  # Harness Slides derives this from its copy.
         if target.get('qualifications'):
