@@ -241,6 +241,18 @@ Training Studio uses finite kinds with native material/level targets, checked in
 
 ### Task 5: Explicit guarded unfinished migration
 
+Blog Studio increment eligibility: supported saved `DRAFT.md`/`ORIGINAL.md` or a
+losslessly round-tripping Markdown outline with at least two heading sections.
+Brief-only work and early research/angles without these materials, list outlines
+and older Team Hub contexts retain their saved flows until lossless material and
+ownership transforms are proven. This increment does not remove all gated formats.
+Original session/run bytes stay at their original paths after migration and later
+checked saves; fixed desk metadata carries live interpretation. The original
+`desk migrate --article ID --expected TOKEN` explicitly recovers an interrupted
+additive transaction before rechecking/applying; altered or unreadable migration
+records refuse and require restoration. Pending metadata excludes worker/recovery
+pickup and synchronization replay even beneath structurally recognized caches.
+
 **Files:** Each Studio's `desk_chat.py` adapter; Blog Studio `desk.py`, deck
 `desk_actions.py`, Training Studio `drafts.py`/`engine.py`; each page routing/UI;
 create per-Studio `tests/test_desk_migration.py` and extend fake page journeys.

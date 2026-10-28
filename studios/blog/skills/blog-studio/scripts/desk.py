@@ -757,7 +757,7 @@ def _sectioned(root, ident, draft):
     directory, target = _paths(root, ident)
     studio.write_json(target, desk_images.stored(draft))
     _CLEANED.pop(str(target), None)
-    record = studio.read_json(studio.metadata_path(directory, 'articles'))
+    record = studio.item(root, 'articles', ident)[1]
     current, body = studio.inside(directory, 'DRAFT.md'), join(draft, data=_data(root, ident))
     recorded = record.get('artifact_hashes', {}).get('draft')
     if current.is_file() and current.read_bytes() != body.encode():
@@ -816,7 +816,7 @@ def _images_out(root, ident, draft, lost=(), raw=None):
 
     directory, _ = _paths(root, ident)
     data = _keep_images(directory, draft)
-    record = studio.read_json(studio.metadata_path(directory, 'articles'))
+    record = studio.item(root, 'articles', ident)[1]
     current, body = studio.inside(directory, 'DRAFT.md'), join(draft, data=data).encode()
     recorded = record.get('artifact_hashes', {}).get('draft')
     if current.is_file() and current.read_bytes() != body:
@@ -865,7 +865,7 @@ def _recovered(root, ident, draft, labels):
         try:
             from google_workflow import snapshot_path
 
-            record = studio.read_json(studio.metadata_path(directory, 'articles'))
+            record = studio.item(root, 'articles', ident)[1]
             base = (record.get('google') or {}).get('baselines', {}).get('draft') or {}
             if base.get('transfer'):
                 snapshot = snapshot_path(directory, base['transfer'], 'document')
@@ -924,7 +924,7 @@ def _write(root, ident, draft, parts=()):
     sections = [_leveled(section, depth) for section in sections]
     draft = {**draft, 'opening': opening.strip(), 'sections': sections, 'images': images}
     draft = desk_images.fitted(draft, before=had)
-    record = studio.read_json(studio.metadata_path(directory, 'articles'))
+    record = studio.item(root, 'articles', ident)[1]
     desk_record.advance(draft, parts, studio.now())
     before = _data(root, ident)
     body = join(draft, data=before)
@@ -1151,7 +1151,7 @@ def reimport(root, ident, markdown, source, record=None):
     draft = _write(root, ident, draft, sorted(set(changed)))
     if record is not None:
         directory, _ = _paths(root, ident)
-        fresh = studio.read_json(studio.metadata_path(directory, 'articles'))
+        fresh = studio.item(root, 'articles', ident)[1]
         for key in ('artifact_hashes', 'artifact_events', 'stage', 'title'):
             if key in fresh:
                 record[key] = fresh[key]

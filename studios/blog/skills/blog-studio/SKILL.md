@@ -15,6 +15,9 @@ The current conversation writes the requested material without opening a page or
 another assistant. Outline, research, interview and passage requests keep their scope.
 For older work with `derived/blog-run.json`, use the clearly marked
 [saved step-by-step work](references/guided-runs.md) path.
+For an explicit request to move eligible unfinished work to the desk, use the
+preview and guarded [unfinished-work migration](references/desk-migration.md).
+Early work without a supported manuscript or lossless outline retains its saved flow.
 
 Read [entry flow](references/entry-flows.md) for writing starts. For setup/help,
 “My blogs,” or memory controls, load only [getting started](references/getting-started.md),

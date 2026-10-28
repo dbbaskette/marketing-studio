@@ -772,33 +772,37 @@ def account_for(root=None, account=None):
     return account or (saved_account(root) if root else None)
 
 
-def linked_documents(root):
-    """IDs of the Google Docs that blogs in this workspace are linked to."""
+def linked_document_owners(root):
+    """One validated live mapping for both document eligibility and team ownership."""
     import studio
 
     base = workspace(root)
-    folder = studio.inside(base, 'articles')
-    found = set()
-    if not folder.is_dir():
-        return found
-    for entry in sorted(folder.iterdir()):
-        if not entry.is_dir():
-            continue
-        try:
-            _, record = studio.item(base, 'articles', entry.name)
-        except (ValueError, OSError):
-            continue
-        google = record.get('google', {}) if isinstance(record, dict) else {}
-        baselines = google.get('baselines', {}) if isinstance(google, dict) else {}
-        for baseline in baselines.values():
-            document_id = (
-                baseline.get('document', {}).get('document_id')
-                if isinstance(baseline, dict)
-                else None
+    found = {}
+    for directory, record in studio.article_records(base):
+        google = record.get('google', {})
+        baselines = google.get('baselines', {}) if isinstance(google, dict) else None
+        if not isinstance(baselines, dict):
+            raise GoogleError(
+                'Restore this blog’s readable Google links before writing a linked Doc.'
             )
-            if isinstance(document_id, str):
-                found.add(document_id)
+        for baseline in baselines.values():
+            if not isinstance(baseline, dict) or not isinstance(baseline.get('document'), dict):
+                raise GoogleError(
+                    'Restore this blog’s readable Google links before writing a linked Doc.'
+                )
+            document_id = baseline['document'].get('document_id')
+            if document_id is not None:
+                if not isinstance(document_id, str):
+                    raise GoogleError(
+                        'Restore this blog’s readable Google document ID before writing a linked Doc.'
+                    )
+                found.setdefault(identifier(document_id), set()).add(directory.name)
     return found
+
+
+def linked_documents(root):
+    """IDs of the Google Docs linked in the validated live records."""
+    return set(linked_document_owners(root))
 
 
 def require_linked(root, file_id, first_handoff=False):
@@ -811,24 +815,20 @@ def require_linked(root, file_id, first_handoff=False):
             '--first-handoff only for the explicit first handoff of a new editing copy.'
         )
     from team_workspace import before, space, guard
-    import studio
 
-    if space(Path(root)):
+    shared = space(Path(root))
+    if shared:
         before(Path(root))
-        for session in studio.inside(Path(root), 'articles').glob('*/session.json'):
-            record = studio.read_json(session)
-            baselines = record.get('google', {}).get('baselines', {})
-            if any(
-                baseline.get('document', {}).get('document_id') == file_id
-                for baseline in baselines.values()
-            ):
-                guard(Path(root), session.parent.name)
-    if identifier(file_id) not in linked_documents(root):
+    owners = linked_document_owners(root).get(identifier(file_id), set())
+    if not owners:
         raise GoogleError(
             'This Google Doc is not linked to a blog in this workspace, so it will not be changed. '
             'Start from the Doc or confirm its handoff first; use --first-handoff only for the '
             'explicit first handoff of a new editing copy.'
         )
+    if shared:
+        for ident in sorted(owners):
+            guard(Path(root), ident)
 
 
 def active_account():

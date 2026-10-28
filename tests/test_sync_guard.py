@@ -127,6 +127,20 @@ class SyncGuardTests(unittest.TestCase):
         self.assertIn('interrupted', SYNC_WAIT.lower())
         self.assertIn('reopen', SYNC_WAIT.lower())
 
+    def test_pending_blog_migration_is_not_hidden_by_recognized_output_cache(self):
+        container = self.repo / 'deck'
+        container.mkdir()
+        (container / 'run.json').write_text(json.dumps({'schema': 1, 'id': 'deck', 'title': 'Synthetic', 'steps': {}, 'route': 'idea', 'form': {}}))
+        journal = container / 'sources/nested/blogs/one/desk/migration.pending.json'
+        journal.parent.mkdir(parents=True)
+        journal.write_text('{interrupted')
+        self.assertTrue(worker_in_progress(self.repo))
+        self.assertEqual(journal.read_text(), '{interrupted')
+        journal.unlink()
+        (journal.parent / 'migration.json').write_text('{broken')
+        with self.assertRaisesRegex(ValueError, 'could not be checked'):
+            worker_in_progress(self.repo)
+
     def test_unknown_item_records_do_not_hide_nested_workspaces(self):
         for record in ('container/run.json', 'container/.training-studio/run.json'):
             for text in ('{bad', '{}', '{"schema":999,"steps":{}}',
