@@ -409,15 +409,13 @@ def check_outline(text: str, spec: dict, slides,
         found = [f"{finding.get('slide')}: {finding.get('detail') or finding.get('code')}"
                  for finding in report.get('findings') or ()]
     frozen = spec.get('frozen') or {}
-    frozen = {slide['id']: slide for slide in deck.slides_of(
-        deck.for_tool({'slides': list(frozen.values())}, known))}
-    actual = deck.slides_of(shown)
+    actual = deck.slides_of(outline)
     for number, slide in enumerate(deck.slides_of(spec.get('previous') or {}), 1):
         ident = slide.get('id')
         if ident in frozen and (number > len(actual) or actual[number - 1] != frozen[ident]):
             found.append(f'Slide {number} is not one to word again. Copy it exactly.')
     if frozen and not spec.get('previous'):
-        for number, slide in enumerate(deck.slides_of(shown), 1):
+        for number, slide in enumerate(actual, 1):
             ident = slide.get('id')
             if ident in frozen and slide != frozen[ident]:
                 found.append(f'Slide {number} is not one to word again. Copy it exactly.')

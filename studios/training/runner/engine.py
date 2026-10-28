@@ -3714,6 +3714,25 @@ class Engine(Reviewing):
         if designed is None:
             return self._problem(root, it.id, 'stopped', DESIGN_GONE, KEPT)
         record = self._load(root)
+        scoped = (says and drafts.on_desk(record) and it.artifact in drafts.updates(record)
+                  and 'slides' in (step.request or {}))
+        if scoped:
+            with self.files:
+                session = workspace.load(root)
+                basis = workspace.inputs(root, session, it.artifact)
+                if basis != step.request.get('inputs') or session != found.session:
+                    record = self._load(root)
+                    asked = self._decided(record, self._level(it)).get('asked') or {}
+                    refreshed = drafts.deck_update(root, session, self._level(it))
+                    if not refreshed['slides']:
+                        record['drafts']['updates'].pop(it.artifact, None)
+                        self._decided(record, self._level(it))['asked'] = None
+                        self._store(root, record)
+                        return self._problem(root, it.id, 'stopped', drafts.NO_SLIDE, KEPT)
+                    asked.update(slides=refreshed['slides'], inputs=basis)
+                    self._decided(record, self._level(it))['asked'] = asked
+                    self._store(root, record)
+                    return  # survey the new inputs and request together
         if (it.id == 'research-plan' and record.get('research_contract')
                 and found.scope == 'supplied-only' and not step.request):
             with self.files:
@@ -3740,9 +3759,26 @@ class Engine(Reviewing):
         outcome, handed, started_at, folder = self._job(root, run, it, work)
         if outcome.reason == 'stopped':
             return self._stopped(root, it, outcome, started_at)
+        if scoped and not handed['artifacts']:
+            with self.files:
+                if workspace.inputs(root, workspace.load(root), it.artifact) != basis:
+                    record = self._load(root)
+                    self._tried(record, it.id, started_at, outcome.seconds, 'discarded',
+                                'Inputs changed while the outline was being written.',
+                                **self._cost(outcome))
+                    self._store(root, record)
+                    shutil.rmtree(folder, ignore_errors=True)
+                    return
         if handed['artifacts']:
             with self.files:
                 record = self._load(root)
+                if scoped and workspace.inputs(root, workspace.load(root), it.artifact) != basis:
+                    self._tried(record, it.id, started_at, outcome.seconds, 'discarded',
+                                'Inputs changed while the outline was being written.',
+                                **self._cost(outcome))
+                    self._store(root, record)
+                    shutil.rmtree(folder, ignore_errors=True)
+                    return  # the next survey refreshes the scope before retrying
                 if it.stage == 'scenario' and it.artifact not in found.own \
                         and it.artifact not in record.setdefault('drafted', []):
                     # Noted before the file is written, so it is never taken for a person's.
@@ -4497,7 +4533,8 @@ class Engine(Reviewing):
                     raise WorkspaceError(drafts.NO_SLIDE)
                 self._decided(record, level)['asked'] = {
                     'kind': 'revise', 'note': drafts.DECK_UPDATE,
-                    'slides': scope_deck['slides'], 'at': home.now()}
+                    'slides': scope_deck['slides'], 'inputs': workspace.inputs(root, session, name),
+                    'at': home.now()}
             record.setdefault('drafts', {}).setdefault('updates', {})[name] = {
                 'at': home.now(), 'by': 'page', 'scope': scope}
             base, level = workspace.split(name)

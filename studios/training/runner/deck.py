@@ -369,8 +369,26 @@ DRAWN_FROM = ('kind', 'title', 'subtitle', 'detail', 'understand', 'focal', 'sou
 def kept_sections(work: Path, earlier: dict, began: dict, whole: dict, built: dict) -> dict:
     """Copy unchanged drawings into the new start before the old start is removed."""
     if not earlier or any(earlier.get(key) != began.get(key)
-                          for key in ('brand', 'design', 'look')):
+                          for key in ('brand', 'look', 'assets', 'icons', 'review')):
         return {}
+    old_design, new_design = earlier.get('design'), began.get('design')
+    if bool(old_design) != bool(new_design):
+        return {}
+    before_design, after_design = {}, {}
+    if old_design and old_design != new_design:
+        try:
+            old_plan = json.loads((work / earlier['folder'] / 'given' / 'design.json')
+                                  .read_text(encoding='utf-8'))
+            new_plan = json.loads((work / began['folder'] / 'given' / 'design.json')
+                                  .read_text(encoding='utf-8'))
+            if not isinstance(old_plan, dict) or not isinstance(new_plan, dict) or {
+                    key: value for key, value in old_plan.items() if key != 'slides'} != {
+                    key: value for key, value in new_plan.items() if key != 'slides'}:
+                return {}
+            before_design = {slide['id']: slide for slide in old_plan['slides']}
+            after_design = {slide['id']: slide for slide in new_plan['slides']}
+        except (OSError, ValueError, KeyError, TypeError):
+            return {}
     try:
         before_whole = json.loads((work / earlier['folder'] / 'given' /
                                    'outline.json').read_text(encoding='utf-8'))
@@ -395,6 +413,8 @@ def kept_sections(work: Path, earlier: dict, began: dict, whole: dict, built: di
         source = work / drawn['file']
         if not source.is_file() or any(
                 slide not in before or slide not in now or
+                (old_design != new_design and (slide not in before_design or
+                 slide not in after_design or before_design[slide] != after_design[slide])) or
                 any(before[slide].get(key) != now[slide].get(key) for key in DRAWN_FROM)
                 for slide in section['slides']):
             continue

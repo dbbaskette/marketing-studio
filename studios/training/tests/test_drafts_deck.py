@@ -850,3 +850,157 @@ class GuideUpdateTests(DeckCase):
                 'frozen': {frozen['id']: frozen}}
         problems, _, _, _ = worker_tools.check_outline(json.dumps(outline), spec, self.slides, self.base)
         self.assertIn('Slide 3 is not one to word again. Copy it exactly.', problems)
+
+
+class ScopedUpdateReviewTests(DeckCase):
+    def test_frozen_fields_stripped_for_the_tool_still_cannot_change(self):
+        from runner import worker_tools
+        from runner_support import OUTLINE
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = copy.deepcopy(OUTLINE)
+        before['slides'][2]['points'][0]['parts'] = ['Several', 'Instances']
+        before['slides'][2]['provenance'] = 'Original source'
+        for field in ('parts', 'provenance'):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(before)
+                if field == 'parts':
+                    changed['slides'][2]['points'][0]['parts'] = ['Different']
+                else:
+                    changed['slides'][2]['provenance'] = 'Changed source'
+                spec = {'brand': str(root / 'brand.json'), 'previous': before,
+                        'frozen': {before['slides'][2]['id']: before['slides'][2]}}
+                problems, _, _, _ = worker_tools.check_outline(
+                    json.dumps(changed), spec, self.slides, self.base)
+                self.assertIn('Slide 3 is not one to word again. Copy it exactly.', problems)
+
+    def test_changed_guide_before_worker_refreshes_scope(self):
+        from test_drafts import edit
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        edit(self, root, 'document', lambda text: text.replace(
+            '## Why this matters', '## Why this matters\nChanged first.'))
+        with mock.patch.object(self.engine, 'carry_on'):
+            self.engine.update(root, 'deck')
+        card = self.engine.draft_card(root, 'document')
+        section = next(part for part in card['sections'] if part['heading'] == 'When capacity holds')
+        self.engine.draft_save(root, 'document', section['id'], card['revision'],
+                               section['text'] + '\nChanged later.')
+        self.engine.carry_on(root)
+        self.to_end(root)
+        spec = next(spec for kind, _, spec in reversed(self.workers.jobs) if kind == 'outline')
+        self.assertEqual(set(spec['artifacts']['outline']['frozen']),
+                         {'cover-restarts', 'what-it-does', 'closing-practice'})
+
+    def test_edit_after_a_failed_try_refreshes_the_retry_scope(self):
+        from runner.agents import Outcome
+        from test_drafts import edit
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        edit(self, root, 'document', lambda text: text.replace(
+            '## Why this matters', '## Why this matters\nChanged first.'))
+        self.workers.then('outline', lambda tools, job: Outcome(False, 'failed', 'Try again.'))
+        failed = self.engine._failed
+
+        def save_after_failure(*args):
+            failed(*args)
+            card = self.engine.draft_card(root, 'document')
+            section = next(part for part in card['sections'] if part['heading'] == 'When capacity holds')
+            self.engine.draft_save(root, 'document', section['id'], card['revision'],
+                                   section['text'] + '\nChanged before retry.')
+
+        with mock.patch.object(self.engine, '_failed', side_effect=save_after_failure):
+            self.engine.update(root, 'deck')
+        self.to_end(root)
+        spec = next(spec for kind, _, spec in reversed(self.workers.jobs) if kind == 'outline')
+        self.assertEqual(set(spec['artifacts']['outline']['frozen']),
+                         {'cover-restarts', 'what-it-does', 'closing-practice'})
+        self.assertIsNone(self.engine._load(root)['problem'])
+
+    def test_changed_guide_during_worker_discards_and_retries(self):
+        from test_drafts import edit
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        edit(self, root, 'document', lambda text: text.replace(
+            '## Why this matters', '## Why this matters\nChanged first.'))
+        before = len(self.workers.of('outline'))
+
+        def edit_during(tools, job):
+            # Another computer or external editor can change an input while the local
+            # desk prevents typing into an input used by the active worker.
+            edit(self, root, 'document', lambda text: text.replace(
+                '## When capacity holds', '## When capacity holds\nChanged during the job.'))
+            self.workers.outline(tools, job)
+
+        self.workers.then('outline', edit_during)
+        self.engine.update(root, 'deck')
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('outline')), before + 2)
+        spec = next(spec for kind, _, spec in reversed(self.workers.jobs) if kind == 'outline')
+        self.assertEqual(set(spec['artifacts']['outline']['frozen']),
+                         {'cover-restarts', 'what-it-does', 'closing-practice'},
+                         (self.engine._load(root).get('problem'),
+                          self.engine._load(root)['steps']['deck-outline'],
+                          self.engine._load(root)['deck']['']))
+        self.assertNotIn('deck', drafts.held(root, workspace.load(root), self.engine._load(root)))
+
+
+class DesignedScopedUpdateReviewTests(JudgedSlideNoteTests):
+    def test_only_changed_section_redrawn_after_design_revision(self):
+        from test_drafts import edit
+        from studio_core import stops
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        before = self.built(root)
+        original = (root / pipeline.WORK / before['sections']['section-1']['file']).read_bytes()
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        self.workers.outline_said = copy.deepcopy(outline)
+        self.workers.outline_said['slides'][3]['notes'] += ' Changed.'
+        edit(self, root, 'document', lambda text: text.replace(
+            '## Why this matters', '## Why this matters\nChanged.'))
+        record = self.engine._load(root)
+        price = self.engine._redo_steps(record, ['deck-outline', 'deck-sections:2', 'deck-review'])
+        preview = drafts.update_preview(root, 'deck')
+        self.assertEqual(preview['price'], stops.redone('the outline', 3, *price,
+                              after='the affected sections and review'))
+        count = len(self.workers.of('section'))
+        self.engine.update(root, 'deck')
+        self.to_end(root)
+        after = self.built(root)
+        self.assertEqual(len(self.workers.of('section')), count + 1)
+        self.assertEqual((root / pipeline.WORK / after['sections']['section-1']['file']).read_bytes(), original)
+
+    def test_a_changed_approved_design_redraws_that_section(self):
+        from test_drafts import edit
+        from runner_support import designed
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        outline = json.loads((root / pipeline.OUTLINE).read_text())
+        self.workers.outline_said = copy.deepcopy(outline)
+        self.workers.outline_said['slides'][3]['notes'] += ' Changed.'
+        self.workers.design_said = designed(self.workers.outline_said)
+        self.workers.design_said['slides'][1]['composition'] += ' A different arrangement.'
+        edit(self, root, 'document', lambda text: text.replace(
+            '## Why this matters', '## Why this matters\nChanged.'))
+        count = len(self.workers.of('section'))
+        self.engine.update(root, 'deck')
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root)['problem'])
+        self.assertEqual(len(self.workers.of('section')), count + 2)
+
+    def test_current_slides_capabilities_keep_the_unchanged_section(self):
+        from stand_ins import slides as slides_stand_in
+        from test_drafts import edit
+        self.slides.keeps = True
+        self.slides.listed = set(slides_stand_in.CURRENT)
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        self.workers.outline_said = json.loads((root / pipeline.OUTLINE).read_text())
+        self.workers.outline_said['slides'][3]['notes'] += ' Changed.'
+        edit(self, root, 'document', lambda text: text.replace(
+            '## Why this matters', '## Why this matters\nChanged.'))
+        count = len(self.workers.of('section'))
+        self.engine.update(root, 'deck')
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root)['problem'])
+        self.assertEqual(len(self.workers.of('section')), count + 1)
