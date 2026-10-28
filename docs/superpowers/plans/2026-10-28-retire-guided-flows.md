@@ -226,16 +226,18 @@ Existing `training.py desk` continues to serve the page. Add `context` and `subm
 with the same envelope defined for Task 3. Current harness saves
 initial materials through checked domain submissions, never hand-editing session.json.
 
-- [ ] Test no-worker creation for requested levels/materials, focused work, checked
+- [x] Test no-worker creation for requested levels/materials, focused work, checked
   initial and subsequent text saves, holds and history, team/worker conflicts,
   no Ready on acceptance, explicit design answers, no copies or delivery. Complete
   a synthetic conversation from absent materials through checked usable outputs;
   reject changed upstream inputs, and test page recovery leaves chat-owned work alone.
-- [ ] Run `"$PYTHON" scripts/ci/run_tests.py --jobs 2 test_desk_chat` RED.
-- [ ] Implement conversation execution and shared checked submissions; runner cannot
+- [x] Run `"$PYTHON" scripts/ci/run_tests.py --jobs 2 test_desk_chat` RED.
+- [x] Implement conversation execution and shared checked submissions; runner cannot
   silently consume the conversation queue. Preserve citations, pins and Google baselines.
-- [ ] Add matrix rows 186–189 below, guidance/version floors; run focused tests and
+- [x] Add matrix rows 186–189 below, guidance/version floors; run focused tests and
   `"$PYTHON" skills/training-studio/scripts/validate_package.py` GREEN; commit.
+
+Training Studio uses finite kinds with native material/level targets, checked initial publication and explicit ownership, scope and answer commands. A focused teaching plan may retain a visibly unprovided research input without inventing research or acceptance; later research holds it. Drawing-bound word answers use actual local proposal token/question/revision/seen and part scope; initial design/look uses drawing scope. Conversation checks run in disposable copies and recheck canonical training plus local proposal/project bytes before bounded publication. Google-target edits retain the delivered link/baseline/approval and keep an explicitly pending local PowerPoint draft; Mark ready refuses until an actual explicit delivery saves successfully. Ordinary later edits remain local; missing or malformed pending drafts refuse safely. Scope/take preserve material bytes and readiness; scope also accepts explicit optional native materials/deck_target/brand/yoodli selections, preserving omissions and refusing saved-deck conversions. Adding a requested material schedules nothing; runner handoff refuses incompatible effective plans, absent runtime pins and delivery/copy work. `training.py desk` retains page-serving meaning. Saved gated work remains unchanged until the separate migration task.
 
 ### Task 5: Explicit guarded unfinished migration
 

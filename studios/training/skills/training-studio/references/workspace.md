@@ -1,5 +1,7 @@
 # Workspace
 
+Use [conversation commands](conversation.md) for new desk work. Below is the saved-work path.
+
 Deliverables are files in the training directory. Bookkeeping is under `.training-studio/`.
 
 ## Artifacts
@@ -38,7 +40,7 @@ Status is computed from the files each time. Changing a setting makes only the a
 
 Never use `--built` or `--from` to clear a stale flag: they claim a rebuild against current inputs, which then needs approval again.
 
-**When the user has edited a file themselves:** `status` shows it as `draft` and what depends on it as `stale`. Say so. While they are still working, `training.py save <artifact>` records the edit and approves nothing; when they are done, `training.py approve <artifact>` approves it. Then rebuild what became stale, or ask whether to accept it.
+For an edited saved file, `training.py save <artifact>` records the edit without approval. Approve only at the person’s request; then update dependent work or ask whether to retain it.
 
 ## Copies
 

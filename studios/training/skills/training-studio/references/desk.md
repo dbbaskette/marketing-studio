@@ -1,5 +1,7 @@
 # The page
 
+New conversation work uses [checked desk commands](conversation.md), including focused teaching plans and explicit ownership/scope. [Look and design answers](answers.md) require the person’s actual response. The instructions below remain the saved-work path. `training.py desk` still serves the page.
+
 A page in the user's browser: what needs them, where every training stands and, when `status` shows `approval: page`, the only place a gate is decided.
 
 ## Open it

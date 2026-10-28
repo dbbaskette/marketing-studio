@@ -1,5 +1,7 @@
 # Intake
 
+New conversation work uses [checked desk commands](conversation.md), including focused teaching plans and explicit ownership/scope. [Look and design answers](answers.md) require the person’s actual response. The instructions below remain the saved-work path. `training.py desk` still serves the page.
+
 ## The directory
 
 A training needs a directory of its own. If this one is the skill's repository, a home directory or a folder of unrelated projects, say so and ask the user to launch in a directory made for the topic. `training.py init` refuses the skill's own directory and any directory above it.
