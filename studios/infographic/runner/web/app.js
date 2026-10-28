@@ -59,7 +59,7 @@ try {
 if(location.hash)history.replaceState(null,'',location.pathname);
 const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
-const draft = {step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
+const draft = {materials: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
 const error = message => { $('notice').textContent = message; $('notice').hidden = !message; };
 const toast = message => { const p = make('p', 'toast', message); $('toasts').replaceChildren(p); };
 function button(label, action, primary=false) { const node = make('button', 'button' + (primary ? ' button-filled' : ''), label); node.type = 'button'; node.addEventListener('click', action); return node; }
@@ -69,19 +69,19 @@ let fieldNumber = 0;
 function field(label, value='', kind='input') { const wrap = make('label', 'field'); const input = make(kind, 'input'); input.value = value; const caption=make('span','field-label',label);caption.id='field-caption-'+(++fieldNumber);input.id='field-'+fieldNumber;wrap.htmlFor=input.id;input.setAttribute('aria-labelledby',caption.id);add(wrap, caption, input); return {wrap, input}; }
 function lines(value) { return value.split('\n').map(v => v.trim()).filter(Boolean); }
 function list(items) { return add(make('ul'), ...items.map(item => make('li', '', item))); }
-function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; $('sheet-body').firstChild.append(...nodes); $('sheet').showModal(); }
+function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; $('sheet-body').firstChild.append(...nodes); if (!$('sheet').open) $('sheet').showModal(); }
 function closeSheet() { $('sheet').close(); }
 async function request(route, data) {
   const response = await fetch(route, {method: data === undefined ? 'GET' : 'POST', headers: {'X-Infographic-Studio-Token': token, ...(data === undefined ? {} : {'Content-Type': 'application/json'})}, ...(data === undefined ? {} : {body: JSON.stringify(data)})});
   const answer = await response.json(); if (!response.ok) throw Error(answer.error || 'This request could not be completed.'); return answer;
 }
-async function action(verb, values={}) {
+async function action(verb, values={}, revision=null) {
   if (busy) return; busy = true; error(''); const id = held.project.id;
   const controls = [...document.querySelectorAll('button')]; controls.forEach(b => b.disabled = true);
   toast('Working. Your saved information and earlier previews are kept.');
   const polling=setInterval(async()=>{try{const progress=await request('/api/desk?id='+encodeURIComponent(id));const pending=progress.recovery[0];if(pending){const message=make('p','',pending.state+': image request saved. Closing this page will not resubmit it.');const cancel=button('Cancel this request',async()=>{try{await request('/api/action',{action:'image-cancel',id,expected_revision:progress.project.revision,request_id:pending.attempt_id});toast('Local adoption cancelled. Remote charges may remain unknown.');}catch(f){error(f.message);}});$('toasts').replaceChildren(add(make('div','toast stack'),message,cancel));}}catch(f){}},1000);
   try {
-    const answer = await request('/api/action', {action:verb, id, expected_revision:held.project.revision, ...values});
+    const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
     closeSheet(); await openProject(id); if(answer.result?.state==='unknown')error('The image request outcome is uncertain. Do not repeat it; use the recovery controls.'); else if(answer.result?.state==='failed')error('The image provider could not finish. Your earlier work is kept.'); else if(answer.result?.state==='outdated')toast('The earlier result was kept privately and did not replace newer work.');else toast('Saved.'); return answer.result;
   } catch (failure) { error(failure.message); }
   finally { clearInterval(polling); busy = false; controls.forEach(b => b.disabled = false); document.querySelectorAll('#actions button').forEach(b => b.disabled = false); }
@@ -89,10 +89,10 @@ async function action(verb, values={}) {
 function heading(title, ...actions) { for(const id of ['home','settings']){if((id==='settings')===title.startsWith('Settings'))$(id).setAttribute('aria-current','page');else $(id).removeAttribute('aria-current');} $('title').textContent = title; $('actions').replaceChildren(...actions); $('title').focus({preventScroll:true}); }
 function resetPicture() { if (picture) URL.revokeObjectURL(picture); picture = null; }
 async function home() {
-  if (busy) return; resetPicture(); held = null; error(''); heading('Infographics', button('New infographic', () => newSheet(), true));
+  if (busy) return; resetPicture(); held = null; error(''); heading('Infographics', button('New infographic', () => newSheet(), true),button('Team library',teamSheet));
   try { const data = await request('/api/projects'); const cards = data.projects.map(p => card(p.title || 'Unreadable infographic', make('p', 'quiet', p.problem || 'Revision ' + p.revision), button('Open ' + (p.title || p.id), () => openProject(p.id)))); $('main').replaceChildren(make('p','lede','Turn supplied information into one clear page.'), ...cards); if (!cards.length) $('main').append(card('Make your first infographic', make('p','','Add notes, choose what matters, and review the page before exporting.'))); } catch (failure) { error(failure.message); }
 }
-async function bytes(file) { if (file.size > 1_000_000) throw Error('The page accepts files up to 1 MB. Use the native source command for larger explicit selections.'); return new Uint8Array(await file.arrayBuffer()); }
+async function bytes(file) { if (file.size > 16_000_000) throw Error('Choose a source no larger than 16 MB.'); return new Uint8Array(await file.arrayBuffer()); }
 function encoded(raw) { let binary=''; for (const v of raw) binary += String.fromCharCode(v); return btoa(binary); }
 function retain(input, key) { input.addEventListener('input', () => { draft[key] = input.value; }); }
 async function newSheet() {
@@ -104,11 +104,49 @@ async function newSheet() {
   if (draft.step === 0) {
     const title = field('Working title',draft.title), text = field('Notes or text',draft.text,'textarea'); text.input.classList.add('ig-source-input'); title.input.required=true;
     retain(title.input,'title'); retain(text.input,'text'); add(form,title.wrap,text.wrap);
-    const upload = field('Or choose a UTF-8 text, Markdown or CSV file'); upload.input.type='file'; upload.input.accept='.txt,.md,.csv';
-    upload.input.addEventListener('change',async()=>{ try { const file=upload.input.files[0]; if(!file) return; const raw=await bytes(file); const suffix=file.name.toLowerCase().split('.').pop(); if(!['txt','md','csv'].includes(suffix)) throw Error('Use UTF-8 text, Markdown or CSV.'); new TextDecoder('utf-8',{fatal:true}).decode(raw); draft.upload={data:encoded(raw),kind:suffix==='md'?'markdown':suffix==='csv'?'csv':'text',name:file.name}; draft.selection=null;
-      if(suffix==='csv') { draft.csv=await request('/api/csv-preview',{data:draft.upload.data}); csvSheet(); } else { draft.csv=null; toast('File selected: '+file.name); }
-    } catch(failure) { problem.textContent=failure.message; } });
-    add(form,upload.wrap,make('p','quiet',draft.upload?'Selected: '+draft.upload.name:'URLs remain references; nothing is fetched. Files stay in your workspace; necessary passages are sent only when you request assistant work.'));
+    const upload = field('Upload files — text, Markdown, CSV, PDF, Word or HTML');
+    upload.input.type = 'file'; upload.input.accept = '.txt,.md,.csv,.pdf,.docx,.html,.htm'; upload.input.multiple = true;
+    upload.input.addEventListener('change', async () => {
+      problem.textContent = '';
+      try {
+        const files = [...upload.input.files];
+        if (!files.length) return;
+        if (files.length > 12 || files.reduce((n,f) => n + f.size, 0) > 64_000_000) throw Error('Choose at most 12 files and 64 MB in one selection.');
+        if (files.some(f => f.name.toLowerCase().endsWith('.csv')) && files.length !== 1) throw Error('Add a CSV on its own so you can confirm its rows, columns and units.');
+        const prepared = [];
+        for (const file of files) {
+          const raw = await bytes(file), suffix = file.name.toLowerCase().split('.').pop();
+          const kinds = {txt:'text', md:'markdown', csv:'csv', pdf:'pdf', docx:'docx', html:'html', htm:'html'};
+          if (!kinds[suffix]) throw Error('Choose text, Markdown, CSV, PDF, Word (.docx) or HTML.');
+          if (suffix === 'csv') {
+            new TextDecoder('utf-8',{fatal:true}).decode(raw);
+            draft.upload = {data:encoded(raw),kind:'csv',name:file.name}; draft.selection = null;
+            draft.csv = await request('/api/csv-preview',{data:draft.upload.data}); csvSheet(); return;
+          }
+          const preview = await request('/api/source-preview',{data:encoded(raw),kind:kinds[suffix],name:file.name});
+          prepared.push({preview, acknowledged:false});
+        }
+        draft.materials.push(...prepared);
+        closeSheet(); await newSheet();
+      } catch (failure) { problem.textContent = failure.message; }
+    });
+    add(form,upload.wrap,make('p','quiet',draft.upload?'Selected: '+draft.upload.name:'Files are read locally. No OCR, linked-resource fetch or assistant work starts during this preview.'));
+    form.append(button('Import selected studio material',()=>handoffSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
+    form.append(button('Add a Google Doc or public page',()=>remoteSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
+    if(draft.upload)form.append(button('Remove selected CSV',()=>{draft.upload=null;draft.csv=null;draft.selection=null;newSheet();}));
+    for (const material of draft.materials) {
+      const preview = material.preview;
+      const coverage = card(preview.name,make('p','quiet',preview.characters+' readable characters · '+preview.locations.length+' located parts'),
+        detail('Preview readable text',make('pre','ig-csv-preview',preview.excerpt)),list(preview.warnings));
+      if (!preview.readable) coverage.append(make('p','problem','No readable text was found. Remove this file and supply an accessible text or Word version.'));
+      if (preview.warnings.length && preview.readable) {
+        const ack = make('input'); ack.type = 'checkbox'; ack.checked = material.acknowledged;
+        ack.addEventListener('change',()=>{material.acknowledged=ack.checked;});
+        coverage.append(add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only the readable text.')));
+      }
+      coverage.append(button('Remove '+preview.name,()=>{draft.materials=draft.materials.filter(m=>m!==material);closeSheet();newSheet();}));
+      form.append(coverage);
+    }
   } else if(draft.step===1) {
     const direction = field('How should we find the story?',draft.direction,'select');
     for(const [value,label] of [['direct','I know what to show'],['suggest','Suggest the story'],['hybrid','Build on my ideas']]) { const option=make('option','',label); option.value=value; direction.input.append(option); } direction.input.value=draft.direction; retain(direction.input,'direction'); add(form,direction.wrap);
@@ -120,17 +158,29 @@ async function newSheet() {
   }
   const go=button(draft.step===2?'Save brief':'Continue',()=>{},true);go.type='submit';
   form.addEventListener('submit',async event=>{event.preventDefault();problem.textContent='';
-    if(draft.step===0 && (!draft.title.trim() || (!draft.text.trim() && !draft.upload))) {problem.textContent='Give a title and some usable information.';return;}
+    if(draft.step===0 && (!draft.title.trim() || (!draft.text.trim() && !draft.upload && !draft.materials.length))) {problem.textContent='Give a title and some usable information.';return;}
+    if(draft.materials.some(m=>!m.preview.readable || (m.preview.warnings.length&&!m.acknowledged))) {problem.textContent='Review the file previews and acknowledge readable-only coverage, or remove unreadable files.';return;}
+    if(draft.step===0 && draft.materials.reduce((n,m)=>n+m.preview.characters, draft.text.length)>120000){problem.textContent='Choose smaller files or explicit excerpts within 120,000 readable characters for one story-planning job. Nothing was sent to an assistant.';return;}
     if(draft.upload?.kind==='csv' && !draft.selection) {problem.textContent='Preview and confirm the CSV selection first.';return;}
     if(draft.step<2) {draft.step++;closeSheet();newSheet();return;}
     go.disabled=true;
     try { let p=draft.created;
       if(!p) {draft.request_id=draft.request_id||requestId();p=(await request('/api/projects',{title:draft.title,preset:draft.preset,direction:draft.direction,request_id:draft.request_id})).project;draft.created=p;}
       p=(await request('/api/project',{id:p.id,expected_revision:p.revision,brief:{...p.brief,title:draft.title,preset:draft.preset,direction:draft.direction,audience:draft.audience,purpose:draft.purpose,must_show:lines(draft.must).map((text,i)=>({id:'r'+i,text})),locked_words:lines(draft.locked),exclusions:lines(draft.exclusions)}})).project;draft.created=p;
-      const upload=draft.upload || {data:encoded(new TextEncoder().encode(draft.text)),kind:'text',name:'Pasted information'};
-      p=(await request('/api/action',{action:'source',id:p.id,expected_revision:p.revision,...upload,...(draft.selection?{selection:draft.selection}:{})})).result;draft.created=p;
-      if(draft.upload && draft.text.trim()) p=(await request('/api/action',{action:'source',id:p.id,expected_revision:p.revision,data:encoded(new TextEncoder().encode(draft.text)),kind:'text',name:'Pasted notes'})).result;
-      closeSheet();Object.assign(draft,{step:0,request_id:null,created:null,upload:null,selection:null,csv:null,title:'',text:'',direction:'suggest',audience:'',purpose:'',must:'',locked:'',exclusions:'',preset:'a4'});await openProject(p.id);toast('Brief saved. Choose Find the story when you are ready to use your assistant.');
+      for (const material of draft.materials) {
+        if (draft.imported.includes(material.preview.id)) continue;
+        p=(await request('/api/action',{action:'source-import',id:p.id,expected_revision:p.revision,capture_id:material.preview.id,acknowledge_warnings:material.acknowledged})).result;
+        draft.created=p; draft.imported.push(material.preview.id);
+      }
+      if (draft.upload) {
+        p=(await request('/api/action',{action:'source',id:p.id,expected_revision:p.revision,...draft.upload,selection:draft.selection})).result;
+        draft.created=p;
+      }
+      if (draft.text.trim() && draft.notes_text !== draft.text) {
+        p=(await request('/api/action',{action:'source',id:p.id,expected_revision:p.revision,data:encoded(new TextEncoder().encode(draft.text)),kind:'text',name:'Pasted notes',...(draft.notes_source?{replace_id:draft.notes_source}:{})})).result;
+        draft.created=p; draft.notes_text=draft.text; draft.notes_source=p.sources.find(source=>source.name==='Pasted notes').id;
+      }
+      closeSheet();Object.assign(draft,{materials:[],imported:[],notes_text:null,notes_source:null,step:0,request_id:null,created:null,upload:null,selection:null,csv:null,title:'',text:'',direction:'suggest',audience:'',purpose:'',must:'',locked:'',exclusions:'',preset:'a4'});await openProject(p.id);toast('Brief saved. Choose Find the story when you are ready to use your assistant.');
     }catch(failure){problem.textContent=failure.message+' Your answers are still here.';}finally{go.disabled=false;}
   });
   add(form,problem,draft.created||draft.request_id?button('Open the saved draft',()=>{closeSheet();openProject(draft.created?.id||draft.request_id);}):null,add(make('div','create-foot bar'),go,draft.step?button('Back',()=>{draft.step--;closeSheet();newSheet();}):null,button('Cancel',closeSheet))); sheet('New infographic',form);
@@ -170,6 +220,7 @@ function renderProject() {
     const scroll=add(make('div','ig-preview-scroll'),img);
     const tools=add(make('div','ig-page-tools'),button('Fit page',()=>img.classList.remove('ig-preview-actual')),button('Actual pixels',()=>img.classList.add('ig-preview-actual')));
     for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+format.toUpperCase()+(delivery.draft?' draft':''),async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
+    if(delivery.approved_current)tools.append(button('Deliver Google Doc or PDF',()=>deliverySheet(delivery)),button('Share selected files with team',()=>shareSheet(delivery)));
     parts.push(card(!delivery.current?'Earlier page — create a new preview':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':'Earlier approval — review the current revision',make('p','quiet','Saved revision '+delivery.revision+'. Earlier deliveries stay available through history; edits require a new review.'),scroll,tools));
     download(delivery,'png',true).then(url=>{if(held?.project.id===p.id && document.body.contains(img)){picture=url;img.src=url;}else URL.revokeObjectURL(url);}).catch(f=>error(f.message));
   }
@@ -179,10 +230,11 @@ function renderProject() {
     if(p.scene.art_regions?.length)parts.push(detail('Artwork and image brief',card('Explanatory artwork',button('Revise this artwork',reviseArtSheet),make('p','','Artwork is raster; labels and chart marks stay editable. Review the exact art direction before starting or editing an image.'),...p.assets.map(a=>button('Compose saved image '+a.id,()=>action('compose-image',{asset_id:a.id}))),button('Suggest precise art direction',()=>action('art-direct')),detail('Write the art direction yourself',button('Describe subjects and relationships',artSheet)),...p.image_briefs.map(b=>detail('Saved image brief',make('pre','ig-csv-preview',b.prompt),button('Generate artwork using selected provider',()=>startImage(b)))))));
     if(delivery?.current)parts.push(card('Review and finish',make('p','','Inspect the actual page at its intended size: facts and qualifications, objects and relationships, crop and resolution, label clearance and brand.'),button('Inspect page with assistant',()=>action('inspect-images')),button('Record my visual review',()=>reviewSheet(delivery)),button('Run checks',()=>action('check')),button('Repair findings',repairSheet),approved?button('Export approved files',()=>action('export',{draft:false})):checked?button('Approve this checked revision',()=>action('approve')):make('p','quiet','Approval becomes available when the current checks pass against the latest visual review.')));
   }
+  for(const sent of held.google_deliveries||[])parts.push(card((sent.current?'Google delivery':'Earlier Google delivery')+' · revision '+sent.revision,sent.url?googleLink(sent.url,'Open delivered Google Doc'):make('p','quiet','Outcome uncertain. Read-only reconciliation checks for the saved request; it never resends.'),sent.url?null:button('Reconcile Google delivery',()=>action('google-deliver',{export_id:sent.export_id,request_id:sent.request_id,account:sent.account,folder:sent.folder,reconcile:true},sent.revision))));
   if(held.visual_review)parts.push(detail('Visual review: '+held.visual_review.status,list(held.visual_review.observations),...held.visual_review.findings.map(f=>card(f.region_id+': '+(f.blocking?'Needs correction':'Suggestion'),make('p','',f.message),make('p','',f.correction)))));
   if(p.checks.length)parts.push(card('Checks for this page',...p.checks.map(c=>add(make('div','stack'),make('strong','',({'coverage':'Required content','facts':'Factual support','layout':'Page layout','brand-accessibility':'Brand and accessibility','visual':'Visual review'}[c.kind]||c.kind)+': '+c.status),list(c.findings || [])))));
   parts.push(detail('Brief and requirements',button('Edit brief',briefSheet),make('p','',p.brief.audience||'Audience not specified'),list(p.brief.must_show.map(r=>r.text))));
-  parts.push(detail('Sources and facts',button('Add or update supplied information',sourceSheet),list(p.sources.map(s=>(s.name||s.id)+' — '+s.characters+' captured characters')),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
+  parts.push(detail('Sources and facts',button('Add or update supplied information',sourceSheet),button('Import selected studio material',()=>handoffSheet(preview=>sourceImportSheet(preview))),button('Use reviewed research',researchSheet),...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
   if(held.image_history?.length)parts.push(detail('Image requests and usage',...held.image_history.map(a=>add(make('div','stack'),make('p','',a.provider+' · '+a.operation+' · '+a.state),make('p','quiet',a.usage?'Reported tokens: '+(a.usage.input_tokens??'unknown')+' in / '+(a.usage.output_tokens??'unknown')+' out. Cost: '+(a.usage.cost??'not reported')+'.':'Usage not reported; no estimate was invented.'),button('Inspect saved image request',()=>imageRequestSheet(a.id))))));
   parts.push(detail('History',...held.history.map(v=>add(make('div','bar'),make('span','','Revision '+v.revision+(v.approved?' · approved then':'')),button('Compare with current',()=>compareSheet(v)),button('Restore revision '+v.revision,()=>restoreSheet(v)))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
   $('main').replaceChildren(...parts.filter(Boolean));
@@ -213,6 +265,8 @@ async function showSettings() {
     const sharedLink = make('a', 'button', 'Shared assistant and brand settings');
     sharedLink.href = '/onboarding/#token=' + encodeURIComponent(token) + '&view=settings';
     const model = field('Gemini image model', preferences.native.gemini_model || '');
+    const teamEmail=field('Team Git email',preferences.native.team_email||'');
+    const googleAccount=field('Google account email',preferences.native.google_account||''),googleFolder=field('Google Drive destination folder ID (optional)',preferences.native.google_folder||'');
     const renderer = field('Installed headless renderer path', preferences.native.renderer || '');
     renderer.input.placeholder = preferences.renderer || 'Use the renderer included in a prepared download';
     const messages = {
@@ -231,11 +285,11 @@ async function showSettings() {
     };
     const imageDefaults = [];
     if (preferences.image_provider === 'gemini') imageDefaults.push(model.wrap);
-    imageDefaults.push(detail('Advanced renderer setting', renderer.wrap),
+    imageDefaults.push(teamEmail.wrap,googleAccount.wrap,googleFolder.wrap,make('p','quiet','Uses the selected existing gcloud sign-in only when you explicitly read or deliver a Google Doc. No login or account access starts here.'),detail('Advanced renderer setting', renderer.wrap),
       make('p', 'quiet', 'Defaults apply to new work. Your existing workspace and saved brand stay in place.'),
       button('Save defaults', async () => {
         try {
-          const changes = {renderer: renderer.input.value};
+          const changes = {renderer: renderer.input.value,team_email:teamEmail.input.value,google_account:googleAccount.input.value,google_folder:googleFolder.input.value};
           if (preferences.image_provider === 'gemini') changes.gemini_model = model.input.value;
           await request('/api/preferences', {expected: preferences.native_revision, changes});
           await showSettings();
@@ -251,7 +305,7 @@ async function showSettings() {
       card('Page renderer', make('p', '', capability.renderer_available
         ? 'Installed renderer found. Preview checks actual fonts, layout, and output.'
         : 'Configure an installed renderer, or use a prepared download that includes it. No browser is downloaded here.')),
-      card('Shared settings', sharedLink, make('p', 'quiet', 'Infographic Studio uses local supplied-information storage in this release. Team settings remain available to the other studios.')),
+      card('Shared settings', sharedLink, make('p', 'quiet', 'Your infographic workspace stays local. Team connection and sharing happen only through explicit Team library actions.')),
       card('Infographic defaults', ...imageDefaults));
   } catch (failure) { error(failure.message); }
 }
@@ -265,7 +319,44 @@ if(!token)error('Open Infographic Studio using the private link printed in your 
 
 function reviseArtSheet(){const change=field('What should change?','','textarea'),preserve=field('What should stay the same?','Keep all other subjects, relationships, brand, empty label regions and composition.','textarea');sheet('Revise the artwork',make('p','','This sends the saved original as a reference to your selected image provider. It uses provider allowance; the earlier artwork remains in history.'),change.wrap,preserve.wrap,add(make('div','bar'),button('Create referenced revision',()=>action('revise-art',{change:change.input.value,preserve:preserve.input.value,request_id:requestId()}),true),button('Cancel',closeSheet)));}
 async function compareSheet(version){try{const result=await request('/api/action',{action:'compare',id:held.project.id,expected_revision:held.project.revision,before:version.revision,after:held.project.revision});sheet('Changes since revision '+version.revision,...Object.entries(result.result).map(([key,value])=>detail(key,make('h3','','Before'),make('pre','ig-csv-preview',JSON.stringify(value.before,null,2)),make('h3','','Current'),make('pre','ig-csv-preview',JSON.stringify(value.after,null,2)))),button('Done',closeSheet));}catch(f){error(f.message);}}
-function sourceSheet(){const value=field('New or replacement supplied information','','textarea'),replacement=field('Source to replace (leave empty to add another)','','select');const empty=make('option','','Add as another source');empty.value='';replacement.input.append(empty);for(const source of held.project.sources){const option=make('option','',source.name);option.value=source.id;replacement.input.append(option);}sheet('Update supplied information',make('p','','Story, scene, checks and approval are refreshed when source content changes. Earlier work stays in history.'),value.wrap,replacement.wrap,add(make('div','bar'),button('Save supplied information',()=>action('source',{data:encoded(new TextEncoder().encode(value.input.value)),kind:'text',name:'Updated supplied information',...(replacement.input.value?{replace_id:replacement.input.value}:{})}),true),button('Cancel',closeSheet)));}
+function sourceSheet() {
+  const value=field('New or replacement supplied information','','textarea');
+  const replacement=field('Source to replace (leave empty to add another)','','select');
+  const empty=make('option','','Add as another source'); empty.value=''; replacement.input.append(empty);
+  for(const source of held.project.sources){const option=make('option','',source.name);option.value=source.id;replacement.input.append(option);}
+  const upload=field('Or upload a source file'); upload.input.type='file'; upload.input.accept='.txt,.md,.pdf,.docx,.html,.htm';
+  const shown=make('div','stack'),problem=make('p','problem'); problem.setAttribute('role','alert');
+  let preview=null,acknowledged=false;
+  const go=button('Save supplied information',async()=>{
+    problem.textContent='';
+    if(preview){
+      if(value.input.value.trim()){problem.textContent='Use either a file or pasted text for this source.';return;}
+      if(!preview.readable || (preview.warnings.length&&!acknowledged)){problem.textContent='Review the readable coverage before importing this source.';return;}
+      await action('source-import',{capture_id:preview.id,acknowledge_warnings:acknowledged,...(replacement.input.value?{replace_id:replacement.input.value}:{})});
+    }else{
+      if(!value.input.value.trim()){problem.textContent='Paste source text or choose a readable file.';return;}
+      await action('source',{data:encoded(new TextEncoder().encode(value.input.value)),kind:'text',name:'Updated supplied information',...(replacement.input.value?{replace_id:replacement.input.value}:{})});
+    }
+  },true);
+  upload.input.addEventListener('change',async()=>{
+    const file=upload.input.files[0]; if(!file)return; go.disabled=true; problem.textContent='';
+    try{
+      const kinds={txt:'text',md:'markdown',pdf:'pdf',docx:'docx',html:'html',htm:'html'},kind=kinds[file.name.toLowerCase().split('.').pop()];
+      if(!kind)throw Error('Choose text, Markdown, PDF, Word (.docx) or HTML. Add selected CSV through a new information preview.');
+      preview=await request('/api/source-preview',{data:encoded(await bytes(file)),kind,name:file.name}); acknowledged=false;
+      shown.replaceChildren(make('p','',preview.characters+' readable characters'),make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings));
+      if(preview.warnings.length){const ack=make('input');ack.type='checkbox';ack.addEventListener('change',()=>{acknowledged=ack.checked;});shown.append(add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only the readable text.')));}
+      if(!preview.readable)problem.textContent='No readable text was found. Supply an accessible Word or text version.';
+    }catch(failure){preview=null;problem.textContent=failure.message;}finally{go.disabled=false;}
+  });
+  sheet('Update supplied information',make('p','','Import keeps a new source revision and clears dependent story/page approval. Earlier work remains in history.'),replacement.wrap,value.wrap,upload.wrap,button('Use a Google Doc or public page',()=>remoteSheet(result=>{preview=result;acknowledged=false;sourceImportSheet(result,replacement.input.value);})),shown,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
+}
+async function sourceTextSheet(source,start=0){
+  try{
+    const found=await request('/api/source?id='+encodeURIComponent(held.project.id)+'&source='+encodeURIComponent(source.id)+'&start='+start);
+    sheet('Captured source: '+source.name,make('p','quiet','Saved text '+found.start+'–'+found.end+' of '+found.total+' characters. This view does not fetch a newer source.'),list(source.coverage?.warnings||[]),make('pre','ig-csv-preview',found.text),add(make('div','bar'),start?button('Previous text',()=>sourceTextSheet(source,Math.max(0,start-20000))):null,found.end<found.total?button('More text',()=>sourceTextSheet(source,found.end)):null,button('Done',closeSheet)));
+  }catch(failure){error(failure.message);}
+}
 
 function reviseStorySheet(story){const scope=field('Scope','','select'),instruction=field('What should change?','','textarea');const all=make('option','','Whole story');all.value='';scope.input.append(all);for(const block of story.blocks){const option=make('option','',block.title);option.value=block.id;scope.input.append(option);}sheet('Refine this story',make('p','','Your selected assistant revises the supplied explanation. A named block preserves all other content. Review and choose the revised story before rebuilding.'),scope.wrap,instruction.wrap,add(make('div','bar'),button('Suggest revision',()=>action('revise-story',{story_id:story.id,block_id:scope.input.value||null,instruction:instruction.input.value}),true),button('Cancel',closeSheet)));}
 function repairSheet(){sheet('Repair current findings',make('p','','Apply the recorded artwork correction, or try the other layout. Artwork correction uses your selected provider and the original as a reference. Layout and image repairs share a two-attempt budget; nothing is approved automatically.'),add(make('div','bar'),button('Apply bounded repair',()=>action('repair',{request_id:requestId()}),true),button('Cancel',closeSheet)));}
@@ -276,3 +367,86 @@ async function imageRequestSheet(id){try{const saved=await request('/api/image-r
 async function olderHistory(){try{const last=held.history.at(-1);const result=await request('/api/history-before?id='+encodeURIComponent(held.project.id)+'&before='+last.revision);held.history.push(...result.history);renderProject();document.querySelectorAll('details').forEach(d=>{if(d.firstChild.textContent==='History')d.open=true;});}catch(f){error(f.message);}}
 
 function briefSheet(){const p=held.project,fields={};for(const[key,label,value]of[['title','Working title',p.brief.title],['audience','Audience',p.brief.audience],['purpose','Desired takeaway',p.brief.purpose],['must','Must-show ideas — one per line',p.brief.must_show.map(r=>r.text).join('\n')],['locked','Exact wording to preserve',p.brief.locked_words.join('\n')],['exclusions','Leave out',p.brief.exclusions.join('\n')]])fields[key]=field(label,value,['must','locked','exclusions'].includes(key)?'textarea':'input');sheet('Edit brief and requirements',make('p','','Changing the brief requires a fresh story/page review. Captured facts, earlier versions and exports are kept.'),...Object.values(fields).map(f=>f.wrap),add(make('div','bar'),button('Save brief',async()=>{try{await request('/api/project',{id:p.id,expected_revision:p.revision,brief:{...p.brief,title:fields.title.input.value,audience:fields.audience.input.value,purpose:fields.purpose.input.value,must_show:lines(fields.must.input.value).map((text,i)=>({id:p.brief.must_show[i]?.id||'r_'+requestId().slice(0,12),text})),locked_words:lines(fields.locked.input.value),exclusions:lines(fields.exclusions.input.value)}});closeSheet();await openProject(p.id);}catch(f){error(f.message);}},true),button('Cancel',closeSheet)));}
+
+function googleLink(url,label){const link=make('a','button',label);link.href=url;link.target='_blank';link.rel='noopener noreferrer';return link;}
+async function remoteSheet(done){
+  try{preferences=await request('/api/preferences');}catch(f){error(f.message);return;}
+  const kind=field('Source type','google-doc','select');for(const[value,label]of[['google-doc','Google Doc'],['url','Public HTTPS page']]){const option=make('option','',label);option.value=value;kind.input.append(option);}kind.input.value='google-doc';
+  const url=field('Document or page link'),account=field('Google account email',preferences.native.google_account||''),tabs=field('Google tab IDs, comma separated (optional; otherwise all tabs)');
+  const problem=make('p','problem');problem.setAttribute('role','alert');
+  kind.input.addEventListener('change',()=>{account.wrap.hidden=tabs.wrap.hidden=kind.input.value!=='google-doc';});
+  const go=button('Read and preview',async()=>{go.disabled=true;problem.textContent='';try{
+    const sent={kind:kind.input.value,url:url.input.value};if(sent.kind==='google-doc'){sent.account=account.input.value;if(tabs.input.value.trim())sent.tabs=tabs.input.value.split(',').map(t=>t.trim());}
+    const preview=await request('/api/remote-preview',sent);done(preview);
+  }catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
+  sheet('Add remote information',make('p','','Read only this selected document or page. Review the captured text and extraction gaps before import. Linked images and other pages are not fetched.'),kind.wrap,url.wrap,account.wrap,detail('Select Google tabs',tabs.wrap),problem,add(make('div','bar'),go,button('Cancel',()=>{closeSheet();if(!held)newSheet();})));
+}
+function sourceImportSheet(preview,replaceId){
+  let acknowledged=false;const problem=make('p','problem'),ack=make('input');ack.type='checkbox';ack.addEventListener('change',()=>{acknowledged=ack.checked;});
+  sheet('Review captured information',make('p','',preview.name+' · '+preview.characters+' readable characters'),make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings),preview.warnings.length?add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only readable text.')):make('p','quiet','Captured text is stored locally; import does not read the remote document again.'),problem,add(make('div','bar'),button('Import this capture',()=>{if(!preview.readable||(preview.warnings.length&&!acknowledged)){problem.textContent='Review readable coverage and acknowledge gaps before import.';return;}action('source-import',{capture_id:preview.id,acknowledge_warnings:acknowledged,...(replaceId?{replace_id:replaceId}:{})});},true),button('Cancel',closeSheet)));
+}
+async function deliverySheet(delivery){
+  try{preferences=await request('/api/preferences');}catch(f){error(f.message);return;}
+  const format=field('Output','both','select');for(const[value,label]of[['both','Google Doc and PDF'],['google','Google Doc'],['pdf','PDF']]){const option=make('option','',label);option.value=value;format.input.append(option);}format.input.value='both';
+  const account=field('Google account email',preferences.native.google_account||''),folder=field('Destination folder ID (optional)',preferences.native.google_folder||'');
+  const problem=make('p','problem'),savedRequest=requestId();
+  format.input.addEventListener('change',()=>{account.wrap.hidden=folder.wrap.hidden=format.input.value==='pdf';});
+  const go=button('Deliver approved page',async()=>{go.disabled=true;problem.textContent='';try{
+    if(format.input.value!=='google')await download(delivery,'pdf');
+    if(format.input.value==='pdf'){closeSheet();return;}
+    const result=await action('google-deliver',{export_id:delivery.id,request_id:savedRequest,account:account.input.value,folder:folder.input.value});
+    if(result?.url)sheet('Google Doc delivered',googleLink(result.url,'Open Google Doc'),button('Done',closeSheet));
+    else if(result)error(result.message||'Keep the PDF and reconcile the saved Google request. Nothing is automatically resent.');
+  }catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
+  sheet('Deliver this approved revision',make('p','','PDF preserves the exact approved one-page render. A new Google Doc contains that page as an image, plus editable text and source notes. Your original document is kept. Google conversion layout requires visual review in Docs.'),format.wrap,account.wrap,folder.wrap,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
+}
+
+async function handoffSheet(done){
+  try{preferences=await request('/api/preferences');}catch(f){error(f.message);return;}
+  const studio=field('Originating studio','blog','select');for(const[value,label]of[['blog','Blog Studio'],['presentation','Presentation Studio'],['training','Training Studio']]){const option=make('option','',label);option.value=value;studio.input.append(option);}studio.input.value='blog';
+  const root=field('Studio materials folder',preferences.material_folders.blog),results=make('div','stack'),problem=make('p','problem');
+  studio.input.addEventListener('change',()=>{root.input.value=preferences.material_folders[studio.input.value];results.replaceChildren();});
+  const scan=button('List available materials',async()=>{scan.disabled=true;problem.textContent='';try{
+    const found=await request('/api/handoff-inventory',{root:root.input.value,studio:studio.input.value});
+    results.replaceChildren(...found.files.map(file=>button(file.file+' · '+file.bytes+' bytes',async()=>{try{scan.disabled=true;const preview=await request('/api/handoff-preview',{root:found.root,studio:found.studio,file:file.file,expected_sha256:file.sha256});done(preview);}catch(f){problem.textContent=f.message;}finally{scan.disabled=false;}})));
+    if(!found.files.length)problem.textContent='No supported materials are available in this studio folder.';
+  }catch(f){problem.textContent=f.message;}finally{scan.disabled=false;}});
+  sheet('Import a selected studio material',make('p','','Lists readable materials from the studio-owned folder. Select one file to preview; nothing else is imported or shared.'),studio.wrap,root.wrap,scan,problem,results,button('Cancel',()=>{closeSheet();if(!held)newSheet();}));
+}
+async function researchSheet(){
+  const mode=field('Research source mode','selected','select');for(const[value,label]of[['selected','Supplied documents only'],['mixed','Supplied documents and public sources'],['public','Public sources']]){const option=make('option','',label);option.value=value;mode.input.append(option);}mode.input.value='selected';
+  const task=make('pre','ig-csv-preview'),path=field('Reviewed Harness Research case folder'),problem=make('p','problem');
+  async function show(){try{task.textContent=JSON.stringify(await request('/api/research-task?id='+encodeURIComponent(held.project.id)+'&source_mode='+mode.input.value),null,2);}catch(f){problem.textContent=f.message;}}
+  mode.input.addEventListener('change',show);await show();
+  const go=button('Verify and preview reviewed research',async()=>{go.disabled=true;try{const preview=await request('/api/research-preview',{id:held.project.id,expected_revision:held.project.revision,case:path.input.value,source_mode:mode.input.value});sourceImportSheet(preview);}catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
+  sheet('Use reviewed research',make('p','','Optional: give this purpose-led task to Harness Research, then import its complete independently reviewed case. This screen starts no research or public search.'),mode.wrap,detail('Infographic research task',task),path.wrap,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
+}
+async function teamSheet(){
+  const problem=make('p','problem'),items=make('div','stack');
+  async function show(){try{const state=await request('/api/team');items.replaceChildren(make('p','quiet',state.connected?'Last explicitly synced team copy. Local projects stay in your workspace.':'Connect to the repository chosen in shared Marketing Studio settings.'));
+    if(state.workspace_owner)items.append(make('p','quiet','Your workspace owner ID: '+state.workspace_owner));
+    if(state.connected)items.append(button('Retry pending team push',async()=>{try{await request('/api/team',{operation:'retry',expected_commit:state.head});await show();}catch(f){problem.textContent=f.message;}}));
+    for(const entry of state.items){
+      const cardNode=card(entry.title,make('p','quiet','Shared revision '+entry.revision+' · driver '+entry.claim.owner),list([...entry.missing.map(f=>'Missing or changed: '+f),...(entry.unshared_sources||[]).map(f=>'Private source not shared: '+f),...(entry.unshared_assets||[]).map(f=>'Private artwork not shared: '+f)]));
+      const pdf=entry.files.find(f=>f.file==='delivery/page.pdf');if(pdf)cardNode.append(button('Download shared PDF',()=>downloadShared(entry,'pdf')));
+      cardNode.append(button('Take over this shared infographic',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim});await show();}catch(f){problem.textContent=f.message;}}));
+      if(entry.editable)cardNode.append(button('Import claimed editable copy',async()=>{try{const result=await request('/api/team',{operation:'take',id:entry.id,expected_head:state.head,expected_claim:entry.claim});closeSheet();await openProject(result.project.id);if(result.missing_sources.length||result.missing_assets.length)error('Editable copy imported without approval. Some private sources or artwork were not shared; supply them before rebuilding.');}catch(f){problem.textContent=f.message;}}));
+      const owner=field('New driver workspace owner ID');cardNode.append(detail('Hand over to a teammate',owner.wrap,button('Hand over shared driver',async()=>{try{await request('/api/team',{operation:'claim',id:entry.id,expected_head:state.head,expected_claim:entry.claim,new_owner:owner.input.value});await show();}catch(f){problem.textContent=f.message;}})));items.append(cardNode);
+    }
+  }catch(f){problem.textContent=f.message;}}
+  const sync=button('Connect or sync team library',async()=>{sync.disabled=true;problem.textContent='';try{await request('/api/team',{operation:'connect'});await show();}catch(f){problem.textContent=f.message;}finally{sync.disabled=false;}},true);
+  sheet('Team library',make('p','','Only an explicit share sends selected files. Takeover changes the shared driver; it does not overwrite anyone’s local draft.'),sync,problem,items,button('Done',closeSheet));await show();
+}
+async function shareSheet(delivery){
+  const editable=make('input');editable.type='checkbox';const include=add(make('label','check'),editable,document.createTextNode('Include editable project (private brief, facts and source metadata)'));
+  const picks=make('div','stack'),sourceIds=new Set(),assetIds=new Set();
+  for(const[kind,records,selected]of[['source',held.project.sources,sourceIds],['artwork',held.project.assets,assetIds]])for(const record of records){const check=make('input');check.type='checkbox';check.disabled=true;editable.addEventListener('change',()=>{check.disabled=!editable.checked;if(!editable.checked){check.checked=false;selected.clear();}});check.addEventListener('change',()=>{if(check.checked)selected.add(record.id);else selected.delete(record.id);});picks.append(add(make('label','check'),check,document.createTextNode('Include private '+kind+': '+(record.name||record.id))));}
+  const problem=make('p','problem');const preview=button('Review exact files to share',async()=>{preview.disabled=true;try{
+    const selection={export_id:delivery.id,include_editable:editable.checked,source_ids:[...sourceIds],asset_ids:[...assetIds]};
+    const result=(await request('/api/action',{action:'team-preview',id:held.project.id,expected_revision:held.project.revision,...selection})).result;
+    const confirm=make('input');confirm.type='checkbox';const send=button('Share these files',()=>{if(selection.include_editable&&!confirm.checked){error('Confirm the displayed private inventory before sharing.');return;}action('team-share',{...selection,inventory_digest:result.inventory_digest,expected_head:result.expected_head,expected_claim:result.expected_claim,expected_connection:result.expected_connection,confirm_private:confirm.checked});},true);
+    sheet('Confirm team sharing',make('p','','Only these files are committed and pushed to the configured team repository. Prompts and image job records are excluded.'),list(result.files.map(f=>f.file+' · '+f.bytes+' bytes')),selection.include_editable?add(make('label','check'),confirm,document.createTextNode('I am allowed to share the selected private project, sources and artwork.')):make('p','quiet','Approved delivery and title only.'),add(make('div','bar'),send,button('Cancel',closeSheet)));
+  }catch(f){problem.textContent=f.message;}finally{preview.disabled=false;}},true);
+  sheet('Select files to share',make('p','','Default: the approved delivery and its title. Optional editable content needs separate selection. Connect the team library first.'),include,picks,problem,add(make('div','bar'),preview,button('Open team library',teamSheet),button('Cancel',closeSheet)));
+}
+async function downloadShared(entry,format){try{const response=await fetch('/api/team-download?id='+encodeURIComponent(entry.id)+'&format='+format,{headers:{'X-Infographic-Studio-Token':token}});if(!response.ok)throw Error('This shared delivery is unavailable.');const url=URL.createObjectURL(await response.blob());const link=make('a');link.href=url;link.download=entry.title+'.'+format;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}catch(f){error(f.message);}}

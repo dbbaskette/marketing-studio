@@ -84,12 +84,28 @@ def check(archive):
         assert cli('inspect', ident)['project']['approval'] is not None
         assert Path(cli('preferences')['renderer']).is_file()
         assert not any(p.is_symlink() for p in native.rglob('*'))
+        document_intake = tuple(int(v) for v in (native / 'VERSION').read_text().strip().split('.')) >= (0, 2, 0)
+        if document_intake:
+            supplied = root / 'synthetic.docx'
+            with zipfile.ZipFile(supplied, 'w') as zipped:
+                zipped.writestr('word/document.xml', '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Selected Word material.</w:t></w:r></w:p></w:body></w:document>')
+            preview = cli('source-preview', '--file', supplied)
+            assert preview['readable'] and preview['excerpt'].strip() == 'Selected Word material.'
+            imported = cli('source-import', ident, '--capture-id', preview['id'], '--expected-revision', p['revision'])
+            assert imported['approval'] is None
+            source = next(s for s in imported['sources'] if s['kind'] == 'docx')
+            assert cli('source-show', ident, '--source-id', source['id'])['text'].strip() == 'Selected Word material.'
+            refused = subprocess.run(['/bin/sh', str(helper), 'remote-preview', '--kind', 'google-doc',
+                '--url', 'https://invalid.example/document', '--account', 'editor@example.invalid'],
+                env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=15)
+            assert refused.returncode == 2 and 'Google document' in json.loads(refused.stderr)['error']
+
         print(json.dumps({'result': 'PASS', 'archive': archive.name,
                           'sha256': hashlib.sha256(archive.read_bytes()).hexdigest(), 'platform': distribution['platform'],
                           'python': distribution['runtimes']['python']['version'],
                           'renderer': distribution['infographic_renderer']['version'], 'formats': 4,
                           'source_and_download_removed': True, 'marketing_studio_removed': True,
-                          'research_slide_companions': 0, 'providers_called': False}))
+                          'research_slide_companions': 0, 'document_intake': document_intake, 'providers_called': False}))
 
 
 if __name__ == '__main__':

@@ -20,8 +20,8 @@ shared = core.for_product(
      '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
      '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/status', '/api/projects', '/api/project', '/api/asset',
-                         '/api/desk', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request'),
-    writes=('/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/brand-current'))
+                         '/api/desk', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task'),
+    writes=('/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current'))
 
 
 class Page(shared.Page):
@@ -32,7 +32,7 @@ class Page(shared.Page):
         self.engine = engine or Engine(store)
 
     def body_limit(self, target, headers):
-        return 2_000_000 if target in ('/api/action', '/api/csv-preview', '/api/csv-selection') else super().body_limit(target, headers)
+        return 24_000_000 if target in ('/api/action', '/api/csv-preview', '/api/csv-selection', '/api/source-preview') else super().body_limit(target, headers)
 
     def check_token(self, headers):
         if len(headers.get_all('X-Infographic-Studio-Token') or []) != 1:
@@ -42,6 +42,16 @@ class Page(shared.Page):
     def read(self, path, one):
         if path not in ('/api/preferences', '/api/computer', '/api/status'):
             require(self.store is not None, 'Finish shared setup before opening Infographic Studio projects.')
+        if path == '/api/team-download':
+            from . import team
+            mime,raw=team.download(one('id'),one('format'))
+            return 200,mime,raw
+        if path == '/api/team':
+            from . import team
+            return shared.as_json(200,{**team.status(),'workspace_owner':self.store.owner})
+        if path == '/api/research-task':
+            from . import research
+            return shared.as_json(200,research.task(self.store.read(one('id')),one('source_mode')))
         if path == '/api/desk':
             return shared.as_json(HTTPStatus.OK, self.engine.inspect(one('id')))
         if path == '/api/history':
@@ -66,6 +76,15 @@ class Page(shared.Page):
             return shared.as_json(HTTPStatus.OK, {'projects': self.store.listing()})
         if path == '/api/project':
             return shared.as_json(HTTPStatus.OK, {'project': self.store.read(one('id'))})
+        if path == '/api/source':
+            project = self.store.read(one('id'))
+            source = next((s for s in project['sources'] if s['id'] == one('source')), None)
+            require(source is not None, 'Choose one captured source from this infographic.')
+            start = int(one('start'))
+            value = sources.read(self.store, project, source)
+            require(0 <= start <= len(value), 'Choose a position within the captured source.')
+            return shared.as_json(200, {'source': source, 'text': value[start:start + 20_000],
+                                      'start': start, 'end': min(start + 20_000, len(value)), 'total': len(value)})
         if path == '/api/asset':
             mime, raw = self.store.read_asset(one('id'), one('asset'))
             return HTTPStatus.OK, mime, raw
@@ -85,6 +104,39 @@ class Page(shared.Page):
         if path == '/api/preferences':
             require(isinstance(sent, dict) and set(sent) == {'changes', 'expected'}, 'Save only the shown native defaults and their revision.')
             return shared.as_json(HTTPStatus.OK, settings.save(sent['changes'], expected=sent['expected']))
+        if path == '/api/team':
+            from . import team
+            require(isinstance(sent,dict) and sent.get('operation') in ('connect','sync','claim','take','retry'), 'Choose an explicit team action.')
+            operation=sent['operation'];values={k:v for k,v in sent.items() if k!='operation'}
+            allowed={'connect':set(),'sync':set(),'claim':{'id','expected_head','expected_claim','new_owner'},'take':{'id','expected_head','expected_claim'},'retry':{'expected_commit'}}
+            require(set(values)<=allowed[operation],'Use only the selected team action fields.')
+            if operation in ('connect','sync'):result=team.connect()
+            elif operation=='retry':result=team.retry_pending(**values)
+            else:
+                ident=values.pop('id')
+                result=(team.claim if operation=='claim' else team.take)(self.store,ident,**values)
+            return shared.as_json(200,result)
+        if path in ('/api/handoff-inventory','/api/handoff-preview'):
+            from . import handoffs
+            require(isinstance(sent,dict) and set(sent)<=({'root','studio'} if path.endswith('inventory') else {'root','studio','file','expected_sha256'}),'Select one studio material from its inventory.')
+            return shared.as_json(200,(handoffs.inventory if path.endswith('inventory') else handoffs.prepare)(**sent))
+        if path == '/api/research-preview':
+            from . import research
+            require(isinstance(sent,dict) and set(sent)=={'id','expected_revision','case','source_mode'},'Choose a research case for this exact infographic task.')
+            project=self.store.read(sent['id']);self.store.expect(project,sent['expected_revision'])
+            return shared.as_json(200,research.prepare(sent['case'],expected_task=research.task(project,sent['source_mode'])))
+        if path == '/api/remote-preview':
+            from . import remote_sources
+            require(isinstance(sent, dict) and set(sent) <= {'kind', 'url', 'account', 'tabs'}, 'Preview one explicitly selected remote source.')
+            require(sent.get('kind') in ('google-doc', 'url'), 'Choose Google Doc or public URL.')
+            result = remote_sources.google(sent.get('url'), account=sent.get('account'), tabs=sent.get('tabs')) if sent['kind'] == 'google-doc' else remote_sources.public(sent.get('url'))
+            return shared.as_json(200, result)
+        if path == '/api/source-preview':
+            from . import intake
+            require(isinstance(sent, dict) and set(sent) <= {'data', 'kind', 'name', 'selection'},
+                    'Preview one supplied document and its explicit selection.')
+            return shared.as_json(200, intake.prepare(api.source_bytes(sent.get('data')),
+                kind=sent.get('kind'), name=sent.get('name'), selection=sent.get('selection')))
         if path == '/api/csv-preview':
             import base64
             require(isinstance(sent, dict) and set(sent) == {'data'} and isinstance(sent['data'], str), 'Supply CSV bytes for preview.')

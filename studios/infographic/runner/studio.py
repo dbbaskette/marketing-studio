@@ -39,23 +39,38 @@ def parser():
     edit.add_argument('id')
     edit.add_argument('--expected-revision', required=True, type=int)
     edit.add_argument('--file', required=True, type=Path, help='UTF-8 JSON brief, at most 64 KB.')
-    for name in ('action', 'inspect', 'history', 'computer', 'preferences'):
+    for name in ('action', 'inspect', 'history', 'computer', 'preferences', 'source-show'):
         command = commands.add_parser(name, help={
             'action': 'Run a checked desk action from JSON; see the native skill for action fields.',
             'inspect': 'Read current content, findings, deliveries and recovery without provider work.',
             'history': 'List immutable saved revisions.',
             'computer': 'Show non-secret local prerequisites; never generate a test image.',
-            'preferences': 'Read page/image defaults; shared assistant and brand settings stay authoritative.'}[name])
-        if name in ('action', 'inspect', 'history'):
+            'preferences': 'Read page/image defaults; shared assistant and brand settings stay authoritative.',
+            'source-show': 'Read an exact captured source and its extraction coverage without fetching.'}[name])
+        if name in ('action', 'inspect', 'history', 'source-show'):
             command.add_argument('id')
+        if name == 'source-show': command.add_argument('--source-id', required=True)
         if name == 'history': command.add_argument('--before', type=int, help='Read an earlier page of immutable revisions.')
         if name == 'action':
             command.add_argument('--file', required=True, type=Path, help='JSON action with expected_revision and stage data.')
+    extra=commands.add_parser('handoff-inventory');extra.add_argument('--root',type=Path,required=True);extra.add_argument('--studio',required=True)
+    extra=commands.add_parser('handoff-preview');extra.add_argument('--root',type=Path,required=True);extra.add_argument('--studio',required=True);extra.add_argument('--file',required=True);extra.add_argument('--expected-sha256',required=True)
+    extra=commands.add_parser('research-task');extra.add_argument('id');extra.add_argument('--source-mode',choices=('selected','mixed','public'),default='selected')
+    extra=commands.add_parser('research-preview');extra.add_argument('id');extra.add_argument('--case',type=Path,required=True);extra.add_argument('--source-mode',choices=('selected','mixed','public'),default='selected')
+    extra=commands.add_parser('team');extra.add_argument('--operation',choices=('status','connect','sync','claim','take','retry'),default='status');extra.add_argument('--file',type=Path,help='Exact JSON claim/head arguments for explicit operations.')
+    remote = commands.add_parser('remote-preview', help='Explicitly read one Google Doc or public page into a local preview.')
+    remote.add_argument('--kind', choices=('google-doc', 'url'), required=True)
+    remote.add_argument('--url', required=True)
+    remote.add_argument('--account')
+    remote.add_argument('--tab', action='append', dest='tabs')
     preview = commands.add_parser('csv-preview', help='Inspect UTF-8 CSV without capturing it or calling a provider.')
     preview.add_argument('--file', required=True, type=Path)
-    for name in ('source', 'facts', 'stories', 'brand', 'image-brief', 'select', 'layout', 'suggest',
+    preview = commands.add_parser('source-preview', help='Capture a local document preview and show readable coverage; no providers.')
+    preview.add_argument('--file', required=True, type=Path)
+    preview.add_argument('--selection', type=Path)
+    for name in ('source', 'source-import', 'facts', 'stories', 'brand', 'image-brief', 'select', 'layout', 'suggest',
                  'build', 'preview', 'check', 'inspect-images', 'approve', 'export', 'restore',
-                 'edit-text', 'review', 'image-start', 'image-cancel', 'revise-art', 'revise-story', 'repair'):
+                 'google-deliver', 'edit-text', 'review', 'image-start', 'image-cancel', 'revise-art', 'revise-story', 'repair'):
         operation = commands.add_parser(name, help='Checked ' + name + ' action; existing work is preserved on failure.')
         operation.add_argument('id')
         operation.add_argument('--expected-revision', required=True, type=int)
@@ -64,12 +79,21 @@ def parser():
         if name == 'source':
             operation.add_argument('--selection', type=Path, help='Confirmed CSV scope JSON, after csv-preview.')
             operation.add_argument('--replace-id')
+        if name == 'source-import':
+            operation.add_argument('--capture-id', required=True)
+            operation.add_argument('--replace-id')
+        if name in ('source', 'source-import'):
+            operation.add_argument('--acknowledge-warnings', action='store_true')
         fields = {'select': ('story-id',), 'build': ('request-id',), 'repair': ('request-id',),
                   'restore': ('revision',), 'edit-text': ('element-id', 'text'),
                   'image-start': ('brief-id', 'provider', 'request-id'), 'image-cancel': ('request-id',),
                   'revise-art': ('change', 'preserve', 'request-id'), 'revise-story': ('story-id', 'instruction')}
         for field in fields.get(name, ()):
             operation.add_argument('--' + field, required=True, type=int if field == 'revision' else str)
+        if name == 'google-deliver':
+            for key in ('export-id', 'request-id', 'account'): operation.add_argument('--' + key, required=True)
+            operation.add_argument('--folder', default='')
+            operation.add_argument('--reconcile', action='store_true')
         if name == 'layout': operation.add_argument('--arrangement', choices=('stack', 'columns'), default='stack')
         if name == 'suggest': operation.add_argument('--automatic', action='store_true')
         if name == 'export': operation.add_argument('--draft', action='store_true')
@@ -84,7 +108,32 @@ def parser():
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
-        if args.command == 'csv-preview':
+        if args.command.startswith('handoff-'):
+            from runner import handoffs
+            value=handoffs.inventory(args.root,args.studio) if args.command=='handoff-inventory' else handoffs.prepare(args.root,args.studio,args.file,args.expected_sha256)
+        elif args.command in ('research-task','research-preview'):
+            from runner import research
+            store=Store.current()
+            if store is None:raise Invalid('Configure Infographic Studio before preparing research.')
+            task=research.task(store.read(args.id),args.source_mode)
+            value=task if args.command=='research-task' else research.prepare(args.case,expected_task=task)
+        elif args.command=='team':
+            from runner import team,api
+            values=api.load_json(args.file) if args.file else {}
+            if args.operation=='status':value={**team.status(),'workspace_owner':Store.current().owner if Store.current() else None}
+            elif args.operation in ('connect','sync'):value=team.connect()
+            elif args.operation=='retry':value=team.retry_pending(**values)
+            else:
+                store=Store.current();ident=values.pop('id');value=(team.claim if args.operation=='claim' else team.take)(store,ident,**values)
+        elif args.command == 'remote-preview':
+            from runner import remote_sources
+            value = remote_sources.google(args.url, account=args.account, tabs=args.tabs) if args.kind == 'google-doc' else remote_sources.public(args.url)
+        elif args.command == 'source-preview':
+            from runner import api, intake, sources
+            kind, raw = sources.read_file(args.file)
+            value = intake.prepare(raw, kind=kind, name=args.file.name,
+                                   selection=api.load_json(args.selection) if args.selection else None)
+        elif args.command == 'csv-preview':
             from runner import sources
             kind, raw = sources.read_file(args.file)
             if kind != 'csv':
@@ -140,6 +189,12 @@ def main(argv=None):
                 value = store.create(args.title, preset=args.preset, direction=args.direction)
             elif args.command == 'show':
                 value = store.read(args.id)
+            elif args.command == 'source-show':
+                from runner import sources
+                project = store.read(args.id)
+                source = next((s for s in project['sources'] if s['id'] == args.source_id), None)
+                if source is None: raise Invalid('Choose a captured source from this infographic.')
+                value = {'source': source, 'text': sources.read(store, project, source)}
             elif args.command == 'history':
                 from runner import history
                 value = history.entries(store, args.id, before=args.before)

@@ -190,3 +190,20 @@ uncertain/late/cancelled work cannot silently replace current content or replay.
 Immutable exports bind current inputs/scene/checks/approval; export retries do not
 regenerate images. Team storage, Office/Google inputs, URL fetching and research
 handoffs remain follow-up scope. See the [native guide](../studios/infographic/README.md).
+
+
+### Infographic Studio document and team boundaries
+
+Native document intake captures bounded original bytes, readable text, locations and gaps.
+Explicit Google reads use a fixed shared Drive/Docs transport with in-memory gcloud tokens;
+public reads pin validated global DNS addresses across redirects without proxy bypass.
+New Google document delivery converts a private OOXML package through one resumable upload,
+bound to a durable request intent and the exact approved local export. Uncertain writes are
+reconciled by private application identity, never replayed. Local PDF remains independent.
+
+Schema-2 research imports verify copied helper state and the complete reviewed evidence bundle,
+retain the verifying helper revision, and recheck captures on consumption. Selected studio
+handoffs snapshot only the chosen visible material. Optional team sharing uses an independent
+owned clone, exact inventory/claim/head/destination guards and non-forced Git pushes. Local
+workspace ownership and approval never transfer through an import. Prompts and image jobs do
+not enter shared inventories; private source/art bytes require explicit selection.
