@@ -64,7 +64,8 @@ from workspace import WorkspaceError
 
 HERE = Path(__file__).resolve().parent
 JOBS = ('research-plan', 'research-plan-queue', 'research-question', 'blueprint', 'document', 'brief', 'scenario',
-        'yoodli', 'part', 'deck-outline', 'deck-section', 'deck-review')
+        'yoodli', 'part', 'finish-sources', 'finish-time', 'finish-answers',
+        'finish-humanize', 'finish-level', 'deck-outline', 'deck-section', 'deck-review')
 NAMED = ('document', 'brief', 'scenario')   # the writers a brand's naming rules are given to
 HAND_BACK = '\n## Hand back\n'
 DESIGNED = {'deck-outline': 'deck-design', 'deck-section': 'deck-section-design',

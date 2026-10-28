@@ -2814,6 +2814,30 @@ class DeskPageTests(PageCase):
         return [*(card['says'] for card in view['cards']), *view['needs'],
                 view['progress']['line'], view['progress']['doing']]
 
+    def test_finishing_routes_are_authenticated_and_saved_runs_refuse_them(self):
+        path = self.desk(materials=['document', 'brief'], levels=['101'])
+        name = 'document@101'
+        card = self.get('drafts/card', path=path, name=name)
+        sent = {'path': path, 'name': name, 'tool': 'coverage', 'seen': card['revision']}
+        self.post('drafts/finish', sent, expect=403, token=False)
+        checked = self.post('drafts/finish', sent)
+        self.assertIn('coverage', checked['finishing'])
+        for tool in ('sources', 'time', 'answers', 'humanize', 'level'):
+            self.post('drafts/finish', {**sent, 'tool': tool}, expect=403, token=False)
+        for route in ('apply', 'skip'):
+            self.post('drafts/' + route, {**sent, 'job': 'a' * 32, 'items': []},
+                      expect=403, token=False)
+        proof = self.get('drafts/proofread', path=path, name=name)
+        self.assertIn('findings', proof)
+        saved = self.started(title='Saved training')
+        for route in ('finish', 'apply', 'skip'):
+            refused = self.post('drafts/' + route, {**sent, 'path': saved}, expect=409)
+            self.assertEqual(refused['error'], drafts.NOT_ON_DESK)
+        self.get('drafts/proofread', path=saved, name=name, expect=409)
+        for tool in ('sources', 'time', 'answers', 'humanize', 'level'):
+            refused = self.post('drafts/finish', {**sent, 'path': saved, 'tool': tool}, expect=409)
+            self.assertEqual(refused['error'], drafts.NOT_ON_DESK)
+
     def test_added_sources_have_a_read_only_price_and_authenticated_batch_route(self):
         path = self.desk(materials=['document', 'brief'])
         before = self.on_disk()
@@ -3207,6 +3231,11 @@ class DeskTeamTests(TeamCase):
             self.blake.engine.hold(theirs)
         name = 'document@101'
         for route, sent in (('source', {'files': [{'name': 'notes.txt', 'content': 'Tm90ZXM='}]}),
+                            ('finish', {'name': name, 'tool': 'coverage'}),
+                            *(("finish", {'name': name, 'tool': tool}) for tool in
+                              ('sources', 'time', 'answers', 'humanize', 'level')),
+                            ('apply', {'name': name, 'job': 'a' * 32, 'items': []}),
+                            ('skip', {'name': name, 'job': 'a' * 32, 'items': []}),
                             ('update-all', {'level': '101'}),
                             ('stop-updates', {'chain': 'some-chain'}),
                             ('ready', {'name': name, 'seen': hashed(theirs, name)}),

@@ -372,6 +372,22 @@ class Workers:
         return Outcome(True, text=returned or '', cost=self.cost,
                        tokens={'input': 1000, 'cached': 800, 'output': 200}, seconds=1.5)
 
+    def finish_proposal(self, tools, job):
+        kind, spec = next(iter(tools.job['artifacts'].items()))
+        part = next(p for p in spec['parts'] if p['text'].strip())
+        item = {'part': part['part'], 'quote': part['text'],
+                'replacement': part['text'], 'reason': 'The supplied text fits this check.'}
+        if kind == 'finish-sources':
+            item.update(verdict='supported', finding=spec['findings'][0]['id'])
+        accepted = tools.submit_artifact(kind, json.dumps([item]))
+        assert accepted[0], accepted[1]
+
+    finish_sources = finish_proposal
+    finish_time = finish_proposal
+    finish_answers = finish_proposal
+    finish_humanize = finish_proposal
+    finish_level = finish_proposal
+
     def research_plan(self, tools, job):
         accepted = tools.submit_artifact('research-plan', json.dumps(self.plan))
         assert accepted[0], accepted[1]

@@ -202,7 +202,7 @@ from workspace import WorkspaceError
 from studio_core import research_sites
 
 from runner import engine as engines
-from runner import drafts, gitstate, pipeline, setup
+from runner import draft_finish, drafts, gitstate, pipeline, setup
 
 from studio_core import modules
 from studio_core.shared_runner import page as _shared
@@ -221,7 +221,8 @@ CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
-         DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price')
+         DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
+         f'{DRAFTS}/proofread')
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
@@ -232,7 +233,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
           f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop',
           f'{DRAFTS}/slide-selection', f'{DRAFTS}/slide-selection-settle', f'{DRAFTS}/deck-outline', f'{DRAFTS}/deck-outline-price',
-          f'{DRAFTS}/source', *DECIDED, *TYPED, *JOBS)
+          f'{DRAFTS}/source', f'{DRAFTS}/finish', f'{DRAFTS}/apply', f'{DRAFTS}/skip', *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -311,6 +312,13 @@ class RunnerPage(desk.Page):
             name = one('name')
             return desk.as_json(HTTPStatus.OK, self.typed(lambda: self.engine.draft_card(
                 root, name)))
+        if path == f'{DRAFTS}/proofread':
+            root = self.on_desk(one('path'))
+            try:
+                return desk.as_json(HTTPStatus.OK, draft_finish.proofread(
+                    self.engine, root, one('name')))
+            except (ValueError, WorkspaceError) as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
         if path == f'{DRAFTS}/slide-versions':
             root = self.on_desk(one('path'))
             try:
@@ -759,6 +767,22 @@ class RunnerPage(desk.Page):
                 decoded.append({'name': name, 'data': data})
             self.typed(lambda: self.engine.add_source(root, decoded))
             return desk.as_json(HTTPStatus.OK, drafts.view(self.engine, root))
+        if path in (f'{DRAFTS}/finish', f'{DRAFTS}/apply', f'{DRAFTS}/skip'):
+            root = self.on_desk(desk.text(sent, 'path'))
+            name = desk.text(sent, 'name')
+            try:
+                if path.endswith('/finish'):
+                    result = draft_finish.finish(self.engine, root, name,
+                        desk.text(sent, 'tool'), sent.get('seen'), sent.get('level'))
+                elif path.endswith('/apply'):
+                    result = draft_finish.apply(self.engine, root, name,
+                        desk.text(sent, 'job'), sent.get('items'), sent.get('seen'))
+                else:
+                    result = draft_finish.skip(self.engine, root, name,
+                        desk.text(sent, 'job'), sent.get('items', sent.get('ids')))
+            except (ValueError, WorkspaceError) as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
+            return desk.as_json(HTTPStatus.OK, result)
         if path == f'{DRAFTS}/open':
             training = desk.text(sent, 'path')
             desk.registered(training)
@@ -842,7 +866,9 @@ class RunnerPage(desk.Page):
                 if path.endswith('slide-words'):
                     result = self.engine.slide_words(root, level, desk.text(sent, 'slide'),
                         desk.text(sent, 'field'), desk.text(sent, 'text', False), desk.text(sent, 'seen'),
-                        _redraw=sent.get('redraw') is True)
+                        _redraw=sent.get('redraw') is True,
+                        _finishing=sent.get('finishing'),
+                        _source='finishing' if sent.get('finishing') else 'save')
                 else:
                     result = self.engine.slide_speaker_notes(root, level, desk.text(sent, 'slide'),
                         desk.text(sent, 'text', False), desk.text(sent, 'seen'))
