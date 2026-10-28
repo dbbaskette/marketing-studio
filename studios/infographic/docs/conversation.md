@@ -150,3 +150,52 @@ request identity cannot spend again. A new explicit attempt needs a new identity
 `repair ID --request-id UNIQUE --expected-revision N` applies a specific recorded
 art correction or a layout alternative, within a shared two-attempt automatic
 repair budget. Smaller/manual revisions remain possible afterward.
+
+
+## Follow-up sources and delivery
+
+Local previews never start providers:
+
+```sh
+python3 runner/studio.py source-preview --file /absolute/material.docx
+python3 runner/studio.py remote-preview --kind google-doc --url https://docs.google.com/document/d/ID/edit --account editor@example.com
+python3 runner/studio.py remote-preview --kind url --url https://public.example.com/page
+python3 runner/studio.py source-import ID --capture-id PREVIEW --expected-revision REV
+python3 runner/studio.py source-show ID --source-id SOURCE
+python3 runner/studio.py handoff-inventory --root /absolute/blogs --studio blog
+python3 runner/studio.py handoff-preview --root /absolute/blogs --studio blog --file ITEM/DRAFT.md --expected-sha256 HASH
+python3 runner/studio.py research-task ID --source-mode selected
+python3 runner/studio.py research-preview ID --case /absolute/reviewed-case --source-mode selected
+```
+
+When a preview names extraction gaps, inspect them before adding
+`--acknowledge-warnings` to `source-import`. Use `--replace-id SOURCE` for an explicit
+refresh. The raw and normalized capture, locations and origin revision are immutable;
+replacement clears dependent story/page approval. Google tab selection uses repeated
+`--tab TAB_ID`; leaving it empty includes all tabs. Pasted links do not trigger a fetch.
+
+After current checks, visual review, user approval and final local export:
+
+```sh
+python3 runner/studio.py google-deliver ID --expected-revision REV --export-id EXPORT --request-id UNIQUE_REQUEST --account editor@example.com
+```
+
+Use optional `--folder FOLDER_ID` for a checked explicit destination. Creates a new Doc;
+no source write or permission change. PDF remains the exact local render. The Doc has a
+page image with alt text, editable text and source notes; Google conversion fidelity is
+checked in Docs. A repeated request never blindly resends. Use the original saved values
+plus `--reconcile` after uncertainty, including after a local edit; result stays historical.
+
+`team --operation status|connect|sync` reads the local copy or explicitly connects/fetches.
+`action ID --file JSON` supports `team-preview` with `export_id`, `include_editable`,
+`source_ids`, `asset_ids`; it returns exact files, `inventory_digest`, `expected_head`,
+`expected_connection`, `expected_claim`. `team-share` adds those returned values and
+`confirm_private: true` for private content. Use the current expected project revision.
+Never infer permission to share sources/artwork from importing them. Prompts/job records
+are excluded. Native defaults store `team_email`; the name comes from shared settings.
+
+`team --operation claim|take|retry --file JSON` accepts the explicit action fields:
+claim/take use `id`, `expected_head`, `expected_claim`; handover adds `new_owner` to claim;
+retry uses `expected_commit`. A foreign driver is read-only for sharing until explicit
+claim takeover. Local draft edits remain local. A claimed editable import keeps missing
+unselected inputs honest, strips approval/checks/jobs and preserves any existing local copy.

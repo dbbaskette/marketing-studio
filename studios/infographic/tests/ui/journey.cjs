@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 (async()=>{
   const renderer=process.env.INFOGRAPHIC_STUDIO_TEST_RENDERER;
   if(!renderer)throw Error('Supply an explicitly installed renderer. No download is performed by this test.');
-  const child=spawn(process.env.PYTHON||'python3',[path.join(__dirname,'fixture_server.py'),'--renderer',renderer],{stdio:['ignore','pipe','pipe']});
+  const child=spawn(process.env.PYTHON||'python3',[path.join(__dirname,'fixture_server.py'),'--renderer',renderer,...(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE?['--remote','--bridge']:[])],{stdio:['ignore','pipe','pipe']});
   let browser, page, errors=[];
   try{
     const url=await new Promise((resolve,reject)=>{let buf='';const timer=setTimeout(()=>reject(Error('Fixture startup timed out')),15000);child.stdout.on('data',b=>{buf+=b;const line=buf.split('\n')[0];if(line.startsWith('http://')&&buf.includes('\n')){clearTimeout(timer);resolve(line);}});child.on('exit',code=>{clearTimeout(timer);reject(Error('Fixture exited '+code));});});
@@ -22,7 +22,13 @@ const assert = require('node:assert/strict');
     await page.getByRole('button',{name:'Infographics',exact:true}).first().click();
     await page.getByRole('button',{name:'New infographic',exact:true}).click();
     await page.getByLabel('Working title',{exact:true}).fill('Synthetic rolling restart');
-    await page.getByLabel('Notes or text',{exact:true}).fill('One instance restarts while the others serve.');
+    if(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE){
+      await page.getByRole('button',{name:'Add a Google Doc or public page',exact:true}).click();
+      await page.getByLabel('Document or page link',{exact:true}).fill('https://docs.google.com/document/d/synthetic_source/edit');
+      await page.getByLabel('Google account email',{exact:true}).fill('editor@example.invalid');
+      await page.getByRole('button',{name:'Read and preview',exact:true}).click();
+      await page.getByRole('heading',{name:'Synthetic Google source',exact:true}).waitFor();
+    }else await page.getByLabel('Notes or text',{exact:true}).fill('One instance restarts while the others serve.');
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByLabel('How should we find the story?',{exact:true}).selectOption('direct');
     await page.getByLabel('Audience and prior knowledge',{exact:true}).fill('Technical practitioners');
@@ -55,6 +61,16 @@ const assert = require('node:assert/strict');
     const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download SVG',exact:true}).click();
     const file=await download;assert.equal(file.suggestedFilename(),'infographic.svg');
     const source=fs.readFileSync(await file.path(),'utf8');assert(source.includes('One at a time'));assert(!source.includes('DRAFT — not approved'));
+    if(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE){
+      await page.getByRole('button',{name:'Deliver Google Doc or PDF',exact:true}).click();
+      await page.getByLabel('Google account email',{exact:true}).fill('editor@example.invalid');
+      const deliveredPdf=page.waitForEvent('download');
+      await page.getByRole('button',{name:'Deliver approved page',exact:true}).click();
+      assert.equal((await deliveredPdf).suggestedFilename(),'infographic.pdf');
+      await page.getByRole('link',{name:'Open Google Doc',exact:true}).waitFor();
+      assert.equal(await page.getByRole('link',{name:'Open Google Doc',exact:true}).getAttribute('href'),'https://docs.google.com/document/d/synthetic_delivered/edit');
+      await page.getByRole('button',{name:'Done',exact:true}).click();
+    }
     await page.getByRole('button',{name:'Record my visual review',exact:true}).click();
     await page.getByLabel('What did you inspect on the actual composed page?',{exact:true}).fill('I inspected the actual page again and confirmed its relationships.');
     await page.getByRole('button',{name:'Record reviewed page',exact:true}).click();

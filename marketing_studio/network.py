@@ -158,6 +158,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
             limit = 15 * 1024 * 1024
         elif own.identifier == 'presentation' and url.path == '/api/decks':
             limit = MAX_BODY
+        elif own.identifier == 'infographic' and url.path in ('/api/source-preview','/api/action','/api/csv-preview','/api/csv-selection'):
+            limit = 24_000_000
         elif own.identifier == 'training' and url.path in ('/api/documents', '/api/asset'):
             limit = 12_000_000
         if size < 0 or size > limit or (self.command == 'POST' and not lengths):

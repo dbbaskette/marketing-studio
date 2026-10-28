@@ -60,6 +60,9 @@ def engine(store):
 FIELDS = {
     'source': {'data', 'kind', 'name', 'selection', 'replace_id', 'acknowledge_warnings'},
     'source-import': {'capture_id', 'replace_id', 'acknowledge_warnings'},
+    'team-preview': {'export_id', 'include_editable', 'source_ids', 'asset_ids'},
+    'team-share': {'export_id', 'include_editable', 'source_ids', 'asset_ids','inventory_digest','expected_head','expected_claim','expected_connection','confirm_private'},
+    'google-deliver': {'export_id', 'request_id', 'account', 'folder', 'reconcile'},
     'facts': {'data'}, 'stories': {'data'}, 'select': {'story_id'}, 'brand': {'data'},
     'layout': {'arrangement'}, 'image-brief': {'data', 'edit'},
     'image-start': {'brief_id', 'provider', 'request_id', 'operation', 'parent'},
@@ -89,7 +92,14 @@ def action(found, sent):
             jobs.intent(ident, expected_revision=revision, brief_id=sent.get('brief_id'), provider=sent.get('provider'),
                         request_id=sent['request_id'], operation=sent.get('operation', 'generate'), parent=sent.get('parent'))
             return {'state': 'existing', 'attempt_id': sent['request_id'], 'automatic_retry': False, 'recovery': jobs.recovery(ident)}
+    if verb == 'google-deliver':
+        from . import google_delivery
+        return google_delivery.execute(store, ident, expected_revision=revision, **{k: sent[k] for k in FIELDS[verb] if k in sent})
     store.expect(store.read(ident), revision)
+    if verb in ('team-preview','team-share'):
+        from . import team
+        method=team.preview if verb=='team-preview' else team.share
+        return method(store,ident,expected_revision=revision,**{k:sent[k] for k in FIELDS[verb] if k in sent})
     if verb == 'source':
         raw = source_bytes(sent.get('data'))
         return sources.capture(store, ident, raw, kind=sent.get('kind', 'text'), name=sent.get('name', 'Pasted information'),

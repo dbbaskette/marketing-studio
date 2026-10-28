@@ -33,29 +33,33 @@ def fake_renderer(svg, *, preset, fonts, executable, destination):
     return {'pdf_pages': 1}
 
 
+def setup_desk(self):
+    self.store = Store.setup(self.workspace, data=self.data)
+    self.project = self.store.create('Restart one instance', preset='digital')
+    self.ident = self.project['id']
+    self.project = sources.capture(self.store, self.ident, b'One instance restarts while the others serve.', expected_revision=0)
+    source = self.project['sources'][0]
+    quote = sources.read(self.store, self.project, source)
+    fact = {'id': 'f1', 'statement': quote, 'value': quote, 'unit': '', 'status': 'supplied',
+            'evidence': [{'source_id': source['id'], 'start': 0, 'end': len(quote), 'quote': quote}]}
+    self.project = evidence.adopt(self.store, self.ident, [fact], expected_revision=1)
+    self.project = brand.adopt(self.store, self.ident, contract(), expected_revision=2)
+    self.proposal = {'id': 'story1', 'headline': 'Restart one instance', 'takeaway': 'Keep the other instances serving.',
+                     'rationale': 'Explain a conceptual relationship.', 'qualifications': [], 'omissions': [],
+                     'blocks': [{'id': 'b1', 'kind': 'concept', 'title': 'One at a time',
+                                 'text': 'The remaining instances continue serving requests.', 'fact_ids': ['f1'],
+                                 'required_ids': [], 'illustration': False, 'illustration_role': ''}]}
+    self.project = stories.adopt(self.store, self.ident, [self.proposal], expected_revision=3)
+    self.project = stories.select(self.store, self.ident, 'story1', expected_revision=4)
+    self.project = scene.adopt(self.store, self.ident, expected_revision=5)
+    self.renderer = mock.Mock(side_effect=fake_renderer)
+    self.engine = Engine(self.store, renderer=self.renderer)
+
+
 class DeskEngineTests(Isolated):
     def setUp(self):
         super().setUp()
-        self.store = Store.setup(self.workspace, data=self.data)
-        self.project = self.store.create('Restart one instance', preset='digital')
-        self.ident = self.project['id']
-        self.project = sources.capture(self.store, self.ident, b'One instance restarts while the others serve.', expected_revision=0)
-        source = self.project['sources'][0]
-        quote = sources.read(self.store, self.project, source)
-        fact = {'id': 'f1', 'statement': quote, 'value': quote, 'unit': '', 'status': 'supplied',
-                'evidence': [{'source_id': source['id'], 'start': 0, 'end': len(quote), 'quote': quote}]}
-        self.project = evidence.adopt(self.store, self.ident, [fact], expected_revision=1)
-        self.project = brand.adopt(self.store, self.ident, contract(), expected_revision=2)
-        self.proposal = {'id': 'story1', 'headline': 'Restart one instance', 'takeaway': 'Keep the other instances serving.',
-                         'rationale': 'Explain a conceptual relationship.', 'qualifications': [], 'omissions': [],
-                         'blocks': [{'id': 'b1', 'kind': 'concept', 'title': 'One at a time',
-                                     'text': 'The remaining instances continue serving requests.', 'fact_ids': ['f1'],
-                                     'required_ids': [], 'illustration': False, 'illustration_role': ''}]}
-        self.project = stories.adopt(self.store, self.ident, [self.proposal], expected_revision=3)
-        self.project = stories.select(self.store, self.ident, 'story1', expected_revision=4)
-        self.project = scene.adopt(self.store, self.ident, expected_revision=5)
-        self.renderer = mock.Mock(side_effect=fake_renderer)
-        self.engine = Engine(self.store, renderer=self.renderer)
+        setup_desk(self)
 
     def current(self): return self.store.read(self.ident)
 

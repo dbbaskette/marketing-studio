@@ -15,10 +15,10 @@ and owner gates remain separate and are not inferred passed.
 | F — integrated desk/distribution | native skill/docs/UI/readiness/installer; shared Tart runner | Desktop/phone full intake→review→approval→delivery; CLI parity; full relevant suite and source-independent bundle |
 
 - [x] Slice A implementation and targeted acceptance: 35 native checks, actual installed PDF extraction, phone multi-file preview/review/replacement and the full editing/export browser journey.
-- [ ] Slice B implementation and targeted acceptance.
-- [ ] Slice C implementation and targeted acceptance.
-- [ ] Slice D implementation and targeted acceptance.
-- [ ] Slice E implementation and targeted acceptance.
+- [x] Slice B: fixed Google transport, permission/version/tab captures and pinned public fetch; seven boundary checks.
+- [x] Slice C: new Google Doc/PDF/both delivery, private OOXML package, durable intent and read-only recovery; four offline delivery checks.
+- [x] Slice D: complete schema-2 research verification, exact purpose/source mode and immutable evidence; three real-helper synthetic checks.
+- [x] Slice E: selected studio material import and independent team inventory/claim sharing; seven synthetic handoff/Git checks.
 - [ ] Slice F final integrated verification.
 - [ ] Separately authorized real Google conversion/fidelity and applicable live/owner gates.
 

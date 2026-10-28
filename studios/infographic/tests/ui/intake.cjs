@@ -13,7 +13,7 @@ with zipfile.ZipFile(b,'w') as z:
  z.writestr('word/document.xml','<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>One instance restarts while the others serve.</w:t></w:r></w:p><w:p><w:r><w:drawing/></w:r></w:p></w:body></w:document>')
 print(base64.b64encode(b.getvalue()).decode())`], {encoding:'utf8'});
   assert.equal(made.status, 0);
-  const child = spawn(python, [path.join(__dirname,'fixture_server.py'),'--renderer',renderer], {stdio:['ignore','pipe','pipe']});
+  const child = spawn(python, [path.join(__dirname,'fixture_server.py'),'--renderer',renderer,'--bridge'], {stdio:['ignore','pipe','pipe']});
   let browser;
   try {
     const url = await new Promise((resolve,reject) => {
@@ -29,7 +29,8 @@ print(base64.b64encode(b.getvalue()).decode())`], {encoding:'utf8'});
     await page.getByLabel('Working title',{exact:true}).fill('Synthetic supplied documents');
     await page.getByLabel('Upload files — text, Markdown, CSV, PDF, Word or HTML',{exact:true}).setInputFiles([
       {name:'synthetic.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',buffer:Buffer.from(made.stdout.trim(),'base64')},
-      {name:'notes.md',mimeType:'text/markdown',buffer:Buffer.from('The supplied service continues serving.\n')}
+      {name:'notes.md',mimeType:'text/markdown',buffer:Buffer.from('The supplied service continues serving.\n')},
+      {name:'larger.txt',mimeType:'text/plain',buffer:Buffer.from('Synthetic readable material. '.repeat(2500))}
     ]);
     await page.getByRole('heading',{name:'synthetic.docx',exact:true}).waitFor();
     await page.getByRole('heading',{name:'notes.md',exact:true}).waitFor();
@@ -46,7 +47,7 @@ print(base64.b64encode(b.getvalue()).decode())`], {encoding:'utf8'});
       const list=await (await fetch('/api/projects',{headers})).json();
       return (await (await fetch('/api/project?id='+encodeURIComponent(list.projects[0].id),{headers})).json()).project;
     });
-    assert.deepEqual(snapshot.sources.map(s=>s.kind),['docx','markdown']);
+    assert.deepEqual(snapshot.sources.map(s=>s.kind),['docx','markdown','text']);
     assert(snapshot.sources[0].coverage.acknowledged);
     assert.equal(snapshot.approval,null);
     await page.getByText('Sources and facts',{exact:true}).click();
@@ -60,7 +61,7 @@ print(base64.b64encode(b.getvalue()).decode())`], {encoding:'utf8'});
     await page.getByRole('button',{name:'Save supplied information',exact:true}).click();
     await page.getByRole('heading',{name:'Find a useful story',exact:true}).waitFor();
     assert.deepEqual(errors,[]);
-    console.log('PASS: phone multi-file Word/Markdown upload, coverage previews, gap acknowledgment, exact saved captures, no approval or provider work.');
+    console.log('PASS: phone LAN bridge multi-file Word/Markdown/text upload beyond 64 KB, coverage previews, gap acknowledgment, exact saved captures, no approval or provider work.');
   } finally {
     if(browser)await browser.close();
     child.kill('SIGTERM');

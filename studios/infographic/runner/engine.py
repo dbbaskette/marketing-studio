@@ -25,13 +25,14 @@ class Engine:
     def inspect(self, ident):
         project = self.store.read(ident)
         from .image_jobs import Jobs
+        from .google_delivery import listing
         return {'project': project, 'history': history.entries(self.store, ident),
                 'source_findings': evidence.findings(project['facts']),
                 'recovery': Jobs(self.store, self.adapters).recovery(ident),
                 'image_history': Jobs(self.store, self.adapters).history(ident),
                 'visual_review': visual_review.latest(self.store, project),
                 'review_checked': visual_review.checked(self.store, project),
-                'deliveries': self.deliveries(ident)}
+                'google_deliveries': listing(self.store, ident), 'deliveries': self.deliveries(ident)}
 
     def deliveries(self, ident):
         project = self.store.read(ident)
@@ -41,6 +42,10 @@ class Engine:
             return []
         found = []
         review_checked = visual_review.checked(self.store, project)
+        try:
+            for source in project['sources']:sources.read(self.store,project,source)
+            sources_intact=True
+        except (ValueError,OSError):sources_intact=False
         for folder in root.iterdir():
             if folder.name.startswith('e_') and not folder.is_symlink() and folder.is_dir():
                 try:
@@ -55,7 +60,7 @@ class Engine:
                               and manifest['revision'] == project['revision']
                               and manifest['approval_digest'] == digest(project['approval'])
                               and manifest['checks_digest'] == digest(project['checks'])
-                              and review_checked})
+                              and review_checked and sources_intact})
         return sorted(found, key=lambda item: (item['revision'], not item['draft']), reverse=True)
 
     def propose(self, ident, *, expected_revision, automatic=False):
@@ -316,6 +321,7 @@ class Engine:
                             and c['scene_digest'] == digest(project['scene']) for c in project['checks']
                             if c['blocking'] or c['kind'] in REQUIRED_CHECKS),
                     'Resolve current blocking/incomplete findings and inspect the actual page before approval.')
+            for source in project['sources']: sources.read(self.store,project,source)
             approved = deepcopy(project)
             approved['revision'] += 1
             approved['approval'] = {'revision': approved['revision'], 'owner': self.store.owner,

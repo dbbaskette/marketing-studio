@@ -177,6 +177,9 @@ def read(store, project: dict, source: dict) -> str:
     raw = _read(store.root, f'projects/{project["id"]}/{source["file"]}', MAX_SOURCE_BYTES)
     require(len(raw) == source['bytes'] and hashlib.sha256(raw).hexdigest() == source['sha256'],
             'The original source no longer matches its captured revision.')
+    if source['kind']=='research':
+        from .research import validate_capture
+        validate_capture(raw,source.get('provenance',{}))
     if 'normalized_file' not in source:
         return decoded(raw)
     normalized = _read(store.root, f'projects/{project["id"]}/{source["normalized_file"]}', MAX_SOURCE_BYTES)
