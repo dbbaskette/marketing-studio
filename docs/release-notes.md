@@ -33,3 +33,19 @@ omit its renderer. Its initial acceptance target is macOS ARM64. Live generation
 reference editing and inspection for both provider routes, owner illustration
 acceptance and publication remain separate gates. See the
 [release acceptance checklist](../studios/infographic/docs/acceptance.md).
+
+## Unreleased: Infographic Studio 0.2.0
+
+Adds previewed Word/PDF/HTML and multi-file intake, explicit Google Doc/public-page
+capture, complete reviewed Harness Research imports, selected cross-studio material,
+and optional team inventories with driver takeover/handover. Delivery offers the
+exact local PDF, a new Google Doc, or both. Google Docs contain the approved page
+image plus editable accessible text/source notes; the original Doc is kept. Unknown
+uploads reconcile read-only. Private sources and artwork need explicit sharing
+selection, and prompts/jobs are excluded. Phone uploads retain bounded route limits.
+
+Python 3.11+ and standard-library application code remain the baseline, with no
+frontend build or document/image SDK. PDF extraction and Google access use explicitly
+installed optional tools. Real Google conversion fidelity, both live image-provider
+routes and owner illustration sign-off remain separate from offline success. See
+[first-release readiness](infographic-first-release-readiness.md) before publishing.
