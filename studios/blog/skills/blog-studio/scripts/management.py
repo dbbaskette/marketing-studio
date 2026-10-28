@@ -705,8 +705,7 @@ def source_role(root, data):
         raise ValueError(
             'Only a file or a library reference changes between facts, messaging and example.'
         )
-    for path in studio.inside(root, 'articles').glob('*/session.json'):
-        article = studio.read_json(path)
+    for _, article in studio.article_records(root):
         if record['id'] in article.get('material', []) or any(
             selected.get('source_id') == record['id'] for selected in article.get('sources', [])
         ):
@@ -805,8 +804,7 @@ def source_keep(root, data, blog=None):
         raise ValueError('Only an uploaded file or a library reference changes where it is kept.')
     if keep == (not material):
         return {'id': record['id'], 'kept': keep}
-    for path in studio.inside(root, 'articles').glob('*/session.json'):
-        article = studio.read_json(path)
+    for _, article in studio.article_records(root):
         if blog and article.get('id') == blog:
             continue
         if record['id'] in article.get('material', []) or any(

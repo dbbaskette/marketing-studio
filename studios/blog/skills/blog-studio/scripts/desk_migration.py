@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 
 import studio
 from studio_core.blog_migration import (
@@ -275,6 +276,201 @@ def _read_tree(directory, files, prefix, budget):
             files[prefix + str(path.relative_to(directory))] = raw
 
 
+def _worker_state(state):
+    """The runner's implicit/schema-1 local format, before interpreting inactivity."""
+    fields = {
+        'schema',
+        'enabled',
+        'status',
+        'error',
+        'reason',
+        'started_at',
+        'notes',
+        'research',
+        'jobs',
+    }
+    if (
+        not isinstance(state, dict)
+        or set(state) - fields
+        or type(state.get('schema', 1)) is not int
+        or state.get('schema', 1) != 1
+        or type(state.get('enabled')) is not bool
+        or state.get('status')
+        not in (
+            'queued',
+            'working',
+            'paused',
+            'stopped',
+            'failed',
+            'complete',
+            'waiting-for-approval',
+            'needs-attention',
+            'in-chat',
+        )
+        or any(not isinstance(state[key], str) for key in ('error', 'started_at') if key in state)
+        or state.get('reason') is not None
+        and not isinstance(state['reason'], str)
+        or not isinstance(state.get('notes', {}), dict)
+        or any(
+            not isinstance(k, str) or not isinstance(v, str)
+            for k, v in state.get('notes', {}).items()
+        )
+        or not isinstance(state.get('research', {}), dict)
+        or not isinstance(state.get('jobs', []), list)
+        or any(not isinstance(job, dict) for job in state.get('jobs', []))
+    ):
+        raise ValueError(
+            'Restore a supported saved worker record with a known status and ownership before opening on the desk.'
+        )
+    return state['enabled'] or state['status'] in ('queued', 'working')
+
+
+def _tool_state(job, name):
+    """Validate actual saved tool ownership before deciding relevance or settlement."""
+    import tool_jobs
+
+    fields = {
+        'schema',
+        'id',
+        'kind',
+        'payload',
+        'basis',
+        'metadata',
+        'fingerprint',
+        'guidance',
+        'status',
+        'created_at',
+        'attempts',
+        'engine',
+        'seconds',
+        'model_profiles',
+        'result',
+        'error',
+        'started_at',
+        'finished_at',
+        'model_selection',
+        'reason',
+        'said',
+        'applied',
+        'saved_content',
+        'settled_at',
+        'angles',
+        'checks',
+    }
+    problem = 'Restore supported saved tool records with known status and ownership before opening on the desk.'
+    if (
+        not isinstance(job, dict)
+        or set(job) - fields
+        or type(job.get('schema', 1)) is not int
+        or job.get('schema', 1) != 1
+        or not isinstance(job.get('id'), str)
+        or re.fullmatch(r'[a-f0-9]{32}\.json', name) is None
+        or name != job['id'] + '.json'
+        or job.get('kind') not in tool_jobs.KINDS
+        or job.get('status') not in ('queued', 'working', 'ready', 'failed', 'cancelled')
+        or not isinstance(job.get('payload'), dict)
+        or not isinstance(job.get('metadata'), dict)
+        or not isinstance(job.get('basis'), str)
+        or any(
+            not isinstance(job.get(key), str)
+            for key in ('fingerprint', 'guidance', 'created_at', 'error')
+        )
+        or type(job.get('attempts')) is not int
+        or job['attempts'] < 0
+        or job.get('engine') not in ('codex', 'claude')
+        or type(job.get('seconds')) is not int
+        or job['seconds'] <= 0
+        or 'result' not in job
+        or job['result'] is not None
+        and not isinstance(job['result'], dict)
+        or any(
+            not isinstance(job[key], str) or not job[key]
+            for key in ('started_at', 'finished_at', 'settled_at')
+            if key in job
+        )
+        or any(
+            not isinstance(job[key], dict)
+            for key in ('model_profiles', 'model_selection', 'checks')
+            if key in job
+        )
+        or job.get('reason') is not None
+        and not isinstance(job['reason'], str)
+    ):
+        raise ValueError(problem)
+    request = {key: job[key] for key in ('kind', 'payload', 'basis', 'metadata')}
+    if job['fingerprint'] != studio.digest(json.dumps(request, sort_keys=True).encode()):
+        raise ValueError(problem)
+    meta, kind = job['metadata'], job['kind']
+    if kind in tool_jobs.DESK:
+        keys = {'article', 'desk'}
+        if not isinstance(meta.get('desk'), dict) or 'article' not in meta:
+            raise ValueError(problem)
+        if 'applied' in job and type(job['applied']) is not bool:
+            raise ValueError(problem)
+        if 'settled_at' in job and (job['status'] != 'ready' or 'applied' not in job):
+            raise ValueError(problem)
+    else:
+        keys = {
+            'voice-learn': {'name', 'samples', 'profile', 'background'},
+            'voice-guide': {'name', 'samples'},
+            'style-learn': {'name', 'samples', 'style'},
+            'voice-audition': {'profile', 'profile_revision'},
+            'repurpose': {'article', 'format', 'words', 'source_sha256', 'voice'},
+            'interview-question': {'article'},
+            'interview-outline': {'article'},
+        }[kind]
+        if 'applied' in job and (not isinstance(job['applied'], dict) or not job['applied']):
+            raise ValueError(problem)
+        if 'settled_at' in job:
+            raise ValueError(problem)
+    if set(meta) - keys:
+        raise ValueError(problem)
+    article = meta.get('article')
+    if article is not None:
+        if not isinstance(article, str):
+            raise ValueError(problem)
+        studio.identifier(article)
+    elif (
+        kind in (*tool_jobs.DESK, 'repurpose', 'interview-question', 'interview-outline')
+        and kind != 'desk-angles'
+    ):
+        raise ValueError(problem)
+    if job['status'] == 'ready' and (
+        not isinstance(job['result'], dict)
+        or not isinstance(job['result'].get('content'), str)
+        or not job['result']['content'].strip()
+    ):
+        raise ValueError(problem)
+    busy = job['status'] in ('queued', 'working') or (
+        job['status'] == 'ready'
+        and not (job.get('settled_at') if kind in tool_jobs.DESK else job.get('applied'))
+    )
+    return article, busy
+
+
+def _driver_record(raw):
+    value = json.loads(raw)
+    if (
+        not isinstance(value, dict)
+        or set(value) != {'schema', 'driver'}
+        or type(value.get('schema')) is not int
+        or value['schema'] != 1
+    ):
+        raise ValueError('Restore a supported saved ownership record before opening on the desk.')
+    driver = value['driver']
+    if driver is not None and (
+        not isinstance(driver, dict)
+        or set(driver) != {'name', 'computer', 'since'}
+        or any(
+            not isinstance(driver.get(key), str) or not driver[key]
+            for key in ('name', 'computer', 'since')
+        )
+        or re.fullmatch(r'[a-f0-9]{16}', driver['computer']) is None
+    ):
+        raise ValueError('Restore a supported saved driver before opening on the desk.')
+    return driver or {}
+
+
 def _snapshot(root, ident):
     import blog_runner
     from studio_sync import support
@@ -298,6 +494,7 @@ def _snapshot(root, ident):
     run = json.loads(original[blog_runner.STATE])
     if not session_supported(record, ident) or not isinstance(run, dict):
         raise ValueError('Restore this blog’s supported original session and run records first.')
+    driver = _driver_record(original['run.json']) if 'run.json' in original else {}
     if os.path.lexists(root / '.team-hub.json') or os.path.lexists(root / '.hub-workspace.json'):
         raise ValueError(
             'This older Team Hub workspace still needs its saved flow. A supported local ownership transform is required first.'
@@ -333,13 +530,37 @@ def _snapshot(root, ident):
 
         research_contract.read_bundle(directory / 'research')
     marker = root / 'hub.json'
-    if marker.exists():
+    if os.path.lexists(marker):
         if marker.is_symlink() or marker.stat().st_size > 1_000_000:
             raise ValueError('Restore an ordinary Blog Studio workspace marker first.')
         files['workspace/hub.json'] = marker.read_bytes()
         hub = json.loads(files['workspace/hub.json'])
+        if (
+            not isinstance(hub, dict)
+            or type(hub.get('schema')) is not int
+            or hub['schema'] != 1
+            or hub.get('tool') != 'blog-studio'
+            or hub.get('folder') != root.name
+            or any(
+                not isinstance(hub.get(key), str) or not hub[key]
+                for key in ('name', 'branch', 'minimum_runtime')
+            )
+            or hub.get('repository') is not None
+            and (not isinstance(hub['repository'], str) or not hub['repository'])
+        ):
+            raise ValueError(
+                'Restore a supported Blog Studio workspace marker before opening on the desk.'
+            )
+        if support.as_tuple(hub['minimum_runtime']) > support.as_tuple(support.runtime_version()):
+            raise ValueError(
+                'This workspace requires a newer Blog Studio runtime. Keep using its supported saved flow.'
+            )
         computer_path = support.data_root() / 'computer.json'
-        if computer_path.is_file() and computer_path.stat().st_size > 1_000_000:
+        if (
+            computer_path.is_symlink()
+            or computer_path.exists()
+            and (not computer_path.is_file() or computer_path.stat().st_size > 1_000_000)
+        ):
             raise ValueError('Restore a supported local ownership record first.')
         computer = (
             computer_path.read_bytes()
@@ -347,47 +568,80 @@ def _snapshot(root, ident):
             else b'null'
         )
         files['ownership/computer.json'] = computer
+        identity = json.loads(computer)
+        if identity is not None and (
+            not isinstance(identity, dict)
+            or set(identity) != {'schema', 'id'}
+            or type(identity.get('schema')) is not int
+            or identity['schema'] != 1
+            or not isinstance(identity.get('id'), str)
+            or re.fullmatch(r'[a-f0-9]{16}', identity['id']) is None
+        ):
+            raise ValueError(
+                'Restore a supported local computer identity before opening on the desk.'
+            )
         if hub.get('repository'):
-            driver = json.loads(original.get('run.json', b'{}')).get('driver') or {}
-            if not driver.get('computer') or driver.get('computer') != (
-                json.loads(computer) or {}
-            ).get('id'):
+            if not driver.get('computer') or driver.get('computer') != (identity or {}).get('id'):
                 raise ValueError(
                     'Another computer drives this blog, or it has no driver. Take it before opening on the desk.'
                 )
     local = root / '.blog-runs' / (ident + '.json')
-    if local.is_symlink():
+    if local.is_symlink() or local.parent.is_symlink():
         raise ValueError('Restore an ordinary saved worker record first.')
-    state = {}
+    busy = False
     if local.exists():
         if local.stat().st_size > 1_000_000:
             raise ValueError('Restore a supported saved worker record first.')
         files['worker/run.json'] = local.read_bytes()
         state = json.loads(files['worker/run.json'])
-        if not isinstance(state, dict):
-            raise ValueError('Restore a readable saved worker record first.')
+        busy = _worker_state(state)
     tools = root / '.blog-runs' / 'tools'
     if tools.is_symlink():
         raise ValueError('Restore ordinary saved worker records first.')
     tool_files = {}
     if tools.exists():
         _read_tree(tools, tool_files, '', budget)
-    for name, raw in tool_files.items():
-        if name.endswith('.json'):
-            job = json.loads(raw)
-            if (job.get('metadata') or {}).get('article') == ident:
-                files['worker/tools/' + name] = raw
-                if (
-                    job.get('status') in ('queued', 'working')
-                    or job.get('status') == 'ready'
-                    and not job.get('applied')
-                ):
-                    raise ValueError(
-                        'A saved job is under way or waiting to land. Stop or finish it before opening on the desk.'
-                    )
     current = blog_runner.ENGINES.get(str(root))
+    for name, raw in tool_files.items():
+        if len(raw) > 1_000_000:
+            raise ValueError('Restore bounded saved tool records before opening on the desk.')
+        job = json.loads(raw)
+        article, unsettled = _tool_state(job, name)
+        if article == ident:
+            files['worker/tools/' + name] = raw
+            if unsettled or current and current.current == 'tool:' + job['id']:
+                raise ValueError(
+                    'A saved job is under way or waiting to land. Stop or finish it before opening on the desk.'
+                )
+    index = root / '.blog-runs/desk-jobs' / (ident + '.json')
+    if index.parent.is_symlink() or index.is_symlink():
+        raise ValueError('Restore an ordinary saved job index before opening on the desk.')
+    if index.exists():
+        if not index.is_file() or index.stat().st_size > 1_000_000:
+            raise ValueError('Restore a supported saved job index before opening on the desk.')
+        files['worker/index.json'] = index.read_bytes()
+        indexed = json.loads(files['worker/index.json'])
+        if (
+            not isinstance(indexed, dict)
+            or set(indexed) != {'jobs'}
+            or not isinstance(indexed.get('jobs'), list)
+            or len(indexed['jobs']) > 60
+            or any(
+                not isinstance(name, str) or re.fullmatch(r'[a-f0-9]{32}', name) is None
+                for name in indexed['jobs']
+            )
+            or len(set(indexed['jobs'])) != len(indexed['jobs'])
+            or any(
+                name + '.json' not in tool_files
+                or json.loads(tool_files[name + '.json'])['metadata'].get('article') != ident
+                for name in indexed['jobs']
+            )
+        ):
+            raise ValueError(
+                'Restore this blog’s supported saved job index and owned tool records before opening on the desk.'
+            )
     active = bool(current and current.current == ident)
-    if state.get('enabled') or state.get('status') in ('queued', 'working') or active:
+    if busy or active:
         raise ValueError('A step of this blog is under way. Stop it before opening on the desk.')
     files['worker/acquired'] = str(active).encode()
     basis = {name: _hash(raw) for name, raw in sorted(files.items())}

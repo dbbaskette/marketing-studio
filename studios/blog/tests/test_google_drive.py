@@ -483,7 +483,9 @@ class GoogleDriveTests(unittest.TestCase):
             self.assertEqual(code, 1)
             self.assertIn('not linked to a blog', error['error'])
             update.assert_not_called()
-            with patch.object(gd, 'linked_documents', return_value={'linked-doc'}):
+            with patch.object(
+                gd, 'linked_document_owners', return_value={'linked-doc': {'synthetic-blog'}}
+            ):
                 code, _ = self.run_cli(
                     '--root',
                     work,

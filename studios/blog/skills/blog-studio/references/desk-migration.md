@@ -33,11 +33,19 @@ oversized work refuse with the saved flow still available. Research, reviews and
 handoff stay as historical records; gaps remain unresolved. These early formats
 retain their saved-flow commands until a supported lossless transform is proven.
 
+Unknown worker formats, statuses or ownership refuse, even when disabled. Stop known
+work and wait for its process to end before previewing again; never edit records to
+bypass refusal.
+
 Migration leaves original `session.json` and `derived/blog-run.json` bytes in place,
 including after later checked desk saves. Separate fixed desk metadata holds the
 live desk session and preserves the original progress and real versus automatic
 approval facts. Material, History, source/voice/guidance pins, Google baselines and
 team driver records are retained. Read context again after opening on the desk.
+
+Later source pins, Google links and publication decisions use the live desk session.
+Unreadable records block source changes, input deletion and linked Doc writes until
+restored.
 
 A changed source, record, file, driver or worker refuses the old preview. Inspect
 and preview again; never replace a pin or approve a step just to make it fit.

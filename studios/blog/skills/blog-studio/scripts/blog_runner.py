@@ -2778,7 +2778,7 @@ def catalog(root):
                 draft = studio.read_json(on_desk)
                 busy = working.get(ident, 0)
                 # Marked as published: finished, out of In progress.
-                published = (studio.read_json(path).get('editorial') or {}).get(
+                published = (studio.item(root, 'articles', ident)[1].get('editorial') or {}).get(
                     'stage'
                 ) == 'published' and not busy
                 # A start that stopped (a failed research, a Stop) needs the person.
