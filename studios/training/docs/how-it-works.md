@@ -2,6 +2,10 @@
 
 This page explains what Training Studio does behind the conversation. [The runner](runner.md) describes a training made on the page as it is now. The first [design](superpowers/specs/2026-10-12-training-studio-core-pipeline-design.md) is kept as history.
 
+## The desk
+
+New trainings run without review stops. The desk shows materials as they arrive; you can edit them or request changes while work continues. When an input changes, dependent materials may be held until you explicitly update them or keep them as they are. Mark ready is your approval, and the index is written once the requested materials are ready. See [the desk](the-desk.md). Trainings started before the desk retain their saved review flow.
+
 ## The stages
 
 | Stage | Done by | Produces | Gate |
@@ -17,7 +21,7 @@ This page explains what Training Studio does behind the conversation. [The runne
 | Yoodli, optional | Training Studio | A Yoodli scenario for each scenario file | 8 |
 | Package | Training Studio | The index and a readiness report | |
 
-At each gate you approve, ask for changes, have it rebuilt, or skip. With levels, intake and research happen once, all the blueprints are reviewed together, and gates 4 to 8 then repeat for one level at a time.
+In a conversation or a saved run, at each gate you approve, ask for changes, have it rebuilt, or skip. With levels, intake and research happen once, all the blueprints are reviewed together, and gates 4 to 8 then repeat for one level at a time.
 
 The blueprint is the hub. The document and brief are written from it, and the deck is built from the blueprint and the document. A Yoodli scenario is built from your scenario file, the brief and the blueprint.
 
@@ -29,7 +33,7 @@ The research is written by one agent and checked by another, which reads every s
 
 Every claim in the blueprint and the brief names the research finding it rests on. A finding is supported, contradicted, insufficient or unavailable; the last two are called unresolved. Only a supported finding can back a claim. A contradicted one can back the correction of a misconception, or the answer to an objection. Where the research could not establish something, the training says so under open gaps and the brief lists it under Unknowns. Nothing is filled in from the assistant's memory.
 
-## Approval, and what "stale" means
+## Approval and changed inputs
 
 Each file has a status:
 
@@ -38,7 +42,7 @@ Each file has a status:
 | not-started | The file does not exist yet |
 | draft | Not approved in its current form |
 | approved | You approved exactly this content, built from exactly these inputs |
-| stale | Something it was built from has changed since |
+| out of date | Something it was built from has changed since |
 | skipped | You chose to leave its stage out |
 | unavailable | Its stage could not run |
 
@@ -46,24 +50,24 @@ Status is worked out from the files each time, so editing a file by hand is safe
 
 An approval covers both the content and what it was built from. Three consequences:
 
-- Edit an approved file and it becomes a draft. Anything built from it becomes stale.
+- Edit an approved file and it becomes a draft. Anything built from it becomes out of date.
 - Rebuild a file against changed inputs and it needs approving again, even if the text came out the same.
-- Accept a stale file as it is, with a reason, and only that file is approved. Files below it stay approved only if their own inputs did not change.
+- Accept an out-of-date file as it is, with a reason, and only that file is approved. Files below it stay approved only if their own inputs did not change.
 
-Changing a setting affects only what uses it. A new brand makes the deck stale and leaves the research alone.
+Changing a setting affects only what uses it. A new brand makes the deck out of date and leaves the research alone.
 
 ## Where you approve
 
 Every decision at a gate is recorded with where it was made, and written into that file's review under `reviews/`.
 
 - **In the conversation.** You tell your assistant, and it records your decision. This is the default.
-- **On the page.** You decide on [the page](desk.md) in your browser. The helper then refuses `approve` and `skip` from the command line, so your assistant cannot record a decision you did not make. Asking for changes or a rebuild leaves a request your assistant acts on when you return to it; the request closes when the file is rebuilt or approved, and an open request keeps the training from being ready.
+- **On the page.** You decide on [the page](page.md) in your browser. The helper then refuses `approve` and `skip` from the command line, so your assistant cannot record a decision you did not make. Asking for changes or a rebuild leaves a request your assistant acts on when you return to it; the request closes when the file is rebuilt or approved, and an open request keeps the training from being ready.
 
 Moving a training to the page raises the bar; it does not make forgery impossible. An assistant with a shell that set out to rewrite the session record could still do so. The guidance forbids it, but only [the runner](runner.md) prevents it: there, each agent works in an empty folder outside your trainings, with no shell, and has no way to approve.
 
 ## Ready, or not
 
-`check` reports two things. **Checks passed** means nothing it could check has failed. **Ready** means the training is complete: every wanted file is approved, nothing is stale, no check failed or could not run, and no Google Doc or Word copy you asked for is out of date. A question still waiting on you also blocks it. It lists what is blocking, and separately what was left out because you skipped it, it could not be produced, or you accepted it as it was after something it was built from changed.
+`check` reports two things. **Checks passed** means nothing it could check has failed. **Ready** means the training is complete: every wanted file is approved, nothing is out of date, no check failed or could not run, and no Google Doc or Word copy you asked for is out of date. A question still waiting on you also blocks it. It lists what is blocking, and separately what was left out because you skipped it, it could not be produced, or you accepted it as it was after something it was built from changed.
 
 Some checks are stronger than others, and the report says which:
 
@@ -125,7 +129,7 @@ The skill drives a small command-line helper, `skills/training-studio/scripts/tr
 | `skip` | Leaves a stage out, or brings it back |
 | `checkpoint` | Records where the run stopped and what is at the gate, and changes settings such as which copies to keep. `--add-level` adds a level; a level with work in it is never dropped |
 | `list` | The trainings on this computer |
-| `desk` | Serves [the page](desk.md) until it is stopped |
+| `desk` | Serves [the page](page.md) until it is stopped |
 
 `--help` after any command lists its flags and the values each takes. A reason is always given with `--reason`, and a list is separated by spaces. A refusal says what puts it right.
 
