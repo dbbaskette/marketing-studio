@@ -1433,9 +1433,13 @@ class Engine(Reviewing):
         """Put back what a step left half-made in each training this copy says is this
         computer's, and return those trainings. Nothing here asks the shared repository."""
         ours = []
+        space = self.workspace
+        if space is None:
+            return ours
         for root in self.trainings():
             try:
-                with self.files:
+                with gitstate.workspace_locked(space, self.files, configured=True):
+                    gitstate.inside(space, root / IN_HAND)
                     record = self._load(root)
                     if not self._ours(record):
                         continue
@@ -1447,7 +1451,7 @@ class Engine(Reviewing):
                         typed = self._typed_here(root) if drafts.on_desk(record) else {}
                         if (root / IN_HAND).exists() and found.next.kind in WORK \
                                 and not self._resting(record) and not self._away(found):
-                            gitstate.discard(self.space(), root)
+                            gitstate.discard(space, root)
                             self._step_marker(root)
                             self._typed_back(root, typed)
                         else:
@@ -1546,7 +1550,7 @@ class Engine(Reviewing):
         return bool(record.get('halt') or record.get('problem') or record.get('question'))
 
     def _step_marker(self, root: Path, step: str | None = None) -> None:
-        mark_step(self, root, IN_HAND, step)
+        mark_step(self, root, IN_HAND, step, workspace_api=gitstate)
 
     def _work(self, root: Path, run: _Run) -> None:
         """Do one step after another until the training waits, ends or is halted."""

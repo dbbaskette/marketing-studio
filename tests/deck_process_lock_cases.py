@@ -317,6 +317,78 @@ with ProcessRLock(lambda: Path(sys.argv[1]), timeout=.5):
                 self.assertEqual((repo / 'original.txt').read_text(), 'preserve ' + repo.name)
 
 
+    def test_recovery_refuses_roots_enumerated_before_workspace_switch(self):
+        from workspace import WorkspaceError
+        with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
+            base = Path(temporary).resolve()
+            repos = [base / name for name in ('a', 'b')]
+            for repo in repos:
+                (repo / '.git').mkdir(parents=True)
+            spaces = [self.gitstate.Workspace('Disposable Test', repo, 'items', 'main')
+                      for repo in repos]
+            root = spaces[0].root / 'one'
+            marker = root / self.marker_path
+            marker.parent.mkdir(parents=True)
+            marker.write_text('interrupted original')
+            (root / self.record_path).parent.mkdir(parents=True, exist_ok=True)
+            (root / self.record_path).write_text('{"schema":1,"steps":{}}')
+            configured = stack.enter_context(mock.patch.object(self.gitstate, 'current', return_value=spaces[0]))
+            engine = self.engines.Engine(background=False)
+            enumerate_roots = getattr(engine, self.enumeration_name)
+            def enumerated():
+                found = enumerate_roots()
+                self.assertEqual(found, [root])
+                configured.return_value = spaces[1]
+                stack.enter_context(self._external_workspace_lock(repos[0]))
+                return found
+            stack.enter_context(mock.patch.object(engine, self.enumeration_name, side_effect=enumerated))
+            loaded = stack.enter_context(mock.patch.object(engine, '_load', return_value={
+                'schema': 1, 'steps': {}, 'halted': True, 'halt': True}))
+            # If reached, the old implementation is allowed through to marker cleanup.
+            team = __import__('runner', fromlist=['team']).team
+            stack.enter_context(mock.patch.object(team, 'ours', return_value=True))
+            if hasattr(engine, '_survey'):
+                from types import SimpleNamespace
+                stack.enter_context(mock.patch.object(engine, '_survey', return_value=SimpleNamespace(
+                    next=SimpleNamespace(kind='done'))))
+                stack.enter_context(mock.patch.object(engine, '_waited'))
+            self.assertEqual(engine._tidy(), [])
+            loaded.assert_not_called()
+            self.assertEqual(marker.read_text(), 'interrupted original')
+            probe = ProcessRLock(lambda: repos[0] / '.git/studios-write.lock')
+            self.assertFalse(probe.acquire(timeout=0))
+
+    def test_marker_publication_and_completion_refuse_another_workspace(self):
+        from workspace import WorkspaceError
+        with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
+            base = Path(temporary).resolve()
+            repos = [base / name for name in ('a', 'b')]
+            for repo in repos:
+                (repo / '.git').mkdir(parents=True)
+            spaces = [self.gitstate.Workspace('Disposable Test', repo, 'items', 'main')
+                      for repo in repos]
+            root = spaces[0].root / 'one'
+            marker = root / self.marker_path
+            marker.parent.mkdir(parents=True)
+            marker.write_text('original marker')
+            stack.enter_context(mock.patch.object(self.gitstate, 'current', return_value=spaces[1]))
+            engine = self.engines.Engine(background=False)
+            engine._active_steps.add(str(root))
+            engine._deferred_share = True
+            with self._external_workspace_lock(repos[0]):
+                for step in ('next step', None):
+                    with self.subTest(step=step):
+                        with self.assertRaises(WorkspaceError):
+                            engine._step_marker(root, step)
+                        self.assertEqual(marker.read_text(), 'original marker')
+                        self.assertEqual(engine._active_steps, {str(root)})
+                        self.assertTrue(engine._deferred_share)
+                marker.unlink()  # test-owned setup, while the independent process still holds A
+                with self.assertRaises(WorkspaceError):
+                    engine._step_marker(root, 'new marker')
+                self.assertFalse(marker.exists())
+
+
 class ChangedWorkspaceStartCases:
     def test_creation_refuses_workspace_changed_during_lock_acquisition(self):
         from dataclasses import replace

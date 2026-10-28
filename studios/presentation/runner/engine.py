@@ -900,16 +900,20 @@ class Engine(Jobs, Researching, DeskActions):
 
     def _tidy(self) -> list[Path]:
         ours = []
+        space = self.workspace
+        if space is None:
+            return ours
         for root in self.every():
             try:
-                with self.files:
+                with gitstate.workspace_locked(space, self.files, configured=True):
+                    gitstate.inside(space, root / IN_HAND)
                     record = self._load(root)
-                    if not team.ours(self.workspace, record):
+                    if not team.ours(space, record):
                         continue
                     research_cli.unlock(root)
                     if (root / IN_HAND).exists() and not self._resting(record):
                         with self.files:
-                            gitstate.discard(self.space(), root)
+                            gitstate.discard(space, root)
                     self._step_marker(root)
             except (WorkspaceError, OSError):
                 continue
@@ -987,7 +991,7 @@ class Engine(Jobs, Researching, DeskActions):
         return bool(record.get('halted') or record.get('question'))
 
     def _step_marker(self, root: Path, step: str | None = None) -> None:
-        mark_step(self, root, IN_HAND, step)
+        mark_step(self, root, IN_HAND, step, workspace_api=gitstate)
 
     def _work(self, root: Path, run: _Run) -> None:
         """Do one step after another until the deck waits, ends or is halted."""

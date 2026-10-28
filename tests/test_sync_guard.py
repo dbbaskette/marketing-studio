@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 import marketing_studio  # noqa: F401
-from studio_core.sync_guard import worker_in_progress
+from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 
 
 class SyncGuardTests(unittest.TestCase):
@@ -54,6 +54,59 @@ class SyncGuardTests(unittest.TestCase):
             (other / 'work').mkdir()
             (other / 'work/step.lock').touch()
             (self.repo / 'linked').symlink_to(other, target_is_directory=True)
-            (self.repo / 'sources/deep/work').mkdir(parents=True)
-            (self.repo / 'sources/deep/work/step.lock').touch()
+            for record, data in (('deck/run.json', {'schema': 1, 'id': 'deck', 'title': 'Synthetic deck', 'steps': {}, 'route': 'idea', 'form': {}}),
+                                 ('training/.training-studio/run.json', {'schema': 1, 'steps': {}, 'agent': 'test'})):
+                item = self.repo / record.split('/')[0]
+                path = self.repo / record
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(data))
+                if item.name == 'training':
+                    (item / '.training-studio/session.json').write_text(json.dumps({
+                        'schema': 1, 'id': 'training', 'title': 'Synthetic training',
+                        'levels': [], 'stage': 'intake', 'sizing': {}, 'settings': {
+                            'deck_target': None, 'brand': None, 'brief_kind': 'product', 'stages': []},
+                        'unavailable': {}, 'pins': {}, 'artifacts': {}, 'exports': {},
+                        'decisions': [], 'events': []}))
+                for cache in ('work', 'sources'):
+                    (item / cache / 'deep/work').mkdir(parents=True)
+                    (item / cache / 'deep/work/step.lock').touch()
             self.assertFalse(worker_in_progress(self.repo))
+
+    def test_workspace_and_container_names_work_and_sources_do_not_hide_workers(self):
+        for folder in ('work', 'sources', 'nested/work', 'nested/sources',
+                       'work/nested/sources', 'sources/nested/work'):
+            for shape in ('deck/work/step.lock', 'training/.training-studio/step.lock',
+                          '.blog-runs/one.json', '.blog-runs/tools/abc.json'):
+                with self.subTest(folder=folder, shape=shape):
+                    marker = self.repo / folder / shape
+                    marker.parent.mkdir(parents=True, exist_ok=True)
+                    text = '{"status":"working"}' if marker.suffix == '.json' else 'active step'
+                    marker.write_text(text)
+                    self.assertTrue(worker_in_progress(self.repo))
+                    self.assertEqual(marker.read_text(), text)
+                    marker.unlink()
+                    self.assertFalse(worker_in_progress(self.repo))
+
+    def test_notice_explains_recovery_after_stop_or_interruption(self):
+        self.assertIn('stopped', SYNC_WAIT.lower())
+        self.assertIn('interrupted', SYNC_WAIT.lower())
+        self.assertIn('reopen', SYNC_WAIT.lower())
+
+    def test_unknown_item_records_do_not_hide_nested_workspaces(self):
+        for record in ('container/run.json', 'container/.training-studio/run.json'):
+            for text in ('{bad', '{}', '{"schema":999,"steps":{}}',
+                         '{"schema":1,"steps":{},"route":"idea"}',
+                         '{"schema":2,"id":"item","title":"Synthetic","steps":{},"form":{},"route":"idea"}',
+                         '{"schema":3,"id":"item","title":"Synthetic","steps":{},"form":{},"route":"idea"}'):
+                for shape in ('deck/work/step.lock', 'training/.training-studio/step.lock',
+                              '.blog-runs/one.json'):
+                    with self.subTest(record=record, text=text, shape=shape):
+                        path = self.repo / record
+                        path.parent.mkdir(parents=True, exist_ok=True)
+                        path.write_text(text)
+                        marker = self.repo / 'container/sources/nested/work' / shape
+                        marker.parent.mkdir(parents=True, exist_ok=True)
+                        marker.write_text('{"status":"working"}' if marker.suffix == '.json' else 'step')
+                        self.assertTrue(worker_in_progress(self.repo))
+                        marker.unlink()
+                        path.unlink()

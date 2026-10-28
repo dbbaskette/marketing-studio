@@ -14,6 +14,7 @@ from deck_process_lock_cases import EngineProcessLockCases, ChangedWorkspaceStar
 
 
 class EngineProcessLockTests(EngineProcessLockCases, unittest.TestCase):
+    enumeration_name = 'every'
     helpers = helpers
     engines = engines
     gitstate = gitstate

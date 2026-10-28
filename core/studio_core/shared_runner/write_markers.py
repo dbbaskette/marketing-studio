@@ -1,11 +1,13 @@
 """Short worker-marker transactions shared by the two deck Studio engines."""
 
 
-def mark_step(engine, root, relative, step=None):
+def mark_step(engine, root, relative, step=None, *, workspace_api):
     """Protect canonical output from replay without holding a lock over rendering."""
     share = False
-    with engine.files:
+    space = engine.space()
+    with workspace_api.workspace_locked(space, engine.files, configured=True):
         marker = root / relative
+        workspace_api.inside(space, marker)
         if step is None:
             marker.unlink(missing_ok=True)
             engine._active_steps.discard(str(root))
