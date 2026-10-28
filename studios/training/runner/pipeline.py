@@ -574,7 +574,7 @@ def research_words(run: dict | None) -> str:
     return 'Research ' + research_sites.summary(looks) + '.'
 
 
-def check_form(sent: dict, brands=None) -> dict:
+def check_form(sent: dict, brands=None, *, conversation=False) -> dict:
     """The form's answers, once each makes sense. Refuses with a sentence for a person.
     `brands` is what `brand.brands()` returned on this computer, or None with no brand
     skill here: a brand is a choice among those."""
@@ -605,7 +605,7 @@ def check_form(sent: dict, brands=None) -> dict:
         raise WorkspaceError('Choose materials from the learner guide, reference brief and '
                              'practice scenarios.')
     form['materials'] = [stage for stage in MATERIALS if stage in materials]
-    if not materials and form['deck_target'] is None:
+    if not materials and form['deck_target'] is None and not conversation:
         raise WorkspaceError('Choose at least one material to make, or a slide deck.')
     if form['yoodli'] and not {'brief', 'scenario'} <= set(materials):
         raise WorkspaceError('Yoodli needs a reference brief and practice scenarios. '
@@ -874,7 +874,7 @@ def research(root: Path, session: dict, run: dict | None, request: dict | None) 
             facts, manifest = research_contract.read_bundle(root / research_contract.CASE / 'research')
             current = handed and handover.get('reviewed') and handover.get('reviewed_request') == (request or {}).get('at')
         except (OSError, ValueError):
-            facts, manifest, current = {}, {}, False
+            manifest, current = {}, False
         entry = session['artifacts'].get('research') or {}
         saved = bool(entry.get('sha256')) and entry['sha256'] == workspace.sha256_file(root / REPORT)
         return Research(handed, manifest.get('digest'), {'synthesis': 'Purpose-led investigation'},
@@ -2452,14 +2452,14 @@ def _practice_note(text: str, session: dict) -> list[str]:
 
 
 def keep_draft(root: Path, step: Step, handed: dict, request: dict | None,
-               found: Survey | None = None, update: bool = False) -> None:
+               found: Survey | None = None, update: bool = False, unprovided=()) -> None:
     """Save a draft the checks let through, with a review for the gate: what was checked,
     what that gate shows in particular, and the worker's own notes on the draft, labelled
     as its judgment. `found` is the training as it stood before the job."""
     draft = next(iter(handed['artifacts'].values()))
     kind, session = _kind(step.artifact), workspace.load(root)
     dated = found is not None and found.state.get(step.artifact) == 'stale'
-    workspace.save(root, step.artifact, source=draft['path'], via='update' if update else None)
+    workspace.save(root, step.artifact, source=draft['path'], via='update' if update else None, unprovided=unprovided)
     lines = _checked(step.artifact, draft['checks'])
     lines += [f'Worth a look: {warning}' for warning in draft['warnings']]
     if kind == 'document':
@@ -2744,11 +2744,12 @@ def deck_shows(root: Path, session: dict, mine: Deck, audit: dict, cited: dict |
     brand's audit, and for each objective the slides the reviewer found it on and the
     slides that cite it."""
     last = mine.last
-    review = last['review']
+    review = last['review'] or {}
     parsed = checks.parse_blueprint(
         _text(root, session, workspace.qualify('blueprint', mine.level)) or '')
     chosen = looked(mine.kept, workspace.sha256_file(place(root, mine.level, OUTLINE))) or {}
     return {'rendered': last['deck'], 'round': len(mine.rounds),
+            **({'review_pending': True, 'unreviewed': 'This deck has not had a review. Read its slides before marking it ready.'} if not last['review'] else {}),
             **({'unreviewed': deck_flow.UNREVIEWED} if chosen.get('shown') == 'unrendered'
                else {}),
             'slides': [{key: slide[key] for key in ('number', 'id', 'title')}
@@ -2756,7 +2757,7 @@ def deck_shows(root: Path, session: dict, mine: Deck, audit: dict, cited: dict |
             'findings': [{key: finding.get(key) for key in (
                 'slide', 'number', 'severity', 'about', 'note', 'fix',
                 *(('category', 'criterion') if 'criterion' in finding else ()))}
-                for finding in deck.ordered(review['findings'])],
+                for finding in deck.ordered(review.get('findings') or [])],
             # Reviewed against the design: the slides drawn as text by decision, and whether
             # the review accepted each so.
             **({'direct': [{key: entry.get(key) for key in ('slide', 'number', 'accepted')}
@@ -2787,6 +2788,9 @@ def deck_note(shows: dict, request: dict | None, dated: bool) -> list[str]:
               f": {entry['says']}" for entry in audit['warnings']]
     lines += [f'  - The audit holds this against the deck: {blocker}'
               for blocker in audit['blockers']]
+    if shows.get('review_pending'):
+        lines += ['', 'Citations are checked; coverage has not been reviewed.']
+        return lines
     lines += ['', deck.remains(findings)]
     left = deck.grave(findings)
     if left:
@@ -2841,7 +2845,25 @@ def keep_deck(root: Path, found: Survey, mine: Deck, source: Path | None, link: 
     was previewed, or the link to the Google Slides made from it. What its gate shows is
     kept beside what it says, tied to the file the core recorded. Returns the core's entry."""
     name, session = mine.name, found.session
-    coverage = {entry['objective']: entry['reviewed'] for entry in shows['coverage']}
+    pending = workspace.pending_local_deck(root, session, name)
+    if link is not None and pending:
+        # Only an actual delivery result reaches this path. Preserve a usable local
+        # draft if any subsequent file/save step fails; no transport runs here.
+        from runner import deck_edit
+        with deck_edit.PreparedEdit(root) as prepared:
+            staged = workspace.load(prepared.root)
+            previous = staged['pending_local_decks'].pop(name)
+            staged.setdefault('local_deck_history', []).append({'name': name, **previous})
+            workspace.store(prepared.root, staged)
+            _keep_deck(prepared.root, replace(found, session=staged), mine, source, link, shows)
+            prepared.publish()
+        return workspace.load(root)['artifacts'][name]
+    return _keep_deck(root, found, mine, source, link, shows)
+
+
+def _keep_deck(root, found, mine, source, link, shows):
+    name, session = mine.name, found.session
+    coverage = None if shows.get('review_pending') else {entry['objective']: entry['reviewed'] for entry in shows['coverage']}
     request, dated = found.asked.get(name), found.state.get(name) == 'stale'
     if link is not None:
         file = workspace.managed(root, workspace.artifact(root, session, name)['file'])

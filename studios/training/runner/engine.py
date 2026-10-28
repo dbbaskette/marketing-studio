@@ -437,7 +437,8 @@ def read_record(root: Path) -> dict | None:
     # A desk run is started with a research contract, as every run is, except on the legacy
     # queue the test suites still drive.
     if record.get('schema') == drafts.SCHEMA:
-        contracted = drafts.on_desk(record) and (contracted or LEGACY_RESEARCH)
+        contracted = drafts.on_desk(record) and (contracted or LEGACY_RESEARCH
+                                                 or drafts.in_conversation(record))
     if record.get('schema') in (3, drafts.SCHEMA) and not contracted:
         raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
@@ -613,8 +614,8 @@ class _Run:
         self.workers: dict[str, dict] = {}
 
 
-from runner import reviews as review_layout
-from runner.reviews import Reviewing
+from runner import reviews as review_layout  # noqa: E402  engine helpers precede the mixin
+from runner.reviews import Reviewing  # noqa: E402
 
 
 class Engine(Reviewing):
@@ -1026,7 +1027,7 @@ class Engine(Reviewing):
     def _ours(self, record: dict) -> bool:
         return self._elsewhere(record) is None
 
-    def hold(self, path) -> None:
+    def hold(self, path, *, conversation=False) -> None:
         """Refuse, saying who has it, a change to a training this computer does not
         drive, and any change while the runner that just started is still looking at what
         was shared. A training no run is driving is not the engine's to refuse."""
@@ -1035,7 +1036,10 @@ class Engine(Reviewing):
             return
         if self._checking:  # who drives it may have changed while the runner was closed
             raise WorkspaceError(CHECKING)
-        why = self._elsewhere(self._load(root))
+        record = self._load(root)
+        if drafts.in_conversation(record) and not conversation:
+            raise WorkspaceError('This training is being worked on in conversation. Explicitly hand it to the runner before changing it on the page.')
+        why = self._elsewhere(record)
         if why:
             raise Elsewhere(why)
 
@@ -1280,8 +1284,13 @@ class Engine(Reviewing):
 
     # --- starting and picking up ---------------------------------------------------------
 
-    def start(self, form: dict) -> dict:
+    def start(self, form: dict, *, execution='runner', scope=None, uploads=None) -> dict:
         """Make a training from the form's answers and start its run."""
+        if execution == 'conversation':
+            from runner import desk_chat
+            return desk_chat._start(self, form, scope, uploads)
+        if execution != 'runner':
+            raise WorkspaceError('Choose runner or conversation execution.')
         space, chosen = self.space(), settings.load()
         gitstate.identity(space.repo)
         # A form that names its agent says its model and level too, None being the
@@ -1441,7 +1450,7 @@ class Engine(Reviewing):
                 with gitstate.workspace_locked(space, self.files, configured=True):
                     gitstate.inside(space, root / IN_HAND)
                     record = self._load(root)
-                    if not self._ours(record):
+                    if not self._ours(record) or drafts.in_conversation(record):
                         continue
                     found = self._survey(root, record)
                     if found.next.kind != 'done':
@@ -1501,6 +1510,9 @@ class Engine(Reviewing):
         root = self.driven(path)
         if root is None or self._closing:
             return
+        with self.files:
+            if drafts.in_conversation(self._load(root)):
+                return
         if not self.background:
             self._work(root, self._run(root))
             return
@@ -1550,7 +1562,12 @@ class Engine(Reviewing):
         return bool(record.get('halt') or record.get('problem') or record.get('question'))
 
     def _step_marker(self, root: Path, step: str | None = None) -> None:
-        mark_step(self, root, IN_HAND, step, workspace_api=gitstate)
+        with self.files:
+            if drafts.in_conversation(self._load(root)):
+                if step:
+                    raise _Gone('Conversation owns this training.')
+                return
+            mark_step(self, root, IN_HAND, step, workspace_api=gitstate)
 
     def _work(self, root: Path, run: _Run) -> None:
         """Do one step after another until the training waits, ends or is halted."""
@@ -1560,7 +1577,7 @@ class Engine(Reviewing):
         try:
             while not self._closing:
                 record = self._load(root)
-                if run.gone or not self._ours(record):
+                if run.gone or not self._ours(record) or drafts.in_conversation(record):
                     return  # someone else drives it, or nobody does
                 pending = next((job for job in (record.get('drafts') or {}).get('jobs', [])
                                 if job.get('status') == 'queued'), None)
@@ -1654,24 +1671,27 @@ class Engine(Reviewing):
         """Continue a desk run past the stop it has come to, with the desk's receipt: a look
         in the brand's default, what a deck says as it was written, and any other gate
         accepted on the desk. Nothing here is the person's approval of a material."""
-        step = found.next
-        if step.kind == 'look':
-            return self._look_default(root, step.step, by='desk')
-        if pipeline.bare(step.step.id) == 'gate:deck-outline':
-            if step.kind == 'gate':
-                self._ask(root, self._run(root), found, step)
-            return self._desk_outline(root, self._survey(root, self._load(root)))
         with self.files:
-            session = workspace.load(root)
-            spec = workspace.artifact(root, session, step.step.artifact)
-            digest = workspace.sha256_file(review_layout.contained(root, spec['file']))
-            self.deck_decided(root, step.step.artifact, 'approve', 'Continued on the desk.',
-                              digest)
-            outcome = workspace.accept_desk(root, step.step.artifact)
-            record = self._load(root)   # deck_decided may have stored a receipt in the run
-            drafts.receipt(record, step.step.id, outcome['approved'], home.now())
-            self._store(root, record)
-            self._commit(root, f'continue {workspace.label(step.step.artifact)} on the desk')
+            if drafts.in_conversation(self._load(root)):
+                return
+            step = found.next
+            if step.kind == 'look':
+                return self._look_default(root, step.step, by='desk')
+            if pipeline.bare(step.step.id) == 'gate:deck-outline':
+                if step.kind == 'gate':
+                    self._ask(root, self._run(root), found, step)
+                return self._desk_outline(root, self._survey(root, self._load(root)))
+            with self.files:
+                session = workspace.load(root)
+                spec = workspace.artifact(root, session, step.step.artifact)
+                digest = workspace.sha256_file(review_layout.contained(root, spec['file']))
+                self.deck_decided(root, step.step.artifact, 'approve', 'Continued on the desk.',
+                                  digest)
+                outcome = workspace.accept_desk(root, step.step.artifact)
+                record = self._load(root)   # deck_decided may have stored a receipt in the run
+                drafts.receipt(record, step.step.id, outcome['approved'], home.now())
+                self._store(root, record)
+                self._commit(root, f'continue {workspace.label(step.step.artifact)} on the desk')
 
     def _do(self, root: Path, run: _Run, found: pipeline.Survey,
             step: pipeline.Next) -> None:
@@ -3221,13 +3241,27 @@ class Engine(Reviewing):
             audit = pipeline.audited(None, f"The brand's audit could not be run. {refusal}")
         try:
             cited = self.slides().cited(base / last['compiled'])
-            if session['settings']['deck_target'] == 'google':
+            local_only = session['settings']['deck_target'] == 'google' and (
+                getattr(self, '_local_decks_only', False) or workspace.pending_local_deck(root, session, it.artifact))
+            if session['settings']['deck_target'] == 'google' and not local_only:
                 link = deck.link(self.slides().drive_import(file, title), title, last['deck'])
         except WorkspaceError as refusal:
             return self._problem(root, it.id, 'failed', (
                 f'The deck was drawn and reviewed, but could not be kept. {refusal}'),
                 'The slides as they were drawn and reviewed are kept on this computer.')
         with self.files:
+            if local_only:
+                from runner import desk_chat
+                _, restore_digest = desk_chat._read_restore(root, it.artifact)
+                workspace.stage_local_deck(root, it.artifact, file,
+                    getattr(self, '_local_deck_approvals', {}).get(it.artifact), restore_digest)
+                session = workspace.load(root)
+                found = replace(found, session=session)
+                record = self._load(root)
+                kept = self._decided(record, level)
+                if kept.get('saved'):
+                    kept.setdefault('saved_history', []).append(dict(kept['saved']))
+                self._store(root, record)
             shows = pipeline.deck_shows(root, session, mine, audit, cited)
             entry = pipeline.keep_deck(root, found, mine, None if link else file, link, shows)
             record = self._load(root)
@@ -3609,7 +3643,7 @@ class Engine(Reviewing):
         what it may."""
         with self.files:  # so that several workers starting at once stop it only once
             record = self._load(root)
-            if self._closing or self._resting(record):
+            if self._closing or self._resting(record) or drafts.in_conversation(record):
                 return False
             left = self._left(record)
             if left > 0 and left >= stops.floor(record['limits']['training_dollars']):
@@ -3692,6 +3726,8 @@ class Engine(Reviewing):
         stop, terminated = _WorkerStop(run.stop), threading.Event()
         with self.files:
             current = self._load(root)
+            if drafts.in_conversation(current):
+                raise _Gone('Conversation owns this training.')
             chain = (current.get('drafts') or {}).get('update_chain') or {}
             if chain.get('status') == 'stopped' and step.artifact in drafts.held(
                     root, workspace.load(root), current):
@@ -4539,24 +4575,28 @@ class Engine(Reviewing):
                     self._preparing_decks.pop(staged, None)
                     self._runs.pop(str(staged), None)
                 changed = prepared.publish()
-                try:
-                    space = self.space()
-                    paths = [gitstate.inside(space, root / path) for path in changed]
-                    ignored = hub.run(space.repo, 'check-ignore', '--stdin', input='\n'.join(paths))
-                    if ignored.returncode not in (0, 1):
-                        raise hub.GitError(hub.reason(ignored))
-                    paths = [path for path in paths if path not in ignored.stdout.splitlines()]
-                    gitstate.commit(space, workspace.load(root)['title']
-                                    + ': change a slide’s words on the desk',
-                                    [space.repo / path for path in paths])
-                except (WorkspaceError, OSError) as refusal:
-                    raise WorkspaceError('Your slide change is saved on this computer, but '
-                                         f'its history could not be committed. {refusal}') from refusal
+                self._commit_slide_words(root, changed)
             if _finishing:
                 draft_finish.mark_deck(self, root, **_finishing)
         if _redraw:
             self.carry_on(root)
         return {'fits': True}
+
+    def _commit_slide_words(self, root, changed):
+        """Commit a checked native edit; disposable validation supplies its own publisher."""
+        try:
+            space = self.space()
+            paths = [gitstate.inside(space, root / path) for path in changed]
+            ignored = hub.run(space.repo, 'check-ignore', '--stdin', input='\n'.join(paths))
+            if ignored.returncode not in (0, 1):
+                raise hub.GitError(hub.reason(ignored))
+            paths = [path for path in paths if path not in ignored.stdout.splitlines()]
+            gitstate.commit(space, workspace.load(root)['title']
+                            + ': change a slide’s words on the desk',
+                            [space.repo / path for path in paths])
+        except (WorkspaceError, OSError) as refusal:
+            raise WorkspaceError('Your slide change is saved on this computer, but '
+                                 f'its history could not be committed. {refusal}') from refusal
 
     def _save_slide_words(self, root, level, name, edited, whole, patched, section,
                           drawing_path, approved_words=None, history=None, redraw=False) -> None:
@@ -5332,6 +5372,12 @@ class Engine(Reviewing):
         version they were shown (`seen`, its hash). The desk's acceptance never is. Refused
         for a held material ("Update it or keep it as it is first."), a deck with something
         that needs the person, and when the version has changed since it was opened."""
+        root = self.driven(path)
+        if root is not None and drafts.in_conversation(self._load(root)):
+            from runner import desk_chat
+            context = desk_chat.context(self, root, 'ready/' + str(name))
+            return desk_chat.ready(self, root, {'target': name, 'expected_basis': context['expected_basis'],
+                'seen': seen, 'response': 'The person explicitly chose Mark ready on the desk.'})
         with self.files:
             root, record = self._on_desk(path, decided=True)
             self._mark(root, record, name, seen)

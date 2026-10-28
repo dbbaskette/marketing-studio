@@ -11,13 +11,13 @@ import codecs
 import difflib
 import json
 import re
-import secrets
-import socketserver
+import secrets  # noqa: F401  retained legacy module exports
+import socketserver  # noqa: F401
 import time
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer  # noqa: F401
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlsplit  # noqa: F401
 
 import assess
 import checks
@@ -47,7 +47,7 @@ COMPUTER_CACHE = 60      # seconds a look at this computer is reused
 READS = ('/api/trainings', '/api/training', '/api/file', '/api/gate', '/api/computer')
 WRITES = ('/api/decide', '/api/approval', '/api/computer')
 
-from studio_core.server import for_product as _server_for_product
+from studio_core.server import for_product as _server_for_product  # noqa: E402
 
 _security = _server_for_product('_training_studio_security', 'Training Studio',
     TOKEN_HEADER, PAGE_DIR, PAGE, computer, workspace.WorkspaceError, READS, WRITES)
@@ -592,6 +592,13 @@ def next_up(listed: list[dict] | None = None) -> dict | None:
 
 def decide(path: str, target: str, decision: str, note: str | None, seen: str | None,
            refresh: bool = False) -> dict:
+    import write_guard
+    with write_guard.admitted(Path(path)):
+        return _decide(path, target, decision, note, seen, refresh)
+
+
+def _decide(path: str, target: str, decision: str, note: str | None, seen: str | None,
+            refresh: bool = False) -> dict:
     """Record a decision made on the page, through the function the command line uses."""
     registered(path)
     root = Path(path)
@@ -613,6 +620,12 @@ def decide(path: str, target: str, decision: str, note: str | None, seen: str | 
 
 
 def move_approval(path: str, mode: str) -> dict:
+    import write_guard
+    with write_guard.admitted(Path(path)):
+        return _move_approval(path, mode)
+
+
+def _move_approval(path: str, mode: str) -> dict:
     """Move a training's approval to the page, or back to the conversation."""
     registered(path)
     if mode not in workspace.APPROVAL:

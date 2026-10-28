@@ -202,6 +202,17 @@ def parser() -> argparse.ArgumentParser:
 
 
 def dispatch(args: argparse.Namespace, root: Path) -> dict:
+    """Helper writes serialize with desk ownership changes and refuse chat-owned work."""
+    writing = {'save', 'approve', 'research-import', 'skip', 'checkpoint', 'pin', 'export'}
+    google_write = args.command == 'google' and args.google_command in {'push', 'record', 'pull', 'unlink'}
+    if args.command not in writing and not google_write:
+        return _dispatch(args, root)
+    import write_guard
+    with write_guard.admitted(root):
+        return _dispatch(args, root)
+
+
+def _dispatch(args: argparse.Namespace, root: Path) -> dict:
     handler = getattr(args, 'handler', None)
     if handler is not None:
         return handler(args, root)
