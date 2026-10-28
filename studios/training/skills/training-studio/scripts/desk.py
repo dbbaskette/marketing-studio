@@ -592,6 +592,7 @@ def next_up(listed: list[dict] | None = None) -> dict | None:
 
 def decide(path: str, target: str, decision: str, note: str | None, seen: str | None,
            refresh: bool = False, *, held=None) -> dict:
+    registered(path)
     import write_guard
     with write_guard.admitted(Path(path), held=held):
         return _decide(path, target, decision, note, seen, refresh)
@@ -620,6 +621,7 @@ def _decide(path: str, target: str, decision: str, note: str | None, seen: str |
 
 
 def move_approval(path: str, mode: str, *, held=None) -> dict:
+    registered(path)
     import write_guard
     with write_guard.admitted(Path(path), held=held):
         return _move_approval(path, mode)
