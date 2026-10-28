@@ -1993,7 +1993,7 @@ def expected(root, ident):
     """The version of a desk blog's record the page last read: a change of driver, Mark as
     published and Delete each refuse a view whose blog has changed since."""
     directory, _ = studio.item(root, 'articles', ident)
-    return studio.digest((directory / 'session.json').read_bytes())
+    return studio.digest(studio.record_bytes(directory, 'articles'))
 
 
 def _team(root, ident):

@@ -5,6 +5,14 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Preview opening eligible unfinished blogs on the writing desk.** Supported
+  manuscripts and lossless heading-based outlines open only after explicit preview
+  and guarded apply. Original session/run records, decisions, source pins, History
+  and Google baselines remain in place, including after checked desk edits. Missing
+  materials and early research/angles retain their saved flow. Interrupted apply
+  excludes workers and sharing until the original command safely recovers it.
+  Blog Studio and guidance now require runtime 4.9.0.
+
 - **Work on the desk directly in conversation.** Checked create, show, save, context
   and submit commands keep the requested scope and never start another assistant.
   A version-checked handoff explicitly transfers requested remaining steps. New desk
@@ -12,7 +20,7 @@ changes for authors first, then what changes for maintainers.
   Proofread also finds editorial notes, source IDs and example carry-over; Finishing
   offers GEO proposals to preview and apply. New `run create` requests point to the
   desk commands; saved step-by-step work remains available. Blog Studio and guidance
-  now require runtime 4.8.0.
+  introduced these commands in runtime 4.8.0.
 
 - **A Google Doc with large images reads, its large images kept in the Doc.** Reading a Doc
   whose images came to more than a blog's shared files hold stopped with "This Doc, with its

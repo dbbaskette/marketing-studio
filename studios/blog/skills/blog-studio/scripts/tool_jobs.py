@@ -173,6 +173,14 @@ def control(root, ident, action, engine):
 
 def _conversation_start(root, job):
     meta = job.get('metadata') or {}
+    if meta.get('article'):
+        import desk_migration
+
+        if desk_migration.pending(root, meta['article']):
+            return True
+        # A damaged migration must never fall back to an older queued job.
+        directory = studio.inside(root, 'articles', studio.identifier(meta['article']))
+        desk_migration.metadata(directory)
     if not (meta.get('desk') or {}).get('start') or not meta.get('article'):
         return False
     import desk_jobs

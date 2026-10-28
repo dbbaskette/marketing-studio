@@ -533,7 +533,7 @@ def schedule(root, ident, data, desk=False):
         raise ValueError('Unknown editorial field.')
     if (
         data.get('expected')
-        and studio.digest((directory / 'session.json').read_bytes()) != data['expected']
+        and studio.digest(studio.record_bytes(directory, 'articles')) != data['expected']
     ):
         raise ValueError('This blog changed. Reload before saving your decision.')
     previous = mapping(record.get('editorial'))

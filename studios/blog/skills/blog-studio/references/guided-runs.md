@@ -5,6 +5,13 @@ New work uses [conversation desk commands](conversation-desk.md); `run create`
 refuses with those commands. Opening saved work preserves its existing pins,
 decisions and approval rules. Do not duplicate or automatically migrate it.
 
+The person may explicitly preview **Open on the desk** for an unfinished blog with
+a supported manuscript or a lossless heading-based Markdown outline. Use the
+[checked migration commands and recovery procedure](desk-migration.md).
+Brief-only starts and early research/angles without those materials remain here,
+as do unsupported outlines and older Team Hub contexts. Their removal requires a
+proven lossless transform; a local inventory cannot establish that they are unused.
+
 `...` means `<python> <runtime>/studio.py --root <absolute-workspace>`.
 
 ## Each stage

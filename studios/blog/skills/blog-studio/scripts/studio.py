@@ -175,15 +175,78 @@ def item(root, kind, value):
             directory, metadata = local, local / 'record.json'
     if not metadata.is_file():
         raise ValueError(f'Unknown {kind} ID: {value}')
-    return directory, read_json(metadata)
+    record = read_json(metadata)
+    if kind == 'articles':
+        # Only unfinished Blog Studio migration has a separate live desk session.
+        # Its original guided session remains immutable at its original path.
+        from desk_migration import metadata as migrated_metadata
+
+        migrated = migrated_metadata(directory)
+        if migrated is not None:
+            record = migrated['session']
+    return directory, record
 
 
 def metadata_path(directory, kind):
     return directory / ('session.json' if kind == 'articles' else 'record.json')
 
 
+def article_records(root, excluding=()):
+    """Live records for reference/ownership guards; an unknown blog is never unreferenced."""
+    from studio_core.blog_migration import session_supported
+
+    folder = inside(root, 'articles')
+    try:
+        if folder.is_symlink():
+            raise ValueError('linked article folder')
+        for entry in sorted(folder.iterdir()) if folder.exists() else []:
+            if entry.name.startswith('.') or entry.name in excluding:
+                continue
+            if not entry.is_dir() and not entry.is_symlink():
+                continue
+            if entry.is_symlink() or (entry / 'session.json').is_symlink():
+                raise ValueError('linked article record')
+            directory, record = item(root, 'articles', entry.name)
+            if not session_supported(record, entry.name) or not isinstance(
+                record.get('material', []), list
+            ):
+                raise ValueError('unsupported article record')
+            for source in [
+                *record.get('material', []),
+                *(pin['source_id'] for pin in record['sources']),
+            ]:
+                identifier(source)
+            yield directory, record
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        raise ValueError(
+            'A saved blog’s live record is unreadable or unsupported. Restore it before '
+            'changing source roles, moving files, deleting their blog, or writing linked Google Docs.'
+        ) from error
+
+
+def record_bytes(directory, kind):
+    """One version boundary: ordinary raw records, or a validated live desk session."""
+    if kind == 'articles':
+        from desk_migration import metadata as migrated_metadata
+
+        migrated = migrated_metadata(directory)
+        if migrated is not None:
+            return json.dumps(
+                migrated['session'], sort_keys=True, ensure_ascii=False, separators=(',', ':')
+            ).encode()
+    return metadata_path(directory, kind).read_bytes()
+
+
 def persist(directory, kind, record):
     record['updated_at'] = now()
+    if kind == 'articles':
+        from desk_migration import META, metadata as migrated_metadata
+
+        migrated = migrated_metadata(directory)
+        if migrated is not None:
+            migrated['session'] = record
+            write_json(directory / 'desk' / META, migrated)
+            return
     write_json(metadata_path(directory, kind), record)
 
 

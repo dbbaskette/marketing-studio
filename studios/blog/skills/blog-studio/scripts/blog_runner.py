@@ -2328,7 +2328,30 @@ class Engine:
                 'outside': outside_words(saved.get('outside')),
             }
         on_desk = (Path(found['directory']) / 'desk' / 'draft.json').is_file()
-        if on_desk:
+        from desk_migration import metadata as migrated_metadata
+
+        migrated = migrated_metadata(Path(found['directory']))
+        found['unfinished_migration'] = bool(migrated)
+        if on_desk and migrated:
+            # The old run's approval facts remain history; desk registration never
+            # finishes its missing steps or turns automatic continuation into approval.
+            found.update(complete=False, next=None, awaits=None)
+            found['stages'] = [
+                {
+                    **row,
+                    'status': migrated['historical_stages']
+                    .get(row['stage'], {})
+                    .get('status', 'pending'),
+                    'auto_accepted': migrated['historical_stages']
+                    .get(row['stage'], {})
+                    .get('status')
+                    == 'approved'
+                    and row.get('accepted_by') == 'review-policy',
+                }
+                for row in found['stages']
+            ]
+            status = 'on-desk'
+        elif on_desk:
             # Opened on the desk once finished: the run is read as it ended, with nothing to
             # resume, approve or redo; desk saves never make it look paused or stale.
             found.update(complete=True, next=None, awaits=None)
@@ -2369,6 +2392,10 @@ class Engine:
                 return self._once(ident)
 
     def _once(self, ident):
+        import desk_migration
+
+        if desk_migration.blocked(self.root, ident):
+            return
         if not self.local(ident).get('enabled'):
             return
         try:
@@ -2390,6 +2417,16 @@ class Engine:
         ):
             before(self.root, ident)
         with studio.locked(self.root):
+            # A migration/conversation may have acquired the lock while this
+            # runner was waiting. Recheck before cleanup or worker acquisition.
+            if desk_migration.blocked(self.root, ident):
+                return
+            directory, record = studio.item(self.root, 'articles', ident)
+            if (
+                record.get('execution') == 'conversation'
+                or (directory / 'desk/draft.json').is_file()
+            ):
+                return
             local = self.local(ident)
             if not local.get('enabled'):
                 return
@@ -2438,7 +2475,7 @@ class Engine:
             self.stop.clear()
             # Includes session metadata as well as run/documents: a parallel edit wins.
             directory, _, run = load(self.root, ident)
-            session = (directory / 'session.json').read_bytes()
+            session = studio.record_bytes(directory, 'articles')
             tie = found.get('research_tie')
             if found['next'] == 'research' and not research_draft(directory, tie):
                 # A draft from other inputs or another research version is not continued.
@@ -2554,7 +2591,7 @@ class Engine:
                     if pending and not self.closed.is_set():
                         keep_research(directory, target / research_contract.CASE, tie)
                     return
-                if (directory / 'session.json').read_bytes() != session:
+                if studio.record_bytes(directory, 'articles') != session:
                     raise ValueError(
                         'The blog changed while the worker ran. Your edit was kept. Retry from the latest version.'
                     )
@@ -2741,7 +2778,7 @@ def catalog(root):
                 draft = studio.read_json(on_desk)
                 busy = working.get(ident, 0)
                 # Marked as published: finished, out of In progress.
-                published = (studio.read_json(path).get('editorial') or {}).get(
+                published = (studio.item(root, 'articles', ident)[1].get('editorial') or {}).get(
                     'stage'
                 ) == 'published' and not busy
                 # A start that stopped (a failed research, a Stop) needs the person.

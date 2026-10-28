@@ -13,6 +13,20 @@ SCOPES = ('draft', 'outline', 'research', 'part')
 CHANGED = 'The blog or its inputs changed. Read desk context again before submitting.'
 
 
+def migration_preview(root, ident):
+    from desk_migration import migration_preview as preview
+
+    _workspace(root)
+    return preview(root, ident)
+
+
+def migrate(root, ident, expected):
+    from desk_migration import migrate as apply
+
+    _workspace(root)
+    return apply(root, ident, expected)
+
+
 def _owner(root, ident):
     return studio.item(root, 'articles', ident)[1].get('execution', 'runner')
 
@@ -503,6 +517,8 @@ def add_parser(groups):
         'handoff',
         'scope',
         'outline-save',
+        'migration-preview',
+        'migrate',
     ):
         command = commands.add_parser(action)
         if action != 'create':
@@ -511,9 +527,15 @@ def add_parser(groups):
             command.add_argument('--input', required=True, help='JSON file, or - for stdin')
         if action == 'context':
             command.add_argument('--target', required=True)
+        if action == 'migrate':
+            command.add_argument('--expected', required=True)
 
 
 def command(root, args):
+    if args.action == 'migration-preview':
+        return migration_preview(root, args.article)
+    if args.action == 'migrate':
+        return migrate(root, args.article, args.expected)
     if args.action == 'show':
         return read(root, args.article)
     if args.action == 'context':

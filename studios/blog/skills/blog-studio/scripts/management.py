@@ -705,8 +705,7 @@ def source_role(root, data):
         raise ValueError(
             'Only a file or a library reference changes between facts, messaging and example.'
         )
-    for path in studio.inside(root, 'articles').glob('*/session.json'):
-        article = studio.read_json(path)
+    for _, article in studio.article_records(root):
         if record['id'] in article.get('material', []) or any(
             selected.get('source_id') == record['id'] for selected in article.get('sources', [])
         ):
@@ -805,8 +804,7 @@ def source_keep(root, data, blog=None):
         raise ValueError('Only an uploaded file or a library reference changes where it is kept.')
     if keep == (not material):
         return {'id': record['id'], 'kept': keep}
-    for path in studio.inside(root, 'articles').glob('*/session.json'):
-        article = studio.read_json(path)
+    for _, article in studio.article_records(root):
         if blog and article.get('id') == blog:
             continue
         if record['id'] in article.get('material', []) or any(
@@ -1287,7 +1285,7 @@ def detail(root, ident, location='local', revision=None):
     return {
         'record': record,
         'title': record['title'],
-        'expected': sha((directory / 'session.json').read_bytes()),
+        'expected': sha(studio.record_bytes(directory, 'articles')),
         'assets': editorial.derived_status(root, directory, record),
         'location': 'local',
         'sources': record.get('sources', [])[:20],
@@ -1994,7 +1992,7 @@ def _dispatch(root, route, data):
             ident = data.get('id')
             values = {k: v for k, v in data.items() if k != 'id'}
             directory, _ = studio.item(root, 'articles', ident)
-            before = (directory / 'session.json').read_bytes()
+            before = studio.record_bytes(directory, 'articles')
             record = editorial.schedule(root, ident, values, desk=True)
             import desk
 
@@ -2007,7 +2005,7 @@ def _dispatch(root, route, data):
             )
             library = {'library': kept} if kept else {}
             receipts = [kept.pop('receipt')] if kept and 'receipt' in kept else []
-            if (directory / 'session.json').read_bytes() == before:
+            if studio.record_bytes(directory, 'articles') == before:
                 if not receipts:
                     return dict(UNCHANGED, id=ident, **library)
                 return {'id': ident, 'status': 'saved', 'receipts': receipts, **library}
@@ -2198,6 +2196,15 @@ def keep_published(root, directory, record):
 def dispatch(root, route, data):
     from team_workspace import space, before, saved, status, refresh, action, join
     from team_workspace import keep_desk_leftovers
+
+    if route == 'desk-migrate':
+        # This transaction checks ownership/basis itself. No fetch, unrelated keep,
+        # settlement or automatic share may occur around a migration decision.
+        import desk_chat
+
+        if not isinstance(data, dict) or set(data) != {'id', 'expected'}:
+            raise ValueError('Choose a saved blog and its current migration preview.')
+        return desk_chat.migrate(root, data['id'], data['expected'])
 
     # Refused before anything is read, fetched or shared. The default voice in run-settings
     # is checked with the rest of that form (blog_runner.settings).
@@ -2403,6 +2410,10 @@ def whole(value):
 def view(root, name, query):
     """Read-only desk views by name. Returns None for an unknown view."""
     arg = lambda key, default=None: query.get(key, [default])[0]
+    if name == 'desk-migration-preview':
+        import desk_chat
+
+        return desk_chat.migration_preview(root, arg('id'))
     if name == 'brand':
         import brand_skill
 

@@ -94,7 +94,7 @@ def record_path(root, ident):
 def versions(root, ident):
     """The blog, and every version token a page may have shown for it."""
     directory, record = studio.item(root, 'articles', ident)
-    known = {studio.digest((directory / 'session.json').read_bytes())}
+    known = {studio.digest(studio.record_bytes(directory, 'articles'))}
     if studio.inside(directory, blog_runner.STATE).is_file():
         try:
             known.add(blog_runner.survey(root, ident)['expected'])
@@ -192,7 +192,19 @@ def _forget(root, ident):
         tool_jobs.path(root, job['id']).unlink(missing_ok=True)
 
 
-def _material_out(root, ident, record):
+def _other_material_pins(root, ident, record):
+    if not record.get('material') and not any(
+        'material' in entry.get('purposes', []) for entry in record.get('sources', [])
+    ):
+        return set()
+    return {
+        source
+        for _, other in studio.article_records(root, excluding=(ident,))
+        for source in [*other.get('material', []), *(p['source_id'] for p in other['sources'])]
+    }
+
+
+def _material_out(root, ident, record, others=None):
     """Keep the uploaded files only this blog pinned beside its deleted copy, and drop
     the upload ledgers that named them. Files another blog pins stay where they are."""
     pinned = [
@@ -203,14 +215,8 @@ def _material_out(root, ident, record):
     wanted = list(dict.fromkeys([*record.get('material', []), *pinned]))
     if not wanted:
         return []
-    others = set()
-    for session in studio.inside(root, 'articles').glob('*/session.json'):
-        if session.parent.name == ident:
-            continue
-        try:
-            others.update(entry['source_id'] for entry in studio.read_json(session)['sources'])
-        except (OSError, ValueError, KeyError, TypeError):
-            continue
+    if others is None:
+        others = _other_material_pins(root, ident, record)
     moved = []
     for source in wanted:
         here = studio.material(root, studio.identifier(source))
@@ -271,9 +277,10 @@ def delete(root, data):
     engine = blog_runner.engine(root)
     with studio.locked(root):
         authorize_write(root)
-        check(root, data)
+        _, record = check(root, data)
         ident = data['id']
         guard(root, ident)
+        _other_material_pins(root, ident, record)  # Refuse uncertainty before even stopping work.
         awaited = _stop(root, engine, ident)
     if not _ended(engine, awaited):
         raise ValueError(NOT_ENDED)
@@ -281,6 +288,7 @@ def delete(root, data):
         adapter = authorize_write(root)
         directory, record = check(root, data)  # still here, and unchanged meanwhile
         guard(root, ident)
+        others = _other_material_pins(root, ident, record)
         title = record['title']
         found = space(root)
         if (folder(root) / ident).exists():
@@ -320,7 +328,7 @@ def delete(root, data):
             'hub': binding,
         }
         studio.write_json(record_path(root, ident), entry)
-        entry['material'] = _material_out(root, ident, record)
+        entry['material'] = _material_out(root, ident, record, others)
         if entry['material']:
             studio.write_json(record_path(root, ident), entry)
         if adapter and binding:
@@ -417,7 +425,9 @@ def restore(root, data):
     if directory.exists():
         # A teammate, or an earlier try, already brought it back: the record is stale.
         session = directory / 'session.json'
-        if session.is_file() and studio.read_json(session).get('title') == record.get('title'):
+        if session.is_file() and studio.item(root, 'articles', ident)[1].get('title') == record.get(
+            'title'
+        ):
             _material_back(root, ident)
             path.unlink(missing_ok=True)
             shutil.rmtree(folder(root) / ident, ignore_errors=True)

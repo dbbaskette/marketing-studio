@@ -1,6 +1,6 @@
 # Blog Studio work in conversation
 
-Requires Blog Studio 4.8.0 or newer. Use the current conversation to write the
+Requires Blog Studio 4.9.0 or newer. Use the current conversation to write the
 requested material. Do not open a browser, run another assistant, install or
 update a companion, or schedule a worker merely to draft or save work.
 `...` below means `<python> <runtime>/studio.py --root <absolute-workspace>`.
@@ -134,3 +134,6 @@ live source acceptance or authorship.
 Older step-by-step records retain their [saved-work commands](guided-runs.md),
 source pins and decisions. `run create` now explains how to create desk work.
 Do not duplicate, silently migrate, or mark unfinished work Ready.
+
+For an explicit request to move eligible unfinished work, read the conditional
+[migration preview, eligibility and recovery procedure](desk-migration.md).
