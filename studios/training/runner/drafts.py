@@ -595,7 +595,9 @@ def view(engine, root) -> dict:
                     'checks': _checked(report['checks'], name) if seen else
                     {'passed': 0, 'problems': []},
                     'seen': seen, 'held': name in holding,
-                    'actions': card_actions if mine else ['download'], 'needs': needs})
+                    'actions': card_actions if mine else ['download'], 'needs': needs,
+                    **({'proposals': engine.deck_proposals(root, level)}
+                       if kind == 'deck' and seen else {})})
     needed = []
     if mine:
         needed = [card['label'] for card in cards if card['state'] in ('held', 'needs')]
@@ -1342,3 +1344,91 @@ def versions_of(engine, root, name, part) -> dict:
     return {'versions': [{**one, 'label': SOURCE_WORDS.get(one['source'], SOURCE_WORDS[EARLIER])}
                          for one in found],
             'sources': dict(SOURCE_WORDS)}
+
+
+def section_price(record: dict, level: str | None, section: str) -> str:
+    """Describe the work and the last recorded cost of redrawing a section."""
+    from runner import pipeline
+    from studio_core import stops
+    level = level or None
+    number = pipeline.numbered(section)
+    numbers = sorted((((record.get('deck') or {}).get(level or '') or {})
+                      .get('section_numbers') or {}).get(section) or [])
+    if len(numbers) == 1:
+        slides = f'slide {numbers[0]}'
+    elif len(numbers) > 2 and numbers == list(range(numbers[0], numbers[-1] + 1)):
+        slides = f'slides {numbers[0]} to {numbers[-1]}'
+    elif numbers:
+        slides = 'slides ' + ', '.join(map(str, numbers[:-1])) + f' and {numbers[-1]}'
+    else:
+        slides = 'its slides'
+    says = (f'Redraws section {number} ({slides}); the other slides stay exactly as they are. '
+            'Then the deck is put together, rendered and checked. ')
+    steps = record.get('steps') or {}
+    drawings = [((steps.get(workspace.qualify(kind, level) + f':{number}') or {})
+                 .get('attempts') or []) for kind in ('deck-sections', 'deck-repair')]
+    tried = [attempts[-1] for attempts in drawings if attempts]
+    if not tried:
+        return says + ('This computer has no record yet of what it costs. '
+                       'Expect minutes, not seconds.')
+    drawn = max(tried, key=lambda attempt: attempt.get('started_at') or '')
+    attempts = [drawn]
+    for kind in ('deck-whole', 'deck-review'):
+        earlier = (steps.get(workspace.qualify(kind, level)) or {}).get('attempts') or []
+        if earlier:
+            attempts.append(earlier[-1])
+    seconds = sum(float(attempt.get('seconds') or 0) for attempt in attempts)
+    costs = [attempt.get('dollars') for attempt in attempts if attempt is drawn or
+             attempt.get('dollars') is not None]
+    dollars = None if any(cost is None for cost in costs) else sum(costs)
+    return says + f'Last time this took {stops.cost(seconds, dollars)}.'
+
+
+def deck_drawings(root: Path, level: str | None) -> dict:
+    """Fingerprint the actual drawing of each slide, including lead slides."""
+    import json
+    from runner import pipeline
+    built = pipeline.read_built(root, level)
+    start = built.get('start') or {}
+    work = pipeline.place(root, level, pipeline.WORK)
+    folder = work / str(start.get('folder') or '')
+    paths = [work / entry['file'] for entry in (built.get('sections') or {}).values()
+             if entry.get('file')]
+    paths.extend(folder.glob('lead-*.json'))
+    found = {}
+    for path in paths:
+        data = home.read_json(path, {}) or {}
+        for slide in data.get('slides') or ():
+            if isinstance(slide, dict) and isinstance(slide.get('id'), str):
+                found[slide['id']] = hashlib.sha256(json.dumps(
+                    slide, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return found
+
+
+class DeckProposalDesk:
+    """The saved deck revision used to check a finding before it becomes a note."""
+    codec = parts.Codec(fixed=(), single=(), thing='deck', noun='slide')
+
+    def __init__(self, engine, root, level):
+        self.engine, self.root, self.level = engine, root, level
+
+    def read(self, ident):
+        name = workspace.qualify('deck', self.level)
+        session = workspace.load(self.root)
+        file = self.root / workspace.artifact(self.root, session, name)['file']
+        return {'seen': workspace.sha256_file(file), 'drawn': deck_drawings(self.root, self.level)}
+
+    def checked(self, draft, seen, parts=None):
+        if not seen or seen != draft['seen']:
+            raise ValueError('This deck has changed since it was opened. Read the new version before deciding.')
+
+
+def deck_proposals(engine, root, level, note=None):
+    """The shared findings store, scoped to this training's deck."""
+    from studio_core.drafting import findings
+    store = TrainingStore(engine, root)
+    desk = DeckProposalDesk(engine, root, level)
+    return findings.Noted(store, desk, {'finish-review': 'review'}, note or (lambda *_: None),
+                          owner='training', present=lambda draft, item:
+                          (draft.get('drawn') or {}).get(item.get('part')) == item.get('drawn')
+                          and item.get('drawn') is not None)

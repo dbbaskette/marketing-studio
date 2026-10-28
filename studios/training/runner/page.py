@@ -223,7 +223,8 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
-          '/api/review-level', '/api/research-site', f'{DRAFTS}/open', *DECIDED, *TYPED, *JOBS)
+          '/api/review-level', '/api/research-site', f'{DRAFTS}/open',
+          f'{DRAFTS}/slide-note', f'{DRAFTS}/finding', *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -720,6 +721,28 @@ class RunnerPage(desk.Page):
                 return desk.as_json(HTTPStatus.OK, self.engine.open_on_desk(training))
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+        if path == f'{DRAFTS}/finding':
+            root = self.on_desk(desk.text(sent, 'path'))
+            level = desk.text(sent, 'level', False) or None
+            ids = sent.get('ids')
+            if not isinstance(ids, list) or not all(isinstance(item, str) for item in ids):
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Choose the suggestions to change.')
+            try:
+                result = self.engine.deck_finding(root, level, desk.text(sent, 'seen'),
+                                                  desk.text(sent, 'job'),
+                                                  desk.text(sent, 'action'), ids)
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **result})
+        if path == f'{DRAFTS}/slide-note':
+            root = self.on_desk(desk.text(sent, 'path'))
+            level = desk.text(sent, 'level', False)
+            try:
+                self.engine.slide_note(root, level or None, desk.text(sent, 'slide'),
+                                       desk.text(sent, 'note'), desk.text(sent, 'seen'))
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, drafts.view(self.engine, root))
         if path in DECIDED:
             return desk.as_json(HTTPStatus.OK, self.drafted(path, sent))
         if path in JOBS:

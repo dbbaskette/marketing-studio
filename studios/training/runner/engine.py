@@ -2773,12 +2773,26 @@ class Engine(Reviewing):
                            f'Draw section {number} of {workspace.label(whole.artifact)}{again}',
                            f'Drawing section {number} of {workspace.label(whole.artifact)}'
                            f'{again}', 'deck', whole.artifact)
+        if drafts.on_desk(self._load(root)):
+            with self.files:
+                record = self._load(root)
+                for note in self._decided(record, level).get('notes') or ():
+                    if note.get('section') == section and note.get('status') == 'waiting':
+                        note['status'] = 'drawing'
+                self._store(root, record)
         work = pipeline.section_work(root, found, whole, section,
                                      last_error(self._load(root), it.id), how)
         outcome, handed, started_at, folder = self._job(root, run, it, work)
-        if outcome.reason == 'stopped':
-            return self._stopped(root, it, outcome, started_at)
-        if not handed['artifacts'] or not handed['shown']:
+        if outcome.reason == 'stopped' or not handed['artifacts'] or not handed['shown']:
+            with self.files:
+                record = self._load(root)
+                if drafts.on_desk(record):
+                    for note in self._decided(record, level).get('notes') or ():
+                        if note.get('section') == section and note.get('status') == 'drawing':
+                            note['status'] = 'waiting'
+                    self._store(root, record)
+            if outcome.reason == 'stopped':
+                return self._stopped(root, it, outcome, started_at)
             return self._failed(root, it, outcome, started_at,
                                 pipeline.why_not(handed, outcome.detail))
         mine, base = found.decks[level], pipeline.place(root, level, pipeline.WORK)
@@ -2800,10 +2814,18 @@ class Engine(Reviewing):
                 'previews': handed['shown']['previews'],
                 'pictures': [slide['number'] for slide in handed['shown']['slides']],
                 'notes': (handed['review'] or '').strip() or None,
+                **({'requested': [note['slide'] for note in mine.kept.get('notes') or ()
+                                  if note.get('section') == section
+                                  and note.get('status') in ('waiting', 'drawing')]}
+                   if drafts.on_desk(self._load(root)) and again else {}),
                 **({'assets': _placed(root, level, draft['text'])}
                    if mine.start.get('assets') is not None else {})}
             self._note(root, level, sections=drawn)
             record = self._load(root)
+            if drafts.on_desk(record):
+                for note in self._decided(record, level).get('notes') or ():
+                    if note.get('section') == section and note.get('status') == 'drawing':
+                        note['status'] = 'done'
             self._tried(record, it.id, started_at, outcome.seconds, 'kept',
                         **self._cost(outcome))
             # Drawn again after a review against the design, a composer may say that only
@@ -2915,12 +2937,16 @@ class Engine(Reviewing):
                 **({'judged': shown['judged']} if judged else
                    {'questions': list(asked_now)}),
                 'deck': shown['deckSha256'], 'slides': slides, 'screens': screens,
+                **({'review_slides': sorted({slide for entry in drawn.values()
+                       if entry.get('round') == len(rounds)
+                       for slide in entry.get('requested') or ()})}
+                   if drafts.on_desk(self._load(root)) and rounds else {}),
                 'audit_findings': blocked, 'audit_warnings': noticed,
                 **({'auditNote': audit_note} if audit_note else {})})
             # What the screens and the brand's check send back is drawn again before anyone
             # reviews it, within the rounds a deck has: the last round is always reviewed.
             back = deck.sent_back(screens) + blocked
-            if back and len(rounds) <= deck.REPAIRS:
+            if back and not drafts.on_desk(self._load(root)) and len(rounds) <= deck.REPAIRS:
                 rounds[-1]['review'] = {'findings': back, 'weakest': None, 'coverage': {},
                                         'by': 'screen', 'at': home.now()}
             self._note(root, level, rounds=rounds)
@@ -2998,17 +3024,50 @@ class Engine(Reviewing):
         assessed = handed['assessment']
         with self.files:
             rounds = list(pipeline.read_built(root, level).get('rounds') or ())
+            scoped = rounds[-1].get('review_slides')
+            earlier = (rounds[-2].get('review') or {}) if scoped and len(rounds) > 1 else {}
+            if rounds[-1].get('judged') and scoped and not earlier.get('judgements'):
+                scoped, earlier = None, {}
+            findings = [finding for finding in earlier.get('findings') or ()
+                        if finding.get('slide') not in scoped] + [
+                            finding for finding in assessed['findings']
+                            if not scoped or finding.get('slide') in scoped]
+            reviewed_numbers = {slide['number'] for slide in rounds[-1]['slides']
+                                if scoped and slide['id'] in scoped}
+            coverage = {objective: sorted({*([number for number in numbers
+                                           if number not in reviewed_numbers]),
+                                         *(handed['coverage']['objectives'].get(objective) or ())})
+                        for objective, numbers in (earlier.get('coverage') or {}).items()}
+            coverage.update({objective: numbers for objective, numbers in
+                             handed['coverage']['objectives'].items() if objective not in coverage})
             rounds[-1] = {**rounds[-1], 'review': {
-                'findings': assessed['findings'], 'weakest': assessed['weakest'],
+                'findings': findings, 'weakest': assessed['weakest'],
                 **({key: assessed.get(key) for key in ('direct', 'complete')}
                    if rounds[-1].get('judged') else {}),
-                'coverage': handed['coverage']['objectives'], 'at': home.now()}}
+                **({'judgements': assessed['judgements']}
+                   if 'judgements' in assessed else {}),
+                'coverage': coverage, 'at': home.now()}}
             self._note(root, level, rounds=rounds)
             record = self._load(root)
+            if drafts.on_desk(record):
+                from studio_core.drafting import findings as review_findings
+                proposals = drafts.deck_proposals(self, root, level)
+                ident = workspace.qualify('deck', level)
+                drawings = drafts.deck_drawings(root, level)
+                items = [{**item, 'drawn': drawings.get(item['part'])}
+                         for item in review_findings.items(findings, 'slide')]
+                previous = (proposals.summary(ident, proposals.desk.read(ident)).get('review')
+                            or {}).get('items') or ()
+                for item in items:
+                    same = next((old for old in previous if all(old.get(key) == item.get(key)
+                                 for key in ('part', 'note', 'fix', 'drawn'))), None)
+                    if same and same.get('state') in ('skipped', 'applied'):
+                        item['state'] = same['state']
+                proposals.keep(ident, secrets.token_hex(16), 'finish-review', items)
             self._tried(record, it.id, started_at, outcome.seconds, 'kept',
                         **self._cost(outcome))
             # What drawing cannot put right goes back to the person, once for each start.
-            back = deck.to_outline(assessed['findings']) if rounds[-1].get('judged') else []
+            back = deck.to_outline(assessed['findings']) if rounds[-1].get('judged') and not drafts.on_desk(record) else []
             sent = bool(back) and self._send_back(record, mine, back, rounds[-1]['deck'])
             self._store(root, record)
             if sent:
@@ -3077,9 +3136,15 @@ class Engine(Reviewing):
             entry = pipeline.keep_deck(root, found, mine, None if link else file, link, shows)
             record = self._load(root)
             kept = self._decided(record, level)
-            kept['saved'] = {'deck': last['deck'], 'sha256': entry['sha256'], 'at': home.now()}
+            kept['saved'] = {'deck': last['deck'], 'sha256': entry['sha256'], 'at': home.now(),
+                             **({'round': last['folder']} if drafts.on_desk(record) else {})}
+            if drafts.on_desk(record):
+                numbers = {slide['id']: slide['number'] for slide in last['slides']}
+                kept['section_numbers'] = {section['id']: [numbers[ident] for ident in section['slides']
+                    if ident in numbers] for section in mine.start.get('sections') or ()}
             kept['presented'] = self._present(root, level, base, last, entry['sha256'])
             kept.pop('redesign', None)
+            kept.pop('redrawing', None)
             self._store(root, record)
             self._done(root, it, clock, f'keep {workspace.label(it.artifact)}')
 
@@ -4040,6 +4105,93 @@ class Engine(Reviewing):
             record = self._load(root)
         return root, record
 
+    def slide_note(self, path, level, slide, note, seen, *, _defer=False) -> dict:
+        """Ask to redraw the section containing one slide of a desk deck."""
+        level = level or None
+        with self.files:
+            root, record = self._on_desk(path, decided=True)
+            name = workspace.qualify('deck', level)
+            if name not in workspace.artifact_names(root, workspace.load(root)):
+                raise WorkspaceError('Choose a level with a slide deck.')
+            built = pipeline.read_built(root, level)
+            kept = self._decided(record, level)
+            file = root / workspace.artifact(root, workspace.load(root), name)['file']
+            if (not seen or seen != (kept.get('saved') or {}).get('sha256')
+                    or seen != workspace.sha256_file(file)):
+                raise WorkspaceError(CHANGED.format(it=workspace.sentence(workspace.label(name))))
+            if not isinstance(note, str) or not note.strip():
+                raise WorkspaceError('Say how the slide should change.')
+            if len(note) > 4000:
+                raise WorkspaceError('Keep a note to 4,000 characters.')
+            rounds = built.get('rounds') or []
+            slides = (rounds[-1].get('slides') or []) if rounds else []
+            shown = next((item for item in slides if item.get('id') == slide), None)
+            section = next((part['id'] for part in (built.get('start') or {}).get('sections') or ()
+                            if slide in part.get('slides', ())), None)
+            if not shown or not section:
+                raise WorkspaceError('Choose a slide in a drawn section.')
+            number = pipeline.numbered(section)
+            working = self._run(root).workers
+            jobs = (workspace.qualify(kind, level) + f':{number}'
+                    for kind in ('deck-sections', 'deck-repair'))
+            if (any(job in working for job in jobs)
+                    or any(item.get('section') == section and item.get('status') == 'drawing'
+                           for item in kept.get('notes') or ())):
+                raise WorkspaceError(f"Slide {shown['number']} is being redrawn now. Your note "
+                                     'is kept here; send it when that ends.')
+            self._settled(root, record, name)
+            workspace.accept_desk(root, name)
+            self._ready_again(root)
+            kept['redrawing'] = True
+            kept.setdefault('notes', []).append({'id': secrets.token_hex(6), 'slide': slide,
+                'section': section, 'note': note.strip(), 'at': home.now(), 'by': 'page',
+                'status': 'waiting'})
+            self._store(root, record)
+            self._commit(root, f"ask to redraw slide {shown['number']}")
+        if not _defer:
+            self.carry_on(root)
+        return self.view(root)
+
+    def deck_proposals(self, path, level):
+        level = level or None
+        with self.files:
+            root = Path(path)
+            name = workspace.qualify('deck', level)
+            if name not in workspace.artifact_names(root, workspace.load(root)):
+                raise WorkspaceError('Choose a level with a slide deck.')
+            proposals = drafts.deck_proposals(self, root, level)
+            result = proposals.summary(name, proposals.desk.read(name))
+            built = pipeline.read_built(root, level)
+            for item in (result.get('review') or {}).get('items') or ():
+                section = next((part['id'] for part in (built.get('start') or {}).get('sections') or ()
+                                if item.get('part') in part.get('slides', ())), None)
+                if section:
+                    item['price'] = drafts.section_price(self._load(root), level, section)
+            return result
+
+    def deck_finding(self, path, level, seen, job, action, ids):
+        level = level or None
+        with self.files:
+            root, _ = self._on_desk(path, decided=True)
+            name = workspace.qualify('deck', level)
+            if name not in workspace.artifact_names(root, workspace.load(root)):
+                raise WorkspaceError('Choose a level with a slide deck.')
+            proposals = drafts.deck_proposals(self, root, level,
+                note=lambda ident, item, words: self.slide_note(
+                    root, level, item['part'], words, seen, _defer=True))
+            try:
+                if action == 'apply':
+                    result = proposals.apply(name, seen, job, [{'id': ident} for ident in ids])
+                elif action == 'skip':
+                    result = proposals.skip(name, job, ids)
+                else:
+                    raise ValueError('Choose Apply or Skip.')
+            except ValueError as refusal:
+                raise WorkspaceError(str(refusal)) from None
+        if action == 'apply':
+            self.carry_on(root)
+        return result
+
     def update(self, path, name, scope=None) -> dict:
         """Update a held material from what it is built from now: an update is asked for in
         the run, which leaves its steps in the survey again, and the run carries on. In this
@@ -4102,6 +4254,9 @@ class Engine(Reviewing):
         if not isinstance(name, str):
             raise WorkspaceError(drafts.UP_TO_DATE)
         state = self._settled(root, record, name)
+        base, level = workspace.split(name)
+        if base == 'deck' and self._decided(record, level).get('redrawing'):
+            raise WorkspaceError(drafts.BUSY)
         if workspace.split(name)[0] == 'deck' and name in state \
                 and drafts.needs_you(root, self._survey_files(root, record), name):
             raise WorkspaceError(drafts.NEEDS_YOU.format(it=workspace.label(name)))

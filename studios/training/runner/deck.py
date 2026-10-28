@@ -1109,6 +1109,9 @@ def kept(section, spec: dict) -> list[str]:
                            + ', '.join(wanted) + '.']
     for mine, theirs in zip(slides, spec['slides']):
         ident = theirs['id']
+        frozen = (spec.get('frozen') or {}).get(ident)
+        if frozen is not None and mine != frozen:
+            problems.append(f'{ident}: this slide has no requested repair. Keep its drawing unchanged.')
         if mine.get('title') != theirs['title']:
             problems.append(f"{ident}: the title is fixed: {json.dumps(theirs['title'])}")
         if mine.get('sources') != theirs['sources']:

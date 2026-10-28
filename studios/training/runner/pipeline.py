@@ -1110,7 +1110,18 @@ def stands(root: Path, session: dict, state: dict, asked: dict, run: dict,
     waiting = bool(said) and asked_of.get('sha256') == said \
         and (asked_of.get('design') or {}).get('sha256') == drawn_as
     # A deck drawn again from a design is made again, whatever was saved before.
-    if state.get(name) in CURRENT and name not in asked and entry.get('sha256') \
+    pending_notes = [note for note in kept.get('notes') or ()
+                     if note.get('status') in ('waiting', 'drawing')] if drafts.on_desk(run) else []
+    section_hashes = {ident: made.get('sha256') for ident, made in
+                      (built.get('sections') or {}).items()
+                      if made.get('start') == start.get('folder')}
+    changed_sections = (drafts.on_desk(run) and bool(rounds)
+                        and (rounds[-1].get('made_from') != section_hashes or any(
+                            entry.get('round', 0) >= len(rounds)
+                            for entry in (built.get('sections') or {}).values())))
+    saved_round = (not drafts.on_desk(run) or not rounds
+                   or (kept.get('saved') or {}).get('round') == rounds[-1].get('folder'))
+    if not pending_notes and not changed_sections and saved_round and state.get(name) in CURRENT and name not in asked and entry.get('sha256') \
             and not kept.get('redesign') and entry['sha256'] == workspace.sha256_file(file) \
             and (not rounds or holds(rounds[-1]) and (kept.get('saved') or {}).get('deck')
                  == rounds[-1].get('deck')):
@@ -1163,15 +1174,17 @@ def stands(root: Path, session: dict, state: dict, asked: dict, run: dict,
     first = tuple(ident for ident in sections if ident not in drawn)
     last = rounds[-1] if rounds else None
     wanting = deck.to_repair((last.get('review') or {}).get('findings'), start['sections']) \
-        if last and last.get('review') and len(rounds) <= deck.REPAIRS else []
+        if not drafts.on_desk(run) and last and last.get('review') and len(rounds) <= deck.REPAIRS else []
     again = tuple(ident for ident in wanting
                   if ident in drawn and drawn[ident].get('round', 0) < len(rounds))
+    again = tuple(dict.fromkeys([*again, *(note.get('section') for note in pending_notes
+                                            if note.get('section') in drawn)]))
     if start and not first:
         done.add('deck-sections')
     if not again:
         done.add('deck-repair')
     current = {ident: drawn[ident].get('sha256') for ident in sections if ident in drawn}
-    whole = bool(last) and not first and (bool(again) or last.get('made_from') == current) \
+    whole = bool(last) and not first and (bool(again) or not changed_sections and last.get('made_from') == current) \
         and bool(shots(root, level, last.get('deck'))) and holds(last) and intact(work, last)
     if whole:
         done.add('deck-whole')
@@ -2105,7 +2118,23 @@ def section_work(root: Path, found: Survey, step: Step, section: str, error: str
     task = (f'Draw section {number} of {workspace.label(step.artifact)}: the slides in your '
             f'input "brief".\n\nYour inputs are {_inputs(inputs)}.\n'
             'Hand the section in with submit_section.')
-    if again:
+    notes = [note for note in mine.kept.get('notes') or ()
+             if note.get('section') == section and note.get('status') in ('waiting', 'drawing')]
+    frozen = {}
+    if notes:
+        drawn = (mine.built.get('sections') or {}).get(section) or {}
+        earlier = _read(work / str(drawn.get('file'))) or ''
+        old = json.loads(earlier)
+        changed = {note['slide'] for note in notes}
+        frozen = {slide['id']: slide for slide in old.get('slides') or ()
+                  if slide.get('id') not in changed}
+        inputs['your earlier section'] = earlier
+        inputs['what the person asked'] = '\n'.join(
+            f"{note['slide']}: {note['note']}" for note in notes)
+        task = (f'Draw section {number} again. The person asked for the changes in '
+                '"what the person asked", on the slides it names. Copy every other slide '
+                'in your section exactly, including its drawing.')
+    elif again:
         drawn = (mine.built.get('sections') or {}).get(section) or {}
         slides = [slide for slide in mine.last['slides'] if slide['id'] in ids]
         inputs['what the review found'] = deck.told(mine.last['review']['findings'], slides,
@@ -2123,11 +2152,12 @@ def section_work(root: Path, found: Survey, step: Step, section: str, error: str
                 'Hand the section in with submit_section.')
     task += _again(None, None, error, [], 'the section')
     # Drawn again after a review against the design: what drawing cannot put right is named.
-    beyond = again and design is not None and start.get('review') == JUDGED
+    beyond = again and not notes and design is not None and start.get('review') == JUDGED
     prepared = {'inputs': inputs, 'ask': False, 'look': look,
                 'artifacts': {name: {'kind': 'section', 'brand': str(contract(root, mine)),
                                      **deck.fixed(whole, ids, number, design),
                                      'previews': deck.PREVIEWS, **how, **bound,
+                                     **({'frozen': frozen} if notes else {}),
                                      **({'outline': str(folder / TOOL_OUTLINE)}
                                         if (folder / TOOL_OUTLINE).is_file() else {}),
                                      **({'beyond': True} if beyond else {})}}}
@@ -2156,9 +2186,13 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
     objectives = {ident: objective['text'] for ident, objective in parsed['objectives'].items()}
     earlier = (mine.rounds[-2].get('review') or {}).get('findings') \
         if len(mine.rounds) > 1 else None
+    scope = last.get('review_slides')
+    if last.get('judged') and len(mine.rounds) > 1 and not (
+            (mine.rounds[-2].get('review') or {}).get('judgements')):
+        scope = None  # Older reviews did not keep their per-criterion answers.
     slides = [{**{key: slide[key] for key in ('number', 'id', 'title')},
                'image': str(place(root, level, SHOTS) / f"{slide['number']}.png")}
-              for slide in last['slides']]
+              for slide in last['slides'] if not scope or slide['id'] in scope]
     if last.get('judged'):
         return _judging_work(root, step, mine, slides, objectives, earlier, error)
     task = (f'Review {workspace.label(step.artifact)} as it was rendered: '
@@ -2184,7 +2218,11 @@ def _judging_work(root: Path, step: Step, mine: Deck, slides: list[dict], object
     """The job of reviewing a whole deck against its approved design: the slides tool's own
     assessment, answered by a worker that drew none of it."""
     work, last = place(root, mine.level, WORK), mine.last
-    packets = home.read_json(work / last['folder'] / 'packets.json', [])
+    all_packets = home.read_json(work / last['folder'] / 'packets.json', [])
+    ids = {slide['id'] for slide in slides}
+    packets = [packet for packet in all_packets if packet.get('slide', {}).get('slide') in ids]
+    previous = ((mine.rounds[-2].get('review') or {}).get('judgements') or []) \
+        if len(mine.rounds) > 1 and len(packets) < len(all_packets) else []
     task = (f'Review {workspace.label(step.artifact)} as it was rendered, against the design '
             f'the person approved: {len(slides)} slides. Your input "the review" has the '
             'criteria, each slide with what you may cite and what the slides tool points at, '
@@ -2200,7 +2238,11 @@ def _judging_work(root: Path, step: Step, mine: Deck, slides: list[dict], object
                            'judged': {'output': str(work / last['preview']),
                                       'revision': last['judged']['revision'],
                                       'binding': last['judged']['binding'],
-                                      'packets': packets}}}
+                                      'packets': packets,
+                                      **({'keep_judgements': True}
+                                         if workspace.on_desk(workspace.load(root)) else {}),
+                                      **({'all_packets': all_packets, 'previous': previous,
+                                          'all_slides': last['slides']} if previous else {})}}}
     _read_also(root, mine, prepared['inputs'], REVIEW_READING)
     return Work(briefs.guidance('deck-review', design=True), task, 'write', prepared)
 

@@ -1235,13 +1235,22 @@ class WorkerTools:
         """Tell the slides tool every slide was looked at, and give it the assessment, against
         the review it answers. Returns what the tool refused."""
         judged = review['judged']
+        packets = judged.get('all_packets') or judged['packets']
+        all_slides = judged.get('all_slides') or review['slides']
+        if judged.get('previous'):
+            answers = {entry['slide']: entry for entry in judged['previous']}
+            answers.update({entry['slide']: entry for entry in kept})
+            combined = [answers.get(packet['slide']['slide']) for packet in packets]
+            kept, problems = deck.judged(combined, packets)
+            if problems:
+                return problems
         output, revision = Path(judged['output']), judged['revision']
         try:
             self.slides().review_mark(output, revision,
-                                      [slide['number'] for slide in review['slides']],
+                                      [slide['number'] for slide in all_slides],
                                       deck.MARKED)
             made = self.slides().review_assess(output, revision, deck.assessment(
-                kept, judged['packets'], judged['binding'],
+                kept, packets, judged['binding'],
                 sources=not self.slides().has('review-sources-from-slide')))
         except WorkspaceError as refusal:
             return [self._plainly(line) for line in said_no(refusal)]
@@ -1251,7 +1260,8 @@ class WorkerTools:
                   for entry in ((made.get('designReview') or {}).get('categories') or {})
                   .get('direct-text') or () if entry.get('kind') == 'treatment']
         home.write_json(recorded, {
-            'findings': deck.found(made.get('unresolved'), kept, review['slides']),
+            'findings': deck.found(made.get('unresolved'), kept, all_slides),
+            **({'judgements': kept} if judged.get('keep_judgements') else {}),
             'weakest': named, 'direct': direct,
             'complete': bool(made.get('creativeReviewComplete'))})
         return []
@@ -1280,6 +1290,7 @@ class WorkerTools:
         self._allowed('coverage', 'The coverage')
         given = as_json(coverage, 'coverage')[0]
         wanted, most = list(review.get('objectives') or ()), len(review['slides'])
+        allowed = {slide['number'] for slide in review['slides']}
         problems = []
         if not isinstance(given, dict) or sorted(given) != sorted(wanted):
             problems.append('Give every objective and nothing else: ' + ', '.join(wanted)
@@ -1289,7 +1300,7 @@ class WorkerTools:
                          'empty list when no slide addresses it.'
                          for objective, numbers in given.items()
                          if not isinstance(numbers, list) or any(
-                             type(number) is not int or not 1 <= number <= most
+                             type(number) is not int or number not in allowed
                              for number in numbers)]
         left = self._count('coverage', problems)
         if problems:
