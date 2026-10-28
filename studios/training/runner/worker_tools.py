@@ -394,8 +394,9 @@ def check_outline(text: str, spec: dict, slides,
         outline, kept = given.get('outline'), as_json(given.get('outline') or {}, 'outline')[1]
         design = given.get('design')
     budget = spec.get('budget')
+    # The tool checks the outline without the short labels a point gives its diagram.
+    known, shown = frozenset(), outline
     try:
-        # The tool checks the outline without the short labels a point gives its diagram.
         known = slides.knows() if hasattr(slides, 'knows') else frozenset()
         shown = deck.for_tool(outline, known)
         told = kept if shown == outline else json.dumps(
@@ -407,6 +408,17 @@ def check_outline(text: str, spec: dict, slides,
         budget = report.get('wordBudget') or budget
         found = [f"{finding.get('slide')}: {finding.get('detail') or finding.get('code')}"
                  for finding in report.get('findings') or ()]
+    frozen = spec.get('frozen') or {}
+    actual = deck.slides_of(outline)
+    for number, slide in enumerate(deck.slides_of(spec.get('previous') or {}), 1):
+        ident = slide.get('id')
+        if ident in frozen and (number > len(actual) or actual[number - 1] != frozen[ident]):
+            found.append(f'Slide {number} is not one to word again. Copy it exactly.')
+    if frozen and not spec.get('previous'):
+        for number, slide in enumerate(actual, 1):
+            ident = slide.get('id')
+            if ident in frozen and slide != frozen[ident]:
+                found.append(f'Slide {number} is not one to word again. Copy it exactly.')
     outcomes = [checks.result('outline.tool', found),
                 checks.result('outline.rules', deck.rules(outline, spec.get('blueprint') or '',
                                                           budget, spec.get('known') or (),
@@ -500,10 +512,20 @@ def check_section(text: str, spec: dict, slides,
     return held(outcomes), outcomes, [], kept
 
 
+def check_slide_words(text: str, spec: dict) -> tuple:
+    """A replacement passage; the complete slide is checked by its normal word chain."""
+    problems = []
+    if not text.strip() or len(text) > spec['limit']:
+        problems.append('Return a nonempty passage within the slide field length.')
+    if '\x00' in text:
+        problems.append('Return plain text.')
+    return problems, [], [], text.strip()
+
+
 VALIDATORS = {'research-plan': check_plan, 'blueprint': check_blueprint,
               'document': check_document, 'brief': check_brief, 'scenario': check_scenario,
               'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section,
-              'part': check_part}
+              'part': check_part, 'slide-words': check_slide_words}
 VALIDATORS['research-json'] = check_research_json
 
 
@@ -1235,13 +1257,22 @@ class WorkerTools:
         """Tell the slides tool every slide was looked at, and give it the assessment, against
         the review it answers. Returns what the tool refused."""
         judged = review['judged']
+        packets = judged.get('all_packets') or judged['packets']
+        all_slides = judged.get('all_slides') or review['slides']
+        if judged.get('previous'):
+            answers = {entry['slide']: entry for entry in judged['previous']}
+            answers.update({entry['slide']: entry for entry in kept})
+            combined = [answers.get(packet['slide']['slide']) for packet in packets]
+            kept, problems = deck.judged(combined, packets)
+            if problems:
+                return problems
         output, revision = Path(judged['output']), judged['revision']
         try:
             self.slides().review_mark(output, revision,
-                                      [slide['number'] for slide in review['slides']],
+                                      [slide['number'] for slide in all_slides],
                                       deck.MARKED)
             made = self.slides().review_assess(output, revision, deck.assessment(
-                kept, judged['packets'], judged['binding'],
+                kept, packets, judged['binding'],
                 sources=not self.slides().has('review-sources-from-slide')))
         except WorkspaceError as refusal:
             return [self._plainly(line) for line in said_no(refusal)]
@@ -1251,7 +1282,8 @@ class WorkerTools:
                   for entry in ((made.get('designReview') or {}).get('categories') or {})
                   .get('direct-text') or () if entry.get('kind') == 'treatment']
         home.write_json(recorded, {
-            'findings': deck.found(made.get('unresolved'), kept, review['slides']),
+            'findings': deck.found(made.get('unresolved'), kept, all_slides),
+            **({'judgements': kept} if judged.get('keep_judgements') else {}),
             'weakest': named, 'direct': direct,
             'complete': bool(made.get('creativeReviewComplete'))})
         return []
@@ -1280,6 +1312,7 @@ class WorkerTools:
         self._allowed('coverage', 'The coverage')
         given = as_json(coverage, 'coverage')[0]
         wanted, most = list(review.get('objectives') or ()), len(review['slides'])
+        allowed = {slide['number'] for slide in review['slides']}
         problems = []
         if not isinstance(given, dict) or sorted(given) != sorted(wanted):
             problems.append('Give every objective and nothing else: ' + ', '.join(wanted)
@@ -1289,7 +1322,7 @@ class WorkerTools:
                          'empty list when no slide addresses it.'
                          for objective, numbers in given.items()
                          if not isinstance(numbers, list) or any(
-                             type(number) is not int or not 1 <= number <= most
+                             type(number) is not int or number not in allowed
                              for number in numbers)]
         left = self._count('coverage', problems)
         if problems:

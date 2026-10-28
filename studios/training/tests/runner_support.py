@@ -455,7 +455,8 @@ class Workers:
             accepted = tools.submit_assessment(self.found.pop(0) if self.found else [])
         assert accepted[0], accepted[1]
         objectives, most = review['objectives'], len(review['slides'])
-        kept = tools.submit_coverage({objective: [min(number, most)] for number, objective
+        numbers = [slide['number'] for slide in review['slides']]
+        kept = tools.submit_coverage({objective: [numbers[min(number, most) - 1]] for number, objective
                                       in enumerate(objectives, start=2)}, 'One slide each.')
         assert kept[0], kept[1]
 

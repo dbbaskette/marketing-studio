@@ -84,11 +84,13 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
+from pathlib import Path
 
 import runner  # noqa: F401  puts the core on the import path
 import checks
 from studio_core import critic, deck_copy, deck_direction
-from workspace import WorkspaceError
+from workspace import WorkspaceError, sha256_file
 
 PREVIEWS = 4            # times one composer may render its section
 REPAIRS = 2             # rounds of drawing again after a review
@@ -357,6 +359,71 @@ def slides_of(outline) -> list[dict]:
     found = outline.get('slides') if isinstance(outline, dict) else None
     return [slide for slide in found or () if isinstance(slide, dict)]
 
+
+
+# Every field of a slide that the section composer can read.
+DRAWN_FROM = ('kind', 'title', 'subtitle', 'detail', 'understand', 'focal', 'sources',
+              'points', 'caveat', 'source', 'notes', 'relation', 'rhythm', 'provenance')
+
+
+def kept_sections(work: Path, earlier: dict, began: dict, whole: dict, built: dict) -> dict:
+    """Copy unchanged drawings into the new start before the old start is removed."""
+    if not earlier or any(earlier.get(key) != began.get(key)
+                          for key in ('brand', 'look', 'assets', 'icons', 'review')):
+        return {}
+    old_design, new_design = earlier.get('design'), began.get('design')
+    if bool(old_design) != bool(new_design):
+        return {}
+    before_design, after_design = {}, {}
+    if old_design and old_design != new_design:
+        try:
+            old_plan = json.loads((work / earlier['folder'] / 'given' / 'design.json')
+                                  .read_text(encoding='utf-8'))
+            new_plan = json.loads((work / began['folder'] / 'given' / 'design.json')
+                                  .read_text(encoding='utf-8'))
+            if not isinstance(old_plan, dict) or not isinstance(new_plan, dict) or {
+                    key: value for key, value in old_plan.items() if key != 'slides'} != {
+                    key: value for key, value in new_plan.items() if key != 'slides'}:
+                return {}
+            before_design = {slide['id']: slide for slide in old_plan['slides']}
+            after_design = {slide['id']: slide for slide in new_plan['slides']}
+        except (OSError, ValueError, KeyError, TypeError):
+            return {}
+    try:
+        before_whole = json.loads((work / earlier['folder'] / 'given' /
+                                   'outline.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError, KeyError, TypeError):
+        return {}
+    if not isinstance(before_whole, dict) or {k: v for k, v in before_whole.items()
+                                             if k not in ('slides', 'approval')} != {
+            k: v for k, v in whole.items() if k not in ('slides', 'approval')}:
+        return {}
+    before = {slide['id']: slide for slide in slides_of(before_whole)}
+    now = {slide['id']: slide for slide in slides_of(whole)}
+    was = {section['id']: section for section in earlier.get('sections', ())}
+    kept = {}
+    for section in began['sections']:
+        ident = section['id']
+        old = was.get(ident)
+        drawn = (built.get('sections') or {}).get(ident)
+        if not old or not drawn or old.get('slides') != section['slides'] \
+                or old.get('file') != section.get('file') \
+                or drawn.get('start') != earlier['folder']:
+            continue
+        source = work / drawn['file']
+        if not source.is_file() or any(
+                slide not in before or slide not in now or
+                (old_design != new_design and (slide not in before_design or
+                 slide not in after_design or before_design[slide] != after_design[slide])) or
+                any(before[slide].get(key) != now[slide].get(key) for key in DRAWN_FROM)
+                for slide in section['slides']):
+            continue
+        file = Path(began['folder']) / 'drawn' / f"{ident}-kept-{began['folder']}.json"
+        (work / file).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, work / file)
+        kept[ident] = {**drawn, 'file': file.as_posix(), 'sha256': sha256_file(work / file),
+                       'round': 0, 'kept': True, 'start': began['folder']}
+    return kept
 
 def rules(outline, blueprint: str, budget: int | None = None, known=(),
           delivery: str = DELIVERY) -> list[str]:
@@ -1062,6 +1129,9 @@ def kept(section, spec: dict) -> list[str]:
                            + ', '.join(wanted) + '.']
     for mine, theirs in zip(slides, spec['slides']):
         ident = theirs['id']
+        frozen = (spec.get('frozen') or {}).get(ident)
+        if frozen is not None and mine != frozen:
+            problems.append(f'{ident}: this slide has no requested repair. Keep its drawing unchanged.')
         if mine.get('title') != theirs['title']:
             problems.append(f"{ident}: the title is fixed: {json.dumps(theirs['title'])}")
         if mine.get('sources') != theirs['sources']:
@@ -1511,3 +1581,49 @@ def link(made: dict, title: str, rendered: str) -> str:
     return (f"# Slide deck: {title}\n\n- URL: {made.get('url')}\n"
             f"- Title: {made.get('name') or title}\n- ID: {made.get('id')}\n"
             f'- Made from the rendered deck with the SHA-256 {rendered}\n')
+
+
+def patch_section(section: dict, slide: str, field: str, old: str, new: str) -> dict:
+    """Patch one slide's words without changing the supplied drawing."""
+    import copy
+
+    made = copy.deepcopy(section)
+    target = next((item for item in made.get('slides', []) if item.get('id') == slide), None)
+    if target is None:
+        raise WorkspaceError('The words are not found once on the slide.')
+    if field in ('title', 'subtitle', 'caveat', 'source', 'notes'):
+        current = target.get(field) or ''
+        if isinstance(current, dict):
+            current = current.get('text') or ''
+        if current != old:
+            raise WorkspaceError('The words are not found once on the slide.')
+        if field == 'caveat' and isinstance(target.get(field), dict):
+            target[field]['text'] = new
+        elif new:
+            target[field] = new
+        else:
+            target.pop(field, None)
+        return made
+    if not re.fullmatch(r'points\[\d+\]\.(?:label|text)', field):
+        raise WorkspaceError('Choose a part of the slide.')
+    found = []
+
+    def collect(node):
+        if isinstance(node, list):
+            for value in node:
+                collect(value)
+        elif isinstance(node, dict):
+            if node.get('type') != 'badge':
+                for key in TEXTS:
+                    if isinstance(node.get(key), str) and old and old in node[key]:
+                        found.append((node, key))
+            for value in node.values():
+                if isinstance(value, (dict, list)):
+                    collect(value)
+
+    collect([target.get('canvas'), target.get('connect')])
+    if len(found) != 1 or found[0][0][found[0][1]].count(old) != 1:
+        raise WorkspaceError('The words are not found once on the slide.')
+    node, key = found[0]
+    node[key] = node[key].replace(old, new)
+    return made

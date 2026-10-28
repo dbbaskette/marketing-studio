@@ -6954,6 +6954,233 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         return self.run_page(answers, steps, state={'screen': 'run', 'path': str(self.root)},
                              **plan)
 
+    def slide_card(self):
+        found = a_card('deck@101')
+        found.update(slides=[{'id': 'check-yourself', 'number': 5, 'title': 'Check yourself',
+            'notes': 'Ask the room.', 'points': [], 'picture': True, 'history': 0,
+            'price': 'Redraws section 2 (slides 4 and 5); last time $0.12.'}],
+            look_price='Redraws the whole deck; last time $0.24.', local=True)
+        return found
+
+    def test_the_deck_card_has_a_card_per_slide(self):
+        result = self.open_desk(self.on_desk(a_desk(self.slide_card())), [{'snapshot': 'deck'}])
+        shot = result['snapshots']['deck']
+        for text in ('Check yourself', 'How should this slide change?', 'Redraws section 2'):
+            self.assertIn(text, shot['text'])
+        for button in ('Redraw slide 5', 'Try another look', 'History'):
+            self.assertIn(button, shot['buttons'])
+        found = self.slide_card()
+        found['local'] = False
+        found['slides'][0]['picture'] = False
+        answers = self.answers(**{'GET /api/run': [a_desk_run()], 'GET /api/drafts': [a_desk(found)]})
+        result = self.open_desk(answers, [{'snapshot': 'deck'}])
+        self.assertIn('Draw it here', result['snapshots']['deck']['buttons'])
+
+    def test_a_review_finding_waits_on_its_slide(self):
+        found = self.slide_card()
+        found['proposals'] = {'review': {'job': 'proposal-set', 'items': [
+            {'id': 'one', 'part': 'check-yourself', 'state': 'waiting', 'after': 'Enlarge the diagram.',
+             'reason': 'The labels are small.', 'price': 'Redraws section 2; last time $0.12.'}]}}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/finding': [a_desk(self.slide_card())]}),
+            [{'snapshot': 'finding'}, {'click': 'Apply'}, {'snapshot': 'after'}])
+        self.assertIn('The labels are small.', result['snapshots']['finding']['text'])
+        self.assertIn('Skip', result['snapshots']['finding']['buttons'])
+        self.assertEqual(self.posts(result)[0], ('/api/drafts/finding', {
+            'path': str(self.root), 'level': '101', 'seen': found['seen'],
+            'job': 'proposal-set', 'ids': ['one'], 'action': 'apply'}))
+        self.assertNotIn('Apply', result['snapshots']['after']['buttons'])
+
+    def test_bound_words_show_the_actual_question_and_wait_for_an_answer(self):
+        found = self.slide_card()
+        approval = {'token': 'private-token', 'revision': 'private-revision',
+            'question': {'id': 'actual-question', 'text': 'Approve this exact design?',
+                         'options': ['Approve the updated wording', 'Keep the prior design']},
+            'before': 'Check yourself', 'after': 'Check the result',
+            'slide': 'check-yourself', 'field': 'title'}
+        answers = self.on_desk(a_desk(found), **{
+            'POST /api/drafts/slide-words': [a_desk(found, fits=None, approval=approval)],
+            'POST /api/drafts/slide-words-decide': [a_desk(found, fits=True)]})
+        result = self.open_desk(answers, [
+            {'fill': 'Slide 5 title', 'value': 'Check the result'}, {'click': 'Save title'},
+            {'snapshot': 'question'}, {'fill': 'Your response', 'value': 'Yes, use these words.'},
+            {'click': 'Approve updated words'}, {'snapshot': 'done'}])
+        shot = result['snapshots']['question']
+        for text in ('Approve this exact design?', 'Check yourself', 'Check the result',
+                     'Approve the updated wording', 'Keep the prior design'):
+            self.assertIn(text, shot['text'])
+        self.assertNotIn('private-token', shot['text'])
+        posts = self.posts(result)
+        self.assertEqual(len(posts), 2)
+        self.assertEqual(posts[1][1]['response'], 'Yes, use these words.')
+        self.assertEqual(posts[1][1]['question'], 'actual-question')
+        self.assertEqual(posts[1][1]['revision'], 'private-revision')
+
+    def test_design_approval_cancel_and_failed_response_remain_explicit(self):
+        found = self.slide_card()
+        approval = {'token': 'proposal', 'revision': 'rev', 'question': {
+            'id': 'question', 'prompt': 'The tool’s actual question', 'options': ['Approve this design']},
+            'before': 'Check yourself', 'after': 'New title', 'slide': 'check-yourself', 'field': 'title'}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/slide-words': [a_desk(found, fits=None, approval=approval)],
+            'POST /api/drafts/slide-words-decide': [
+                {'status': 409, 'body': {'error': 'This training changed. Enter the words again.'}},
+                a_desk(found, cancelled=True)]}), [
+            {'fill': 'Slide 5 title', 'value': 'New title'}, {'click': 'Save title'},
+            {'snapshot': 'waiting'}, {'click': 'Approve updated words'}, {'snapshot': 'empty'},
+            {'fill': 'Your response', 'value': 'I approve this wording.'},
+            {'click': 'Approve updated words'}, {'snapshot': 'failed'}, {'click': 'Cancel'}])
+        self.assertIn('The tool’s actual question', result['snapshots']['waiting']['text'])
+        self.assertIn('Answer the displayed design question first.', result['snapshots']['empty']['text'])
+        self.assertIn('This training changed. Enter the words again.', result['snapshots']['failed']['text'])
+        self.assertEqual(len(self.posts(result)), 3)
+        self.assertEqual(self.posts(result)[-1][1], {
+            'path': str(self.root), 'proposal': 'proposal', 'decision': 'cancel'})
+
+    def test_the_look_sheet_waits_for_a_pick_and_shows_the_whole_price(self):
+        found = self.slide_card()
+        look = {'looks': [{'id': 'calm', 'name': 'Calm', 'number': 1, 'useWhen': 'Explanations.'}],
+                'default': 'calm', 'sheet': False}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/look-samples': [a_desk(found, look=look)],
+            'POST /api/drafts/look': [a_desk(found)]}), [
+            {'click': 'Try another look'}, {'snapshot': 'looks'}, {'click': 'Use this look'},
+            {'snapshot': 'unpicked'}, {'click': 'Calm'}, {'click': 'Use this look'}])
+        self.assertIn(found['look_price'], result['snapshots']['looks']['text'])
+        self.assertIn('Choose a look first.', result['snapshots']['unpicked']['text'])
+        self.assertEqual(self.posts(result)[-1], ('/api/drafts/look', {
+            'path': str(self.root), 'level': '101', 'choice': 'calm', 'words': '', 'seen': found['seen']}))
+        self.assertEqual(len(self.posts(result)), 2)
+
+    def test_slide_history_restores_the_named_version(self):
+        found = self.slide_card()
+        found['slides'][0]['history'] = 1
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'GET /api/drafts/slide-versions': [ok({'versions': [
+                {'stamp': 'saved-version', 'at': '2030-01-02', 'source': 'save',
+                 'words': {'title': 'Earlier title', 'notes': 'Earlier notes'}, 'drawing': True, 'picture': False}]})],
+            'POST /api/drafts/slide-restore': [a_desk(found, fits=True)]}), [
+            {'click': 'History (1)'}, {'snapshot': 'history'}, {'click': 'Restore'}])
+        self.assertIn('Earlier notes', result['snapshots']['history']['text'])
+        self.assertEqual(self.posts(result)[0], ('/api/drafts/slide-restore', {
+            'path': str(self.root), 'level': '101', 'slide': 'check-yourself',
+            'stamp': 'saved-version', 'seen': found['seen']}))
+
+    def test_words_that_do_not_fit_need_an_explicit_priced_redraw(self):
+        found = self.slide_card()
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/slide-words': [a_desk(found, fits=False,
+                said='These words do not fit.', price='Redraws section 2, $0.12.'), a_desk(found, fits=True)]}), [
+            {'fill': 'Slide 5 title', 'value': 'Longer title'}, {'click': 'Save title'},
+            {'snapshot': 'refused'}, {'click': 'Redraw with these words'}])
+        self.assertIn('Redraws section 2, $0.12.', result['snapshots']['refused']['text'])
+        self.assertIn('Discard', result['snapshots']['refused']['buttons'])
+        self.assertEqual(self.posts(result)[1][1]['redraw'], True)
+        self.assertEqual(self.posts(result)[1][1]['text'], 'Longer title')
+
+    def test_slide_selection_outline_and_whole_note_controls(self):
+        found = self.slide_card()
+        found['outline'] = {'slides': [{'id': 'check-yourself', 'title': 'Check yourself', 'serves': ['O2']}]}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/slide-selection': [a_desk(found)]}), [
+            {'select': 'Slide 5 title', 'start': 0, 'end': 5}, {'snapshot': 'selection'},
+            {'click': 'Shorten'}, {'click': 'Outline'}, {'snapshot': 'outline'}])
+        for label in ('Rephrase', 'Shorten', 'Expand', 'Fix', 'Ask…'):
+            self.assertIn(label, result['snapshots']['selection']['buttons'])
+        self.assertIn('Note for the whole deck', result['snapshots']['selection']['text'])
+        self.assertIn('O2', result['snapshots']['outline']['text'])
+        self.assertEqual(self.posts(result)[0][0], '/api/drafts/slide-selection')
+
+    def test_outline_prices_edits_and_preserves_them_when_saving_fails(self):
+        found = self.slide_card()
+        found['outline'] = {'slides': [{'id': 'check-yourself', 'title': 'Check yourself', 'sources': ['O2']}]}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/deck-outline-price': [a_desk(found, price='Redraws one section, about $1.')],
+            'POST /api/drafts/deck-outline': [{'status': 409, 'body': {'error': 'The deck changed.'}}]}), [
+            {'click': 'Outline'}, {'fill': 'Outline title of slide 1', 'value': 'Review your choice'},
+            {'snapshot': 'priced'}, {'click': 'Save outline'}, {'snapshot': 'failed'}])
+        self.assertIn('Redraws one section, about $1.', result['snapshots']['priced']['text'])
+        self.assertIn('The deck changed.', result['snapshots']['failed']['sheetAlerts'])
+        self.assertEqual(self.posts(result)[-1][1]['slides'][0]['title'], 'Review your choice')
+
+    def test_fit_refusal_errors_stay_in_the_active_sheet(self):
+        found = self.slide_card()
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/slide-words': [a_desk(found, fits=False, said='Too long.', price='About $1.'),
+                {'status': 409, 'body': {'error': 'Changed; enter these words again.'}}]}), [
+            {'fill': 'Slide 5 title', 'value': 'Longer words'}, {'click': 'Save title'},
+            {'click': 'Redraw with these words'}, {'snapshot': 'failed'}])
+        self.assertIn('Changed; enter these words again.', result['snapshots']['failed']['sheetAlerts'])
+
+    def test_history_compare_and_restore_errors_stay_in_the_sheet(self):
+        found = self.slide_card()
+        found['slides'][0]['history'] = 1
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'GET /api/drafts/slide-versions': [ok({'versions': [{'stamp': 'old', 'at': '2030',
+                'source': 'save', 'words': {'title': 'Prior words'}, 'drawing': True, 'picture': False}]})],
+            'POST /api/drafts/slide-restore': [{'status': 409, 'body': {'error': 'This version cannot fit.'}}]}), [
+            {'click': 'History (1)'}, {'click': 'Compare'}, {'click': 'Restore'}, {'snapshot': 'failed'}])
+        self.assertIn('This version cannot fit.', result['snapshots']['failed']['sheetAlerts'])
+        self.assertIn('Struck words', result['snapshots']['failed']['text'])
+
+    def test_outline_adds_a_slide_then_prices_before_saving(self):
+        found = self.slide_card()
+        found['outline'] = {'slides': [{'id': 'check-yourself', 'kind': 'content', 'title': 'Check yourself', 'sources': ['O2']}]}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/deck-outline-price': [a_desk(found, price='Redraws section 2, about $1.')],
+            'POST /api/drafts/deck-outline': [a_desk(found, fits=True)]}), [
+            {'click': 'Outline'}, {'fill': 'A new slide’s title', 'value': 'Practice again'},
+            {'fill': 'Objectives for the new slide', 'value': 'O2'},
+            {'fill': 'What the presenter says on it', 'value': 'Ask for another explanation.'},
+            {'click': 'Add slide'}, {'snapshot': 'priced'}, {'click': 'Save outline'}])
+        self.assertIn('Redraws section 2, about $1.', result['snapshots']['priced']['text'])
+        slides = self.posts(result)[-1][1]['slides']
+        self.assertEqual(slides[-1]['title'], 'Practice again')
+        self.assertEqual(slides[-1]['sources'], ['O2'])
+        self.assertEqual(slides[-1]['notes'], 'Ask for another explanation.')
+
+    def test_added_slide_long_titles_and_collisions_keep_valid_ids(self):
+        found = self.slide_card()
+        found['outline'] = {'slides': [{'id': 'check-yourself', 'kind': 'content', 'title': 'Check yourself', 'sources': ['O2']}]}
+        actions = [{'click': 'Outline'}]
+        for title in ('A' * 100, 'A' * 100, '1', '!'):
+            actions += [{'fill': 'A new slide’s title', 'value': title},
+                        {'fill': 'Objectives for the new slide', 'value': 'O2'},
+                        {'fill': 'What the presenter says on it', 'value': 'Explain the choice.'},
+                        {'click': 'Add slide'}]
+        actions.append({'click': 'Save outline'})
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/deck-outline-price': [a_desk(found, price='Redraws a section.')]*4,
+            'POST /api/drafts/deck-outline': [a_desk(found, fits=True)]}), actions)
+        ids = [slide['id'] for slide in self.posts(result)[-1][1]['slides']]
+        self.assertEqual(len(ids), len(set(ids)))
+        for ident in ids:
+            self.assertRegex(ident, r'^[a-zA-Z_][a-zA-Z0-9_-]{4,40}$')
+
+    def test_discarding_selected_words_retires_the_review_action(self):
+        found = self.slide_card()
+        found['selection'] = {'id': 'selection-one', 'status': 'done', 'part': 'check-yourself',
+            'result': {'fits': False, 'said': 'Too long.', 'price': 'About $1.',
+                       'sent': {'text': 'Longer words', 'seen': 'saved'}}}
+        settled = json.loads(json.dumps(found))
+        settled['selection']['result'] = {'cancelled': True}
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/slide-selection-settle': [a_desk(settled)]}), [
+            {'click': 'Review selected words'}, {'click': 'Discard'}, {'snapshot': 'settled'}])
+        self.assertNotIn('Review selected words', result['snapshots']['settled']['buttons'])
+        self.assertIn('Selected words discarded.', result['snapshots']['settled']['text'])
+
+    def test_failed_look_samples_offer_retry_and_default(self):
+        found = self.slide_card()
+        result = self.open_desk(self.on_desk(a_desk(found), **{
+            'POST /api/drafts/look-samples': [a_desk(found, look={'failed': True,
+                'default_available': True, 'message': 'Rendering failed.', 'looks': []})],
+            'POST /api/drafts/look': [a_desk(found)]}), [
+            {'click': 'Try another look'}, {'snapshot': 'failed'},
+            {'click': 'Carry on in the brand’s default look'}])
+        self.assertIn('Try again', result['snapshots']['failed']['buttons'])
+        self.assertEqual(self.posts(result)[-1][1]['choice'], 'default')
+
     def start_steps(self, *more) -> list:
         return [{'click': 'New training'},
                 {'fill': 'A short title', 'value': 'Rolling restarts'},
@@ -7559,6 +7786,20 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             'POST /api/drafts/ready': [a_desk()]}), [{'click': 'Mark ready'}])
         self.assertEqual(self.posts(result), [('/api/drafts/ready', {
             'path': str(self.root), 'name': 'blueprint@101', 'seen': seen_of('blueprint@101')})])
+
+    def test_a_deck_update_with_no_slide_offers_only_keep(self):
+        held = a_card('deck@101', 'held', 'Built from an earlier guide.', ('update', 'keep'))
+        answers = self.on_desk(a_desk(held, levels=('101',)), **{
+            'GET /api/drafts/update-preview': [ok({'parts': ['Glossary'], 'slides': [],
+                'message': 'No slide is built from the sections that changed.', 'price': ''})],
+            'POST /api/drafts/keep': [a_desk(levels=('101',))]})
+        result = self.open_desk(answers, [{'click': 'Update from the guide'}, {'snapshot': 'preview'},
+                                          {'click': 'Keep as it is'}])
+        shot = result['snapshots']['preview']
+        self.assertIn('No slide is built from the sections that changed.', shot['text'])
+        self.assertNotIn('Update', shot['buttons'])
+        self.assertIn('Keep as it is', shot['buttons'])
+        self.assertEqual(self.posts(result)[0][0], '/api/drafts/keep')
 
     def test_a_held_deck_offers_update_and_keep(self):
         says = 'Built from an earlier guide. 3 sections changed since.'

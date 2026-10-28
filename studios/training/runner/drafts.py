@@ -19,6 +19,7 @@ what is Ready or what the person sent (`copied`).
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from contextlib import contextmanager
 from pathlib import Path
@@ -62,8 +63,8 @@ UP_TO_DATE = workspace.UP_TO_DATE
 # research plan and the research. It can only be kept as it is.
 NOT_REMADE = '{it} is not made again by the studio. Keep it as it is, or change it yourself.'
 NEVER_REMADE = ('research-plan', 'research')
-# Until the deck's scoped update (Task 20), an update is of the whole material.
-NO_SCOPE = 'An update is of the whole material for now. Leave out what it covers.'
+# The person cannot supply an arbitrary scope to an update.
+NO_SCOPE = 'Leave out the custom scope when updating this material.'
 # What a held card says: what it was built from, and how much of it changed since.
 HELD = 'Built from an earlier {what}.'
 CHANGED = ' {n} {parts} changed since.'
@@ -186,9 +187,103 @@ def scoped_update(root, session, name, change, draft):
     return set(touched(draft, objectives))
 
 
+DECK_UPDATE = ('The guide changed. Word again only the slides in "slides to word again", '
+               'from the guide as it is now, and copy every other slide exactly.')
+NO_SLIDE = 'No slide is built from the sections that changed.'
+
+
+def slides_for(root: Path, session: dict, level: str | None, since: str) -> dict:
+    """Find the slides served by the parts changed since this deck was built."""
+    from runner import pipeline, deck
+    if since not in ('document', 'blueprint'):
+        raise ValueError('Choose the guide or plan.')
+    name = workspace.qualify('deck', level)
+    source = workspace.qualify(since, level)
+    digest = (session['artifacts'].get(name, {}).get('built_from') or {}).get(source)
+    old_file = workspace.history_file(root, source, digest, '.md') if digest else None
+    current_file = root / workspace.artifact(root, session, source)['file']
+    current = current_file.read_text(encoding='utf-8') if current_file.is_file() else ''
+    old = old_file.read_text(encoding='utf-8') if old_file and old_file.is_file() else None
+    outline = json.loads(pipeline.place(root, level, pipeline.OUTLINE).read_text(encoding='utf-8'))
+    slides = deck.slides_of(outline)
+    all_ids = [slide['id'] for slide in slides if slide.get('id')]
+    if old is None:
+        return {'slides': all_ids, 'sections': [], 'whole': True}
+    if since == 'blueprint':
+        before, after = checks.parse_blueprint(old), checks.parse_blueprint(current)
+        a, b = before['objectives'], after['objectives']
+        if set(a) != set(b):
+            return {'slides': all_ids, 'sections': [], 'whole': True}
+        objectives = {key for key in a if a[key] != b[key]}
+        # Other plan edits may affect any slide; do not guess at their scope.
+        if not _objective_only(plan_change(root, session, name)) and old != current:
+            return {'slides': all_ids, 'sections': [], 'whole': True}
+        sections = sorted(objectives)
+    else:
+        codec = GuideCodec()
+        before, after = codec.split(old), codec.split(current)
+        old_parts = {part['heading']: part for part in before['sections']}
+        new_parts = {part['heading']: part for part in after['sections']}
+        if len(old_parts) != len(before['sections']) or len(new_parts) != len(after['sections']):
+            return {'slides': all_ids, 'sections': [], 'whole': True}
+        changed = [part for part in [*before['sections'], *after['sections']]
+                   if ({key: value for key, value in old_parts.get(part['heading'], {}).items() if key != 'id'}
+                       != {key: value for key, value in new_parts.get(part['heading'], {}).items() if key != 'id'})]
+        sections = list(dict.fromkeys(part['heading'] for part in changed))
+        objectives = set()
+        plan_name = workspace.qualify('blueprint', level)
+        plan_file = root / workspace.artifact(root, session, plan_name)['file']
+        modules = checks.parse_blueprint(plan_file.read_text(encoding='utf-8'))['modules']
+        for part in changed:
+            covers = part.get('covers') or []
+            direct = {cover for cover in covers if cover.startswith('O')}
+            objectives.update(direct)
+            if not direct:
+                for cover in covers:
+                    if cover.startswith('K'):
+                        objectives.update(modules.get('M' + cover[1:].partition('.')[0], {}).get('objectives', []))
+        if before.get('opening') != after.get('opening'):
+            return {'slides': all_ids, 'sections': sections, 'whole': True}
+    return {'slides': [slide['id'] for slide in slides
+                       if objectives.intersection(slide.get('sources') or [])],
+            'sections': sections, 'whole': False}
+
+
+def deck_update(root: Path, session: dict, level: str | None) -> dict:
+    """Scope a deck update only when exactly one supported input changed."""
+    from runner import pipeline, deck
+    name = workspace.qualify('deck', level)
+    changed = input_of(root, session, name)
+    supported = [workspace.qualify(key, level) for key in ('document', 'blueprint')]
+    if len(changed) == 1 and changed[0] in supported:
+        return slides_for(root, session, level, workspace.split(changed[0])[0])
+    outline = json.loads(pipeline.place(root, level, pipeline.OUTLINE).read_text(encoding='utf-8'))
+    return {'slides': [slide['id'] for slide in deck.slides_of(outline) if slide.get('id')],
+            'sections': [], 'whole': True}
+
+
 def update_preview(root: Path, name: str) -> dict:
     from studio_core import stops
     session = workspace.load(root)
+    kind, level = workspace.split(name)
+    if kind == 'deck':
+        from runner import pipeline
+        from runner.engine import Engine
+        scoped = deck_update(root, session, level)
+        run = run_of(root) or {'steps': {}}
+        start = pipeline.read_built(root, level).get('start') or {}
+        sections = [part for part in start.get('sections') or ()
+                    if set(part.get('slides') or ()).intersection(scoped['slides'])]
+        names = [workspace.qualify('deck-outline', level)] + [
+            workspace.qualify('deck-sections', level) + ':' + part['id'].rpartition('-')[2]
+            for part in sections] + [workspace.qualify('deck-review', level)]
+        price = Engine._redo_steps(run, names)
+        return {'parts': ['The whole outline'] if scoped['whole'] else scoped['sections'],
+                'slides': scoped['slides'], 'whole': scoped['whole'],
+                'message': NO_SLIDE if not scoped['slides'] else '',
+                'price': stops.redone('the outline', len(names), *price,
+                                      after='the affected sections and review') if price
+                else NO_UPDATE_RECORD}
     change = plan_change(root, session, name)
     kind = workspace.split(name)[0]
     codec = GuideCodec() if kind == 'document' else BriefCodec()
@@ -595,7 +690,10 @@ def view(engine, root) -> dict:
                     'checks': _checked(report['checks'], name) if seen else
                     {'passed': 0, 'problems': []},
                     'seen': seen, 'held': name in holding,
-                    'actions': card_actions if mine else ['download'], 'needs': needs})
+                    'actions': card_actions if mine else ['download'], 'needs': needs,
+                    **({'proposals': engine.deck_proposals(root, level),
+                        **deck_card(engine, root, level, found)}
+                       if kind == 'deck' and seen else {})})
     needed = []
     if mine:
         needed = [card['label'] for card in cards if card['state'] in ('held', 'needs')]
@@ -1342,3 +1440,342 @@ def versions_of(engine, root, name, part) -> dict:
     return {'versions': [{**one, 'label': SOURCE_WORDS.get(one['source'], SOURCE_WORDS[EARLIER])}
                          for one in found],
             'sources': dict(SOURCE_WORDS)}
+
+
+def section_price(record: dict, level: str | None, section: str) -> str:
+    """Describe the work and the last recorded cost of redrawing a section."""
+    from runner import pipeline
+    from studio_core import stops
+    level = level or None
+    number = pipeline.numbered(section)
+    numbers = sorted((((record.get('deck') or {}).get(level or '') or {})
+                      .get('section_numbers') or {}).get(section) or [])
+    if len(numbers) == 1:
+        slides = f'slide {numbers[0]}'
+    elif len(numbers) > 2 and numbers == list(range(numbers[0], numbers[-1] + 1)):
+        slides = f'slides {numbers[0]} to {numbers[-1]}'
+    elif numbers:
+        slides = 'slides ' + ', '.join(map(str, numbers[:-1])) + f' and {numbers[-1]}'
+    else:
+        slides = 'its slides'
+    says = (f'Redraws section {number} ({slides}); the other slides stay exactly as they are. '
+            'Then the deck is put together, rendered and checked. ')
+    steps = record.get('steps') or {}
+    drawings = [((steps.get(workspace.qualify(kind, level) + f':{number}') or {})
+                 .get('attempts') or []) for kind in ('deck-sections', 'deck-repair')]
+    tried = [attempts[-1] for attempts in drawings if attempts]
+    if not tried:
+        return says + ('This computer has no record yet of what it costs. '
+                       'Expect minutes, not seconds.')
+    drawn = max(tried, key=lambda attempt: attempt.get('started_at') or '')
+    attempts = [drawn]
+    for kind in ('deck-whole', 'deck-review'):
+        earlier = (steps.get(workspace.qualify(kind, level)) or {}).get('attempts') or []
+        if earlier:
+            attempts.append(earlier[-1])
+    seconds = sum(float(attempt.get('seconds') or 0) for attempt in attempts)
+    costs = [attempt.get('dollars') for attempt in attempts if attempt is drawn or
+             attempt.get('dollars') is not None]
+    dollars = None if any(cost is None for cost in costs) else sum(costs)
+    return says + f'Last time this took {stops.cost(seconds, dollars)}.'
+
+
+def deck_drawings(root: Path, level: str | None) -> dict:
+    """Fingerprint the actual drawing of each slide, including lead slides."""
+    import json
+    from runner import pipeline
+    built = pipeline.read_built(root, level)
+    start = built.get('start') or {}
+    work = pipeline.place(root, level, pipeline.WORK)
+    folder = work / str(start.get('folder') or '')
+    paths = [work / entry['file'] for entry in (built.get('sections') or {}).values()
+             if entry.get('file')]
+    paths.extend(folder.glob('lead-*.json'))
+    found = {}
+    for path in paths:
+        data = home.read_json(path, {}) or {}
+        for slide in data.get('slides') or ():
+            if isinstance(slide, dict) and isinstance(slide.get('id'), str):
+                found[slide['id']] = hashlib.sha256(json.dumps(
+                    slide, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+    return found
+
+
+class DeckProposalDesk:
+    """The saved deck revision used to check a finding before it becomes a note."""
+    codec = parts.Codec(fixed=(), single=(), thing='deck', noun='slide')
+
+    def __init__(self, engine, root, level):
+        self.engine, self.root, self.level = engine, root, level
+
+    def read(self, ident):
+        name = workspace.qualify('deck', self.level)
+        session = workspace.load(self.root)
+        file = self.root / workspace.artifact(self.root, session, name)['file']
+        return {'seen': workspace.sha256_file(file), 'drawn': deck_drawings(self.root, self.level)}
+
+    def checked(self, draft, seen, parts=None):
+        if not seen or seen != draft['seen']:
+            raise ValueError('This deck has changed since it was opened. Read the new version before deciding.')
+
+
+def deck_proposals(engine, root, level, note=None):
+    """The shared findings store, scoped to this training's deck."""
+    from studio_core.drafting import findings
+    store = TrainingStore(engine, root)
+    desk = DeckProposalDesk(engine, root, level)
+    return findings.Noted(store, desk, {'finish-review': 'review'}, note or (lambda *_: None),
+                          owner='training', present=lambda draft, item:
+                          (draft.get('drawn') or {}).get(item.get('part')) == item.get('drawn')
+                          and item.get('drawn') is not None)
+
+
+def slide_words(outline: dict, slide: str, field: str, text: str) -> tuple[dict, str]:
+    """Return an edited outline and the previous words, without changing the original."""
+    import copy
+
+    if not isinstance(text, str) or len(text) > (4000 if field == 'notes' else 2000):
+        raise workspace.WorkspaceError('Keep the words to the allowed length.')
+    made = copy.deepcopy(outline)
+    target = next((item for item in made.get('slides', []) if item.get('id') == slide), None)
+    if target is None:
+        raise workspace.WorkspaceError('The deck has no such slide.')
+    match = re.fullmatch(r'points\[(\d+)\]\.(label|text)', field) if isinstance(field, str) else None
+    if match:
+        points = target.get('points') or []
+        index = int(match[1])
+        if index >= len(points):
+            raise workspace.WorkspaceError('Choose a part of the slide.')
+        target, field = points[index], match[2]
+    elif field not in ('title', 'subtitle', 'caveat', 'source', 'notes'):
+        raise workspace.WorkspaceError('Choose a part of the slide.')
+    old = target.get(field) or ''
+    if isinstance(old, dict):
+        old = old.get('text') or ''
+        target[field]['text'] = text.strip()
+    elif text.strip():
+        target[field] = text.strip()
+    else:
+        target.pop(field, None)
+    return made, old
+
+
+def slide_speaker_notes(outline: dict, slide: str, text: str) -> tuple[dict, str]:
+    return slide_words(outline, slide, 'notes', text)
+
+
+def design_words(plan: dict, outline: dict, slide: str, field: str, old: str, text: str) -> dict:
+    """Derive approved copy from the edited outline, including title fallbacks."""
+    import copy
+    from runner import deck
+    made = copy.deepcopy(plan)
+    target = next((item for item in made.get('slides', []) if item.get('id') == slide), None)
+    if target is None:
+        raise workspace.WorkspaceError('The approved design has no such slide.')
+    original = next((item for item in outline.get('slides', []) if item.get('id') == slide), None)
+    edited, found = slide_words(outline, slide, field, text)
+    if (found != old or original is None or target.get('title') != original.get('title')
+            or target.get('copy') != deck._copy(original)):
+        raise workspace.WorkspaceError('The design and the outline have different words. Review the design first.')
+    updated = next(item for item in edited['slides'] if item['id'] == slide)
+    target['title'], target['copy'] = updated['title'], deck._copy(updated)
+    target.pop('visibleText', None)  # Harness Slides derives this from its copy.
+    if field != 'title' and target.get('qualifications'):
+        target['qualifications'] = [text.strip() if value == old else value
+                                    for value in target['qualifications']]
+    return made
+
+
+SLIDE_SOURCES = ('save', 'selection', 'note', 'redraw', 'restore', 'outline', 'finishing', 'open', 'update')
+SLIDE_WORDS = ('title', 'subtitle', 'points', 'caveat', 'source', 'notes')
+# Harness Slides outline and composition IDs; new slides must satisfy both.
+SLIDE_ID = re.compile(r'[a-zA-Z_][a-zA-Z0-9_-]{4,40}')
+# Older desk versions accepted short, digit-leading and longer lowercase IDs.
+# Keep their saved History readable without allowing separators or path traversal.
+SLIDE_CODEC = parts.Codec(fixed=(), single=(), part=re.compile(
+    r'(?:[a-zA-Z_][a-zA-Z0-9_-]{4,40}|[a-z0-9][a-z0-9-]{0,79})'),
+                          thing='deck', noun='slide')
+
+
+class DeckStore(TrainingStore):
+    """Shared slide words beside the outline; drawings remain local under work/deck."""
+    def folder(self, name):
+        from runner import pipeline
+        if workspace.split(name)[0] != 'deck' or name not in workspace.artifact_names(self.root, workspace.load(self.root)):
+            raise ValueError('Choose a level with a slide deck.')
+        return plain_deck_path(self.root, pipeline.place(self.root, workspace.split(name)[1], 'deck'))
+
+
+def plain_deck_path(root, path):
+    """Never follow a linked History directory, including an existing parent."""
+    root, path = Path(root), Path(path)
+    if root not in path.parents:
+        raise workspace.WorkspaceError('Choose a saved slide version.')
+    for item in (path, *path.parents):
+        if item == root:
+            break
+        if item.is_symlink():
+            raise workspace.WorkspaceError('Slide History must use plain files inside this training.')
+    return path
+
+
+def slide_history(engine, root):
+    return desk_versions.Versions(DeckStore(engine, root), SLIDE_CODEC, SLIDE_SOURCES)
+
+
+def words_of(slide):
+    return {key: slide.get(key) for key in SLIDE_WORDS}
+
+
+def with_slide_words(outline, slide, wanted):
+    made = json.loads(json.dumps(outline))
+    target = next(item for item in made['slides'] if item['id'] == slide)
+    for key in SLIDE_WORDS:
+        if wanted.get(key) is None:
+            target.pop(key, None)
+        else:
+            target[key] = wanted[key]
+    return made
+
+
+def word_changes(now, wanted):
+    """Individual editable fields, including each point's text."""
+    if len(now.get('points') or []) != len(wanted.get('points') or []):
+        raise workspace.WorkspaceError('The slide has another number of points now.')
+    changes = []
+    for field in SLIDE_WORDS:
+        if field == 'points':
+            fields = [(f'points[{i}].{key}', point.get(key) or '',
+                       (wanted['points'][i].get(key) or ''))
+                      for i, point in enumerate(now.get('points') or []) for key in ('label', 'text')]
+        else:
+            def text(value):
+                return value.get('text', '') if isinstance(value, dict) else value or ''
+            fields = [(field, text(now.get(field)), text(wanted.get(field)))]
+        changes.extend((field, old, new) for field, old, new in fields if old != new)
+    return changes
+
+
+def drawing_file(root, level, slide):
+    from runner import pipeline
+    built = pipeline.read_built(root, level)
+    work = pipeline.place(root, level, pipeline.WORK)
+    start = built.get('start') or {}
+    section = next((part for part in start.get('sections') or [] if slide in part['slides']), None)
+    if section:
+        entry = (built.get('sections') or {}).get(section['id']) or {}
+        return work / entry['file'] if entry.get('file') else None
+    return next((file for file in (work / str(start.get('folder') or '')).glob('lead-*.json')
+                 if any(item.get('id') == slide for item in home.read_json(file, {}).get('slides', []))), None)
+
+
+def keep_slide(engine, root, level, slide, source):
+    import json
+    from runner import pipeline
+    outline = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
+    current = next((item for item in outline.get('slides', []) if item.get('id') == slide), None)
+    if current is None:
+        return
+    versions = slide_history(engine, root)
+    name = workspace.qualify('deck', level)
+    versions.keep(name, slide, json.dumps(words_of(current), ensure_ascii=False), source)
+    entry = versions.kept(name, slide)[0]
+    stamp = re.sub(r'[^0-9A-Za-z]', '', entry['at'])
+    file = drawing_file(root, level, slide)
+    drawn = next((item for item in (home.read_json(file, {}) if file else {}).get('slides', [])
+                  if item.get('id') == slide), None)
+    if drawn is not None:
+        folder = plain_deck_path(root, pipeline.place(root, level, f'work/deck/versions/{slide}'))
+        versions.store.write_json(plain_deck_path(root, folder / f'{stamp}.json'), drawn)
+        number = next((i for i, item in enumerate(outline['slides'], 1) if item['id'] == slide), None)
+        picture = pipeline.place(root, level, pipeline.SHOTS) / f'{number}.png'
+        if picture.is_file() and not picture.is_symlink():
+            versions.store.atomic(plain_deck_path(root, folder / f'{stamp}.png'), picture.read_bytes())
+
+
+def slide_versions(engine, root, level, slide):
+    import json
+    from runner import pipeline
+    found = []
+    for entry in slide_history(engine, root).kept(workspace.qualify('deck', level), slide):
+        try:
+            words = json.loads(entry['text'])
+        except ValueError:
+            continue
+        stamp = re.sub(r'[^0-9A-Za-z]', '', entry['at'])
+        folder = plain_deck_path(root, pipeline.place(root, level, f'work/deck/versions/{slide}'))
+        found.append({'at': entry['at'], 'source': entry['source'], 'words': words,
+                      'stamp': stamp, 'drawing': plain_deck_path(root, folder / f'{stamp}.json').is_file(),
+                      'picture': plain_deck_path(root, folder / f'{stamp}.png').is_file()})
+    return {'versions': found}
+
+
+def deck_card(engine, root, level, found):
+    from runner import pipeline, deck
+    from studio_core import stops
+    mine = found.decks.get(level)
+    if mine is None:
+        return {'slides': [], 'local': False}
+    outline = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
+    counts = slide_history(engine, root).counts(mine.name)
+    record = engine._load(root)
+    drawn = deck_drawings(root, level)
+    slides = []
+    for number, item in enumerate(outline.get('slides') or [], 1):
+        section = next((part['id'] for part in mine.start.get('sections') or []
+                        if item['id'] in part['slides']), None)
+        slides.append({**words_of(item), 'id': item['id'], 'number': number,
+                       'picture': (pipeline.place(root, level, pipeline.SHOTS) / f'{number}.png').is_file(),
+                       'history': counts.get(item['id'], 0),
+                       'price': section_price(record, level, section) if section else '',
+                       'redraw': bool(section)})
+    estimate = deck.before(len(slides))
+    cost = engine._redo_steps(record, [workspace.qualify(kind, level)
+        for kind in ('deck-sections', 'deck-whole', 'deck-review')])
+    price = ('Redraws the whole deck. ' + (f'Last time this took {stops.cost(*cost)}.' if cost else
+             'Expect about ' + stops.cost(estimate['minutes'] * 60, estimate['dollars']) + '.'))
+    from runner import deck_edit
+    selection = next((job for job in reversed((record.get('drafts') or {}).get('jobs', []))
+                      if job.get('name') == mine.name and job.get('kind') == 'slide-selection'), None)
+    if selection:
+        selection = {**selection, 'result': home.read_json(
+            deck_edit.storage(root) / f"selection-{selection['id']}.json", None)}
+    chain = mine.kept.get('note_chain') or {}
+    notes = [note for note in mine.kept.get('notes') or [] if note['id'] in chain.get('ids', [])]
+    done = sum(all(note['status'] == 'done' for note in notes if note['section'] == section)
+               for section in chain.get('sections', []))
+    return {'slides': slides, 'local': bool(drawn), 'look_price': price,
+            'change': {**chain, 'done': done, 'total': len(chain.get('sections', []))} if chain else None,
+            'outline': outline, 'outline_delivery': pipeline.delivery_of(found.session), 'selection': selection,
+            'look': (mine.kept.get('look_pending') or None)}
+
+
+def check_added_slide(slide, delivery):
+    allowed = {'id', 'kind', 'title', 'understand', 'relation', 'rhythm', 'points', 'sources', 'notes'}
+    if set(slide) - allowed or slide.get('kind') != 'content' or slide.get('points') != [] \
+            or slide.get('relation') != 'none' or slide.get('rhythm') != 'breathing' \
+            or slide.get('understand') != slide.get('title'):
+        raise workspace.WorkspaceError('Add a content slide with its title, objectives and speaker notes.')
+    if not isinstance(slide.get('sources'), list) or not slide['sources'] \
+            or any(not isinstance(item, str) for item in slide['sources']):
+        raise workspace.WorkspaceError('Choose the objectives the new slide serves.')
+    notes = slide.get('notes', '')
+    if not isinstance(notes, str) or len(notes) > 2000 or (delivery == 'live' and not notes.strip()):
+        raise workspace.WorkspaceError('A live slide needs speaker notes, up to 2,000 characters.')
+
+
+def added_slide_design(slide):
+    """A transparent, text-only proposal for a person's added slide; still needs approval."""
+    from runner import deck
+    return {'id': slide['id'], 'title': slide['title'], 'copy': deck._copy(slide),
+            'sources': slide['sources'], 'objectives': slide['sources'],
+            **({'notes': slide['notes']} if slide.get('notes') else {}),
+            'composition': 'Show the requested title as a single native text block with generous space.',
+            'intent': {'takeaway': slide['title'], 'audienceQuestion': 'What should I practise next?',
+                       'relationship': 'none', 'evidence': slide['sources'],
+                       'rationale': 'This added slide states the person’s requested topic without adding claims.',
+                       'alternative': {'treatment': 'An illustration',
+                                       'reason': 'No illustration was requested or supplied for this topic.'},
+                       'visual': {'family': 'text', 'purpose': 'Name the requested topic clearly.'}},
+            'asset': {'description': 'No asset.', 'disposition': 'not-needed',
+                      'reason': 'The requested title is the slide; no picture is needed to state it.'}}
