@@ -123,6 +123,24 @@ remain recoverable. Initial outline submission stays restricted to new work.
 
 ### Task 3: Presentation Studio conversation desk
 
+Deliver this task in two sequential independently reviewed PRs: **3a** adds the
+shared process lock and wires competing writers in both deck Studios without
+changing execution ownership; **3b** adds the Presentation Studio conversation
+adapter, ownership guards, checked submissions, explicit scope changes and
+guidance on top of that reviewed lock. This is a split of Task 3, not added scope.
+
+Synchronization in 3a defers reconciliation and replay while either deck Studio's
+existing step markers or Blog Studio's saved working-status records show active
+work anywhere in the repository. Stop or wait for work to finish before sharing;
+interrupted markers remain for existing recovery. Unreadable worker scope refuses
+replay. Final automatic sharing resumes after the current step releases its marker.
+All three Studios acquire the shared repository lock before Blog Studio's existing
+repository/workspace locks where applicable. Provider/render work stays outside
+these short transactions. Deck locks resolve Git directory indirection; Blog Studio
+retains its literal `.git/blog-studio.lock` format. A `.git`-file worktree still
+supports deck synchronization and checks copied Blog Studio worker records, but
+current Blog Studio cannot start writers there. No alternative Blog lock is invented.
+
 **Files:** `studios/presentation/runner/studio.py`, `engine.py`, `decks.py`,
 `desk_actions.py`; create `runner/desk_chat.py`, `tests/test_desk_chat.py`;
 update SKILL.md, desk/workspace/route guidance, VERSION and manifest.
@@ -132,7 +150,11 @@ update SKILL.md, desk/workspace/route guidance, VERSION and manifest.
 `studio desk create --input FILE`, `studio desk show --folder PATH`,
 `studio desk save --folder PATH --input FILE`. Add explicit conversation execution
 mode to creation; runner scheduling and recovery exclude that mode until explicit handoff.
-Also add `context(engine, path, target) -> dict`, `submit(engine, path, request) -> dict`,
+Also add a bounded explicit checked scope-change command using existing requested
+material/step selections; it changes scope only after a person requests it, never
+saved materials, approvals, readiness or scheduling. Handoff honors current scope
+or refuses an incompatible remaining plan. Also add
+`context(engine, path, target) -> dict`, `submit(engine, path, request) -> dict`,
 `handoff(engine, path, expected_basis, scope) -> dict`, exposed under `studio desk`.
 `context` returns `{target, expected_basis, scope, inputs, requirements}`; submit
 consumes `{kind, target, expected_basis, payload}`. Kinds are `text`, `outline`,

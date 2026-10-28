@@ -68,7 +68,7 @@ import re
 import secrets
 import shutil
 import threading
-from contextlib import nullcontext
+from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 
@@ -816,7 +816,7 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
     pushed as it stood when the push began; a commit made while it was on its way waits
     for the next share.
     """
-    held = held or nullcontext()
+    held = held or hub.Held(workspace.repo / '.git/blog-studio.lock')
     repo, branch = workspace.repo, workspace.branch
     report = {
         'shared': False,
@@ -836,6 +836,8 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
             ),
         }
     with held:
+        if worker_in_progress(repo, WorkspaceError):
+            return {**report, 'reached': None, 'notice': SYNC_WAIT}
         if on_branch(repo) != branch:
             raise WorkspaceError(
                 f"The workspace's repository in {repo} is on the branch "
@@ -851,6 +853,8 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
             report['reached'] = False
             break
         with held:
+            if worker_in_progress(repo, WorkspaceError):
+                return {**report, 'notice': SYNC_WAIT}
             # Another fetch may move the ref at any moment, so the commit it names now is
             # the one learned from and replayed on; what came after is the next round's.
             at = _tip(repo, track)
