@@ -175,7 +175,16 @@ def item(root, kind, value):
             directory, metadata = local, local / 'record.json'
     if not metadata.is_file():
         raise ValueError(f'Unknown {kind} ID: {value}')
-    return directory, read_json(metadata)
+    record = read_json(metadata)
+    if kind == 'articles':
+        # Only unfinished Blog Studio migration has a separate live desk session.
+        # Its original guided session remains immutable at its original path.
+        from desk_migration import metadata as migrated_metadata
+
+        migrated = migrated_metadata(directory)
+        if migrated is not None:
+            record = migrated['session']
+    return directory, record
 
 
 def metadata_path(directory, kind):
@@ -184,6 +193,14 @@ def metadata_path(directory, kind):
 
 def persist(directory, kind, record):
     record['updated_at'] = now()
+    if kind == 'articles':
+        from desk_migration import META, metadata as migrated_metadata
+
+        migrated = migrated_metadata(directory)
+        if migrated is not None:
+            migrated['session'] = record
+            write_json(directory / 'desk' / META, migrated)
+            return
     write_json(metadata_path(directory, kind), record)
 
 

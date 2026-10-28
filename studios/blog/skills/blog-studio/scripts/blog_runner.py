@@ -2328,7 +2328,30 @@ class Engine:
                 'outside': outside_words(saved.get('outside')),
             }
         on_desk = (Path(found['directory']) / 'desk' / 'draft.json').is_file()
-        if on_desk:
+        from desk_migration import metadata as migrated_metadata
+
+        migrated = migrated_metadata(Path(found['directory']))
+        found['unfinished_migration'] = bool(migrated)
+        if on_desk and migrated:
+            # The old run's approval facts remain history; desk registration never
+            # finishes its missing steps or turns automatic continuation into approval.
+            found.update(complete=False, next=None, awaits=None)
+            found['stages'] = [
+                {
+                    **row,
+                    'status': migrated['historical_stages']
+                    .get(row['stage'], {})
+                    .get('status', 'pending'),
+                    'auto_accepted': migrated['historical_stages']
+                    .get(row['stage'], {})
+                    .get('status')
+                    == 'approved'
+                    and row.get('accepted_by') == 'review-policy',
+                }
+                for row in found['stages']
+            ]
+            status = 'on-desk'
+        elif on_desk:
             # Opened on the desk once finished: the run is read as it ended, with nothing to
             # resume, approve or redo; desk saves never make it look paused or stale.
             found.update(complete=True, next=None, awaits=None)
@@ -2369,6 +2392,10 @@ class Engine:
                 return self._once(ident)
 
     def _once(self, ident):
+        import desk_migration
+
+        if desk_migration.blocked(self.root, ident):
+            return
         if not self.local(ident).get('enabled'):
             return
         try:
@@ -2390,6 +2417,16 @@ class Engine:
         ):
             before(self.root, ident)
         with studio.locked(self.root):
+            # A migration/conversation may have acquired the lock while this
+            # runner was waiting. Recheck before cleanup or worker acquisition.
+            if desk_migration.blocked(self.root, ident):
+                return
+            directory, record = studio.item(self.root, 'articles', ident)
+            if (
+                record.get('execution') == 'conversation'
+                or (directory / 'desk/draft.json').is_file()
+            ):
+                return
             local = self.local(ident)
             if not local.get('enabled'):
                 return

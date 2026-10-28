@@ -127,6 +127,26 @@ until the replacement is reachable.
 
 ## Explicit unfinished migration
 
+Blog Studio's first migration increment accepts a supported saved manuscript
+(`DRAFT.md` or `ORIGINAL.md`) or a losslessly round-tripping Markdown outline with
+at least two heading sections. Outline words become briefs and prose remains empty;
+research, reviews and handoff remain historical, and unresolved publishing gaps
+remain gaps. Brief-only starts, early research/angles without those materials,
+list/unstructured outlines and older Team Hub contexts keep their saved-flow path.
+Removing those compatibility paths requires supported lossless transforms for
+their early material and ownership formats; this increment makes no claim that all
+gated formats have been removed.
+
+For Blog Studio, original `session.json` and `derived/blog-run.json` stay byte-for-byte
+at their original paths through migration and later checked desk saves. A fixed
+`desk/migration.json` holds the effective desk session and historical interpretation;
+the draft registers last. A pending journal prevents workers, recovery cleanup and
+repository replay from picking up partial metadata, including within recognized
+output caches. Repeat the original `desk migrate --article ID --expected TOKEN`
+after interruption to roll back only matching additive outputs and recheck/apply;
+changed inputs then refuse safely. Altered or unreadable outputs/journals require
+restoring the saved desk records, never deleting a marker to bypass exclusion.
+
 Each Studio offers a read-only preview, then an apply bound to that preview. Show
 what can be retained, what will be held or left incomplete, and any prerequisite
 that prevents migration. No worker, source, team or file change may occur between

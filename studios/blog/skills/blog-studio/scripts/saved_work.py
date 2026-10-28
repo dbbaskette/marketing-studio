@@ -51,11 +51,27 @@ def scan(root: Path, folders=()) -> dict:
             ):
                 raise ValueError('Unsupported blog record schema.')
             title = record.get('title') or directory.name
+            # A retained guided run is still a compatibility dependency after
+            # migration. Partial/unknown desk interpretation adds uncertainty;
+            # it must never make that raw dependency disappear from the report.
+            from desk_migration import JOURNAL, META, metadata as migrated_metadata
+
+            for name in (JOURNAL, META):
+                marker = directory / 'desk' / name
+                if marker.exists() or marker.is_symlink():
+                    try:
+                        inventory.checked_path(marker)
+                        migrated_metadata(directory)
+                    except (OSError, ValueError, TypeError, KeyError) as exc:
+                        inventory.issue(issues, marker, str(exc))
             draft = directory / 'desk' / 'draft.json'
             if draft.exists() or draft.is_symlink():
                 try:
                     inventory.checked_path(draft)
-                    _check_desk(studio.read_json(draft))
+                    desk_record = studio.read_json(draft)
+                    _check_desk(desk_record)
+                    if desk_record.get('unfinished_migration'):
+                        migrated_metadata(directory)
                 except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
                     inventory.issue(issues, draft, str(exc))
             run_path = directory / 'derived' / 'blog-run.json'

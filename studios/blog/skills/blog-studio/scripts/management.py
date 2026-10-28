@@ -2199,6 +2199,15 @@ def dispatch(root, route, data):
     from team_workspace import space, before, saved, status, refresh, action, join
     from team_workspace import keep_desk_leftovers
 
+    if route == 'desk-migrate':
+        # This transaction checks ownership/basis itself. No fetch, unrelated keep,
+        # settlement or automatic share may occur around a migration decision.
+        import desk_chat
+
+        if not isinstance(data, dict) or set(data) != {'id', 'expected'}:
+            raise ValueError('Choose a saved blog and its current migration preview.')
+        return desk_chat.migrate(root, data['id'], data['expected'])
+
     # Refused before anything is read, fetched or shared. The default voice in run-settings
     # is checked with the rest of that form (blog_runner.settings).
     if old_voice_tool(route, data):
@@ -2403,6 +2412,10 @@ def whole(value):
 def view(root, name, query):
     """Read-only desk views by name. Returns None for an unknown view."""
     arg = lambda key, default=None: query.get(key, [default])[0]
+    if name == 'desk-migration-preview':
+        import desk_chat
+
+        return desk_chat.migration_preview(root, arg('id'))
     if name == 'brand':
         import brand_skill
 

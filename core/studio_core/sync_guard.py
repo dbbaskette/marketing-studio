@@ -1,5 +1,6 @@
 """Conservative exclusion of canonical Studio workers during repository replay."""
 import json
+import hashlib
 import os
 from pathlib import Path
 
@@ -107,13 +108,67 @@ def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
                 and all(key in session['settings']
                         for key in ('deck_target', 'brand', 'brief_kind', 'stages')))
 
+    def blog_migration(folder):
+        desk = folder / 'desk'
+        if present(desk / 'migration.pending.json'):
+            return True
+        marker = desk / 'migration.json'
+        if present(marker):
+            value = small_record(marker)
+            draft = small_record(desk / 'draft.json')
+            if (not isinstance(value, dict) or value.get('schema') != 1
+                    or value.get('product') != 'Blog Studio' or value.get('id') != folder.name
+                    or not isinstance(value.get('session'), dict)
+                    or value['session'].get('id') != folder.name
+                    or not isinstance(draft, dict) or not draft.get('unfinished_migration')
+                    or not isinstance(value.get('files'), list)
+                    or any(not isinstance(name, str) or name not in (
+                        'desk/migration.json', 'desk/draft.json', 'desk/images.json', 'desk/start.json')
+                           for name in value['files'])
+                    or not {'desk/migration.json', 'desk/draft.json'} <= set(value['files'])
+                    or any(not present(folder / name) or (folder / name).is_symlink()
+                           for name in value['files'])):
+                unknown(ValueError('Incomplete Blog Studio migration'))
+            for name, key in (('session.json', 'session_basis'), ('derived/blog-run.json', 'run_basis')):
+                path = folder / name
+                try:
+                    if path.is_symlink() or path.stat().st_size > 1_000_000 \
+                            or hashlib.sha256(path.read_bytes()).hexdigest() != value.get(key):
+                        unknown(ValueError('Changed original Blog Studio migration record'))
+                except OSError as error:
+                    unknown(error)
+        elif present(desk / 'draft.json'):
+            draft = small_record(desk / 'draft.json')
+            if isinstance(draft, dict) and draft.get('unfinished_migration'):
+                unknown(ValueError('Missing Blog Studio migration record'))
+        return False
+
+    def migration_in_cache(cache):
+        # Only Blog Studio's fixed migration records override structural cache
+        # pruning. Bound this uncertainty check; never silently skip an oversized
+        # or unreadable candidate tree and declare replay safe.
+        count = 0
+        for folder, directories, _ in os.walk(cache, followlinks=False, onerror=unknown):
+            count += 1
+            if count > 2000:
+                unknown(ValueError('Migration scope too large'))
+            if blog_migration(Path(folder)):
+                return True
+            directories[:] = [name for name in directories if name != '.git'
+                              and not (Path(folder) / name).is_symlink()]
+        return False
+
     for folder, directories, _ in os.walk(repo, followlinks=False, onerror=unknown):
         here = Path(folder)
+        if blog_migration(here):
+            return True
         if any(present(here / name) for name in ('work/step.lock', '.training-studio/step.lock')):
             return True
         if present(here / '.blog-runs') and blog_busy(here / '.blog-runs'):
             return True
         caches = {'work', 'sources'} if item_has_caches(here) else set()
+        if any(migration_in_cache(here / name) for name in caches):
+            return True
         directories[:] = [name for name in directories
                           if name not in {'.git', '.training-studio', '.presentation-studio',
                                           '.blog-runs'} | caches

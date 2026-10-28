@@ -67,6 +67,7 @@ async function check(){
   await busyAnalysis();
   await refreshWithNewSelection();
   await guidedRuns();
+  await unfinishedMigration();
   await manuscriptEditing();
   await reviewInteractions();
   await editorTransitions();
@@ -4758,4 +4759,49 @@ async function deskStartTakeOver(){
   await actions().find(n=>n.textContent==='Take this blog').listeners.click();
   await t.sheet().find(n=>n.textContent==='Confirm').listeners.click();
   assert.deepEqual(t.requests.find(r=>r.url==='/api/team-take').data,{id:'started',expected:'session-v1',confirmed:true});
+}
+
+async function unfinishedMigration(){
+  const found={id:'synthetic',title:'Synthetic saved blog',status:'paused',next:'draft',approval:'page',expected:'saved-run-v1',enabled:false,directory:'/synthetic/articles/synthetic',content:'',seconds:600,engine:'codex',mode:'write',decisions:[],brief:{goal:'Explain a fixture',audience:'Authors'},stages:[{stage:'outline',label:'Outline',path:'OUTLINE.md',status:'approved',accepted_by:'person',notes:''},{stage:'draft',label:'Draft',path:'DRAFT.md',status:'draft',notes:''},{stage:'review',label:'Review',path:'derived/blog-review.md',status:'pending',notes:''}],complete:false,on_desk:false,team:false};
+  const preview={id:'synthetic',eligible:true,expected:'opaque-migration-value',blockers:[],retained:['Original records and real approvals','Source pins and Google baselines'],held:'Unfinished checks remain incomplete. No work is started.',notice:'Your saved flow remains available.'};
+  const response=deferred(),cancelled=deskStartFixture(url=>url.startsWith('/api/desk-migration-preview?')?response.promise:null);
+  cancelled.f.set('found',found);const pending=cancelled.f.run('sMigrationPreview(found)');
+  await cancelled.sheet().find(n=>n.textContent==='Cancel').listeners.click();
+  cancelled.f.run("sOpenSheet('Another choice',sNode('p','','Keep this choice open.'))");
+  response.resolve(preview);await pending;
+  assert.ok(cancelled.sheet().some(n=>n.textContent==='Another choice'),'a cancelled delayed preview cannot replace another sheet');
+  let eligible=true,changed=false;
+  const t=deskStartFixture((url,data)=>{
+    if(url.startsWith('/api/desk-migration-preview?'))return {...preview,eligible,blockers:eligible?[]:['There is no usable manuscript or supported outline yet.']};
+    if(url==='/api/desk-migrate'){if(changed)return {__http:409,error:'This blog or its inputs changed. Preview again.'};return {id:data.id,execution:'conversation',draft:{}};}
+    if(url.startsWith('/api/desk?'))return deskView({id:'synthetic',execution:'conversation',run:true,unfinished_migration:true});
+    if(url.startsWith('/api/desk-images?'))return {id:'synthetic',images:[]};
+    return null;
+  });
+  t.f.set('found',found);t.f.run("studio.screen='run';studio.id='synthetic';sRun(found)");
+  await t.click('Open on the desk');
+  assert.equal(t.requests.filter(r=>r.url==='/api/desk-migrate').length,0,'preview starts no migration');
+  assert.ok(t.sheet().some(n=>n.textContent==='Original records and real approvals'));
+  assert.ok(!t.sheet().some(n=>n.textContent.includes(preview.expected)),'machine token is hidden');
+  assert.equal(t.sheet().filter(n=>n.className.split(' ').includes('button-filled')).length,1);
+  await t.click('Cancel');assert.equal(t.f.get('sheet').hidden,true);
+  assert.equal(t.requests.filter(r=>r.url==='/api/desk-migrate').length,0,'Cancel changes nothing');
+  eligible=false;await t.click('Open on the desk');
+  assert.ok(t.sheet().some(n=>n.textContent.includes('no usable manuscript')));
+  assert.ok(!t.sheet().some(n=>n.textContent==='Open on the desk'&&n.tagName==='button'));
+  await t.click('Cancel');eligible=true;changed=true;
+  await t.click('Open on the desk');
+  await t.sheet().find(n=>n.textContent==='Open on the desk'&&n.tagName==='button').listeners.click();
+  assert.ok(t.sheet().some(n=>n.textContent.includes('inputs changed')));
+  assert.equal(t.f.run('studio.screen'),'run');
+  await t.click('Cancel');changed=false;
+  await t.click('Open on the desk');
+  await t.sheet().find(n=>n.textContent==='Open on the desk'&&n.tagName==='button').listeners.click();
+  assert.deepEqual(t.requests.filter(r=>r.url==='/api/desk-migrate').at(-1).data,{id:'synthetic',expected:preview.expected});
+  assert.equal(t.f.run('studio.screen'),'desk');
+  assert.equal(t.f.get('sheet').hidden,true);
+  t.f.set('migrated',{...found,on_desk:true,unfinished_migration:true,next:null});
+  t.f.run('sRunOnDesk(migrated)');
+  assert.ok(t.nodes().some(n=>n.textContent.includes('Unfinished steps remain incomplete')));
+  assert.ok(!t.nodes().some(n=>n.textContent.includes('It was finished here')));
 }
