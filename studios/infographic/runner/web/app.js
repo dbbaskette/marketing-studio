@@ -424,6 +424,7 @@ async function researchSheet(){
 async function teamSheet(){
   const problem=make('p','problem'),items=make('div','stack');
   async function show(){try{const state=await request('/api/team');items.replaceChildren(make('p','quiet',state.connected?'Last explicitly synced team copy. Local projects stay in your workspace.':'Connect to the repository chosen in shared Marketing Studio settings.'));
+    if(state.workspace_owner)items.append(make('p','quiet','Your workspace owner ID: '+state.workspace_owner));
     if(state.connected)items.append(button('Retry pending team push',async()=>{try{await request('/api/team',{operation:'retry',expected_commit:state.head});await show();}catch(f){problem.textContent=f.message;}}));
     for(const entry of state.items){
       const cardNode=card(entry.title,make('p','quiet','Shared revision '+entry.revision+' · driver '+entry.claim.owner),list([...entry.missing.map(f=>'Missing or changed: '+f),...(entry.unshared_sources||[]).map(f=>'Private source not shared: '+f),...(entry.unshared_assets||[]).map(f=>'Private artwork not shared: '+f)]));

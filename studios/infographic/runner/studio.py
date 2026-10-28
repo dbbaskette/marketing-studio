@@ -120,7 +120,7 @@ def main(argv=None):
         elif args.command=='team':
             from runner import team,api
             values=api.load_json(args.file) if args.file else {}
-            if args.operation=='status':value=team.status()
+            if args.operation=='status':value={**team.status(),'workspace_owner':Store.current().owner if Store.current() else None}
             elif args.operation in ('connect','sync'):value=team.connect()
             elif args.operation=='retry':value=team.retry_pending(**values)
             else:

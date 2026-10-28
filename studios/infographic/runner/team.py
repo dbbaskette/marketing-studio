@@ -516,7 +516,7 @@ def claim(store, ident, *, expected_head, expected_claim, new_owner=None):
             git(folder, "rev-parse", "FETCH_HEAD") == expected_head,
             "The remote claim changed. Sync before taking over.",
         )
-        current = _json(folder / f"infographics/{ident}", "claim.json", 10_000)
+        current = _json(safe(folder, f"infographics/{ident}"), "claim.json", 10_000)
         require(
             current == expected_claim,
             "The shared driver changed. Review their current claim.",

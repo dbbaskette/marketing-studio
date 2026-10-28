@@ -48,7 +48,7 @@ class Page(shared.Page):
             return 200,mime,raw
         if path == '/api/team':
             from . import team
-            return shared.as_json(200,team.status())
+            return shared.as_json(200,{**team.status(),'workspace_owner':self.store.owner})
         if path == '/api/research-task':
             from . import research
             return shared.as_json(200,research.task(self.store.read(one('id')),one('source_mode')))
