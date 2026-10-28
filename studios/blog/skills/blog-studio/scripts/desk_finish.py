@@ -26,6 +26,7 @@ TOOLS = {
     'finish-headline': 'headline',
     'finish-feedback': 'feedback',
     'finish-voice': 'voice',
+    'finish-geo': 'geo',
 }
 KINDS = tuple(TOOLS)
 # The proposals are kept, read and skipped by the shared desk
@@ -820,14 +821,61 @@ def proofread(root, ident):
     rewrite. Reading only: nothing is written and no job starts."""
     import text_checks
 
-    return quick.check(
-        desk.read(root, ident),
+    draft = desk.read(root, ident)
+    found = quick.check(
+        draft,
         proof_rules(),
         _listed('sentence-starters.txt'),
         ident,
         join=lambda draft: desk.join(draft, images=False),
         lint=text_checks.lint,
     )
+    import desk_jobs
+
+    extra, _ = desk_jobs._context(root, draft)
+    research, _ = desk_jobs._research_extra(root, ident)
+    allowed = [source['text'] for source in extra.get('sources', [])]
+    allowed += [str(value) for value in (draft.get('brief') or {}).values()]
+    allowed += [draft['title'], draft.get('opening_brief', ''), json_text(research)]
+    allowed += [s.get('brief', '') for s in draft['sections']]
+    start = desk.read_start(root, ident) or {}
+    allowed += [start.get('notes', '')]
+    hits = []
+    for part, _, text in quick.offsets(draft):
+        for hit in text_checks.reader_facing_notes(text):
+            target = hit['target']
+            at = hit['start']
+            if at >= 0:
+                item = quick.finding(part, text, 'reader-facing-note', at, target)
+                item.update(
+                    label='Source ID or editorial note in the writing.',
+                    fix='Keep source IDs and editorial notes outside reader-facing text.',
+                )
+                hits.append(item)
+        copied = text_checks.carried_over(text, extra.get('examples', []), allowed)['findings']
+        for hit in copied:
+            target = hit['target']
+            at = hit['start']
+            if at >= 0:
+                item = quick.finding(part, text, 'from-example', at, target)
+                item.update(
+                    label='Passage carried over from an example.',
+                    fix='Use the example for shape; support claims with your sources.',
+                )
+                hits.append(item)
+    findings = found['findings'] + hits
+    order = {part: number for number, (part, _, _) in enumerate(quick.offsets(draft))}
+    findings.sort(key=lambda item: (order.get(item['part'], 0), item['at'], item['rule']))
+    found.update(
+        findings=findings[:PROOF_LIMIT], more=found['more'] + max(0, len(findings) - PROOF_LIMIT)
+    )
+    return found
+
+
+def json_text(value):
+    import json
+
+    return json.dumps(value, sort_keys=True)
 
 
 # The tools that propose through a job: what each asks for, and how its result is read.
@@ -1059,6 +1107,19 @@ def request(root, ident, draft, tool, level=None, guide=None):
         guidance += _reference('modules', 'blog-fact-check.md') + '\n\n'
         guidance += _reference('review', 'evidence.md') + '\n\n' + shared + said
         guidance += '\nThe sources are in sources, with their names and stance.\n' + FACTS_JSON
+    elif tool == 'geo':
+        research, said = desk_jobs._research_extra(root, ident)
+        payload = {**_payload(draft, extra), **research}
+        guidance = manuscript_editor.CHECKS['geo'] + '\n\n'
+        guidance += _reference('modules', 'blog-geo-review.md') + '\n\n' + shared + said
+        guidance += (
+            '\nPropose only changes requested by this GEO review. Invent no evidence, '
+            'research, authority, facts, links or approval. Preserve qualifiers and images. '
+            'Return JSON with suggestions [{part, before, after, why}] and an optional '
+            'summary string for advice without an edit. before must occur once in its '
+            'part. Changes are proposals the person previews before applying; do not '
+            'return rewritten files. Empty suggestions means no changes.'
+        )
     elif tool == 'voice':
         # The guide's text is put in the payload: the desk's own context stays tone-only.
         chosen = _guide(root, guide)
@@ -1380,6 +1441,15 @@ def _read_copyedit(draft, found):
     return _read_humanize(draft, found, title=True, kinds=True)
 
 
+def _read_geo(draft, found):
+    if not isinstance(found, dict) or set(found) - {'suggestions', 'summary'}:
+        raise ValueError(UNREADABLE)
+    items, dropped, extra = _read_humanize(draft, found, title=True)
+    if found.get('summary'):
+        extra['summary'] = _text(found['summary'], 2000)
+    return items, dropped, extra
+
+
 READERS = {
     'finish-copyedit': _read_copyedit,
     'finish-humanize': _read_humanize,
@@ -1387,6 +1457,7 @@ READERS = {
     'finish-headline': _read_headline,
     'finish-feedback': _read_feedback,
     'finish-voice': _read_voice,
+    'finish-geo': _read_geo,
 }
 
 

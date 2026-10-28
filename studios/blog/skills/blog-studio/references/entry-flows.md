@@ -34,11 +34,12 @@ For software-product starts, infer the blog type separately from the writing rou
 If unresolved, offer the [blog-type selector](style/forms.md#intake-choice) once;
 reuse a saved choice on resume. Do not interrupt a clear request or a passage edit.
 
-Preserve imported-draft voice; reuse a chosen profile/tone. Otherwise offer
-saved voice, learn my voice, described tone, or a conversational default.
-No profile is required. Standalone voice setup creates no article; its focused
+Use [conversation desk commands](conversation-desk.md) to create and save chat work.
+New desk work uses its described tone, without a default voice. Explicit voice
+transformations remain separate. Preserve saved voice pins. Pin author and brand
+defaults at creation; explicit empty choices opt out. Standalone voice setup creates no article; its focused
 reference handles LinkedIn background and authored blog links/samples.
 
 Record the brief and stop using only consequential questions. Draft requests
 can continue from the internal outline. Outline-only ends before drafting. Deliver the
-chosen artifact and open issues; suggest further work without starting it.
+chosen material and open issues; suggest further work without starting it.

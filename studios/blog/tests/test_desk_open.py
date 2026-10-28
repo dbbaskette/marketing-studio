@@ -44,6 +44,26 @@ class OpenOnTheDeskTests(RunnerCase):
         row = next(r for r in runner.catalog(self.root)['items'] if r['id'] == found['id'])
         self.assertEqual(row['flow'], 'desk')
 
+    def test_opened_saved_run_uses_its_brand_pin_without_rewriting_the_run(self):
+        import desk_jobs
+
+        found = self.finished()
+        directory, _, run = runner.load(self.root, found['id'])
+        run['brand'] = {
+            'skill': 'synthetic-brand',
+            'version': '1.0.0',
+            'brand': 'synthetic',
+            'variant': 'blog',
+            'voice': 'Synthetic naming.',
+        }
+        studio.write_json(directory / runner.STATE, run)
+        before = self.state(found['id'])
+        with studio.locked(self.root):
+            draft = desk.open_run(self.root, found['id'])
+            context, _ = desk_jobs._context(self.root, draft)
+        self.assertEqual(context['brand'], run['brand'])
+        self.assertEqual(self.state(found['id']), before)
+
     def test_a_finished_draft_of_more_than_sixty_sections_is_refused_readably(self):
         found = self.finished()
         directory, _, _ = runner.load(self.root, found['id'])

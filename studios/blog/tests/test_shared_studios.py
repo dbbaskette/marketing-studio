@@ -99,29 +99,35 @@ class ConfigTests(unittest.TestCase):
         self.config.write_text(
             '{"schema":1,"assistant":{"agent":"claude"},"person":{"name":"First Author"}}'
         )
-        args = studio.parser().parse_args(
-            [
-                '--root',
-                str(root),
-                'run',
-                'create',
-                '--title',
-                'Synthetic defaults',
-                '--audience',
-                'Authors',
-                '--goal',
-                'Explain synthetic defaults',
-                '--research',
-                'none',
-                '--stop',
-                'outline',
-            ]
+        # Seed an older saved run without reopening its retired public create route.
+        first = blog_runner.create(
+            root,
+            {
+                'title': 'Synthetic defaults',
+                'audience': 'Authors',
+                'goal': 'Explain synthetic defaults',
+                'research': 'none',
+                'stop': 'outline',
+            },
         )
-        first = blog_runner.command(root, args)
+        import desk_chat
+
+        conversation = desk_chat.create(
+            root,
+            {
+                'title': 'Synthetic desk defaults',
+                'way': 'topic',
+                'point': 'Explain synthetic defaults',
+            },
+        )
+        self.assertEqual(conversation['execution'], 'conversation')
         self.assertEqual(first['engine'], 'claude')
         self.assertEqual(studio.item(root, 'articles', first['id'])[1]['author'], 'First Author')
         self.config.write_text(
             '{"schema":1,"assistant":{"agent":"codex"},"person":{"name":"Second Author"}}'
+        )
+        self.assertEqual(
+            studio.item(root, 'articles', conversation['id'])[1]['author'], 'First Author'
         )
         self.assertEqual(blog_runner.survey(root, first['id'])['engine'], 'claude')
         self.assertEqual(studio.item(root, 'articles', first['id'])[1]['author'], 'First Author')

@@ -13,8 +13,11 @@ when it is saved, retired or used for a blog; reading never writes. Until then
 ... style save --id <style-id> --guide-file <revised-guide> --status confirmed
 ... style show --id <style-id> --revision <number>
 ... style retire --id <style-id> --expected-revision <number> --confirmed
-... run create ... --style <style-id>
+... desk create --input <request.json>
 ```
+
+Set `style` in the desk creation JSON to the selected style ID; see
+[conversation desk commands](../conversation-desk.md).
 
 Samples must be ready and classed `style-sample`; one post may be both a `voice-sample`
 and a `style-sample`. Learn a style from examples of the kind by anyone: describe

@@ -3607,3 +3607,101 @@ class CopyEditTeamTests(TeamCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ConversationParityTests(FinishCase):
+    def test_proofread_reports_editorial_notes_and_source_ids(self):
+        desk.save(
+            self.root, self.ident, 1, 'opening', 'Evidence [source-123].\n\n[TODO: add a link]'
+        )
+        found = desk_finish.proofread(self.root, self.ident)
+        self.assertTrue(any(f['rule'] == 'reader-facing-note' for f in found['findings']))
+
+    def test_repeated_editorial_notes_keep_each_occurrence_location(self):
+        text = 'First [TODO: date]. Second [TODO: date].'
+        desk.save(self.root, self.ident, 1, 'opening', text)
+        found = desk_finish.proofread(self.root, self.ident)
+        notes = [f for f in found['findings'] if f['rule'] == 'reader-facing-note']
+        self.assertEqual([f['at'] for f in notes], [text.index('[TODO'), text.rindex('[TODO')])
+
+    def test_proofread_reports_example_carryover_with_part_location(self):
+        from unittest.mock import patch
+
+        phrase = 'Synthetic operators keep the exact recovery checklist alongside every scheduled maintenance task.'
+        desk.save(self.root, self.ident, 1, self.first, phrase)
+        with patch(
+            'desk_jobs._context', return_value=({'sources': [], 'examples': [{'text': phrase}]}, '')
+        ):
+            found = desk_finish.proofread(self.root, self.ident)
+        copied = [f for f in found['findings'] if f['rule'] == 'from-example']
+        self.assertTrue(copied)
+        self.assertEqual(copied[0]['part'], self.first)
+
+    def test_geo_keeps_overall_advice_and_refuses_unsupported_comment_shape(self):
+        found = desk_finish._read_geo(
+            self.draft(), {'suggestions': [], 'summary': 'Synthetic advice.'}
+        )
+        self.assertEqual(found[2]['summary'], 'Synthetic advice.')
+        with self.assertRaisesRegex(ValueError, 'shape'):
+            desk_finish._read_geo(self.draft(), {'comments': [{'comment': 'Hidden advice.'}]})
+
+    def test_geo_proposes_then_applies_with_history_and_changed_basis_guard(self):
+        kind, payload, guidance, _ = desk_finish.request(self.root, self.ident, self.draft(), 'geo')
+        self.assertEqual(kind, 'finish-geo')
+        self.assertIn('sections', payload)
+        self.assertIn('JSON', guidance)
+        job = {
+            'id': secrets.token_hex(16),
+            'kind': kind,
+            'result': {
+                'content': json.dumps(
+                    {
+                        'suggestions': [
+                            {
+                                'part': self.first,
+                                'before': 'First text.',
+                                'after': 'A direct answer.',
+                                'why': 'Lead with the answer.',
+                            }
+                        ]
+                    }
+                )
+            },
+        }
+        offered = desk_finish.settle(self.root, self.ident, self.draft(), job)
+        self.assertEqual(self.draft()['sections'][0]['text'], 'First text.')
+        self.act('apply', seen=1, job=job['id'], items=[{'id': offered['items'][0]['id']}])
+        self.assertEqual(self.draft()['sections'][0]['text'], 'A direct answer.')
+        self.assertEqual(desk.versions(self.root, self.ident, self.first)[0]['source'], 'finishing')
+        with self.assertRaises(ValueError):
+            self.act('apply', seen=1, job=job['id'], items=[{'id': offered['items'][0]['id']}])
+
+
+class GEOQueueTests(ToolCase):
+    def test_explicit_geo_tool_runs_with_fake_worker_and_never_applies_automatically(self):
+        calls = []
+
+        def worker(engine, payload, guidance, **options):
+            calls.append(options)
+            return {
+                'content': json.dumps(
+                    {
+                        'suggestions': [
+                            {
+                                'part': self.first,
+                                'before': 'We leverage a robust parser.',
+                                'after': 'We use a sturdy parser.',
+                                'why': 'Lead with a direct answer.',
+                            }
+                        ]
+                    }
+                ),
+                'notes': '',
+            }
+
+        job = self.queue('geo')
+        tool_jobs.once(blog_runner.Engine(self.root, worker=worker))
+        self.assertEqual(calls[0]['web'], False)
+        self.assertTrue(tool_jobs.read(self.root, job['id'])['settled_at'])
+        self.assertTrue(self.draft()['sections'][0]['text'].startswith('We leverage'))
+        self.assertEqual(self.shown('geo')['items'][0]['state'], 'open')

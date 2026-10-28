@@ -1,82 +1,11 @@
-# Guided blogs: page or conversation
+# Saved step-by-step Blog Studio work
 
-Use this flow for a requested guided blog, stage approvals, or switching between
-the page and chat. On the page, new blogs start on the writing desk, which has no stages
-or approvals ([page tools](page-tools.md)); runs there are blogs started before the desk. Focused edits, interviews and ordinary writing keep their
-existing routes. Never start an approval pipeline just because a user asks for
-a paragraph or draft.
+This compatibility path continues blogs already saved with `derived/blog-run.json`.
+New work uses [conversation desk commands](conversation-desk.md); `run create`
+refuses with those commands. Opening saved work preserves its existing pins,
+decisions and approval rules. Do not duplicate or automatically migrate it.
 
-`...` means `<python> <runtime>/studio.py --root <absolute-workspace>` as in
-[workspace](workspace.md). Initialize a new workspace with `... init`.
-
-## Start
-
-For the page, run `... manage --open` and keep that process running. **Home** groups work
-needing a decision, in progress and finished; **Blogs** opens saved blogs. A run on the
-page goes through each stage with the assistant and waits for the person's decision.
-Opening it does not turn on reference analysis.
-
-For a conversation, gather title, audience, goal, selected sources and voice,
-where research may look and requested stop. Then use:
-
-```sh
-... run create --title "Title" --audience "Readers" --goal "Purpose" \
-  --research-from documents --stop package
-```
-
-`--research-from` takes any of `documents`, `sites` and `web`, comma separated: the
-selected sources, your sites (the shared list, or each `--site <https address>` for
-this blog only) and the public web. With sites and not web, pages are saved only from
-under the sites; that needs Harness Research, and without it sites alone are refused
-and no job gets web search for them. `--research none` omits research; documents with no selected sources
-also omit it. The older `supplied-only` and `web-allowed` still work. Add `--source <id>` for each chosen source.
-Without `--profile` the settings' default voice applies, and a revise or review of a
-`--manuscript` keeps that manuscript's own voice; `--profile <id>` pins a saved voice
-and `--profile ''` writes in no particular voice. `--tone "description"` is then a
-nudge beside the voice (dropped when it equals the settings' tone), or the whole voice
-when none applies. `--style <id>` adds a kind of post. `--author` overrides a saved
-default. Select an installed brand with `--brand ID --variant VARIANT`, or
-`--brand ''` for no brand. `--example <id>` reads a team library item as an example of
-the kind of post for this blog only, `--messaging <id>` as the product's approved
-messaging (`--source` reads one with its library role). `--length short|deep` halves or
-doubles the usual length of new writing; in depth adds an example or proof point per point.
-Approving the last stage keeps the draft in the team library as a reference and an
-example, once per blog. Read its pinned guides in `derived/blog-run.json`;
-keep its naming rules separate from the author voice. `--mode write` is the default; `outline` stops at outline. Use
-`--mode revise --manuscript <source-id>` to revise a saved readable source, or
-`--mode review --manuscript <source-id>` to review it without rewriting.
-The original and working manuscript are retained. Revision and review omit new research
-unless requested. Use `--mode from-outline --outline-text "..."` to draft from
-a supplied outline, or `--mode ideas` to explore angles and stop before drafting.
-Use `--mode from-files --source <id>...` to write from the person's uploaded files
-(`source add --purpose material` keeps a file out of the reference library; on the page a
-Google Doc link is added the same way; `--goal`
-is their one line about it, `--audience` may be empty): the run starts with an
-`angles` stage. Write three angles, each a `## Title` heading over one line of
-`audience · the point it makes · Leans on <file names>` (exactly three), and submit it;
-it always waits for the person and is never approved. Then `... run choose --id <id> --expected <latest> --angle
-"<heading>" --note "..."` makes that angle the title, point and reader and starts
-the outline onward (research first only with your sites or the public web); `run
-changes --stage angles` with their note asks for three different ones. When the person
-already knows the point, add `--point` with `--title`, `--goal` (the point) and
-`--audience`: the run starts at the outline with no angles stage, and `run choose`
-refuses it. Each file says what it is for: facts the writing may quote (`material`),
-approved messaging (`--purpose material --purpose messaging`), or an example of the kind
-of post wanted (`--purpose material --purpose inspiration`; a kept one is `reference`
-with its mark). Approved messaging reaches the worker with `stance: messaging`: state its
-claims as the product's own, without attribution hedges. Examples reach the worker under `examples`,
-never `sources`: take their shape, length, moves and register, and no fact, figure,
-name, quotation, link or product detail from one unless the sources, research or brief
-also say it. Research never reads an example. At draft and review, `mechanical_checks`
-lists passages carried over from an example under rule `from-example`; a claim traced
-to an example and to nothing else is unsupported. Files past
-the run's budget are excerpted and `excerpted` in status names them. On the page a file is
-kept in the team library (with its role, author and kind of post) unless **Keep** is unticked;
-material stays on this computer, but the blog's outline and draft may quote it and are shared like any blog. `--stop` can be `outline`,
-`draft`, `review` or `package`. For an existing article, use `--id <article-id>`;
-a saved manuscript starts at review, or use `--mode revise --id <article-id>` to
-start with revision.
-This creates no model process in chat: you do the writing here.
+`...` means `<python> <runtime>/studio.py --root <absolute-workspace>`.
 
 ## Each stage
 
@@ -162,7 +91,7 @@ the same Google review helpers as the CLI. Conflicts remain local until reconcil
 
 ## Research stops and supplied material
 
-New runs from your documents only, with selected facts/material, map the claims in that material
+Saved runs from your documents only, with selected facts/material, map the claims in that material
 instead of running research. Each claim names a source ID and an exact passage. The runner
 checks words against that source (ignoring whitespace and line breaks), allows one
 correction and stops on another failure. Later writers receive the map and keep the

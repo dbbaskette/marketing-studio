@@ -10,9 +10,11 @@ For contextual browser tasks and their limits, read [page tools](references/page
 For a shared studios repository, drivers, handovers or migration, read
 [team workspace](references/workspace/team-workspace.md).
 
-To start a guided blog in chat or continue one with `derived/blog-run.json`, read
-[guided runs](references/guided-runs.md). On the page, new blogs start on the writing desk.
-Focused outline, draft, edit and interview requests keep the routes below.
+For new work in chat, use [conversation desk commands](references/conversation-desk.md).
+The current conversation writes the requested material without opening a page or starting
+another assistant. Outline, research, interview and passage requests keep their scope.
+For older work with `derived/blog-run.json`, use the clearly marked
+[saved step-by-step work](references/guided-runs.md) path.
 
 Read [entry flow](references/entry-flows.md) for writing starts. For setup/help,
 “My blogs,” or memory controls, load only [getting started](references/getting-started.md),

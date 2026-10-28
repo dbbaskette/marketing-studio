@@ -3390,7 +3390,7 @@ def choose_angle(root, directory, record, run, found, request):
 
 
 def add_parser(groups):
-    commands = groups.add_parser('run', help='Guided blogs in chat or on the page').add_subparsers(
+    commands = groups.add_parser('run', help='Saved step-by-step Blog Studio work').add_subparsers(
         dest='action', required=True
     )
     create_cmd = commands.add_parser('create')
@@ -3406,7 +3406,7 @@ def add_parser(groups):
         'brand',
         'variant',
     ):
-        create_cmd.add_argument('--' + name, required=name in ('audience', 'goal'))
+        create_cmd.add_argument('--' + name)
     create_cmd.add_argument(
         '--research',
         choices=OLD_RESEARCH,
@@ -3495,6 +3495,10 @@ def research_from_words(words, sites):
 
 
 def command(root, args):
+    if args.action == 'create':
+        raise ValueError(
+            'New Blog Studio work starts on the desk. Use studio.py --root PATH desk create --input FILE (or --input - for JSON on stdin). Saved run status, submit and decisions remain available.'
+        )
     if args.action == 'list':
         return catalog(root)
     if args.action == 'status':

@@ -636,7 +636,7 @@ class BlogRunnerTests(RunnerCase):
             release.set()
             thread.join(3)
 
-    def test_cli_conversation_flow_uses_same_state(self):
+    def test_saved_run_cli_submissions_use_same_state(self):
         script = Path(studio.__file__)
 
         def cli(*args):
@@ -648,18 +648,16 @@ class BlogRunnerTests(RunnerCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             return json.loads(result.stdout)
 
-        found = cli(
-            'create',
-            '--title',
-            'A synthetic CLI blog',
-            '--audience',
-            'Authors',
-            '--goal',
-            'Explain a fixture',
-            '--research',
-            'none',
-            '--stop',
-            'outline',
+        # Seed an older saved format through its internal fixture constructor.
+        found = runner.create(
+            self.root,
+            {
+                'title': 'A synthetic CLI blog',
+                'audience': 'Authors',
+                'goal': 'Explain a fixture',
+                'research': 'none',
+                'stop': 'outline',
+            },
         )
         self.file.write_text('# Outline\nSynthetic fixture.')
         found = cli(
@@ -2510,7 +2508,7 @@ class FromFilesTests(FilesCase):
         )
         self.assertEqual(runner.engine(self.root).describe(found['id'])['excerpted'], ['big'])
 
-    def test_a_chat_run_can_write_from_files_too(self):
+    def test_saved_chat_run_can_choose_from_files(self):
         sources = self.material(('notes.md', 'Retries cost money.'))
         args = studio.parser().parse_args(
             [
@@ -2528,7 +2526,12 @@ class FromFilesTests(FilesCase):
                 '',
             ]
         )
-        found = runner.command(self.root, args)
+        with self.assertRaisesRegex(ValueError, 'desk create --input'):
+            runner.command(self.root, args)
+        found = runner.create(
+            self.root,
+            {'mode': 'from-files', 'sources': sources, 'goal': 'A short post', 'audience': ''},
+        )
         self.assertEqual(found['next'], 'angles')
         self.assertEqual(found['approval'], 'conversation')
         found = self.submit(found, self.ANGLES)
@@ -3891,7 +3894,12 @@ class LengthAndQualificationTests(RunnerCase):
             ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
             + ['--title', 'Chat', '--research', 'none', '--length', 'deep']
         )
-        chat = runner.command(self.root, args)
+        with self.assertRaisesRegex(ValueError, 'desk create --input'):
+            runner.command(self.root, args)
+        chat = runner.create(
+            self.root,
+            {'title': 'Chat', 'audience': 'A', 'goal': 'G', 'research': 'none', 'length': 'deep'},
+        )
         self.assertEqual(runner.load(self.root, chat['id'])[2]['length'], 'deep')
 
     def test_length_names_only_what_applies(self):
@@ -3930,7 +3938,7 @@ class LengthAndQualificationTests(RunnerCase):
             ['--root', str(self.root), 'run', 'create', '--audience', 'A', '--goal', 'G']
             + ['--title', 'Ideas', '--mode', 'ideas', '--length', 'short']
         )
-        with self.assertRaisesRegex(ValueError, 'Length is for new writing'):
+        with self.assertRaisesRegex(ValueError, 'desk create --input'):
             runner.command(self.root, args)
 
     def test_the_writer_qualifies_once_and_builds_each_capability(self):
