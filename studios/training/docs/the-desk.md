@@ -35,3 +35,5 @@ Use **Add a source** to add documents after research. The desk shows the price b
 In a shared workspace, one computer drives a training at a time. A teammate can read what was shared and explicitly take over when needed. Your unshared work is kept aside when a takeover requires it. Share before leaving the desk so teammates can see your work.
 
 Trainings started before the desk keep their original review flow. Once a saved training is finished and nothing is waiting, **Open on the desk** brings it to the desk. Existing person-approved material stays ready where applicable; other material may return as a draft for your decision. Opening it again does not create another copy.
+
+Conversation-owned work supports explicit person Mark ready through the main desk or checked `studio desk ready`, without runner handoff or jobs. Retained helper-page decisions and approval-mode changes refuse conversation ownership under the shared write guard. `studio desk return-delivered` previews and losslessly sets aside an undelivered local deck in History, restoring proven delivered active state or prior absence; it does not publish or invent approval.

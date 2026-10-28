@@ -5,7 +5,7 @@ description: Turn a topic into researched training in the current directory, wit
 
 # Training Studio
 
-Use checked `studio desk` commands for new conversation work: [conversation contract](references/conversation.md), [actual look/design answers](references/answers.md), [later requests](references/requests.md). No browser or nested assistant is needed. Only the person approves.
+Use checked `studio desk` commands for new work: [conversation](references/conversation.md), [look/design answers](references/answers.md), [later requests](references/requests.md), [completion](references/completion.md). No browser or nested assistant is needed.
 
 ## Start or continue
 

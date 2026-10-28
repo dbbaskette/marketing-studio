@@ -344,6 +344,23 @@ class ConversationTeamTests(TeamCase):
                 desk_chat.take(self.blake.engine, theirs, context['expected_basis'], ['outline'])
             self.assertEqual(desk_chat._files(theirs), before)
 
+    def test_person_ready_and_both_helper_routes_refuse_another_driver(self):
+        import desk
+        with self.be(self.alex):
+            root = Path(desk_chat.create(self.alex.engine, {**FORM, 'materials': [], 'scope': ['outline']})['path'])
+            self.alex.engine.share()
+        with self.be(self.blake):
+            self.blake.engine.fetch()
+            theirs = self.theirs(self.blake, root)
+            before = desk_chat._files(theirs)
+            with self.assertRaises(WorkspaceError):
+                self.blake.engine.mark_ready(theirs, 'blueprint', 'unseen')
+            for route, payload in [('/api/decide', {'artifact': 'blueprint', 'decision': 'approve', 'seen': 'unseen'}),
+                                   ('/api/approval', {'mode': 'chat'})]:
+                with self.subTest(route=route), self.assertRaises(WorkspaceError):
+                    desk.Page(0).write(route, {'path': str(theirs), **payload})
+            self.assertEqual(desk_chat._files(theirs), before)
+
 
 class ConversationGoogleDraftTests(ConversationDesignTests):
     # Reuse setup/helpers without repeating inherited tests below.
@@ -679,7 +696,7 @@ class ConversationReviewFixTests(DeckCase):
         self.assertFalse((self.base / 'must-not-exist.md').exists())
         self.assertEqual(desk_chat._files(root), before)
 
-    def drawing_request(self, existing):
+    def drawing_request(self, existing, deck_target='pptx'):
         from runner_support import OUTLINE, CHOSEN, drawn
         from runner import pipeline
         if existing:
@@ -692,7 +709,7 @@ class ConversationReviewFixTests(DeckCase):
                 desk_chat.answer(self.engine, root, {'target': 'look', 'expected_basis': context['expected_basis'],
                     'answer': {'questionId': context['requirements']['questionId'], 'choice': 'default', 'response': 'Use the shown default.'}})
         else:
-            root = self.researched(deck_target='pptx', brand=CHOSEN, materials=[])
+            root = self.researched(deck_target=deck_target, brand=CHOSEN, materials=[])
             self.submit(root, 'blueprint', 'outline', {'text': BLUEPRINT})
             self.submit(root, 'deck-outline', 'outline', {'outline': OUTLINE})
             context = desk_chat.context(self.engine, root, 'look')
@@ -725,3 +742,284 @@ class ConversationReviewFixTests(DeckCase):
 
     def test_initial_and_existing_drawing_save_failure_preserves_canonical(self):
         self.check_failed_keep('save')
+
+
+class ConversationCompletionTests(ConversationReviewFixTests):
+    test_binary_zip_deck_part_outline_and_design_contexts = None
+    test_binary_zip_pending_local_part_outline_and_design_contexts = None
+    test_google_plugin_writers_refuse_chat_ownership_before_transport = None
+    test_initial_and_existing_drawing_citation_failure_preserves_canonical = None
+    test_initial_and_existing_drawing_save_failure_preserves_canonical = None
+
+    def guide(self):
+        from runner_support import DOCUMENT
+        root = self.researched(materials=['document'], title='Ready guide')
+        self.submit(root, 'blueprint', 'outline', {'text': BLUEPRINT})
+        self.submit(root, 'document', 'text', {'text': DOCUMENT})
+        return root
+
+    def test_main_ready_records_explicit_person_without_runner_jobs(self):
+        from runner import page
+        root = self.guide()
+        count = len(self.workers.jobs)
+        seen = workspace.sha256_file(root / 'document.md')
+        handler = page.RunnerPage(0, self.engine)
+        with mock.patch.object(self.engine, 'carry_on', side_effect=AssertionError('runner')):
+            handler.drafted('/api/drafts/ready', {'path': str(root), 'name': 'document', 'seen': seen})
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['document'], 'approved')
+        self.assertEqual(self.record(root)['execution'], 'conversation')
+        self.assertNotIn('research_contract', self.record(root))
+        self.assertEqual(len(self.workers.jobs), count)
+
+    def test_ready_checked_cli_and_incomplete_version_refusals(self):
+        root = self.create()
+        self.submit(root, 'blueprint', 'outline', {'text': BLUEPRINT})
+        context = desk_chat.context(self.engine, root, 'ready/blueprint')
+        request = {'target': 'blueprint', 'expected_basis': context['expected_basis'],
+                   'seen': context['requirements']['seen'], 'response': 'I read it and mark it ready.'}
+        before = desk_chat._files(root)
+        with self.assertRaises(WorkspaceError):
+            desk_chat.ready(self.engine, root, request)
+        self.assertEqual(desk_chat._files(root), before)
+        other = self.guide()
+        context = desk_chat.context(self.engine, other, 'ready/document')
+        request.update(target='document', expected_basis=context['expected_basis'], seen='outdated')
+        before = desk_chat._files(other)
+        with self.assertRaises(WorkspaceError):
+            desk_chat.ready(self.engine, other, request)
+        self.assertEqual(desk_chat._files(other), before)
+        request['seen'] = context['requirements']['seen']
+        args = studio.parser().parse_args(['desk', 'ready', '--folder', str(other), '--input', '-'])
+        with mock.patch('sys.stdin', io.StringIO(json.dumps(request))):
+            studio.desk_command(args, make=lambda: self.engine, out=io.StringIO())
+        self.assertEqual(workspace.person_statuses(other, workspace.load(other))['document'], 'approved')
+
+    def test_retained_helper_handlers_refuse_conversation_decisions_and_mode(self):
+        import desk
+        root = self.guide()
+        before = desk_chat._files(root)
+        for route, payload in [('/api/decide', {'artifact': 'document', 'decision': 'skip'}),
+                               ('/api/decide', {'artifact': 'document', 'decision': 'approve', 'seen': workspace.sha256_file(root / 'document.md')}),
+                               ('/api/approval', {'mode': 'chat'})]:
+            with self.subTest(route=route, payload=payload), self.assertRaises(WorkspaceError):
+                desk.Page(0).write(route, {'path': str(root), **payload})
+            self.assertEqual(desk_chat._files(root), before)
+
+    def pending(self):
+        self.slides.design, self.slides.judges = True, True
+        self.slides.have['local'] = True
+        root, link, baseline, original = self.google_desk()
+        previous = self.record(root)['deck']['']
+        original_files = desk_chat._files(root)
+        self.proposed(root)
+        context = desk_chat.context(self.engine, root, 'design')
+        desk_chat.answer(self.engine, root, self.reply(context))
+        return root, link, baseline, original, previous, original_files
+
+    def resolution(self, root):
+        context = desk_chat.context(self.engine, root, 'return-delivered')
+        return context, {'target': 'return-delivered', 'expected_basis': context['expected_basis'],
+                         'seen': context['requirements']['seen'], 'response': 'Set aside my local draft and return to the delivered deck.'}
+
+    def test_return_delivered_restores_actual_old_state_and_archives_repeated_local_edits(self):
+        root, link, baseline, original, previous, original_files = self.pending()
+        first = workspace.load(root)['pending_local_decks']['deck']
+        self.submit(root, 'deck/check-yourself/notes', 'part', {'text': 'Another explicit local note.'})
+        self.assertEqual(workspace.load(root)['pending_local_decks']['deck']['restore_sha256'], first['restore_sha256'])
+        context, request = self.resolution(root)
+        self.assertIn('delivered', context['requirements']['summary'].lower())
+        local = (root / 'deck/local-draft.pptx').read_bytes()
+        with mock.patch.object(self.slides, 'drive_import', side_effect=AssertionError('delivery')):
+            desk_chat.return_delivered(self.engine, root, request)
+        session = workspace.load(root)
+        self.assertFalse(session.get('pending_local_decks'))
+        self.assertEqual((link.read_bytes(), baseline.read_bytes()), original[:2])
+        self.assertEqual(session['artifacts']['deck'], json.loads(original_files['.training-studio/session.json'])['artifacts']['deck'])
+        self.assertEqual(self.record(root)['deck'][''], previous)
+        self.assertEqual(workspace.person_statuses(root, session)['deck'], 'approved')
+        self.assertTrue(any(path.read_bytes() == local for path in (root / 'history').rglob('*.pptx')))
+        for name, data in original_files.items():
+            if name.startswith(('deck/', 'work/deck/')):
+                self.assertEqual((root / name).read_bytes(), data)
+
+    def test_return_delivered_refuses_changed_basis_dependencies_pending_ready_and_failure(self):
+        root, _, _, _, _, _ = self.pending()
+        context, request = self.resolution(root)
+        before = desk_chat._files(root)
+        with self.assertRaises(WorkspaceError):
+            self.engine.mark_ready(root, 'deck', request['seen'])
+        self.assertEqual(desk_chat._files(root), before)
+        request['seen'] = 'different'
+        with self.assertRaises(WorkspaceError):
+            desk_chat.return_delivered(self.engine, root, request)
+        self.assertEqual(desk_chat._files(root), before)
+        request['seen'] = context['requirements']['seen']
+        from runner import gitstate
+        with mock.patch.object(gitstate, 'commit', side_effect=WorkspaceError('synthetic publication failure')):
+            with self.assertRaises(WorkspaceError):
+                desk_chat.return_delivered(self.engine, root, request)
+        self.assertEqual(desk_chat._files(root), before)
+        (root / 'blueprint.md').write_bytes((root / 'blueprint.md').read_bytes() + b'\nChanged upstream.\n')
+        before = desk_chat._files(root)
+        with self.assertRaises(WorkspaceError):
+            desk_chat.return_delivered(self.engine, root, request)
+        self.assertEqual(desk_chat._files(root), before)
+        with self.assertRaises(WorkspaceError):
+            self.resolution(root)
+
+    def test_initial_google_drawing_can_be_set_aside_then_select_local_deck(self):
+        root, request = self.drawing_request(False, deck_target='google')
+        desk_chat.submit(self.engine, root, request)
+        context, request = self.resolution(root)
+        self.assertIn('no delivered', context['requirements']['summary'].lower())
+        args = studio.parser().parse_args(['desk', 'return-delivered', '--folder', str(root), '--input', '-'])
+        with mock.patch('sys.stdin', io.StringIO(json.dumps(request))):
+            studio.desk_command(args, make=lambda: self.engine, out=io.StringIO())
+        self.assertNotIn('deck', workspace.load(root)['artifacts'])
+        self.assertFalse((root / 'deck-link.md').exists())
+        context = desk_chat.context(self.engine, root, 'scope')
+        desk_chat.set_scope(self.engine, root, context['expected_basis'], list(desk_chat.KINDS), deck_target='pptx')
+        self.assertEqual(workspace.load(root)['settings']['deck_target'], 'pptx')
+
+    def test_snapshot_is_bound_before_pending_and_never_silently_replaced(self):
+        from runner import pipeline
+        self.slides.design, self.slides.judges = True, True
+        self.slides.have['local'] = True
+        root, _, _, _ = self.google_desk()
+        path = root / 'deck/delivered-state.json'
+        path.write_text('{"unrecognized":"original state"}\n')
+        before = desk_chat._files(root)
+        with self.assertRaises(WorkspaceError):
+            desk_chat.context(self.engine, root, 'deck/check-yourself/title')
+        self.assertEqual(desk_chat._files(root), before)
+        path.unlink()
+        self.proposed(root)
+        self.assertTrue(path.is_file())
+        self.assertFalse(workspace.load(root).get('pending_local_decks'))
+        context = desk_chat.context(self.engine, root, 'design')
+        path.write_bytes(path.read_bytes() + b'\n')
+        before = desk_chat._files(root)
+        with self.assertRaises(WorkspaceError):
+            desk_chat.answer(self.engine, root, self.reply(context))
+        self.assertEqual(desk_chat._files(root), before)
+        with self.assertRaises(WorkspaceError):
+            desk_chat.context(self.engine, root, 'design')
+        self.assertTrue((root / pipeline.OUTLINE).is_file())
+
+    def test_ready_and_return_final_recheck_refuse_a_concurrent_writer(self):
+        from runner import gitstate
+        from contextlib import contextmanager
+        pending, _, _, _, _, _ = self.pending()
+        _, returning = self.resolution(pending)
+        guide = self.guide()
+        context = desk_chat.context(self.engine, guide, 'ready/document')
+        approving = {'target': 'document', 'expected_basis': context['expected_basis'],
+                     'seen': context['requirements']['seen'], 'response': 'Mark the guide ready.'}
+        real = gitstate.workspace_locked
+        for root, operation, request in [(pending, desk_chat.return_delivered, returning), (guide, desk_chat.ready, approving)]:
+            with self.subTest(operation=operation.__name__):
+                calls = 0
+                external = root / 'blueprint.md'
+                @contextmanager
+                def racing(*args, **kwargs):
+                    nonlocal calls
+                    calls += 1
+                    if calls == 3:
+                        external.write_bytes(external.read_bytes() + b'\nConcurrent change.\n')
+                    with real(*args, **kwargs):
+                        yield
+                before = desk_chat._files(root)
+                with mock.patch.object(gitstate, 'workspace_locked', racing):
+                    with self.assertRaises(WorkspaceError):
+                        operation(self.engine, root, request)
+                after = desk_chat._files(root)
+                self.assertEqual({key: data for key, data in after.items() if key != 'blueprint.md'},
+                                 {key: data for key, data in before.items() if key != 'blueprint.md'})
+
+    def test_retained_handlers_preserve_runner_and_standalone_saved_behavior(self):
+        import desk
+        root = self.guide()
+        record = self.record(root)
+        record['execution'] = 'runner'
+        self.engine._store(root, record)
+        result = desk.Page(0).write('/api/decide', {'path': str(root), 'artifact': 'document',
+                                  'decision': 'approve', 'seen': workspace.sha256_file(root / 'document.md')})
+        self.assertEqual(result[0], 200)
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['document'], 'approved')
+        desk.Page(0).write('/api/approval', {'path': str(root), 'mode': 'chat'})
+        self.assertEqual(workspace.load(root)['settings']['approval'], 'chat')
+        (root / '.training-studio/run.json').unlink()
+        desk.Page(0).write('/api/approval', {'path': str(root), 'mode': 'page'})
+        self.assertEqual(workspace.load(root)['settings']['approval'], 'page')
+
+    def test_legacy_helper_handlers_wait_for_real_shared_process_lock(self):
+        import os
+        import subprocess
+        import sys
+        import threading
+        import desk
+        from studio_core.process_lock import workspace_lock_path
+        import home
+        root = self.guide()
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join((str(helpers.REPO), str(helpers.SCRIPTS))))
+        code = '''from pathlib import Path
+import sys
+import workspace
+from studio_core.process_lock import ProcessRLock
+with ProcessRLock(lambda: Path(sys.argv[1]), refusal=ValueError):
+    print('locked', flush=True)
+    sys.stdin.read(1)
+'''
+        for route, sent in [('/api/decide', {'artifact': 'document', 'decision': 'skip'}), ('/api/approval', {'mode': 'chat'})]:
+            with self.subTest(route=route):
+                child = subprocess.Popen([sys.executable, '-c', code, str(workspace_lock_path(self.engine.space().repo, home.data_root()))], env=env,
+                    stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                finished, started, errors = threading.Event(), threading.Event(), []
+                def call():
+                    started.set()
+                    try:
+                        desk.Page(0).write(route, {'path': str(root), **sent})
+                    except WorkspaceError as error:
+                        errors.append(str(error))
+                    finally:
+                        finished.set()
+                thread = threading.Thread(target=call)
+                try:
+                    self.assertEqual(child.stdout.readline().strip(), 'locked')
+                    before = desk_chat._files(root)
+                    thread.start()
+                    self.assertTrue(started.wait(2))
+                    self.assertFalse(finished.wait(.15))
+                    self.assertEqual(desk_chat._files(root), before)
+                    child.communicate('x', timeout=5)
+                    thread.join(5)
+                    self.assertTrue(finished.is_set())
+                    self.assertTrue(errors)
+                    self.assertEqual(desk_chat._files(root), before)
+                finally:
+                    if child.poll() is None:
+                        child.kill()
+                        child.communicate()
+                    if thread.ident:
+                        thread.join(5)
+
+    def test_completion_and_helper_routes_refuse_worker_and_unknown_saved_jobs(self):
+        import desk
+        root = self.guide()
+        marker = root / self.engines.IN_HAND
+        marker.write_text('synthetic saved worker')
+        before = desk_chat._files(root)
+        with self.assertRaises(WorkspaceError):
+            self.engine.mark_ready(root, 'document', workspace.sha256_file(root / 'document.md'))
+        for route, payload in [('/api/decide', {'artifact': 'document', 'decision': 'skip'}), ('/api/approval', {'mode': 'chat'})]:
+            with self.subTest(route=route), self.assertRaises(WorkspaceError):
+                desk.Page(0).write(route, {'path': str(root), **payload})
+        self.assertEqual(desk_chat._files(root), before)
+        marker.unlink()
+        record = self.record(root)
+        record['drafts']['jobs'] = 'unknown'
+        self.engine._store(root, record)
+        before = desk_chat._files(root)
+        with self.assertRaises(WorkspaceError):
+            desk.Page(0).write('/api/approval', {'path': str(root), 'mode': 'chat'})
+        self.assertEqual(desk_chat._files(root), before)

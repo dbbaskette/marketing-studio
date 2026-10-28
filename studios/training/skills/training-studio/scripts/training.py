@@ -205,15 +205,10 @@ def dispatch(args: argparse.Namespace, root: Path) -> dict:
     """Helper writes serialize with desk ownership changes and refuse chat-owned work."""
     writing = {'save', 'approve', 'research-import', 'skip', 'checkpoint', 'pin', 'export'}
     google_write = args.command == 'google' and args.google_command in {'push', 'record', 'pull', 'unlink'}
-    record = root / workspace.STATE_DIR / 'run.json'
-    if (args.command not in writing and not google_write) or not record.is_file():
+    if args.command not in writing and not google_write:
         return _dispatch(args, root)
-    from studio_core.process_lock import ProcessRLock, workspace_lock_path
-    repo = next((folder for folder in (root, *root.parents) if (folder / '.git').exists()), None)
-    with ProcessRLock(lambda: workspace_lock_path(repo, home.data_root()), refusal=workspace.WorkspaceError):
-        kept = home.read_json(record, {})
-        if kept.get('flow') == 'desk' and kept.get('execution') == 'conversation':
-            raise workspace.WorkspaceError('This training is being worked on in conversation. Use studio desk context and submit for checked changes.')
+    import write_guard
+    with write_guard.admitted(root):
         return _dispatch(args, root)
 
 

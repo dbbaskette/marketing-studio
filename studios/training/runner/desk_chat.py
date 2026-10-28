@@ -185,6 +185,17 @@ def _target(root, target):
         return None, target, None
     if not isinstance(target, str) or len(target) > 200:
         raise WorkspaceError('Choose a current Training Studio material target.')
+    if target.startswith('ready/'):
+        name = target.removeprefix('ready/')
+        session = workspace.load(root)
+        if name not in workspace.artifact_names(root, session) or workspace.split(name)[0].partition(':')[0] not in workspace.PERSON_MARKED:
+            raise WorkspaceError('Choose one current material to mark ready.')
+        return None, name, None
+    if workspace.split(target)[0] == 'return-delivered':
+        name = workspace.qualify('deck', workspace.split(target)[1])
+        if name not in workspace.artifact_names(root, workspace.load(root)):
+            raise WorkspaceError('Choose a current deck level.')
+        return None, name, None
     name, separator, part = target.partition('/')
     base, level = workspace.split(name)
     session = workspace.load(root)
@@ -229,6 +240,18 @@ def _step(found, name, outline=False):
 
 def _prepare(engine, root, record, target):
     kind, name, part = _target(root, target)
+    if target.startswith('ready/'):
+        session = workspace.load(root)
+        return {'operation': 'ready', 'material': name, 'label': workspace.label(name),
+                'seen': workspace.sha256_file(root / workspace.artifact(root, session, name)['file']),
+                'state': workspace.person_statuses(root, session).get(name),
+                'response': 'The person explicitly marks this version ready.'}
+    if workspace.split(target)[0] == 'return-delivered':
+        snapshot, marker = _return_state(root, name)
+        return {'operation': 'return-delivered', 'material': name, 'seen': marker['sha256'],
+                'summary': 'Return to the previously delivered deck; keep the local draft in History.' if snapshot['delivered_sha256'] else
+                           'Set aside local draft; no delivered deck exists. Keep the draft in History.',
+                'delivered': snapshot['delivered_sha256'], 'local': marker['sha256']}
     if kind is None:
         return {'allowed_scope': list(KINDS), 'existing_scope': record.get('conversation_scope'),
                 'optional_selection_fields': ['materials', 'deck_target', 'brand', 'yoodli'] if target == 'scope' else []}
@@ -306,6 +329,91 @@ def _material_input(root, name, part):
     return material
 
 
+def _restore_path(root, name):
+    return root / workspace.prefix(workspace.split(name)[1]) / 'deck/delivered-state.json'
+
+
+def _deck_path(name, relative):
+    prefix = workspace.prefix(workspace.split(name)[1])
+    return (relative.startswith((prefix + 'deck/', prefix + 'work/deck/'))
+            and relative != prefix + 'deck/delivered-state.json'
+            and '..' not in Path(relative).parts and not Path(relative).is_absolute())
+
+
+def _read_restore(root, name):
+    record = home.read_json(root / drafts.RECORD, {})
+    bindings = record.get('delivered_restore', {})
+    if not isinstance(bindings, dict):
+        raise WorkspaceError('The original delivered state binding cannot be read.')
+    digest = bindings.get(name)
+    path = _restore_path(root, name)
+    if not isinstance(digest, str) or workspace.sha256_file(path) != digest:
+        raise WorkspaceError('The original delivered state is missing or changed. Keep the local draft and restore its saved record.')
+    value = home.read_json(path, None)
+    fields = {'schema', 'material', 'inputs', 'artifact', 'desk_ready', 'deck', 'delivered_sha256', 'files'}
+    if (not isinstance(value, dict) or set(value) != fields or value['schema'] != 1 or value['material'] != name
+            or not isinstance(value['files'], dict) or not isinstance(value['inputs'], dict)
+            or any(value[key] is not None and not isinstance(value[key], dict) for key in ('artifact', 'deck'))):
+        raise WorkspaceError('The original delivered state cannot be read.')
+    if any(not isinstance(relative, str) or not _deck_path(name, relative) or not isinstance(data, str) for relative, data in value['files'].items()):
+        raise WorkspaceError('The original delivered state contains unsupported paths.')
+    try:
+        data = {relative: base64.b64decode(content, validate=True) for relative, content in value['files'].items()}
+    except ValueError:
+        raise WorkspaceError('The original delivered state contains invalid saved bytes.') from None
+    if sum(map(len, data.values())) > 64_000_000:
+        raise WorkspaceError('The original delivered state is too large.')
+    return value, digest
+
+
+def _capture_restore(root, before, name):
+    session = workspace.load(root)
+    if session['settings']['deck_target'] != 'google':
+        return
+    record = home.read_json(root / drafts.RECORD, {})
+    bindings = record.get('delivered_restore', {})
+    if not isinstance(bindings, dict):
+        raise WorkspaceError('The original delivered state binding cannot be read.')
+    if _restore_path(root, name).exists() or name in bindings:
+        _read_restore(root, name)
+        return
+    if session.get('pending_local_decks', {}).get(name):
+        raise WorkspaceError('This older local draft has no proven original state. Restore its saved record before editing it.')
+    old_session = json.loads(before[workspace.STATE_DIR + '/session.json'])
+    old_record = json.loads(before[drafts.RECORD])
+    prefix = workspace.prefix(workspace.split(name)[1])
+    linked = before.get(prefix + 'deck-link.md')
+    artifact = old_session['artifacts'].get(name)
+    if artifact and (linked is None or artifact.get('sha256') != hashlib.sha256(linked).hexdigest()):
+        raise WorkspaceError('The delivered deck metadata does not match its link. Restore it before editing.')
+    files = {relative: content for relative, content in before.items() if _deck_path(name, relative)}
+    if sum(map(len, files.values())) > 64_000_000:
+        raise WorkspaceError('The delivered deck state exceeds the bounded local snapshot size.')
+    value = {'schema': 1, 'material': name, 'inputs': workspace.inputs(root, session, name),
+             'artifact': artifact, 'desk_ready': old_session.get('desk_ready', {}).get(name),
+             'deck': old_record.get('deck', {}).get(workspace.split(name)[1] or ''),
+             'delivered_sha256': hashlib.sha256(linked).hexdigest() if linked is not None else None,
+             'files': {relative: base64.b64encode(content).decode() for relative, content in files.items()}}
+    path = _restore_path(root, name)
+    workspace.write_atomic(path, (json.dumps(value, sort_keys=True) + '\n').encode())
+    record.setdefault('delivered_restore', {})[name] = workspace.sha256_file(path)
+    home.write_json(root / drafts.RECORD, record)
+
+
+def _return_state(root, name):
+    session = workspace.load(root)
+    marker = workspace.pending_local_deck(root, session, name)
+    snapshot, digest = _read_restore(root, name)
+    prefix = workspace.prefix(workspace.split(name)[1])
+    if not marker or marker.get('restore_sha256') != digest:
+        raise WorkspaceError('This local draft has no proven original delivered state.')
+    if (workspace.sha256_file(root / (prefix + 'deck-link.md')) != snapshot['delivered_sha256']
+            or workspace.inputs(root, session, name) != snapshot['inputs']
+            or (snapshot['artifact'] is not None and snapshot['artifact'].get('built_from') != snapshot['inputs'])):
+        raise WorkspaceError('The delivered deck or its dependencies changed. Keep the local draft and resolve those inputs first.')
+    return snapshot, marker
+
+
 @contextmanager
 def _prepared(engine, path, target, change=False, owner=True):
     space = engine.space()
@@ -324,6 +432,8 @@ def _prepared(engine, path, target, change=False, owner=True):
             file = _path(stage, relative)
             file.parent.mkdir(parents=True, exist_ok=True)
             file.write_bytes(data)
+        if kind and workspace.split(name)[0] == 'deck':
+            _capture_restore(stage, before, name)
         # Rebase operational metadata only, preserving original sources/material bytes.
         for file in stage.rglob('*.json'):
             relative = file.relative_to(stage).as_posix()
@@ -549,6 +659,78 @@ def submit(engine, path, request):
 
 def save(engine, path, request):
     return submit(engine, path, request)
+
+
+def _person_request(request):
+    if (not isinstance(request, dict) or set(request) != {'target', 'expected_basis', 'seen', 'response'}
+            or not isinstance(request['target'], str) or not isinstance(request['response'], str)
+            or not request['response'].strip() or len(request['response']) > 4000):
+        raise WorkspaceError('Supply target, expected_basis, seen and the person’s explicit response.')
+
+
+def ready(engine, path, request):
+    _person_request(request)
+    with _prepared(engine, path, 'ready/' + request['target'], True) as prepared:
+        space, root, stage, staged, before, context = prepared
+        if request['expected_basis'] != context['expected_basis'] or request['seen'] != context['requirements']['seen']:
+            raise WorkspaceError(CHANGED)
+        record = staged._load(stage)
+        staged._mark(stage, record, request['target'], request['seen'])
+        record = staged._load(stage)
+        record.setdefault('conversation_decisions', []).append({**request, 'at': home.now(), 'by': 'person-request'})
+        staged._store(stage, record)
+        _publish(engine, space, root, stage, before)
+    return show(engine, root)
+
+
+def return_delivered(engine, path, request):
+    _person_request(request)
+    if workspace.split(request['target'])[0] != 'return-delivered':
+        raise WorkspaceError('Choose return-delivered at the current deck level.')
+    with _prepared(engine, path, request['target'], True) as prepared:
+        space, root, stage, staged, before, context = prepared
+        if request['expected_basis'] != context['expected_basis'] or request['seen'] != context['requirements']['seen']:
+            raise WorkspaceError(CHANGED)
+        name = context['requirements']['material']
+        snapshot, marker = _return_state(stage, name)
+        archive = stage / 'history/deck-local' / request['expected_basis']
+        if archive.exists():
+            raise WorkspaceError('This local draft is already retained in History. Read its current state.')
+        for relative, data in _files(stage, proposals=False).items():
+            if _deck_path(name, relative):
+                workspace.write_atomic(archive / relative, data)
+                (stage / relative).unlink()
+        session = workspace.load(stage)
+        record = staged._load(stage)
+        home.write_json(archive / 'state.json', {'material': name, 'marker': marker,
+            'artifact': session['artifacts'].get(name), 'desk_ready': session.get('desk_ready', {}).get(name),
+            'deck': record.get('deck', {}).get(workspace.split(name)[1] or ''), 'request': request})
+        workspace.write_atomic(archive / 'delivered-state.json', _restore_path(stage, name).read_bytes())
+        for relative, data in snapshot['files'].items():
+            workspace.write_atomic(stage / relative, base64.b64decode(data, validate=True))
+        if snapshot['artifact'] is None:
+            session['artifacts'].pop(name, None)
+        else:
+            session['artifacts'][name] = snapshot['artifact']
+        if snapshot['desk_ready'] is None:
+            session.get('desk_ready', {}).pop(name, None)
+        else:
+            session.setdefault('desk_ready', {})[name] = snapshot['desk_ready']
+        session['pending_local_decks'].pop(name)
+        key = workspace.split(name)[1] or ''
+        if snapshot['deck'] is None:
+            record.get('deck', {}).pop(key, None)
+        else:
+            record.setdefault('deck', {})[key] = snapshot['deck']
+        record['delivered_restore'].pop(name)
+        record.setdefault('conversation_resolutions', []).append({**request, 'at': home.now(),
+            'archive': archive.relative_to(stage).as_posix(), 'restored': snapshot['delivered_sha256']})
+        workspace.log(session, 'set-aside-local-deck', artifact=name, by='person-request')
+        workspace.store(stage, session)
+        staged._store(stage, record)
+        _restore_path(stage, name).unlink()
+        _publish(engine, space, root, stage, before)
+    return show(engine, root)
 
 
 def set_scope(engine, path, expected_basis, scope, **selection):

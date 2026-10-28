@@ -216,8 +216,8 @@ def desk_command(args, make=engines.Engine, out=None):
             result = desk_chat.show(engine, args.folder)
         elif action == 'context':
             result = desk_chat.context(engine, args.folder, args.target)
-        elif action in ('save', 'submit', 'answer'):
-            result = getattr(desk_chat, action)(engine, args.folder, data)
+        elif action in ('save', 'submit', 'answer', 'ready', 'return-delivered'):
+            result = getattr(desk_chat, action.replace('-', '_'))(engine, args.folder, data)
         else:
             required = {'expected_basis', 'scope'}
             optional = {'materials', 'deck_target', 'brand', 'yoodli'} if action == 'scope' else set()
@@ -250,7 +250,7 @@ def parser() -> argparse.ArgumentParser:
     saving.set_defaults(handler=saved_work)
     conversation = commands.add_parser('desk', help='checked conversation work as JSON')
     actions = conversation.add_subparsers(dest='desk_action', required=True)
-    for name in ('create', 'show', 'save', 'context', 'submit', 'scope', 'handoff', 'take', 'answer'):
+    for name in ('create', 'show', 'save', 'context', 'submit', 'scope', 'handoff', 'take', 'answer', 'ready', 'return-delivered'):
         action = actions.add_parser(name)
         if name != 'create':
             action.add_argument('--folder', required=True, type=Path)

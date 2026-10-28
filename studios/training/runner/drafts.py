@@ -576,7 +576,7 @@ def needs_you(root: Path, found, name: str) -> list[str]:
     if workspace.split(name)[0] != 'deck':
         return []
     if workspace.pending_local_deck(root, found.session, name):
-        return ['This deck has an undelivered local draft. Deliver it explicitly before marking it ready.']
+        return ['This deck has an undelivered local draft. Resolve it explicitly before marking a deck ready.']
     from runner import pipeline
     shown = pipeline.deck_gate(root, found.session, name)
     return review_policy.held((shown.get('review') or {}).get('findings'),

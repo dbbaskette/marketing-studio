@@ -395,24 +395,28 @@ def pending_local_deck(root: Path, session: dict, name: str) -> dict | None:
     base, level = split(name)
     valid_level = level in session['levels'] if session['levels'] else level is None
     fields = {'schema', 'sha256', 'delivered_sha256', 'delivered_approval', 'at'}
-    valid_marker = isinstance(marker, dict) and set(marker) == fields
+    valid_marker = isinstance(marker, dict) and ((marker.get('schema') == 1 and set(marker) == fields)
+        or (marker.get('schema') == 2 and set(marker) == fields | {'restore_sha256'}))
     if valid_marker:
         delivered = marker['delivered_sha256']
         approval = marker['delivered_approval']
-        valid_marker = (type(marker['schema']) is int and marker['schema'] == 1
+        valid_marker = (type(marker['schema']) is int and marker['schema'] in (1, 2)
                         and isinstance(marker['at'], str)
                         and re.fullmatch(r'[a-f0-9]{64}', str(marker['sha256']))
                         and (delivered is None or re.fullmatch(r'[a-f0-9]{64}', str(delivered)))
                         and (approval is None or isinstance(approval, dict)))
     if base != 'deck' or not valid_level or session['settings']['deck_target'] != 'google' or not valid_marker:
         raise WorkspaceError('The local deck draft record is invalid. Restore its saved record.')
+    if marker['schema'] == 2 and (not re.fullmatch(r'[a-f0-9]{64}', str(marker['restore_sha256']))
+            or sha256_file(managed(root, prefix(level) + 'deck/delivered-state.json')) != marker['restore_sha256']):
+        raise WorkspaceError('The original delivered state is missing or changed. Restore its saved record.')
     file = managed(root, prefix(level) + 'deck/local-draft.pptx')
     if sha256_file(file) != marker['sha256'] or file.read_bytes()[:4] != PPTX_SIGNATURE:
         raise WorkspaceError('The local deck draft is missing or changed. Restore that draft before continuing.')
     return marker
 
 
-def stage_local_deck(root: Path, name: str, source: Path, delivered_approval=None) -> None:
+def stage_local_deck(root: Path, name: str, source: Path, delivered_approval=None, restore_sha256=None) -> None:
     """Keep checked local bytes separately from an unchanged delivered Google link."""
     session = load(root)
     old = pending_local_deck(root, session, name)
@@ -424,7 +428,9 @@ def stage_local_deck(root: Path, name: str, source: Path, delivered_approval=Non
         raise WorkspaceError('The local drawing is not a usable PowerPoint deck.')
     file = managed(root, prefix(level) + 'deck/local-draft.pptx')
     link = managed(root, prefix(level) + 'deck-link.md')
-    marker = dict(old) if old else {'schema': 1, 'delivered_sha256': sha256_file(link),
+    if not re.fullmatch(r'[a-f0-9]{64}', str(restore_sha256)):
+        raise WorkspaceError('Keep the proven original delivered state before saving a local deck draft.')
+    marker = dict(old) if old else {'schema': 2, 'restore_sha256': restore_sha256, 'delivered_sha256': sha256_file(link),
         'delivered_approval': delivered_approval if delivered_approval is not None else
                               (session['artifacts'].get(name) or {}).get('approved')}
     snapshot(root, name, file)
@@ -949,7 +955,7 @@ def _approve(root: Path, session: dict, name: str, accept_stale: str | None,
     """Approve what is on disk in a loaded record. The caller stores it."""
     spec = artifact(root, session, name)
     if pending_local_deck(root, session, name) and by != 'desk':
-        raise WorkspaceError('This deck has an undelivered local draft. Deliver it explicitly before marking it ready.')
+        raise WorkspaceError('This deck has an undelivered local draft. Resolve it explicitly before marking a deck ready.')
     if not policy:
         check_choice(by, tuple(WHERE), 'Who decided')
     if name != 'intake' and not policy:  # intake records the user's own answers, given in the conversation

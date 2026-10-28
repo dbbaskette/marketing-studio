@@ -3251,8 +3251,10 @@ class Engine(Reviewing):
                 'The slides as they were drawn and reviewed are kept on this computer.')
         with self.files:
             if local_only:
+                from runner import desk_chat
+                _, restore_digest = desk_chat._read_restore(root, it.artifact)
                 workspace.stage_local_deck(root, it.artifact, file,
-                    getattr(self, '_local_deck_approvals', {}).get(it.artifact))
+                    getattr(self, '_local_deck_approvals', {}).get(it.artifact), restore_digest)
                 session = workspace.load(root)
                 found = replace(found, session=session)
                 record = self._load(root)
@@ -5370,6 +5372,12 @@ class Engine(Reviewing):
         version they were shown (`seen`, its hash). The desk's acceptance never is. Refused
         for a held material ("Update it or keep it as it is first."), a deck with something
         that needs the person, and when the version has changed since it was opened."""
+        root = self.driven(path)
+        if root is not None and drafts.in_conversation(self._load(root)):
+            from runner import desk_chat
+            context = desk_chat.context(self, root, 'ready/' + str(name))
+            return desk_chat.ready(self, root, {'target': name, 'expected_basis': context['expected_basis'],
+                'seen': seen, 'response': 'The person explicitly chose Mark ready on the desk.'})
         with self.files:
             root, record = self._on_desk(path, decided=True)
             self._mark(root, record, name, seen)
