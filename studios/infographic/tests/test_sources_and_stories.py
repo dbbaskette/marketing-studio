@@ -99,7 +99,7 @@ class SourceStoryTests(Isolated):
         link = self.temp / 'linked.txt'
         link.symlink_to(target)
         with self.assertRaises(Invalid): sources.read_file(link)
-        unsupported = self.temp / 'notes.docx'
+        unsupported = self.temp / 'notes.doc'
         unsupported.write_bytes(b'not a supported file')
         with self.assertRaises(Invalid): sources.read_file(unsupported)
         self.assertEqual(sources.read_file(target), ('text', b'Supplied notes'))

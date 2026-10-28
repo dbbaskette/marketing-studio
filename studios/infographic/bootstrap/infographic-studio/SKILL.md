@@ -1,20 +1,21 @@
 ---
 name: infographic-studio
-description: Turn supplied text, Markdown or explicitly selected CSV into a branded one-page infographic; suggest a story, compose editable labels and charts with explanatory artwork, inspect actual pixels, revise, approve and export PNG, PDF, SVG and accessible text.
+description: Turn supplied documents, Google Docs, reviewed research or explicitly selected CSV into a branded one-page infographic; suggest a story, compose editable labels and charts with explanatory artwork, inspect actual pixels, revise, approve and export PNG, PDF, SVG and accessible text.
 ---
 
 # Infographic Studio
 
 Use the native editing desk, from this conversation or its browser UI. Keep content
-outside the application/skill directory. Never fetch a supplied URL, conduct research,
-install software or publish as part of this skill. A link is a supplied reference.
+outside the application/skill directory. A pasted link is a reference until the user explicitly requests its read/import.
+Preview supplied files or permissioned Google Docs/public pages before capture. Never
+install software, conduct public research, deliver to Google or share team content implicitly.
 
 Find `runner/studio.py` beside this installed SKILL.md; in a source checkout it is
 `../../runner/studio.py`. Use Python 3.11+. `--help`, `status`, `inspect ID`,
 `history ID`, `computer` and `csv-preview --file FILE` are read-only and start no
 provider. `setup --workspace ABSOLUTE_EMPTY_FOLDER` or `serve --open` explicitly
-sets up a missing local workspace. Existing workspaces are preserved. Team storage
-and research handoffs are follow-up features.
+sets up a missing local workspace. Existing workspaces are preserved. Google delivery, reviewed research and selected studio/team handoffs are explicit native
+actions documented in the conversation reference. Keep source permissions and privacy.
 
 Read `docs/conversation.md` beside an installed skill (or `../../docs/conversation.md`
 in a checkout) for exact action schemas and a synthetic journey. Read only the
@@ -22,7 +23,8 @@ reference needed for the current stage. In a conversation, author located facts,
 stories and art direction directly through the native `action` command; do not
 launch the page's planning assistant again for work you are already doing.
 
-1. Capture supplied information, audience, desired takeaway, must-show ideas, locked
+1. Offer Paste, Upload files, Google Doc/public page, or selected studio material.
+   Review readable coverage and acknowledge extraction gaps before importing. Capture audience, desired takeaway, must-show ideas, locked
    wording, exclusions and A4, Letter or digital portrait size. Preview CSV and ask
    for exact rows/columns/types/units before capture; never infer numeric types.
 2. Choose direct (one user-directed story), suggest (one to three distinct stories)
@@ -47,7 +49,11 @@ launch the page's planning assistant again for work you are already doing.
    Approval binds the exact revision, scene and input hashes. Edits/restores clear it.
 8. Export approved PNG/PDF/editable SVG/accessible text, or an explicitly labeled
    draft. Artwork in SVG remains raster; text and chart marks stay editable. State
-   the font portability limitation. Download files, not workspace JSON, as the deliverable.
+   the font portability limitation. Offer PDF, a new Google Doc, or both after explicit
+   delivery authorization. Google Docs contain the approved page raster plus editable text
+   and source notes; inspect conversion in Docs. Never overwrite the supplied source.
+   Reconcile uncertain delivery intents read-only; never resubmit blindly. Team sharing
+   needs the exact selected inventory and separate private-source/art confirmation.
 
 Preserve all existing content on failures. Never replay running/unknown image intents.
 Reopening is read-only; cancellation revokes adoption and does not promise remote

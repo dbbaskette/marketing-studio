@@ -12,7 +12,7 @@ from .contracts import canonical, digest
 from .validation import require, text
 from .workspace import _atomic, _json, data_root, file_lock
 
-FIELDS = {'gemini_model', 'renderer'}
+FIELDS = {'gemini_model', 'renderer', 'google_account', 'google_folder', 'team_email'}
 
 
 def native():
@@ -32,6 +32,14 @@ def validate(changes):
     require(isinstance(changes, dict) and set(changes) <= FIELDS, 'Choose only image-model and renderer defaults.')
     for key, value in changes.items():
         require(text(value, empty=True, limit=2000), 'Use bounded non-secret preference text.')
+        if key in ('google_account','team_email') and value:
+            from studio_core.google_api import account
+            try: account(value)
+            except ValueError as failure: require(False, str(failure))
+        if key == 'google_folder' and value:
+            from studio_core.google_api import identifier
+            try: identifier(value)
+            except ValueError as failure: require(False, str(failure))
         if key == 'gemini_model' and value:
             require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}', value) is not None, 'Use an explicit Gemini model ID.')
         if key == 'renderer' and value:
@@ -66,6 +74,7 @@ def snapshot():
     return {'assistant': {'agent': agent, 'model': assistant.get('model'), 'effort': assistant.get('effort')},
             'person': deepcopy(shared.get('person') or {}), 'brand': deepcopy(shared.get('brand') or {}),
             'native': local, 'native_revision': digest(local),
+            'material_folders': {key: str(Path((shared.get('local') or {}).get('root') or '~/Studios').expanduser() / (key+'-workspace') / folder) for key,folder in (('blog','blogs'),('presentation','presentations'),('training','trainings'))},
             'renderer': os.environ.get('INFOGRAPHIC_STUDIO_RENDERER') or local.get('renderer') or packaged_renderer(),
             'image_provider': 'codex' if agent == 'codex' else 'gemini'}
 

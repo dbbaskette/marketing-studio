@@ -1,16 +1,16 @@
 # Infographic Studio
 
-Turn supplied information into one clear page. Add notes, a UTF-8 text/Markdown
-file or an explicitly selected CSV table; choose a story; build and inspect the
+Turn supplied information into one clear page. Paste notes, upload text/Markdown/PDF/Word/HTML files or selected CSV,
+read a Google Doc or public HTTPS page, or import selected studio material; choose a story; build and inspect the
 page; make focused edits; approve the exact revision and download PNG, one-page
 PDF, editable SVG and accessible text. Explanatory artwork stays raster inside
 SVG; labels and chart marks remain editable.
 
 The first release implements comparison, process, timeline, number callouts,
 parts-to-whole and conceptual explanations in A4, US Letter and 1080 × 1350 digital
-portrait. It does not fetch URLs, conduct research, import Office/Google documents,
-or share content into team repositories. Those follow-up integrations are tracked
-separately. Sources and generated files stay in your local workspace.
+portrait. Remote reads, reviewed research imports and selected team sharing are explicit actions.
+The app does not start public research or OCR implicitly. Sources and generated files
+stay in the local workspace; connecting a team library keeps an independent private clone.
 
 ## Start
 
@@ -26,15 +26,16 @@ python3 runner/studio.py serve --open
 A missing shared configuration opens the same shared setup used by the other
 studios. Finishing setup or launching explicitly creates a missing local workspace;
 existing workspaces are preserved. Shared assistant, model, effort and brand choices
-remain authoritative. Infographic Studio uses local storage even when other studios
-use the shared team repository; no repository content is moved, cloned or pushed.
+remain authoritative. Infographic Studio keeps its local workspace even when other studios use a team
+repository. Team library → Connect or sync explicitly clones the configured repository;
+only Share selected files commits and pushes a reviewed inventory.
 The native Settings screen opens shared setup and separate image/renderer defaults.
 
 Python 3.11+, Git and a compatible headless Chromium renderer are required. Prepared
 supported-platform packages include private Python, Node and a checksum-pinned
 renderer. Node supports installed brand add-ons; the Infographic Studio pipeline
-uses Python's standard library, no frontend build, no image SDK, no Research or
-Slides runtime. A separately installed brand add-on may have its own prerequisites:
+uses Python's standard library, no frontend build, no image SDK, and no required Research or Slides runtime.
+Optional reviewed research import uses an explicitly installed schema-2 Harness Research helper. A separately installed brand add-on may have its own prerequisites:
 the current Tanzu Brand shared-contract exporter requires Harness Slides 0.14.1+.
 Nothing installs or updates those prerequisites automatically. A supplied resolved
 brand contract can be adopted directly with the native `brand` command.
@@ -102,3 +103,46 @@ enables real rendering checks; the tests never download or install it. The brows
 journey is `tests/ui/journey.cjs` using a separately available Playwright test runtime.
 Live provider generation/edit/inspection and owner illustration acceptance remain
 separate release gates, never inferred from fixture success.
+
+## Documents in, documents out
+
+1. **New infographic → Add information.** Paste text, upload one or more files, or choose
+   **Add a Google Doc or public page**. Review the captured text and any extraction gaps.
+   Google reads use the explicitly selected existing gcloud account and stable Drive version;
+   all tabs are included unless you choose tab IDs. Import uses that exact preview, without
+   refetching. PDF requires an explicitly installed `pdftotext`; scanned pages need a readable
+   text copy. Word means `.docx`, without OCR, linked-resource reads or embedded-object analysis.
+2. Set the audience, takeaway and must-show information. Choose a story, build the page,
+   edit, inspect actual pixels, run checks and approve the exact revision.
+3. **Deliver Google Doc or PDF** offers either or both. PDF is the exact approved one-page
+   local render. Google delivery creates a new native Doc containing the approved page image
+   with alt text, plus editable accessible text and source notes. Artwork/layout in Docs is
+   raster; the local SVG retains editable labels/charts. Inspect Google conversion in Docs
+   before relying on its layout. The original source Doc is never overwritten or shared.
+
+Native defaults accept a Google account email and optional destination folder ID. The
+account must already be signed in through an explicitly installed gcloud CLI with Drive/Docs
+access. Settings/status never read credentials or initiate login. Tokens and resumable upload
+session URLs remain in memory. A saved delivery intent precedes writes; after interruption,
+**Reconcile Google delivery** performs reads only and never blindly creates another Doc.
+PDF remains available when Google access fails. An old delivery remains historical after edits.
+
+**Sources and facts → Use reviewed research** displays the exact infographic-purpose task
+and explicit source mode. Give it to Harness Research separately, then select its complete
+independently reviewed case. The installed helper verifies a bounded copied case; exact
+manifest, review, helper revision, report/brief/evidence/facts and captures are retained.
+The brief is supplied first; gaps, counterfacts and qualifications remain attached. No
+public work runs in supplied-only mode. Missing or changed captures block claims/approval.
+
+**Import selected studio material** lists readable material from a Blog Studio,
+Presentation Studio or Training Studio `hub.json` folder. Select one file and review its
+preview. Refresh/replacement is explicit and creates a new source revision.
+
+**Team library** shows the last explicitly synced copy, its shared driver and omitted or
+missing private inputs. Default sharing includes approved delivery files and a title only.
+Editable project, source captures and artwork require separate selection and confirmation;
+image briefs, prompts and job records are excluded. Set your shared display name and native
+**Team Git email** before committing. Sync never force-pushes, resets or discards conflicts.
+Failed pushes keep their commit for **Retry pending team push**. Takeover changes the driver;
+importing its supported editable copy creates local work without approval. A local copy
+already present is preserved. Unshared private inputs remain unavailable until supplied.

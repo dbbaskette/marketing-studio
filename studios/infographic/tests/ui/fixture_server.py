@@ -39,6 +39,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--renderer', required=True, type=Path)
     parser.add_argument('--suite', action='store_true')
+    parser.add_argument('--remote',action='store_true')
+    parser.add_argument('--bridge',action='store_true')
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='infographic-browser-') as folder:
         root = Path(folder).resolve(); home = root / 'home'; home.mkdir()
@@ -51,6 +53,20 @@ def main():
             'person': {'name': 'Synthetic Author'}, 'local': {'root': str(root / 'work')}}))
         store = Store.setup()
         settings.save({'renderer': str(args.renderer)}, expected=settings.snapshot()['native_revision'])
+        if args.remote:
+            from runner import remote_sources,google_delivery
+            from studio_core.google_api import DOC_MIME
+            class Google:
+                def __init__(self,account):
+                    assert account=='editor@example.invalid'
+                def file(self,ident):
+                    return {'id':ident,'mimeType':DOC_MIME,'name':'Synthetic Google source','version':'7','modifiedTime':'2026-10-28T00:00:00Z','capabilities':{'canDownload':True}}
+                def document(self,ident):
+                    return {'documentId':ident,'tabs':[{'tabProperties':{'tabId':'main','title':'Main'},'documentTab':{'body':{'content':[{'paragraph':{'elements':[{'textRun':{'content':'One instance restarts while the others serve.'}}]}}]}}}]}
+                def create_document(self,payload,**values):
+                    assert payload.startswith(b'PK')
+                    return {'id':'synthetic_delivered','mimeType':DOC_MIME,'appProperties':{'infographic_request':values['request_key'],'infographic_payload':values['payload_hash']}}
+            remote_sources.Client=google_delivery.Client=Google
         engine = Engine(store, executable=args.renderer, assistant=Assistant())
         engine.configuration = {'image_provider': 'codex'}
         class Page(server.Page):
@@ -65,8 +81,14 @@ def main():
         page = server.shared.Desk(page=lambda port: Page(port, store, engine))
         suite = None
         launcher = None
+        bridge = None
         try:
             page.start()
+            if args.bridge:
+                sys.path.insert(0,str(Path(__file__).resolve().parents[4]))
+                from marketing_studio.network import BridgeServer
+                bridge=BridgeServer(('127.0.0.1',0),f'127.0.0.1:{page.port}',page.token,server.shared.TOKEN_HEADER,'infographic')
+                threading.Thread(target=bridge.serve_forever,daemon=True).start()
             if args.suite:
                 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
                 from marketing_studio import server as home_server
@@ -84,12 +106,17 @@ def main():
                 suite.start()
                 # Simulate a native loopback home port differing from the phone/network origin.
                 os.environ['MARKETING_STUDIO_HOME_PORT'] = '1'
-            print(suite.url if suite else page.url, flush=True)  # Private test process only.
+            offered=suite.url if suite else page.url
+            if bridge:
+                from urllib.parse import urlsplit,urlunsplit
+                parts=urlsplit(offered);offered=urlunsplit(parts._replace(netloc=bridge.authority))
+            print(offered, flush=True)  # Private test process only.
             signal.signal(signal.SIGTERM, server.shared.interrupt)
             signal.signal(signal.SIGINT, server.shared.interrupt)
             threading.Event().wait()
         except KeyboardInterrupt: pass
         finally:
+            if bridge:bridge.shutdown();bridge.server_close()
             if suite: suite.stop()
             if launcher: launcher.close()
             page.stop()
