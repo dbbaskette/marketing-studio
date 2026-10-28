@@ -76,3 +76,23 @@ workspace, not private team material.
    decisions and generated material in the separate workspace, not this repository.
 5. Record sanitized acceptance conclusions, required platform evidence and remaining
    limitations; obtain a separate publication/upgrade instruction.
+
+
+## Version 0.2 follow-up capability acceptance
+
+686 Marketing Studio tests and 139 native Infographic Studio tests pass on the
+integrated source, including actual installed PDF extraction/rendering and the
+real schema-2 helper with synthetic independent author/reviewer output. Disposable
+macOS clean-machine checks cover file and Google Doc intake, editing, pixel review,
+approval, PDF/new-Google-Doc controls, authenticated return to Marketing Studio,
+selected-file sharing, competing owners, retained failed pushes, and source-independent
+installation. The final bundle also previews/imports Word after the download and
+Marketing Studio are removed. No Research/Slides runtime or document/image SDK is
+required for ordinary use. Optional PDF extraction and Google access require explicitly
+installed tools; no runtime auto-installation occurs.
+
+Google transport and delivery use injected accounts in automated checks. The native
+Doc contains a raster visual plus editable accessible text/source notes; review real
+Google conversion/layout with a selected account before claiming live fidelity.
+Existing live image-provider, illustration-owner and platform release gates remain
+in force. These offline results do not claim those gates passed.
