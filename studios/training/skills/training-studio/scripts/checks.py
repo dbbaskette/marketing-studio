@@ -396,16 +396,16 @@ def _sources(text: str) -> tuple[str, list[int]]:
 def _claims(paragraph: str, names) -> bool:
     """Whether a paragraph states a number, a name or a product from intake. A word after a
     colon, and each table cell's first word, start afresh, so "Note: Tanzu …" is not a
-    claim by its capital; and `citations` takes a paragraph starting "#" (or a bold line)
+    claim by its capital; a lone capitalised word such as a button label is not enough; and `citations` takes a paragraph starting "#" (or a bold line)
     for a heading. The check errs towards naming fewer claims."""
     text = LIST_MARKER.sub('', paragraph)
     if re.search(r'\d', text):
         return True
     if any(re.search(rf'(?<!\w){re.escape(name)}(?!\w)', text) for name in names if name):
         return True
-    return any(word[0].isupper() and word != 'I'
+    return any(left[0].isupper() and right[0].isupper() and left != 'I'
                for sentence in SENTENCE_END.split(text)
-               for word in WORD.findall(sentence)[1:])
+               for left, right in zip(WORD.findall(sentence)[1:], WORD.findall(sentence)[2:]))
 
 
 def citations(text: str, kind: str, added: list[str] | None = None, names=()) -> dict:

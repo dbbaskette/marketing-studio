@@ -149,6 +149,7 @@ import checks  # noqa: E402
 import home  # noqa: E402
 from workspace import BRIEF_KINDS, WorkspaceError  # noqa: E402
 from studio_core import research_sites  # noqa: E402
+from studio_core.research_contract import check_json as check_research_json  # noqa: E402
 
 from runner import deck  # noqa: E402
 
@@ -229,6 +230,40 @@ def check_brief(text: str, spec: dict) -> tuple[list[str], list[dict], list[str]
     outcomes = checks.check_brief(text, spec.get('brief_kind') or BRIEF_KINDS[0],
                                   spec.get('findings'))
     return held(outcomes), outcomes, [], as_kept(text)
+
+
+def check_part(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
+    """Splice a worker's words into the full material before running its checks."""
+    from runner import draft_jobs, drafts
+    from studio_core.drafting import basis
+    heading = spec['heading']
+    problems = []
+    if any(checks.SOURCES_HEADING.match(line) for line in text.splitlines()):
+        problems.append(draft_jobs.SOURCES)
+    first = text.strip().split('\n', 1)[0]
+    kind = spec['name'].partition('@')[0]
+    if kind == 'brief' and first.startswith('## ') and first != '## ' + heading:
+        problems.append(f"Keep this section's heading exactly: {heading}.")
+    cleaned = text.strip() if spec.get('selection') else basis.clean(text, heading)
+    allowed = set(checks._sources(spec['material'])[1]) | {f['number'] for f in spec['findings']}
+    problems += [f'Cite only the references you were given: [{n}] is not one of them.'
+                 for n in sorted({int(n) for n in checks.REFERENCE.findall(cleaned)} - allowed)]
+    try:
+        codec = drafts.codec_of(spec['name'])
+        basis.no_heading(cleaned, codec)
+        codec.vet(spec['part'], cleaned)
+        whole, added_text = draft_jobs.spliced(spec, cleaned)
+    except ValueError as error:
+        return [*problems, str(error)], [], [], text
+    checked_spec = {**spec, 'findings': spec.get('finding_statuses')}
+    _, outcomes, warnings, _ = (check_brief if kind == 'brief' else check_document)(whole, checked_spec)
+    # Dropping a reference is allowed. Unused Sources are reported on the card, while
+    # unknown references and unsupported new claims are handed back for correction.
+    added = [p for p in re.split(r'\n\s*\n', added_text) if p.strip() and p not in spec['before']]
+    cited = checks.citations(whole, kind, added=added, names=spec.get('names') or ())
+    outcomes.append(cited)
+    problems += [p for p in held(outcomes) if not p.startswith('Sources entry ')]
+    return problems, outcomes, warnings, as_kept(cleaned)
 
 
 def check_scenario(text: str, spec: dict) -> tuple[list[str], list[dict], list[str], str]:
@@ -402,11 +437,10 @@ def check_section(text: str, spec: dict, slides,
     return held(outcomes), outcomes, [], kept
 
 
-from studio_core.research_contract import check_json as check_research_json
-
 VALIDATORS = {'research-plan': check_plan, 'blueprint': check_blueprint,
               'document': check_document, 'brief': check_brief, 'scenario': check_scenario,
-              'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section}
+              'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section,
+              'part': check_part}
 VALIDATORS['research-json'] = check_research_json
 
 
@@ -638,6 +672,8 @@ class WorkerTools:
             names += ['check_outline', 'submit_outline', 'submit_review']
             if any(spec.get('icons') for spec in job['artifacts'].values()):
                 names.append('search_icons')
+        elif 'part' in kinds:
+            names += ['submit_part']
         elif 'section' in kinds:
             names += ['check_section', 'preview_section', 'search_icons', 'submit_section']
             if any(spec.get('assets') for spec in job['artifacts'].values()):
@@ -712,8 +748,18 @@ class WorkerTools:
                           'that name.')
         if not isinstance(text, str) or not text.strip():
             raise Refusal('The text is empty. Hand back the whole draft.')
+        if wanted[name]['kind'] == 'part':
+            raise Refusal('Hand a part in with submit_part.')
         if wanted[name]['kind'] == 'section':
             raise Refusal('Hand a section in with submit_section.')
+        return self._hand_in(name, text)
+
+    @tool
+    def submit_part(self, text):
+        """Hand back one part or selected passage, checked in its complete material."""
+        name, _ = self._spec('part')
+        if not isinstance(text, str) or not text.strip():
+            raise Refusal('The text is empty. Hand back the requested words.')
         return self._hand_in(name, text)
 
     def _validate(self, spec: dict, text: str) -> tuple[list[str], list[dict], list[str], str]:
@@ -1395,6 +1441,7 @@ TOOLS = [
     _described('submit_artifact', 'Hand back a finished draft under the name your task '
                'gives. It is checked: if anything is wrong you are told what, to fix it '
                'and hand it back again.', {'name': TEXT, 'text': TEXT}, ['name', 'text']),
+    _described('submit_part', 'Hand back only the requested section or passage. The whole material is checked.', {'text': TEXT}, ['text']),
     _described('submit_review', 'After your draft is accepted, give your own honest notes '
                'on it for the person who will review it: where it is weakest, what is '
                'missing, what to look at.', {'text': TEXT}, ['text']),

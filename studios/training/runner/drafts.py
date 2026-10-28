@@ -483,6 +483,10 @@ def view(engine, root) -> dict:
                     card_actions = ['ready', *(['send'] if name in copied_to
                                                and name not in sent(record) else []),
                                     'download']
+                changed = next((job for job in reversed((record.get('drafts') or {}).get('jobs', []))
+                                if job.get('name') == name), None)
+                if changed and changed.get('dropped'):
+                    says = f"{says} {changed.get('says') or ''}".strip()
                 cards.append({
                     'name': name, 'level': level or '', 'kind': kind,
                     'label': workspace.label(name), 'state': shown, 'says': says,
@@ -591,8 +595,18 @@ def _cut(body: str, note: _Note | None) -> dict:
             if rest:
                 gap = '\n' + BLANK_LINES.match(rest, 1).group(0)
                 rest = rest[len(gap):]
+    embedded = None
+    if note is not None and ids is None:
+        lines = rest.splitlines(keepends=True)
+        for at, (one, outside) in enumerate(parts.free([line.rstrip('\r\n') for line in lines])):
+            found = note.read(one) if outside else None
+            if found is not None:
+                ids = found
+                embedded = {'at': at, 'line': lines.pop(at)}
+                rest = ''.join(lines)
+                break
     words = rest.rstrip()
-    return {'lead': lead, 'line': line, 'gap': gap, 'words': words,
+    return {'embedded': embedded, 'lead': lead, 'line': line, 'gap': gap, 'words': words,
             'tail': rest[len(words):], 'ids': ids}
 
 
@@ -627,7 +641,7 @@ def _split(markdown: str, note: _Note | None, numbered: bool, locked) -> dict:
                    'text': cut['words'], 'locked': locked(heading),
                    'layout': {'head': head, 'lead': cut['lead'], 'line': cut['line'],
                               'gap': cut['gap'], 'tail': cut['tail'],
-                              'blank': not cut['words']}}
+                              'blank': not cut['words'], 'embedded': cut.get('embedded')}}
         if note is not None:
             section[note.key] = cut['ids'] or []
         sections.append(section)
@@ -647,6 +661,17 @@ def _join(draft: dict, note: _Note | None) -> str:
     for number, section in enumerate(sections):
         last = number == len(sections) - 1
         words, kept = section.get('text') or '', section.get('layout') or {}
+        embedded = kept.get('embedded')
+        if embedded and note is not None:
+            lines = words.splitlines(keepends=True)
+            at = min(embedded['at'], len(lines))
+            if at and not lines[at - 1].endswith('\n'):
+                lines[at - 1] += '\n\n'
+            raw = embedded['line']
+            if note.read(raw.rstrip('\r\n')) != (section.get(note.key) or []):
+                raw = note.written(section.get(note.key) or []) + '\n'
+            lines.insert(at, raw)
+            words = ''.join(lines)
         head = kept.get('head')
         if not head or SECTION_LINE.fullmatch(head).group(1) != section['heading']:
             head = '## ' + section['heading']
@@ -654,7 +679,7 @@ def _join(draft: dict, note: _Note | None) -> str:
         if note is not None and kept.get('line') is not None:
             line = kept['line'] if note.read(kept['line']) == ids else (
                 note.written(ids) if ids else None)
-        elif ids:
+        elif ids and not embedded:
             line = note.written(ids)
         if kept and kept.get('blank') == (not words) and (
                 line is None or kept.get('line') is not None):
@@ -1106,8 +1131,34 @@ def card(engine, root, name: str, draft: dict | None = None,
     found = next((one for one in whole['cards'] if one['name'] == name),
                  {'name': name, 'label': workspace.label(name)})
     job = whole['job']
+    run = run_of(root) or {}
     return {**found, **parts_of(desk, name, draft),
-            'working': job if job and job.get('name') == name else None, 'desk': whole}
+            'working': job if job and job.get('name') == name else None,
+            'jobs': [dict(one) for one in (run.get('drafts') or {}).get('jobs', []) if one.get('name') == name],
+            'chain': _chain(run, name), 'start': _start(whole),
+            'readonly': _reading(engine, root, name), 'desk': whole}
+
+
+def _reading(engine, root, name):
+    from runner import draft_jobs
+    return draft_jobs.readonly(engine, root, name)
+
+
+def _chain(run, name):
+    job = next((j for j in reversed((run.get('drafts') or {}).get('jobs', []))
+                if j.get('name') == name and j.get('chain')), None)
+    if job is None:
+        return None
+    return {'working': basis.busy(job), 'total': job['total'], 'revised': len(job['done']),
+            'problems': job.get('problems') or []}
+
+
+def _start(whole):
+    progress = whole['progress']
+    if not progress['running'] or whole['job']:
+        return None
+    return {**progress, 'status': 'working', 'busy': False, 'steps': [], 'step': None,
+            'minutes_left': progress['minutes'], 'phase': progress['doing'], 'problem': None}
 
 
 def _saved(desk: TrainingDesk, name: str, save) -> tuple[dict, bool, str | None]:

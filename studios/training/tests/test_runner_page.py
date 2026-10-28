@@ -2828,7 +2828,12 @@ class DeskPageTests(PageCase):
                                       'text': 'Typed.', 'session': 'ab12'}),
                             ('restore', {'name': 'blueprint', 'part': 'opening', 'seen': 1,
                                          'index': 0}),
-                            ('share', {})):
+                            ('share', {}),
+                            ('note', {'name': 'blueprint', 'seen': 1, 'note': 'Change.'}),
+                            ('revise', {'name': 'document', 'seen': 1, 'note': 'Change.'}),
+                            ('selection', {'name': 'document', 'part': 'opening', 'seen': 1,
+                                           'text': 'word', 'start': 0, 'action': 'shorten'}),
+                            ('stop', {'job': 'unknown'}), ('retry', {'job': 'unknown'})):
             with self.subTest(route=route):
                 said = self.post(f'drafts/{route}', {'path': saved, **sent}, 409)
                 self.assertEqual(said['error'], drafts.NOT_ON_DESK)
@@ -3149,7 +3154,12 @@ class DeskTeamTests(TeamCase):
                             ('save', {'name': name, 'part': 'opening', 'seen': 1,
                                       'text': 'Typed.', 'session': 'ab12'}),
                             ('restore', {'name': name, 'part': 'opening', 'seen': 1,
-                                         'index': 0})):
+                                         'index': 0}),
+                            ('note', {'name': name, 'seen': 1, 'note': 'Change.'}),
+                            ('revise', {'name': name, 'seen': 1, 'note': 'Change.'}),
+                            ('selection', {'name': name, 'part': 'opening', 'seen': 1,
+                                           'text': 'word', 'start': 0, 'action': 'shorten'}),
+                            ('stop', {'job': 'unknown'}), ('retry', {'job': 'unknown'})):
             with self.subTest(route=route):
                 said = self.ask(self.blake, f'drafts/{route}', {'path': str(theirs), **sent},
                                 409)

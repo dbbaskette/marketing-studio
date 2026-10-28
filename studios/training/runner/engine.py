@@ -219,13 +219,15 @@ from pathlib import Path, PurePosixPath
 
 import runner  # noqa: F401  puts the core on the import path
 import computer
+import checks
 import home
-from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, research_sites, stops
+from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, research_sites, step_times, stops
 import hub
 import workspace
 from workspace import WorkspaceError
+from studio_core.drafting import basis, guards
 
-from runner import agents, companion, deck, drafts, gitstate, pipeline, settings, team, worker_tools
+from runner import agents, companion, deck, draft_jobs, drafts, gitstate, pipeline, settings, team, worker_tools
 from runner import brand as brand_skill
 from runner import brand_source
 from runner import copies as copies_made
@@ -1398,6 +1400,16 @@ class Engine(Reviewing):
                     else:
                         (root / IN_HAND).unlink(missing_ok=True)
                         self._waited(root, typed)
+                    resumed = self._load(root)
+                    interrupted = [job for job in (resumed.get('drafts') or {}).get('jobs', [])
+                                   if drafts.on_desk(resumed) and job.get('status') == 'working']
+                    if interrupted:
+                        for job in interrupted:
+                            job.update(status='stopped', applied=False, settled_at=home.now(),
+                                       problem='This change stopped when Training Studio closed. Try it again.',
+                                       error='This change stopped when Training Studio closed. Try it again.')
+                        self._store(root, resumed)
+                        self._commit(root, 'keep interrupted desk changes ready to try again')
             except (WorkspaceError, OSError):
                 continue  # its view says what is wrong; the others still run
             ours.append(root)
@@ -1490,6 +1502,25 @@ class Engine(Reviewing):
                 record = self._load(root)
                 if run.gone or not self._ours(record):
                     return  # someone else drives it, or nobody does
+                pending = next((job for job in (record.get('drafts') or {}).get('jobs', [])
+                                if job.get('status') == 'queued'), None)
+                if drafts.on_desk(record) and pending and not self._resting(record):
+                    if self.background and not held:
+                        run.queued = True
+                        held = self._slots.take(lambda: self._closing or run.stop.is_set(), run)
+                        run.queued = False
+                        if not held:
+                            return
+                        continue
+                    if not self._may_go(root):
+                        return
+                    try:
+                        self._draft_job(root, run, pending)
+                    except _Gone:
+                        raise
+                    except Exception as error:  # keep a desk failure local and retryable
+                        self._draft_job_failed(root, pending['id'], str(error))
+                    continue
                 found = self._survey(root, record)
                 step = found.next
                 # A desk run never stops for review: each stop is continued on the desk.
@@ -3450,7 +3481,8 @@ class Engine(Reviewing):
         """Run one worker on one job. Returns how the agent ended, what the worker tools
         accepted from it, when it started and the job's folder. A note the person left for
         the next step goes with it, once."""
-        work = self._noted(root, step, work)
+        if not step.id.startswith('draft:'):
+            work = self._noted(root, step, work)
         record = self._load(root)
         if work.prepared.get('fetch'):
             # A job that saves pages keeps to where the run says research may look: its
@@ -4166,6 +4198,148 @@ class Engine(Reviewing):
         self.carry_on(root)
         return {'made': made, 'problems': dict(problems or {})}
 
+    # --- checked desk jobs ---------------------------------------------------------------
+
+    def draft_begin(self, path, kind, name, **values) -> dict:
+        draft_jobs.begin(self, path, kind, name, **values)
+        return self.draft_card(path, name) if workspace.split(name)[0] in drafts.CODECS else self.view(path)
+
+    def stop_draft(self, path, job) -> dict:
+        """Let an active section finish, then stop; a queued request stops immediately."""
+        with self.files:
+            root, record = self._on_desk(path, decided=True)
+            found = next((one for one in (record.get('drafts') or {}).get('jobs', [])
+                          if one['id'] == job), None)
+            if found is None:
+                raise WorkspaceError('Choose a change of this training.')
+            if found.get('status') == 'working':
+                found['stop'] = True
+            elif basis.busy(found):
+                found.update(status='stopped', settled_at=home.now())
+            self._store(root, record)
+            self._commit(root, 'stop the change after this section')
+        return self.draft_card(root, found['name']) if workspace.split(found['name'])[0] in drafts.CODECS else self.view(root)
+
+    def retry_draft(self, path, job) -> dict:
+        with self.files:
+            root, record = self._on_desk(path, decided=True)
+            if drafts.busy(record):
+                raise WorkspaceError(drafts.BUSY)
+            found = next((one for one in (record.get('drafts') or {}).get('jobs', [])
+                          if one['id'] == job), None)
+            if found is None or found.get('status') not in ('stopped', 'failed', 'done'):
+                raise WorkspaceError('Choose a finished change to try again.')
+            values = {key: found.get(key) for key in ('note', 'action', 'passage', 'start')}
+            name, kind = found['name'], found['kind']
+            if found['part'] == 'whole':
+                seen = workspace.sha256_file(root / workspace.artifact(root, workspace.load(root), name)['file'])
+                part = None
+            else:
+                seen = drafts.desk_of(self, root, name).read(name)['revision']
+                part = None if kind == 'revise-all' else found['part']
+        return self.draft_begin(root, kind, name, part=part, seen=seen, **values)
+
+    def _draft_job_failed(self, root, ident, problem):
+        with self.files:
+            if self._run(root).gone or not self._ours(self._load(root)):
+                raise _Gone('This training is no longer run from this computer.')
+            self._edits_first(root)
+            record = self._load(root)
+            job = next(one for one in record['drafts']['jobs'] if one['id'] == ident)
+            job.update(status='failed', applied=False, settled_at=home.now(),
+                       error=problem[:1000], problem=problem[:1000])
+            self._store(root, record)
+            self._commit(root, 'keep the problem with this desk change')
+
+    def _draft_job(self, root: Path, run: _Run, job: dict) -> None:
+        """One worker per section, in the normal runner loop, with a protected landing."""
+        with self.files:
+            self._edits_first(root)
+            record = self._load(root)
+            job = next(j for j in record['drafts']['jobs'] if j['id'] == job['id'])
+            found = self._survey(root, record)
+            job.update(status='working', started_at=home.now(), says='Writing this section.')
+            self._store(root, record)
+            work = draft_jobs.work_for(root, found, job)
+        spec = workspace.artifact(root, found.session, job['name'])
+        step = pipeline.Step(f"draft:{job['id']}", 'agent', workspace.label(job['name']),
+                             f"Rewriting {workspace.label(job['name'])}", spec['stage'], job['name'])
+        (root / IN_HAND).write_text(step.id + '\n', encoding='utf-8')
+        try:
+            outcome, handed, started_at, folder = self._job(root, run, step, work)
+            with self.files:
+                # Commit typing BEFORE a returned result touches the same file.
+                self._edits_first(root)
+                record = self._load(root)
+                if run.gone or not self._ours(record):
+                    raise _Gone('This training is no longer run from this computer.')
+                job = next(j for j in record['drafts']['jobs'] if j['id'] == job['id'])
+                accepted = next(iter(handed['artifacts'].values()), None)
+                if accepted is None:
+                    job.update(status='failed', applied=False, problem=pipeline.why_not(handed, outcome.detail),
+                               error=pipeline.why_not(handed, outcome.detail), settled_at=home.now())
+                else:
+                    def apply():
+                        via = 'rewrite' if job['kind'] in ('section', 'write-again', 'update') else job['kind']
+                        if job['part'] == 'whole':
+                            before = draft_jobs.file_text(root, job['name'])
+                            if basis.fingerprint(before) != job['basis']:
+                                raise ValueError(basis.stale())
+                            workspace.save(root, job['name'], source=accepted['path'], edit=True, via=via)
+                            if workspace.statuses(root, workspace.load(root))[job['name']] != 'stale':
+                                workspace.accept_desk(root, job['name'])
+                            after = accepted['text']
+                        else:
+                            desk = drafts.desk_of(self, root, job['name'])
+                            draft = desk.read(job['name'])
+                            codec = desk.codec
+                            # Training Studio intentionally requires the whole part to match,
+                            # including for a selection (core also allows a unique fallback).
+                            if basis.fingerprint(codec.text_of(draft, job['part'])) != job['basis']:
+                                raise ValueError(basis.stale(codec))
+                            section = codec.section(draft, job['part']) if job['part'] not in codec.fixed else None
+                            if section and section.get('locked'):
+                                raise ValueError(draft_jobs.SOURCES)
+                            # Locked identity was checked above; a different section with the
+                            # same words as Sources is still editable.
+                            landing = codec.replace(landed=lambda draft, before, text: text)
+                            land = basis.land_selection if job['kind'] == 'selection' else basis.land_part
+                            part, before, after, _ = land(draft, job, accepted['text'], landing)
+                            codec.set_text(draft, part, after)
+                            draft_jobs.append_sources(draft, work.prepared['artifacts']['part']['findings'], after,
+                                                      workspace.split(job['name'])[0])
+                            desk.store.write(job['name'], draft, [part], via=via)
+                        job['dropped'] = checks.dropped(before, after)
+                        job['checks'] = guards.flags(before, after)
+                        job['says'] = ' '.join(f'This change dropped reference [{n}].' for n in job['dropped'])
+                    basis.settle(job, apply, home.now)
+                    job.update(status='stopped' if job.get('stop') else 'done', problem=job.get('error') or '')
+                    if job.get('sections'):
+                        job.setdefault('problems', [])
+                        if job['applied']:
+                            job['done'].append(job['part'])
+                        else:
+                            job['problems'].append({'part': job['part'], 'error': job['error']})
+                        index = job['index'] + 1
+                        if job.get('stop'):
+                            job['status'] = 'stopped'
+                        elif index < len(job['sections']):
+                            part = job['sections'][index]
+                            job.update(status='queued', part=part, basis=job['bases'][part], index=index)
+                            job.pop('settled_at', None)
+                if job.get('applied'):
+                    step_times.note(drafts.Times(), drafts.times(), f"draft:{job['kind']}", outcome.seconds)
+                self._tried(record, step.id, started_at, outcome.seconds,
+                            'kept' if job.get('applied') else 'failed', **self._cost(outcome))
+                self._store(root, record)
+                self._ready_again(root)
+                self._commit(root, f"keep the change to {workspace.label(job['name'])}")
+            shutil.rmtree(folder, ignore_errors=True)
+            if self.space().share == gitstate.SHARE[0]:
+                self.share_soon()
+        finally:
+            (root / IN_HAND).unlink(missing_ok=True)
+
     # --- typing on the desk ----------------------------------------------------------------
 
     def draft_card(self, path, name) -> dict:
@@ -4205,6 +4379,9 @@ class Engine(Reviewing):
     def _typed(self, path, name, save) -> dict:
         with self.files:
             root, record = self._on_desk(path)
+            reading = draft_jobs.readonly(self, root, name)
+            if reading:
+                raise WorkspaceError(reading)
             if isinstance(name, str) and name in drafts.updates(record):
                 raise WorkspaceError(drafts.BUSY)   # it is being made again
             try:

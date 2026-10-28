@@ -209,6 +209,7 @@ DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'upd
                                                      'send'))
 # Typing into a part, bringing back one of its versions, and committing what was typed.
 TYPED = tuple(f'{DRAFTS}/{action}' for action in ('save', 'restore', 'share'))
+JOBS = tuple(f'{DRAFTS}/{action}' for action in ('note', 'revise', 'selection', 'stop', 'retry'))
 VERSIONS = f'{DRAFTS}/versions'
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
@@ -220,7 +221,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
-          '/api/review-level', '/api/research-site', *DECIDED, *TYPED)
+          '/api/review-level', '/api/research-site', *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -705,6 +706,22 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, self.asset(sent))
         if path in DECIDED:
             return desk.as_json(HTTPStatus.OK, self.drafted(path, sent))
+        if path in JOBS:
+            root = self.known(sent)
+            action = path.rsplit('/', 1)[-1]
+            if action in ('stop', 'retry'):
+                method = self.engine.stop_draft if action == 'stop' else self.engine.retry_draft
+                reply = method(root, desk.text(sent, 'job'))
+            else:
+                note = desk.text(sent, 'note', False) or desk.text(sent, 'instruction', False)
+                kind = ('selection' if action == 'selection' else 'revise-all' if action == 'revise'
+                        else 'section' if note else 'write-again')
+                reply = self.engine.draft_begin(root, kind, desk.text(sent, 'name'),
+                    part=desk.text(sent, 'part', False), seen=sent.get('seen'), note=note,
+                    action=desk.text(sent, 'action', False),
+                    passage=desk.text(sent, 'passage', False) or desk.text(sent, 'text', False),
+                    start=sent.get('start'))
+            return desk.as_json(HTTPStatus.OK, reply)
         if path in TYPED:
             return desk.as_json(HTTPStatus.OK, self.part(path, sent))
         if path == '/api/review':
