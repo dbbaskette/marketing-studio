@@ -1077,3 +1077,175 @@ class ScopedUpdateRetryTests(DeckCase):
         self.assertIsNone(self.engine._load(root)['problem'])
         self.assertEqual(len(self.workers.of('outline')), count)
         self.assertNotIn('deck', drafts.updates(self.engine._load(root)))
+
+
+class SlideHistoryLookTests(DeckCase):
+    def test_row_171_another_look_redraws_the_whole_deck(self):
+        self.brand.offers_looks = True
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        count = len(self.workers.of('section'))
+        chosen = copy.deepcopy(self.engine._load(root)['deck']['']['look'])
+        samples = self.engine.look_samples(root, None)
+        self.assertTrue(samples['looks'])
+        self.assertEqual(self.engine._load(root)['deck']['']['look'], chosen)
+        self.engine.wake(root)
+        self.assertEqual(len(self.workers.of('section')), count)
+        self.engine.look_apply(root, None, samples['looks'][-1]['id'], seen)
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('section')), count + 2)
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['deck'], 'draft')
+
+    def test_row_172_a_slide_keeps_its_words_and_drawing_as_versions(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        original = drafts.deck_drawings(root, None)['check-yourself']
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        jobs = len(self.workers.jobs)
+        self.engine.slide_words(root, None, 'check-yourself', 'title', 'A new title', seen)
+        versions = self.engine.slide_versions(root, None, 'check-yourself')['versions']
+        self.assertEqual(len(versions), 1)
+        self.assertTrue((root / 'deck/versions/check-yourself.jsonl').is_file())
+        folder = root / 'work/deck/versions/check-yourself'
+        self.assertEqual(len(list(folder.glob('*.json'))), 1)
+        self.assertEqual(len(list(folder.glob('*.png'))), 1)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.engine.slide_restore(root, None, 'check-yourself', versions[0]['stamp'], seen)
+        self.assertEqual(drafts.deck_drawings(root, None)['check-yourself'], original)
+        self.assertEqual(len(self.workers.jobs), jobs)
+        self.assertEqual(len(self.engine.slide_versions(root, None, 'check-yourself')['versions']), 2)
+
+    def test_the_current_look_also_redraws_and_old_samples_are_refused(self):
+        self.brand.offers_looks = True
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.engine.look_samples(root, None)
+        with self.assertRaisesRegex(Exception, 'has changed'):
+            self.engine.look_apply(root, None, self.brand.LOOKS[0]['id'], 'old')
+        count = len(self.workers.of('section'))
+        self.engine.look_apply(root, None, self.brand.LOOKS[0]['id'], seen)
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('section')), count + 2)
+
+
+class SlideRestoreContinuationTests(DeckCase):
+    def test_restoring_without_the_local_drawing_uses_the_word_chain(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        original = drafts.deck_drawings(root, None)['check-yourself']
+        self.engine.slide_words(root, None, 'check-yourself', 'title', 'New words', seen)
+        for file in (root / 'work/deck/versions/check-yourself').iterdir():
+            file.unlink()
+        version = self.engine.slide_versions(root, None, 'check-yourself')['versions'][0]
+        self.assertFalse(version['drawing'])
+        jobs = len(self.workers.jobs)
+        self.engine.slide_restore(root, None, 'check-yourself', version['stamp'],
+                                  self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.assertEqual(drafts.deck_drawings(root, None)['check-yourself'], original)
+        self.assertEqual(len(self.workers.jobs), jobs)
+
+    def test_row_173_explicit_redraw_installs_the_requested_words_before_the_composer(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        count = len(self.workers.of('section'))
+        self.engine.slide_words(root, None, 'check-yourself', 'title', 'A different title', seen,
+                                _redraw=True)
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('section')), count + 1)
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title'],
+                         'A different title')
+        self.assertIsNone(self.engine._load(root).get('problem'))
+
+    def test_draw_here_rebuilds_only_after_the_explicit_action(self):
+        import shutil
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        shutil.rmtree(root / pipeline.WORK)
+        count = len(self.workers.of('section'))
+        card = next(card for card in drafts.view(self.engine, root)['cards'] if card['kind'] == 'deck')
+        self.assertFalse(card['local'])
+        self.assertTrue(card['slides'])
+        self.assertFalse((root / pipeline.WORK).exists())
+        self.engine.draw_here(root, None, seen)
+        self.to_end(root)
+        self.assertEqual(len(self.workers.of('section')), count + 2)
+        self.assertIsNone(self.engine._load(root).get('problem'))
+
+    def test_history_refuses_a_linked_folder_and_an_unlisted_level(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        with self.assertRaisesRegex(Exception, 'Choose a level'):
+            self.engine.slide_versions(root, '../elsewhere', 'check-yourself')
+        outside = self.base / 'outside-history'
+        outside.mkdir()
+        (root / 'deck/versions').symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(Exception, 'plain file|symbolic|plain files|linked file'):
+            self.engine.slide_words(root, None, 'check-yourself', 'title', 'New title',
+                                    self.engine._load(root)['deck']['']['saved']['sha256'])
+        self.assertEqual(list(outside.iterdir()), [])
+
+
+class ApprovedHistoryTests(JudgedSlideNoteTests):
+    propose = ApprovedWordsTests.propose
+    approve = ApprovedWordsTests.approve
+
+    def test_restoring_bound_words_asks_again_before_changing_the_deck(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen, proposed = self.propose(root)
+        self.approve(root, seen, proposed)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        versions = self.engine.slide_versions(root, None, 'check-yourself')['versions']
+        self.assertTrue(versions)
+        outline = (root / pipeline.OUTLINE).read_bytes()
+        jobs = len(self.workers.jobs)
+        result = self.engine.slide_restore(root, None, 'check-yourself', versions[0]['stamp'], seen)
+        self.assertIn('approval', result)
+        self.assertEqual((root / pipeline.OUTLINE).read_bytes(), outline)
+        self.approve(root, seen, result['approval'])
+        self.assertEqual(len(self.workers.jobs), jobs)
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title'],
+                         versions[0]['words']['title'])
+
+    def test_an_approved_redraw_uses_the_persons_words_and_only_one_answer(self):
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen, proposed = self.propose(root)
+        count = len(self.workers.of('section'))
+        self.engine.slide_words_decide(root, proposed['token'], 'approve', seen,
+            question=proposed['question']['id'], revision=proposed['revision'],
+            response='I approve these words.', redraw=True)
+        self.to_end(root)
+        self.assertIsNone(self.engine._load(root).get('problem'))
+        self.assertEqual(len(self.workers.of('section')), count + 1)
+        self.assertEqual(json.loads((root / pipeline.OUTLINE).read_text())['slides'][4]['title'],
+                         proposed['after'])
+
+
+class SlideHistoryRoutesTests(PageCase):
+    def test_history_restore_and_looks_routes(self):
+        self.brand.offers_looks = True
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.post('drafts/slide-words', {'path': str(root), 'level': '', 'slide': 'check-yourself',
+            'field': 'title', 'text': 'Changed title', 'seen': seen})
+        versions = self.get('drafts/slide-versions', path=str(root), level='', slide='check-yourself')['versions']
+        image = self.get('slide', path=str(root), artifact='deck', number=5,
+                         version='check-yourself/' + versions[0]['stamp'])
+        self.assertTrue(image.startswith(b'\x89PNG'))
+        self.post('drafts/slide-restore', {'path': str(root), 'level': '', 'slide': 'check-yourself',
+            'stamp': versions[0]['stamp'], 'seen': self.engine._load(root)['deck']['']['saved']['sha256']})
+        result = self.post('drafts/look-samples', {'path': str(root), 'level': ''})
+        self.assertTrue(result['look']['looks'])
+        self.assertTrue(self.get('slide', path=str(root), artifact='deck', section='look',
+                                number=1).startswith(b'\x89PNG'))
+        self.post('drafts/look', {'path': str(root), 'level': '',
+            'choice': result['look']['looks'][-1]['id'],
+            'seen': self.engine._load(root)['deck']['']['saved']['sha256']})
+        self.assertIsNone(self.engine._load(root).get('problem'))

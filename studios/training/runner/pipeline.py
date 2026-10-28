@@ -1139,7 +1139,7 @@ def stands(root: Path, session: dict, state: dict, asked: dict, run: dict,
                             for entry in (built.get('sections') or {}).values())))
     saved_round = (not drafts.on_desk(run) or not rounds
                    or (kept.get('saved') or {}).get('round') == rounds[-1].get('folder'))
-    if not pending_notes and not changed_sections and saved_round and state.get(name) in CURRENT and name not in asked and entry.get('sha256') \
+    if not (drafts.on_desk(run) and kept.get('redrawing')) and not pending_notes and not changed_sections and saved_round and state.get(name) in CURRENT and name not in asked and entry.get('sha256') \
             and not kept.get('redesign') and entry['sha256'] == workspace.sha256_file(file) \
             and (not rounds or holds(rounds[-1]) and (kept.get('saved') or {}).get('deck')
                  == rounds[-1].get('deck')):
@@ -1177,7 +1177,7 @@ def stands(root: Path, session: dict, state: dict, asked: dict, run: dict,
     if chosen or earlier or drawn_here and shown.get('unavailable'):
         done.add('gate:deck-look')
     # A start drawn from its approved design gives its sections that design to draw from.
-    if start.get('outline') == said and start.get('brand') == brand.get('sha256') \
+    if not (drafts.on_desk(run) and kept.get('draw_all')) and start.get('outline') == said and start.get('brand') == brand.get('sha256') \
             and (earlier or start.get('look') == (chosen or {}).get('id')) \
             and start.get('design') == approved.get('design') \
             and (start.get('design') or {}).get('sha256') == drawn_as \

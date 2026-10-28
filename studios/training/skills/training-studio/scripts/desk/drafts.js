@@ -756,10 +756,220 @@ function deskCard(found) {
     bar.append(add(menu, make('summary', 'button button-quiet', 'Guide actions'),
       add(make('div', 'menu-list'), again)));
   }
-  const editing = material ? materialParts(material, found) : null;
+  const editing = found.kind === 'deck' ? deckParts(found) : material ? materialParts(material, found) : null;
   add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
     checkedPart(found.checks), bar.childNodes.length ? bar : null);
   return editing ? add(make('div', 'desk-material-group stack'), node, editing) : node;
+}
+
+// Slide cards keep their writing opaque; approval, History and looks use the shared sheet.
+function slidePicture(found, number, section) {
+  return pictureAt({ path: view.path, artifact: found.name, number,
+    ...(section ? { section } : {}) }, section ? 'Look sample ' + number : 'Slide ' + number,
+    found.seen, { again: true });
+}
+
+function slideWordsText(value) {
+  return typeof value === 'object' && value ? value.text || '' : value || '';
+}
+
+function deckParts(found) {
+  const area = make('div', 'stack desk-slide-cards');
+  const ours = deskOurs();
+  if (ours && list(found.slides).length) {
+    const again = capsule(found.local ? 'Try another look' : 'Draw it here', 'quiet', async () => {
+      if (!found.local) return deskDecide('draw-here', { level: found.level, seen: found.seen }, again);
+      const answer = await deskDecide('look-samples', { level: found.level }, again);
+      if (answer) lookSheet(found, answer.look);
+    });
+    add(area, add(make('div', 'bar'), again), make('p', 'quiet', found.look_price));
+  }
+  for (const slide of list(found.slides)) {
+    const node = card(slide.number + '. ' + slide.title, 'desk-slide-card');
+    if (slide.picture) node.append(slidePicture(found, slide.number));
+    else node.append(make('p', 'quiet', 'Words only. The drawing is kept on the computer that made it.'));
+    const history = capsule(slide.history ? 'History (' + slide.history + ')' : 'History',
+      'quiet', () => slideHistory(found, slide));
+    history.disabled = !slide.history;
+    node.append(history);
+    const fields = [['title', 'Title'], ['subtitle', 'Subtitle']];
+    list(slide.points).forEach((point, i) => fields.push(
+      ['points[' + i + '].label', 'Point ' + (i + 1) + ' label'],
+      ['points[' + i + '].text', 'Point ' + (i + 1) + ' text']));
+    fields.push(['caveat', 'Caveat'], ['source', 'Source'], ['notes', 'Speaker notes']);
+    for (const [field, label] of fields) {
+      const match = /^points\[(\d+)\]\.(label|text)$/.exec(field);
+      const text = slideWordsText(match ? slide.points[Number(match[1])][match[2]] : slide[field]);
+      if (!ours || !found.local) {
+        if (field !== 'title' && text) add(node, make('p', 'sheet-part', label), make('p', 'desk-plain', text));
+        continue;
+      }
+      const box = make('textarea', 'input');
+      box.rows = field === 'notes' ? 3 : 2;
+      box.maxLength = field === 'notes' ? 4000 : 2000;
+      box.value = text;
+      box.setAttribute('aria-label', 'Slide ' + slide.number + ' ' + label.toLowerCase());
+      box.dataset.key = found.name + ':' + slide.id + ':' + field;
+      const saved = deskHeld(view.path);
+      saved.slideText ||= {};
+      if (saved.slideText[box.dataset.key] !== undefined) box.value = saved.slideText[box.dataset.key];
+      box.addEventListener('input', () => { saved.slideText[box.dataset.key] = box.value; });
+      const go = capsule('Save ' + label.toLowerCase(), 'quiet', async () => {
+        const sent = { level: found.level, slide: slide.id, seen: found.seen, field, text: box.value };
+        const answer = await deskDecide(field === 'notes' ? 'slide-speaker-notes' : 'slide-words', sent, go);
+        if (answer) slideWordResult(found, slide, sent, answer, () => { delete saved.slideText[box.dataset.key]; });
+      });
+      add(node, add(make('label', 'field'), make('span', 'field-label', label), box), go);
+    }
+    const proposals = found.proposals?.review;
+    for (const proposal of list(proposals?.items).filter((item) => item.part === slide.id && item.state === 'waiting')) {
+      const row = add(make('section', 'card-part'), make('p', 'sheet-part', 'Review suggestion'),
+        make('p', '', proposal.reason || proposal.says), make('p', '', proposal.after),
+        make('p', 'quiet', proposal.price));
+      if (ours) {
+        const decide = (action) => deskDecide('finding', { level: found.level, seen: found.seen,
+          job: proposals.job, ids: [proposal.id], action });
+        row.append(add(make('div', 'bar'), capsule('Apply', 'quiet', () => decide('apply')),
+          capsule('Skip', 'quiet', () => decide('skip'))));
+      }
+      node.append(row);
+    }
+    if (ours && found.local && slide.redraw !== false && slide.price) {
+      const note = make('textarea', 'input'); note.rows = 2; note.maxLength = 4000;
+      note.setAttribute('aria-label', 'How should slide ' + slide.number + ' change?');
+      const held = deskHeld(view.path); held.slideNotes ||= {};
+      const noteKey = found.name + ':' + slide.id;
+      note.value = held.slideNotes[noteKey] || '';
+      note.dataset.key = found.name + ':' + slide.id + ':note';
+      note.addEventListener('input', () => { held.slideNotes[noteKey] = note.value; });
+      const go = capsule('Redraw slide ' + slide.number, 'quiet', async () => {
+        if (!note.value.trim()) { toast('Write a note first.'); return; }
+        const answer = await deskDecide('slide-note', { level: found.level, slide: slide.id,
+          note: note.value, seen: found.seen }, go);
+        if (answer) delete held.slideNotes[noteKey];
+      });
+      add(node, add(make('label', 'field'), make('span', 'field-label', 'How should this slide change?'), note),
+        make('p', 'quiet', slide.price), go);
+    }
+    area.append(node);
+  }
+  return area;
+}
+
+function slideWordResult(found, slide, sent, answer, saved) {
+  if (answer.approval) { slideApproval(found, slide, sent, answer.approval, saved); return; }
+  if (answer.fits === false) {
+    const redraw = capsule('Redraw with these words', 'filled', async () => {
+      const route = sent.approval ? 'slide-words-decide' : sent.stamp ? 'slide-restore' : 'slide-words';
+      const { approval, ...words } = sent;
+      const result = await deskDecide(route, { ...(approval || words), redraw: true }, redraw);
+      if (result) { saved(); closeSheet(); }
+    });
+    DESK.kitSheet = [sheetTitle('These words need another drawing'),
+      make('h3', 'sheet-part', '1. Your words'), make('p', 'desk-plain', sent.text),
+      make('p', '', answer.said), make('h3', 'sheet-part', '2. Redraw this section'),
+      make('p', 'quiet', answer.price || slide.price),
+      answer.can_redraw === false ? make('p', '', 'This slide uses a fixed layout. Shorten its words before saving.') : null,
+      add(make('div', 'bar'), answer.can_redraw === false ? null : redraw,
+        capsule('Discard', 'quiet', async () => {
+          if (sent.approval) {
+            const result = await deskDecide('slide-words-decide', { proposal: sent.approval.proposal, decision: 'cancel' });
+            if (!result) return;
+          }
+          saved(); closeSheet();
+        }))].filter(Boolean);
+    openSheet('desk-kit', '')();
+  } else { saved(); closeSheet(); }
+}
+
+function slideApproval(found, slide, sent, approval, saved) {
+  const response = make('textarea', 'input'); response.rows = 3; response.maxLength = 4000;
+  response.setAttribute('aria-label', 'Your response');
+  const error = make('p', 'notice'); error.setAttribute('role', 'alert');
+  const cancel = capsule('Cancel', 'quiet', async () => {
+    const result = await deskDecide('slide-words-decide', { proposal: approval.token, decision: 'cancel' }, cancel);
+    if (result) closeSheet(); else error.textContent = deskHeld(view.path).said;
+  });
+  const approve = capsule('Approve updated words', 'filled', async () => {
+    if (!response.value.trim()) { error.textContent = 'Answer the displayed design question first.'; return; }
+    const answer = await deskDecide('slide-words-decide', { proposal: approval.token,
+      decision: 'approve', seen: sent.seen, question: approval.question.id,
+      revision: approval.revision, response: response.value }, approve);
+    if (answer) slideWordResult(found, slide, { ...sent, approval: { proposal: approval.token,
+      decision: 'approve', seen: sent.seen, question: approval.question.id,
+      revision: approval.revision, response: response.value } }, answer, saved);
+    else error.textContent = deskHeld(view.path).said;
+  });
+  const question = approval.question;
+  const options = make('div', 'stack');
+  for (const option of list(question.options)) {
+    const text = typeof option === 'string' ? option : option.label || option.text || option.title || '';
+    if (text) options.append(/^Approve\b/i.test(text)
+      ? capsule(text, 'quiet', () => { response.value = text; }) : make('p', '', text));
+  }
+  DESK.kitSheet = [sheetTitle('Approve updated words'),
+    make('h3', 'sheet-part', '1. Exact change'), make('p', 'quiet', 'Before'),
+    make('p', 'desk-plain', approval.before), make('p', 'quiet', 'After'),
+    make('p', 'desk-plain', approval.after), make('h3', 'sheet-part', '2. Design question'),
+    make('p', 'desk-plain', question.text || question.prompt || question.question || ''), options,
+    add(make('label', 'field'), make('span', 'field-label', 'Your response'), response), error,
+    add(make('div', 'bar'), approve, cancel)];
+  openSheet('desk-kit', '')();
+}
+
+async function slideHistory(found, slide) {
+  try {
+    const answer = await ask('drafts/slide-versions', { path: view.path, level: found.level, slide: slide.id });
+    const rows = make('div', 'stack');
+    for (const version of list(answer.versions)) {
+      const row = add(make('section', 'card'), make('h3', 'card-title', version.at),
+        make('p', 'quiet', ({save: 'Saved', selection: 'Selection', note: 'Slide note',
+          redraw: 'Redrawn', restore: 'Restored', outline: 'Outline changed', finishing: 'Finishing',
+          open: 'Opened on the desk', update: 'Updated'})[version.source] || 'An earlier version'), make('p', 'desk-plain', version.words.title),
+        make('p', 'quiet', version.drawing ? 'Words and drawing' : 'Words only'));
+      if (version.picture) row.append(pictureAt({ path: view.path, artifact: found.name,
+        number: slide.number, version: slide.id + '/' + version.stamp }, 'Earlier slide ' + slide.number, version.stamp));
+      for (const [key, value] of Object.entries(version.words || {})) {
+        if (key === 'title' || !value) continue;
+        row.append(make('p', 'desk-plain', key === 'points'
+          ? list(value).map((point) => [point.label, point.text].filter(Boolean).join(': ')).join('\n')
+          : slideWordsText(value)));
+      }
+      if (deskOurs()) {
+        const restore = capsule('Restore', 'quiet', async () => {
+          const sent = { level: found.level, slide: slide.id, stamp: version.stamp, seen: found.seen };
+          const result = await deskDecide('slide-restore', sent, restore);
+          if (result) slideWordResult(found, slide, { ...sent, text: JSON.stringify(version.words) }, result, () => {});
+        });
+        row.append(restore);
+      }
+      rows.append(row);
+    }
+    DESK.kitSheet = [sheetTitle('Slide ' + slide.number + ' History'), rows,
+      add(make('div', 'bar'), capsule('Close', 'quiet', () => closeSheet()))];
+    openSheet('desk-kit', '')();
+  } catch (failure) { deskHeld(view.path).said = failure.message; paintDesk(false); }
+}
+
+function lookSheet(found, look) {
+  const picked = { choice: '', words: '' };
+  const options = window.DeckPanels.lookPicker({ name: found.name, looks: list(look?.looks),
+    defaultId: look?.default, sheet: look?.sheet, notes: list(look?.notes), failed: look?.failed,
+    picked, changed: (now) => Object.assign(picked, now),
+    picture: (number, alt) => pictureAt({ path: view.path, artifact: found.name,
+      section: 'look', number }, alt, look?.at || found.seen, { again: true }) });
+  const error = make('p', 'notice');
+  const apply = capsule('Use this look', 'filled', async () => {
+    if (!picked.choice) { error.textContent = 'Choose a look first.'; return; }
+    const answer = await deskDecide('look', { level: found.level, choice: picked.choice,
+      words: picked.words, seen: found.seen }, apply);
+    if (answer) closeSheet(); else error.textContent = deskHeld(view.path).said;
+  });
+  DESK.kitSheet = [sheetTitle('Try another look'), make('h3', 'sheet-part', '1. Choose a look'),
+    make('p', '', look?.message), options, make('h3', 'sheet-part', '2. Redraw the whole deck'),
+    make('p', '', found.look_price), error, add(make('div', 'bar'), list(look?.looks).length ? apply : null,
+      capsule('Cancel', 'quiet', () => closeSheet()))];
+  openSheet('desk-kit', '')();
 }
 
 function materialParts(held, found) {

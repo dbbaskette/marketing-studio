@@ -217,7 +217,7 @@ CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
-         DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview')
+         DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions')
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
@@ -225,7 +225,8 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
           '/api/review-level', '/api/research-site', f'{DRAFTS}/open',
           f'{DRAFTS}/slide-note', f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes', f'{DRAFTS}/slide-words-decide',
-          f'{DRAFTS}/finding', *DECIDED, *TYPED, *JOBS)
+          f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
+          f'{DRAFTS}/look', f'{DRAFTS}/draw-here', *DECIDED, *TYPED, *JOBS)
 KINDS = {
     '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -304,6 +305,14 @@ class RunnerPage(desk.Page):
             name = one('name')
             return desk.as_json(HTTPStatus.OK, self.typed(lambda: self.engine.draft_card(
                 root, name)))
+        if path == f'{DRAFTS}/slide-versions':
+            root = self.on_desk(one('path'))
+            try:
+                level = one('level') or None
+            except desk.Refusal:
+                level = None
+            return desk.as_json(HTTPStatus.OK, self.typed(lambda: self.engine.slide_versions(
+                root, level, one('slide'))))
         if path == f'{DRAFTS}/update-preview':
             root = self.on_desk(one('path'))
             with self.engine.files:
@@ -402,7 +411,7 @@ class RunnerPage(desk.Page):
                 return None
 
         path, artifact, section = one('path'), given('artifact'), given('section')
-        if (artifact is None) == (section is None):
+        if section != 'look' and (artifact is None) == (section is None):
             raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Name the deck as artifact, or the '
                                'section, and not both.')
         if not one('number').isascii() or not one('number').isdigit():
@@ -411,6 +420,8 @@ class RunnerPage(desk.Page):
         if self.engine.driven(path) is None:
             raise desk.Refusal(HTTPStatus.NOT_FOUND, 'No run is driving this training.')
         try:
+            if given('version'):
+                return shaped(self.engine.picture, path, int(one('number')), artifact, section, given('version'))
             return shaped(self.engine.picture, path, int(one('number')), artifact, section)
         except OSError:
             raise desk.Refusal(HTTPStatus.NOT_FOUND, engines.NO_PICTURE)
@@ -722,10 +733,32 @@ class RunnerPage(desk.Page):
                 return desk.as_json(HTTPStatus.OK, self.engine.open_on_desk(training))
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+        if path in (f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
+                    f'{DRAFTS}/look', f'{DRAFTS}/draw-here'):
+            root = self.on_desk(desk.text(sent, 'path'))
+            level = desk.text(sent, 'level', False) or None
+            if type(sent.get('redraw', False)) is not bool:
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Give redraw as true or false.')
+            try:
+                if path.endswith('/slide-restore'):
+                    result = self.engine.slide_restore(root, level, desk.text(sent, 'slide'),
+                        desk.text(sent, 'stamp'), desk.text(sent, 'seen'), redraw=sent.get('redraw', False))
+                elif path.endswith('/look-samples'):
+                    result = {'look': self.engine.look_samples(root, level)}
+                elif path.endswith('/draw-here'):
+                    result = self.engine.draw_here(root, level, desk.text(sent, 'seen'))
+                else:
+                    result = self.engine.look_apply(root, level, desk.text(sent, 'choice'),
+                                                    desk.text(sent, 'seen'), desk.text(sent, 'words', False))
+            except WorkspaceError as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
+            return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **result})
         if path == f'{DRAFTS}/finding':
             root = self.on_desk(desk.text(sent, 'path'))
             level = desk.text(sent, 'level', False) or None
             ids = sent.get('ids')
+            if ids is None and isinstance(sent.get('finding'), str):
+                ids = [sent['finding']]
             if not isinstance(ids, list) or not all(isinstance(item, str) for item in ids):
                 raise desk.Refusal(HTTPStatus.BAD_REQUEST, 'Choose the suggestions to change.')
             try:
@@ -741,7 +774,8 @@ class RunnerPage(desk.Page):
             try:
                 if path.endswith('slide-words'):
                     result = self.engine.slide_words(root, level, desk.text(sent, 'slide'),
-                        desk.text(sent, 'field'), desk.text(sent, 'text', False), desk.text(sent, 'seen'))
+                        desk.text(sent, 'field'), desk.text(sent, 'text', False), desk.text(sent, 'seen'),
+                        _redraw=sent.get('redraw') is True)
                 else:
                     result = self.engine.slide_speaker_notes(root, level, desk.text(sent, 'slide'),
                         desk.text(sent, 'text', False), desk.text(sent, 'seen'))
@@ -754,7 +788,7 @@ class RunnerPage(desk.Page):
                 result = self.engine.slide_words_decide(root, desk.text(sent, 'proposal'),
                     desk.text(sent, 'decision'), desk.text(sent, 'seen', False),
                     question=desk.text(sent, 'question', False), revision=desk.text(sent, 'revision', False),
-                    response=desk.text(sent, 'response', False))
+                    response=desk.text(sent, 'response', False), redraw=sent.get('redraw') is True)
             except WorkspaceError as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal))
             return desk.as_json(HTTPStatus.OK, {**drafts.view(self.engine, root), **result})

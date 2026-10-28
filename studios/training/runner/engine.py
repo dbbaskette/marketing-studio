@@ -2726,7 +2726,7 @@ class Engine(Reviewing):
                 **({'review': pipeline.JUDGED} if plan is not None and self._judges() else {}),
                 'folder': folder.name, 'sections': sections, 'at': home.now()}
             kept = deck.kept_sections(work, mine.start, began, whole, mine.built) \
-                if drafts.on_desk(self._load(root)) else {}
+                if drafts.on_desk(self._load(root)) and not mine.kept.get('draw_all') else {}
             for old in (*work.glob('start-*'), pipeline.place(root, level, pipeline.SHOTS)):
                 if old != folder:
                     shutil.rmtree(old, ignore_errors=True)
@@ -2737,6 +2737,10 @@ class Engine(Reviewing):
                         shutil.rmtree(old, ignore_errors=True)
             else:
                 shutil.rmtree(pictures, ignore_errors=True)
+            record = self._load(root)
+            if drafts.on_desk(record):
+                self._decided(record, level).pop('draw_all', None)
+                self._store(root, record)
             self._note(root, level, sections=kept, rounds=[], start=began)
             self._done(root, it, clock, f'split {workspace.label(it.artifact)} into '
                        f"{len(sections)} section{'' if len(sections) == 1 else 's'}")
@@ -3166,6 +3170,7 @@ class Engine(Reviewing):
             kept['presented'] = self._present(root, level, base, last, entry['sha256'])
             kept.pop('redesign', None)
             kept.pop('redrawing', None)
+            kept.pop('draw_all', None)
             self._store(root, record)
             self._done(root, it, clock, f'keep {workspace.label(it.artifact)}')
 
@@ -3416,7 +3421,7 @@ class Engine(Reviewing):
                 and workspace.split(name.rpartition(':')[0])[1] == Engine._level(drawing)}
 
     def picture(self, path, number: int, artifact: str | None = None,
-                section: str | None = None) -> bytes:
+                section: str | None = None, version: str | None = None) -> bytes:
         """One slide's picture, as PNG bytes: of a deck the runner rendered, named by the
         core's name for it, or of a section's latest preview while a deck is drawn. Where
         the picture is kept is worked out from those and the number, and what is there is
@@ -3426,7 +3431,17 @@ class Engine(Reviewing):
         if root is None:
             raise WorkspaceError('No run is driving this training.')
         session, within = workspace.load(root), root
-        if section == 'look' and artifact is not None:
+        if version is not None:
+            if artifact not in workspace.artifact_names(root, session) or workspace.split(artifact)[0] != 'deck':
+                raise WorkspaceError('Choose a slide deck of this training.')
+            slide, _, stamp = version.partition('/')
+            level = workspace.split(artifact)[1]
+            versions = self.slide_versions(root, level, slide)['versions']
+            if not any(item['stamp'] == stamp and item['picture'] for item in versions):
+                raise WorkspaceError('Choose a saved slide picture.')
+            file = drafts.plain_deck_path(root, pipeline.place(root, level,
+                f'work/deck/versions/{slide}/{stamp}.png'))
+        elif section == 'look' and artifact is not None:
             if artifact not in workspace.artifact_names(root, session) \
                     or workspace.split(artifact)[0] != 'deck':
                 raise WorkspaceError('That is not a slide deck of this training.')
@@ -3787,6 +3802,10 @@ class Engine(Reviewing):
                     record['drafted'].append(it.artifact)
                     self._store(root, record)
                 if says:  # kept in the deck's own folder: its gate is the runner's
+                    if drafts.on_desk(record):
+                        for slide in home.read_json(pipeline.place(root, self._level(it), pipeline.OUTLINE), {}).get('slides', []):
+                            drafts.keep_slide(self, root, self._level(it), slide['id'],
+                                              'update' if scoped else 'outline')
                     self._decided(record, self._level(it)).update(
                         outline=pipeline.keep_outline(root, found, self._level(it), handed,
                                                       step.request, designed),
@@ -4168,7 +4187,104 @@ class Engine(Reviewing):
             record = self._load(root)
         return root, record
 
-    def slide_words(self, path, level, slide, field, text, seen, *, _approved_words=None) -> dict:
+    def _deck_change(self, path, level, seen):
+        root, record = self._on_desk(path, decided=True)
+        name = workspace.qualify('deck', level)
+        if name not in workspace.artifact_names(root, workspace.load(root)):
+            raise WorkspaceError('Choose a level with a slide deck.')
+        kept = self._decided(record, level)
+        if not seen or drafts.DeckProposalDesk(self, root, level).read(name)['seen'] != seen:
+            raise WorkspaceError(CHANGED.format(it=workspace.sentence(workspace.label(name))))
+        self._settled(root, record, name)
+        if self._run(root).workers or kept.get('redrawing'):
+            raise WorkspaceError(drafts.BUSY)
+        return root, record, name, kept
+
+    def slide_versions(self, path, level, slide):
+        with self.files:
+            root = Path(path)
+            if not drafts.on_desk(self._load(root)):
+                raise WorkspaceError(drafts.NOT_ON_DESK)
+            try:
+                return drafts.slide_versions(self, root, level or None, slide)
+            except ValueError as refusal:
+                raise WorkspaceError(str(refusal)) from None
+
+    def slide_restore(self, path, level, slide, stamp, seen, *, redraw=False):
+        level = level or None
+        with self.files:
+            root, _, _, _ = self._deck_change(path, level, seen)
+            entry = next((item for item in self.slide_versions(root, level, slide)['versions']
+                          if item['stamp'] == stamp), None)
+            if entry is None:
+                raise WorkspaceError('Choose a saved version.')
+            file = pipeline.place(root, level, f'work/deck/versions/{slide}/{stamp}.json')
+            drawing = home.read_json(file, None) if entry['drawing'] else None
+            return self.slide_words(root, level, slide, 'title', entry['words'].get('title') or '',
+                                    seen, _restore={'words': entry['words'], 'drawing': drawing}, _redraw=redraw)
+
+    def look_samples(self, path, level):
+        level = level or None
+        with self.files:
+            root, record = self._on_desk(path, decided=True)
+            name = workspace.qualify('deck', level)
+            seen = drafts.DeckProposalDesk(self, root, level).read(name)['seen']
+            root, record, name, kept = self._deck_change(root, level, seen)
+            found = self._survey(root, record)
+            step = next((step for step in found.steps
+                         if step.id == workspace.qualify('deck-look', level)), None)
+            if step is None or not found.decks[level].built.get('brand'):
+                raise WorkspaceError('Draw the deck on this computer first.')
+            self._looks(root, self._run(root), found, pipeline.Next('code', step))
+            record = self._load(root)
+            shown = pipeline.read_built(root, level).get('look') or {}
+            pending = {'seen': seen, 'outline': shown.get('outline'),
+                       'looks': [{key: look.get(key) for key in ('id', 'name', 'useWhen', 'number')}
+                                 for look in shown.get('looks') or []],
+                       'message': shown.get('unavailable') or shown.get('failed') or '',
+                       'failed': bool(shown.get('failed')), 'default': shown.get('default'),
+                       'sheet': bool(shown.get('sheet')), 'at': shown.get('at')}
+
+            self._decided(record, level)['look_pending'] = pending
+            self._store(root, record)
+            return pending
+
+    def look_apply(self, path, level, choice, seen, words=None):
+        level = level or None
+        with self.files:
+            root, record, name, kept = self._deck_change(path, level, seen)
+            pending = kept.get('look_pending') or {}
+            if pending.get('seen') != seen or pending.get('outline') != workspace.sha256_file(
+                    pipeline.place(root, level, pipeline.OUTLINE)):
+                raise WorkspaceError('This deck changed after the looks were drawn. Try another look again.')
+            if not self._choose_look(root, level, choice, (words or '').strip()[:2000] or 'Chosen on the desk.', 'page'):
+                raise WorkspaceError('This deck changed after the looks were drawn. Try another look again.')
+            record = self._load(root)
+            for slide in home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {}).get('slides', []):
+                drafts.keep_slide(self, root, level, slide['id'], 'redraw')
+            kept = self._decided(record, level)
+            kept.pop('look_pending', None)
+            kept['redrawing'] = kept['draw_all'] = True
+            workspace.accept_desk(root, name)
+            self._ready_again(root)
+            self._store(root, record)
+            self._commit(root, 'choose another look for ' + workspace.label(name))
+        self.carry_on(root)
+        return drafts.view(self, root)
+
+    def draw_here(self, path, level, seen):
+        level = level or None
+        with self.files:
+            root, record, name, kept = self._deck_change(path, level, seen)
+            kept['redrawing'] = kept['draw_all'] = True
+            workspace.accept_desk(root, name)
+            self._ready_again(root)
+            self._store(root, record)
+            self._commit(root, 'draw ' + workspace.label(name) + ' on this computer')
+        self.carry_on(root)
+        return drafts.view(self, root)
+
+    def slide_words(self, path, level, slide, field, text, seen, *, _approved_words=None, _restore=None, _redraw=False) -> dict:
         """Change the outline and its drawing, then render and keep the deck."""
         level = level or None
         with self.files:
@@ -4197,7 +4313,14 @@ class Engine(Reviewing):
                 raise WorkspaceError('This training changed after these words were proposed. Enter them again.')
             outline = home.read_json(outline_file, {})
             edited, old = drafts.slide_words(outline, slide, field, text)
-            if old == text.strip():
+            changes = [(field, old, text.strip())]
+            if _restore:
+                current = next(item for item in outline['slides'] if item['id'] == slide)
+                changes = drafts.word_changes(current, _restore['words'])
+                edited = json.loads(json.dumps(outline))
+                for changed_field, _, new in changes:
+                    edited, _ = drafts.slide_words(edited, slide, changed_field, new)
+            if not _restore and old == text.strip():
                 return {'fits': True}
             blueprint = pipeline._text(root, session, workspace.qualify('blueprint', level)) or ''
             problems = deck.rules(edited, blueprint, known=pipeline.research_ids(root),
@@ -4205,8 +4328,10 @@ class Engine(Reviewing):
             if problems:
                 raise WorkspaceError(' '.join(problems))
             if start.get('design') and _approved_words is None and (
-                    field in ('title', 'subtitle', 'caveat', 'source') or field.startswith('points[')):
-                return self._propose_slide_words(root, level, slide, field, text, seen, old, basis)
+                    any(key in ('title', 'subtitle', 'caveat', 'source') or key.startswith('points[')
+                        for key, _, _ in changes)):
+                return self._propose_slide_words(root, level, slide, field, text, seen, old, basis,
+                                                changes=changes, restore=_restore)
             whole = home.read_json(folder / 'given' / 'outline.json', {})
             updated = next(item for item in deck.slides_of(edited) if item.get('id') == slide)
             whole['slides'] = [updated if item.get('id') == slide else item
@@ -4224,7 +4349,13 @@ class Engine(Reviewing):
                         home.read_json(folder / part, {}).get('slides', []))), None)
                 if drawing_file is None:
                     raise WorkspaceError('The deck has no such drawn slide.')
-            patched = deck.patch_section(home.read_json(drawing_file, {}), slide, field, old, text.strip())
+            patched = home.read_json(drawing_file, {})
+            if _restore and _restore.get('drawing'):
+                patched['slides'] = [_restore['drawing'] if item.get('id') == slide else item
+                                     for item in patched['slides']]
+            elif not _redraw:
+                for changed_field, previous, new in changes:
+                    patched = deck.patch_section(patched, slide, changed_field, previous, new)
             found = self._survey(root, record)
             with tempfile.TemporaryDirectory(prefix='training-words-') as scratch:
                 scratch = Path(scratch)
@@ -4250,9 +4381,11 @@ class Engine(Reviewing):
                         problems = []
                     except WorkspaceError as refusal:
                         problems = worker_tools.said_no(refusal)
-            if problems:
+            if problems and not _redraw:
                 return {'fits': False, 'said': 'These words do not fit the slide as it is drawn.',
-                        'price': drafts.section_price(record, level, section['id']) if section else ''}
+                        'can_redraw': section is not None, 'price': drafts.section_price(record, level, section['id']) if section else ''}
+            if _redraw and section is None:
+                raise WorkspaceError('This slide uses a fixed layout. Shorten its words before saving.')
             with deck_edit.PreparedEdit(root, basis) as prepared:
                 staged = prepared.root
                 if _approved_words:
@@ -4263,7 +4396,8 @@ class Engine(Reviewing):
                 self._preparing_decks[staged] = prepared
                 try:
                     self._save_slide_words(staged, level, name, edited, whole, patched,
-                                           section, drawing_file.relative_to(root), _approved_words)
+                                           section, drawing_file.relative_to(root), _approved_words,
+                                           history=(slide, 'restore' if _restore else 'save'), redraw=_redraw)
                 finally:
                     self._preparing_decks.pop(staged, None)
                     self._runs.pop(str(staged), None)
@@ -4281,10 +4415,12 @@ class Engine(Reviewing):
                 except (WorkspaceError, OSError) as refusal:
                     raise WorkspaceError('Your slide change is saved on this computer, but '
                                          f'its history could not be committed. {refusal}') from refusal
-            return {'fits': True}
+        if _redraw:
+            self.carry_on(root)
+        return {'fits': True}
 
     def _save_slide_words(self, root, level, name, edited, whole, patched, section,
-                          drawing_path, approved_words=None) -> None:
+                          drawing_path, approved_words=None, history=None, redraw=False) -> None:
         """Render and save only in PreparedEdit's private copy; never commit this root."""
         record = self._load(root)
         kept = self._decided(record, level)
@@ -4295,6 +4431,8 @@ class Engine(Reviewing):
         outline_file = pipeline.place(root, level, pipeline.OUTLINE)
         drawing_file = root / drawing_path
         entry = built['sections'][section['id']] if section else None
+        if history:
+            drafts.keep_slide(self, root, level, *history)
         if approved_words:
             plan = approved_words['plan']
             design_file = pipeline.place(root, level, pipeline.DESIGN)
@@ -4321,6 +4459,17 @@ class Engine(Reviewing):
         start['outline'] = digest
         home.write_json(folder / 'given' / 'outline.json', whole)
         home.write_json(folder / pipeline.TOOL_OUTLINE, deck.for_tool(whole, self.slides().knows()))
+        if redraw:
+            slide = history[0]
+            kept['redrawing'] = True
+            kept.setdefault('notes', []).append({'id': secrets.token_hex(6), 'slide': slide,
+                'section': section['id'], 'note': 'Use the exact updated words in the outline: '
+                    + json.dumps(drafts.words_of(next(item for item in edited['slides']
+                                                     if item['id'] == slide)), ensure_ascii=False),
+                'at': home.now(), 'by': 'page', 'status': 'waiting'})
+            pipeline.write_built(root, level, built)
+            self._store(root, record)
+            return
         if section:
             drawing_file = folder / 'drawn' / f"{section['id']}-w{secrets.token_hex(3)}.json"
             worker_tools._write(drawing_file, json.dumps(patched, indent=2, ensure_ascii=False) + '\n')
@@ -4350,11 +4499,15 @@ class Engine(Reviewing):
             problem = self._load(root).get('problem') or {}
             raise WorkspaceError(problem.get('what') or 'The deck could not be saved.')
 
-    def _propose_slide_words(self, root, level, slide, field, text, seen, old, basis):
+    def _propose_slide_words(self, root, level, slide, field, text, seen, old, basis,
+                            *, changes=None, restore=None):
         """Put the tool's actual question to the person; this never answers it."""
         tool, project = self.slides(), pipeline.design_project(root, level)
         checked = tool.design_check(project)
-        plan = drafts.design_words(checked['plan'], slide, field, old, text)
+        plan = checked['plan']
+        for key, previous, new in changes or [(field, old, text)]:
+            if key != 'notes':
+                plan = drafts.design_words(plan, slide, key, previous, new)
         token = secrets.token_hex(12)
         folder = deck_edit.proposal_folder(root, token)
         try:
@@ -4370,7 +4523,13 @@ class Engine(Reviewing):
                 raise WorkspaceError('The slides tool did not provide a design question for these words.')
             approval = {'token': token, 'revision': status['revision'], 'question': question,
                         'slide': slide, 'field': field, 'before': old, 'after': text.strip()}
+            if restore:
+                approval.update(before=json.dumps(drafts.words_of(next(
+                    item for item in home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})['slides']
+                    if item['id'] == slide)), ensure_ascii=False),
+                    after=json.dumps(restore['words'], ensure_ascii=False))
             home.write_json(folder / 'request.json', {'root': str(root), 'level': level,
+                'restore': restore, 'text': text,
                 'seen': seen, 'approval': approval,
                 'basis': {str(path): digest.hex() for path, digest in basis.items()}})
             return {'fits': None, 'approval': approval}
@@ -4379,7 +4538,7 @@ class Engine(Reviewing):
             raise
 
     def slide_words_decide(self, path, token, decision, seen, *, question=None,
-                           revision=None, response=None) -> dict:
+                           revision=None, response=None, redraw=False) -> dict:
         """Only a separate explicit answer may approve proposed design-bound words."""
         with self.files:
             root, record = self._on_desk(path, decided=True)
@@ -4405,7 +4564,8 @@ class Engine(Reviewing):
             if checked['revision'] != revision:
                 raise WorkspaceError('The design changed after this question was displayed. Enter the words again.')
             result = self.slide_words(root, requested['level'], approval['slide'], approval['field'],
-                approval['after'], seen, _approved_words={'plan': checked['plan'], 'revision': revision,
+                requested.get('text', approval['after']), seen, _restore=requested.get('restore'),
+                _redraw=redraw, _approved_words={'plan': checked['plan'], 'revision': revision,
                     'source': project, 'project': f'deck/design-edits/{token}',
                     'basis': {Path(path): bytes.fromhex(digest) for path, digest in requested['basis'].items()}})
             if result.get('fits'):
@@ -4450,6 +4610,7 @@ class Engine(Reviewing):
                 raise WorkspaceError(f"Slide {shown['number']} is being redrawn now. Your note "
                                      'is kept here; send it when that ends.')
             self._settled(root, record, name)
+            drafts.keep_slide(self, root, level, slide, 'note')
             workspace.accept_desk(root, name)
             self._ready_again(root)
             kept['redrawing'] = True
@@ -4478,6 +4639,18 @@ class Engine(Reviewing):
                 if section:
                     item['price'] = drafts.section_price(self._load(root), level, section)
             return result
+
+    def finding_apply(self, path, level, finding, seen):
+        return self._finding_action(path, level, finding, seen, 'apply')
+
+    def finding_skip(self, path, level, finding, seen):
+        return self._finding_action(path, level, finding, seen, 'skip')
+
+    def _finding_action(self, path, level, finding, seen, action):
+        if not isinstance(finding, dict) or not isinstance(finding.get('job'), str) \
+                or not isinstance(finding.get('id'), str):
+            raise WorkspaceError('Choose a suggestion from its review.')
+        return self.deck_finding(path, level, seen, finding['job'], action, [finding['id']])
 
     def deck_finding(self, path, level, seen, job, action, ids):
         level = level or None

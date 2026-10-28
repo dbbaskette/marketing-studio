@@ -691,7 +691,8 @@ def view(engine, root) -> dict:
                     {'passed': 0, 'problems': []},
                     'seen': seen, 'held': name in holding,
                     'actions': card_actions if mine else ['download'], 'needs': needs,
-                    **({'proposals': engine.deck_proposals(root, level)}
+                    **({'proposals': engine.deck_proposals(root, level),
+                        **deck_card(engine, root, level, found)}
                        if kind == 'deck' and seen else {})})
     needed = []
     if mine:
@@ -1596,3 +1597,139 @@ def design_words(plan: dict, slide: str, field: str, old: str, text: str) -> dic
             target['qualifications'] = [text.strip() if value == old else value
                                         for value in target['qualifications']]
     return made
+
+
+SLIDE_SOURCES = ('save', 'selection', 'note', 'redraw', 'restore', 'outline', 'finishing', 'open', 'update')
+SLIDE_WORDS = ('title', 'subtitle', 'points', 'caveat', 'source', 'notes')
+SLIDE_CODEC = parts.Codec(fixed=(), single=(), part=re.compile(r'^[a-zA-Z_][a-zA-Z0-9_-]{4,40}$'),
+                          thing='deck', noun='slide')
+
+
+class DeckStore(TrainingStore):
+    """Shared slide words beside the outline; drawings remain local under work/deck."""
+    def folder(self, name):
+        from runner import pipeline
+        if workspace.split(name)[0] != 'deck' or name not in workspace.artifact_names(self.root, workspace.load(self.root)):
+            raise ValueError('Choose a level with a slide deck.')
+        return plain_deck_path(self.root, pipeline.place(self.root, workspace.split(name)[1], 'deck'))
+
+
+def plain_deck_path(root, path):
+    """Never follow a linked History directory, including an existing parent."""
+    root, path = Path(root), Path(path)
+    if root not in path.parents:
+        raise workspace.WorkspaceError('Choose a saved slide version.')
+    for item in (path, *path.parents):
+        if item == root:
+            break
+        if item.is_symlink():
+            raise workspace.WorkspaceError('Slide History must use plain files inside this training.')
+    return path
+
+
+def slide_history(engine, root):
+    return desk_versions.Versions(DeckStore(engine, root), SLIDE_CODEC, SLIDE_SOURCES)
+
+
+def words_of(slide):
+    return {key: slide.get(key) for key in SLIDE_WORDS}
+
+
+def word_changes(now, wanted):
+    """Individual editable fields, including each point's text."""
+    if len(now.get('points') or []) != len(wanted.get('points') or []):
+        raise workspace.WorkspaceError('The slide has another number of points now.')
+    changes = []
+    for field in SLIDE_WORDS:
+        if field == 'points':
+            fields = [(f'points[{i}].{key}', point.get(key) or '',
+                       (wanted['points'][i].get(key) or ''))
+                      for i, point in enumerate(now.get('points') or []) for key in ('label', 'text')]
+        else:
+            def text(value):
+                return value.get('text', '') if isinstance(value, dict) else value or ''
+            fields = [(field, text(now.get(field)), text(wanted.get(field)))]
+        changes.extend((field, old, new) for field, old, new in fields if old != new)
+    return changes
+
+
+def drawing_file(root, level, slide):
+    from runner import pipeline
+    built = pipeline.read_built(root, level)
+    work = pipeline.place(root, level, pipeline.WORK)
+    start = built.get('start') or {}
+    section = next((part for part in start.get('sections') or [] if slide in part['slides']), None)
+    if section:
+        entry = (built.get('sections') or {}).get(section['id']) or {}
+        return work / entry['file'] if entry.get('file') else None
+    return next((file for file in (work / str(start.get('folder') or '')).glob('lead-*.json')
+                 if any(item.get('id') == slide for item in home.read_json(file, {}).get('slides', []))), None)
+
+
+def keep_slide(engine, root, level, slide, source):
+    import json
+    from runner import pipeline
+    outline = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
+    current = next((item for item in outline.get('slides', []) if item.get('id') == slide), None)
+    if current is None:
+        return
+    versions = slide_history(engine, root)
+    name = workspace.qualify('deck', level)
+    versions.keep(name, slide, json.dumps(words_of(current), ensure_ascii=False), source)
+    entry = versions.kept(name, slide)[0]
+    stamp = re.sub(r'[^0-9A-Za-z]', '', entry['at'])
+    file = drawing_file(root, level, slide)
+    drawn = next((item for item in (home.read_json(file, {}) if file else {}).get('slides', [])
+                  if item.get('id') == slide), None)
+    if drawn is not None:
+        folder = plain_deck_path(root, pipeline.place(root, level, f'work/deck/versions/{slide}'))
+        versions.store.write_json(plain_deck_path(root, folder / f'{stamp}.json'), drawn)
+        number = next((i for i, item in enumerate(outline['slides'], 1) if item['id'] == slide), None)
+        picture = pipeline.place(root, level, pipeline.SHOTS) / f'{number}.png'
+        if picture.is_file() and not picture.is_symlink():
+            versions.store.atomic(plain_deck_path(root, folder / f'{stamp}.png'), picture.read_bytes())
+
+
+def slide_versions(engine, root, level, slide):
+    import json
+    from runner import pipeline
+    found = []
+    for entry in slide_history(engine, root).kept(workspace.qualify('deck', level), slide):
+        try:
+            words = json.loads(entry['text'])
+        except ValueError:
+            continue
+        stamp = re.sub(r'[^0-9A-Za-z]', '', entry['at'])
+        folder = plain_deck_path(root, pipeline.place(root, level, f'work/deck/versions/{slide}'))
+        found.append({'at': entry['at'], 'source': entry['source'], 'words': words,
+                      'stamp': stamp, 'drawing': plain_deck_path(root, folder / f'{stamp}.json').is_file(),
+                      'picture': plain_deck_path(root, folder / f'{stamp}.png').is_file()})
+    return {'versions': found}
+
+
+def deck_card(engine, root, level, found):
+    from runner import pipeline, deck
+    from studio_core import stops
+    mine = found.decks.get(level)
+    if mine is None:
+        return {'slides': [], 'local': False}
+    outline = home.read_json(pipeline.place(root, level, pipeline.OUTLINE), {})
+    counts = slide_history(engine, root).counts(mine.name)
+    record = engine._load(root)
+    drawn = deck_drawings(root, level)
+    slides = []
+    for number, item in enumerate(outline.get('slides') or [], 1):
+        section = next((part['id'] for part in mine.start.get('sections') or []
+                        if item['id'] in part['slides']), None)
+        slides.append({**words_of(item), 'id': item['id'], 'number': number,
+                       'picture': (pipeline.place(root, level, pipeline.SHOTS) / f'{number}.png').is_file(),
+                       'history': counts.get(item['id'], 0),
+                       'price': section_price(record, level, section) if section else '',
+                       'redraw': bool(section)})
+    estimate = deck.before(len(slides))
+    cost = engine._redo_steps(record, [workspace.qualify(kind, level)
+        for kind in ('deck-sections', 'deck-whole', 'deck-review')])
+    price = ('Redraws the whole deck. ' + (f'Last time this took {cost}.' if cost else
+             'Expect about ' + stops.cost(estimate['minutes'] * 60, estimate['dollars']) + '.'))
+    return {'slides': slides, 'local': bool(drawn), 'look_price': price,
+            'look': (mine.kept.get('look_pending') or None)}
