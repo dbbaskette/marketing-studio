@@ -20,7 +20,7 @@ Fields are `title`, `subtitle`, `detail`, `caveat`, `source`, `notes`, or `point
 
 `studio desk context --folder PATH --target TARGET` returns `{target, expected_basis, scope, inputs, requirements}`. Submit `{kind, target, expected_basis, payload}` using `desk submit` or `desk save`. Context describes absent materials too. It prepares companion contracts on disposable copies without changing the desk. Checkers run outside the repository lock; current inputs, team ownership and workers are checked again before saving. No arbitrary destination paths are accepted.
 
-`desk show --folder PATH` exposes materials, native drawing state, sources, prior deliveries and History without recovery or jobs. Missing prerequisites receive a refusal, never implicit scope expansion. Drawing requires a checked outline and an explicitly settled look. Validation never chooses missing design answers or runs an assistant.
+`desk show --folder PATH` exposes materials, native drawing state, sources, prior deliveries and History without recovery or jobs. Missing prerequisites receive a refusal, never implicit scope expansion. Drawing needs a checked outline and settled look. Use `desk answer` for explicit look/design responses; validation never chooses answers.
 
 ## Execution and later scope
 

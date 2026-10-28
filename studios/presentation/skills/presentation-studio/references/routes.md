@@ -18,7 +18,7 @@ Research requires both the form's explicit research choice and the submitted kin
 
 ## Drawing and revisions
 
-Target `drawing` returns exact section composition requirements from the checked outline and brand contract. The current conversation supplies compositions; existing compile, native preview, fixed-word and brand checks validate them. No nested assistant draws them. A saved picked look is preserved; using the brand default at creation requires the person's explicit choice. Missing design answers are refused and never filled automatically.
+Target `drawing` returns exact section composition requirements from the checked outline and brand contract. The current conversation supplies compositions; existing compile, native preview, fixed-word and brand checks validate them. No nested assistant draws them. Preserve saved looks. For a later look/default choice or current companion design question, use checked `desk answer` with the person's explicit response and drawing scope. Missing answers are never inferred.
 
 Part edits use stable slide IDs and known fields. They preserve unchanged sections, check fit, keep History, and update the native file without a composer. A changed outline retains unaffected sections; a changed delivered deck keeps prior delivery decisions and revisions as history, with the new revision unapproved.
 

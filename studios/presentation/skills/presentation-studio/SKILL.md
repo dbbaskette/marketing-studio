@@ -5,14 +5,14 @@ description: Create, inspect and revise branded slide materials on the Presentat
 
 # Presentation Studio
 
-Use the checked `studio desk` commands for conversation work. They use the same desk without a browser or another assistant. Focused requests never imply drawing, delivery, approval or design answers. `studio serve` still opens the page.
+Use the checked `studio desk` commands for conversation work. No browser or nested assistant is needed. Focused requests never imply drawing, delivery, approval or design answers. `studio serve` still opens the page.
 
 ## Rules
 
 - **Only the person approves.** Checked submissions record inputs and provenance, never approval or Ready.
 - **Slides use Harness Slides.** Its contracts, compile, preview, patch, comparison and brand checks still apply. Never write slide files directly or invent checked drawings or research.
 - **Respect requested scope.** Require an explicit finite material list derived from the person's request. Add or remove scope only after they explicitly ask; never widen to make a submission pass.
-- **Design answers are the person's.** Never choose a look or fill design answers from permission to draft. Preserve a saved choice; pass on a companion's request for missing answers.
+- **Design answers are the person's.** Never choose a look or fill design answers from permission to draft. Preserve saved choices; obtain the person’s actual answers.
 - **Keep originals.** An existing deck is read and its result is a new file. Preserve sources, pins, History, Google baselines and team ownership.
 
 ## Start or continue
@@ -33,4 +33,4 @@ Read `studio desk context --folder PATH --target TARGET`. It returns pinned inpu
 
 For a later explicit change in requested work, read target `scope`, then `desk scope` with `{expected_basis, scope}`. For explicit runner execution, read target `handoff`, then use `desk handoff` with the same fields. Incompatible scope is refused; finish focused work in conversation.
 
-See [research](references/research.md), [existing-deck levels](references/levels.md) and [workspace records](references/workspace.md).
+See [explicit answers](references/answers.md), [research](references/research.md), [existing-deck levels](references/levels.md) and [workspace records](references/workspace.md).

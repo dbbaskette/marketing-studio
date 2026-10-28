@@ -486,3 +486,229 @@ class ConversationTeamTests(runner_support.TeamCase):
             with self.assertRaisesRegex(WorkspaceError, 'Alex|another|driv'):
                 desk_chat.submit(self.blake.engine, other, {'kind': 'text', 'target': 'brief',
                     'expected_basis': context['expected_basis'], 'payload': {'text': 'Wrong driver'}})
+
+
+class ConversationAnswerTests(runner_support.DeskCase):
+    def create(self, scope):
+        return Path(desk_chat.create(self.engine, {**runner_support.FORM, 'scope': scope})['path'])
+
+    def outline(self, root):
+        context = desk_chat.context(self.engine, root, 'outline')
+        desk_chat.submit(self.engine, root, {'kind': 'outline', 'target': 'outline',
+            'expected_basis': context['expected_basis'],
+            'payload': {'outline': runner_support.LONG_OUTLINE}})
+
+    def answer(self, root, context, answer):
+        return desk_chat.answer(self.engine, root, {'target': context['target'],
+            'expected_basis': context['expected_basis'], 'answer': answer})
+
+    def drawing_scope(self, root):
+        context = desk_chat.context(self.engine, root, 'scope')
+        desk_chat.set_scope(self.engine, root, context['expected_basis'], ['outline', 'drawing'])
+
+    def test_outline_only_later_explicit_default_answer_reaches_usable_drawing(self):
+        from stand_ins.slides import sketch
+        root = self.create(['outline'])
+        self.outline(root)
+        with self.assertRaisesRegex(WorkspaceError, 'scope'):
+            desk_chat.context(self.engine, root, 'look')
+        self.drawing_scope(root)
+        before = desk_chat._files(root)
+        context = desk_chat.context(self.engine, root, 'look')
+        self.assertEqual(desk_chat._files(root), before, 'context never publishes samples')
+        self.assertTrue(context['requirements']['offered'])
+        self.assertTrue(context['requirements']['previews'])
+        with mock.patch.object(self.engine, 'wake', side_effect=AssertionError('wake')):
+            self.answer(root, context, {'questionId': context['requirements']['questionId'],
+                'choice': 'default', 'response': 'Use the brand default for this drawing.'})
+        record = self.record(root)
+        self.assertEqual(record['form']['look'], 'default')
+        self.assertFalse(any(g.get('state') == 'approved' for g in record['gates'].values()))
+        context = desk_chat.context(self.engine, root, 'drawing')
+        slides = {s['id']: s for s in runner_support.LONG_OUTLINE['slides']}
+        sections = {ident: {'version': 1, 'title': spec['title'], 'direction': spec['direction'],
+            'slides': [sketch(slides[slide['id']], spec['prefix']) for slide in spec['slides']]}
+            for ident, spec in context['requirements']['sections'].items()}
+        desk_chat.submit(self.engine, root, {'kind': 'drawing', 'target': 'drawing',
+            'expected_basis': context['expected_basis'], 'payload': {'sections': sections}})
+        self.assertTrue((root / build.DECK).is_file())
+        self.assertTrue(build.read_state(root)['audit'])
+        self.assertIsNone(decks.delivered(root))
+
+    def test_named_look_answer_keeps_words_history_and_real_decisions(self):
+        from runner.steps import look
+        root = self.create(['outline', 'drawing'])
+        self.outline(root)
+        before = desk_chat.show(self.engine, root)
+        gates = copy.deepcopy(self.record(root)['gates'])
+        context = desk_chat.context(self.engine, root, 'look')
+        choice = context['requirements']['offered'][-1]['id']
+        self.answer(root, context, {'questionId': context['requirements']['questionId'],
+                                  'choice': choice, 'response': 'Use this offered look.'})
+        after = desk_chat.show(self.engine, root)
+        self.assertEqual(look.chosen(root)['choice'], choice)
+        self.assertEqual(after['outline']['slides'], before['outline']['slides'])
+        self.assertEqual(after['history'], before['history'])
+        self.assertEqual(self.record(root)['gates'], gates)
+        self.assertEqual(self.record(root)['execution'], 'conversation')
+
+    def test_stale_look_basis_question_and_changed_samples_refuse_without_writes(self):
+        root = self.create(['outline', 'drawing'])
+        self.outline(root)
+        context = desk_chat.context(self.engine, root, 'look')
+        answer = {'questionId': context['requirements']['questionId'], 'choice': 'default',
+                  'response': 'Use the default look.'}
+        before = desk_chat._files(root)
+        with self.assertRaisesRegex(WorkspaceError, 'question'):
+            self.answer(root, context, {**answer, 'questionId': 'wrong'})
+        self.assertEqual(desk_chat._files(root), before)
+        record = self.record(root)
+        record['form']['goal'] = 'Different current input'
+        decks.write_run(root, record)
+        before = desk_chat._files(root)
+        with self.assertRaisesRegex(WorkspaceError, 'changed'):
+            self.answer(root, context, answer)
+        self.assertEqual(desk_chat._files(root), before)
+
+    def sample_rewriter(self, rewrite):
+        samples = self.brand.look_samples
+
+        def changed(outline, output, *args, **kwargs):
+            result = samples(outline, output, *args, **kwargs)
+            manifest = json.loads((Path(output) / 'looks.json').read_text())
+            for sample in manifest['samples']:
+                if sample.get('image'):
+                    picture = Path(sample['image'])
+                    picture.write_bytes(rewrite(picture.read_bytes()))
+            return result
+        return changed
+
+    def test_same_visual_preview_different_text_time_metadata_has_stable_basis(self):
+        import zlib
+        root = self.create(['outline', 'drawing'])
+        self.outline(root)
+        original = desk_chat.context(self.engine, root, 'look')
+        count = 0
+
+        def metadata(data):
+            nonlocal count
+            count += 1
+            def chunk(kind, body):
+                return len(body).to_bytes(4, 'big') + kind + body \
+                    + zlib.crc32(kind + body).to_bytes(4, 'big')
+            # Both timestamp and arbitrary writer text change at each rendering.
+            incidental = chunk(b'tEXt', b'Writer\x00render-' + str(count).encode()) \
+                + chunk(b'tIME', bytes([7, 234, 10, 28, 12, 0, count % 60]))
+            return data[:-12] + incidental + data[-12:]
+
+        before = desk_chat._files(root)
+        with mock.patch.object(self.brand, 'look_samples', side_effect=self.sample_rewriter(metadata)):
+            current = desk_chat.context(self.engine, root, 'look')
+            self.assertEqual(current['expected_basis'], original['expected_basis'])
+            self.assertEqual(current['requirements'], original['requirements'])
+            self.assertEqual(desk_chat._files(root), before)
+            self.answer(root, original, {'questionId': original['requirements']['questionId'],
+                'choice': 'default', 'response': 'Use the shown brand default.'})
+
+    def test_changed_visual_preview_refuses_answer_without_material_or_history_changes(self):
+        from stand_ins import assets
+        root = self.create(['outline', 'drawing'])
+        self.outline(root)
+        context = desk_chat.context(self.engine, root, 'look')
+        before = desk_chat._files(root)
+        with mock.patch.object(self.brand, 'look_samples',
+                side_effect=self.sample_rewriter(lambda data: assets.png(shade=235))):
+            with self.assertRaisesRegex(WorkspaceError, 'changed'):
+                self.answer(root, context, {'questionId': context['requirements']['questionId'],
+                    'choice': 'default', 'response': 'Use the displayed default.'})
+        self.assertEqual(desk_chat._files(root), before)
+
+    def test_truncated_or_bad_checksum_preview_is_refused_without_context_publication(self):
+        root = self.create(['outline', 'drawing'])
+        self.outline(root)
+        before = desk_chat._files(root)
+        for rewrite in (lambda data: data[:-1],
+                        lambda data: data[:-5] + bytes([data[-5] ^ 1]) + data[-4:]):
+            with self.subTest(rewrite=rewrite), mock.patch.object(self.brand, 'look_samples',
+                    side_effect=self.sample_rewriter(rewrite)):
+                with self.assertRaisesRegex(WorkspaceError, 'PNG'):
+                    desk_chat.context(self.engine, root, 'look')
+                self.assertEqual(desk_chat._files(root), before)
+
+    def design_question(self, root):
+        from stand_ins import slides
+        command = slides.StandIn()
+        command.design = True
+        self.slides = self.real[0](runtime=Path('stand-in'), run=command, read=command.read)
+        project = root / 'work'
+        project.mkdir(exist_ok=True)
+        fixture = Path(__file__).parent / 'fixtures/visual-contract/proposal.json'
+        return self.slides.design_propose(project, fixture)
+
+    def test_actual_companion_question_revision_response_contract_is_preserved(self):
+        root = self.create(['drawing'])
+        status = self.design_question(root)
+        context = desk_chat.context(self.engine, root, 'design')
+        self.assertEqual(context['requirements']['question']['id'], status['question']['id'])
+        before = desk_chat._files(root)
+        reply = {'questionId': status['question']['id'], 'planRevision': status['revision'],
+                 'decision': 'approve', 'feedback': 'I approve the displayed whole design plan.'}
+        with mock.patch.object(self.engine, 'wake', side_effect=AssertionError('wake')):
+            self.answer(root, context, reply)
+        self.assertTrue(self.slides.design_check(root / 'work')['buildAllowed'])
+        self.assertTrue(any(call[:2] == ['design', 'respond'] for call in self.slides.run.calls))
+        self.assertEqual(self.record(root)['gates'], {})
+        self.assertEqual(self.record(root)['conversation_answers'][-1]['answer'], reply)
+        after = desk_chat._files(root)
+        untouched = {name: data for name, data in before.items()
+                     if name != 'run.json' and not name.startswith('work/.harness-slides/design/')}
+        self.assertEqual(untouched, {name: after[name] for name in untouched})
+        with self.assertRaisesRegex(WorkspaceError, 'question|changed'):
+            self.answer(root, context, reply)
+
+    def test_actual_companion_stale_revision_and_closed_question_refuse(self):
+        root = self.create(['drawing'])
+        status = self.design_question(root)
+        context = desk_chat.context(self.engine, root, 'design')
+        reply = {'questionId': status['question']['id'], 'planRevision': 'old-revision',
+                 'decision': 'approve', 'feedback': 'I approve the displayed plan.'}
+        before = desk_chat._files(root)
+        with self.assertRaisesRegex(WorkspaceError, 'revision|question'):
+            self.answer(root, context, reply)
+        self.assertEqual(desk_chat._files(root), before)
+        self.slides.design_respond(root / 'work', {**reply, 'planRevision': status['revision']})
+        before = desk_chat._files(root)
+        with self.assertRaisesRegex(WorkspaceError, 'question|changed'):
+            self.answer(root, context, {**reply, 'planRevision': status['revision']})
+        self.assertEqual(desk_chat._files(root), before)
+
+    def test_answer_cannot_publish_after_canonical_worker_acquires_output(self):
+        root = self.create(['drawing'])
+        status = self.design_question(root)
+        context = desk_chat.context(self.engine, root, 'design')
+        respond = self.slides.design_respond
+        marker = root / 'work/step.lock'
+        original = desk_chat._files(root)
+
+        def concurrently(*args, **kwargs):
+            self.assertFalse(self.engine.files._is_owned())
+            answered = respond(*args, **kwargs)
+            with self.engine.files:
+                marker.write_text('canonical worker acquired')
+            return answered
+
+        with mock.patch.object(self.slides, 'design_respond', side_effect=concurrently):
+            with self.assertRaisesRegex(WorkspaceError, 'progress'):
+                self.answer(root, context, {'questionId': status['question']['id'],
+                    'planRevision': status['revision'], 'decision': 'approve',
+                    'feedback': 'I approve this displayed plan.'})
+        after = desk_chat._files(root)
+        after.pop('work/step.lock')
+        self.assertEqual(after, original)
+        self.assertFalse(self.slides.design_status(root / 'work')['buildAllowed'])
+
+    def test_answer_cli_is_explicit_and_no_submission_kind_is_added(self):
+        from runner import studio
+        args = studio.parser().parse_args(['desk', 'answer', '--folder', '/synthetic/deck', '--input', '-'])
+        self.assertEqual(args.desk_action, 'answer')
+        self.assertEqual(desk_chat.KINDS, ('text', 'outline', 'research', 'drawing', 'part'))

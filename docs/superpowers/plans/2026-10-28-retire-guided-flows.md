@@ -170,7 +170,15 @@ Drawing accepts bounded section compositions (Selected changes accepts a checked
 patch). Existing checker/compile/native-preview/brand contracts run on disposable
 copies outside the write lock, then publication rechecks current inputs, scope,
 workspace, team and canonical worker state. Context includes absent-target bases.
-Explicit look/design answers are never inferred. Handoff honors current scope and
+`answer(engine, path, request)` / `studio desk answer` accepts explicit targets
+`look` and `design`, both requiring drawing scope, with
+`{target, expected_basis, answer}`. Look context binds current offered IDs and inline
+PNG previews; answer requires its questionId, exact offered choice or explicit
+brand default, and actual person response. Companion design uses canonical `work/`
+with actual design_status question/revision and design_respond four-field reply.
+Missing/changed/closed questions refuse; preparation never publishes. Neither path
+invents approvals, wakes workers or expands scope. Existing words, History and
+pins remain. Explicit look/design answers are never inferred. Handoff honors current scope and
 pinned inputs or refuses an incompatible remaining saved plan. Also add
 `context(engine, path, target) -> dict`, `submit(engine, path, request) -> dict`,
 `handoff(engine, path, expected_basis, scope) -> dict`, exposed under `studio desk`.

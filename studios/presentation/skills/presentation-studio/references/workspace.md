@@ -4,7 +4,7 @@ Presentation Studio keeps decks under the configured `presentations/` folder in 
 
 ## Conversation records
 
-Use `studio desk create/show/context/submit/save/take/scope/handoff` as [the desk contract](desk.md) describes. They use the existing workspace and repository lock. Never write `run.json`, draw files or mark steps/approvals yourself.
+Use `studio desk create/show/context/submit/save/answer/take/scope/handoff` as [the desk contract](desk.md) describes. They use the existing workspace and repository lock. Never write `run.json`, draw files or mark steps/approvals yourself.
 
 A deck lives at `presentations/<deck-id>/`:
 

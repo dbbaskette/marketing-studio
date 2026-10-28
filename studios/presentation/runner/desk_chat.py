@@ -4,18 +4,20 @@ Companions validate a disposable copy outside the repository write lock. Publica
 rechecks the exact inputs, execution owner and canonical worker markers under files.
 """
 from contextlib import contextmanager
+import base64
 import hashlib
 import json
 import os
 import stat
 from pathlib import Path
 import tempfile
+import zlib
 
 import home
 from workspace import WorkspaceError, write_atomic
 from runner import decks, desk, documents, gitstate, settings, stages, worker_tools
 from runner.steps import build, existing, intake, outline as outlines, words
-from runner.steps import deliver as delivering
+from runner.steps import deliver as delivering, look as looks
 from studio_core import research_contract, research_sites
 from studio_core.sync_guard import worker_in_progress, SYNC_WAIT
 
@@ -130,6 +132,8 @@ def _kind(target):
         return 'text'
     if target in ('outline', 'research', 'drawing'):
         return target
+    if target in ('look', 'design'):
+        return 'drawing'
     if isinstance(target, str) and '/' in target:
         return 'part'
     if target in ('scope', 'handoff', 'ownership'):
@@ -196,6 +200,15 @@ def _prepare(engine, root, record, target):
     requirements = {'kind': kind, 'envelope': ['kind', 'target', 'expected_basis', 'payload']}
     if target in ('scope', 'handoff', 'ownership'):
         return {'allowed_scope': list(KINDS), 'existing_scope': record.get('conversation_scope')}
+    if target == 'design':
+        status = engine.slides().design_status(root / 'work')
+        question = status.get('question')
+        if not isinstance(question, dict) or not question.get('id') or not status.get('revision'):
+            raise WorkspaceError('No current companion design question is waiting.')
+        return {'operation': 'answer', 'question': question, 'revision': status['revision'],
+                'slides': status.get('slides') or [], 'project': 'work',
+                'envelope': ['target', 'expected_basis', 'answer'],
+                'answer': ['questionId', 'planRevision', 'decision', 'feedback']}
     if target == 'brief':
         return {**requirements, 'payload': {'text': 'Brief, at most 4,000 characters'}}
     if target == 'classification':
@@ -228,6 +241,8 @@ def _prepare(engine, root, record, target):
     if state.get('start'):
         state['start']['brand'] = str(contract)
         build.write_state(root, state)
+    if target == 'look':
+        return _look_context(engine, root, record)
     if target == 'outline':
         if desk.selected(record):
             raise WorkspaceError('Selected changes keeps its original deck; submit its scoped patch drawing instead.')
@@ -249,11 +264,114 @@ def _prepare(engine, root, record, target):
         raise WorkspaceError('Submit a checked outline before its drawing.')
     if record['form'].get('look') != 'default' and not (root / 'look.md').is_file():
         raise WorkspaceError('The look needs the person’s explicit choice. Choose the brand default explicitly at creation, or retain a saved picked look.')
+    if (root / 'work/.harness-slides/design/session.json').is_file():
+        status = engine.slides().design_status(root / 'work')
+        if status.get('question') or not status.get('buildAllowed'):
+            raise WorkspaceError('Answer the current companion design question before drawing.')
+        engine.slides().design_check(root / 'work')
     if not state.get('start'):
         build.start(root, record, engine.slides(), contract)
     return {**requirements, 'payload': {'sections': 'Object mapping requested section IDs to compositions'},
             'sections': {ident: build.section_spec(root, record, ident, 'local')
                          for ident in build.to_draw(root)}}
+
+
+
+def _preview_png(data):
+    """Keep visual PNG chunks byte-for-byte; discard only text and clock metadata."""
+    signature = b'\x89PNG\r\n\x1a\n'
+    if not data.startswith(signature):
+        raise WorkspaceError('The look preview is not a complete PNG.')
+    kept, offset, image = [signature], len(signature), False
+    while offset + 12 <= len(data):
+        length = int.from_bytes(data[offset:offset + 4], 'big')
+        end = offset + length + 12
+        kind = data[offset + 4:offset + 8]
+        body = data[offset + 8:end - 4]
+        if end > len(data) or not all(65 <= b <= 90 or 97 <= b <= 122 for b in kind) \
+                or zlib.crc32(kind + body) != int.from_bytes(data[end - 4:end], 'big') \
+                or (offset == 8 and (kind != b'IHDR' or length != 13)) \
+                or (offset != 8 and kind == b'IHDR'):
+            break
+        if kind not in (b'tEXt', b'zTXt', b'iTXt', b'tIME'):
+            kept.append(data[offset:end])
+        image = image or kind == b'IDAT'
+        if kind == b'IEND':
+            if length == 0 and end == len(data) and image:
+                return b''.join(kept)
+            break
+        offset = end
+    raise WorkspaceError('The look preview is a malformed or truncated PNG.')
+
+
+def _look_context(engine, root, record):
+    """Offer actual local samples without publishing them or choosing an answer."""
+    if looks.chosen(root) is not None:
+        raise WorkspaceError('The look question has already been answered.')
+    if not (root / outlines.OUTLINE).is_file():
+        raise WorkspaceError('Submit a checked outline before choosing its look.')
+    skill = engine.brand()
+    shown = looks.draw_looks(root, record, skill, 'local', engine.slides().has) \
+        if skill.looks() else None
+    offered, previews, size = (shown or {}).get('looks') or [], {}, 0
+    if len(offered) > 12:
+        raise WorkspaceError('The brand offered too many look samples for one bounded answer.')
+    for item in offered:
+        picture = root / looks.FOLDER / f"{item['number']}.png"
+        with picture.open('rb') as source:
+            data = source.read(4_000_001 - size)
+        size += len(data)
+        if size > 4_000_000 or not data.startswith(b'\x89PNG\r\n\x1a\n'):
+            raise WorkspaceError('The look previews exceed the bounded PNG input limit.')
+        previews[item['id']] = {'mime': 'image/png', 'base64': base64.b64encode(_preview_png(data)).decode()}
+    packet = {'operation': 'answer', 'offered': offered, 'previews': previews,
+              'default': (shown or {}).get('default'),
+              'failed': bool((shown or {}).get('failed')), 'unseen': (shown or {}).get('unseen'),
+              'outline': hashlib.sha256((root / outlines.OUTLINE).read_bytes()).hexdigest(),
+              'envelope': ['target', 'expected_basis', 'answer'],
+              'answer': ['questionId', 'choice', 'response']}
+    return packet
+
+
+def _look_answer(engine, root, record, requirements, reply):
+    if set(reply) != {'questionId', 'choice', 'response'} \
+            or reply['questionId'] != requirements['questionId']:
+        raise WorkspaceError('Answer the current look question.')
+    choice, response = reply['choice'], reply['response']
+    if not isinstance(choice, str) or not isinstance(response, str) \
+            or not response.strip() or len(response) > 4000:
+        raise WorkspaceError('Supply the person’s explicit look choice and response.')
+    offered = {item['id'] for item in requirements['offered']}
+    shown = looks.shown_looks(root)
+    if choice == 'default':
+        if shown is None:
+            picked = looks._unseen_default(root, engine.brand(), {}, root / build.CONTRACT, response)
+            picked.update(words=response, by='conversation-person', at=home.now())
+            home.write_json(root / looks.CHOSEN, picked)
+        else:
+            actual = looks.DEFAULT if shown.get('failed') else shown.get('default')
+            if actual != looks.DEFAULT and actual not in offered:
+                raise WorkspaceError('The brand did not identify a current default look.')
+            picked = looks.choose(root, engine.brand(), actual, response, by='conversation-person')
+    else:
+        if choice not in offered:
+            raise WorkspaceError('Choose an offered look from the current context.')
+        picked = looks.choose(root, engine.brand(), choice, response, by='conversation-person')
+    if picked is None:
+        raise WorkspaceError(CHANGED)
+    # Apply the actual chosen direction without the page's approve()/wake path.
+    outline = desk._outline(root)
+    for key in ('direction', 'house', 'layouts'):
+        outline.pop(key, None)
+        if picked.get(key):
+            outline[key] = {k: v for k, v in picked[key].items()
+                            if k in ('cover', 'section', 'closing')} if key == 'layouts' else picked[key]
+    outlines._write(root, outline)
+    write_atomic(root / looks.LOOK_MD, looks._markdown(record['form'], shown))
+    record['form']['look'] = 'default' if choice == 'default' else 'pick'
+    record['look_shown'], record['look_by'] = picked.get('shown'), 'conversation-person'
+    if build.read_state(root).get('start'):
+        build.start(root, record, engine.slides(), root / build.CONTRACT)
 
 
 def _canonical(value, stage, root):
@@ -295,6 +413,8 @@ def _prepared(engine, path, target, change=False, owner=True):
             # The first context exports only in scratch space. Bind those bytes too,
             # rebasing the scratch prefix so a new preparation has the same identity.
             requirements['brand_contract_sha256'] = hashlib.sha256(brand_input.encode()).hexdigest()
+        if target == 'look':
+            requirements['questionId'] = _digest(requirements)
         context = {'target': target, 'scope': scope, 'requirements': requirements,
                    'inputs': {'form': record['form'], 'outline': home.read_json(root / 'outline.json', None),
                               'brand_contract': brand_input,
@@ -515,6 +635,8 @@ def submit(engine, path, request):
             or not isinstance(request['payload'], dict):
         raise WorkspaceError('Submit kind, target, expected_basis and payload together.')
     target, kind, payload = request['target'], request['kind'], request['payload']
+    if target in ('look', 'design'):
+        raise WorkspaceError('Use desk answer for an explicit look or design answer.')
     if kind not in KINDS or _kind(target) != kind:
         raise WorkspaceError('The submission kind does not match its target.')
     if len(json.dumps(payload)) > 2_000_000:
@@ -626,4 +748,35 @@ def take(engine, path, expected_basis, scope):
             'basis': expected_basis, 'scope': scope, 'at': home.now(), 'by': 'person-request'})
         decks.write_run(stage, record)
         _publish(engine, space, root, stage, before, owner=False)
+    return show(engine, root)
+
+
+def answer(engine, path, request):
+    """Only an explicit person answer may settle a current look/design question."""
+    if not isinstance(request, dict) or set(request) != {'target', 'expected_basis', 'answer'} \
+            or request['target'] not in ('look', 'design') or not isinstance(request['answer'], dict):
+        raise WorkspaceError('Supply target look/design, expected_basis and the person’s answer.')
+    target, reply = request['target'], request['answer']
+    with _prepared(engine, path, target, change=True) as prepared:
+        space, root, stage, record, before, context = prepared
+        if request['expected_basis'] != context['expected_basis']:
+            raise WorkspaceError(CHANGED)
+        requirements = context['requirements']
+        if target == 'look':
+            _look_answer(engine, stage, record, requirements, reply)
+        else:
+            if set(reply) != {'questionId', 'planRevision', 'decision', 'feedback'} \
+                    or reply['questionId'] != requirements['question']['id'] \
+                    or reply['planRevision'] != requirements['revision']:
+                raise WorkspaceError('Answer the current design question and revision.')
+            if not isinstance(reply['decision'], str) or not reply['decision'] \
+                    or len(reply['decision']) > 64 or not isinstance(reply['feedback'], str) \
+                    or not reply['feedback'].strip() or len(reply['feedback']) > 4000:
+                raise WorkspaceError('Supply the person’s actual design decision and response.')
+            engine.slides().design_respond(stage / 'work', reply)
+        record.setdefault('conversation_answers', []).append({
+            'target': target, 'basis': request['expected_basis'], 'answer': reply,
+            'scope': context['scope'], 'at': home.now(), 'by': 'person-request'})
+        decks.write_run(stage, record)
+        _publish(engine, space, root, stage, before)
     return show(engine, root)
