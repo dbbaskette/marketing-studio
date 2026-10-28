@@ -82,6 +82,8 @@ def main():
                         return super().write(route, sent)
                 suite = home_server.Desk(page=lambda port: Suite(port, launcher))
                 suite.start()
+                # Simulate a native loopback home port differing from the phone/network origin.
+                os.environ['MARKETING_STUDIO_HOME_PORT'] = '1'
             print(suite.url if suite else page.url, flush=True)  # Private test process only.
             signal.signal(signal.SIGTERM, server.shared.interrupt)
             signal.signal(signal.SIGINT, server.shared.interrupt)

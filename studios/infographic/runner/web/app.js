@@ -16,6 +16,15 @@ function suiteHome(hash, here) {
 // Marketing Studio says when it opened this studio in its own tab, as it does on a phone: the
 // way back then stays in this tab, where Marketing Studio still holds its key.
 // The return key stays in a fragment and tab memory, bound to the validated home origin.
+// A phone's network home port can differ from the native server's loopback home port.
+function rememberedSuiteHome(here) {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem('marketing-studio-return') || 'null');
+    if (saved && /^[A-Za-z0-9_-]{8,256}$/.test(saved.token || '')
+        && suiteHome('#home=' + encodeURIComponent(saved.home), here) === saved.home) return saved.home;
+  } catch (failure) {}
+  return '';
+}
 function suiteReturn(home, hash, here) {
   if (!home || suiteHome('#home=' + encodeURIComponent(home), here) !== home) return '';
   const offered = suiteHome(hash, here) === home
@@ -39,7 +48,7 @@ function suiteBack(hash) {
   return new URLSearchParams(String(hash).replace(/^#/, '')).get('back') === 'tab';
 }
 const launchHash = '#' + launch.toString();
-let homeLink = suiteHome(launchHash, location) || suitePort(document.body?.dataset?.suitePort, location);
+let homeLink = suiteHome(launchHash, location) || rememberedSuiteHome(location) || suitePort(document.body?.dataset?.suitePort, location);
 let sameTab = suiteBack(launchHash);
 try {
   homeLink = homeLink || suiteHome('#home=' + encodeURIComponent(sessionStorage.getItem('infographic-studio-home') || ''), location);

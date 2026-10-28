@@ -137,6 +137,7 @@ const invalid = suiteReturn(home, '#home=' + encodeURIComponent(home) + '&homeTo
                 key = 'infographic-studio-home' if folder.name == 'web' else 'marketing-studio-home'
                 wiring = wiring[:wiring.index("sessionStorage.getItem('" + key + "')")]
                 self.assertIn('suitePort(document.body?.dataset?.suitePort, ', wiring)
+                self.assertIn('rememberedSuiteHome(', wiring)
 
     def test_marketing_studio_names_itself_in_studio_links(self):
         text = HOME.read_text()
