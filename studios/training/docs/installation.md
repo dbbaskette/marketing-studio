@@ -60,7 +60,7 @@ Your assistant drives a small helper program. The installer writes a command for
 ~/.local/share/training-studio/training status
 ```
 
-It looks for Python 3.11 or newer in the same places the installer does, so it works where `python3` is older, as on a stock Mac. Like the launchers, it follows the current version, and a linked checkout gets one too. The installed skill finds its guidance with `training guidance start`. You need it yourself only to open [the page](desk.md).
+It looks for Python 3.11 or newer in the same places the installer does, so it works where `python3` is older, as on a stock Mac. Like the launchers, it follows the current version, and a linked checkout gets one too. The installed skill finds its guidance with `training guidance start`. You need it yourself only to open [the page](page.md).
 
 ## The companion skills
 

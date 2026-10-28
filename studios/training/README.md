@@ -1,6 +1,6 @@
 # Training Studio
 
-Training Studio turns a topic into training material. You give it a subject, it researches it, and it builds the material with you one stage at a time. On the page, its review level decides where it stops for your decision; see [review levels](docs/runner.md#review-levels).
+Training Studio turns a topic into training material. You give it a subject, it researches it, and it builds the material with you one stage at a time. New trainings open on [the desk](docs/the-desk.md), where you can read and change materials as they are made.
 
 The writing is done by an AI assistant you already have, Claude Code or Codex. Training Studio guides it, checks what it makes, and keeps track of what you have approved.
 
@@ -19,7 +19,7 @@ You can ask for one or more **levels**, from 101 (introduction) to 401 (expert).
 
 ## Two ways to work
 
-You can make a training in either of two ways. Both use the same file formats. The page follows your saved review preference; a conversation keeps its explicit checkpoints.
+You can make a training in either of two ways. Both use the same file formats. The desk lets you work as materials arrive; a conversation keeps its explicit checkpoints.
 
 | | On the page | In a conversation |
 | --- | --- | --- |
@@ -29,7 +29,7 @@ You can make a training in either of two ways. Both use the same file formats. T
 | Working with a team | Built in: your team shares one workspace | Through a [team hub](docs/team-hub.md) |
 | Best for | Getting a training made while you get on with other things | Steering each step closely |
 
-Start on the page for a guided workflow, or use a conversation when you want to steer each stage closely.
+Start on the desk for a guided workflow, or use a conversation when you want to steer each stage closely.
 
 ## Before you start
 
@@ -69,7 +69,7 @@ See the [guided installation reference](../../docs/installation.md) for offline
 setup, updates, rollback, and removing the Marketing Studio launcher. Native
 studio commands and your content remain independent.
 
-## Your first training, on the page
+## Your first training, on the desk
 
 **1. Open Training Studio.** On a Mac, double-click "Open Training Studio" in the Applications folder inside your home folder. On any system, run the line the installer printed:
 
@@ -81,9 +81,9 @@ A terminal window opens and the page opens in your browser. Leave the window ope
 
 **2. Set it up, once.** Say where trainings are kept: a folder on this computer to try things out, or a git repository your team shares. The page checks each answer as you give it. If you use Presentation Studio or Blog Studio too, the answers they share, such as the team repository and the agent, are kept in one place for all of them, so a change in one studio is a change in all three (see [the shared studios config](docs/runner.md#shared-studios-config)).
 
-**3. Press "New training".** Describe what learners should be able to do and what they know already. Choose the materials: a guide, reference brief, deck, practice, or a combination. Set the learner's time and choose where the research looks: your documents, your sites (a list of web addresses you keep in Shared settings) and/or the public web. The final summary shows the materials and review preference before you start. Depth, extra copies and assistant settings are optional details.
+**3. Press "New training".** Describe what learners should be able to do and what they know already. Choose the materials: a guide, reference brief, deck, practice, or a combination. Set the learner's time and choose where the research looks: your documents, your sites (a list of web addresses you keep in Shared settings) and/or the public web. The final summary shows your choices before you start. Depth, extra copies and assistant settings are optional details.
 
-**4. Review what needs you.** Read the teaching plan and materials when the page asks, or request changes in your own words. Balanced and Automatic draft continue intermediate work according to their saved policy; Step by step asks at each stage. Completed materials stay ahead of the optional production log. You can close the page while it works and come back later.
+**4. Work on the desk.** Materials appear as they are made. Read them, make changes, and mark each one ready when you are satisfied. The desk shows work that needs your attention. You can close the page while it works and come back later. See [the desk](docs/the-desk.md).
 
 See [the runner](docs/runner.md) for every step, the slide deck, working as a team, and what it guarantees.
 
@@ -118,7 +118,7 @@ cd valkey-training
 
 At each stop you can approve it, ask for changes, or skip that stage. What you were shown, and what you decided, is also saved under `reviews/` in your folder.
 
-You decide in the conversation, by telling your assistant. If you would rather decide on [the page](docs/desk.md), where the document is laid out to read and your assistant cannot approve anything for you, say so when you start.
+You decide in the conversation, by telling your assistant. If you would rather decide on [the page](docs/page.md), where the document is laid out to read and your assistant cannot approve anything for you, say so when you start.
 
 **6. Find your files.** They are ordinary files: `document.md`, `product-brief.md` or `competitive-brief.md`, the deck, and `scenario.md`, in a folder for each level such as `101/`. If you chose Google Docs or Word copies, the guide and the brief are there too. If you asked for Yoodli scenarios there is a `yoodli/` folder too. `README.md` at the top of your training folder lists everything and says whether the training is complete. [How it works](docs/how-it-works.md#the-training-folder) describes every file.
 
@@ -201,7 +201,7 @@ For each scenario, Training Studio then writes a file under `yoodli/` laid out i
 | The deck is "unavailable" | harness-slides is not installed. Everything else still works. The same command installs it |
 | The page says the deck needs something | This computer is missing part of what a deck needs. The Status screen says what, and how to get it |
 | A Word copy is "unavailable" | You asked for Word copies and no converter was found. Installing [pandoc](https://pandoc.org) fixes it |
-| Something is "stale" | A file it was built from has changed. Ask to rebuild it, or say it is fine as it is |
+| Something is out of date | A file it was built from has changed. Ask to rebuild it, or say it is fine as it is |
 | It refuses to start in a folder | The folder already holds files with the names it uses, or it is the Training Studio folder you downloaded. Use a new folder |
 | The page does not work | Open the link exactly as the terminal printed it, and keep that window open. The part after `#` is a key |
 
@@ -214,9 +214,10 @@ The programs that track your files, and the runner behind the page, have automat
 ## Learn more
 
 - [Installation](docs/installation.md): what the installer does, how it brings the companion skills, and how to update, roll back or remove.
+- [The desk](docs/the-desk.md): read, change and finish a training.
 - [The runner](docs/runner.md): making a training on the page, from a form to its finished files, the slide deck included. How a team shares one workspace, takes over, hands over and publishes.
-- [The page](docs/desk.md): what needs you, every training and this computer's readiness in your browser, and approval that only you can give.
-- [How it works](docs/how-it-works.md): the stages, approvals, what "stale" means, and the files in a training folder.
+- [The page](docs/page.md): what needs you, every training and this computer's readiness in your browser, and approval that only you can give.
+- [How it works](docs/how-it-works.md): the stages, approvals, how changes affect later work, and the files in a training folder.
 - [Scenarios and Yoodli](docs/scenarios-and-yoodli.md): the scenario format, and building a roleplay in Yoodli.
 - [Google Docs](docs/google-docs.md): sending the learner guide or the brief to a Google Doc for review, and bringing the edits back.
 - [Team hub](docs/team-hub.md): sharing finished trainings from a conversation, and reusing your team's scenarios, audiences and research.

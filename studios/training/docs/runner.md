@@ -1,6 +1,6 @@
 # The runner
 
-The runner is a program that takes a training from a short form to its finished files on its own, and stops each time it needs your decision. You work on [the page](desk.md) in your browser. There is no conversation with an assistant: the runner starts an AI agent for each piece of work, checks what comes back, keeps it, and waits for you at each gate.
+The runner takes a training from a short form to its materials. New trainings appear on [the desk](the-desk.md) as work is made. The runner starts an AI agent for each piece of work and checks what comes back. You decide when materials are ready.
 
 It is early. It makes the research, the blueprint, the learner guide, the brief, the slide deck, the practice scenarios and, if you want them, their layout for Yoodli. A deck needs more on your computer than the rest does. Where that is missing, the training is taken through everything else and the page says what the deck still needs.
 
@@ -141,50 +141,19 @@ Saving writes only the values you changed on that screen, and only where the fil
 
 ## Start a training
 
-"New training" opens one sheet in four numbered steps: **1. Learning goal**,
-**2. Materials**, **3. Research** and **4. Where it stops, and the assistant**, then the
-**Ready to start** summary, with **Start the training** and **Cancel** together at its
-end. Describe the learner's task and prior knowledge, choose the materials and learner
-time, then confirm sources and the saved review preference. Cancel closes the sheet and
-keeps what you filled in for the session. Research and the
-teaching blueprint support whichever materials you select. Guide-only,
-brief-only, deck-only and practice-only bundles are supported; existing runs
-keep their selections. Yoodli requires a reference brief and practice scenarios
-and prepares fields to copy into its builder, with no automatic posting.
+“New training” opens a form for the learning goal, materials and research. Choose the learner's task and prior knowledge, the materials and learner time, and the sources. Optional details include depth, brand, copies and assistant settings. Check the summary and start the training. Research and a teaching blueprint support the materials you select. Yoodli requires a brief and practice scenarios; Training Studio prepares fields for you to copy into its builder.
 
-Depth, brand details, extra copies and assistant settings stay available under
-disclosures. The primary next action stays in the toolbar on a phone. Finished
-materials appear before the collapsible production steps. If another studio
-changes the review preference while this form is open, starting is refused
-before any files are made; the page reloads the preference and keeps the answers.
+### The desk
+
+New trainings continue without review stops and show materials as they arrive. Read and edit them, request changes, settle holds and mark them ready yourself. The desk shows progress, costs and problems. See [the desk](the-desk.md) for the controls, Sources and Finishing.
 
 ### Review levels
 
-Where a training stops for you is its review level. Balanced reads the research plan,
-then **Review the first drafts** for all levels together (the research and what is
-written so far, with each deck's wireframe draft and the look you pick from the brand's
-rendered samples), then each drawn deck, then the finished materials. Automatic draft
-stops at each drawn deck and the finished materials, and uses the brand's default look;
-Step by step reviews every stage. A drawn deck always comes to you, and no stop is
-passed while a review or the brand's audit still finds something grave. Each run says
-how many steps are left, where it next stops and what it has spent so far.
+Trainings started before the desk keep their saved review level. Balanced brings combined reviews, Automatic draft continues intermediate work under its saved policy, and Step by step asks at each stage. A drawn deck and finished materials still come to you. These saved runs retain their own screens until a finished training is opened on the desk.
 
-A deck that
-continued past its own gate under the saved level before this release is not held
-again: only decks drawn from now on stop at it. A training chooses where it stops on
-the last step of the form, in **Where this training stops**; the shared level is the
-default, and **Use this for new work in every studio** also makes it the shared level
-when the training starts. Under Step by step a deck adds three stops per level: its
-outline, its look and the deck. Settings has **Where new work stops**. Only selected
-material stages run. Earlier trainings keep
-the review level they started with. For web research and legacy queues, the research-plan stop is part of what Balanced
-means: it applies to any Balanced training that has not
-reached its research plan yet, including one started earlier, and a run already past
-its plan is unaffected.
+### The steps in a saved run
 
-### The steps
-
-The steps below are Step by step review.
+The steps below describe Step by step review for trainings started before the desk.
 
 | The runner does this on its own | Then it stops for you |
 | --- | --- |
@@ -208,11 +177,11 @@ The copies card has **Look for changes in Google Docs**: the one time Google is 
 
 **The combined reviews.** Under Balanced and Automatic draft, the direction and the finished materials come to you together, on the run. Mark what needs changes as you read, say what should change in each, and send every request at once: the review says what each change is written again from, so a change to the research is known to rewrite every level's blueprint, guide, brief and deck direction before it is sent. Approving is confirmed in a sheet that says what it commits to, with what a deck of this size is estimated to cost. A change asked for at **Review the finished materials** keeps the first drafts approved: what it rewrites comes back to that review, and a deck drawn again stops at its own gate first. While a combined review waits, each file it covers is read-only on its own page, with one way back to the review: nothing can restart a step from two places at once. Leaving the deck out is still allowed from there. Yoodli fields can be copied from their own page, the finished-materials review and Done, ready for the box of the same name in Yoodli's Builder.
 
-New Balanced and Automatic draft trainings prepare the research, blueprints, guides and deck direction before the first combined review. Balanced waits for approval; Automatic draft continues under its saved policy. Briefs and their copies are written after that review is completed. Older trainings keep their saved ordering. Combined reviews have their own beads in the timeline. **Finish this level, then wait** appears after preparation, where a level can actually be finished; it is hidden while the first review is being prepared.
+Saved Balanced and Automatic draft trainings prepare the research, blueprints, guides and deck direction before the first combined review. Balanced waits for approval; Automatic draft continues under its saved policy. Briefs and their copies are written after that review is completed. Older trainings keep their saved ordering. Combined reviews have their own beads in the timeline. **Finish this level, then wait** appears after preparation, where a level can actually be finished; it is hidden while the first review is being prepared.
 
 After a decision, its time and what happens next stay above the working line until the next stop for you. With levels, every blueprint is drafted first. Then each level is finished in turn, lowest first.
 
-**The deck.** Choose "No deck" when you start and the deck is left out. Otherwise you choose its brand and the brand's variant from what your brand skill offers, and whether it is a PowerPoint file or Google Slides. The deck is made for each level after its brief, the brand's way: the deck's slide task is started through the brand's own guidance, the brand's guidance for composers goes to every agent that draws, and the brand decides how it looks. A new deck is approved on what it says and on its look, as the brand's checkpoints are, and then on the deck itself. You decide three times.
+**The deck in a saved run.** The following approval and review flow applies to trainings started before the desk. For new trainings, see [the desk](the-desk.md#the-deck), where findings are proposals for you to Apply or Skip. Choose "No deck" when you start and the deck is left out. Otherwise you choose its brand and the brand's variant from what your brand skill offers, and whether it is a PowerPoint file or Google Slides. The deck is made for each level after its brief, the brand's way: the deck's slide task is started through the brand's own guidance, the brand's guidance for composers goes to every agent that draws, and the brand decides how it looks. In this saved flow, a deck comes to you on what it says, its look and the deck itself.
 
 - **What the deck says.** Every slide's title, points, caveat and notes, beside its wireframe draft, before any slide is drawn. Words are quick to change here and slow to change later. The run says what a deck of this size has cost before.
 - **The look.** After what the deck says is approved (`gate:deck-look`), the brand draws one of its slides in each of its looks (`deck-look`), rendered the way this computer renders every preview, which the page says. You pick one on a picker that shows each look with what it is for, and may say why; your words are kept with the choice, and the brand writes the look into the deck's outline. Under Balanced you pick it in **Review the first drafts** instead. If the looks cannot be rendered, nothing is picked blind: try again, or carry on knowingly in the brand's default, and the deck says it is an unreviewed draft of its look. Automatic draft uses the brand's default and says why. A brand too old to offer looks is noted, and the deck is drawn in its default direction.
