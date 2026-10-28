@@ -7120,6 +7120,34 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         # Each card is marked ready on its own, with the version shown on it.
         self.assertGreaterEqual(shot['buttons'].count('Mark ready'), 5)
 
+    def test_the_update_preview_names_what_changes(self):
+        held = a_card('document@101', 'held', 'Built from an earlier plan.',
+                      ('update', 'keep'))
+        answers = self.on_desk(a_desk(held, levels=('101',)), **{
+            'GET /api/drafts/update-preview': [ok({'parts': ['When capacity holds'],
+                                                   'price': 'About $0.10.'})]})
+        result = self.open_desk(answers, [{'click': 'Update from the plan'},
+                                          {'snapshot': 'preview'}])
+        shot = result['snapshots']['preview']
+        self.assertIn('When capacity holds', shot['text'])
+        self.assertIn('About $0.10.', shot['text'])
+        self.assertIn('Update', shot['buttons'])
+        self.assertIn('Cancel', shot['buttons'])
+
+    def test_the_update_preview_requires_confirmation(self):
+        held = a_card('document@101', 'held', 'Built from an earlier plan.',
+                      ('update', 'keep'))
+        answers = self.on_desk(a_desk(held, levels=('101',)), **{
+            'GET /api/drafts/update-preview': [ok({'parts': ['When capacity holds'],
+                                                   'price': 'About $0.10.'})],
+            'POST /api/drafts/update': [a_desk(held, levels=('101',))]})
+        result = self.open_desk(answers, [{'click': 'Update from the plan'},
+                                          {'snapshot': 'preview'}, {'click': 'Update'}])
+        buttons = result['snapshots']['preview']['buttons']
+        self.assertEqual(buttons[buttons.index('Update') + 1], 'Cancel')
+        self.assertEqual(self.posts(result), [('/api/drafts/update', {
+            'path': str(self.root), 'name': 'document@101'})])
+
     def test_a_card_is_marked_ready_with_the_version_it_shows(self):
         result = self.open_desk(self.on_desk(a_desk(), **{
             'POST /api/drafts/ready': [a_desk()]}), [{'click': 'Mark ready'}])

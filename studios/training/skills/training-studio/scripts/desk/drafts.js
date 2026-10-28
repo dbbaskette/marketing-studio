@@ -496,8 +496,11 @@ function deskCard(found) {
       'desk-ready ' + found.name));
   }
   if (actions.includes('update')) {
-    bar.append(press(updateLabel(found), 'update', { name: found.name },
-      'desk-update ' + found.name));
+    const update = capsule(updateLabel(found), '', () => {
+      if (['document', 'brief'].includes(found.kind)) previewUpdate(found);
+      else deskDecide('update', { name: found.name }, update);
+    }, 'desk-update ' + found.name);
+    bar.append(update);
   }
   if (actions.includes('keep')) {
     bar.append(press('Keep as it is', 'keep', { name: found.name, seen: found.seen },
@@ -510,6 +513,28 @@ function deskCard(found) {
   if (actions.includes('download')) bar.append(downloadButton(found));
   return add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
     checkedPart(found.checks), bar.childNodes.length ? bar : null);
+}
+
+async function previewUpdate(found) {
+  const path = view.path;
+  try {
+    const preview = await ask('drafts/update-preview', { path, name: found.name });
+    if (view.path !== path || view.screen !== 'run') return;
+    const update = capsule('Update', 'filled', async () => {
+      const answer = await deskDecide('update', { name: found.name }, update);
+      if (answer) closeSheet();
+    });
+    DESK.kitSheet = [sheetTitle(updateLabel(found)),
+      make('h3', 'sheet-part', '1. Sections to update'),
+      list(preview.parts).length ? bullets(preview.parts, 'reasons')
+        : make('p', 'quiet', 'No sections need updating.'),
+      make('h3', 'sheet-part', '2. Estimated price'), make('p', '', preview.price),
+      add(make('div', 'bar'), update, capsule('Cancel', 'quiet', () => closeSheet()))];
+    openSheet('desk-kit', '')();
+  } catch (failure) {
+    deskHeld(path).said = failure.message;
+    paintDesk(false);
+  }
 }
 
 function downloadButton(found) {
