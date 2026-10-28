@@ -197,6 +197,60 @@ def saved_work(args, make=engines.Engine, out=None) -> int:
     return 0
 
 
+
+def desk_command(args, make=engines.Engine, out=None):
+    """JSON conversation commands; no server, setup, upkeep or assistant launch."""
+    from runner import desk_chat
+    engine = make()
+    try:
+        data = None
+        if getattr(args, 'input', None):
+            stream = sys.stdin if args.input == '-' else open(args.input, encoding='utf-8')
+            try:
+                raw = stream.read(2_000_001)
+            finally:
+                if stream is not sys.stdin:
+                    stream.close()
+            if len(raw) > 2_000_000:
+                raise WorkspaceError('The JSON input is too large.')
+            try:
+                data = json.loads(raw)
+            except ValueError:
+                raise WorkspaceError('Supply a valid JSON object.') from None
+            if not isinstance(data, dict):
+                raise WorkspaceError('Supply a JSON object.')
+        action = args.desk_action
+        if action == 'create':
+            data = dict(data)
+            named = data.pop('uploads', {})
+            if not isinstance(named, dict) or len(named) > 1:
+                raise WorkspaceError('Uploads maps one source filename to an explicit local path.')
+            uploads = {}
+            for name, value in named.items():
+                if not isinstance(value, str) or not Path(value).is_absolute():
+                    raise WorkspaceError('An upload needs an explicit absolute local path.')
+                source = Path(value)
+                if source.is_symlink() or not source.is_file() or source.stat().st_size > 64_000_000:
+                    raise WorkspaceError('The upload must be a local file of at most 64 MB.')
+                uploads[name] = source.read_bytes()
+            result = desk_chat.create(engine, data, uploads)
+        elif action == 'show':
+            result = desk_chat.show(engine, args.folder)
+        elif action == 'context':
+            result = desk_chat.context(engine, args.folder, args.target)
+        elif action in ('save', 'submit'):
+            result = getattr(desk_chat, action)(engine, args.folder, data)
+        else:
+            if set(data) != {'expected_basis', 'scope'}:
+                raise WorkspaceError('Supply expected_basis and scope only.')
+            operation = {'scope': desk_chat.set_scope, 'handoff': desk_chat.handoff, 'take': desk_chat.take}[action]
+            result = operation(engine, args.folder, data['expected_basis'], data['scope'])
+        print(json.dumps(result, indent=2, sort_keys=True), file=out or sys.stdout)
+        return 0
+    except (ValueError, KeyError, TypeError) as error:
+        raise WorkspaceError(str(error)) from None
+
+
 def parser() -> argparse.ArgumentParser:
     top = argparse.ArgumentParser(prog='studio', description=__doc__.splitlines()[0])
     commands = top.add_subparsers(dest='command', required=True)
@@ -214,6 +268,17 @@ def parser() -> argparse.ArgumentParser:
     saving.add_argument('--folder', action='append', type=Path,
                         help='a deck folder to look at besides the workspace')
     saving.set_defaults(handler=saved_work)
+    conversation = commands.add_parser('desk', help='checked conversation work as JSON')
+    actions = conversation.add_subparsers(dest='desk_action', required=True)
+    for name in ('create', 'show', 'save', 'context', 'submit', 'scope', 'handoff', 'take'):
+        action = actions.add_parser(name)
+        if name != 'create':
+            action.add_argument('--folder', required=True, type=Path)
+        if name not in ('show', 'context'):
+            action.add_argument('--input', required=True, help='JSON file, or - for stdin')
+        if name == 'context':
+            action.add_argument('--target', required=True)
+        action.set_defaults(handler=desk_command)
     return top
 
 

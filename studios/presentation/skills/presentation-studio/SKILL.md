@@ -1,49 +1,36 @@
 ---
 name: presentation-studio
-description: Make a slide deck in your organisation's brand from an idea, a document or an existing deck, one approved step at a time, with harness-slides, harness-research and your brand skill. Use to start, resume, check or revise a deck kept under presentations/.
+description: Create, inspect and revise branded slide materials on the Presentation Studio desk in conversation, using checked Harness Slides and Harness Research submissions. Resume supported saved decks without losing their decisions or originals.
 ---
 
 # Presentation Studio
 
-Conversation guidance; `studio` opens the page. A deck started here is gated: reuse settled choices, honor its review level, show the storyboard before building, keep the final checkpoint unless waived. A `run.json` with `"flow": "desk"` is on [the desk](references/desk.md): change it on the page.
+Use the checked `studio desk` commands for conversation work. They use the same desk without a browser or another assistant. Focused requests never imply drawing, delivery, approval or design answers. `studio serve` still opens the page.
 
 ## Rules
 
-- **Only the person approves.** At a required checkpoint, show what was made, then wait. An explicitly waived checkpoint is recorded as waived, never approved. Silence or approval of an earlier step never approves a later one. Record each decision as [the workspace](references/workspace.md) says.
-- **Slides are made by harness-slides.** Draw, check, preview, render and patch slides through its commands and guidance. Never write or edit a slide file yourself.
-- **Each slide is designed on its own,** from what it says. Never have the person pick a layout for the whole deck.
-- **The brand is the person's brand skill.** Before the first step that needs the brand, export its contract into the deck's `brand/` folder with the brand skill's own `contract export` command, and give that contract to harness-slides with `--brand`. Presentation Studio names no brand: offer the brands and variants the brand skill lists.
-- **Research follows harness-research guidance** when enabled.
-- **An original is never changed.** A deck being improved is read; the result is always a new file.
-- **Stay inside the deck's folder** under `presentations/`. Never write anywhere else.
+- **Only the person approves.** Checked submissions record inputs and provenance, never approval or Ready.
+- **Slides use Harness Slides.** Its contracts, compile, preview, patch, comparison and brand checks still apply. Never write slide files directly or invent checked drawings or research.
+- **Respect requested scope.** Require an explicit finite material list derived from the person's request. Add or remove scope only after they explicitly ask; never widen to make a submission pass.
+- **Design answers are the person's.** Never choose a look or fill design answers from permission to draft. Preserve a saved choice; pass on a companion's request for missing answers.
+- **Keep originals.** An existing deck is read and its result is a new file. Preserve sources, pins, History, Google baselines and team ownership.
 
-## Before you start
+## Start or continue
 
-1. Check that harness-slides, harness-research and a brand skill are installed for this assistant. If one is missing, say which and stop: the companions come with Presentation Studio's installer, the brand skill from the page's Settings or by hand.
-2. Read the shared values, read-only, from `~/.config/studios-config.json` (the `STUDIOS_CONFIG` variable names another file): `team.repository` and `share`, `person.name`, `brand.brand` and `brand.variant` as the brand offered first, and `output` (`google` or `pptx`). A missing or unreadable file means no defaults; say so once. Never write it from a conversation.
-3. Find or make the deck's folder, as [the workspace](references/workspace.md) says. If the page's runner drives that deck, do not work on it here.
+1. Read shared defaults from `~/.config/studios-config.json`, or `STUDIOS_CONFIG`: workspace, person, brand/variant and output. Do not write shared settings from conversation. An unconfigured workspace needs explicit setup first; never install or update anything automatically.
+2. Follow [the routes](references/routes.md). Prepare the normal checked form, plus `scope`, then `studio desk create --input FILE` (or `--input -` for stdin). Creation returns the folder, checks no assistant readiness and starts no jobs. Uploads are explicit; Google is never fetched silently.
+3. For a saved desk, inspect `studio desk show --folder PATH`. To continue its work in chat at the person's request, read `studio desk context --folder PATH --target ownership`, then `studio desk take --folder PATH --input FILE` with that basis and explicit scope. It changes ownership only. Gated decks keep their [saved path](references/workspace.md).
 
-## The steps
+## Work in this conversation
 
-Ask how the person is starting and follow [the three routes](references/routes.md). For an existing deck, they choose one of [the five levels](references/levels.md), which decides which steps run.
+Read `studio desk context --folder PATH --target TARGET`. It returns pinned inputs, current scope, validation requirements and `expected_basis`, including for absent materials. Supply content through `studio desk submit --folder PATH --input FILE`; `desk save` accepts the same envelope:
 
-| Step | Stops for the person |
-| --- | --- |
-| Intake: title, audience, goal, length, brand and variant, output | They confirm the form |
-| Classify: a document's kind, or an existing deck's slides | Yes, when there is a source |
-| Research plan, then research | Each, when research is on |
-| Outline: title, key message and notes for each slide | Yes |
-| Look: the brand's looks, to pick one | Yes, or another brand |
-| Build: the whole deck, its preview and its checks | Yes, or changes |
-| Deliver: Google Slides or PowerPoint | No: say where it is |
+```json
+{"kind":"outline","target":"outline","expected_basis":"<returned basis>","payload":{"outline":{}}}
+```
 
-"Ask for changes" at any stop means redoing that step with their words, then stopping again. A change to a delivered deck reopens Build for the slides named and delivers a new numbered revision.
+[The desk contract](references/desk.md) lists targets and payloads. Follow returned requirements; never hand-edit run records. Read context again after changed inputs. Refusals preserve canonical work.
 
-For fresh synthesis research, read [the research handoff](references/research.md).
+For a later explicit change in requested work, read target `scope`, then `desk scope` with `{expected_basis, scope}`. For explicit runner execution, read target `handoff`, then use `desk handoff` with the same fields. Incompatible scope is refused; finish focused work in conversation.
 
-## Checking where a deck stands
-
-`run.json` in the deck's folder says which steps are done and which stop waits. Read it before you resume. A deck made in conversation can be copied into the
-page's workspace with Decks → Bring in a deck, leaving its original.
-
-`studio status` lists remembered decks as JSON without serving.
+See [research](references/research.md), [existing-deck levels](references/levels.md) and [workspace records](references/workspace.md).

@@ -1,39 +1,27 @@
 # The three routes
 
-Keep intake and form in `run.json`; sources stay in never-shared `sources/`. Research is off until enabled, for scratch/document material only.
+Keep the person's exact requested scope. The form uses `route`, `title`, `audience`, `goal`, `minutes`, `brand`, `variant`, `output` (`google` or `pptx`), optional brief `notes`, and required finite `scope`. Creation starts no worker. An outline request adds no research or drawings.
 
-| Starting point | Work and checkpoints |
+| Starting point | Checked form and inputs |
 | --- | --- |
-| An idea | Intake → optional research plan/findings → outline → look → build → delivery |
-| A document | Classify as slide-by-slide spec or raw material → outline; optional research only for material → look/build/delivery |
-| An existing deck | Copy PPTX or Google Slides input, inventory and show original images → steps required by the selected [level](levels.md) → new delivery |
+| An idea | `route: scratch`; brief and optional explicitly enabled research |
+| A document | `route: document`; `source` names an upload, pasted text or Google link; `reading: spec` or `material` when the person chose it |
+| An existing deck | `route: existing`; preserved input deck and one of the five [levels](levels.md); Selected changes also requires `selected` |
 
-Honor the requested review cadence. Show required checkpoints and wait; never invent approvals. Reuse unchanged decisions. A [desk](desk.md) deck continues them with a desk receipt, except a look pick it chose.
+For uploads, name `source: {kind: upload, name: NAME}` and explicitly supply that name's local file through CLI `uploads` or API bytes. Pasted documents use `{kind: paste, text: TEXT}`. Google input never triggers a silent read, authentication or delivery. Originals remain intact.
 
-## Research and outline
+## Focused writing and research
 
-Presentation Studio writes the plan; Harness Research publishes the report. Synthesis
-plans ask at most eight questions; supplied-only plans come from the form without
-a worker. Document research defaults to supplied-only. Keep source words, evidence
-and caveats. Check `outline.json` against the brand contract, then run Harness Slides
-`outline draft` on that file. Show wireframes before construction; refresh after edits.
+Read target context; submit against its basis. An outline-only supplied document works without extra requested text steps when its reading is already explicit. Otherwise the missing classification is a genuine prerequisite: ask the person and explicitly change scope if they request that work. A supplied existing deck is inventoried locally through Harness Slides; its level still constrains every word and slide that may change.
 
-## Look and build
+Research requires both the form's explicit research choice and the submitted kind in current scope. Follow [the research handoff](research.md), within pinned document/site/web permissions. Import a complete reviewed case through target `research`; never save unsupported prose as evidence. The outline receives its brief, source relationships, conditions and gaps. A plan is not permission to execute it.
 
-Reuse settled brand, direction and artwork. At Look the person picks one of
-the brand's looks. Sample only unresolved treatment; never impose one layout. Bind the same actual response to runner and engine records. Reopen material choices, not in-scope fitting repairs.
+## Drawing and revisions
 
-Compose each slide from its content. Build batches of up to three slides, inspect
-every changed native image before continuing, then complete whole-deck review and
-the brand audit. Preserve existing-deck scope and show before/after. Show native pictures, findings and the contact sheet at the final checkpoint; keep technical coverage separate from user acceptance.
+Target `drawing` returns exact section composition requirements from the checked outline and brand contract. The current conversation supplies compositions; existing compile, native preview, fixed-word and brand checks validate them. No nested assistant draws them. A saved picked look is preserved; using the brand default at creation requires the person's explicit choice. Missing design answers are refused and never filled automatically.
 
-## First draft, not checked
+Part edits use stable slide IDs and known fields. They preserve unchanged sections, check fit, keep History, and update the native file without a composer. A changed outline retains unaffected sections; a changed delivered deck keeps prior delivery decisions and revisions as history, with the new revision unapproved.
 
-“See the first draft before the deck is checked” and “Skip AI review on the first build” opt
-in; urgency or “quick” does not. Validate assets/design and render natively; skip AI pixel critique, reviewer jobs and polishing. Label it **First draft, not checked**; offer **Check the deck**, changes
-or **Use this first draft**. Resume/download/export never backfill review or create
-inspection evidence. Other permissions remain unchanged.
+To broaden/narrow the same desk after the person asks, use checked `desk scope`. To continue an idle saved desk in chat, use checked `desk take`; neither starts work or changes readiness. Explicit `desk handoff` checks that the remaining runner plan fits current scope and pinned inputs. It may refuse a narrow scope; focused work can finish in conversation.
 
-## Delivery
-
-Deliver the accepted native file with honest review status. Use Google Slides or requested PowerPoint; explain a PowerPoint fallback when Google is unavailable. Keep `deliver.json`; never overwrite originals.
+Older gated records keep their saved readers and decisions; use [saved work](workspace.md).

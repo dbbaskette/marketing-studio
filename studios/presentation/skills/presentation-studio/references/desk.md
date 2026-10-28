@@ -1,33 +1,33 @@
-# The desk
+# The Presentation Studio desk
 
-A deck started from the page's **New deck** is a desk deck: its `run.json` has `"flow": "desk"`. Only the page changes it. A deck started in a conversation, or before the desk, is gated and keeps its stops. Review levels govern only gated decks, and Training Studio.
+A desk record has `flow: desk`. Conversation and the page use these records and History. New conversation work also has `execution: conversation`; page visits, restarts, recovery and queued continuations cannot start its workers. The person's explicit handoff transfers execution.
 
-## The start and progress
+## Checked conversation commands
 
-The start has three steps: **Kind of deck** (an idea, a document, or an existing deck at one of its five levels), **Sources and settings** (research and its questions, minutes, audience, talk or handout, brand and variant, output, and **Look**: pick it when the samples are drawn, or the brand's default) and **What you have** (title, goal, and the brief, document or deck).
+All commands return JSON. `--input FILE` accepts JSON; `--input -` reads stdin. `create` takes the normal form plus a required `scope` list. Scope contains only `text`, `outline`, `research`, `drawing`, `part`, normalized without duplicates. It permits kinds; target, prerequisites and current basis constrain each operation.
 
-It then runs with no stops, except a look pick the person chose. Each stop before the deck is continued with a desk receipt, never as the person's approval. A question, a failed step or the spend limit comes first.
+| Kind | Target | Payload |
+| --- | --- | --- |
+| text | brief | `{text}`: the checked form brief, at most 4,000 characters |
+| text | classification | `{classification: {kind, reason, slides}}`: a document's checked spec/material verdict |
+| text | research-plan | `{plan}`: checked planning questions within the pinned source scope |
+| outline | outline | `{outline}`: complete Harness Slides outline JSON, with original-deck level constraints |
+| research | research | `{case}`: absolute local complete, independently reviewed Harness Research case |
+| drawing | drawing | `{sections}`: composition objects by exactly the section IDs returned by context; Selected changes uses `{patch}` |
+| part | SLIDE/FIELD | `{text}`: current stable slide ID plus a known field |
 
-## On the desk
+Fields are `title`, `subtitle`, `detail`, `caveat`, `source`, `notes`, or `points:INDEX:label` / `points:INDEX:text` (zero-based index). Selected changes uses `slide-N/object:ID:RUN`, with `all` for a single run; the existing deck's notes stay unchanged.
 
-- A card for each slide, under its section.
-- A slide note redraws only its section; the other slides stay exactly as drawn. Its price is said first, from what it last took on that computer, or "Expect minutes, not seconds." with no record.
-- The whole-deck note redraws every section, three at a time. **Stop** keeps what was redrawn.
-- Words are typed on the card, or changed with the selection bar: Rephrase, Shorten, Expand, Fix, Ask…. Words that still fit go into the drawing with no redraw; words that do not fit save nothing, and the card offers a priced redraw or Discard. Speaker notes are their own edit and redraw nothing.
-- History keeps each slide's words before a change. The words are shared with the team; the drawings stay on the computer that made them.
-- The Outline tab edits the outline, priced by the sections it redraws. It also reads a document the other way and changes the look.
-- **Add a source**: a file or pasted text that the words jobs, the speaker notes and the outline read. It runs no research; Research again and Leave out are priced first.
-- **Finishing** proposes, and nothing changes until Apply: the brand check, Review the deck (its findings are proposals on their slides, to Apply or Skip), speaker notes, and rehearse (the notes' minutes against the form's).
-- **Deliver** is always the person's. The brand check's blockers are listed with their slides first, to deliver anyway or fix. A change after delivery makes the next revision.
+`studio desk context --folder PATH --target TARGET` returns `{target, expected_basis, scope, inputs, requirements}`. Submit `{kind, target, expected_basis, payload}` using `desk submit` or `desk save`. Context describes absent materials too. It prepares companion contracts on disposable copies without changing the desk. Checkers run outside the repository lock; current inputs, team ownership and workers are checked again before saving. No arbitrary destination paths are accepted.
 
-## Existing decks
+`desk show --folder PATH` exposes materials, native drawing state, sources, prior deliveries and History without recovery or jobs. Missing prerequisites receive a refusal, never implicit scope expansion. Drawing requires a checked outline and an explicitly settled look. Validation never chooses missing design answers or runs an assistant.
 
-All five levels come to the desk. Brand only and Polish keep the deck's words: word edits are refused; speaker notes and slide notes are not. Selected changes changes text only by patches to a copy, through harness-slides' `pptx patch` and `pptx compare`, and keeps the deck's speaker notes.
+## Execution and later scope
 
-## Saved decks
+At the person's explicit request to continue an existing desk in chat, read target `ownership`, then use `desk take --folder PATH --input FILE` with `{expected_basis, scope}`. Supply scope when the old desk has none; retain an existing scope. Only execution metadata changes: originals, material bytes, History, Google records, approvals and readiness are preserved. Busy workers, pending jobs, another driver and changed inputs refuse the operation. Gated saved work needs its supported saved-work/migration path.
 
-A gated deck that is delivered offers **Open on the desk** on the page, on the computer that drew it. It stays delivered until a change is made there, and the first change makes the next revision.
+At the person's explicit request to broaden or narrow work, read target `scope`, then use `desk scope` with `{expected_basis, scope}`. This changes scope/provenance only. For explicit runner execution, read target `handoff`, then use `desk handoff` with the same fields and current scope. An incompatible remaining plan is refused without broadening or approving it.
 
-## In a conversation
+## On the page
 
-Never change a desk deck here: its stops are the desk's, and a decision on one is refused. Say what the desk offers, and that the person changes it on the page.
+The existing desk offers slide/whole-deck notes, checked word and speaker-note edits, History, outline changes, source intake and Finishing proposals. Notes redraw only their requested sections; unchanged sections are retained. Selected changes patches a copy and compares it against the original. Brand only and Polish preserve original words. Finishing proposes before Apply; Deliver remains the person's, showing brand blockers first. A change after delivery starts the next revision and retains prior delivery history.
