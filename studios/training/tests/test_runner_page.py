@@ -49,7 +49,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/review-level', '/api/research-site')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
-RUN_KEYS = ['agent', 'ahead', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
+RUN_KEYS = ['agent', 'ahead', 'can_open_desk', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'flow', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'research_from', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
@@ -3303,6 +3303,25 @@ class DeskTeamTests(TeamCase):
                     saved = json.loads(self.git('show', f'{kept}:{prefix}/.training-studio/session.json'))
                     self.assertIn(event, saved['events'])
                 # The next fixture starts under Alex again; leave this training Blake's.
+
+    def test_a_finished_saved_training_must_be_claimed_before_opening(self):
+        with self.be(self.alex):
+            root = self.start(levels=['101'], materials=['document'])
+            self.to_end(root)
+            self.assertEqual(self.engine.view(root)['state'], 'done')
+            self.engine.share()
+        self.as_(self.blake, self.blake.engine.fetch)
+        theirs = self.theirs(self.blake, root)
+        detail = self.ask(self.blake, 'training', path=str(theirs))
+        run = self.ask(self.blake, 'run', path=str(theirs))
+        self.assertFalse(detail['run']['can_open_desk'])
+        self.assertFalse(run['can_open_desk'])
+        self.ask(self.blake, 'drafts/open', {'path': str(theirs)}, expect=409)
+        claimed = self.ask(self.blake, 'drive', {'path': str(theirs), 'action': 'take'})
+        self.assertTrue(claimed['can_open_desk'])
+        opened = self.ask(self.blake, 'drafts/open', {'path': str(theirs)})
+        self.assertEqual(opened['flow'], 'desk')
+        self.assertEqual(self.ask(self.blake, 'run', path=str(theirs))['flow'], 'desk')
 
     def test_a_pr1_finished_training_requires_an_explicit_claim_and_keeps_local_edits(self):
         root, name = self.finished(), 'document@101'

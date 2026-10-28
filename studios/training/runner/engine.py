@@ -5280,13 +5280,17 @@ class Engine(Reviewing):
         with self._lock:
             began = [worker['started_at'] for worker in run.workers.values()]
         return {'state': state, 'sentence': sentence, 'flow': record.get('flow'),
-                'can_open_desk': (not drafts.on_desk(record) and state == 'done'
-                                  and found.next.kind == 'done'
-                                  and not found.session.get('gate')),
+                'can_open_desk': self._can_open_desk(record, found, state, mine),
                 'needs': needs and mine,
                 'question': asked['text'] if asked and mine else None, 'mine': mine,
                 'driver': who, 'last_shared': last, 'notice': self._notice(root, record),
                 'busy_since': max(began) if began and mine else None}
+
+    @staticmethod
+    def _can_open_desk(record, found, state, mine) -> bool:
+        """Only the owner may open a completed saved run on the desk."""
+        return bool(mine and not drafts.on_desk(record) and state == 'done'
+                    and found.next.kind == 'done' and not found.session.get('gate'))
 
     @staticmethod
     def _asking(scope: str) -> str:
@@ -5410,6 +5414,7 @@ class Engine(Reviewing):
             'model_mode': (record.get('model_profiles') or {}).get('mode', 'single'),
             # A desk run opens on the desk; a saved run keeps its own screens.
             'flow': drafts.FLOW if drafts.on_desk(record) else None,
+            'can_open_desk': self._can_open_desk(record, found, state, mine),
             # A desk run has none: a run without one reads as Step by step everywhere else.
             'review_level': None if drafts.on_desk(record) else review_policy.level(record),
             'review': self._review_view(root, record, found),

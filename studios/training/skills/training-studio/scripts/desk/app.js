@@ -3276,6 +3276,15 @@ function folderCard(training) {
       'copy-sentence')));
 }
 
+function openDeskButton(path, kind) {
+  return capsule('Open on the desk', kind, async () => {
+    try {
+      await send('drafts/open', { path });
+      show('run', { path });
+    } catch (failure) { toast(failure.message); }
+  }, 'open-desk');
+}
+
 function paintTraining(fresh) {
   const training = view.training;
   const above = levelsText(training.levels) ? [make('span', '', levelsText(training.levels))]
@@ -3300,12 +3309,7 @@ function paintTraining(fresh) {
   const watch = training.run || watched(known) ? capsule('Watch the run', '',
     () => show('run', { path: training.path }), 'watch') : null;
   const openDesk = training.run && training.run.can_open_desk
-    ? capsule('Open on the desk', 'filled', async () => {
-      try {
-        await send('drafts/open', { path: training.path });
-        show('run', { path: training.path });
-      } catch (failure) { toast(failure.message); }
-    }, 'open-desk') : null;
+    ? openDeskButton(training.path, 'filled') : null;
   place({ title: training.title || 'Untitled', above, back: true, actions: [watch, lead, openDesk] },
     [add(make('div', 'intro'), state(shape, words), beads(training.stages, false),
       make('p', 'lede', saysOf(training)), whoLine(known)),
@@ -5955,6 +5959,7 @@ function controlsPart(run) {
 
 function finishedPart(run, lead) {
   const found = run.finished;
+  const desk = run.can_open_desk ? openDeskButton(view.path, '') : null;
   const limits = list(found.limitations);
   const yoodli = list(found.yoodli).map((item) => add(make('div', 'card-part'),
     make('p', 'row-title', item.label || 'Yoodli scenario'), yoodliCopies(item)));
@@ -5969,7 +5974,8 @@ function finishedPart(run, lead) {
     return callout('', make('h2', 'aside-title', 'Ready to use'),
       ...(limited.length ? limited : [make('p', '', 'Nothing was left out or limited.')]),
       found.index ? make('p', 'quiet', 'Open the index for the materials and how to use them, '
-        + 'or open an individual material below.') : null, ...yoodli);
+        + 'or open an individual material below.') : null, ...yoodli,
+      desk ? add(make('div', 'bar'), desk) : null);
   }
   const blocking = list(found.blocking);
   const go = capsule('See what is in the way', lead ? 'filled' : '',
@@ -5979,7 +5985,7 @@ function finishedPart(run, lead) {
       + ' in the way:' : 'Something is in the way, and it was not said what.'),
     blocking.length ? bullets(blocking, 'reasons') : null,
     add(make('p', ''), make('strong', '', 'What was kept: '), 'everything that was made.'),
-    ...limited, ...yoodli, indexed, add(make('div', 'bar'), go, open));
+    ...limited, ...yoodli, indexed, add(make('div', 'bar'), go, open, desk));
 }
 
 async function steer(action, pressed) {
@@ -6769,7 +6775,7 @@ function paintRun(fresh) {
     ['cost', [run.spent, run.agent, run.model, run.effort, limits.training_dollars],
       () => costCard(run)],
     // Then what is finished.
-    run.finished ? ['finished', [run.finished, lead],
+    run.finished ? ['finished', [run.finished, lead, run.can_open_desk],
       () => finishedPart(run, lead === 'finished')] : null,
     theirs && !driver && run.finished ? ['free', [title], () => finishedFreePart()] : null,
     run.finished ? ['publish', [run.finished.ready, published, teamSpace()],

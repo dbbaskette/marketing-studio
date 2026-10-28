@@ -1037,6 +1037,15 @@ class OpenSavedTrainingTests(DeckCase):
                 self.assertEqual(record['opened_on_desk']['was'], {key: before.get(key) for key in ('review_policy', 'review_layout')})
                 self.assertEqual(workspace.load(root)['flow'], 'desk')
 
+    def test_opening_preserves_legacy_run_schemas(self):
+        for mode, schema in (('step_by_step', 1), ('automatic', 2)):
+            with self.subTest(schema=schema):
+                root = self.finished(mode)
+                self.assertEqual(self.record(root)['schema'], schema)
+                self.engine.open_on_desk(root)
+                self.assertEqual(engines.read_record(root)['schema'], schema)
+                self.assertEqual(self.engine.view(root)['flow'], 'desk')
+
     def test_policy_approval_without_final_review_is_a_draft(self):
         root = self.finished('automatic')
         record = self.record(root)

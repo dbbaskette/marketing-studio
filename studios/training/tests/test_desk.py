@@ -7704,6 +7704,33 @@ class TeamScreenTests(ScriptedPage, PageCase):
                       'where git keeps it under the name ' + KEPT):
             self.assertIn(shown, later['text'])
 
+    def test_open_a_finished_saved_training_after_taking_it(self):
+        self.started()
+        done = a_team_run('done', 'Finished.', None, False, finished={
+            'ready': True, 'limitations': [], 'blocking': [], 'index': 'README.md'})
+        done['body']['can_open_desk'] = False
+        mine = a_team_run('done', 'Finished.', a_driver('Dana', True), True,
+                          finished=done['body']['finished'])
+        mine['body']['can_open_desk'] = True
+        answers = self.answers(**{
+            'GET /api/trainings': [self.driven('done', 'Finished.', None)],
+            'GET /api/training': [self.shown('done', 'Finished.', None)],
+            'GET /api/run': [done, mine, a_desk_run()],
+            'POST /api/drive': [mine],
+            'POST /api/drafts/open': [a_desk()],
+            'GET /api/drafts': [a_desk()]})
+        result = self.run_page(answers, [
+            {'click': 'Open Rolling restarts'}, {'snapshot': 'unclaimed'},
+            {'click': 'Take it'}, {'click': 'Take it'}, {'snapshot': 'claimed'},
+            {'click': 'Open on the desk'}, {'snapshot': 'desk'}])
+        shots = result['snapshots']
+        self.assertNotIn('Open on the desk', shots['unclaimed']['buttons'])
+        self.assertIn('Open on the desk', shots['claimed']['buttons'])
+        self.assertEqual(shots['desk']['ledes'], [DESK_LEDE])
+        self.assertEqual(self.posts(result), [
+            ('/api/drive', {'path': str(self.root), 'action': 'take'}),
+            ('/api/drafts/open', {'path': str(self.root)})])
+
     def test_a_finished_training_nobody_runs_is_published_and_is_taken_to_change_it(self):
         self.started()
         over = 'Finished, but not ready to use: 1 thing is in the way.'
