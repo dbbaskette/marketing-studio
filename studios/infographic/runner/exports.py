@@ -42,11 +42,14 @@ def validate_manifest(value, export_id, project=None):
 
 
 def build(store, ident, *, expected_revision, executable, draft=False, renderer=render.render):
+    from . import visual_review
     with store.locked():
         project = store.read(ident)
         store.expect(project, expected_revision)
         validate_project(project)
         require(draft or project['approval'] is not None, 'Approve this exact checked page before creating final exports.')
+        require(draft or visual_review.checked(store, project),
+                'The visual review changed. Run checks and approve the latest review before final export.')
         scene_id = digest(project['scene'])
         key = 'e_' + digest({'project': project, 'draft': draft})[:24]
         marker = f'projects/{ident}/exports/{key}/manifest.json'
@@ -96,6 +99,8 @@ def build(store, ident, *, expected_revision, executable, draft=False, renderer=
             store.expect(current, expected_revision)
             require(basis(current) == basis(project) and current['approval'] == project['approval'],
                     'The page changed during export. The earlier approved delivery is kept.')
+            require(draft or visual_review.checked(store, current),
+                    'The visual review changed during export. Run checks and approve its latest decision.')
             if folder.exists():
                 # A concurrent identical export may have finished while this one rendered.
                 return validate_manifest(json.loads(_read(store.root, marker, 100_000)), key, project)

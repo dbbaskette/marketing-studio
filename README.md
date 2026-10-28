@@ -217,7 +217,7 @@ Or keep it in this terminal with `marketing-studio serve --lan`.
 
 Open the **private phone link** printed in the terminal. Once setup is complete,
 Marketing Studio also shows it under **Continue on your phone**. Launch Blog Studio,
-Presentation Studio, or Training Studio there; their links work on your phone too.
+Presentation Studio, Training Studio or Infographic Studio there; their links work on your phone too.
 The layouts adapt to a narrow screen, with touch controls and readable forms.
 Your work, Git repositories, and signed-in assistant stay on the computer.
 
@@ -234,8 +234,9 @@ For address selection, firewall help, and troubleshooting, see
 
 ## Keep your work local. Share when you choose.
 
-**Local Git is the default. A remote repository is optional.** Every studio can
-record decisions on this computer without a GitHub account.
+**Local storage is the default. A remote repository is optional.** Blog Studio,
+Presentation Studio and Training Studio record decisions in local Git. Infographic
+Studio keeps immutable local revisions and exports. None requires a GitHub account.
 
 With the default work folder, your projects live here:
 
@@ -243,17 +244,20 @@ With the default work folder, your projects live here:
 ~/Studios/
 ├── blog-workspace/blogs/
 ├── presentation-workspace/presentations/
-└── training-workspace/trainings/
+├── training-workspace/trainings/
+└── infographic-workspace/projects/
 ```
 
-For collaboration, choose an existing repository in setup. Each studio keeps its
-own clone and works in its own content folder. Choose whether to share after each
+For collaboration in Blog Studio, Presentation Studio and Training Studio, choose
+an existing repository in setup. Each keeps its own clone and content folder. Choose whether to share after each
 decision or only when asked. Setup never changes a repository's visibility.
+Infographic Studio's first release stays local even when a team repository is
+configured; its card explains this and does not offer to connect or push.
 
 Already using a studio? Its existing workspace stays where it is. Shared choices
 are used for new work; existing items retain their saved choices.
 
-Each studio card on the home page says where that studio's work lives: *Connected
+The Blog Studio, Presentation Studio and Training Studio cards say where their work lives: *Connected
 to* the shared repository, *Local Git on this computer*, or *Not connected to the
 shared repository*. Changing the workspace setting never moves a studio by itself.
 When a studio keeps a different workspace, its card offers **Connect**: the studio
@@ -319,6 +323,7 @@ marketing_studio/    Home page and user CLI
 studios/blog/       Blog Studio and its native tests
 studios/presentation/
 studios/training/
+studios/infographic/
 core/studio_core/    Shared infrastructure
 ui-kit/             Shared page assets
 pins/               One companion version set
@@ -338,10 +343,12 @@ bash scripts/ci/tart-macos.sh
 
 Read the [architecture](docs/architecture.md), [installation guide](docs/installation.md), [testing guide](docs/testing.md),
 [migration plan](docs/migration-plan.md), and [source provenance](docs/provenance.md).
-The proposed [Infographic Studio specification](docs/infographic-studio-spec.md)
-describes a future studio for creating a single-page visual explanation from supplied information.
+The [Infographic Studio specification](docs/infographic-studio-spec.md)
+defines the first-release candidate for single-page visual explanations from supplied information.
 Its [implementation plan](docs/infographic-studio-implementation-plan.md) includes
 delivery gates, dependencies, acceptance criteria, and the GitHub epic backlog.
+The [execution ledger](docs/superpowers/plans/2026-10-28-infographic-first-release.md)
+records implementation evidence and outstanding acceptance gates.
 Track the epics and tasks in [the Infographic Studio roadmap](https://github.com/dbbaskette/marketing-studio/issues/136).
 Use `presentation-studio-package` to regenerate the local Apple Silicon
 Presentation Studio bundle with Tanzu Brand and its tools; the

@@ -267,3 +267,40 @@ class DeskEngineTests(Isolated):
         self.engine.assistant = assistant
         with self.assertRaises(Invalid): self.engine.inspect_images(self.ident, expected_revision=6)
         self.assertEqual(self.engine.inspect(self.ident)['visual_review']['by'], 'user')
+
+    def failing_review(self):
+        answer = visual_answer()
+        answer['findings'] = [{'region_id': 'page', 'blocking': True,
+                               'message': 'The latest inspection found a misleading relationship.',
+                               'correction': 'Correct the relationship before approval.'}]
+        self.engine.assistant = mock.Mock()
+        self.engine.assistant.inspect_images.return_value = answer
+        return self.engine.inspect_images(self.ident, expected_revision=self.current()['revision'])
+
+    def test_new_review_supersedes_checked_or_approved_decision_and_saved_delivery(self):
+        approved = self.review_and_approve()
+        final = self.engine.preview(self.ident, expected_revision=approved['revision'], draft=False)
+        self.failing_review()
+        with self.assertRaisesRegex(Invalid, 'visual review'):
+            self.engine.approve(self.ident, expected_revision=approved['revision'])
+        with self.assertRaisesRegex(Invalid, 'visual review'):
+            self.engine.preview(self.ident, expected_revision=approved['revision'], draft=False)
+        self.assertFalse(next(d for d in self.engine.deliveries(self.ident) if d['id'] == final['id'])['approved_current'])
+        self.assertEqual(exports.read(self.store, self.ident, final['id'], 'png')[0], 'image/png',
+                         'Keep the earlier immutable delivery available as history')
+        self.engine.manual_review(self.ident, final['id'], ['Inspected the disputed relationship myself.'],
+                                  expected_revision=approved['revision'])
+        with self.assertRaisesRegex(Invalid, 'visual review'):
+            self.engine.approve(self.ident, expected_revision=approved['revision'])
+        checked = self.engine.check(self.ident, expected_revision=approved['revision'])
+        self.engine.approve(self.ident, expected_revision=checked['revision'])
+
+    def test_review_changed_during_final_render_cannot_land_a_delivery(self):
+        approved = self.review_and_approve()
+        def review_during_render(*args, **kwargs):
+            self.failing_review()
+            return fake_renderer(*args, **kwargs)
+        self.engine.renderer = review_during_render
+        with self.assertRaisesRegex(Invalid, 'visual review changed during export'):
+            self.engine.preview(self.ident, expected_revision=approved['revision'], draft=False)
+        self.assertTrue(all(d['draft'] for d in self.engine.deliveries(self.ident)))

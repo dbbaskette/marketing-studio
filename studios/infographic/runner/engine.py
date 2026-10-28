@@ -30,6 +30,7 @@ class Engine:
                 'recovery': Jobs(self.store, self.adapters).recovery(ident),
                 'image_history': Jobs(self.store, self.adapters).history(ident),
                 'visual_review': visual_review.latest(self.store, project),
+                'review_checked': visual_review.checked(self.store, project),
                 'deliveries': self.deliveries(ident)}
 
     def deliveries(self, ident):
@@ -39,6 +40,7 @@ class Engine:
         if not root.exists():
             return []
         found = []
+        review_checked = visual_review.checked(self.store, project)
         for folder in root.iterdir():
             if folder.name.startswith('e_') and not folder.is_symlink() and folder.is_dir():
                 try:
@@ -52,7 +54,8 @@ class Engine:
                               'approved_current': not manifest['draft'] and project['approval'] is not None
                               and manifest['revision'] == project['revision']
                               and manifest['approval_digest'] == digest(project['approval'])
-                              and manifest['checks_digest'] == digest(project['checks'])})
+                              and manifest['checks_digest'] == digest(project['checks'])
+                              and review_checked})
         return sorted(found, key=lambda item: (item['revision'], not item['draft']), reverse=True)
 
     def propose(self, ident, *, expected_revision, automatic=False):
@@ -299,12 +302,15 @@ class Engine:
             result = deepcopy(project)
             result.update(revision=project['revision'] + 1, approval=None,
                           checks=checks.evaluate(self.store, project, measurement=measurement, visual=visual))
+            next(c for c in result['checks'] if c['kind'] == 'visual')['review_digest'] = digest(visual)
             return self.store.commit_locked(project, result)
 
     def approve(self, ident, *, expected_revision):
         with self.store.locked():
             project = self.store.read(ident)
             self.store.expect(project, expected_revision)
+            require(visual_review.checked(self.store, project),
+                    'The visual review changed or is incomplete. Run checks against the latest review before approval.')
             require(REQUIRED_CHECKS <= {c['kind'] for c in project['checks']}
                     and all(c['status'] == 'passed' and c['basis'] == basis(project)
                             and c['scene_digest'] == digest(project['scene']) for c in project['checks']

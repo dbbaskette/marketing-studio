@@ -387,6 +387,8 @@ def validate_project(project: dict) -> dict:
                 ('passed', 'failed', 'incomplete') and type(check.get('blocking')) is bool,
                 'Checks need a scene identity, status, and blocking decision.')
         input_basis(check.get('basis'))
+        require('review_digest' not in check or check['kind'] == 'visual' and sha(check['review_digest']),
+                'The visual check must name its exact review decision.')
     approval = project['approval']
     if approval is not None:
         require(isinstance(approval, dict) and type(approval.get('revision')) is int

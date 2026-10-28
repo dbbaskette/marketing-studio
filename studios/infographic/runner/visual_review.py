@@ -26,6 +26,16 @@ def latest(store, project):
     return max(records, key=lambda item: item[:2])[2] if records else None
 
 
+def checked(store, project):
+    """A later review supersedes the decision used by approval, even without a copy edit."""
+    review = latest(store, project)
+    visual = next((c for c in project['checks'] if c['kind'] == 'visual'), None)
+    return bool(review and review.get('status') == 'passed' and review.get('observations')
+                and not any(f.get('blocking') for f in review.get('findings', []))
+                and visual and visual.get('status') == 'passed'
+                and visual.get('review_digest') == digest(review))
+
+
 def inspect(engine, ident, *, expected_revision):
     project = engine.store.read(ident)
     engine.store.expect(project, expected_revision)

@@ -44,6 +44,8 @@ the retired guided pipelines.
   implies visual inspection. Actual-image inspection or an explicit recorded
   human review is required. Approval is a user action and includes the current
   checks. Export retries use saved approved scenes without provider work.
+  The visual check also binds the exact review decision: a newer review requires
+  new checks and approval, including when it arrives during final rendering.
 - Reuse shared Golden Gate controls, drafting/history primitives where compatible,
   the catalog/lifecycle protocol, shared-settings authority and bundle machinery.
   Native CLI, authenticated API and browser consume the same engine methods.

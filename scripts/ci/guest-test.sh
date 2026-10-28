@@ -42,7 +42,7 @@ export PATH="$work/tools/bin:$PATH"
 # Real helper contract checks use source only, never an installed skill or provider.
 export STUDIO_TEST_RESEARCH_RUNTIME="$work/research-runtime"
 "$python" scripts/ci/research-runtime.py "$STUDIO_TEST_RESEARCH_RUNTIME" > "$results_dir/research-runtime.log" 2>&1
-if [[ "${1:-full}" == infographic ]]; then
+if [[ "${1:-full}" == infographic || "${1:-full}" == infographic-finish ]]; then
   # These are explicit CI preparation steps in the disposable clone, not tests
   # downloading software or touching a signed-in machine.
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
@@ -54,7 +54,19 @@ if [[ "${1:-full}" == infographic ]]; then
   export NODE_PATH="$work/browser/node_modules"
   export PYTHON="$python"
   export INFOGRAPHIC_UI_RESULTS="$results_dir/infographic-ui"
-  bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+  if [[ "${1:-full}" == infographic-finish ]]; then
+    # Reuse passing full suite evidence for unchanged shared/other-studio code.
+    # Verify the final review/approval repair with the full native suite and the
+    # same browser + source-independent prepared package journeys.
+    {
+      "$python" -m compileall -q studios/infographic/runner
+      node --check studios/infographic/runner/web/app.js
+      "$python" -m unittest discover -s studios/infographic/tests -v
+      PYTHONPATH=tests "$python" -m unittest test_infographic_release test_start_stop.ParserTests -v
+    } 2>&1 | tee "$results_dir/tests.log"
+  else
+    bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+  fi
   node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-browser.log"
   bundle="$(find dist -maxdepth 1 -name 'infographic-first-release-*-macos-arm64.zip' -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
