@@ -1,5 +1,7 @@
 # The Training Studio desk
 
+Conversation can create, inspect and save the same desk records with `studio desk create/show/context/submit/save`. It needs no browser or nested assistant. Requested scope is explicit and finite; a teaching-plan-only request creates no broader materials. Checked acceptance leaves materials Draft. `studio desk take/scope/handoff` are explicit checked ownership and scope changes; restarts and page visits leave conversation-owned work alone. `studio desk answer` records only actual current look/design answers. The existing `training.py desk` command still serves the page.
+
 The desk is where you read, change and finish a new training as Training Studio makes it. Start with **New training**: describe the learning goal and audience, choose materials and research sources, then check the summary and start. You can leave and return while work continues. Progress shows what is being made, time and cost, and anything that needs you; pause, resume or stop work from the run.
 
 ## Read and change materials

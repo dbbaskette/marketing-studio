@@ -383,6 +383,58 @@ def scenario_file(root: Path, level: str | None, ident: str) -> str:
     return f'{folder}scenario.md'
 
 
+def pending_local_deck(root: Path, session: dict, name: str) -> dict | None:
+    """An undelivered local Google-target draft; never a selector for arbitrary paths."""
+    entries = session.get('pending_local_decks', {})
+    valid = {qualify('deck', level) for level in session['levels'] or [None]}
+    if not isinstance(entries, dict) or not set(entries) <= valid:
+        raise WorkspaceError('The local deck draft record cannot be read. Restore its saved record.')
+    if name not in entries:
+        return None
+    marker = entries[name]
+    base, level = split(name)
+    valid_level = level in session['levels'] if session['levels'] else level is None
+    fields = {'schema', 'sha256', 'delivered_sha256', 'delivered_approval', 'at'}
+    valid_marker = isinstance(marker, dict) and set(marker) == fields
+    if valid_marker:
+        delivered = marker['delivered_sha256']
+        approval = marker['delivered_approval']
+        valid_marker = (type(marker['schema']) is int and marker['schema'] == 1
+                        and isinstance(marker['at'], str)
+                        and re.fullmatch(r'[a-f0-9]{64}', str(marker['sha256']))
+                        and (delivered is None or re.fullmatch(r'[a-f0-9]{64}', str(delivered)))
+                        and (approval is None or isinstance(approval, dict)))
+    if base != 'deck' or not valid_level or session['settings']['deck_target'] != 'google' or not valid_marker:
+        raise WorkspaceError('The local deck draft record is invalid. Restore its saved record.')
+    file = managed(root, prefix(level) + 'deck/local-draft.pptx')
+    if sha256_file(file) != marker['sha256'] or file.read_bytes()[:4] != PPTX_SIGNATURE:
+        raise WorkspaceError('The local deck draft is missing or changed. Restore that draft before continuing.')
+    return marker
+
+
+def stage_local_deck(root: Path, name: str, source: Path, delivered_approval=None) -> None:
+    """Keep checked local bytes separately from an unchanged delivered Google link."""
+    session = load(root)
+    old = pending_local_deck(root, session, name)
+    base, level = split(name)
+    if base != 'deck' or session['settings']['deck_target'] != 'google':
+        raise WorkspaceError('Only a Google-target deck keeps an undelivered local draft.')
+    data = source.read_bytes()
+    if data[:4] != PPTX_SIGNATURE:
+        raise WorkspaceError('The local drawing is not a usable PowerPoint deck.')
+    file = managed(root, prefix(level) + 'deck/local-draft.pptx')
+    link = managed(root, prefix(level) + 'deck-link.md')
+    marker = dict(old) if old else {'schema': 1, 'delivered_sha256': sha256_file(link),
+        'delivered_approval': delivered_approval if delivered_approval is not None else
+                              (session['artifacts'].get(name) or {}).get('approved')}
+    snapshot(root, name, file)
+    write_atomic(file, data)
+    marker.update(sha256=hashlib.sha256(data).hexdigest(), at=now())
+    session.setdefault('pending_local_decks', {})[name] = marker
+    log(session, 'keep-local-deck-draft', artifact=name, sha256=marker['sha256'])
+    store(root, session)
+
+
 def artifact(root: Path, session: dict, name: str) -> dict:
     """File, upstream artifacts, stage and other inputs for a named artifact."""
     base, level = split(name)
@@ -411,7 +463,8 @@ def artifact(root: Path, session: dict, name: str) -> dict:
                 'upstream': (same('blueprint'), 'research'), 'stage': 'brief',
                 'extras': ('setting:brief_kind',)}
     if base == 'deck':
-        file = 'deck-link.md' if settings['deck_target'] == 'google' else 'deck.pptx'
+        pending = pending_local_deck(root, session, name)
+        file = 'deck/local-draft.pptx' if pending else 'deck-link.md' if settings['deck_target'] == 'google' else 'deck.pptx'
         reference = same('document') if 'document' in settings['stages'] else 'research'
         return {'file': folder + file, 'upstream': (same('blueprint'), reference),
                 'stage': 'deck', 'extras': ('setting:deck_target', 'setting:brand')}
@@ -551,7 +604,7 @@ def snapshot(root: Path, name: str, path: Path) -> str | None:
 def pinned_inputs(root: Path, session: dict, name: str) -> dict:
     found = inputs(root, session, name)
     for upstream in artifact(root, session, name)['upstream']:
-        if found[upstream] is None:
+        if found[upstream] is None and upstream not in (session['artifacts'].get(name) or {}).get('unprovided_inputs', ()):
             raise WorkspaceError(f'Cannot record {name} before {upstream} exists.')
     return found
 
@@ -600,7 +653,7 @@ def check_coverage(root: Path, session: dict, name: str, coverage) -> None:
 @mutating
 def save(root: Path, name: str, source: Path | None = None, built: bool = False,
          coverage: dict | None = None, edit: bool = False, via: str | None = None,
-         session_token: str | None = None) -> dict:
+         session_token: str | None = None, unprovided=()) -> dict:
     """Record an artifact. `source` replaces the file first; `built` marks a rebuild.
 
     `edit` says the text from `source` is someone's edit, not a rebuild: the old version
@@ -612,6 +665,11 @@ def save(root: Path, name: str, source: Path | None = None, built: bool = False,
         raise WorkspaceError(NO_VIA)
     session = load(root)
     spec = artifact(root, session, name)
+    if unprovided:
+        run = json.loads((root / STATE_DIR / 'run.json').read_bytes())
+        if not on_desk(session) or run.get('execution') != 'conversation' or split(name)[0] != 'blueprint' or tuple(unprovided) != ('research',):
+            raise WorkspaceError('Only a focused conversation plan may record research that was not supplied.')
+        session['artifacts'].setdefault(name, {})['unprovided_inputs'] = list(unprovided)
     path = managed(root, spec['file'])
     if coverage is not None:
         if split(name)[0] != 'deck':
@@ -687,6 +745,10 @@ def person_statuses(root: Path, session: dict) -> dict[str, str]:
         if (base in PERSON_MARKED and status == 'approved'
                 and approved.get('by') in DESK_ACCEPTED
                 and ready.get(name) != approved.get('sha256')):
+            known[name] = 'draft'
+    for name in session.get('pending_local_decks', {}):
+        pending_local_deck(root, session, name)
+        if known.get(name) not in ('stale', 'skipped', 'unavailable'):
             known[name] = 'draft'
     return known
 
@@ -886,6 +948,8 @@ def _approve(root: Path, session: dict, name: str, accept_stale: str | None,
              by: str, policy: bool = False) -> dict:
     """Approve what is on disk in a loaded record. The caller stores it."""
     spec = artifact(root, session, name)
+    if pending_local_deck(root, session, name) and by != 'desk':
+        raise WorkspaceError('This deck has an undelivered local draft. Deliver it explicitly before marking it ready.')
     if not policy:
         check_choice(by, tuple(WHERE), 'Who decided')
     if name != 'intake' and not policy:  # intake records the user's own answers, given in the conversation

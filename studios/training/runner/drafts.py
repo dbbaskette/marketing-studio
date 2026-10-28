@@ -152,6 +152,10 @@ def add_source(root: Path, record: dict, files: list, documents) -> list[str]:
     return [entry.get('title') or entry['name'] for entry in added]
 
 
+def in_conversation(record: dict | None) -> bool:
+    return on_desk(record) and (record or {}).get('execution') == 'conversation'
+
+
 def on_desk(record: dict | None) -> bool:
     """Whether a run record, or a form, is a training worked on at the desk."""
     return (record or {}).get('flow') == FLOW
@@ -571,6 +575,8 @@ def needs_you(root: Path, found, name: str) -> list[str]:
     training's survey. Nothing for any other material."""
     if workspace.split(name)[0] != 'deck':
         return []
+    if workspace.pending_local_deck(root, found.session, name):
+        return ['This deck has an undelivered local draft. Deliver it explicitly before marking it ready.']
     from runner import pipeline
     shown = pipeline.deck_gate(root, found.session, name)
     return review_policy.held((shown.get('review') or {}).get('findings'),
@@ -1929,3 +1935,54 @@ def added_slide_design(slide):
                        'visual': {'family': 'text', 'purpose': 'Name the requested topic clearly.'}},
             'asset': {'description': 'No asset.', 'disposition': 'not-needed',
                       'reason': 'The requested title is the slide; no picture is needed to state it.'}}
+
+
+def select_materials(root: Path, record: dict, selection: dict) -> None:
+    """Apply an explicit finite conversation request, preserving all existing content."""
+    from runner import pipeline
+    allowed = {'materials', 'deck_target', 'brand', 'yoodli'}
+    if not isinstance(selection, dict) or not set(selection) <= allowed:
+        raise workspace.WorkspaceError('Choose materials, deck_target, brand or yoodli only.')
+    if not in_conversation(record):
+        raise workspace.WorkspaceError('Requested materials change only on a conversation desk.')
+    if 'materials' in selection and (not isinstance(selection['materials'], list) or len(selection['materials']) > 20):
+        raise workspace.WorkspaceError('Give materials as a finite list.')
+    session = workspace.load(root)
+    current = session['settings']
+    if not isinstance(current['stages'], list) or any(stage not in workspace.SKIPPABLE for stage in current['stages']):
+        raise workspace.WorkspaceError('This saved material selection cannot be changed safely.')
+    brand, _, variant = str(current.get('brand') or '').partition('/')
+    form = {**pipeline.answers(root), 'title': session['title'], 'levels': session['levels'],
+            'brief_kind': current['brief_kind'], 'delivery': current['delivery'],
+            'materials': [kind for kind in pipeline.MATERIALS if kind in current['stages']],
+            'deck_target': current['deck_target'],
+            'brand': {'brand': brand, 'variant': variant} if brand else None,
+            'yoodli': 'yoodli' in current['stages'], 'research_from': pipeline.research_of(record),
+            **selection}
+    checked = pipeline.check_form(form, conversation=True)
+    has_deck = workspace.deck_written(root, session) or bool(session.get('pending_local_decks')) or any(
+        workspace.qualify('deck', level) in session['artifacts'] or
+        (root / workspace.prefix(level) / 'deck-link.md').exists() or
+        (root / workspace.prefix(level) / 'deck.pptx').exists()
+        for level in session['levels'] or [None])
+    if has_deck and any(key in selection and checked[key] != current[key]
+                        for key in ('deck_target', 'brand')):
+        raise workspace.WorkspaceError('This deck already has saved work. Keep its target and brand; conversion needs its own explicit saved-work path.')
+    stages = set(current['stages'])
+    if 'materials' in selection:
+        stages.difference_update(pipeline.MATERIALS)
+        stages.update(checked['materials'])
+    if 'deck_target' in selection:
+        stages.discard('deck')
+        if checked['deck_target'] is not None:
+            stages.add('deck')
+        current['deck_target'] = checked['deck_target']
+    if 'brand' in selection:
+        current['brand'] = checked['brand']
+    if 'yoodli' in selection:
+        stages.discard('yoodli')
+        if checked['yoodli']:
+            stages.add('yoodli')
+    current['stages'] = [stage for stage in workspace.SKIPPABLE if stage in stages]
+    workspace.log(session, 'requested-materials', by='conversation-person', selection=selection)
+    workspace.store(root, session)
