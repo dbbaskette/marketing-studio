@@ -10,7 +10,7 @@ from runner import engine as engines, gitstate
 shared_tests = str(helpers.REPO.parents[1] / 'tests')
 if shared_tests not in sys.path:
     sys.path.append(shared_tests)
-from deck_process_lock_cases import EngineProcessLockCases, ChangedWorkspaceStartCases
+from deck_process_lock_cases import EngineProcessLockCases, ChangedWorkspaceStartCases  # noqa: E402
 
 
 class EngineProcessLockTests(EngineProcessLockCases, unittest.TestCase):

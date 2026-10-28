@@ -318,7 +318,6 @@ with ProcessRLock(lambda: Path(sys.argv[1]), timeout=.5):
 
 
     def test_recovery_refuses_roots_enumerated_before_workspace_switch(self):
-        from workspace import WorkspaceError
         with tempfile.TemporaryDirectory() as temporary, ExitStack() as stack:
             base = Path(temporary).resolve()
             repos = [base / name for name in ('a', 'b')]
