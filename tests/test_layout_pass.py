@@ -212,7 +212,7 @@ class PageLayoutTests(unittest.TestCase):
         self.assertEqual(cards['blog']['filled'], ['Connect'])
         self.assertEqual(cards['blog']['plain'], ['Open Blog Studio'])
         order = cards['blog']['order']
-        self.assertLess(order.index('button studio-connect button-filled'), order.index('button'))
+        self.assertLess(order.index('button studio-connect button-filled'), order.index('button studio-open'))
         self.assertEqual(cards['presentation']['filled'], ['Return to Presentation Studio'])
         self.assertEqual(cards['presentation']['plain'], [])
 
@@ -225,8 +225,11 @@ class PageLayoutTests(unittest.TestCase):
                 self.assertIn('state', card['order'])
                 self.assertFalse(any('studio-status' in name or 'studio-icon' in name for name in card['order']))
         self.assertEqual({card['studio']: card['status'] for card in cards},
-                         {'blog': ['none', 'Ready · 1.0'], 'presentation': ['done', 'Running'],
+                         {'blog': ['done', 'Ready to open'], 'presentation': ['done', 'Ready to open'],
                           'training': ['off', 'Not installed']})
+        running = {card['studio']: card['running'] for card in cards}
+        self.assertIn('Running', running['presentation'])
+        self.assertNotIn('Running', running['blog'])
 
     def test_moved_setup_controls_are_reachable(self):
         shots = self.page([{'home': self.SHOWN}, {'show': 'settings'},

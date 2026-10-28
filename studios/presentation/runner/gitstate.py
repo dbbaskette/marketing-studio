@@ -21,4 +21,5 @@ Change a deck through Presentation Studio, not by hand, so its record stays true
 
 sys.modules[__name__] = for_product(
     __name__, 'Presentation Studio', TOOL='presentation-studio', FOLDER='presentations',
-    ITEM='deck', ITEMS='decks', README=README, studios_config=studios_config)
+    ITEM='deck', ITEMS='decks', README=README, studios_config=studios_config,
+    REQUIRE_WORKSPACE_MARKER=True)

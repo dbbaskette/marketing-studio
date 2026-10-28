@@ -137,7 +137,8 @@ for (const step of steps) {
           filled: buttons.filter(part => /\bbutton-filled\b/.test(part.className)).map(part => part.textContent),
           plain: buttons.filter(part => !/\bbutton-filled\b/.test(part.className)).map(part => part.textContent),
           order: card.children.map(part => part.className),
-          status: state ? [state.children[0].dataset.state, state.children[1].textContent] : null };
+          status: state ? [state.children[0].dataset.state, state.children[1].textContent] : null,
+          running: card.children.find(part => /\bstudio-running\b/.test(part.className || ''))?.textContent || '' };
       }),
       ...(step.ids ? { hidden: Object.fromEntries(step.ids.map(id => [id, find('#' + id).hidden])),
         words: Object.fromEntries(step.ids.map(id => [id, find('#' + id).textContent])) } : {}),
