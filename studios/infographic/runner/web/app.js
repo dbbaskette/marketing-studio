@@ -155,7 +155,59 @@ async function startImage(brief){
 }
 function reviewSheet(delivery){const observations=field('What did you inspect on the actual composed page?','','textarea');sheet('Review the actual page',button('Inspect page with assistant',()=>action('inspect-images')),make('p','','Or record your own visual review of the rendered revision. It does not claim automated or live-provider quality verification.'),observations.wrap,add(make('div','bar'),button('Record reviewed page',()=>action('review',{export_id:delivery.id,observations:lines(observations.input.value)}),true),button('Cancel',closeSheet)));}
 function restoreSheet(version){sheet('Restore revision '+version.revision+'?',make('p','','Creates a new revision. Current sources, images and deliveries remain in history; approval is not restored.'),add(make('div','bar'),button('Restore as a new revision',()=>action('restore',{revision:version.revision,sha256:version.sha256}),true),button('Cancel',closeSheet)));}
-async function showSettings(){if(busy)return;held=null;resetPicture();heading('Settings and capability',button('Infographics',home));try{preferences=await request('/api/preferences');const capability=await request('/api/computer');const sharedLink=make('a','button','Shared assistant and brand settings');sharedLink.href='/onboarding/#token='+encodeURIComponent(token)+'&view=settings';const model=field('Gemini image model',preferences.native.gemini_model||''),renderer=field('Installed headless renderer path',preferences.native.renderer||'');$('main').replaceChildren(card('Selected assistant and image provider',make('p','',capability.assistant+' · '+capability.image_provider+' · '+capability.state),make('p','',capability.disclosure),list([...capability.problems,...capability.unknown])),card('Shared settings',sharedLink,make('p','quiet','Infographic Studio uses local supplied-information storage in this release. Team storage settings remain available to the other studios.')),card('Infographic defaults',model.wrap,renderer.wrap,make('p','quiet','Changing defaults does not move a workspace, change a saved brand or start provider work. Shared assistant and brand choices remain in shared Marketing Studio settings.'),button('Save defaults',async()=>{try{await request('/api/preferences',{expected:preferences.native_revision,changes:{gemini_model:model.input.value,renderer:renderer.input.value}});showSettings();toast('Defaults saved.');}catch(f){error(f.message);}})));}catch(f){error(f.message);}}
+async function showSettings() {
+  if (busy) return;
+  held = null;
+  resetPicture();
+  heading('Settings and capability', button('Infographics', home));
+  try {
+    preferences = await request('/api/preferences');
+    const capability = await request('/api/computer');
+    const sharedLink = make('a', 'button', 'Shared assistant and brand settings');
+    sharedLink.href = '/onboarding/#token=' + encodeURIComponent(token) + '&view=settings';
+    const model = field('Gemini image model', preferences.native.gemini_model || '');
+    const renderer = field('Installed headless renderer path', preferences.native.renderer || '');
+    renderer.input.placeholder = preferences.renderer || 'Use the renderer included in a prepared download';
+    const messages = {
+      'assistant-missing': 'Install the selected assistant CLI before starting assistant work.',
+      'sign-in-required': 'Sign in to the selected assistant.',
+      'gemini-key-required': 'Supply GEMINI_API_KEY in the server launch environment.',
+      'gemini-model-required': 'Choose an image-capable Gemini model below.',
+      'image-model-unavailable': 'Choose a Gemini image model available to your account.',
+      'image-tool-unavailable': 'The installed Codex does not expose its image tool.',
+      'manual-image-review-required': 'Use your own review of the actual page.',
+      'sign-in-not-checked': 'Sign-in is checked when you explicitly start assistant work.',
+      'image-tool-not-checked': 'Codex image-tool access awaits a live run.',
+      'image-model-access-not-checked': 'Gemini model access awaits a live run.',
+      'image-inspection-not-checked': 'Multimodal inspection awaits a live run.',
+      'generation-and-editing-not-live-verified': 'Generation and reference editing await live acceptance.'
+    };
+    const imageDefaults = [];
+    if (preferences.image_provider === 'gemini') imageDefaults.push(model.wrap);
+    imageDefaults.push(detail('Advanced renderer setting', renderer.wrap),
+      make('p', 'quiet', 'Defaults apply to new work. Your existing workspace and saved brand stay in place.'),
+      button('Save defaults', async () => {
+        try {
+          const changes = {renderer: renderer.input.value};
+          if (preferences.image_provider === 'gemini') changes.gemini_model = model.input.value;
+          await request('/api/preferences', {expected: preferences.native_revision, changes});
+          await showSettings();
+          toast('Defaults saved.');
+        } catch (failure) { error(failure.message); }
+      }, true));
+    $('main').replaceChildren(
+      card('Assistant and image provider',
+        make('p', '', capability.assistant + ' · ' + capability.image_provider),
+        make('p', '', capability.state === 'unavailable' ? 'Finish these prerequisites before generating artwork.' : 'Local prerequisites detected; provider access remains unverified.'),
+        make('p', '', capability.disclosure),
+        list([...capability.problems, ...capability.unknown].map(code => messages[code] || code))),
+      card('Page renderer', make('p', '', capability.renderer_available
+        ? 'Installed renderer found. Preview checks actual fonts, layout, and output.'
+        : 'Configure an installed renderer, or use a prepared download that includes it. No browser is downloaded here.')),
+      card('Shared settings', sharedLink, make('p', 'quiet', 'Infographic Studio uses local supplied-information storage in this release. Team settings remain available to the other studios.')),
+      card('Infographic defaults', ...imageDefaults));
+  } catch (failure) { error(failure.message); }
+}
 $('home').addEventListener('click',home);$('settings').addEventListener('click',showSettings);
 const port=Number(document.body.dataset.suitePort);homeLink=homeLink||(Number.isInteger(port)&&port>0&&port<65536?suiteHome(location.protocol+'//'+location.hostname+':'+port+'/'):'');if(homeLink){$('suite').hidden=false;$('suite').href=homeLink+'/';}
 if(!token)error('Open Infographic Studio using the private link printed in your terminal.');else home();

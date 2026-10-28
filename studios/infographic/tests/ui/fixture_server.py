@@ -48,6 +48,7 @@ def main():
         (root / 'settings.json').write_text(json.dumps({'schema': 1, 'assistant': {'agent': 'codex', 'model': None},
             'person': {'name': 'Synthetic Author'}, 'local': {'root': str(root / 'work')}}))
         store = Store.setup()
+        settings.save({'renderer': str(args.renderer)}, expected=settings.snapshot()['native_revision'])
         engine = Engine(store, executable=args.renderer, assistant=Assistant())
         engine.configuration = {'image_provider': 'codex'}
         class Page(server.Page):

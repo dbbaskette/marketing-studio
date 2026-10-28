@@ -24,10 +24,11 @@ def native():
         return {}
     saved = _json(root, 'preferences.json', 10_000)
     require(isinstance(saved, dict) and set(saved) <= FIELDS, 'Restore valid Infographic Studio preferences.')
+    validate(saved)
     return saved
 
 
-def save(changes, *, expected):
+def validate(changes):
     require(isinstance(changes, dict) and set(changes) <= FIELDS, 'Choose only image-model and renderer defaults.')
     for key, value in changes.items():
         require(text(value, empty=True, limit=2000), 'Use bounded non-secret preference text.')
@@ -35,6 +36,11 @@ def save(changes, *, expected):
             require(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,99}', value) is not None, 'Use an explicit Gemini model ID.')
         if key == 'renderer' and value:
             require(Path(value).expanduser().is_absolute(), 'Name an explicitly installed renderer by absolute path.')
+
+
+def save(changes, *, expected):
+    validate(changes)
+    changes = {key: str(Path(value).expanduser()) if key == 'renderer' and value else value for key, value in changes.items()}
     with file_lock(data_root() / 'preferences.lock'):
         current = native()
         require(expected == digest(current), 'Infographic Studio preferences changed. Reload this form before saving.')
@@ -46,7 +52,9 @@ def save(changes, *, expected):
 def snapshot():
     shared, problem = studios_config.read()
     require(not problem, 'Restore valid shared settings before starting provider work.')
-    assistant = shared.get('assistant') or {}
+    assistant = shared.get('assistant', {})
+    require(isinstance(assistant, dict) and all(isinstance(shared.get(key, {}), dict) for key in ('person', 'brand')),
+            'Restore valid shared assistant, person and brand sections before starting provider work.')
     agent = assistant.get('agent') or runtime.assistant_default()
     require(agent in ('codex', 'claude'), 'Choose Codex or Claude Code in shared settings.')
     from studio_core.preferences import EFFORTS

@@ -1,7 +1,7 @@
-![Marketing Studio — one workspace for Blog Studio, Presentation Studio, and Training Studio](docs/assets/marketing-studio-header.png)
+![Marketing Studio — one home for your studios](docs/assets/marketing-studio-header.png)
 
 <p align="center">
-  <strong>From your first idea to a blog, a deck, or a training.</strong><br>
+  <strong>From your first idea to a blog, a deck, a training, or an infographic.</strong><br>
   Set up your tools once. Open the studio you need. Keep control of every decision.
 </p>
 
@@ -21,7 +21,7 @@
 
 ---
 
-## Three studios. One place to begin.
+## Your studios. One place to begin.
 
 Marketing Studio is the home for your writing and presentation tools. It holds
 shared settings and opens the right studio for the job. Each studio also has its
@@ -32,9 +32,15 @@ own launcher and can be installed on its own.
 | Turn a topic, notes or a draft into a finished blog | **[Blog Studio](studios/blog)** | One writing desk: notes per section, selection edits, versions, and finishing tools before publishing |
 | Build a researched presentation in your brand | **[Presentation Studio](studios/presentation)** | New decks, existing decks, storyboards, and slide reviews |
 | Teach a topic at the right level | **[Training Studio](studios/training)** | Research, teaching plans, learner materials, decks, and practice |
+| Explain supplied information in one page | **[Infographic Studio](studios/infographic)** | Story choices, editable labels/charts, explanatory artwork, review and local exports |
+
+Infographic Studio 0.1.0 is a first-release candidate. Live provider and owner
+illustration acceptance remain [explicit release gates](studios/infographic/docs/acceptance.md);
+it is not yet part of a published release. Its initial acceptance target is macOS
+ARM64, with other renderer/platform combinations tracked separately.
 
 **Your choices carry across the studios:** your name, assistant, work location,
-brand, delivery format, and sharing preference. All three studios read the shared
+brand, delivery format, and sharing preference. All four studios read the shared
 assistant, model and reasoning settings.
 Slide previews and your brand skill source are shared too: give a Git repository
 address or choose an installed folder. A repository does not require a folder path.
@@ -46,7 +52,7 @@ when the locks are refreshed and the research contract tests pass again.
 Downloadable bundles include the same exact versions and install offline; opening a
 studio never updates its tools automatically.
 
-Quick, Main, and Complex model profiles can be configured once in Shared settings. Every studio saves the resolved choices with new work. [See model routing](docs/shared-setup.md#models-by-task).
+Quick, Main, and Complex model profiles can be configured once in Shared settings. Blog Studio, Presentation Studio and Training Studio save resolved task profiles with new work. Infographic Studio snapshots the shared assistant/model/effort; its Gemini image model is a separate native default. [See model routing](docs/shared-setup.md#models-by-task).
 
 ## Get started
 
@@ -58,14 +64,14 @@ Choose `macos-arm64` for Apple Silicon, `macos-x64` for an Intel Mac, or the mat
 `linux-arm64` / `linux-x64` build for a Linux computer using glibc.
 
 Unzip it, open Terminal, and run `bash install.sh` from the unpacked folder.
-This installs Blog Studio, Presentation Studio and Training Studio together.
+A suite bundle installs the studios listed in its manifest. Current source builds can include all four studios.
 Each individual studio download has the same root `install.sh` and installs
 only that studio. To build your own downloads, use the matching root `package.sh`;
 see [package and install the studios](docs/packaging.md).
 This works on macOS and Linux without opening a `.command` file. The macOS
 Finder launcher, **installer/Install Marketing Studio.command**, is also available.
 
-**The platform bundle brings its own Python, Node, research tools, and slide engine.**
+**Platform bundles bring private Python and Node plus the selected pipelines’ dependencies.** Infographic Studio-only builds add a pinned renderer and omit Research/Slides companions; its pipeline has no image SDK or frontend build.
 There is no npm install or compiler setup. The runtimes stay inside the installed
 version, so you can delete the downloaded folder afterward.
 
@@ -152,6 +158,7 @@ marketing-studio open training
 | Command | What happens |
 | :--- | :--- |
 | `marketing-studio` | Opens the home page |
+| `marketing-studio open infographic` | Opens Infographic Studio and preserves its local workspace |
 | `marketing-studio open presentation` | Opens Presentation Studio; reuses it if already open through Marketing Studio |
 | `marketing-studio serve` | Runs the home server in this terminal without opening a browser, for example over SSH |
 | `marketing-studio serve --lan` | Enables private phone access on your trusted local network |
@@ -180,8 +187,8 @@ marketing-studio stop --all            # every studio, then Marketing Studio
 marketing-studio restart --all         # same phone access and port; restarts the studios that were running
 ```
 
-Choose studios with `--bs` (Blog Studio), `--ps` (Presentation Studio) and `--ts`
-(Training Studio); `-bs`, `--blog` and the like also work, as does putting the
+Choose studios with `--bs` (Blog Studio), `--ps` (Presentation Studio), `--ts`
+(Training Studio) and `--is` (Infographic Studio); `-bs`, `--blog` and the like also work, as does putting the
 command last: `marketing-studio --all stop`. In a terminal, `start` prints the
 private link, and the phone link when phone access is on. Through a pipe or with
 `--json` it prints JSON without any key. Its output goes to `home.log` in the
