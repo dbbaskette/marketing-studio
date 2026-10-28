@@ -14,6 +14,7 @@ and their acceptance criteria are fulfilled.
 | Rendering | `tests/test_render.py` | Actual fonts, image decode, text bounds, overflow, PNG dimensions and exactly one PDF page; placeholder samples are not illustration-quality acceptance |
 | Provider adapters | `tests/test_image_adapters.py`, `test_workers.py` | Injected CLI/HTTP only; no key leakage/fallback, actual owned bytes, minimal tools, bounded process groups, blocked-stdin timeout |
 | Jobs and recovery | `tests/test_image_jobs.py` | Durable intent, duplicate IDs, cancellation, restart, changed-basis rejection, uncertain requests surviving content invalidation |
+| Settings and readiness | `tests/test_settings.py` | Shared authority, no mutation of existing work, stale/concurrent native form conflicts, explicit model/renderer readiness, no credential disclosure or generation |
 | Desk/approval/history | `tests/test_desk_engine.py` | Source-to-export workflow, scoped story/text/art edits, actual-pixel review contract, shared repair budget, exact user approval, newer-review invalidation including concurrent final export, immutable retryable delivery and restore |
 | Native HTTP/CLI/install | `tests/test_server.py`, `test_cli.py`, `test_installer.py` | Real loopback auth/Host/Origin limits, idempotent creation, CSV validation before creation, source-independent commands, rollback, active-work refusal and preservation |
 | Browser | `tests/ui/journey.cjs` | Real native page and renderer, injected assistant; intake to approved download, focused edit, actual-pixel zoom, comparison, 320/390/1280 widths, light/dark, reduced motion/transparency, keyboard dialog return and 44 px controls |
@@ -40,7 +41,7 @@ actual source tree and guest environment in those logs.
 
 | Platform | Renderer pin | First-release acceptance |
 | --- | --- | --- |
-| macOS ARM64 | Chrome headless shell 145.0.7632.6, archive and executable hashes pinned | Target platform for real render, browser, Tart and prepared native package acceptance |
+| macOS ARM64 | Chrome headless shell 145.0.7632.6, archive and executable hashes pinned | Offline real render, browser, Tart and prepared native package acceptance passed; separate live/owner gates remain open |
 | macOS x64 | Same renderer version, hashes pinned | Foundation renderer feasibility passed; new native package requires separate platform acceptance before publication |
 | Linux x64 | Same renderer version, hashes pinned | Archive checksum verified; runtime, fonts and native package acceptance remain unverified |
 | Linux ARM64 / Windows | No supported renderer pin | Refused before preparing an Infographic Studio platform bundle; existing studio subsets retain their own support |

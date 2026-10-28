@@ -1,6 +1,6 @@
 # Infographic Studio provider feasibility
 
-This milestone defines the execution handoffs; it does not claim that any account
+The first-release candidate implements the execution handoffs; it does not claim that any account
 has successfully generated or edited an image. CLI help/feature discovery and
 scripted tests incur no provider work. Manual live acceptance remains separate.
 
@@ -8,7 +8,7 @@ scripted tests incur no provider work. Manual live acceptance remains separate.
 
 | Configuration | Generation/editing | Inspecting the actual result |
 | --- | --- | --- |
-| Codex | Native image job with `image_generation` enabled, prompt on stdin, optional staged `--image` references; collect the returned image events and copy validated files into the owned attempt | Separate image-input job with returned assets attached through `--image`; do not enable shell/browser access to read them |
+| Codex | Native image job with `image_generation` enabled, prompt on stdin, optional staged `--image` references; collect actual regular PNG files from the owned `generated_images/` folder | Separate image-input job with returned assets attached through `--image`; do not enable shell/browser access to read them |
 | Claude Code with Gemini API | Claude Code authors the complete image brief; a server-side standard-library HTTPS adapter sends it and selected reference bytes to an image-capable Gemini model | Restricted Claude Code job in a disposable job folder with only the built-in `Read` tool and an explicitly empty MCP configuration; prompt names the staged returned image and scene |
 
 The compatibility baselines inspected for this milestone are Codex CLI 0.162.1
@@ -16,14 +16,15 @@ and Claude Code 2.1.303. These are tested command-surface baselines, not claims
 that older versions cannot work. Neither executable presence nor a feature flag
 proves account access, image editing, multimodal inspection, or output quality.
 
-The existing shared Codex worker keeps `image_generation` disabled. The proposed
-native command keeps its other capabilities disabled and permits only the image
-tool. Production collection, capability attestation, timeouts, and cancellation
-belong to the image-adapter issues. Do not execute these proposals as a provider
-test during automated verification.
+The existing shared Codex worker keeps `image_generation` disabled. The native
+image command keeps its other capabilities disabled and permits only the image
+tool. Owned-file collection, durable intent, bounded timeouts and scoped
+cancellation are implemented and covered with injected workers. Account access
+and provider behavior still require separate live acceptance.
 
-Claude Code inspection runs with `--restricted --tools Read --allowedTools Read`,
-strict empty MCP configuration, no permission prompts, no persistent session,
+Claude Code inspection runs with restricted mode, only the Read tool and allowed
+Read patterns scoped to the staged PNG names, strict empty MCP configuration,
+no inherited setting sources, no permission prompts, no persistent session,
 and a working directory containing only staged inputs. Managed policy and model
 access can still refuse image reading. That is an incomplete visual check requiring
 manual review, never a successful inspection inferred from a textual response.
@@ -66,7 +67,7 @@ credential or operational transcript belongs in this repository.
 - [Claude Code programmatic sessions](https://code.claude.com/docs/en/headless)
 - [Gemini image generation and editing](https://ai.google.dev/gemini-api/docs/image-generation)
 
-Official capability descriptions support the proposed surfaces. The installed
+Official capability descriptions support these surfaces. The installed
 command help establishes flag availability; only explicit future live acceptance
 can establish generation/edit/inspection behavior for a particular account.
 

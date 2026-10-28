@@ -42,28 +42,51 @@ This ledger records actual implementation and verification; unchecked means pend
 - [x] Slice 3 implementation and offline targeted verification (live provider gate remains open).
 - [x] Slice 4 implementation and targeted verification.
 - [x] Slice 5 implementation and real-loopback/browser targeted verification.
-- [x] Slice 6 implementation and targeted setup/launch/installer verification; prepared-platform acceptance follows.
-- [ ] Slice 7 integration and acceptance.
+- [x] Slice 6 implementation, setup/launch/installer verification and prepared macOS ARM64 platform acceptance.
+- [x] Slice 7 offline integration, accessible browser journey and clean-platform acceptance.
+- [ ] Separate live generation/reference-edit/inspection acceptance for both providers.
+- [ ] Owner review of meaningful conceptual, process and mixed illustrations.
+- [ ] Additional platform acceptance before publishing those platform packages.
 
 No first-release feature or issue is complete merely because it is described here.
-Live provider, illustration review, platform and publication gaps remain explicit.
+Live provider, illustration review, additional-platform and publication gaps remain explicit.
 
 ## Current evidence boundary
 
-The native suite passes 95 tests with the actual pinned macOS ARM64 renderer,
-including all six forms in three presets, invalid images/fonts/overflow, located
-claims and exact numeric display, durable job recovery, focused revisions, review,
-approval and export. The real browser journey passes intake through approved SVG
-with an injected assistant, fit/actual-pixel viewing, history, 320/390/1280 widths,
-light/dark, reduced transparency/motion and keyboard dialog return. The selected
-installed Tanzu Brand exporter returns a valid non-slide snapshot in an isolated
-local contract check; no provider is started.
+The full shared suite and existing studio regressions passed at `24cc5b84`:
+Marketing Studio 666 tests, Blog Studio 1,575, Presentation Studio 1,952 and
+Training Studio 2,863. Final native review/approval repairs and the acceptance
+fixture's migration from retired run creation to current desk commands were
+then verified at `6e90b3df`, reusing the unchanged suites' passing evidence.
+
+The final disposable macOS ARM64 guest passed all 106 native tests with the pinned
+renderer and 11 targeted integration/CLI tests. Coverage includes all six forms
+in three presets, signed callouts, invalid images/fonts/overflow, located claims
+and exact numeric display, durable job recovery, conflicting settings edits,
+focused revisions, newer-review invalidation including concurrent final export,
+approval and export. The real browser journey passed intake through approved SVG
+with an injected assistant, fit/actual-pixel viewing, history, recheck/reapproval,
+320/390/1280 widths, light/dark, reduced transparency/motion, keyboard dialog return
+and 44 px controls. The selected installed Tanzu Brand exporter also returned a
+valid non-slide snapshot in an isolated local contract check; no provider started.
 
 Real native setup, independent shared setup, protected LAN launch, repeated-open
 reuse and owned teardown pass for all four studios. Native install/repeat/rollback/
-uninstall and source-independent suite/subset tests pass with disposable homes.
-Infographic Studio-only packages omit Research/Slides; other subsets omit its renderer.
+uninstall and source-independent suite/subset tests passed with disposable homes.
+The synthetic Hub journey passed 41 steps; the shared-studio CLI journey passed
+39 commands, including cross-clone driver handover, offline saves/retry and local
+edit protection. Infographic Studio-only packages omit Research/Slides; other
+subsets omit its renderer.
 
-Final shared Tart and prepared-platform acceptance are pending at this checkpoint.
+Final Tart environment: macOS 27.0 ARM64, Python 3.13.15, Node 22.23.2. Prepared
+macOS ARM64 package acceptance passed with private Python 3.13.16 and headless
+Chromium 145.0.7632.6: all four actual exports, extracted download removed,
+Marketing Studio uninstalled, native app still operational, no Research/Slides
+companions and no provider calls. Each disposable VM was deleted; detailed source,
+artifact hashes and operational logs are retained outside this public repository.
+
 Live generation/edit/inspection for both providers and owner illustration-quality
-review remain open. No first-release issue has been closed and no release published.
+review remain open. macOS x64 and Linux x64 package/runtime acceptance remain
+unverified; Linux ARM64/Windows renderer bundles are refused. No first-release
+issue has been closed and no release published. Documentation-only clarifications
+after the tested code do not change these behavioral results.
