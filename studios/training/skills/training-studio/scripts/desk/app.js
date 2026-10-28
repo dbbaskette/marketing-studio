@@ -5998,7 +5998,16 @@ async function steer(action, pressed) {
   view.busy = true;
   pressed.disabled = true;
   try {
-    if (onTheDesk(view.run)) await flushDesk(deskHeld(view.path));
+    if (onTheDesk(view.run)) {
+      const path = view.path;
+      if (action === 'stop') {
+        // Stopping must not wait for a refused or stalled save. Its text stays pending.
+        flushDesk(deskHeld(path)).catch(() => {
+          deskHeld(path).said = 'Unsaved text is still on the desk.';
+          if (view.path === path && view.screen === 'run') paintDesk(false);
+        });
+      } else await flushDesk(deskHeld(path));
+    }
     const run = await send('run', { path: view.path, action });
     view.busy = false;
     if (turn !== view.turn) return;
@@ -8965,7 +8974,11 @@ function begin() {
     open(event.state || { screen: 'home' });
   });
   window.addEventListener('pagehide', () => {
-    if (view.screen === 'run' && view.path && typeof shareDesk === 'function') shareDesk(view.path);
+    if (view.screen === 'run' && view.path && typeof leaveDesk === 'function') leaveDesk(view.path);
+  });
+  window.addEventListener('beforeunload', (event) => {
+    if (view.screen === 'run' && DESK.held[view.path] && pendingDeskEdits(view.path).length
+        && !keepDeskRecovery(view.path)) { event.preventDefault(); event.returnValue = ''; }
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) refresh();

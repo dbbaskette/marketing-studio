@@ -115,6 +115,17 @@ class DraftJobTests(DeckCase):
         self.engine.wake(root)
         self.assertTrue(self.last(root).get('applied'), (self.last(root), self.record(root)['problem']))
 
+    def test_row_165_write_whole_guide_uses_one_document_job(self):
+        root = self.desk()
+        before = self.card(root)
+        count = len(self.workers.of('document'))
+        self.ask(root, 'write-whole', seen=before['revision'])
+        self.assertEqual(len(self.workers.of('document')), count + 1)
+        self.assertEqual(self.last(root)['part'], 'whole')
+        self.assertTrue(self.last(root)['applied'])
+        self.assertEqual(self.saves(root)[-1]['via'], 'rewrite')
+        self.assertNotIn('sections', self.last(root))
+
     def test_the_whole_guide_note_goes_in_order_and_stops(self):
         root = self.desk()
         before = self.card(root)

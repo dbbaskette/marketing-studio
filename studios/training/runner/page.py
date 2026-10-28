@@ -211,7 +211,7 @@ DECIDED = tuple(f'{DRAFTS}/{action}' for action in ('ready', 'level-ready', 'upd
                                                      'send'))
 # Typing into a part, bringing back one of its versions, and committing what was typed.
 TYPED = tuple(f'{DRAFTS}/{action}' for action in ('save', 'restore', 'share'))
-JOBS = tuple(f'{DRAFTS}/{action}' for action in ('note', 'revise', 'selection', 'stop', 'retry', 'layout'))
+JOBS = tuple(f'{DRAFTS}/{action}' for action in ('note', 'revise', 'selection', 'stop', 'retry', 'layout', 'write-whole'))
 VERSIONS = f'{DRAFTS}/versions'
 CARD = f'{DRAFTS}/card'   # one card with its parts, as the shared kit reads it
 PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
@@ -729,7 +729,7 @@ class RunnerPage(desk.Page):
                 reply = method(root, desk.text(sent, 'job'))
             else:
                 note = desk.text(sent, 'note', False) or desk.text(sent, 'instruction', False)
-                kind = ('layout' if action == 'layout' else 'selection' if action == 'selection' else 'revise-all' if action == 'revise'
+                kind = ('write-whole' if action == 'write-whole' else 'layout' if action == 'layout' else 'selection' if action == 'selection' else 'revise-all' if action == 'revise'
                         else 'section' if note else 'write-again')
                 reply = self.engine.draft_begin(root, kind, desk.text(sent, 'name'),
                     part=desk.text(sent, 'part', False), seen=sent.get('seen'), note=note,

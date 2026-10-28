@@ -14,7 +14,7 @@ from studio_core.drafting import basis, prompts, record
 
 from runner import briefs, drafts, pipeline
 
-KINDS = ('section', 'write-again', 'revise-all', 'selection', 'update', 'layout')
+KINDS = ('section', 'write-again', 'revise-all', 'selection', 'update', 'layout', 'write-whole')
 BUSY = drafts.BUSY
 NEXT = 'Next, after {doing}.'
 SOURCES = 'Leave Sources as it is: the studio adds the references you use.'
@@ -68,7 +68,9 @@ def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None
             drafts._vet('whole', file_text(root, name))
         except ValueError as error:
             raise workspace.WorkspaceError(str(error)) from None
-        if base in WHOLE:
+        if kind == 'write-whole' and base != 'document':
+            raise workspace.WorkspaceError('Choose a guide to write again as a whole.')
+        if base in WHOLE or kind == 'write-whole':
             if part is not None or kind == 'selection':
                 raise workspace.WorkspaceError('Change this material with a whole note.')
             if kind == 'layout' and (base != 'scenario' or name not in engine._survey(root, run).own):
@@ -76,7 +78,7 @@ def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None
             if kind != 'layout' and name in engine._survey(root, run).own:
                 raise workspace.WorkspaceError('This scenario is your own. Change its words yourself; ask to lay it out from its practice card.')
             text, sections = file_text(root, name), None
-            if base == 'blueprint' and type(seen) is int:
+            if (base == 'blueprint' or kind == 'write-whole') and type(seen) is int:
                 try:
                     record.checked(drafts.desk_of(engine, root, name).read(name), seen, thing='draft')
                 except ValueError as error:

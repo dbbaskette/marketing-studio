@@ -50,7 +50,7 @@ const DESK = { held: {}, kitSheet: [] };
 function deskHeld(path) {
   if (!DESK.held[path]) {
     DESK.held[path] = { view: null, level: null, sources: false, said: '', unsent: null,
-      drawn: '', materials: {} };
+      drawn: '', materials: {}, recovery: readDeskRecovery(path) };
   }
   return DESK.held[path];
 }
@@ -90,10 +90,18 @@ function deskApi(route, data) {
   }
   const { id, ...rest } = data;
   const item = deskItem(id), material = deskHeld(item.path).materials[item.name];
+  if (endpoint === 'drafts/restore' && Object.keys(material?.pending || {}).length) {
+    throw new Error('Save or reload your pending text before restoring a version.');
+  }
+  if (endpoint === 'drafts/save' && material?.editSeen?.[rest.part] !== undefined) {
+    rest.seen = material.editSeen[rest.part];
+  }
   if (material?.view.whole && ['drafts/note', 'drafts/revise', 'drafts/layout'].includes(endpoint)) {
     rest.seen = material.view.seen;
   }
-  return send(endpoint, { ...item, ...rest });
+  const body = { ...item, ...rest };
+  return send(endpoint, body, endpoint === 'drafts/save' && smallDeskSave(body)
+    ? { keepalive: true } : {});
 }
 
 // The shared kit is loaded before this script; without it there is no desk to draw.
@@ -148,14 +156,21 @@ const deskKit = Drafting.kit({
   current: (held) => view.screen === 'run' && deskItem(held.id).path === view.path,
   page: () => main(),
   hooks: {
-    saved: (held) => {
+    saved: (held, part) => {
+      // Only an acknowledged save of our text advances an outstanding edit's basis.
+      if (held.pending[part]) held.editSeen[part] = held.view.revision;
+      else if (held.editSeen) delete held.editSeen[part];
+      if (!Object.keys(held.pending).length) held.recovered = false;
+      keepDeskRecovery(deskItem(held.id).path);
       if (held.view.desk) deskHeld(deskItem(held.id).path).view = held.view.desk;
     },
     render: (held) => deskMaterialChanged(held),
     refresh: (held) => deskMaterialChanged(held),
     reload: async (held) => {
       held.view = await ask('drafts/card', deskItem(held.id));
-      held.pending = {}; held.stale = false; held.saved = '';
+      held.pending = {}; held.editSeen = {}; held.recovered = false;
+      keepDeskRecovery(deskItem(held.id).path);
+      held.stale = false; held.saved = '';
       deskMaterialChanged(held);
     },
     beforeJob: (held) => {
@@ -172,7 +187,8 @@ const deskKit = Drafting.kit({
       : (list(found.sections).find((one) => one.id === part) || {}).heading || '',
     textOf: (found, part) => part === 'opening' ? found.opening || '' : part === 'title'
       ? found.title || '' : (list(found.sections).find((one) => one.id === part) || {}).text || '',
-    nameOf: (found, part) => part,
+    nameOf: (found, part) => part === 'opening' ? (found.whole ? 'Whole file' : 'Opening')
+      : (list(found.sections).find((one) => one.id === part) || {}).heading || 'this section',
     single: (part) => part === 'title',
     noted: (found) => deskOurs() && !found.readonly && !found.whole && found.kind !== 'blueprint',
   },
@@ -189,6 +205,108 @@ const selectDeskPart = deskKit.selected;
 deskKit.selected = (held, part, input) => {
   if (held.view.kind !== 'blueprint' && !held.view.whole) selectDeskPart(held, part, input);
 };
+
+// A pending edit keeps the revision of the text the person actually saw. Job polling
+// may replace the card view, but must never rebase text whose save was refused.
+const flushDeskPart = deskKit.flush;
+deskKit.flush = (held) => held.recovered ? Promise.resolve() : flushDeskPart(held);
+const typeDeskPart = deskKit.typed;
+deskKit.typed = (held, part, text) => {
+  held.editSeen = held.editSeen || {};
+  if (held.editSeen[part] === undefined) held.editSeen[part] = held.view.revision;
+  held.recovered = false;
+  typeDeskPart(held, part, text);
+  keepDeskRecovery(deskItem(held.id).path);
+};
+
+const RECOVERY_PREFIX = 'training-studio-unsaved:';
+function recoveryKey(path) { return RECOVERY_PREFIX + encodeURIComponent(path); }
+function readDeskRecovery(path) {
+  try {
+    const found = JSON.parse(window.localStorage.getItem(recoveryKey(path)) || '[]');
+    return list(found).filter((edit) => edit && typeof edit.name === 'string'
+      && typeof edit.part === 'string' && typeof edit.text === 'string'
+      && Number.isInteger(edit.seen) && typeof edit.session === 'string');
+  } catch (_) { return []; }
+}
+function pendingDeskEdits(path) {
+  const held = DESK.held[path];
+  const edits = (held.recovery || []).filter((edit) => !held.materials[edit.name]);
+  for (const material of Object.values(held.materials)) {
+    for (const [part, pending] of Object.entries(material.pending)) edits.push({
+      ...deskItem(material.id), part, text: pending.text,
+      seen: material.editSeen?.[part] ?? material.view.revision, session: material.session });
+  }
+  return edits;
+}
+function keepDeskRecovery(path) {
+  try {
+    const edits = pendingDeskEdits(path);
+    if (edits.length) window.localStorage.setItem(recoveryKey(path), JSON.stringify(edits));
+    else window.localStorage.removeItem(recoveryKey(path));
+    return true;
+  } catch (_) { return false; }
+}
+function recoverDeskMaterial(path, material) {
+  const name = deskItem(material.id).name;
+  for (const edit of deskHeld(path).recovery.filter((edit) => edit.name === name)) {
+    material.pending[edit.part] = { text: edit.text };
+    material.editSeen = { ...material.editSeen, [edit.part]: edit.seen };
+    material.session = edit.session;
+    material.recovered = true;
+    material.saved = 'Recovered unsaved text. Review it before saving.';
+  }
+}
+function smallDeskSave(body) {
+  // Fetch keepalive has a 64 KiB shared queue. Large edits remain in browser recovery.
+  return new TextEncoder().encode(JSON.stringify(body)).length <= 60000;
+}
+
+// Start every pending write during pagehide itself, not after awaiting another request.
+// Unacknowledged text stays in browser recovery, including conflicts, network failures,
+// keepalive queue overflow and edits too large for the browser's keepalive allowance.
+function leaveDesk(path) {
+  const held = DESK.held[path];
+  if (!held) return;
+  keepDeskRecovery(path);
+  const edits = pendingDeskEdits(path);
+  const requests = edits.map((edit) => {
+    const material = held.materials[edit.name];
+    if (!material || material.recovered) return Promise.reject(
+      new Error('Review recovered text before saving it.'));
+    if (material?.pending[edit.part]?.timer) clearTimeout(material.pending[edit.part].timer);
+    const body = { ...edit, path };
+    if (!smallDeskSave(body)) return Promise.reject(new Error('This edit is too large to save while closing.'));
+    return send('drafts/save', body, { keepalive: true }).then((answer) => {
+      if (material && material.pending[edit.part]?.text === edit.text) {
+        delete material.pending[edit.part];
+        if (material.editSeen) delete material.editSeen[edit.part];
+        material.view = answer;
+        material.saved = 'Saved.';
+      }
+      keepDeskRecovery(path);
+    });
+  });
+  return Promise.allSettled(requests).then(async (results) => {
+    if (results.some((one) => one.status === 'rejected') || pendingDeskEdits(path).length) {
+      held.said = 'Some text could not be saved. It is kept in this browser; return to this training to save it.';
+      if (!keepDeskRecovery(path)) held.said = 'Some text could not be saved or kept in this browser. Keep this page open and copy your text.';
+      if (view.path === path && view.screen === 'run') paintDesk(false);
+      return;
+    }
+    try { await send('drafts/share', { path }, { keepalive: true }); }
+    catch (_) { held.said = 'Your text was saved, but sharing did not finish.'; }
+  });
+}
+
+async function stopDeskChange(material, job, control) {
+  control.disabled = true;
+  try {
+    material.view = await send('drafts/stop', { path: deskItem(material.id).path, job });
+    deskMaterialChanged(material);
+  } catch (error) { deskHeld(view.path).said = error.message; paintDesk(false); }
+  finally { control.disabled = false; }
+}
 
 // --- the start ----------------------------------------------------------------------------
 
@@ -478,8 +596,11 @@ async function loadDeskMaterials(path, held, found) {
               || heldMaterial.stale) return;
           if (JSON.stringify(heldMaterial.view) !== JSON.stringify(material)) held.drawn = '';
           heldMaterial.view = material;
-        } else held.materials[one.name] = { id: JSON.stringify([path, one.name]), view: material,
+        } else {
+          held.materials[one.name] = { id: JSON.stringify([path, one.name]), view: material,
           pending: {}, notes: {}, session: String(Date.now()) + Math.random(), tab: 'draft' };
+          recoverDeskMaterial(path, held.materials[one.name]);
+        }
       } catch (_) { /* A material still being written has no editor yet. */ }
     }));
 }
@@ -581,6 +702,16 @@ function deskCard(found) {
   }
   if (actions.includes('download')) bar.append(downloadButton(found));
   const material = deskHeld(view.path).materials[found.name];
+  if (material && found.kind === 'document' && deskOurs() && !material.view.readonly) {
+    const menu = make('details', 'menu'); menu.dataset.key = 'whole-menu ' + found.name;
+    const again = capsule('Write the whole guide again', 'quiet', () => {
+      menu.open = false;
+      return deskKit.job(material, again, 'drafts/write-whole', {});
+    });
+    again.disabled = !!material.view.working;
+    bar.append(add(menu, make('summary', 'button button-quiet', 'Guide actions'),
+      add(make('div', 'menu-list'), again)));
+  }
   const editing = material ? materialParts(material, found) : null;
   add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
     checkedPart(found.checks), bar.childNodes.length ? bar : null);
@@ -595,6 +726,15 @@ function materialParts(held, found) {
   held.status = status;
   add(area, status, deskKit.selectionBar(held), held.view.readonly
     ? make('p', 'quiet', held.view.readonly) : null);
+  if (deskOurs() && !held.view.readonly) area.append(materialNote(held, found));
+  if (held.recovered && deskOurs() && !held.view.readonly) {
+    const save = capsule('Save recovered text', 'quiet', async () => {
+      held.recovered = false;
+      await deskKit.flush(held);
+      deskMaterialChanged(held);
+    });
+    area.append(save);
+  }
   if (held.view.opening || held.view.whole) area.append(materialPart(held, 'opening'));
   for (const section of list(held.view.sections)) {
     if (section.locked) {
@@ -602,7 +742,6 @@ function materialParts(held, found) {
         make('p', 'quiet', 'Kept from the findings cited.'), make('p', 'desk-plain', section.text)));
     } else area.append(materialPart(held, section.id));
   }
-  if (deskOurs() && !held.view.readonly) area.append(materialNote(held, found));
   if (found.kind === 'yoodli') {
     for (const field of list(held.view.fields)) {
       const title = list(field.heading).join(' / ');
@@ -616,6 +755,8 @@ function materialParts(held, found) {
   if (job) {
     const checks = make('div', 'card');
     add(checks, make('h2', 'card-title', 'Checked for you'));
+    if (job.chain && job.total) checks.append(make('p', '',
+      Math.min(job.index + 1, job.total) + ' of ' + job.total + ' sections'));
     if (job.says) checks.append(make('p', '', job.says));
     if (job.error) checks.append(make('p', 'notice', job.error));
     const flags = Array.isArray(job.checks) ? job.checks : job.checks ? [job.checks] : [];
@@ -631,7 +772,8 @@ function materialParts(held, found) {
       if (working || ['stopped', 'failed'].includes(job.status) || job.applied === false) {
         const route = working ? 'stop' : 'retry';
         const go = capsule(working ? 'Stop change' : 'Retry change', 'quiet', () =>
-          deskKit.job(held, go, 'drafts/' + route, { job: job.id }));
+          working ? stopDeskChange(held, job.id, go)
+            : deskKit.job(held, go, 'drafts/' + route, { job: job.id }));
         checks.append(go);
       }
     }
@@ -640,7 +782,7 @@ function materialParts(held, found) {
   const problem = deskKit.problem(held);
   if (problem) area.append(problem);
   if (held.stale) deskKit.stale(held);
-  deskKit.watch(held);
+  if (!held.recovered) deskKit.watch(held);
   return area;
 }
 

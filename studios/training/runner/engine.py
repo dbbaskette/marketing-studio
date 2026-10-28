@@ -4304,7 +4304,7 @@ class Engine(Reviewing):
                                error=pipeline.why_not(handed, outcome.detail), settled_at=home.now())
                 else:
                     def apply():
-                        via = 'rewrite' if job['kind'] in ('section', 'write-again', 'update', 'layout') else job['kind']
+                        via = 'rewrite' if job['kind'] in ('section', 'write-again', 'update', 'layout', 'write-whole') else job['kind']
                         if job['part'] == 'whole':
                             before = draft_jobs.file_text(root, job['name'])
                             if basis.fingerprint(before) != job['basis']:
