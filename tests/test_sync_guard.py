@@ -87,6 +87,41 @@ class SyncGuardTests(unittest.TestCase):
                     marker.unlink()
                     self.assertFalse(worker_in_progress(self.repo))
 
+    def test_linked_training_metadata_does_not_hide_real_nested_workers(self):
+        with tempfile.TemporaryDirectory() as outside:
+            metadata = Path(outside)
+            (metadata / 'run.json').write_text(json.dumps({
+                'schema': 1, 'steps': {}, 'agent': 'test'}))
+            (metadata / 'session.json').write_text(json.dumps({
+                'schema': 1, 'id': 'training', 'title': 'Synthetic training',
+                'levels': [], 'stage': 'intake', 'sizing': {}, 'settings': {
+                    'deck_target': None, 'brand': None, 'brief_kind': 'product', 'stages': []},
+                'unavailable': {}, 'pins': {}, 'artifacts': {}, 'exports': {},
+                'decisions': [], 'events': []}))
+            container = self.repo / 'container'
+            container.mkdir()
+            (container / '.training-studio').symlink_to(metadata, target_is_directory=True)
+
+            def snapshot(root):
+                return {str(path.relative_to(root)): (
+                    ('link', str(path.readlink())) if path.is_symlink() else
+                    ('directory',) if path.is_dir() else ('file', path.read_bytes()))
+                    for path in root.rglob('*')}
+
+            for cache in ('work', 'sources'):
+                for shape in ('deck/work/step.lock', 'training/.training-studio/step.lock',
+                              '.blog-runs/one.json'):
+                    with self.subTest(cache=cache, shape=shape):
+                        marker = container / cache / 'nested' / shape
+                        marker.parent.mkdir(parents=True, exist_ok=True)
+                        marker.write_text('{"status":"working"}' if marker.suffix == '.json'
+                                          else 'active step')
+                        before = snapshot(self.repo), snapshot(metadata)
+                        self.assertTrue(worker_in_progress(self.repo))
+                        self.assertEqual((snapshot(self.repo), snapshot(metadata)), before)
+                        marker.unlink()
+                        self.assertFalse(worker_in_progress(self.repo))
+
     def test_notice_explains_recovery_after_stop_or_interruption(self):
         self.assertIn('stopped', SYNC_WAIT.lower())
         self.assertIn('interrupted', SYNC_WAIT.lower())

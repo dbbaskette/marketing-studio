@@ -53,8 +53,13 @@ def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
 
     def small_record(path):
         try:
-            if path.is_symlink():
-                return None
+            # Metadata reached through a link cannot prove this folder owns caches.
+            # Stop at the scanned root; ancestors outside it are not scan evidence.
+            for candidate in (path, *path.parents):
+                if candidate.is_symlink():
+                    return None
+                if candidate == repo:
+                    break
             with path.open('rb') as handle:
                 text = handle.read(1_000_001)
             return json.loads(text) if len(text) <= 1_000_000 else None
