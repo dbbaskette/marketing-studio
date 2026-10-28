@@ -48,6 +48,20 @@ def readonly(engine, root, name):
     return None
 
 
+def browser_offset(text, offset):
+    """Translate a UTF-16 selection offset to a Python index, only at character boundaries."""
+    if type(offset) is not int or offset < 0:
+        return None
+    units = 0
+    for index, char in enumerate(text):
+        if units == offset:
+            return index
+        units += 2 if ord(char) > 0xffff else 1
+        if units > offset:
+            return None
+    return len(text) if units == offset else None
+
+
 def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None,
           passage=None, start=None):
     """Validate and persist a request. Waking schedules work; the caller never calls a provider."""
@@ -111,7 +125,8 @@ def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None
         if kind == 'selection':
             if action not in (*prompts.ACTIONS, 'ask') or not isinstance(passage, str) or not passage:
                 raise workspace.WorkspaceError('Choose a passage and a listed change.')
-            if type(start) is not int or start < 0 or text[start:start + len(passage)] != passage:
+            start = browser_offset(text, start)
+            if start is None or text[start:start + len(passage)] != passage:
                 raise workspace.WorkspaceError('Select the passage again in the current text.')
         job = {'id': secrets.token_hex(6), 'kind': kind, 'name': name, 'part': part,
                'note': note or '', 'action': action, 'passage': passage, 'selection': passage,

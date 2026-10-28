@@ -154,6 +154,32 @@ class DraftJobTests(DeckCase):
         self.assertEqual(self.card(root)['sections'][0]['text'], 'one phrase; short.')
         self.assertEqual(self.saves(root)[-1]['via'], 'selection')
 
+    def test_browser_selection_after_non_bmp_replaces_the_chosen_repeat(self):
+        root = self.desk()
+        card = self.card(root)
+        part = card['sections'][0]['id']
+        self.engine.draft_save(root, self.NAME, part, card['revision'],
+                               '😀 one phrase; one phrase [1].')
+        self.workers.then('part', lambda tools, job: tools.submit_part('short'))
+        card = self.card(root)
+        self.ask(root, 'selection', part=part, seen=card['revision'], action='shorten',
+                 passage='one phrase', start=15)
+        self.assertEqual(self.card(root)['sections'][0]['text'], '😀 one phrase; short [1].')
+        self.assertEqual(self.last(root)['start'], 14)
+
+    def test_browser_selection_rejects_offsets_inside_or_past_non_bmp(self):
+        root = self.desk()
+        card = self.card(root)
+        part = card['sections'][0]['id']
+        self.engine.draft_save(root, self.NAME, part, card['revision'], '😀 phrase [1].')
+        card = self.card(root)
+        for start in (1, 2, 99):
+            with self.subTest(start=start), self.assertRaisesRegex(
+                    WorkspaceError, 'Select the passage again'):
+                self.ask(root, 'selection', part=part, seen=card['revision'], action='shorten',
+                         passage='phrase', start=start)
+        self.assertEqual(self.record(root)['drafts']['jobs'], [])
+
     def test_selection_does_not_follow_a_passage_in_a_changed_part(self):
         root = self.desk()
         card = self.card(root)
