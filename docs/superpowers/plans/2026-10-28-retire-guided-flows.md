@@ -1,0 +1,259 @@
+# Retiring guided flows Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Start and edit desk work in conversation, explicitly migrate eligible unfinished work, and retire current gated creation while preserving supported saved formats.
+
+**Architecture:** Reuse each Studio's desk domain operations and locks. Add read-only inventory completeness and small conversation/migration adapters; retain compatibility dispatch where format evidence prevents removal.
+
+**Tech Stack:** Python 3.11+, standard library, existing JavaScript/CSS, unittest and scripted companions.
+
+**Spec:** [Retire guided flows](../specs/2026-10-28-retire-guided-flows-design.md).
+
+## Global Constraints
+
+- Use full product names; Python 3.11 or newer, standard library only, no frontend build.
+- Marketing Studio owns shared settings and launching; each Studio remains independently runnable.
+- Use the existing studios-config file and adjacent lock; preserve unrelated values and conflicting-edit guards. Installation folders remain under one Save in Shared settings.
+- Preserve original files, history, source and guidance pins, Google baselines, team ownership and readiness. No automatic migration, assistant installation or update, publishing or delivery.
+- Only the person approves. Automatic continuation is recorded as continuation, never person approval; new or changed materials are not Ready.
+- Follow docs/design/golden-gate.md: material only on navigation, toolbars and transient controls; opaque forms and reading surfaces, one primary action, a lede, 44px controls, no phone overflow.
+- Person-facing text never says artifact, stale or lineage, and never exposes hashes.
+- Verification uses disposable settings, workspaces, HOME, Git identities and processes. Never launch real Marketing Studio or Studio applications or provider, Google or image jobs. Fake scripted servers are allowed. Do not change workflow files.
+- Public issues, PRs and docs contain no credentials, private content or machine-specific operational records.
+
+## Review Focus
+
+- Missing, unreadable, orphaned and unsupported saved records must prevent false unused claims (Task 1).
+- A second CLI/page process or teammate changing the input must invalidate a chat save or migration preview (Tasks 2–5).
+- Conversation creation must not wake a nested assistant or silently broaden a focused request (Tasks 2–4).
+- Migration must preserve real approval history and Google baselines without making unfinished work Ready (Task 5).
+- Old installed formats and saved review defaults must remain readable after controls disappear (Task 6).
+
+## Delivery and verification protocol
+
+Tasks 1–6 are sequential independently mergeable PRs; split a task by Studio when
+its review surface requires it. Planning ships with Task 1. Task 7 verifies the
+combined frozen result. Every implementation is followed by an independent task
+review; every PR by a broad fresh review. Fix Important/Critical findings with
+meaningful tests. Use bounded SDD fix loops and the private per-plan ledger.
+
+Before every merge: `git fetch origin`, `git merge origin/main`, rerun checks
+affected by integration, `git push`, inspect exact `headRefOid` and required checks,
+then `gh pr merge --merge --match-head-commit <verified-head>` with normal protection.
+If checks are pending use the parent thread's PR watcher and resume on notification.
+Link each PR to both owning threads immediately. Do not delete any worktree or branch.
+
+Commands below use `PYTHON` for an available Python >=3.11. For each test invocation,
+use a short disposable TMPDIR and HOME, with temporary Studio data/config settings
+as existing helpers require. Never set global Git author/committer environment.
+Use modest concurrency (`--jobs 2`). Private logs retain the exact interpreter,
+commands, outputs, heads, review rounds and rulings; public docs describe synthetic
+evidence only. Source must be frozen while full per-class suites run.
+
+### Task 1: Complete read-only inventory across all Studios
+
+**Files:** Modify `core/studio_core/saved_work.py`, both deck `runner/engine.py`
+scanners and `runner/studio.py`; create
+`studios/blog/skills/blog-studio/scripts/saved_work.py`; wire Blog Studio's
+`scripts/studio.py`; modify root `tests/test_saved_work.py`, deck
+`tests/test_engine.py` / `tests/test_runner_engine.py`, `tests/test_runner_studio.py`;
+create Blog Studio `tests/test_saved_work.py`.
+
+**Interfaces:** Extend `report(ids: tuple, found: dict, *, scope: dict | None=None,
+issues: list | None=None, unknown: dict | None=None) -> dict`. Preserve existing
+keys and add schema/completeness/status per spec. Add
+`gated-flow` to PATHS. `Engine.saved_work(folders=()) -> dict` remains read-only.
+Blog Studio exposes `scan(root: Path, folders=()) -> dict` and
+`studio.py --root PATH saved-work [--folder PATH]` following its parser conventions.
+
+- [ ] Write tests for a known dependency, clean local scope, explicit missing root,
+  corrupt/unsupported record, enumeration failure, excluded symlink, orphan and
+  recoverable deleted Blog Studio record. Assert no files/bytes changed, no expiry,
+  no worker/network call, `complete == False` and no false unused on unknowns.
+- [ ] Run focused tests RED: root `PYTHONPATH=.:tests "$PYTHON" -m unittest test_saved_work -v`;
+  Blog Studio `PYTHONPATH=tests "$PYTHON" -m unittest test_saved_work -v`;
+  deck Studios `"$PYTHON" scripts/ci/run_tests.py --jobs 2` with the existing
+  scanner module names above as positional arguments.
+- [ ] Implement schema and enumeration using the existing readers, without
+  `catalog()` cleanup side effects or silently filtering unreadable candidates.
+- [ ] Run root saved-work and deck scanner/CLI tests plus Blog Studio inventory tests GREEN.
+- [ ] Self-review and commit `feat: inventory Marketing Studio saved-work dependencies completely`.
+
+### Task 2: Blog Studio conversation desk and parity
+
+**Files:** Blog Studio `scripts/desk.py`, `desk_jobs.py`, `desk_finish.py`,
+`studio.py`, `blog_runner.py`; create `scripts/desk_chat.py`; update
+`assets/management/desk.js`, entry guidance and relevant tests; version/manifest.
+
+**Interfaces:** `desk_chat.create(root, data) -> dict`, `read(root, ident) -> dict`,
+`save(root, ident, seen, part, text) -> dict` reuse locked desk functions. Expose
+`studio.py --root PATH desk create --input FILE`, `desk show --article ID`,
+`desk save --article ID --input FILE`; input `-` means stdin. Creation never
+calls desk job scheduling; current harness submits content through checked saves. Also expose
+`context(root, ident, target) -> dict` and `submit(root, ident, request) -> dict`
+as `desk context` / `desk submit --input FILE`, using the envelope below.
+
+- [ ] Test conversation creation from supplied draft and scoped topic/outline state,
+  checked saves/history, same-part conflict, worker/team refusal, no nested jobs,
+  saved author/brand context, Proofread notes/example checks, GEO preview/apply.
+- [ ] Run `PYTHONPATH=tests "$PYTHON" -m unittest test_desk_chat test_desk_finish test_desk_start -v` RED.
+- [ ] Add the CLI adapter, retain focused scope, pin defaults at creation, carry brand
+  through desk context, port safeguards to Proofread and GEO to Finishing.
+- [ ] Replace public gated `run create` with an actionable desk-command refusal;
+  saved-run operations remain. Update guidance/runtime floors with tested commands.
+- [ ] Run focused tests, package validator and `node scripts/ci/check-management.cjs` GREEN; commit.
+
+### Task 3: Presentation Studio conversation desk
+
+**Files:** `studios/presentation/runner/studio.py`, `engine.py`, `decks.py`,
+`desk_actions.py`; create `runner/desk_chat.py`, `tests/test_desk_chat.py`;
+update SKILL.md, desk/workspace/route guidance, VERSION and manifest.
+
+**Interfaces:** `desk_chat.create(engine, form, uploads=None) -> dict`,
+`show(engine, path) -> dict`, `save(engine, path, request) -> dict` exposed as
+`studio desk create --input FILE`, `studio desk show --folder PATH`,
+`studio desk save --folder PATH --input FILE`. Add explicit conversation execution
+mode to creation; runner scheduling and recovery exclude that mode until explicit handoff.
+Also add `context(engine, path, target) -> dict`, `submit(engine, path, request) -> dict`,
+`handoff(engine, path, expected_basis, scope) -> dict`, exposed under `studio desk`.
+`context` returns `{target, expected_basis, scope, inputs, requirements}`; submit
+consumes `{kind, target, expected_basis, payload}`. Kinds are `text`, `outline`,
+`research`, `drawing`, and `part`; each dispatches to the existing Studio checker
+and storage, never arbitrary paths. A missing target still has a basis over its
+pinned inputs and requested scope. Submission records dependencies/provenance,
+never approval. Task 2 uses the same envelope with Blog Studio's supported kinds.
+
+Add `core/studio_core/process_lock.py: ProcessRLock(path)` where `path` is a
+zero-argument callable returning the current lock Path. It supports `with`,
+`acquire`, `release`, and `_is_owned` for existing store contracts. Acquire thread
+RLock then persistent OS process lock, bounded wait, reentrant per owning thread;
+release process lock at outermost exit. Lock location is the workspace's resolved
+Git directory / `studios-write.lock`, or product data / `studios-write.lock` when
+unconfigured. Wire both deck Engine.files instances and competing synchronization
+writers; validate lock call sites for mutations outside existing `with files`.
+Use the standard-library OS lock already used by studios-config. Tests belong in
+`tests/test_process_lock.py` and each engine's concurrent-write tests. Read-only
+inventory must remain lock-free. Task 4 consumes this shared contract.
+
+- [ ] Test idea/document/existing-deck creation, original preservation, no assistant
+  readiness or wake, no duplicate page pickup, checked outline/notes/word edits,
+  team and active-worker refusal, unchanged-section preservation and design answers.
+  Add a complete synthetic conversation from absent outline through usable checked
+  drawing, and reject an upstream change between context and submission. Add real
+  two-process competing writes and page recovery while conversation owns work.
+- [ ] Run `"$PYTHON" scripts/ci/run_tests.py --jobs 2 test_desk_chat` RED.
+- [ ] Reuse validated creation and desk actions with a no-worker execution branch;
+  do not bypass drawing/companion checks or delivery approvals. Support local uploads
+  without silently reading Google or broadening the requested work.
+- [ ] Update conversation guidance, runtime floor and version; run focused desk/CLI
+  suites and `"$PYTHON" skills/presentation-studio/scripts/validate_package.py` GREEN; commit.
+
+### Task 4: Training Studio conversation desk
+
+**Files:** `studios/training/runner/studio.py`, `engine.py`, `pipeline.py`,
+`drafts.py`; create `runner/desk_chat.py`, `tests/test_desk_chat.py`; update helper
+`training.py`, `workspace.py` only where shared write guards require it; guidance/version/manifest.
+
+**Interfaces:** Same `runner/desk_chat.py` signatures and `studio desk` CLI verbs as
+Task 3, using Training Studio forms/material identifiers and `draft_card/draft_save`.
+Existing `training.py desk` continues to serve the page. Add `context` and `submit`
+with the same envelope defined for Task 3. Current harness saves
+initial materials through checked domain submissions, never hand-editing session.json.
+
+- [ ] Test no-worker creation for requested levels/materials, focused work, checked
+  initial and subsequent text saves, holds and history, team/worker conflicts,
+  no Ready on acceptance, explicit design answers, no copies or delivery. Complete
+  a synthetic conversation from absent materials through checked usable outputs;
+  reject changed upstream inputs, and test page recovery leaves chat-owned work alone.
+- [ ] Run `"$PYTHON" scripts/ci/run_tests.py --jobs 2 test_desk_chat` RED.
+- [ ] Implement conversation execution and shared checked submissions; runner cannot
+  silently consume the conversation queue. Preserve citations, pins and Google baselines.
+- [ ] Add matrix rows 186–189 below, guidance/version floors; run focused tests and
+  `"$PYTHON" skills/training-studio/scripts/validate_package.py` GREEN; commit.
+
+### Task 5: Explicit guarded unfinished migration
+
+**Files:** Each Studio's `desk_chat.py` adapter; Blog Studio `desk.py`, deck
+`desk_actions.py`, Training Studio `drafts.py`/`engine.py`; each page routing/UI;
+create per-Studio `tests/test_desk_migration.py` and extend fake page journeys.
+
+**Interfaces:** Each adapter exposes `migration_preview(..., ident/path) -> dict`
+and `migrate(..., ident/path, expected: str) -> dict`. CLI verbs
+`desk migration-preview` and `desk migrate --expected TOKEN`; page offers
+**Open on the desk** with preview then apply. Tokens are opaque machine values,
+not displayed hashes. Existing finished adoption remains available. Add pure
+`prepare_migration(record, saved_inputs) -> dict` producing `{blockers, retained,
+writes}`; writes are a bounded Studio-defined set, not user-supplied paths. Store
+old approval/input records unchanged and desk interpretation separately. Apply
+under the process lock with rollback/recovery, including failure between session
+and run writes; assign conversation execution before registering migrated work.
+
+- [ ] Test interrupted stages with/without usable materials, unchanged file bytes,
+  original record/history preservation, real versus automatic approvals, Google
+  baselines, cancel, repeated apply, and rollback after a write failure.
+- [ ] Test preview invalidation by teammate, worker, content, source and record
+  changes, plus unsupported/missing data refusal leaving original flow usable.
+- [ ] Run per-Studio `PYTHONPATH=tests "$PYTHON" -m unittest test_desk_migration -v` RED; implement preview and atomic guarded
+  metadata changes using the Studio's existing write lock and ownership checks.
+- [ ] Add Training Studio matrix rows 190–193; run migration and finished-adoption
+  regressions plus desktop/phone fake journeys GREEN; commit per Studio if needed.
+
+### Task 6: Retire eligible entry points and document compatibility
+
+**Files:** `core/studio_core/setup_web/{index.html,app.js}`, `preferences.py`,
+`review_policy.py`, `shared_runner/setup.py`; each Studio's settings routes/UI,
+engine start guards, research stand-ins and relevant tests; current docs/guidance,
+versions/manifests; create `docs/saved-work-compatibility.md`.
+
+**Interfaces:** Existing saved policy/layout/research format readers stay supported.
+New starts cannot request gated flow. Remove review-level write controls/routes;
+unrelated settings Save preserves stored review values. Replace `LEGACY_RESEARCH`
+with synthesis for ordinary fixture starts; legacy fixtures load saved formats directly.
+
+- [ ] Test omitted controls preserve review/installation values under one Save,
+  conflicting settings edits still refuse, old saved runs still resume, no current
+  creation/guidance routes into gates, synthesis fixtures drive normal starts.
+- [ ] Run settings, policy, synthesis and legacy fixture tests RED; remove only
+  eligible controls/creation/fallback branches. For every deletion document caller
+  evidence, saved-format regression and replacement path; retain uncertain paths.
+- [ ] Document retained queue/layout/cover/gated compatibility and exact exit
+  criteria, local scan limits, migration commands, focused chat behavior and no-worker starts.
+- [ ] Run affected suites/journeys/validators GREEN, inspect guidance links and
+  person-facing text, update versions/runtime floors and commit.
+
+### Task 7: Frozen combined verification and closure
+
+**Files:** Only corrections justified by combined verification, with independent
+review; tracking issue and PR descriptions updated with safe final evidence.
+
+- [ ] Fetch and integrate latest origin/main before final verification. Freeze source.
+- [ ] Run root `PYTHONPATH=.:tests "$PYTHON" -m unittest discover -s tests -v`.
+- [ ] Run each Studio `"$PYTHON" scripts/ci/run_tests.py --jobs 2`; run each package
+  validator, Blog Studio `node scripts/ci/check-management.cjs`, and affected root
+  settings/management fake journeys. Run Ruff with the repository's existing rules.
+- [ ] Check Tart availability without installing it; use its shared runner when
+  available. Never run native-launch acceptance. Use T3 preview for desktop/phone
+  journeys on fake servers only; record fake/live interoperability limits.
+- [ ] Fresh most-capable final review of combined scope; one fix dispatch and one
+  scoped re-review, adjudicate remaining findings per SDD. Recheck integrated exact
+  heads and normal protected merges; list/link/unwatch all PRs before handoff.
+- [ ] Close the issue only when all authorized work is merged; report PR merge SHAs,
+  tests/skips, retained compatibility, rulings/costs and worktree cleanliness.
+
+## Training Studio state-transition matrix additions
+
+Canonical matrix currently ends at 185. Add these rows to
+`studios/training/docs/superpowers/plans/2026-10-12-training-studio-core-pipeline.md`
+with `test_row_NNN_*` tests. Rebase IDs if another merged change consumes them.
+
+| Row | Given | When | Then / test assertion |
+| --- | --- | --- | --- |
+| 186 | Explicit conversation start | Create requested scope | Desk run/session, conversation execution, no worker/copy/approval |
+| 187 | Unchanged conversation material | Checked save | History and input basis preserved, material Draft, dependents held |
+| 188 | Changed part, active worker or other driver | Chat submit | Refused without mutation |
+| 189 | Drawing-bound word proposal | Submit without/with explicit design answers | Missing answers refuse; accepted answers checked through existing drawing path |
+| 190 | Unfinished old work | Migration preview/cancel | Read-only, consequences and blockers reported |
+| 191 | Preview remains current | Apply migration | Desk metadata added, files/history/pins/baselines kept, no new Ready/work |
+| 192 | Ownership, worker or source changed | Apply old preview | Refused without mutation |
+| 193 | Applied migration or write failure | Repeat/apply fails | Idempotent or safe refusal; rollback preserves original usable work |
