@@ -539,6 +539,7 @@ def view(engine, root) -> dict:
 NO_PARTS = 'Only a guide, a brief or a plan is written in parts.'
 BRIEF_SHAPE = 'A brief keeps its eight numbered sections, in order.'
 LOCKED = 'Sources is kept from the findings cited. Change the references in the text instead.'
+UNCLOSED = 'Close the code block in this part.'
 SECTION_LINE = re.compile(r'## +(\S.*?)[ \t\r]*')
 BLANK_LINES = re.compile(r'(?:[ \t\r]*\n)*')
 NUMBERED_HEADING = re.compile(r'(\d+)\. (.+)')
@@ -594,14 +595,14 @@ def _cut(body: str, note: _Note | None) -> dict:
             'tail': rest[len(words):], 'ids': ids}
 
 
-def _starts(lines: list[str], code_too: bool) -> list[int]:
-    """The lines that start a section: each `## ` line outside fenced code, or in it too
-    when `code_too` (a brief's check reads every `## ` line)."""
-    outside = [True] * len(lines) if code_too else [free for _, free in parts.free(lines)]
-    return [at for at, line in enumerate(lines) if outside[at] and SECTION_LINE.fullmatch(line)]
+def _starts(lines: list[str], numbered: bool) -> list[int]:
+    """The lines that start a section, outside fenced code: each `## ` line, or for a brief
+    each `## N. Title` line, the only ones its check reads as sections."""
+    return [at for at, (line, outside) in enumerate(parts.free(lines)) if outside and (
+        checks.NUMBERED.match(line) if numbered else SECTION_LINE.fullmatch(line))]
 
 
-def _split(markdown: str, note: _Note | None, code_too: bool, locked) -> dict:
+def _split(markdown: str, note: _Note | None, numbered: bool, locked) -> dict:
     """A material's file as its opening and sections, each with how it was written around
     its words; `locked(heading)` says which section is not typed in."""
     lines = markdown.split('\n')
@@ -609,7 +610,7 @@ def _split(markdown: str, note: _Note | None, code_too: bool, locked) -> dict:
     for line in lines:
         offsets.append(at)
         at += len(line) + 1
-    starts = _starts(lines, code_too)
+    starts = _starts(lines, numbered)
     opening = _cut(markdown[:offsets[starts[0]] if starts else len(markdown)], None)
     draft = {'opening': opening['words'],
              'layout': {'lead': opening['lead'], 'tail': opening['tail'],
@@ -668,26 +669,52 @@ def _join(draft: dict, note: _Note | None) -> str:
 
 
 def _section_heading(text: str, level: int = 2) -> str:
-    """The marks of a `## ` heading a part holds outside code, which would start a section."""
+    """The marks of a `## ` line a part holds outside code, which would start a section."""
+    lines = text.replace('\r\n', '\n').split('\n')
+    if any(outside and SECTION_LINE.fullmatch(line) for line, outside in parts.free(lines)):
+        return '##'
     return parts.heading_in(text, 2)
+
+
+def _vet(part: str, text: str) -> None:
+    """Refuse a part that leaves a code block open: every heading after it would be read as
+    code the next time the file is split."""
+    fence = None
+    for line in text.replace('\r\n', '\n').split('\n'):
+        marker = parts.FENCE.match(line)
+        if marker and fence is None:
+            fence = marker.group(1)
+        elif marker and marker.group(1).startswith(fence[0] * len(fence)):
+            fence = None
+    if fence is not None:
+        raise ValueError(UNCLOSED)
+
+
+def _landed(draft: dict, before: str, text: str) -> str:
+    """A job's result as it lands: never in a locked part (Sources), which is kept from the
+    findings cited."""
+    if text.strip() != before.strip() and any(
+            section.get('locked') and section['text'] == before
+            for section in draft.get('sections') or ()):
+        raise ValueError(LOCKED)
+    return text
 
 
 def _sources(heading: str) -> bool:
     return heading.lower() == 'sources'
 
 
+def _brief_title(heading: str) -> str:
+    found = NUMBERED_HEADING.fullmatch(heading)
+    return found.group(2).strip().lower() if found else ''
+
+
 def _brief_fits(draft: dict, kind: str) -> bool:
-    """Whether a brief's sections are its kind's eight, numbered and in order."""
-    expected = checks.BRIEF_SECTIONS[kind]
-    sections = draft.get('sections') or []
-    if len(sections) != len(expected):
-        return False
-    for number, (section, title) in enumerate(zip(sections, expected, strict=True), 1):
-        found = NUMBERED_HEADING.fullmatch(section['heading'])
-        if not found or int(found.group(1)) != number \
-                or found.group(2).strip().lower() != title.lower():
-            return False
-    return True
+    """Whether a brief has its kind's eight sections, in order, as `checks.check_brief`
+    reads them: by title, other numbered sections between them allowed."""
+    expected = [title.lower() for title in checks.BRIEF_SECTIONS[kind]]
+    titles = [_brief_title(section['heading']) for section in draft.get('sections') or ()]
+    return [title for title in titles if title in expected] == expected
 
 
 def _brief_kind(draft: dict) -> str:
@@ -704,7 +731,7 @@ def _brief_kind(draft: dict) -> str:
 
 def _brief_split(markdown: str) -> dict:
     draft = _split(markdown, FINDINGS_NOTE, True,
-                   lambda heading: _sources(heading.partition('. ')[2].strip()))
+                   lambda heading: _brief_title(heading) == 'sources')
     draft['kind'] = _brief_kind(draft)
     if not _brief_fits(draft, draft['kind']):
         raise ValueError(BRIEF_SHAPE)
@@ -718,7 +745,8 @@ def _brief_join(draft: dict) -> str:
 
 
 def _brief_heading(text: str, level: int = 2) -> str:
-    """A brief's check reads every `## ` line as a section, in code too: a part holds none."""
+    """A brief's part holds no `## ` line at all, in code or not: its check would read a
+    numbered one as a section wherever it is."""
     return '##' if ANY_SECTION_LINE.search(text) else parts.heading_in(text, 2)
 
 
@@ -729,7 +757,7 @@ def GuideCodec() -> parts.Codec:
         fixed=('opening',), single=(), thing='draft', noun='section',
         split=lambda markdown: _split(markdown, COVERS_NOTE, False, _sources),
         join=lambda draft, after=(): _join(draft, COVERS_NOTE),
-        deepest=lambda draft: 2, heading_in=_section_heading)
+        deepest=lambda draft: 2, heading_in=_section_heading, vet=_vet, landed=_landed)
 
 
 def BriefCodec() -> parts.Codec:
@@ -738,7 +766,7 @@ def BriefCodec() -> parts.Codec:
     return parts.Codec(
         fixed=('opening',), single=(), thing='draft', noun='section', split=_brief_split,
         join=lambda draft, after=(): _brief_join(draft), deepest=lambda draft: 2,
-        heading_in=_brief_heading)
+        heading_in=_brief_heading, vet=_vet, landed=_landed)
 
 
 def PlanCodec() -> parts.Codec:
@@ -747,7 +775,7 @@ def PlanCodec() -> parts.Codec:
         fixed=('opening',), single=(), thing='draft', noun='section',
         split=lambda markdown: _split(markdown, None, False, lambda heading: False),
         join=lambda draft, after=(): _join(draft, None),
-        deepest=lambda draft: 2, heading_in=_section_heading)
+        deepest=lambda draft: 2, heading_in=_section_heading, vet=_vet, landed=_landed)
 
 
 CODECS = {'document': GuideCodec(), 'brief': BriefCodec(), 'blueprint': PlanCodec()}
@@ -901,6 +929,7 @@ class TrainingDesk(desk_record.Desk):
         return current(self.store, self.codec, ident)
 
     def save(self, ident, seen, part, text, source='save', session=None):
+        require_held(self.store)   # before the kind of change is set on the store
         if source not in workspace.VIA:
             raise ValueError(workspace.NO_VIA)
         if part not in self.codec.fixed and (

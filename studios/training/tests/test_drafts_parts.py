@@ -9,6 +9,7 @@ import unittest
 
 import helpers
 from helpers import EXAMPLES, TrainingCase
+import checks
 import workspace
 from workspace import WorkspaceError
 
@@ -18,6 +19,7 @@ from runner import drafts
 from studio_core.drafting.store import HELD
 
 SHAPE = 'A brief keeps its eight numbered sections, in order.'
+UNCLOSED = 'Close the code block in this part.'
 LOCKED = 'Sources is kept from the findings cited. Change the references in the text instead.'
 EXAMPLE_FILES = (('document', 'document.md'), ('brief', 'product-brief.md'),
                  ('brief', 'competitive-brief.md'), ('blueprint', 'blueprint.md'))
@@ -143,6 +145,50 @@ class CodecTests(unittest.TestCase):
         self.assertTrue(codec.breaks('```\n## 2. Fenced, still read as a section\n```'),
                         "the brief's check reads every ## line as a section")
         self.assertFalse(codec.breaks('Words.\n### A heading inside'))
+
+    def test_a_brief_that_passes_its_check_splits_and_joins(self):
+        codec = drafts.CODECS['brief']
+        text = example('product-brief.md').replace(
+            '\n## 4. Limitations', '\n## Notes\n\nMore.\n\n## 4. Limitations').replace(
+            '\n## 8. Sources', '\n## 7b. Unknowns\n\nNone.\n\n## 8. Sources').replace(
+            '## 5. Qualification', '## 6. Qualification') + '\n## 9. Appendix\n\nExtra.\n'
+        self.assertEqual(checks.check_brief(text, 'product', None)[0]['status'], 'passed')
+        draft = codec.split(text)
+        self.assertEqual(codec.join(draft), text)
+        self.assertIn('## Notes\n\nMore.', headed(draft, '3. Capabilities')['text'],
+                      'a ## line the check does not read stays in its section')
+        self.assertTrue(headed(draft, '8. Sources')['locked'])
+        fenced = example('product-brief.md').replace(
+            '\n## 4. Limitations', '\n```\n## 4. Limitations\n```\n\n## 4. Limitations', 1)
+        self.assertEqual(codec.join(codec.split(fenced)), fenced)
+
+    def test_a_section_line_in_a_part_is_refused(self):
+        for name in ('document', 'blueprint'):
+            codec = drafts.CODECS[name]
+            self.assertTrue(codec.breaks('Words.\n## #tag'), name)
+            self.assertFalse(codec.breaks('```\n## #tag\n```'), name)
+
+    def test_a_job_never_lands_in_sources(self):
+        from studio_core.drafting import basis
+        codec = drafts.CODECS['document']
+        draft = codec.split(example('document.md'))
+        sources = headed(draft, 'Sources')
+        with self.assertRaisesRegex(ValueError, f'^{LOCKED}$'):
+            basis.land_part(draft, {'part': sources['id'],
+                                    'basis': basis.fingerprint(sources['text'])},
+                            '1. A source of its own', codec)
+        summary = headed(draft, 'Summary')
+        landed = basis.land_part(draft, {'part': summary['id'],
+                                         'basis': basis.fingerprint(summary['text'])},
+                                 'A new summary.', codec)
+        self.assertEqual(landed[2], 'A new summary.')
+
+    def test_every_codec_refuses_an_unclosed_code_block(self):
+        for name, codec in drafts.CODECS.items():
+            with self.subTest(name=name):
+                with self.assertRaisesRegex(ValueError, f'^{UNCLOSED}$'):
+                    codec.vet('opening', 'Words.\n~~~\ncode')
+                codec.vet('opening', 'Words.\n~~~\ncode\n~~~\n')
 
     def test_the_plan_has_nothing_locked(self):
         draft = drafts.CODECS['blueprint'].split(example('blueprint.md'))
@@ -288,8 +334,9 @@ class StoreTests(DeskCase):
             restored = desk.restore('document', saved['revision'], part, 0)
         self.assertIn('- A rolling restart replaces instances in batches',
                       (self.root / 'document.md').read_text(encoding='utf-8'))
-        event = workspace.load(self.root)['events'][-2]
-        self.assertEqual((event['event'], event['via']), ('save', 'restore'))
+        event = [event for event in workspace.load(self.root)['events']
+                 if event['event'] == 'save'][-1]
+        self.assertEqual(event['via'], 'restore')
         self.assertEqual(restored['revision'], saved['revision'] + 1)
 
     def test_a_form_older_than_the_file_is_told_to_reload(self):
@@ -314,6 +361,38 @@ class StoreTests(DeskCase):
         with self.assertRaisesRegex(RuntimeError, f'^{HELD}$'):
             self.store.write('document', draft, [part])
         self.assertEqual((self.root / 'document.md').read_bytes(), before)
+        self.assertIsNone(self.store._making, 'a refused save leaves no kind of change behind')
+
+    def test_a_held_material_is_saved_and_left_held(self):
+        self.write('blueprint.md', example('blueprint.md') + '\nA changed plan.\n')
+        workspace.save(self.root, 'blueprint', built=True)
+        workspace.accept_desk(self.root, 'blueprint')
+        state = workspace.statuses(self.root, workspace.load(self.root))
+        self.assertEqual(state['document'], 'stale')
+        approved = workspace.load(self.root)['artifacts']['document']['approved']
+        desk = drafts.TrainingDesk(self.store, self.codec)
+        draft = self.current()
+        with self.engine.files:
+            desk.save('document', draft['revision'], headed(draft, 'Summary')['id'],
+                      'Typed while held.')
+        self.assertIn('Typed while held.', (self.root / 'document.md').read_text())
+        session = workspace.load(self.root)
+        self.assertEqual(session['artifacts']['document']['approved'], approved,
+                         'not accepted on the desk: an edit never clears what is out of date')
+        self.assertEqual(workspace.statuses(self.root, session)['document'], 'stale')
+
+    def test_a_part_closes_its_code_blocks(self):
+        desk = drafts.TrainingDesk(self.store, self.codec)
+        draft = self.current()
+        part = headed(draft, 'Answer key')['id']
+        before = (self.root / 'document.md').read_bytes()
+        with self.engine.files, self.assertRaisesRegex(ValueError, f'^{UNCLOSED}$'):
+            desk.save('document', draft['revision'], part, 'Run this:\n\n```\nrestart app')
+        self.assertEqual((self.root / 'document.md').read_bytes(), before,
+                         'the headings after it, Sources among them, stay sections')
+        with self.engine.files:
+            desk.save('document', draft['revision'], part, 'Run this:\n\n```\nrestart\n```')
+        self.assertEqual(len(self.current()['sections']), len(draft['sections']))
 
     def test_the_sources_part_cannot_be_typed_in(self):
         desk = drafts.TrainingDesk(self.store, self.codec)
