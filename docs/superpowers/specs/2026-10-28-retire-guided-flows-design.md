@@ -192,6 +192,14 @@ uploads. Submissions never approve. Compatible setup/join and current locked wri
 the workspace floor; already configured old runtimes may ignore it and must be closed
 before migration. No retroactive old-process exclusion or automatic update is claimed.
 
+Ready requires the complete current preview set and every recorded image digest. Selected
+changes uses read-only native preservation compare and current-object inspection against
+the retained patch. Where an older format lacks historical deck/image hashes, context
+discloses that missing proof and requires a separate explicit acknowledgment, default
+unchecked, plus the person's response bound to current material bytes and check results.
+This records a current validation/approval fact, never historical equality or invented
+old hashes. Existing hashes remain required; an unavailable checker refuses Ready.
+
 ## Retirement and compatibility evidence
 
 After replacements work, remove current gated-create entry points and review-level

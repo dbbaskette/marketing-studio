@@ -478,6 +478,107 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
 
 
 class ReadyTests(runner_support.DeskCase):
+    def selected_migrated(self):
+        from test_desk_words import planned
+        self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
+        root = self.existing_deck('automatic', 'selected', selected='Shorten slide 2')
+        preview = desk_chat.migration_preview(self.engine, root)
+        desk_chat.migrate(self.engine, root, preview['expected'])
+        return root
+
+    def test_migrated_selected_ready_checks_current_copy_and_requires_explicit_ack(self):
+        root = self.selected_migrated()
+        before = MigrationTests.snapshot(self, root)
+        self.assertNotIn('deckSha256', build.read_state(root))
+        context = desk_chat.context(self.engine, root, 'ready')
+        required = context['requirements']
+        self.assertIn('historical', required['historical_proof'].lower())
+        self.assertFalse(required['seen']['historical_proof_ack'])
+        request = {'expected_basis': context['expected_basis'], 'seen': required['seen'],
+                   'response': 'I inspected the current copy and acknowledge the missing historical byte proof.'}
+        with self.assertRaises(WorkspaceError):
+            desk_chat.ready(self.engine, root, request)
+        with self.assertRaises(WorkspaceError):
+            desk_chat.ready(self.engine, root, {**request, 'seen': {**request['seen'], 'historical_proof_ack': 1}})
+        request['seen'] = {**request['seen'], 'historical_proof_ack': True}
+        with mock.patch.object(self.engine, 'wake', side_effect=AssertionError('wake')), \
+                mock.patch.object(build, 'render', side_effect=AssertionError('render')):
+            shown = desk_chat.ready(self.engine, root, request)
+        self.assertTrue(shown['desk']['ready'])
+        self.assertIsNone(shown['deliver'])
+        for name, data in before.items():
+            if name != 'desk/migration.json':
+                self.assertEqual((root / name).read_bytes(), data, name)
+        with mock.patch.object(self.engine, 'slides', side_effect=AssertionError('polling checker')):
+            self.assertTrue(self.engine.view(root)['desk']['ready'])
+        record = decks.read_run(root)
+        self.assertTrue(record['conversation_ready']['validation']['preservation']['preserved'])
+        self.assertTrue(record['conversation_ready']['validation']['patch_matches'])
+
+    def test_selected_refuses_changed_native_copy_outside_and_inside_allowed_patch(self):
+        from stand_ins.slides import inventory, _pack
+        root = self.selected_migrated()
+        deck = root / build.read_state(root)['deck']
+        original = deck.read_bytes()
+        for slide, obj, run in ((0, 0, 0), (1, 1, 1)):
+            current = inventory(deck)
+            current['slides'][slide]['objects'][obj]['runs'][run] = 'Not the retained request'
+            deck.unlink()
+            _pack(deck, current)
+            before = MigrationTests.snapshot(self, root)
+            with self.assertRaises(WorkspaceError):
+                self.request(root)
+            self.assertEqual(MigrationTests.snapshot(self, root), before)
+            deck.write_bytes(original)
+
+    def test_selected_missing_preview_plan_checker_and_changed_basis_refuse(self):
+        from runner.steps import existing
+        root = self.selected_migrated()
+        for path in (root / existing.PLAN, root / existing.ALLOW, next(build.shots(root).glob('*.png'))):
+            original = path.read_bytes()
+            path.unlink()
+            before = MigrationTests.snapshot(self, root)
+            with self.assertRaises(WorkspaceError):
+                self.request(root)
+            self.assertEqual(MigrationTests.snapshot(self, root), before)
+            path.write_bytes(original)
+        for report in ({}, {'preserved': False, 'failures': ['changed']}, {'preserved': True, 'failures': None}):
+            with mock.patch.object(self.engine, 'slides') as slides:
+                slides.return_value.pptx_compare.return_value = report
+                with self.assertRaises(WorkspaceError):
+                    self.request(root)
+                slides.return_value.pptx_inspect.assert_not_called()
+        with mock.patch.object(self.engine, 'slides', side_effect=WorkspaceError('Read-only checker unavailable')):
+            with self.assertRaisesRegex(WorkspaceError, 'unavailable'):
+                self.request(root)
+        request = self.request(root)
+        request['seen']['historical_proof_ack'] = True
+        image = next(build.shots(root).glob('*.png'))
+        original = image.read_bytes()
+        other = next(path for path in build.shots(root).glob('*.png') if path != image)
+        image.write_bytes(other.read_bytes())
+        with self.assertRaises(WorkspaceError):
+            desk_chat.ready(self.engine, root, request)
+        request = self.request(root)
+        request['seen']['historical_proof_ack'] = True
+        desk_chat.ready(self.engine, root, request)
+        image.write_bytes(original)
+        self.assertFalse(self.engine.view(root)['desk']['ready'])
+
+    def test_selected_existing_native_deck_hash_remains_mandatory(self):
+        from test_desk_words import SelectedTests
+        root = SelectedTests.deck(self)
+        context = desk_chat.context(self.engine, root, 'ownership')
+        desk_chat.take(self.engine, root, context['expected_basis'], ['part'])
+        state = build.read_state(root)
+        self.assertTrue(state['deckSha256'])
+        self.assertTrue(self.request(root)['seen']['expected'])
+        path = root / state['deck']
+        path.write_bytes(path.read_bytes() + b'changed historical byte proof')
+        with mock.patch.object(self.engine, 'slides', side_effect=AssertionError('ignore saved hash')):
+            with self.assertRaises(WorkspaceError):
+                self.request(root)
+
     def conversation(self):
         from test_desk_chat import ConversationTests
         root = ConversationTests.create(self, ['outline', 'drawing', 'part'], look='default')
@@ -578,3 +679,29 @@ class ReadyTests(runner_support.DeskCase):
             with self.assertRaises(WorkspaceError):
                 self.request(root)
             (root / name).write_bytes(data)
+
+    def test_ready_requires_current_preview_images_and_recorded_hashes_without_repair(self):
+        root = self.conversation()
+        state = build.read_state(root)
+        from runner import desk
+        folders = (root / desk.last_round(state)['preview'], build.shots(root))
+        for folder in folders:
+            image = next(folder.glob('*.png'))
+            original = image.read_bytes()
+            other = next(path for path in folder.glob('*.png') if path != image)
+            for changed in (None, other.read_bytes(), b'\x89PNG\r\n\x1a\ntruncated'):
+                if changed is None:
+                    image.unlink()
+                else:
+                    image.write_bytes(changed)
+                before = MigrationTests.snapshot(self, root)
+                with mock.patch.object(self.engine, 'slides', side_effect=AssertionError('render/repair')):
+                    with self.assertRaises(WorkspaceError):
+                        self.request(root)
+                self.assertEqual(MigrationTests.snapshot(self, root), before)
+                image.write_bytes(original)
+        self.assertTrue(self.request(root)['seen']['expected'])
+        state['rounds'][-1]['slides'][0].pop('sha256')
+        build.write_state(root, state)
+        with self.assertRaises(WorkspaceError):
+            self.request(root)

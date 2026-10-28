@@ -22,4 +22,6 @@ Read `studio desk context --folder PATH --target ready`. Show the actual checked
 
 Echo the complete `seen` value from context; never supply a default response or silently acknowledge blockers. The page's **Mark ready** action uses the same checked decision. Missing dependencies, open design decisions, incomplete drawings, changed inputs, another driver or workers refuse it. Do not fabricate earlier runner approvals to make conversation materials eligible.
 
+Selected changes uses read-only native compare/inspect against the retained original and patch. An unavailable checker refuses Ready. Older copies may lack historical deck/image hashes. Only the person's explicit acknowledgment permits `seen.historical_proof_ack` to change from false to true. The page requires an unchecked acknowledgment plus their response. Approval binds the current copy, complete previews and checks; it proves no historical byte equality and backfills nothing. Existing hashes remain mandatory.
+
 Ready records only the person's build approval and keeps conversation execution. It starts no job, copy, upload or delivery and needs no invented runtime/research pin. It does not claim Delivered. Later material/input changes require a new approval. Normal runner Deliver remains separate.

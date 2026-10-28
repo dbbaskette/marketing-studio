@@ -1383,6 +1383,29 @@ class OpenOnDeskPageTests(DeskPageCase):
 
 
 class MigrationPageTests(DeskPageCase):
+    def test_selected_ready_requires_unchecked_historical_proof_acknowledgment(self):
+        from test_desk_migration import ReadyTests
+        path = str(ReadyTests.selected_migrated(self))
+        view = self.run_of(path)
+        context = self.get('desk-ready-context', path=path)
+        response = 'I acknowledge missing historical proof and approve the current checked copy.'
+        seen = {**context['requirements']['seen'], 'historical_proof_ack': True}
+        approved = self.post('desk-ready', {'path': path, 'expected_basis': context['expected_basis'],
+            'seen': seen, 'response': response})
+        acknowledgment = 'I understand the missing historical byte proof and approve the current checked copy.'
+        result = self.open_deck(path, view, [{'click': 'Mark ready'}, {'snapshot': 'unchecked'},
+            {'fill': 'Your approval', 'value': response}, {'snapshot': 'typed'},
+            {'click': 'Mark ready'}, {'snapshot': 'refused'}, {'tick': acknowledgment},
+            {'snapshot': 'acknowledged'}, {'click': 'Mark ready'}, {'snapshot': 'ready'}], **{
+                'GET /api/desk-ready-context': [ok(context)], 'POST /api/desk-ready': [ok(approved)],
+                'GET /api/run': [ok(view), ok(view), ok(approved)]})
+        for name in ('unchecked', 'typed', 'refused'):
+            self.assertIn('Mark ready', result['snapshots'][name]['off'])
+            self.assertEqual(result['snapshots'][name]['posts'], 0)
+        self.assertNotIn('Mark ready', result['snapshots']['acknowledged']['off'])
+        self.assertEqual(self.posts(result), [('/api/desk-ready', {'path': path,
+            'expected_basis': context['expected_basis'], 'seen': seen, 'response': response})])
+
     def saved(self):
         root = runner_support.DeskCase.gated(self)
         return str(root), self.run_of(str(root))

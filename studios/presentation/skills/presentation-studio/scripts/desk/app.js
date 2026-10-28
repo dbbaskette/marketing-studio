@@ -3575,8 +3575,20 @@ function readySheet() {
   const response = make('textarea', 'input');
   response.id = 'ready-response'; response.maxLength = 4000; response.rows = 3;
   const go = submitButton('Mark ready', 'ready-confirm');
+  let acknowledgment = null;
+  if (requirements && requirements.historical_proof) {
+    add(node, make('p', 'problem', requirements.historical_proof));
+    acknowledgment = make('input');
+    acknowledgment.type = 'checkbox'; acknowledgment.id = 'ready-historical-proof';
+    const acknowledge = make('label', 'check');
+    acknowledge.htmlFor = acknowledgment.id;
+    add(acknowledge, acknowledgment, make('span', '', 'I understand the missing historical byte proof and approve the current checked copy.'));
+    add(node, acknowledge);
+  }
   go.disabled = true;
-  response.addEventListener('input', () => { go.disabled = !requirements || !response.value.trim(); });
+  const enable = () => { go.disabled = !requirements || !response.value.trim() || (acknowledgment && !acknowledgment.checked); };
+  response.addEventListener('input', enable);
+  if (acknowledgment) acknowledgment.addEventListener('change', enable);
   add(node, label, response, problem, add(make('div', 'bar create-foot'), go,
     capsule('Cancel', 'quiet', closeSheet, 'cancel')));
   node.addEventListener('submit', async (event) => {
@@ -3585,7 +3597,8 @@ function readySheet() {
     go.disabled = true;
     try {
       view.run = await send('desk-ready', { path: view.path, expected_basis: found.expected_basis,
-        seen: requirements.seen, response: response.value.trim() });
+        seen: acknowledgment ? { ...requirements.seen, historical_proof_ack: acknowledgment.checked }
+          : requirements.seen, response: response.value.trim() });
       closeSheet(); paintDeck(true);
     } catch (error) { say(problem, error.message); go.disabled = false; }
   });
