@@ -170,6 +170,7 @@ def status(args, make=engines.Engine, out=None, keeper=None) -> int:
 def saved_work(args, make=engines.Engine, out=None) -> int:
     """Which saved trainings still need each older path. Starts nothing, changes nothing,
     and asks nothing online."""
+    # This command inventories declared local roots without runner upkeep.
     report = make().saved_work(tuple(args.folder or ()))
     print(json.dumps(report, indent=2, sort_keys=True), file=out or sys.stdout)
     return 0

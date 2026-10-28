@@ -148,6 +148,46 @@ class SavedWorkTests(StudioCase):
     """`studio saved-work`: which saved trainings still need each older path. Each run is
     begun on the legacy queue, as a saved one was, and its record set as the case needs."""
 
+    def test_inventory_reports_unresolved_candidates_without_writing(self):
+        missing = self.base / 'missing-inventory-folder'
+        said = self.engine.saved_work(folders=(missing,))
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+        self.assertFalse(missing.exists())
+        self.assertTrue(any(entry['path'] == str(missing) for entry in said['issues']))
+
+    def test_inventory_does_not_follow_linked_candidates(self):
+        target = self.base / 'inventory-target'
+        target.mkdir()
+        linked = self.space.root / 'inventory-link'
+        linked.symlink_to(target, target_is_directory=True)
+        said = self.engine.saved_work()
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+
+    def test_inventory_reports_corrupt_or_unsupported_records(self):
+        folder = self.space.root / 'inventory-broken'
+        folder.mkdir()
+        record = folder / '.training-studio/run.json'
+        record.parent.mkdir(parents=True, exist_ok=True)
+        for content in ('{', '{"schema": 999}'):
+            record.write_text(content)
+            said = self.engine.saved_work()
+            self.assertFalse(said['complete'])
+            self.assertEqual(said['unused'], [])
+            self.assertEqual(record.read_text(), content)
+
+    def test_registered_missing_training_is_not_filtered_out(self):
+        missing = self.base / 'remembered-missing'
+        home.write_json(home.registry_path(), {'schema': 1, 'trainings': {str(missing): {}}})
+        before = home.registry_path().read_bytes()
+        said = self.engine.saved_work()
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+        self.assertTrue(any(entry['path'] == str(missing) for entry in said['issues']))
+        self.assertEqual(home.registry_path().read_bytes(), before)
+        self.assertFalse(missing.exists())
+
     QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
     CHAT = 'A conversation training whose research has not started.'
     LAYOUT = 'It began before the current review layout, and its final review is still to come.'
@@ -244,8 +284,9 @@ class SavedWorkTests(StudioCase):
                    if path.is_file() and '.git' not in path.parts})
         said = self.engine.saved_work(folders=(chat, outside))
         self.assertEqual([entry['id'] for entry in said['paths']],
-                         ['research-queue', 'review-layout-1', 'old-harness-slides'])
-        self.assertEqual(said['unused'], ['review-layout-1', 'old-harness-slides'])
+                         ['research-queue', 'review-layout-1', 'old-harness-slides', 'gated-flow'])
+        self.assertEqual(said['unused'], [])
+        self.assertFalse(said['complete'])
         self.assertEqual((self.git('status', '--porcelain'),
                           {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
                            if path.is_file() and '.git' not in path.parts}), before)

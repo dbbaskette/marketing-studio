@@ -8,12 +8,13 @@ What a caller needs to know
     saved_work.needs(path, title, why)    # one saved item that needs a path, and why
     saved_work.report(ids, found)         # {'paths': [{'id', 'about', 'needed_by'}], 'unused'}
 
-- `found` maps a path's id to the items that need it; an id with none is in `unused`.
-- Nothing here reads or writes anything.
+- `found` maps path ids to dependencies; unresolved scope prevents claiming unused.
+- Report formatting performs no I/O; enumeration helpers only read directory entries.
 """
 from pathlib import Path
 
 PATHS = {
+    'gated-flow': 'The guided creation flow used by saved work that has not moved to the desk.',
     'research-queue': ('The legacy research question queue, for a run begun before Harness '
                        'Research could synthesize its research.'),
     'cover-sample': ('The cover drawn to show a brand skill that offers no looks. Only this '
@@ -32,10 +33,51 @@ def needs(path: Path, title: str, why: str) -> dict:
     return {'path': str(path), 'title': title, 'why': why}
 
 
-def report(ids: tuple, found: dict) -> dict:
-    """The paths `ids` names, in that order, each with the items that need it sorted by
-    where they are, and the ids no item needs."""
-    paths = [{'id': ident, 'about': PATHS[ident],
-              'needed_by': sorted(found.get(ident) or (), key=lambda item: item['path'])}
-             for ident in ids]
-    return {'paths': paths, 'unused': [entry['id'] for entry in paths if not entry['needed_by']]}
+def report(ids: tuple, found: dict, *, scope: dict | None = None,
+           issues: list | None = None, unknown: dict | None = None) -> dict:
+    """Report only what the declared local scope can establish."""
+    scope = {'product': None, 'roots': [], **(scope or {}), 'local_only': True}
+    issues = list(issues or ())
+    if not scope.get('roots'):
+        issues.append({'path': '', 'why': 'No local roots are configured.'})
+    unknown = unknown or {}
+    paths = []
+    for ident in ids:
+        needed = sorted(found.get(ident) or (), key=lambda item: item['path'])
+        unresolved = sorted([*(unknown.get(ident) or ()), *issues],
+                            key=lambda item: item.get('path', ''))
+        paths.append({'id': ident, 'about': PATHS[ident], 'needed_by': needed,
+                      'unknown_by': unresolved,
+                      'status': 'needed' if needed else 'unknown' if unresolved else 'unused'})
+    return {'schema': 2, 'scope': scope, 'complete': not issues and not any(unknown.values()),
+            'issues': issues, 'paths': paths,
+            'unused': [entry['id'] for entry in paths if entry['status'] == 'unused'],
+            'limits': 'Local declared roots only; excludes unmounted workspaces, other clones, '
+                      'other installations and recovery history.'}
+
+
+def issue(issues: list, path: Path, why: str) -> None:
+    issues.append({'path': str(path), 'why': why})
+
+
+def children(root: Path, issues: list, *, optional=False) -> list[Path]:
+    """Enumerate without glob's silent errors or following directory links."""
+    try:
+        # macOS exposes its system temporary directories through /var and /tmp.
+        # These fixed OS aliases are not user workspace links.
+        if root.is_symlink() or any(parent.is_symlink() for parent in root.parents if str(parent) not in ('/var', '/tmp')):
+            raise ValueError('Symbolic link excluded.')
+        return sorted(root.iterdir())
+    except FileNotFoundError:
+        if not optional:
+            issue(issues, root, 'Declared root is missing.')
+    except (OSError, ValueError) as exc:
+        issue(issues, root, str(exc))
+    return []
+
+
+def checked_path(path: Path) -> None:
+    if path.is_symlink() or any(parent.is_symlink() for parent in path.parents if str(parent) not in ('/var', '/tmp')):
+        raise ValueError('Symbolic link excluded.')
+    if not path.is_file():
+        raise ValueError('Saved record is missing or is not a file.')

@@ -191,7 +191,7 @@ def status(args, make=engines.Engine, out=None, keeper=None) -> int:
 
 def saved_work(args, make=engines.Engine, out=None) -> int:
     """Which saved decks still need each older path. Starts nothing, changes nothing, and
-    asks nothing online."""
+    asks nothing online. Covers only declared local roots."""
     report = make().saved_work(tuple(args.folder or ()))
     print(json.dumps(report, indent=2, sort_keys=True), file=out or sys.stdout)
     return 0

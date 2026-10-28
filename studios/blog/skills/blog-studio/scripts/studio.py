@@ -1045,6 +1045,8 @@ def parser():
     from blog_runner import add_parser as run_parser
 
     run_parser(groups)
+    inventory = groups.add_parser('saved-work', help='inventory local saved-work dependencies')
+    inventory.add_argument('--folder', action='append', default=[])
     groups.add_parser('init')
     listing = groups.add_parser('list')
     listing.add_argument('kind', choices=('profiles', 'sources', 'articles', 'styles'))
@@ -1252,6 +1254,11 @@ def main():
     from hub_store import HubError
 
     try:
+        if args.group == 'saved-work':
+            from saved_work import scan
+
+            print(json.dumps(scan(root, args.folder), indent=2))
+            return 0
         if args.group == 'team':
             from team_workspace import command
 

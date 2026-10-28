@@ -142,6 +142,35 @@ class SavedWorkTests(StudioCase):
     """`studio saved-work`: which saved decks still need each older path, read from decks
     written as files, with nothing started and nothing changed."""
 
+    def test_inventory_reports_unresolved_candidates_without_writing(self):
+        missing = self.base / 'missing-inventory-folder'
+        said = self.engine.saved_work(folders=(missing,))
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+        self.assertFalse(missing.exists())
+        self.assertTrue(any(entry['path'] == str(missing) for entry in said['issues']))
+
+    def test_inventory_does_not_follow_linked_candidates(self):
+        target = self.base / 'inventory-target'
+        target.mkdir()
+        linked = self.space.root / 'inventory-link'
+        linked.symlink_to(target, target_is_directory=True)
+        said = self.engine.saved_work()
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+
+    def test_inventory_reports_corrupt_or_unsupported_records(self):
+        folder = self.space.root / 'inventory-broken'
+        folder.mkdir()
+        record = folder / decks.RUN
+        record.parent.mkdir(parents=True, exist_ok=True)
+        for content in ('{', '{"schema": 999}'):
+            record.write_text(content)
+            said = self.engine.saved_work()
+            self.assertFalse(said['complete'])
+            self.assertEqual(said['unused'], [])
+            self.assertEqual(record.read_text(), content)
+
     QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
     DRAWN = 'It was drawn a cover to show its brand.'
     MAY = 'It may need it: its brand was exported before it reached the look.'
@@ -202,7 +231,7 @@ class SavedWorkTests(StudioCase):
         self.deck('waiting-deck', files=('look.md',))
         said = self.engine.saved_work()
         self.assertEqual([entry['id'] for entry in said['paths']],
-                         ['research-queue', 'cover-sample', 'old-harness-slides'])
+                         ['research-queue', 'cover-sample', 'old-harness-slides', 'gated-flow'])
         self.assertEqual(said['unused'], ['old-harness-slides'])
 
     def test_a_folder_given_outside_the_workspace_is_looked_at_too(self):
