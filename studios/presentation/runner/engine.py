@@ -3862,22 +3862,40 @@ class Engine(Jobs, Researching, DeskActions):
     def saved_work(self, folders=()) -> dict:
         """Which saved decks still need each older path, as `saved_work.report` says: every
         deck in the workspace and each of `folders` that holds one. Only read: no lock is
-        taken, nothing is written and nothing is asked online. A record that cannot be read
-        is passed over, as the runner passes it over."""
+        taken, nothing is written and nothing is asked online. Unreadable records are reported as unresolved."""
         from studio_core import saved_work
         found: dict[str, list[dict]] = {}
+        issues = []
+        roots = saved_work.workspace_roots(gitstate.settings_path(), gitstate.MARKER, issues)
+        candidates = []
+        for declared in roots:
+            for child in saved_work.children(declared, issues):
+                if child.is_symlink():
+                    saved_work.issue(issues, child, 'Symbolic link excluded.')
+                elif child.is_dir() and not child.name.startswith('.'):
+                    candidates.append(child)
+        candidates.extend(Path(folder) for folder in folders)
+        scope = {'product': 'Presentation Studio', 'roots': [str(root) for root in [*roots, *map(Path, folders)]],
+                 'local_only': True}
+        registered = saved_work.registered_roots(home.registry_path(), 'decks', issues)
+        candidates.extend(registered)
+        scope['roots'].extend(str(path) for path in registered)
         seen: set[Path] = set()
-        for root in [*self.every(), *(Path(folder) for folder in folders)]:
-            if root.resolve() in seen or not (root / decks.RUN).is_file():
+        for root in candidates:
+            if root.absolute() in seen:
                 continue
-            seen.add(root.resolve())
+            seen.add(root.absolute())
             try:
-                run = decks.read_run(root)
+                saved_work.checked_path(root / decks.RUN)
+                run = self._load(root)
                 survey = stages.survey(run)
                 listed = [step.name for step in stages.steps(run)]
-            except (OSError, ValueError, TypeError, AttributeError, KeyError):
+            except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError) as exc:
+                saved_work.issue(issues, root, str(exc))
                 continue
             title = (run.get('form') or {}).get('title') or root.name
+            if not decks.on_desk(run):
+                found.setdefault('gated-flow', []).append(saved_work.needs(root, title, 'Saved guided creation flow.'))
             if 'research' in listed and not run.get('research_contract') \
                     and 'research' not in survey.done:
                 found.setdefault('research-queue', []).append(saved_work.needs(
@@ -3893,8 +3911,8 @@ class Engine(Jobs, Researching, DeskActions):
             else:
                 continue
             found.setdefault('cover-sample', []).append(saved_work.needs(root, title, why))
-        return saved_work.report(('research-queue', 'cover-sample', 'old-harness-slides'),
-                                 found)
+        return saved_work.report(('research-queue', 'cover-sample', 'old-harness-slides', 'gated-flow'),
+                                 found, scope=scope, issues=issues)
 
 
 # Which step's worker spoke last before each gate, for what the gate shows it said.

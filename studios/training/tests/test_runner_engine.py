@@ -148,6 +148,114 @@ class SavedWorkTests(StudioCase):
     """`studio saved-work`: which saved trainings still need each older path. Each run is
     begun on the legacy queue, as a saved one was, and its record set as the case needs."""
 
+    def test_inventory_reports_unresolved_candidates_without_writing(self):
+        missing = self.base / 'missing-inventory-folder'
+        said = self.engine.saved_work(folders=(missing,))
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+        self.assertFalse(missing.exists())
+        self.assertTrue(any(entry['path'] == str(missing) for entry in said['issues']))
+
+    def test_inventory_does_not_follow_linked_candidates(self):
+        target = self.base / 'inventory-target'
+        target.mkdir()
+        linked = self.space.root / 'inventory-link'
+        linked.symlink_to(target, target_is_directory=True)
+        said = self.engine.saved_work()
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+
+    def test_inventory_reports_corrupt_or_unsupported_records(self):
+        folder = self.space.root / 'inventory-broken'
+        folder.mkdir()
+        record = folder / '.training-studio/run.json'
+        record.parent.mkdir(parents=True, exist_ok=True)
+        for content in ('{', '{"schema": 999}'):
+            record.write_text(content)
+            said = self.engine.saved_work()
+            self.assertFalse(said['complete'])
+            self.assertEqual(said['unused'], [])
+            self.assertEqual(record.read_text(), content)
+
+    def test_registered_missing_training_is_not_filtered_out(self):
+        missing = self.base / 'remembered-missing'
+        home.write_json(home.registry_path(), {'schema': 1, 'trainings': {str(missing): {}}})
+        before = home.registry_path().read_bytes()
+        said = self.engine.saved_work()
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+        self.assertTrue(any(entry['path'] == str(missing) for entry in said['issues']))
+        self.assertEqual(home.registry_path().read_bytes(), before)
+        self.assertFalse(missing.exists())
+
+    def test_invalid_configured_scope_stays_unknown_with_explicit_folder(self):
+        for content in ('{', '{"schema": 999}'):
+            gitstate.settings_path().write_text(content)
+            said = self.engine.saved_work(folders=(self.base,))
+            self.assertFalse(said['complete'])
+            self.assertEqual(said['unused'], [])
+            self.assertTrue(any(entry['path'] == str(gitstate.settings_path())
+                                for entry in said['issues']))
+            self.assertEqual(gitstate.settings_path().read_text(), content)
+
+    def test_missing_workspace_marker_stays_unknown_with_explicit_folder(self):
+        (self.space.root / gitstate.MARKER).unlink()
+        said = self.engine.saved_work(folders=(self.base,))
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+        self.assertTrue(any(entry['path'] == str(self.space.root / gitstate.MARKER)
+                            for entry in said['issues']))
+
+    def test_session_only_conversation_training_needs_gated_flow(self):
+        root = self.chat()
+        said = self.engine.saved_work()
+        self.assertIn(str(root), self.needed(said, 'gated-flow'))
+        self.assertEqual(next(entry['status'] for entry in said['paths']
+                              if entry['id'] == 'gated-flow'), 'needed')
+
+    def test_inventory_excludes_session_and_material_links_before_reading(self):
+        for conversation in (False, True):
+            for linked in ('session', 'material', 'dangling-run'):
+                with self.subTest(conversation=conversation, linked=linked):
+                    root = self.chat(f'linked-chat-{linked}') if conversation else self.saved(f'linked-run-{linked}')
+                    outside = self.base / f'outside-{conversation}-{linked}'
+                    outside.mkdir()
+                    if linked == 'session':
+                        session = root / workspace.STATE_DIR / 'session.json'
+                        target = outside / 'session.json'
+                        target.write_bytes(session.read_bytes())
+                        session.unlink()
+                        session.symlink_to(target)
+                    elif linked == 'material':
+                        (outside / 'report.md').write_text('Synthetic private material')
+                        material = root / 'research'
+                        if material.exists():
+                            import shutil
+                            shutil.rmtree(material)
+                        material.symlink_to(outside, target_is_directory=True)
+                    else:
+                        run = root / '.training-studio/run.json'
+                        run.unlink(missing_ok=True)
+                        run.symlink_to(outside / 'missing.json')
+                    before = {path: path.read_bytes() for path in outside.iterdir() if path.is_file()}
+                    original = Path.read_text
+                    def guarded(path, *args, **kwargs):
+                        if path.resolve().is_relative_to(outside.resolve()):
+                            raise AssertionError('Inventory read excluded bytes')
+                        return original(path, *args, **kwargs)
+                    original_load = workspace.load
+                    def guarded_load(folder):
+                        if folder == root:
+                            raise AssertionError('Linked candidate reached a material reader')
+                        return original_load(folder)
+                    with mock.patch.object(Path, 'read_text', guarded), \
+                            mock.patch.object(workspace, 'load', guarded_load):
+                        said = self.engine.saved_work()
+                    self.assertFalse(said['complete'])
+                    self.assertEqual(said['unused'], [])
+                    self.assertTrue(any(entry['path'] == str(root) for entry in said['issues']))
+                    self.assertEqual({path: path.read_bytes() for path in outside.iterdir() if path.is_file()}, before)
+
     QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
     CHAT = 'A conversation training whose research has not started.'
     LAYOUT = 'It began before the current review layout, and its final review is still to come.'
@@ -244,8 +352,9 @@ class SavedWorkTests(StudioCase):
                    if path.is_file() and '.git' not in path.parts})
         said = self.engine.saved_work(folders=(chat, outside))
         self.assertEqual([entry['id'] for entry in said['paths']],
-                         ['research-queue', 'review-layout-1', 'old-harness-slides'])
-        self.assertEqual(said['unused'], ['review-layout-1', 'old-harness-slides'])
+                         ['research-queue', 'review-layout-1', 'old-harness-slides', 'gated-flow'])
+        self.assertEqual(said['unused'], [])
+        self.assertFalse(said['complete'])
         self.assertEqual((self.git('status', '--porcelain'),
                           {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
                            if path.is_file() and '.git' not in path.parts}), before)

@@ -7260,23 +7260,57 @@ class Engine(Reviewing):
         """Which saved trainings still need each older path, as `saved_work.report` says:
         every training in the workspace a run drives, each of `folders` that holds a run,
         and the conversation trainings this computer remembers. Only read: no lock is
-        taken, nothing is written and nothing is asked online. A training whose files
-        cannot be read is passed over, as the runner passes it over."""
+        taken, nothing is written and nothing is asked online. Unreadable records are reported as unresolved."""
         from studio_core import saved_work
         found: dict[str, list[dict]] = {}
+        issues = []
+        roots = saved_work.workspace_roots(gitstate.settings_path(), gitstate.MARKER, issues)
+        candidates = []
+        for declared in roots:
+            for child in saved_work.children(declared, issues):
+                if child.is_symlink():
+                    saved_work.issue(issues, child, 'Symbolic link excluded.')
+                elif child.is_dir() and not child.name.startswith('.'):
+                    candidates.append(child)
+        candidates.extend(Path(folder) for folder in folders)
+        scope = {'product': 'Training Studio', 'roots': [str(root) for root in [*roots, *map(Path, folders)]],
+                 'local_only': True}
         seen: set[Path] = set()
-        runs = [*self.trainings(), *(Path(folder) for folder in folders)]
+        runs = candidates
+        registered = saved_work.registered_roots(home.registry_path(), 'trainings', issues)
+        runs.extend(registered)
+        scope['roots'].extend(str(path) for path in registered)
         for root in runs:
-            if root.resolve() in seen or not (root / RECORD).is_file():
+            if root.absolute() in seen:
                 continue
-            seen.add(root.resolve())
+            seen.add(root.absolute())
             try:
-                record = self._load(root)
+                saved_work.checked_path(root / workspace.STATE_DIR / 'session.json')
+                saved_work.checked_tree(root)
+                if not (root / RECORD).exists() and (root / workspace.STATE_DIR / 'session.json').exists():
+                    saved_work.checked_path(root / workspace.STATE_DIR / 'session.json')
+                    session = workspace.load(root)
+                    if session.get('flow') != 'desk':
+                        found.setdefault('gated-flow', []).append(saved_work.needs(
+                            root, session['title'] or root.name, 'Saved guided creation flow.'))
+                    started = workspace.statuses(root, session).get('research', 'not-started')
+                    if not session.get('research_contract') and started == 'not-started':
+                        found.setdefault('research-queue', []).append(saved_work.needs(
+                            root, session['title'] or root.name,
+                            'A conversation training whose research has not started.'))
+                    continue
+                saved_work.checked_path(root / RECORD)
+                record = read_record(root)
+                if record is None:
+                    raise ValueError('Saved run record is missing.')
                 survey = self._survey_files(root, record)
                 done, title = survey.done, survey.session['title'] or root.name
                 level = review_policy.level(record)
-            except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError):
+            except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError) as exc:
+                saved_work.issue(issues, root, str(exc))
                 continue
+            if record.get('flow') != 'desk':
+                found.setdefault('gated-flow', []).append(saved_work.needs(root, title, 'Saved guided creation flow.'))
             if not record.get('research_contract') and 'research' not in done:
                 found.setdefault('research-queue', []).append(saved_work.needs(
                     root, title, 'Its research has not run, and it was started before '
@@ -7286,23 +7320,8 @@ class Engine(Reviewing):
                 found.setdefault('review-layout-1', []).append(saved_work.needs(
                     root, title, 'It began before the current review layout, and its final '
                     'review is still to come.'))
-        for entry in home.trainings():
-            root = Path(entry['path'])
-            if root.resolve() in seen or (root / RECORD).is_file():
-                continue
-            seen.add(root.resolve())
-            try:
-                session = workspace.load(root)
-                started = workspace.statuses(root, session).get('research', 'not-started')
-            except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError):
-                continue
-            if not session.get('research_contract') and started == 'not-started':
-                found.setdefault('research-queue', []).append(saved_work.needs(
-                    root, session['title'] or root.name,
-                    'A conversation training whose research has not started.'))
-        return saved_work.report(('research-queue', 'review-layout-1', 'old-harness-slides'),
-                                 found)
-
+        return saved_work.report(('research-queue', 'review-layout-1', 'old-harness-slides', 'gated-flow'),
+                                 found, scope=scope, issues=issues)
 
 def _assets_said(problem: dict, recorded: dict) -> str:
     """One problem the slides tool found with a deck's assets, as the person is told it. A
