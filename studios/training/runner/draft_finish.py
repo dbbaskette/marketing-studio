@@ -39,7 +39,21 @@ def proposals(engine, root, name='document'):
 
     # Lock by part identity, as the selection job does. Another section can legitimately
     # contain the same words as Sources; the generic codec hook compares text instead.
-    fit = shared.text_fit(desk.codec.replace(landed=lambda draft, before, text: text))
+    text_fit = shared.text_fit(desk.codec.replace(landed=lambda draft, before, text: text))
+
+    def fit(draft, item, after, text):
+        if not present(draft, item) or basis.fingerprint(text) != item['basis']:
+            raise ValueError(shared.GONE)
+        if 'start' not in item:
+            return text_fit(draft, item, after, text)
+        # Mechanical findings retain a Python character offset. Identical sentences
+        # elsewhere in the part do not make the chosen occurrence ambiguous.
+        start, before = item['start'], item['before']
+        if (type(start) is not int or start < 0 or not before
+                or text[start:start + len(before)] != before):
+            raise ValueError(shared.GONE)
+        return text[:start] + after + text[start + len(before):]
+
     return shared.Proposals(store, desk, TOOLS, owner='training', present=present, fit=fit)
 
 

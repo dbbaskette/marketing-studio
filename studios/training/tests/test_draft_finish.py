@@ -54,7 +54,7 @@ class FinishingTests(DeckCase):
         self.assertEqual(response['note']['text'], 'Teach O2 here.')
         self.assertEqual(len(self.workers.jobs), jobs)
 
-    def test_row_180_applying_a_proposal_keeps_a_version(self):
+    def test_row_184_applying_a_proposal_keeps_a_version(self):
         root = self.desk()
         found, part = self.proof(root)
         before = self.card(root)
@@ -150,6 +150,51 @@ class FinishingTests(DeckCase):
         self.assertEqual([e for e in workspace.load(root)['events']
                           if e['event'] == 'save'][-1]['via'], 'finishing')
         self.assertTrue(self.engine.draft_versions(root, self.NAME, part)['versions'])
+
+    def test_editing_each_repeated_sentence_uses_its_recorded_location(self):
+        root = self.desk()
+        part = self.card(root)['sections'][0]['id']
+        text = '😀 Pause. Try this -- then pause. Try this -- then pause.'
+        replacement = 'Try this, then wait.'
+        for occurrence in (0, 1):
+            with self.subTest(occurrence=occurrence):
+                self.engine.draft_save(root, self.NAME, part, self.card(root)['revision'], text)
+                checked = self.ask(root, 'finish', tool='proofread')
+                found = checked['finishing']['proofread']
+                items = [item for item in found['items'] if item['part'] == part
+                         and item['before'] == 'Try this -- then pause.']
+                chosen = items[occurrence]
+                self.assertEqual(text[chosen['start']:chosen['start'] + len(chosen['before'])],
+                                 chosen['before'])
+                workers = len(self.workers.jobs)
+                result = self.ask(root, 'apply', job=found['job'], seen=checked['revision'],
+                                  items=[{'id': chosen['id'], 'after': replacement}])
+                expected = text[:chosen['start']] + replacement + text[
+                    chosen['start'] + len(chosen['before']):]
+                self.assertEqual(result['sections'][0]['text'], expected)
+                self.assertEqual(expected.count('Try this -- then pause.'), 1)
+                self.assertEqual(len(self.workers.jobs), workers)
+                self.assertEqual([e for e in workspace.load(root)['events']
+                                  if e['event'] == 'save'][-1]['via'], 'finishing')
+                history = self.engine.draft_versions(root, self.NAME, part)
+                self.assertEqual(history['versions'][0]['text'], text)
+
+    def test_edited_repeated_sentence_refuses_a_changed_part(self):
+        root = self.desk()
+        part = self.card(root)['sections'][0]['id']
+        text = 'Try this -- then pause. Try this -- then pause.'
+        self.engine.draft_save(root, self.NAME, part, self.card(root)['revision'], text)
+        checked = self.ask(root, 'finish', tool='proofread')
+        found = checked['finishing']['proofread']
+        chosen = next(item for item in found['items'] if item['part'] == part)
+        self.engine.draft_save(root, self.NAME, part, checked['revision'], text + ' Person typed.')
+        before = (root / '101/document.md').read_bytes()
+        events = workspace.load(root)['events']
+        with self.assertRaisesRegex(page.desk.Refusal, GONE):
+            self.ask(root, 'apply', job=found['job'], seen=self.card(root)['revision'],
+                     items=[{'id': chosen['id'], 'after': 'Try this, then wait.'}])
+        self.assertEqual((root / '101/document.md').read_bytes(), before)
+        self.assertEqual(workspace.load(root)['events'], events)
 
     def test_edited_proposal_commits_only_validated_materials(self):
         root = self.desk()
