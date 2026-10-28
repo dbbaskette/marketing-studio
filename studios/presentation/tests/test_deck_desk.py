@@ -792,7 +792,7 @@ class DeskTeamTests(DeskCase, runner_support.TeamCase):
         self.assertTrue(drawn['desk']['drawn_here'])
         self.assertEqual(drawn['gate']['name'], 'gate:build')
 
-    def test_desk_work_settles_only_on_the_driving_computer(self):
+    def test_desk_work_reconciles_a_takeover_after_the_active_step_finishes(self):
         root = self.deck()
         theirs = self.theirs(self.blake, root)
 
@@ -800,7 +800,9 @@ class DeskTeamTests(DeskCase, runner_support.TeamCase):
             self.as_blake(self.blake.engine.fetch)
             self.as_blake(self.blake.engine.drive, theirs, 'take')
             with self.be(self.alex):
-                self.alex.engine.fetch()
+                deferred = self.alex.engine.fetch()
+                self.assertIn('step', deferred['notice'])
+                self.assertTrue(self.alex.engine.view(root)['mine'])
             return self.workers.section(tools, job)
 
         self.workers.then('section', taken_over)
@@ -808,6 +810,10 @@ class DeskTeamTests(DeskCase, runner_support.TeamCase):
         with self.be(self.alex):
             self.engine.desk_note(root, 3, 'Make the diagram a sequence.',
                                   self.desk_view(root)['expected'])
+        # No reconciliation may move canonical files while the section is drawing.
+        # Once its marker clears, the same saved takeover semantics apply.
+        with self.be(self.alex):
+            self.engine.fetch()
         mine = self.as_blake(self.blake.engine.view, theirs)
         self.assertTrue(mine['mine'])
         notes = self.as_blake(self.blake.engine._load, theirs)['desk_notes']

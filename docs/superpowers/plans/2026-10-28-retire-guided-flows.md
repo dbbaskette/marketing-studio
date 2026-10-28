@@ -123,6 +123,24 @@ remain recoverable. Initial outline submission stays restricted to new work.
 
 ### Task 3: Presentation Studio conversation desk
 
+Deliver this task in two sequential independently reviewed PRs: **3a** adds the
+shared process lock and wires competing writers in both deck Studios without
+changing execution ownership; **3b** adds the Presentation Studio conversation
+adapter, ownership guards, checked submissions, explicit scope changes and
+guidance on top of that reviewed lock. This is a split of Task 3, not added scope.
+
+Synchronization in 3a defers reconciliation and replay while either deck Studio's
+existing step markers or Blog Studio's saved working-status records show active
+work anywhere in the repository. Stop or wait for work to finish before sharing;
+interrupted markers remain for existing recovery. Unreadable worker scope refuses
+replay. Final automatic sharing resumes after the current step releases its marker.
+All three Studios acquire the shared repository lock before Blog Studio's existing
+repository/workspace locks where applicable. Provider/render work stays outside
+these short transactions. Deck locks resolve Git directory indirection; Blog Studio
+retains its literal `.git/blog-studio.lock` format. A `.git`-file worktree still
+supports deck synchronization and checks copied Blog Studio worker records, but
+current Blog Studio cannot start writers there. No alternative Blog lock is invented.
+
 **Files:** `studios/presentation/runner/studio.py`, `engine.py`, `decks.py`,
 `desk_actions.py`; create `runner/desk_chat.py`, `tests/test_desk_chat.py`;
 update SKILL.md, desk/workspace/route guidance, VERSION and manifest.
@@ -132,7 +150,37 @@ update SKILL.md, desk/workspace/route guidance, VERSION and manifest.
 `studio desk create --input FILE`, `studio desk show --folder PATH`,
 `studio desk save --folder PATH --input FILE`. Add explicit conversation execution
 mode to creation; runner scheduling and recovery exclude that mode until explicit handoff.
-Also add `context(engine, path, target) -> dict`, `submit(engine, path, request) -> dict`,
+Conversation scope is an explicit finite material list: `text`, `outline`,
+`research`, `drawing`, `part`; normalize/dedupe and reject unknowns. It permits kinds,
+while exact target, prerequisites and current basis constrain the operation. Never
+add research/drawing to an outline request. `set_scope(engine, path, expected_basis,
+scope)` is exposed as `studio desk scope --folder PATH --input FILE` and used only
+when the person explicitly changes the request; it changes scope/provenance only.
+
+`take(engine, path, expected_basis, scope)` is exposed as `studio desk take`; target
+`ownership` context binds the explicit request to continue an idle existing desk in
+chat. Require finite scope when absent and retain an existing requested scope. Team,
+worker, pending-job and changed-input guards apply; change execution/provenance only,
+leaving materials, History, Google baselines, approvals and readiness untouched.
+Gated saved formats retain their existing adoption/migration paths.
+
+Targets: text is `brief`, `classification` or `research-plan`; outline/research/drawing
+use their named targets; part names a stable current slide ID and known field.
+Drawing accepts bounded section compositions (Selected changes accepts a checked
+patch). Existing checker/compile/native-preview/brand contracts run on disposable
+copies outside the write lock, then publication rechecks current inputs, scope,
+workspace, team and canonical worker state. Context includes absent-target bases.
+`answer(engine, path, request)` / `studio desk answer` accepts explicit targets
+`look` and `design`, both requiring drawing scope, with
+`{target, expected_basis, answer}`. Look context binds current offered IDs and inline
+PNG previews; answer requires its questionId, exact offered choice or explicit
+brand default, and actual person response. Companion design uses canonical `work/`
+with actual design_status question/revision and design_respond four-field reply.
+Missing/changed/closed questions refuse; preparation never publishes. Neither path
+invents approvals, wakes workers or expands scope. Existing words, History and
+pins remain. Explicit look/design answers are never inferred. Handoff honors current scope and
+pinned inputs or refuses an incompatible remaining saved plan. Also add
+`context(engine, path, target) -> dict`, `submit(engine, path, request) -> dict`,
 `handoff(engine, path, expected_basis, scope) -> dict`, exposed under `studio desk`.
 `context` returns `{target, expected_basis, scope, inputs, requirements}`; submit
 consumes `{kind, target, expected_basis, payload}`. Kinds are `text`, `outline`,

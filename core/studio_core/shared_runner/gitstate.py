@@ -74,7 +74,7 @@ import re
 import secrets
 import shutil
 import threading
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
@@ -83,6 +83,8 @@ import hub
 import sync_guidance
 import workspace
 from workspace import WorkspaceError
+from studio_core.process_lock import ProcessRLock, workspace_lock_path
+from studio_core.sync_guard import SYNC_WAIT, worker_in_progress
 
 # The studio's values, passed in by `for_product`. A plain import, made only to reach
 # `for_product`, has stand-ins. `studios_config` is the studio's own module for the file
@@ -106,6 +108,19 @@ ASKING = threading.Lock()       # one fetch or push at a time in this process
 TRUST = ('This computer has not been told to trust that host yet. Run git ls-remote with the '
          "repository's address once in a terminal and answer yes, then share again.")
 IGNORE_NOTE = f'# Kept on each computer and never shared. Written by {PRODUCT}.'
+
+
+def workspace_identity(found):
+    """The resolved workspace selection, independent of sharing preferences."""
+    if found is None:
+        return None
+    return (found.repo.resolve(), found.root.resolve(), found.branch, found.address)
+
+
+def write_lock_path() -> Path:
+    """The current workspace's lock; resolve settings once, at outer acquisition."""
+    found = current()
+    return workspace_lock_path(found.repo if found is not None else None, home.data_root())
 
 
 @dataclass(frozen=True)
@@ -688,6 +703,36 @@ def undo(workspace: Workspace, path) -> bool:
     return True
 
 
+WORKSPACE_CHANGED = ('The workspace changed while sharing was being checked. '
+                     'Open the current workspace and try again.')
+
+
+def require_workspace(workspace):
+    if workspace_identity(current()) != workspace_identity(workspace):
+        raise WorkspaceError(WORKSPACE_CHANGED)
+
+
+@contextmanager
+def workspace_locked(workspace, held, *, configured=False):
+    """Check explicit operation scope after acquiring a potentially dynamic lock."""
+    with held:
+        if isinstance(held, ProcessRLock) and not held.protects(
+                workspace_lock_path(workspace.repo, home.data_root())):
+            raise WorkspaceError(WORKSPACE_CHANGED)
+        if configured:
+            require_workspace(workspace)
+        yield
+
+
+@contextmanager
+def _sync_locks(workspace, held, blog):
+    # Every Studio now takes the shared repository lock first. Blog Studio
+    # retains its repository-before-workspace order within that boundary.
+    with workspace_locked(workspace, held):
+        with blog:
+            yield
+
+
 def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dict:
     """Share the workspace: fetch, replay local commits on the remote's, and push.
 
@@ -700,20 +745,30 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
     remote, when the remote has commits this copy does not, before anything is replayed.
     `at` is the remote's commit that is then replayed on, whatever fetch comes after.
 
+    Running Studio steps defer synchronization, including the reconciliation callback,
+    until their recovery markers are removed by completion, Stop or recovery.
+
     `held` is a lock held while this copy is read or changed, and never while the remote
     is asked, so a slow remote holds up nothing that waits for the lock. The branch is
     pushed as it stood when the push began; a commit made while it was on its way waits
     for the next share.
     """
-    held = held or nullcontext()
+    held = held or ProcessRLock(lambda: workspace_lock_path(workspace.repo, home.data_root()),
+                                refusal=WorkspaceError)
     repo, branch = workspace.repo, workspace.branch
+    # Match Blog Studio's literal path exactly. Its current runtime cannot start
+    # writers in a .git-file worktree; copied worker records are still checked.
+    blog = ProcessRLock(lambda: repo / '.git' / 'blog-studio.lock', refusal=WorkspaceError) \
+        if (repo / '.git').is_dir() else nullcontext()
     report = {'shared': False, 'reached': True, 'received': 0, 'unshared': 0, 'conflict': [],
               'notice': None}
     if workspace.address is None:
         return {**report, 'reached': None, 'notice': (
             'This workspace has no shared repository, so there is nowhere to share it. Your '
             'work is kept on this computer.')}
-    with held:
+    with _sync_locks(workspace, held, blog):
+        if worker_in_progress(repo, WorkspaceError):
+            return {**report, 'reached': None, 'notice': SYNC_WAIT}
         if on_branch(repo) != branch:
             raise WorkspaceError(f"The workspace's repository in {repo} is on the branch "
                                  f'{on_branch(repo)}, not {branch}. Check {branch} out there '
@@ -726,7 +781,9 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
         if fetched.returncode != 0:
             report['reached'] = False
             break
-        with held:
+        with _sync_locks(workspace, held, blog):
+            if worker_in_progress(repo, WorkspaceError):
+                return {**report, 'notice': SYNC_WAIT}
             # Another fetch may move the ref at any moment, so the commit it names now is
             # the one learned from and replayed on; what came after is the next round's.
             at = _tip(repo, track)
@@ -752,7 +809,7 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
             waiting = 0
             break
     if waiting is None:
-        with held:
+        with _sync_locks(workspace, held, blog):
             waiting = hub.ahead(repo, track)
     report['unshared'] = waiting
     report['shared'] = bool(report['reached']) and not stuck and not report['unshared']

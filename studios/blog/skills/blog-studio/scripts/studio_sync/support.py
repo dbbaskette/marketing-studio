@@ -8,7 +8,7 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 
 
 class WorkspaceError(ValueError):
@@ -77,34 +77,44 @@ def slugify(value):
 
 
 _LOCKS = {}
+_STUDIO_LOCKS = {}
 _DEPTH = threading.local()
 
 
 @contextmanager
 def locked(path):
-    from hub_store import acquire_lock, release_lock
+    from hub_store import acquire_lock, release_lock, lock_wait_seconds
 
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     key = str(path.resolve())
-    lock = _LOCKS.setdefault(key, threading.RLock())
-    if not lock.acquire(timeout=30):
-        raise WorkspaceError('Another workspace operation is running. Retry shortly.')
-    depths = getattr(_DEPTH, 'values', {})
-    _DEPTH.values = depths
-    fd = None
-    try:
-        if not depths.get(key):
-            fd = acquire_lock(path)
-            if fd is None:
-                raise WorkspaceError('Another workspace operation is running. Retry shortly.')
-        depths[key] = depths.get(key, 0) + 1
-        yield
-    finally:
-        depths[key] = max(0, depths.get(key, 1) - 1)
-        if fd is not None:
-            release_lock(fd)
-        lock.release()
+    shared = nullcontext()
+    if path.name == 'blog-studio.lock' and path.parent.name == '.git':
+        # Existing callers may already hold this repository lock when syncing.
+        # Always establish shared -> Blog repository -> workspace order here.
+        from studio_core.process_lock import ProcessRLock
+        shared = _STUDIO_LOCKS.setdefault(key, ProcessRLock(
+            lambda: path.parent / 'studios-write.lock', timeout=lock_wait_seconds(),
+            refusal=WorkspaceError))
+    with shared:
+        lock = _LOCKS.setdefault(key, threading.RLock())
+        if not lock.acquire(timeout=30):
+            raise WorkspaceError('Another workspace operation is running. Retry shortly.')
+        depths = getattr(_DEPTH, 'values', {})
+        _DEPTH.values = depths
+        fd = None
+        try:
+            if not depths.get(key):
+                fd = acquire_lock(path)
+                if fd is None:
+                    raise WorkspaceError('Another workspace operation is running. Retry shortly.')
+            depths[key] = depths.get(key, 0) + 1
+            yield
+        finally:
+            depths[key] = max(0, depths.get(key, 1) - 1)
+            if fd is not None:
+                release_lock(fd)
+            lock.release()
 
 
 class Held:
