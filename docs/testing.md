@@ -1,5 +1,21 @@
 # Verification
 
+Infographic Studio's foundations have their own disposable native suite, also
+included in the root check. They do not yet add a fourth installed studio to the
+suite's setup/launch/distribution matrix. From the repository root:
+
+```sh
+python3 -m unittest discover -s studios/infographic/tests -v
+```
+
+The optional renderer tests require an explicit `INFOGRAPHIC_STUDIO_TEST_RENDERER`
+path to an installed headless Chromium executable. They use disposable profiles
+and synthetic graphics and never start assistant or image-provider jobs. The
+[rendering decision](../studios/infographic/docs/rendering-decision.md) describes
+the graphics smoke command and visual inspection of its real PNG/PDF/SVG outputs.
+Provider command/capability tests use stand-ins; they do not attest live account
+access, generation, editing, or visual inspection.
+
 `bash scripts/ci/check.sh` is the suite verification entry point. It runs Python
 and JavaScript syntax checks, Marketing Studio's tests, every studio's native
 suite and package validator, standalone setup/launch acceptance, a synthetic
