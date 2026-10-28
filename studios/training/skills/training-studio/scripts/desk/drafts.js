@@ -174,7 +174,7 @@ const deskKit = Drafting.kit({
       deskMaterialChanged(held);
     },
     beforeJob: (held) => {
-      if (Object.keys(held.pending).length) throw new Error('Save your text before starting a change.');
+      if (Object.keys(held.pending).length || pendingDeckWords(held)) throw new Error('Save your text before starting a change.');
     },
     extra: (held, part) => {
       const section = list(held.view.sections).find((one) => one.id === part);
@@ -201,6 +201,18 @@ const deskKit = Drafting.kit({
 });
 
 const FINISHING_TOOLS = [
+  { key: 'sources', name: 'Check against sources', kinds: ['document', 'brief'], run: 'Check against sources',
+    says: 'Check each claim against the saved research. This does not run research.',
+    verdicts: { supported: 'Supported', 'not in the sources': 'Not in the sources', contradicted: 'Contradicted' } },
+  { key: 'time', name: 'Fit the learner’s time', kinds: ['document', 'deck'], run: 'Fit the time',
+    says: 'Propose cuts or additions for the time in your intake.' },
+  { key: 'answers', name: 'Check the answer key', kinds: ['document'], run: 'Check answers',
+    says: 'Explain why each answer is right and a plausible alternative is wrong.' },
+  { key: 'humanize', name: 'Humanize', kinds: ['document', 'brief'], run: 'Humanize wording',
+    says: 'Make the wording natural while keeping facts and references.', start: { level: 'medium' },
+    data: (f) => ({ level: f.level }) },
+  { key: 'level', name: 'Level check', kinds: ['document', 'brief'], run: 'Check the level',
+    says: 'Find passages that teach what an earlier level already taught.' },
   { key: 'proofread', name: 'Proofread', kinds: ['document', 'brief'], run: 'Proofread',
     says: 'Mechanical checks, sentence by sentence. Fix rewrites only that sentence.' },
   { key: 'coverage', name: 'Coverage', kinds: ['document'], run: 'Check coverage',
@@ -213,6 +225,12 @@ const FINISHING_TOOLS = [
     says: 'Fields over Yoodli’s limits.' },
 ].map((tool) => ({ ...tool, doing: 'Checking…', empty: 'Nothing found by this check.' }));
 
+function pendingDeckWords(material) {
+  if (material.view.kind !== 'deck') return false;
+  const held = deskHeld(deskItem(material.id).path);
+  return Object.keys(held.slideText || {}).some((key) => key.startsWith(material.view.name + ':'));
+}
+
 function finishingMaterial() {
   const held = deskHeld(view.path);
   return Object.values(held.materials).find((material) => material.finish
@@ -221,7 +239,24 @@ function finishingMaterial() {
 
 function finishingTools() {
   const kind = finishingMaterial()?.view.kind;
-  return FINISHING_TOOLS.filter((tool) => !kind || tool.kinds.includes(kind));
+  return FINISHING_TOOLS.filter((tool) => !kind || tool.kinds.includes(kind)).map((tool) => ({
+    ...tool, options: (held, f) => {
+      const price = held.view.finish_prices?.[tool.key];
+      const rows = price ? [make('p', 'quiet', 'Expect about ' + Math.max(1, Math.round(price.minutes)) + ' minutes.')] : [];
+      const job = held.view.working;
+      if (job?.kind === 'finish-' + tool.key) {
+        const stop = capsule('Stop check', 'quiet', () => stopDeskChange(held, job.id, stop));
+        rows.push(stop);
+      }
+      if (tool.key === 'humanize') {
+        rows.push(segmented('Humanize level', ['Light', 'Medium', 'Strong'],
+          ['light', 'medium', 'strong'].indexOf(f.level || 'medium'), (index) => {
+            f.level = ['light', 'medium', 'strong'][index]; deskKit.panelShow(held);
+          }, 'humanize-level'));
+      }
+      return rows;
+    },
+  }));
 }
 
 function openFinishing() {
@@ -243,11 +278,19 @@ function openFinishing() {
   openSheet('desk-kit', '')();
 }
 
+// Before/after are labels inside a proposal card, keeping one heading level per card.
+const finishingSides = deskKit.sides;
+deskKit.sides = (before, after) => {
+  const sides = finishingSides(before, after);
+  for (const label of sides.querySelectorAll('h4')) label.replaceWith(make('p', 'sheet-part', label.textContent));
+  return sides;
+};
+
 const finishingProposal = deskKit.proposal;
 deskKit.proposal = (held, set, item, key) => {
   if (!item.instruction) {
     const card = finishingProposal(held, set, item, key);
-    if (item.state === 'open' && item.present && held.finish.editing[item.id] === undefined) {
+    if (!('after' in item) && item.state === 'open' && item.present && held.finish.editing[item.id] === undefined) {
       const apply = capsule('Apply', 'quiet', () => deskKit.apply(held, set, [{ id: item.id }], apply));
       apply.disabled = !deskOurs() || !!held.view.working || !!held.view.readonly;
       card.append(add(make('div', 'bar'), apply));
@@ -269,9 +312,16 @@ deskKit.apply = async (held, set, items, control) => {
   control.disabled = true;
   try {
     await deskKit.flush(held);
-    if (held.stale || Object.keys(held.pending).length) throw new Error('Save your text before applying a suggestion.');
+    if (held.stale || Object.keys(held.pending).length || pendingDeckWords(held)) throw new Error('Save your text before applying a suggestion.');
     held.view = await deskApi('drafts/apply', { id: held.id, seen: held.view.revision, job: set.job, items });
     for (const item of items) delete held.finish.editing[item.id];
+    if (held.view.slide_result) {
+      const found = held.view.desk.cards.find((card) => card.name === held.view.name);
+      const sent = held.view.slide_edit, slide = found.slides.find((one) => one.id === sent.slide);
+      await slideWordResult(found, slide, sent, held.view.slide_result, () => { deskMaterialChanged(held); });
+      deskMaterialChanged(held);
+      return;
+    }
     const note = held.view.note;
     if (note) {
       // Existing author notes survive a proposal handoff, just as pending text does.
@@ -713,7 +763,7 @@ async function drawDesk(fresh) {
 // Each editable material keeps its own revision and pending typing across redraws.
 async function loadDeskMaterials(path, held, found) {
   await Promise.all(list(found.cards).filter((one) =>
-    ['blueprint', 'document', 'brief', 'scenario', 'yoodli'].includes(one.kind) && one.seen)
+    ['blueprint', 'document', 'brief', 'scenario', 'yoodli', 'deck'].includes(one.kind) && one.seen)
     .map(async (one) => {
       let heldMaterial = held.materials[one.name];
       // A pending save owns its revision until it succeeds or explicitly reloads.
@@ -1361,7 +1411,7 @@ function materialParts(held, found) {
     }
     if (deskOurs()) {
       const working = ['queued', 'working'].includes(job.status);
-      if (working || ['stopped', 'failed'].includes(job.status) || job.applied === false) {
+      if (working || ['stopped', 'failed'].includes(job.status) || (job.applied === false && !job.proposed)) {
         const route = working ? 'stop' : 'retry';
         const go = capsule(working ? 'Stop change' : 'Retry change', 'quiet', () =>
           working ? stopDeskChange(held, job.id, go)

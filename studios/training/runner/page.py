@@ -773,7 +773,7 @@ class RunnerPage(desk.Page):
             try:
                 if path.endswith('/finish'):
                     result = draft_finish.finish(self.engine, root, name,
-                        desk.text(sent, 'tool'), sent.get('seen'))
+                        desk.text(sent, 'tool'), sent.get('seen'), sent.get('level'))
                 elif path.endswith('/apply'):
                     result = draft_finish.apply(self.engine, root, name,
                         desk.text(sent, 'job'), sent.get('items'), sent.get('seen'))
@@ -866,7 +866,9 @@ class RunnerPage(desk.Page):
                 if path.endswith('slide-words'):
                     result = self.engine.slide_words(root, level, desk.text(sent, 'slide'),
                         desk.text(sent, 'field'), desk.text(sent, 'text', False), desk.text(sent, 'seen'),
-                        _redraw=sent.get('redraw') is True)
+                        _redraw=sent.get('redraw') is True,
+                        _finishing=sent.get('finishing'),
+                        _source='finishing' if sent.get('finishing') else 'save')
                 else:
                     result = self.engine.slide_speaker_notes(root, level, desk.text(sent, 'slide'),
                         desk.text(sent, 'text', False), desk.text(sent, 'seen'))

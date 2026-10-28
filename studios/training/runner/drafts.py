@@ -1490,6 +1490,8 @@ def card(engine, root, name: str, draft: dict | None = None,
     holding `files`, so the record that names the parts is the one kept."""
     from runner import draft_finish
     root = Path(root)
+    if workspace.split(name)[0] == 'deck':
+        return draft_finish.deck_card(engine, root, name)
     desk = desk if desk is not None else desk_of(engine, root, name)
     draft = draft if draft is not None else desk.read(name)
     whole = view(engine, root)
@@ -1499,6 +1501,7 @@ def card(engine, root, name: str, draft: dict | None = None,
     run = run_of(root) or {}
     return {**found, **parts_of(desk, name, draft), **whole_parts(engine, root, name, draft),
             'finishing': draft_finish.proposals(engine, root, name).summary(name, draft),
+            'finish_prices': draft_finish.prices(name),
             'working': job if job and job.get('name') == name else None,
             'jobs': [dict(one) for one in (run.get('drafts') or {}).get('jobs', []) if one.get('name') == name],
             'chain': _chain(run, name), 'start': _start(whole),

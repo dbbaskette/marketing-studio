@@ -2822,6 +2822,8 @@ class DeskPageTests(PageCase):
         self.post('drafts/finish', sent, expect=403, token=False)
         checked = self.post('drafts/finish', sent)
         self.assertIn('coverage', checked['finishing'])
+        for tool in ('sources', 'time', 'answers', 'humanize', 'level'):
+            self.post('drafts/finish', {**sent, 'tool': tool}, expect=403, token=False)
         for route in ('apply', 'skip'):
             self.post('drafts/' + route, {**sent, 'job': 'a' * 32, 'items': []},
                       expect=403, token=False)
@@ -2832,6 +2834,9 @@ class DeskPageTests(PageCase):
             refused = self.post('drafts/' + route, {**sent, 'path': saved}, expect=409)
             self.assertEqual(refused['error'], drafts.NOT_ON_DESK)
         self.get('drafts/proofread', path=saved, name=name, expect=409)
+        for tool in ('sources', 'time', 'answers', 'humanize', 'level'):
+            refused = self.post('drafts/finish', {**sent, 'path': saved, 'tool': tool}, expect=409)
+            self.assertEqual(refused['error'], drafts.NOT_ON_DESK)
 
     def test_added_sources_have_a_read_only_price_and_authenticated_batch_route(self):
         path = self.desk(materials=['document', 'brief'])
@@ -3227,6 +3232,8 @@ class DeskTeamTests(TeamCase):
         name = 'document@101'
         for route, sent in (('source', {'files': [{'name': 'notes.txt', 'content': 'Tm90ZXM='}]}),
                             ('finish', {'name': name, 'tool': 'coverage'}),
+                            *(("finish", {'name': name, 'tool': tool}) for tool in
+                              ('sources', 'time', 'answers', 'humanize', 'level')),
                             ('apply', {'name': name, 'job': 'a' * 32, 'items': []}),
                             ('skip', {'name': name, 'job': 'a' * 32, 'items': []}),
                             ('update-all', {'level': '101'}),

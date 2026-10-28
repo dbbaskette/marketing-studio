@@ -243,3 +243,203 @@ class FinishingTests(DeckCase):
         result = self.ask(root, 'skip', job=found['job'], ids=[item])
         self.assertEqual(result['finishing']['proofread']['items'][0]['state'], 'skipped')
         self.assertEqual((root / '101/document.md').read_bytes(), before)
+
+
+class FinishingJobTests(DeckCase):
+    NAME = FinishingTests.NAME
+    desk, card, ask = FinishingTests.desk, FinishingTests.card, FinishingTests.ask
+    # Reuse fixture helpers without rerunning the in-process cases in this subclass.
+    def proposal(self, root, kind, *, verdict=None, replacement=None):
+        card = self.card(root)
+        part = card['sections'][0]
+        row = {'part': part['id'], 'quote': part['text'],
+               'replacement': replacement if replacement is not None else part['text'] + ' Consider this.',
+               'reason': 'Read the supplied finding.'}
+        if verdict:
+            row.update(verdict=verdict, finding='zero-downtime')
+        def answer(tools, job):
+            accepted = tools.submit_artifact(kind, json.dumps([row]))
+            self.assertTrue(accepted[0], accepted[1])
+        self.workers.then(kind, answer)
+        return part
+
+    def test_check_against_sources_marks_each_claim(self):
+        root = self.desk()
+        before = (root / '101/document.md').read_bytes()
+        self.proposal(root, 'finish-sources', verdict='contradicted')
+        research = len(self.workers.of('question'))
+        from runner import drafts
+        read_card = drafts.card
+        def locked_card(*args, **kwargs):
+            self.assertTrue(self.engine.files._is_owned(), 'Finishing returns one locked card snapshot.')
+            return read_card(*args, **kwargs)
+        with mock.patch.object(drafts, 'card', side_effect=locked_card):
+            result = self.ask(root, 'finish', tool='sources', seen=self.card(root)['revision'])
+        item = result['finishing']['sources']['items'][0]
+        self.assertEqual(item['verdict'], 'contradicted')
+        self.assertEqual(item['finding'], 'zero-downtime')
+        self.assertIn('downtime', item['source'].lower())
+        self.assertEqual((root / '101/document.md').read_bytes(), before)
+        self.assertEqual(len(self.workers.of('question')), research)
+
+    def test_humanize_keeps_references(self):
+        root = self.desk()
+        card = self.card(root)
+        self.engine.draft_save(root, self.NAME, card['sections'][0]['id'], card['revision'],
+                               'Keep the reference [1].')
+        self.proposal(root, 'finish-humanize', replacement='Keep the reference.')
+        result = self.ask(root, 'finish', tool='humanize', level='strong', seen=self.card(root)['revision'])
+        item = result['finishing']['humanize']['items'][0]
+        self.assertEqual(item['dropped'], [1])
+        self.assertIn('Check the facts:', item['flag'])
+        self.assertTrue(item['present'])
+        self.assertEqual(item['state'], 'open')
+        result = self.ask(root, 'apply', job=result['finishing']['humanize']['job'],
+                          items=[{'id': item['id']}], seen=result['revision'])
+        self.assertEqual(result['sections'][0]['text'], 'Keep the reference.')
+        self.assertEqual([e for e in workspace.load(root)['events'] if e['event'] == 'save'][-1]['via'], 'finishing')
+
+    def test_a_finishing_job_is_one_desk_job(self):
+        root = self.desk()
+        card = self.card(root)
+        from runner import draft_jobs
+        with mock.patch.object(self.engine, 'wake'):
+            draft_jobs.begin(self.engine, root, 'section', self.NAME,
+                part=card['sections'][0]['id'], seen=card['revision'], note='Clarify.')
+        with self.assertRaisesRegex(page.desk.Refusal, draft_jobs.BUSY):
+            self.ask(root, 'finish', tool='time', seen=card['revision'])
+
+
+    def test_row_185_fit_time_offers_deck_words_and_apply_keeps_slide_history(self):
+        root = self.desk()
+        name = 'deck@101'
+        card = self.engine.draft_card(root, name)
+        part = next(p for p in card['sections'] if p['slide'] == 'check-yourself' and p['field'] == 'title')
+        def answer(tools, job):
+            self.assertIn('learner time', [i['name'] for i in tools.job['inputs']])
+            accepted = tools.submit_artifact('finish-time', json.dumps([{
+                'part': part['id'], 'quote': part['text'], 'replacement': 'A shorter check',
+                'reason': 'Keep the practice within the intake time.'}]))
+            self.assertTrue(accepted[0], accepted[1])
+        self.workers.then('finish-time', answer)
+        result = self.finish.finish(self.engine, root, name, 'time', card['revision'])
+        item = result['finishing']['time']['items'][0]
+        result = self.finish.apply(self.engine, root, name, result['finishing']['time']['job'],
+                                  [{'id': item['id']}], result['revision'])
+        self.assertTrue(result['slide_result']['fits'])
+        self.assertEqual(result['finishing']['time']['items'][0]['state'], 'applied')
+        versions = self.engine.slide_versions(root, '101', 'check-yourself')['versions']
+        self.assertEqual(versions[0]['source'], 'finishing')
+
+    def test_prices_and_each_worker_context_are_available_before_running(self):
+        root = self.desk()
+        card = self.card(root)
+        self.assertEqual(set(card['finish_prices']), {'sources', 'time', 'answers', 'humanize', 'level'})
+        self.assertTrue(all(p['minutes'] == 2 for p in card['finish_prices'].values()))
+        for tool in ('time', 'answers', 'level', 'humanize'):
+            with self.subTest(tool=tool):
+                result = self.ask(root, 'finish', tool=tool, level='light', seen=self.card(root)['revision'])
+                self.assertEqual(len(result['finishing'][tool]['items']), 1)
+                self.assertEqual(self.record(root)['drafts']['jobs'][-1]['status'], 'done')
+        self.assertTrue(home.read_json(__import__('runner.drafts', fromlist=['times']).times(), {}))
+
+    def test_typing_during_a_finishing_job_keeps_the_proposal_on_its_basis(self):
+        root = self.desk()
+        card = self.card(root)
+        part = card['sections'][0]
+        def answer(tools, job):
+            self.engine.draft_save(root, self.NAME, part['id'], card['revision'], 'My pending words.')
+            accepted = tools.submit_artifact('finish-humanize', json.dumps([{
+                'part': part['id'], 'quote': part['text'], 'replacement': 'Worker words.',
+                'reason': 'A clearer sentence.'}]))
+            self.assertTrue(accepted[0], accepted[1])
+        self.workers.then('finish-humanize', answer)
+        result = self.ask(root, 'finish', tool='humanize', seen=card['revision'])
+        item = result['finishing']['humanize']['items'][0]
+        self.assertFalse(item['present'])
+        self.assertEqual(result['sections'][0]['text'], 'My pending words.')
+        with self.assertRaisesRegex(page.desk.Refusal, GONE):
+            self.ask(root, 'apply', job=result['finishing']['humanize']['job'],
+                     items=[{'id': item['id']}], seen=result['revision'])
+
+
+    def test_deck_proposal_waits_for_design_approval(self):
+        from stand_ins import slides as slides_stand_in
+        self.slides.design, self.slides.judges, self.slides.keeps = True, True, True
+        self.slides.have['local'] = True
+        self.slides.listed = set(slides_stand_in.CURRENT)
+        root = self.desk(walkthrough=True)
+        name = 'deck@101'
+        card = self.engine.draft_card(root, name)
+        part = next(p for p in card['sections'] if p['slide'] == 'check-yourself' and p['field'] == 'title')
+        def answer(tools, job):
+            self.assertTrue(tools.submit_artifact('finish-time', json.dumps([{
+                'part': part['id'], 'quote': part['text'], 'replacement': 'A short check',
+                'reason': 'Fits the intake time.'}]))[0])
+        self.workers.then('finish-time', answer)
+        result = self.finish.finish(self.engine, root, name, 'time', card['revision'])
+        found = result['finishing']['time']
+        before, answers = (root / '101/deck/outline.json').read_bytes(), len(self.slides.replies)
+        result = self.finish.apply(self.engine, root, name, found['job'],
+                                  [{'id': found['items'][0]['id']}], result['revision'])
+        approval = result['slide_result']['approval']
+        self.assertEqual(result['finishing']['time']['items'][0]['state'], 'open')
+        self.assertEqual((root / '101/deck/outline.json').read_bytes(), before)
+        self.assertEqual(len(self.slides.replies), answers)
+        self.engine.slide_words_decide(root, approval['token'], 'cancel', None)
+        self.assertEqual(self.engine.draft_card(root, name)['finishing']['time']['items'][0]['state'], 'open')
+        result = self.finish.apply(self.engine, root, name, found['job'],
+                                  [{'id': found['items'][0]['id']}], result['revision'])
+        approval = result['slide_result']['approval']
+        applied = self.engine.slide_words_decide(root, approval['token'], 'approve', card['seen'],
+            question=approval['question']['id'], revision=approval['revision'], response='Use these shorter words.')
+        self.assertTrue(applied['fits'])
+        self.assertEqual(self.engine.draft_card(root, name)['finishing']['time']['items'][0]['state'], 'applied')
+
+    def test_results_refuse_sources_and_malformed_proposals(self):
+        root = self.desk()
+        card = self.card(root)
+        source = next(p for p in card['sections'] if p.get('locked'))
+        before = (root / '101/document.md').read_bytes()
+        for value in ('not json', '{}', '[{}]', json.dumps([{
+                'part': source['id'], 'quote': source['text'], 'replacement': 'Replace sources.', 'reason': 'No.'}])):
+            def answer(tools, job, value=value):
+                ok, said = tools.submit_artifact('finish-humanize', value)
+                self.assertFalse(ok, said)
+            self.workers.then('finish-humanize', answer)
+            result = self.ask(root, 'finish', tool='humanize', seen=self.card(root)['revision'])
+            self.assertEqual(self.record(root)['drafts']['jobs'][-1]['status'], 'failed')
+            self.assertNotIn('humanize', result['finishing'])
+        self.assertEqual((root / '101/document.md').read_bytes(), before)
+
+    def test_queued_finishing_can_stop_and_retry_with_the_chosen_level(self):
+        root = self.desk()
+        with mock.patch.object(self.engine, 'wake'):
+            self.ask(root, 'finish', tool='humanize', level='strong', seen=self.card(root)['revision'])
+        job = self.record(root)['drafts']['jobs'][-1]
+        self.engine.stop_draft(root, job['id'])
+        self.assertEqual(len(self.workers.of('finish-humanize')), 0)
+        self.engine.retry_draft(root, job['id'])
+        self.assertEqual(self.record(root)['drafts']['jobs'][-1]['level'], 'strong')
+        self.assertEqual(len(self.workers.of('finish-humanize')), 1)
+
+
+    def test_level_check_reads_the_earlier_objectives_and_never_researches(self):
+        self.finish = importlib.import_module('runner.draft_finish')
+        root = self.begin(flow='desk', levels=['101', '201'], materials=['document', 'brief'])
+        self.to_end(root)
+        name = 'document@201'
+        card = self.engine.draft_card(root, name)
+        research = len(self.workers.of('question'))
+        def answer(tools, job):
+            ok, earlier = tools.read_input('earlier levels')
+            self.assertTrue(ok)
+            self.assertIn('Level 101', earlier)
+            self.assertIn('Assume the reader can already:', earlier)
+            self.assertNotIn('Level 201', earlier)
+            self.assertNotIn('save_source', [entry['name'] for entry in tools.offered()])
+            self.workers.finish_level(tools, job)
+        self.workers.then('finish-level', answer)
+        result = self.finish.finish(self.engine, root, name, 'level', card['revision'])
+        self.assertEqual(len(result['finishing']['level']['items']), 1)
+        self.assertEqual(len(self.workers.of('question')), research)

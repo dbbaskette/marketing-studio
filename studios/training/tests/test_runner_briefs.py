@@ -45,6 +45,8 @@ class BriefTests(JobCase):
     def test_there_is_a_brief_for_each_job_and_no_other(self):
         self.assertEqual(briefs.JOBS, ('research-plan', 'research-plan-queue', 'research-question', 'blueprint',
                                        'document', 'brief', 'scenario', 'yoodli', 'part',
+                                       'finish-sources', 'finish-time', 'finish-answers',
+                                       'finish-humanize', 'finish-level',
                                        'deck-outline', 'deck-section', 'deck-review'))
         self.assertEqual(sorted(path.name for path in briefs.HERE.glob('*.md')),
                          ['blueprint-level.md', 'blueprint.md', 'brief.md',
@@ -53,7 +55,8 @@ class BriefTests(JobCase):
                           'deck-review-design.md', 'deck-review.md',
                           'deck-section-assets.md', 'deck-section-design.md',
                           'deck-section.md',
-                          'document.md', 'level.md', 'naming.md', 'part.md', 'research-plan-queue.md', 'research-plan.md',
+                          'document.md', 'finish-answers.md', 'finish-humanize.md', 'finish-level.md',
+                          'finish-sources.md', 'finish-time.md', 'level.md', 'naming.md', 'part.md', 'research-plan-queue.md', 'research-plan.md',
                           'research-question.md', 'scenario.md', 'yoodli.md'])
         with self.assertRaisesRegex(WorkspaceError, 'There is a brief for: research-plan'):
             briefs.guidance('deck')
@@ -69,6 +72,18 @@ class BriefTests(JobCase):
             with self.assertRaisesRegex(WorkspaceError, 'A brief, and nothing else, is '
                                         'written as one of these kinds: product, competitive'):
                 briefs.guidance(job, kind=kind)
+
+    def test_finishing_briefs_use_only_worker_inputs_and_return_proposals(self):
+        for kind in ('sources', 'time', 'answers', 'humanize', 'level'):
+            text = briefs.guidance('finish-' + kind)
+            with self.subTest(kind=kind):
+                for pattern in (FILE_NAME, PATH, COMMAND, A_HARNESS):
+                    self.assertEqual(pattern.findall(text), [])
+                self.assertLessEqual(set(TOOL_LIKE.findall(text)), set(worker_tools.NAMES))
+                self.assertIn('part, quote, replacement and reason', text)
+                self.assertIn('Leave Sources', text)
+                self.assertIn('fix them and hand it back again', text)
+                self.assertIn('Stop once accepted.', text)
 
     def test_a_brief_never_names_a_helper_command_or_a_file(self):
         for name, text in EVERY.items():

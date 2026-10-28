@@ -522,7 +522,12 @@ def check_slide_words(text: str, spec: dict) -> tuple:
     return problems, [], [], text.strip()
 
 
-VALIDATORS = {'research-plan': check_plan, 'blueprint': check_blueprint,
+def check_finishing(text, spec):
+    from runner import draft_finish
+    return draft_finish.check_result(text, spec)
+
+
+VALIDATORS = {'finishing': check_finishing, 'research-plan': check_plan, 'blueprint': check_blueprint,
               'document': check_document, 'brief': check_brief, 'scenario': check_scenario,
               'yoodli': check_yoodli, 'outline': check_outline, 'section': check_section,
               'part': check_part, 'slide-words': check_slide_words}

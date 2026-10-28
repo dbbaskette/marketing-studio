@@ -4388,11 +4388,15 @@ class Engine(Reviewing):
         self.carry_on(root)
         return drafts.view(self, root)
 
-    def slide_words(self, path, level, slide, field, text, seen, *, _approved_words=None, _restore=None, _redraw=False, _source='save') -> dict:
+    def slide_words(self, path, level, slide, field, text, seen, *, _approved_words=None, _restore=None, _redraw=False, _source='save', _finishing=None) -> dict:
         """Change the outline and its drawing, then render and keep the deck."""
         level = level or None
         with self.files:
             root, record = self._on_desk(path, decided=True, deck_change=True)
+            if _finishing is not None:
+                from runner import draft_finish
+                draft_finish.deck_link(self, root, level, {'finishing': _finishing,
+                    'slide': slide, 'field': field})
             name = workspace.qualify('deck', level)
             session = workspace.load(root)
             if name not in workspace.artifact_names(root, session):
@@ -4440,7 +4444,7 @@ class Engine(Reviewing):
                     any(key in ('title', 'subtitle', 'caveat', 'source') or key.startswith('points[')
                         for key, _, _ in changes)):
                 return self._propose_slide_words(root, level, slide, field, text, seen, old, basis,
-                                                changes=changes, restore=_restore, source=_source)
+                                                changes=changes, restore=_restore, source=_source, finishing=_finishing)
             whole = home.read_json(folder / 'given' / 'outline.json', {})
             updated = next(item for item in deck.slides_of(edited) if item.get('id') == slide)
             whole['slides'] = [updated if item.get('id') == slide else item
@@ -4529,6 +4533,8 @@ class Engine(Reviewing):
                 except (WorkspaceError, OSError) as refusal:
                     raise WorkspaceError('Your slide change is saved on this computer, but '
                                          f'its history could not be committed. {refusal}') from refusal
+            if _finishing:
+                draft_finish.mark_deck(self, root, **_finishing)
         if _redraw:
             self.carry_on(root)
         return {'fits': True}
@@ -4614,7 +4620,7 @@ class Engine(Reviewing):
             raise WorkspaceError(problem.get('what') or 'The deck could not be saved.')
 
     def _propose_slide_words(self, root, level, slide, field, text, seen, old, basis,
-                            *, changes=None, restore=None, source='save', outline=None):
+                            *, changes=None, restore=None, source='save', outline=None, finishing=None):
         """Put the tool's actual question to the person; this never answers it."""
         tool, project = self.slides(), pipeline.design_project(root, level)
         checked = tool.design_check(project)
@@ -4666,7 +4672,7 @@ class Engine(Reviewing):
                     if item['id'] == slide)), ensure_ascii=False),
                     after=json.dumps(restore['words'], ensure_ascii=False))
             home.write_json(folder / 'request.json', {'root': str(root), 'level': level,
-                'restore': restore, 'text': text, 'source': source,
+                'restore': restore, 'text': text, 'source': source, 'finishing': finishing,
                 'outline': outline if source == 'outline' else None,
                 'seen': seen, 'approval': approval,
                 'basis': {str(path): digest.hex() for path, digest in basis.items()}})
@@ -4686,6 +4692,11 @@ class Engine(Reviewing):
                 shutil.rmtree(folder)
                 return {'cancelled': True}
             approval = requested['approval']
+            if requested.get('finishing'):
+                from runner import draft_finish
+                draft_finish.deck_link(self, root, requested['level'], {
+                    'finishing': requested['finishing'], 'slide': approval['slide'],
+                    'field': approval['field']})
             if decision != 'approve' or question != approval['question']['id'] \
                     or revision != approval['revision'] or not isinstance(response, str) \
                     or not response.strip() or len(response) > 4000:
@@ -4711,7 +4722,8 @@ class Engine(Reviewing):
             else:
                 result = self.slide_words(root, requested['level'], approval['slide'], approval['field'],
                     requested.get('text', approval['after']), seen, _restore=requested.get('restore'),
-                    _redraw=redraw, _source=requested.get('source', 'save'), _approved_words=approved)
+                    _redraw=redraw, _source=requested.get('source', 'save'), _approved_words=approved,
+                    _finishing=requested.get('finishing'))
             if result.get('fits'):
                 self._settle_selection_token(root, token, {'fits': True})
                 shutil.rmtree(folder, ignore_errors=True)
@@ -5380,7 +5392,7 @@ class Engine(Reviewing):
 
     def draft_begin(self, path, kind, name, **values) -> dict:
         draft_jobs.begin(self, path, kind, name, **values)
-        return self.draft_card(path, name) if workspace.split(name)[0].partition(':')[0] in drafts.CODECS else self.view(path)
+        return self.draft_card(path, name) if workspace.split(name)[0].partition(':')[0] in (*drafts.CODECS, 'deck') else self.view(path)
 
     def stop_draft(self, path, job) -> dict:
         """Let an active section finish, then stop; a queued request stops immediately."""
@@ -5396,7 +5408,7 @@ class Engine(Reviewing):
                 found.update(status='stopped', settled_at=home.now())
             self._store(root, record)
             self._commit(root, 'stop the change after this section')
-        return self.draft_card(root, found['name']) if workspace.split(found['name'])[0].partition(':')[0] in drafts.CODECS else self.view(root)
+        return self.draft_card(root, found['name']) if workspace.split(found['name'])[0].partition(':')[0] in (*drafts.CODECS, 'deck') else self.view(root)
 
     def retry_draft(self, path, job) -> dict:
         with self.files:
@@ -5407,14 +5419,14 @@ class Engine(Reviewing):
                           if one['id'] == job), None)
             if found is None or found.get('status') not in ('stopped', 'failed', 'done'):
                 raise WorkspaceError('Choose a finished change to try again.')
-            values = {key: found.get(key) for key in ('note', 'action', 'passage', 'start')}
+            values = {key: found.get(key) for key in ('note', 'action', 'passage', 'start', 'level')}
             name, kind = found['name'], found['kind']
             if found['part'] == 'whole':
                 seen = workspace.sha256_file(root / workspace.artifact(root, workspace.load(root), name)['file'])
                 part = None
             else:
-                seen = drafts.desk_of(self, root, name).read(name)['revision']
-                part = None if kind == 'revise-all' else found['part']
+                seen = self.draft_card(root, name)['revision']
+                part = None if kind == 'revise-all' or kind in draft_jobs.FINISHING else found['part']
         return self.draft_begin(root, kind, name, part=part, seen=seen, **values)
 
     def _draft_job_failed(self, root, ident, problem):
@@ -5440,12 +5452,14 @@ class Engine(Reviewing):
             if job.get('status') != 'queued':
                 return  # It may have been stopped after the runner selected it.
             found = self._survey(root, record)
-            job.update(status='working', started_at=home.now(), says='Writing this section.')
+            job.update(status='working', started_at=home.now(), says=(
+                'Checking this material.' if job['kind'] in draft_jobs.FINISHING else 'Writing this section.'))
             self._store(root, record)
             work = draft_jobs.work_for(root, found, job)
         spec = workspace.artifact(root, found.session, job['name'])
         step = pipeline.Step(f"draft:{job['id']}", 'agent', workspace.label(job['name']),
-                             f"Rewriting {workspace.label(job['name'])}", spec['stage'], job['name'])
+                             ("Checking " if job['kind'] in draft_jobs.FINISHING else "Rewriting ")
+                             + workspace.label(job['name']), spec['stage'], job['name'])
         (root / IN_HAND).write_text(step.id + '\n', encoding='utf-8')
         try:
             outcome, handed, started_at, folder = self._job(root, run, step, work)
@@ -5460,6 +5474,12 @@ class Engine(Reviewing):
                 if accepted is None:
                     job.update(status='failed', applied=False, problem=pipeline.why_not(handed, outcome.detail),
                                error=pipeline.why_not(handed, outcome.detail), settled_at=home.now())
+                elif job['kind'] in draft_jobs.FINISHING:
+                    from runner import draft_finish
+                    draft_finish.receive(self, root, job, accepted['text'],
+                        work.prepared['artifacts'][job['kind']])
+                    if job.get('stop'):
+                        job['status'] = 'stopped'
                 else:
                     def apply():
                         via = 'rewrite' if job['kind'] in ('section', 'write-again', 'update', 'layout', 'write-whole') else job['kind']
@@ -5518,12 +5538,14 @@ class Engine(Reviewing):
                             part = job['sections'][index]
                             job.update(status='queued', part=part, basis=job['bases'][part], index=index)
                             job.pop('settled_at', None)
-                if job.get('applied'):
+                kept = bool(job.get('applied') or job['kind'] in draft_jobs.FINISHING and accepted)
+                if kept:
                     step_times.note(drafts.Times(), drafts.times(), f"draft:{job['kind']}", outcome.seconds)
                 self._tried(record, step.id, started_at, outcome.seconds,
-                            'kept' if job.get('applied') else 'failed', **self._cost(outcome))
+                            'kept' if kept else 'failed', **self._cost(outcome))
                 self._store(root, record)
-                self._ready_again(root)
+                if job['kind'] not in draft_jobs.FINISHING:
+                    self._ready_again(root)
                 self._commit(root, f"keep the change to {workspace.label(job['name'])}")
             shutil.rmtree(folder, ignore_errors=True)
             if self.space().share == gitstate.SHARE[0]:

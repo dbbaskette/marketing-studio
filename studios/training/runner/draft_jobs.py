@@ -14,7 +14,8 @@ from studio_core.drafting import basis, prompts, record
 
 from runner import briefs, drafts, pipeline
 
-KINDS = ('section', 'write-again', 'revise-all', 'selection', 'update', 'layout', 'write-whole')
+FINISHING = ('finish-sources', 'finish-time', 'finish-answers', 'finish-humanize', 'finish-level')
+KINDS = FINISHING + ('section', 'write-again', 'revise-all', 'selection', 'update', 'layout', 'write-whole')
 BUSY = drafts.BUSY
 NEXT = 'Next, after {doing}.'
 SOURCES = 'Leave Sources as it is: the studio adds the references you use.'
@@ -63,7 +64,7 @@ def browser_offset(text, offset):
 
 
 def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None,
-          passage=None, start=None, finishing=None, wake=True):
+          passage=None, start=None, finishing=None, wake=True, level=None):
     """Validate and persist a request. Waking schedules work; the caller never calls a provider."""
     with engine.files:
         root, run = engine._on_desk(root, decided=True)
@@ -79,12 +80,21 @@ def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None
             raise workspace.WorkspaceError(locked)
         base = workspace.split(name)[0].partition(':')[0]
         try:
-            drafts._vet('whole', file_text(root, name))
+            if kind not in FINISHING:
+                drafts._vet('whole', file_text(root, name))
         except ValueError as error:
             raise workspace.WorkspaceError(str(error)) from None
         if kind == 'write-whole' and base != 'document':
             raise workspace.WorkspaceError('Choose a guide to write again as a whole.')
-        if base in WHOLE or kind == 'write-whole':
+        if kind in FINISHING:
+            from runner import draft_finish
+            draft_finish.validate(name, kind.removeprefix('finish-'), level)
+            desk, draft = draft_finish._read(engine, root, name)
+            desk.checked(draft, seen)
+            if base != 'deck':
+                drafts._vet('whole', desk.codec.join(draft))
+            text, sections, part = desk.codec.join(draft), None, 'finishing'
+        elif base in WHOLE or kind == 'write-whole':
             if part is not None or kind == 'selection':
                 raise workspace.WorkspaceError('Change this material with a whole note.')
             if kind == 'layout' and (base != 'scenario' or name not in engine._survey(root, run).own):
@@ -128,15 +138,18 @@ def begin(engine, root, kind, name, part=None, note=None, seen=None, action=None
             start = browser_offset(text, start)
             if start is None or text[start:start + len(passage)] != passage:
                 raise workspace.WorkspaceError('Select the passage again in the current text.')
-        job = {'id': secrets.token_hex(6), 'kind': kind, 'name': name, 'part': part,
+        job = {'id': secrets.token_hex(16 if kind in FINISHING else 6), 'kind': kind, 'name': name, 'part': part,
                'note': note or '', 'action': action, 'passage': passage, 'selection': passage,
                'start': start, 'basis': basis.fingerprint(text), 'status': 'queued', 'at': home.now()}
+        if kind in FINISHING:
+            job['level'] = level or 'medium'
         if finishing:
             job['finishing'] = finishing
         if sections is not None:
             job.update(sections=sections, done=[], bases={s: basis.fingerprint(
                 codec.text_of(draft, s)) for s in sections}, total=len(sections), index=0, chain=True)
-        guess = len(sections) if sections is not None else 2 if kind == 'write-again' else 1
+        guess = (len(sections) if sections is not None
+                 else 2 if kind == 'write-again' or kind in FINISHING else 1)
         job['minutes'] = step_times.expected(drafts.Times(), drafts.times(), f'draft:{kind}', guess)
         live = engine._run(root).workers
         doing = next((v['label'] for k, v in live.items() if not k.startswith('draft:')), None)
@@ -211,6 +224,9 @@ def references(root, session, draft, section, blueprint):
 
 
 def work_for(root, found, job):
+    if job['kind'] in FINISHING:
+        from runner import draft_finish
+        return draft_finish.work_for(root, found, job)
     name, part = job['name'], job['part']
     base, level = workspace.split(name)
     if part == 'whole':
