@@ -136,7 +136,7 @@ def _kind(target):
         return 'drawing'
     if isinstance(target, str) and '/' in target:
         return 'part'
-    if target in ('scope', 'handoff', 'ownership'):
+    if target in ('scope', 'handoff', 'ownership', 'ready'):
         return None
     raise WorkspaceError('Choose brief, classification, research-plan, outline, research, drawing or a current slide/field.')
 
@@ -198,6 +198,9 @@ def _intake(engine, root, record, reading=True):
 def _prepare(engine, root, record, target):
     kind = _kind(target)
     requirements = {'kind': kind, 'envelope': ['kind', 'target', 'expected_basis', 'payload']}
+    if target == 'ready':
+        from runner.desk_ready import requirements as ready_requirements
+        return ready_requirements(root, record, engine)
     if target in ('scope', 'handoff', 'ownership'):
         return {'allowed_scope': list(KINDS), 'existing_scope': record.get('conversation_scope')}
     if target == 'design':
@@ -652,7 +655,7 @@ def submit(engine, path, request):
             or not isinstance(request['payload'], dict):
         raise WorkspaceError('Submit kind, target, expected_basis and payload together.')
     target, kind, payload = request['target'], request['kind'], request['payload']
-    if target in ('look', 'design'):
+    if target in ('look', 'design', 'ready'):
         raise WorkspaceError('Use desk answer for an explicit look or design answer.')
     if kind not in KINDS or _kind(target) != kind:
         raise WorkspaceError('The submission kind does not match its target.')
@@ -707,6 +710,26 @@ def submit(engine, path, request):
 
 def save(engine, path, request):
     return submit(engine, path, request)
+
+
+def prepare_migration(record, saved_inputs):
+    from runner.desk_migration import prepare_migration as prepare
+    return prepare(record, saved_inputs)
+
+
+def migration_preview(engine, path):
+    from runner.desk_migration import migration_preview as preview
+    return preview(engine, path)
+
+
+def migrate(engine, path, expected):
+    from runner.desk_migration import migrate as apply
+    return apply(engine, path, expected)
+
+
+def ready(engine, path, request):
+    from runner.desk_ready import ready as approve
+    return approve(engine, path, request)
 
 
 def set_scope(engine, path, expected_basis, scope):

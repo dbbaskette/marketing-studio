@@ -385,6 +385,8 @@ class Engine(Jobs, Researching, DeskActions):
         if found is None:
             raise WorkspaceError('No workspace is set up on this computer yet. Set one up '
                                  'first.')
+        if gitstate.marker(found.repo, found.folder) is None:
+            raise WorkspaceError('The Presentation Studio workspace record is missing. Restore it before continuing.')
         return found
 
     def driven(self, path) -> Path | None:
@@ -490,6 +492,7 @@ class Engine(Jobs, Researching, DeskActions):
         root = self.driven(path)
         if root is None:
             return
+        self.space()  # the existing marker's runtime floor also guards configured writers
         if self._checking:
             raise WorkspaceError(CHECKING)
         if decks.in_conversation(self._load(root)) and not conversation:
@@ -624,14 +627,20 @@ class Engine(Jobs, Researching, DeskActions):
         shared. Call it holding `files`."""
         gitstate.require_workspace(space)
         arrived = gitstate.arrived(space, at)
+        from studio_core import presentation_migration as migration
         for root in self.every():
             try:
                 record = decks.read_run(root)
-                if not team.ours(space, record) \
-                        or gitstate.inside(space, root / decks.RUN) not in arrived:
+                changes = {gitstate.inside(space, root / name)
+                           for name in (decks.RUN, migration.RECORD, migration.ORIGIN)}
+                if not team.ours(space, record) or not changes.intersection(arrived):
                     continue
-                theirs = json.loads(gitstate.theirs(space, root / decks.RUN, at) or 'null')
-            except (WorkspaceError, ValueError, OSError):
+                theirs = self._remote_record(space, root, at)
+            except (ValueError, OSError) as error:
+                raise WorkspaceError('Shared deck ownership cannot be verified. Keep its saved records before sharing again.') from error
+            except WorkspaceError:
+                raise
+            except TypeError:
                 continue
             if not isinstance(theirs, dict) or team.ours(space, theirs):
                 continue    # changed on both sides under our name: the replay reports it
@@ -643,10 +652,26 @@ class Engine(Jobs, Researching, DeskActions):
             run.gone = True
             run.stop.set()
             who = team.driver(space, theirs)
-            by = gitstate.last_by(space, root / decks.RUN, at) or ('Someone', home.now())
+            current = migration.RECORD if (root / migration.RECORD).is_file() else decks.RUN
+            by = gitstate.last_by(space, root / current, at) or ('Someone', home.now())
             self._aside(root, gitstate.set_aside(space, root, at),
                         who['name'] if who else by[0], who['since'] if who else by[1])
         self._deleted(space, arrived, at)
+
+    @staticmethod
+    def _remote_record(space, root, at=None):
+        from studio_core import presentation_migration as migration
+        original = gitstate.theirs(space, root / decks.RUN, at)
+        if original is None:
+            return None
+        value = gitstate.theirs(space, root / migration.RECORD, at)
+        origin = gitstate.theirs(space, root / migration.ORIGIN, at)
+        if value is not None or origin is not None:
+            return migration.validated(json.loads(value or 'null'), original.encode(), root.name,
+                                       json.loads(origin or 'null'))
+        if (root / migration.ORIGIN).exists():
+            raise ValueError('A shared migrated deck lost both desk records.')
+        return json.loads(original)
 
     def _move(self, space: gitstate.Workspace, root: Path, theirs: dict, at: str) -> None:
         """A teammate started a deck in the same folder as one this computer started while
@@ -654,6 +679,8 @@ class Engine(Jobs, Researching, DeskActions):
         folder; this computer's is moved, whole, to a folder of its own and committed there,
         so the replay that follows carries it on top of theirs. Call it holding `files`."""
         record = decks.read_run(root)
+        if record.get('unfinished_migration'):
+            raise WorkspaceError('This migrated deck has a shared name conflict. Keep both saved folders before resolving it.')
         title = record.get('title') or root.name
         run = self._run(root)
         run.gone = True     # a step in hand ends, and keeps nothing
@@ -702,7 +729,7 @@ class Engine(Jobs, Researching, DeskActions):
                 theirs = gitstate.theirs(space, root / decks.RUN, at)
                 if theirs is None or not gitstate.unshared(space, root, at):
                     continue
-                record = json.loads(theirs)
+                record = self._remote_record(space, root, at)
             except (WorkspaceError, ValueError):
                 continue
             who = team.driver(space, record if isinstance(record, dict) else None)
@@ -867,7 +894,7 @@ class Engine(Jobs, Researching, DeskActions):
             self._forget(root, space)
             theirs = None
             try:
-                theirs = json.loads(gitstate.theirs(space, root / decks.RUN) or 'null')
+                theirs = self._remote_record(space, root)
             except (WorkspaceError, ValueError):
                 pass
             who = team.driver(space, theirs if isinstance(theirs, dict) else None)
@@ -1006,6 +1033,13 @@ class Engine(Jobs, Researching, DeskActions):
 
     def _work(self, root: Path, run: _Run) -> None:
         """Do one step after another until the deck waits, ends or is halted."""
+        # Unknown/pending effective records must not reach exception cleanup/marker repair.
+        try:
+            with gitstate.workspace_locked(self.space(), self.files, configured=True):
+                if decks.in_conversation(self._load(root)):
+                    return
+        except WorkspaceError:
+            return
         if run.busy:  # woken from inside its own step: that step's end looks again anyway
             return
         held, last, run.busy, settled = False, None, True, False
@@ -1081,8 +1115,14 @@ class Engine(Jobs, Researching, DeskActions):
         except companion.Stopped:   # ended on purpose; IN_HAND stays for the next start
             pass
         except Exception as failure:  # whatever a step does, the runner keeps serving
-            self._step_marker(root)
-            self._trouble(root, failure)
+            with self.files:
+                try:
+                    if decks.in_conversation(self._load(root)):
+                        return
+                except WorkspaceError:
+                    return
+                self._step_marker(root)
+                self._trouble(root, failure)
         finally:
             if held:
                 self._slots.give_back()
@@ -1240,6 +1280,8 @@ class Engine(Jobs, Researching, DeskActions):
         """Continue under the saved policy, without claiming a person's approval."""
         with self.files:
             record = self._load(root)
+            if decks.in_conversation(record):
+                return
             if not self._automatic(record, step.name,
                                    holding=self._holding(root, step.name)):
                 raise WorkspaceError('This step needs your review.')
@@ -2802,6 +2844,9 @@ class Engine(Jobs, Researching, DeskActions):
         if halted:
             return halted.get('state') or 'failed', halted.get('why') or 'It has stopped.'
         if decks.in_conversation(record) and decks.delivered(root) is None:
+            from runner.desk_ready import status as ready_status
+            if ready_status(root, record)['ready']:
+                return 'ready', 'Ready. Delivery is a separate action.'
             return 'waiting', 'Work continues in conversation.'
         if record.get('question'):
             return 'waiting', f"A question is waiting for you: {record['question']['text']}"
@@ -3943,6 +3988,11 @@ class Engine(Jobs, Researching, DeskActions):
             seen.add(root.absolute())
             try:
                 saved_work.checked_path(root / decks.RUN)
+                raw = json.loads((root / decks.RUN).read_bytes())
+                from studio_core import presentation_migration as migration
+                if migration.supported(raw) and not decks.on_desk(raw):
+                    found.setdefault('gated-flow', []).append(saved_work.needs(
+                        root, raw['title'], 'Original saved guided creation record is retained.'))
                 run = self._load(root)
                 survey = stages.survey(run)
                 listed = [step.name for step in stages.steps(run)]
@@ -3950,7 +4000,7 @@ class Engine(Jobs, Researching, DeskActions):
                 saved_work.issue(issues, root, str(exc))
                 continue
             title = (run.get('form') or {}).get('title') or root.name
-            if not decks.on_desk(run):
+            if not migration.supported(raw) and not decks.on_desk(raw):
                 found.setdefault('gated-flow', []).append(saved_work.needs(root, title, 'Saved guided creation flow.'))
             if 'research' in listed and not run.get('research_contract') \
                     and 'research' not in survey.done:

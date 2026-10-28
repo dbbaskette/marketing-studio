@@ -5,13 +5,14 @@ import stat
 from pathlib import Path
 
 from .blog_migration import dependencies, migration_supported
+from . import presentation_migration
 
 SYNC_WAIT = ('A Studio step is still in progress in this repository. Stop it or wait for it '
              'to finish, then share again. A stopped or interrupted step can leave a marker; '
              'if sharing still waits, reopen the Studio to recover the saved work first.')
 
 
-def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
+def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentation=None) -> bool:
     """Check known canonical worker records without following directory links.
 
     A missing marker is idle; unreadable scope or a malformed Blog Studio worker
@@ -101,6 +102,10 @@ def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
         # work/sources are legal workspace and container names. A filename alone,
         # or an unknown/partial record, never proves an output/source cache.
         deck = small_record(folder / 'run.json')
+        if isinstance(deck, dict) and deck.get('route') in ('scratch', 'document', 'existing'):
+            if not presentation_migration.supported(deck):
+                unknown(ValueError('Unsupported Presentation Studio worker metadata'))
+            return True
         if named_record(deck, (1, 2, 3)) and known_run(deck, (1, 2, 3)) \
                 and isinstance(deck.get('form'), dict) \
                 and deck.get('route') in ('idea', 'document', 'existing'):
@@ -124,6 +129,9 @@ def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
         marker = desk / 'migration.json'
         if present(marker):
             value = small_record(marker)
+            if present(folder / 'run.json') or present(desk / 'migration-origin.json') \
+                    or (isinstance(value, dict) and value.get('product') == 'Presentation Studio'):
+                return False
             draft = small_record(desk / 'draft.json')
             if not migration_supported(value, small_bytes(folder / 'session.json'),
                                        small_bytes(folder / 'derived/blog-run.json'), draft, folder.name):
@@ -147,11 +155,17 @@ def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
             return False
         except OSError as error:
             unknown(error)
+        if stat.S_ISLNK(info.st_mode):
+            unknown(ValueError('Linked Studio cache'))
         if not stat.S_ISDIR(info.st_mode):
             return False
         # Only Blog Studio's fixed migration records override structural cache
         # pruning. Bound this uncertainty check; never silently skip an oversized
         # or unreadable candidate tree and declare replay safe.
+        if not present(cache):
+            return False
+        if cache.is_symlink():
+            unknown(ValueError('Linked Studio cache'))
         count = 0
         for folder, directories, _ in os.walk(cache, followlinks=False, onerror=unknown):
             count += 1
@@ -159,15 +173,47 @@ def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
                 unknown(ValueError('Migration scope too large'))
             if blog_migration(Path(folder)):
                 return True
+            if presentation_busy(Path(folder)):
+                return True
+            if any(present(Path(folder) / name) for name in ('.harness-slides/design/.lock', '.studio-research/lock')):
+                return True
             directories[:] = [name for name in directories if name != '.git'
                               and not (Path(folder) / name).is_symlink()]
         return False
 
+    def presentation_busy(folder):
+        pending = folder / presentation_migration.PENDING
+        if present(pending) and pending != recovering_presentation:
+            return True
+        marker, origin = folder / presentation_migration.RECORD, folder / presentation_migration.ORIGIN
+        value = small_record(marker)
+        if pending == recovering_presentation:
+            return False  # explicit locked recovery validates the exact journal itself
+        if present(origin) or (present(marker) and (present(folder / 'run.json') or
+                isinstance(value, dict) and value.get('product') == 'Presentation Studio')):
+            try:
+                value = small_record(marker)
+                presentation_migration.validated(value, small_bytes(folder / 'run.json'),
+                                                  folder.name, small_record(origin))
+                for name in value['required']:
+                    path = folder / name
+                    if not path.is_file() or any(p.is_symlink() for p in (path, *path.parents) if p != folder.parent):
+                        raise ValueError('Missing saved Presentation Studio dependency')
+                    with path.open('rb') as stream:
+                        stream.read(1)
+                    presentation_migration.shared_material(name, small_bytes(path))
+            except (ValueError, TypeError, KeyError, OSError) as error:
+                unknown(error)
+        return False
+
     for folder, directories, _ in os.walk(repo, followlinks=False, onerror=unknown):
         here = Path(folder)
+        if presentation_busy(here):
+            return True
         if blog_migration(here):
             return True
-        if any(present(here / name) for name in ('work/step.lock', '.training-studio/step.lock')):
+        if any(present(here / name) for name in ('work/step.lock', '.training-studio/step.lock',
+                'work/.harness-slides/design/.lock', '.studio-research/lock')):
             return True
         if present(here / '.blog-runs') and blog_busy(here / '.blog-runs'):
             return True

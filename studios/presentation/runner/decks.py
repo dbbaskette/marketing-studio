@@ -26,6 +26,7 @@ import home
 from workspace import WorkspaceError, write_atomic
 
 from runner import gitstate, settings
+from studio_core import presentation_migration as migration
 
 ROUTES = ('scratch', 'document', 'existing')
 DELIVERIES = ('live', 'reading')     # a talk, or a handout read on its own
@@ -318,11 +319,47 @@ def deck_id(space, title: str) -> str:
 # --- the run record ------------------------------------------------------------------------
 
 def read_run(root: Path) -> dict:
-    return json.loads((Path(root) / RUN).read_text(encoding='utf-8'))
+    return json.loads(record_bytes(root))
+
+
+def record_bytes(root: Path) -> bytes:
+    """Ordinary original bytes, or canonical effective bytes for every version consumer."""
+    root = Path(root)
+    if (root / migration.PENDING).exists() or (root / migration.PENDING).is_symlink():
+        raise ValueError('Opening this deck on the desk was interrupted. Retry the explicit migration to recover it.')
+    original = (root / RUN).read_bytes()
+    path = root / migration.RECORD
+    receipt = root / migration.ORIGIN
+    if path.exists() or path.is_symlink() or receipt.exists() or receipt.is_symlink():
+        if path.is_symlink() or path.parent.is_symlink() or path.stat().st_size > 2_000_000:
+            raise ValueError('The saved desk record cannot be verified.')
+        if receipt.is_symlink() or receipt.stat().st_size > 10000:
+            raise ValueError('The migration receipt cannot be verified.')
+        value = json.loads(path.read_bytes())
+        effective = migration.validated(value, original, root.name,
+                                        json.loads(receipt.read_bytes()))
+        for name in value['required']:
+            file = root / name
+            if file.is_symlink() or file.parent.is_symlink():
+                raise ValueError('A required shared desk record is linked.')
+            migration.shared_material(name, file.read_bytes())
+        return json.dumps(effective, sort_keys=True, ensure_ascii=False).encode()
+    return original
 
 
 def write_run(root: Path, run: dict) -> None:
-    write_atomic(Path(root) / RUN, json.dumps(run, indent=2, ensure_ascii=False) + '\n')
+    root = Path(root)
+    path = root / migration.RECORD
+    if path.exists() or path.is_symlink() or (root / migration.ORIGIN).exists() \
+            or (root / migration.PENDING).exists():
+        read_run(root)  # fail closed on interrupted, linked or mismatched metadata
+        value = json.loads(path.read_bytes())
+        value['record'] = run
+        migration.validated(value, (root / RUN).read_bytes(), root.name,
+                            json.loads((root / migration.ORIGIN).read_bytes()))
+        write_atomic(path, json.dumps(value, indent=2, ensure_ascii=False) + '\n')
+    else:
+        write_atomic(root / RUN, json.dumps(run, indent=2, ensure_ascii=False) + '\n')
 
 
 def _new_run(ident: str, form: dict) -> dict:

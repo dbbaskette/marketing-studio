@@ -566,6 +566,7 @@ function snapshot() {
     notice: document.getElementById('notice').hidden ? '' : document.getElementById('notice').textContent,
     current: document.body.querySelectorAll('[aria-current]').map(name),
     sheet: sheet.hidden ? '' : words(sheet).replace(/\n+/g, '\n'),
+    sheetCards: sheet.hidden ? 0 : sheet.querySelectorAll('.card').filter(visible).length,
     toasts: document.body.querySelectorAll('.toast').map((node) => node.textContent),
     links: document.body.querySelectorAll('a').filter((node) => visible(node) && node.href)
       .map((node) => ({ name: name(node), href: node.href, rel: node.rel,

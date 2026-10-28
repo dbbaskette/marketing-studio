@@ -278,6 +278,18 @@ and run writes; assign conversation execution before registering migrated work.
 - [ ] Add Training Studio matrix rows 190–193; run migration and finished-adoption
   regressions plus desktop/phone fake journeys GREEN; commit per Studio if needed.
 
+Task 5 Presentation Studio clarification: retain immutable original run bytes and use the
+fixed effective `desk/migration.json` + immutable `desk/migration-origin.json` pair, local
+`work/desk/migration-transaction.json`, and the existing Presentation Studio workspace
+`hub.json` floor (at least 4.8.0; preserve higher floors/unrelated values). Preview explains
+existing-part scope and closing older runtimes; current guards cannot retroactively change
+older configured code. Eligibility and retained early/marker-bearing compatibility follow
+the design. Explicit `desk ready` and main **Mark ready** use actual checked-material,
+drawing/dependency/freshness/blocker/person-response guards without jobs, delivery or
+fabricated upstream approvals. Shared metadata and private local inputs have distinct
+verification requirements. Missing paired records fail closed; total external deletion of
+all migration evidence cannot be detected from an unchanged old run alone.
+
 ### Task 6: Retire eligible entry points and document compatibility
 
 **Files:** `core/studio_core/setup_web/{index.html,app.js}`, `preferences.py`,
