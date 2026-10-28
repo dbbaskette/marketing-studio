@@ -1,4 +1,5 @@
 """Inventory never expires or changes disposable Blog Studio records."""
+
 import isolation  # noqa: F401
 import json
 import io
@@ -22,19 +23,57 @@ class SavedWorkTests(unittest.TestCase):
         path.write_text(json.dumps(data))
 
     def snapshot(self):
-        return {str(p.relative_to(self.root)): p.read_bytes()
-                for p in self.root.rglob('*') if p.is_file()}
+        return {
+            str(p.relative_to(self.root)): p.read_bytes()
+            for p in self.root.rglob('*')
+            if p.is_file()
+        }
 
     def test_cli_returns_inventory_before_team_or_worker_operations(self):
         import studio
+
         out = io.StringIO()
-        with patch.object(sys, 'argv', ['studio.py', '--root', str(self.root),
-                                      'saved-work', '--folder', str(self.root / 'absent')]), \
-                patch('sys.stdout', out), \
-                patch('team_workspace.before', side_effect=AssertionError('No team operation')):
+        with (
+            patch.object(
+                sys,
+                'argv',
+                [
+                    'studio.py',
+                    '--root',
+                    str(self.root),
+                    'saved-work',
+                    '--folder',
+                    str(self.root / 'absent'),
+                ],
+            ),
+            patch('sys.stdout', out),
+            patch('team_workspace.before', side_effect=AssertionError('No team operation')),
+        ):
             self.assertEqual(studio.main(), 0)
         self.assertFalse(json.loads(out.getvalue())['complete'])
         self.assertEqual(list(self.root.iterdir()), [])
+
+    def test_cli_excludes_linked_root_and_ancestor_without_resolving(self):
+        import studio
+
+        target = self.root / 'target'
+        target.mkdir()
+        (target / 'nested').mkdir()
+        link = self.root / 'linked'
+        link.symlink_to(target, target_is_directory=True)
+        for declared in (link, link / 'nested'):
+            with self.subTest(declared=declared):
+                out = io.StringIO()
+                with (
+                    patch.object(sys, 'argv', ['studio.py', '--root', str(declared), 'saved-work']),
+                    patch('sys.stdout', out),
+                ):
+                    self.assertEqual(studio.main(), 0)
+                said = json.loads(out.getvalue())
+                self.assertFalse(said['complete'])
+                self.assertEqual(said['unused'], [])
+                self.assertEqual(said['scope']['roots'][0], str(declared))
+                self.assertEqual(list((target / 'nested').iterdir()), [])
 
     def test_clean_local_scope(self):
         said = saved_work.scan(self.root)
@@ -55,12 +94,22 @@ class SavedWorkTests(unittest.TestCase):
         self.assertFalse(saved_work.scan(self.root)['complete'])
 
     def test_guided_and_recoverable_deleted_dependencies_without_expiry(self):
-        for directory in (self.root / 'articles' / 'saved',
-                          self.root / '.blog-runs' / 'deleted' / 'old' / 'blog'):
-            self.write(directory / 'session.json', {'id': 'synthetic', 'title': 'Synthetic', 'mode': 'first-draft'})
-            self.write(directory / 'derived' / 'blog-run.json', {'schema': 1, 'approval': 'conversation', 'pipeline': ['research'], 'stages': {}})
-        self.write(self.root / '.blog-runs' / 'deleted' / 'old.json',
-                   {'schema': 1, 'deleted_at': '2000-01-01T00:00:00Z'})
+        for directory in (
+            self.root / 'articles' / 'saved',
+            self.root / '.blog-runs' / 'deleted' / 'old' / 'blog',
+        ):
+            self.write(
+                directory / 'session.json',
+                {'id': 'synthetic', 'title': 'Synthetic', 'mode': 'first-draft'},
+            )
+            self.write(
+                directory / 'derived' / 'blog-run.json',
+                {'schema': 1, 'approval': 'conversation', 'pipeline': ['research'], 'stages': {}},
+            )
+        self.write(
+            self.root / '.blog-runs' / 'deleted' / 'old.json',
+            {'schema': 1, 'deleted_at': '2000-01-01T00:00:00Z'},
+        )
         before = self.snapshot()
         with patch('blog_runner.catalog', side_effect=AssertionError('No catalog')):
             said = saved_work.scan(self.root)

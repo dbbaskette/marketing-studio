@@ -188,6 +188,31 @@ class SavedWorkTests(StudioCase):
         self.assertEqual(home.registry_path().read_bytes(), before)
         self.assertFalse(missing.exists())
 
+    def test_invalid_configured_scope_stays_unknown_with_explicit_folder(self):
+        for content in ('{', '{"schema": 999}'):
+            gitstate.settings_path().write_text(content)
+            said = self.engine.saved_work(folders=(self.base,))
+            self.assertFalse(said['complete'])
+            self.assertEqual(said['unused'], [])
+            self.assertTrue(any(entry['path'] == str(gitstate.settings_path())
+                                for entry in said['issues']))
+            self.assertEqual(gitstate.settings_path().read_text(), content)
+
+    def test_missing_workspace_marker_stays_unknown_with_explicit_folder(self):
+        (self.space.root / gitstate.MARKER).unlink()
+        said = self.engine.saved_work(folders=(self.base,))
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+        self.assertTrue(any(entry['path'] == str(self.space.root / gitstate.MARKER)
+                            for entry in said['issues']))
+
+    def test_session_only_conversation_training_needs_gated_flow(self):
+        root = self.chat()
+        said = self.engine.saved_work()
+        self.assertIn(str(root), self.needed(said, 'gated-flow'))
+        self.assertEqual(next(entry['status'] for entry in said['paths']
+                              if entry['id'] == 'gated-flow'), 'needed')
+
     QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
     CHAT = 'A conversation training whose research has not started.'
     LAYOUT = 'It began before the current review layout, and its final review is still to come.'

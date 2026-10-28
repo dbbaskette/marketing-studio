@@ -1250,7 +1250,8 @@ def main():
     root = Path(args.root).expanduser()
     if not root.is_absolute():
         p.error('--root must be absolute')
-    root = root.resolve()
+    # Inventory must preserve links for its read-only exclusion checks.
+    root = root.absolute() if args.group == 'saved-work' else root.resolve()
     from hub_store import HubError
 
     try:

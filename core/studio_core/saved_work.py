@@ -81,3 +81,63 @@ def checked_path(path: Path) -> None:
         raise ValueError('Symbolic link excluded.')
     if not path.is_file():
         raise ValueError('Saved record is missing or is not a file.')
+
+
+def workspace_roots(settings: Path, marker: str, issues: list) -> list[Path]:
+    """Read remembered scope without current() silently discarding damaged settings."""
+    import json
+
+    try:
+        settings.lstat()
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        issue(issues, settings, str(exc))
+        return []
+    try:
+        checked_path(settings)
+        record = json.loads(settings.read_text(encoding='utf-8'))
+        if not isinstance(record, dict) or record.get('schema') != 1 \
+                or not isinstance(record.get('repo'), str) \
+                or not isinstance(record.get('folder'), str) \
+                or not isinstance(record.get('name'), str) \
+                or not isinstance(record.get('branch'), str):
+            raise ValueError('Unsupported workspace settings.')
+        repo, folder = Path(record['repo']), Path(record['folder'])
+        if not repo.is_absolute() or folder.is_absolute() or '..' in folder.parts:
+            raise ValueError('Invalid saved workspace location.')
+        root = repo / folder
+    except (OSError, ValueError, TypeError) as exc:
+        issue(issues, settings, str(exc))
+        return []
+    try:
+        checked_path(root / marker)
+    except (OSError, ValueError) as exc:
+        issue(issues, root / marker, str(exc))
+    return [root]
+
+
+def registered_roots(registry: Path, key: str, issues: list) -> list[Path]:
+    """Include remembered candidates without filtering missing records."""
+    import json
+
+    try:
+        registry.lstat()
+    except FileNotFoundError:
+        return []
+    except OSError as exc:
+        issue(issues, registry, str(exc))
+        return []
+    try:
+        checked_path(registry)
+        record = json.loads(registry.read_text(encoding='utf-8'))
+        if not isinstance(record, dict) or record.get('schema') != 1 \
+                or not isinstance(record.get(key), dict):
+            raise ValueError('Unsupported saved-work registry.')
+        roots = [Path(path) for path in record[key]]
+        if any(not root.is_absolute() for root in roots):
+            raise ValueError('Registered workspace locations must be absolute.')
+        return roots
+    except (OSError, ValueError, TypeError) as exc:
+        issue(issues, registry, str(exc))
+        return []

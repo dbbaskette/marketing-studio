@@ -1,4 +1,5 @@
 """Read-only inventory of local Blog Studio saved work, including retained deletions."""
+
 from pathlib import Path
 
 import studio
@@ -25,7 +26,9 @@ def scan(root: Path, folders=()) -> dict:
                     raise ValueError('Unsupported deleted record schema.')
                 retained = deleted / child.stem / 'blog'
                 if not retained.is_dir():
-                    raise ValueError('Deleted work requires recovery history unavailable to this scan.')
+                    raise ValueError(
+                        'Deleted work requires recovery history unavailable to this scan.'
+                    )
                 candidates.append(retained)
             except (OSError, ValueError, TypeError, AttributeError) as exc:
                 inventory.issue(issues, child, str(exc))
@@ -40,7 +43,12 @@ def scan(root: Path, folders=()) -> dict:
         try:
             inventory.checked_path(directory / 'session.json')
             record = studio.read_json(directory / 'session.json')
-            if record.get('schema', 1) != 1 or not record.get('id') or not record.get('title') or not record.get('mode'):
+            if (
+                record.get('schema', 1) != 1
+                or not record.get('id')
+                or not record.get('title')
+                or not record.get('mode')
+            ):
                 raise ValueError('Unsupported blog record schema.')
             title = record.get('title') or directory.name
             draft = directory / 'desk' / 'draft.json'
@@ -54,20 +62,37 @@ def scan(root: Path, folders=()) -> dict:
                 continue  # A conversation article has no guided run.
             inventory.checked_path(run_path)
             run = studio.read_json(run_path)
-            if run.get('schema') not in (1, 2, 3) or run.get('approval') not in ('page', 'conversation'):
+            if run.get('schema') not in (1, 2, 3) or run.get('approval') not in (
+                'page',
+                'conversation',
+            ):
                 raise ValueError('Unsupported run record schema.')
             if run.get('schema') == 2 and not run.get('review_policy'):
                 raise ValueError('Saved review policy is missing.')
             if run.get('schema') == 3 and (run.get('research_contract') or {}).get('schema') != 2:
                 raise ValueError('Saved research contract is missing.')
-            found.setdefault('gated-flow', []).append(inventory.needs(
-                directory, title, 'Saved guided creation flow.'))
-            if not run.get('research_contract') and 'research' in (run.get('pipeline') or ()) \
-                    and (run.get('stages') or {}).get('research', {}).get('status') != 'approved':
-                found.setdefault('research-queue', []).append(inventory.needs(
-                    directory, title, 'Saved research predates the current research contract.'))
+            found.setdefault('gated-flow', []).append(
+                inventory.needs(directory, title, 'Saved guided creation flow.')
+            )
+            if (
+                not run.get('research_contract')
+                and 'research' in (run.get('pipeline') or ())
+                and (run.get('stages') or {}).get('research', {}).get('status') != 'approved'
+            ):
+                found.setdefault('research-queue', []).append(
+                    inventory.needs(
+                        directory, title, 'Saved research predates the current research contract.'
+                    )
+                )
         except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
             inventory.issue(issues, directory, str(exc))
-    return inventory.report(IDS, found, scope={
-        'product': 'Blog Studio', 'roots': [str(root), *map(str, folders)], 'local_only': True},
-        issues=issues)
+    return inventory.report(
+        IDS,
+        found,
+        scope={
+            'product': 'Blog Studio',
+            'roots': [str(root), *map(str, folders)],
+            'local_only': True,
+        },
+        issues=issues,
+    )

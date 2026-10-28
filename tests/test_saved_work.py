@@ -1,5 +1,6 @@
 from pathlib import Path
 import unittest
+from unittest.mock import patch
 
 import marketing_studio  # noqa: F401  puts the shared core on the import path
 from studio_core import saved_work
@@ -33,6 +34,14 @@ class SavedWorkTests(unittest.TestCase):
             self.assertFalse(said['complete'])
             self.assertEqual(said['unused'], [])
             self.assertEqual(said['paths'][0]['status'], 'unknown')
+
+    def test_unreadable_scope_and_registry_are_reported(self):
+        for scanner, args in ((saved_work.workspace_roots, ('hub.json',)),
+                              (saved_work.registered_roots, ('decks',))):
+            issues = []
+            with patch.object(Path, 'lstat', side_effect=PermissionError('Denied')):
+                self.assertEqual(scanner(Path('/synthetic/record.json'), *args, issues), [])
+            self.assertEqual(issues, [{'path': '/synthetic/record.json', 'why': 'Denied'}])
 
     def test_every_path_has_its_sentence_and_names_no_studio(self):
         self.assertEqual(set(saved_work.PATHS), {'research-queue', 'cover-sample',

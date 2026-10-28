@@ -3866,8 +3866,7 @@ class Engine(Jobs, Researching, DeskActions):
         from studio_core import saved_work
         found: dict[str, list[dict]] = {}
         issues = []
-        space = self.workspace
-        roots = [space.root] if space is not None else []
+        roots = saved_work.workspace_roots(gitstate.settings_path(), gitstate.MARKER, issues)
         candidates = []
         for declared in roots:
             for child in saved_work.children(declared, issues):
@@ -3878,6 +3877,9 @@ class Engine(Jobs, Researching, DeskActions):
         candidates.extend(Path(folder) for folder in folders)
         scope = {'product': 'Presentation Studio', 'roots': [str(root) for root in [*roots, *map(Path, folders)]],
                  'local_only': True}
+        registered = saved_work.registered_roots(home.registry_path(), 'decks', issues)
+        candidates.extend(registered)
+        scope['roots'].extend(str(path) for path in registered)
         seen: set[Path] = set()
         for root in candidates:
             if root.absolute() in seen:
@@ -3885,12 +3887,10 @@ class Engine(Jobs, Researching, DeskActions):
             seen.add(root.absolute())
             try:
                 saved_work.checked_path(root / decks.RUN)
-                run = decks.read_run(root)
-                if run.get('schema') != decks.SCHEMA:
-                    raise ValueError('Unsupported saved record schema.')
+                run = self._load(root)
                 survey = stages.survey(run)
                 listed = [step.name for step in stages.steps(run)]
-            except (OSError, ValueError, TypeError, AttributeError, KeyError) as exc:
+            except (OSError, ValueError, TypeError, AttributeError, KeyError, WorkspaceError) as exc:
                 saved_work.issue(issues, root, str(exc))
                 continue
             title = (run.get('form') or {}).get('title') or root.name

@@ -13,7 +13,8 @@ from stand_ins import brand as brand_stand_in
 from runner_support import LONG_OUTLINE, OUTLINE, StudioCase, asks, fails, unsettled
 from workspace import WorkspaceError
 
-from runner import decks, jobs, marks, stages, worker_tools
+import home
+from runner import decks, gitstate, jobs, marks, stages, worker_tools
 from runner.steps import build
 
 
@@ -170,6 +171,45 @@ class SavedWorkTests(StudioCase):
             self.assertFalse(said['complete'])
             self.assertEqual(said['unused'], [])
             self.assertEqual(record.read_text(), content)
+
+    def test_supported_policy_and_contract_schemas_remain_known(self):
+        for schema, extra in ((2, {'review_policy': {'schema': 1, 'level': 'balanced'}}),
+                              (3, {'research_contract': {'schema': 2}})):
+            root = self.deck(f'supported-{schema}', schema=schema, **extra)
+            said = self.engine.saved_work()
+            self.assertTrue(said['complete'], said['issues'])
+            self.assertIn(str(root), self.needed(said, 'gated-flow'))
+
+    def test_raw_registry_includes_outside_and_missing_candidates(self):
+        outside = self.deck('registered', at=self.base / 'elsewhere')
+        missing = self.base / 'missing-registered'
+        home.write_json(home.registry_path(), {'schema': 1, 'decks': {
+            str(outside): {}, str(missing): {}}})
+        said = self.engine.saved_work()
+        self.assertIn(str(outside), self.needed(said, 'gated-flow'))
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+        self.assertTrue(any(entry['path'] == str(missing) for entry in said['issues']))
+        home.registry_path().write_text('{')
+        self.assertFalse(self.engine.saved_work()['complete'])
+
+    def test_invalid_configured_scope_stays_unknown_with_explicit_folder(self):
+        for content in ('{', '{"schema": 999}'):
+            gitstate.settings_path().write_text(content)
+            said = self.engine.saved_work(folders=(self.base,))
+            self.assertFalse(said['complete'])
+            self.assertEqual(said['unused'], [])
+            self.assertTrue(any(entry['path'] == str(gitstate.settings_path())
+                                for entry in said['issues']))
+            self.assertEqual(gitstate.settings_path().read_text(), content)
+
+    def test_missing_workspace_marker_stays_unknown_with_explicit_folder(self):
+        (self.space.root / gitstate.MARKER).unlink()
+        said = self.engine.saved_work(folders=(self.base,))
+        self.assertFalse(said['complete'])
+        self.assertEqual(said['unused'], [])
+        self.assertTrue(any(entry['path'] == str(self.space.root / gitstate.MARKER)
+                            for entry in said['issues']))
 
     QUEUE = 'Its research has not run, and it was started before Harness Research could synthesize.'
     DRAWN = 'It was drawn a cover to show its brand.'

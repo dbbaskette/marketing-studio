@@ -7264,8 +7264,7 @@ class Engine(Reviewing):
         from studio_core import saved_work
         found: dict[str, list[dict]] = {}
         issues = []
-        space = self.workspace
-        roots = [space.root] if space is not None else []
+        roots = saved_work.workspace_roots(gitstate.settings_path(), gitstate.MARKER, issues)
         candidates = []
         for declared in roots:
             for child in saved_work.children(declared, issues):
@@ -7278,18 +7277,9 @@ class Engine(Reviewing):
                  'local_only': True}
         seen: set[Path] = set()
         runs = candidates
-        registry = home.registry_path()
-        try:
-            if registry.exists() or registry.is_symlink():
-                saved_work.checked_path(registry)
-                remembered = json.loads(registry.read_text())
-                if remembered.get('schema') != 1 or not isinstance(remembered.get('trainings'), dict):
-                    raise ValueError('Unsupported training registry.')
-                registered = [Path(path) for path in remembered['trainings']]
-                runs.extend(registered)
-                scope['roots'].extend(str(path) for path in registered)
-        except (OSError, ValueError, TypeError, AttributeError) as exc:
-            saved_work.issue(issues, registry, str(exc))
+        registered = saved_work.registered_roots(home.registry_path(), 'trainings', issues)
+        runs.extend(registered)
+        scope['roots'].extend(str(path) for path in registered)
         for root in runs:
             if root.absolute() in seen:
                 continue
@@ -7298,6 +7288,9 @@ class Engine(Reviewing):
                 if not (root / RECORD).exists() and (root / workspace.STATE_DIR / 'session.json').exists():
                     saved_work.checked_path(root / workspace.STATE_DIR / 'session.json')
                     session = workspace.load(root)
+                    if session.get('flow') != 'desk':
+                        found.setdefault('gated-flow', []).append(saved_work.needs(
+                            root, session['title'] or root.name, 'Saved guided creation flow.'))
                     started = workspace.statuses(root, session).get('research', 'not-started')
                     if not session.get('research_contract') and started == 'not-started':
                         found.setdefault('research-queue', []).append(saved_work.needs(
