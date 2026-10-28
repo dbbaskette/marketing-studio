@@ -588,3 +588,111 @@ class ConversationTests(DeskCase):
                 },
             )
         self.assertEqual(desk_chat.read(self.root, ident), current)
+
+    def test_checked_outline_edits_keep_text_ids_history_and_recoverable_removals(self):
+        made = self.create()
+        ident = made['id']
+        first, second = made['draft']['sections']
+        desk_chat.save(self.root, ident, 1, first['id'], 'An edited first passage.')
+        history = desk.versions(self.root, ident, first['id'])
+        context = desk_chat.context(self.root, ident, 'outline')
+        rows = [
+            {'id': second['id'], 'heading': 'Second retitled', 'brief': 'Second brief.'},
+            {'id': first['id'], 'heading': 'First retitled', 'brief': 'First brief.'},
+            {'heading': 'New section', 'brief': 'New brief.'},
+        ]
+        with patch('desk_jobs.begin', side_effect=AssertionError('nested job')):
+            saved = desk_chat.outline_save(
+                self.root, ident, {'expected_basis': context['expected_basis'], 'rows': rows}
+            )
+        self.assertEqual(
+            [row['id'] for row in saved['draft']['sections'][:2]], [second['id'], first['id']]
+        )
+        self.assertEqual(
+            [row['text'] for row in saved['draft']['sections']],
+            [second['text'], 'An edited first passage.', ''],
+        )
+        self.assertEqual(saved['draft']['sections'][1]['brief'], 'First brief.')
+        self.assertEqual(saved['history'][first['id']], history)
+        self.assertEqual(saved['execution'], 'conversation')
+        context = desk_chat.context(self.root, ident, 'outline')
+        kept = [
+            {'id': row['id'], 'heading': row['heading'], 'brief': row.get('brief', '')}
+            for row in saved['draft']['sections']
+            if row['id'] != first['id']
+        ]
+        removed = desk_chat.outline_save(
+            self.root, ident, {'expected_basis': context['expected_basis'], 'rows': kept}
+        )
+        self.assertEqual(removed['removed'][0]['id'], first['id'])
+        self.assertEqual(removed['removed'][0]['text'], 'An edited first passage.')
+        self.assertEqual(removed['history'][first['id']], history)
+        restored = desk.unremove(self.root, ident, removed['draft']['revision'], 0)
+        self.assertIn(first['id'], [row['id'] for row in restored['sections']])
+        self.assertEqual(desk.versions(self.root, ident, first['id']), history)
+        self.assertEqual(desk_jobs.jobs(self.root, ident), [])
+
+    def test_checked_outline_refuses_changed_basis_worker_and_team_without_mutation(self):
+        made = self.create()
+        ident = made['id']
+        context = desk_chat.context(self.root, ident, 'outline')
+        rows = [
+            {'id': row['id'], 'heading': row['heading'], 'brief': ''}
+            for row in made['draft']['sections']
+        ]
+        desk_chat.save(self.root, ident, 1, 'opening', 'A newer opening.')
+        before = desk_chat.read(self.root, ident)
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            desk_chat.outline_save(
+                self.root, ident, {'expected_basis': context['expected_basis'], 'rows': rows}
+            )
+        self.assertEqual(desk_chat.read(self.root, ident), before)
+        context = desk_chat.context(self.root, ident, 'outline')
+        for target, message in (
+            ('desk_jobs._busy', 'A worker is active'),
+            ('team_workspace.guard', 'Other driver'),
+        ):
+            with patch(target, side_effect=ValueError(message)):
+                with self.assertRaisesRegex(ValueError, message):
+                    desk_chat.outline_save(
+                        self.root,
+                        ident,
+                        {'expected_basis': context['expected_basis'], 'rows': rows},
+                    )
+            self.assertEqual(desk_chat.read(self.root, ident), before)
+
+    def test_outline_save_cli_accepts_stdin_and_json_file(self):
+        made = self.create()
+        ident = made['id']
+        script = isolation.SCRIPTS / 'studio.py'
+        rows = [
+            {'id': row['id'], 'heading': row['heading'], 'brief': ''}
+            for row in made['draft']['sections']
+        ]
+        for input_file in ('-', str(self.base / 'outline-edit.json')):
+            context = desk_chat.context(self.root, ident, 'outline')
+            rows[0]['brief'] = input_file == '-' and 'From stdin.' or 'From a file.'
+            request = json.dumps({'expected_basis': context['expected_basis'], 'rows': rows})
+            if input_file != '-':
+                (self.base / 'outline-edit.json').write_text(request)
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(script),
+                    '--root',
+                    str(self.root),
+                    'desk',
+                    'outline-save',
+                    '--article',
+                    ident,
+                    '--input',
+                    input_file,
+                ],
+                input=request if input_file == '-' else None,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(
+                json.loads(result.stdout)['draft']['sections'][0]['brief'], rows[0]['brief']
+            )

@@ -104,9 +104,9 @@
       "sha256": "c83864165a76b39c77b6e5b0d9548e9c6f0af60ba8abdcbd9aa76a43bf5a9cdf"
     },
     "references/conversation-desk.md": {
-      "characters": 6913,
-      "estimated_tokens": 1729,
-      "sha256": "51f3f7756b34ae4000d8a586f6b55e11ddb4bf0558d46576d84bce2eb2349a8f"
+      "characters": 7824,
+      "estimated_tokens": 1956,
+      "sha256": "4934dea2d7d9b88ca96014748ccad65b40d1e6aeb2e0e31a1184cb41a8706c74"
     },
     "references/editorial/board.md": {
       "characters": 1598,
@@ -804,7 +804,7 @@
       "sha256": "4c95901507d60239adadfec8ddd4001a409a52b5c5f7bf20b49bb10a79890142"
     }
   },
-  "library_tokens": 227187,
+  "library_tokens": 227414,
   "routes": {
     "outline_with_sources": {
       "files": [
@@ -820,7 +820,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "New local outline-only article from readable supplied notes and an explicit tone; no voice profile or hub.",
-      "estimated_tokens": 6584
+      "estimated_tokens": 6811
     },
     "first_draft_with_sources": {
       "files": [
@@ -837,7 +837,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "New local draft from supplied notes and explicit tone; internal outline, no specialized template or extra composition reference.",
-      "estimated_tokens": 8422
+      "estimated_tokens": 8649
     },
     "quick_edit": {
       "files": [
@@ -854,7 +854,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "Saved local article; controlled polish, selected voice-rule check and saved review. No new source/profile intake.",
-      "estimated_tokens": 7637
+      "estimated_tokens": 7864
     },
     "voice_setup": {
       "files": [
@@ -889,7 +889,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "Saved article with selected evidence/voice; five requested feedback checks and stored coverage, without rewriting or an optional deep humanization rubric.",
-      "estimated_tokens": 8343
+      "estimated_tokens": 8570
     },
     "quick_polish": {
       "files": [
@@ -902,7 +902,7 @@
         "references/conversation-desk.md"
       ],
       "scenario": "Saved local draft; light clarity and voice polish, no separately requested check or recorded review.",
-      "estimated_tokens": 6421
+      "estimated_tokens": 6648
     }
   },
   "team_hub_routes": {
@@ -1057,7 +1057,7 @@
         "references/workspace.md",
         "references/conversation-desk.md"
       ],
-      "estimated_tokens": 1967
+      "estimated_tokens": 2194
     }
   },
   "craft_guides": {

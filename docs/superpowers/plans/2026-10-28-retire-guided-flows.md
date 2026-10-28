@@ -115,6 +115,12 @@ worker guards under the normal write lock; updates requested scope/provenance on
 and never schedules work, approves or changes material readiness. This permits a
 later requested draft in the same conversation article without a browser.
 
+Task 2 outline-edit clarification: `outline_save(root, ident, request)` is exposed as
+`desk outline-save --article ID --input FILE` with `{expected_basis, rows}`, using
+current `desk context --target outline`. Reuse `desk.outline_save` under normal
+team/worker/process/basis guards; existing IDs retain text/History and removals
+remain recoverable. Initial outline submission stays restricted to new work.
+
 ### Task 3: Presentation Studio conversation desk
 
 **Files:** `studios/presentation/runner/studio.py`, `engine.py`, `decks.py`,

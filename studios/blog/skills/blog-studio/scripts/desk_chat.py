@@ -27,6 +27,7 @@ def _guard(root, ident):
 def _read(root, ident):
     draft = desk.read(root, ident)
     _, record = studio.item(root, 'articles', ident)
+    removed = desk.removed(root, ident)
     return {
         'id': ident,
         'execution': record.get('execution', 'runner'),
@@ -36,9 +37,12 @@ def _read(root, ident):
         'start': desk.read_start(root, ident),
         'editorial_notes': _notes(root, ident),
         'research': desk_jobs._research_extra(root, ident)[0],
+        'removed': removed,
         'history': {
             part: desk.versions(root, ident, part)
-            for part in ['title', 'opening'] + [s['id'] for s in draft['sections']]
+            for part in ['title', 'opening']
+            + [s['id'] for s in draft['sections']]
+            + [s['id'] for s in removed]
         },
     }
 
@@ -108,6 +112,25 @@ def save(root, ident, seen, part, text):
         desk.save(root, ident, seen, part, text, source='chat')
         result = _read(root, ident)
     saved(root, ident, 'Keep a Blog Studio conversation edit')
+    return result
+
+
+def outline_save(root, ident, request):
+    """Edit the complete ordered outline while retaining the desk's section identities."""
+    from team_workspace import before, saved
+
+    _workspace(root)
+    if not isinstance(request, dict) or set(request) != {'expected_basis', 'rows'}:
+        raise ValueError('An outline save takes expected_basis and the complete ordered rows.')
+    before(root, ident)
+    with studio.locked(root):
+        _guard(root, ident)
+        current = _context(root, ident, 'outline')
+        if request['expected_basis'] != current['expected_basis']:
+            raise ValueError(CHANGED)
+        desk.outline_save(root, ident, current['inputs']['draft']['revision'], request['rows'])
+        result = _read(root, ident)
+    saved(root, ident, 'Keep a checked Blog Studio outline edit')
     return result
 
 
@@ -241,7 +264,7 @@ def submit(root, ident, request):
             ):
                 raise ValueError(
                     'An initial outline is only for a new unwritten start without part History. '
-                    'Use the checked outline editor to preserve existing sections and History.'
+                    'Use desk outline-save --article ID --input FILE to preserve sections and History.'
                 )
             job = {'metadata': {'desk': {'basis': desk_jobs._outline_basis(draft)}}}
             desk_jobs._apply_outline(root, ident, draft, job, {'content': json.dumps(payload)})
@@ -464,11 +487,20 @@ def add_parser(groups):
     commands = groups.add_parser(
         'desk', help='create and edit Blog Studio work in conversation'
     ).add_subparsers(dest='action', required=True)
-    for action in ('create', 'show', 'save', 'context', 'submit', 'handoff', 'scope'):
+    for action in (
+        'create',
+        'show',
+        'save',
+        'context',
+        'submit',
+        'handoff',
+        'scope',
+        'outline-save',
+    ):
         command = commands.add_parser(action)
         if action != 'create':
             command.add_argument('--article', required=True)
-        if action in ('create', 'save', 'submit', 'handoff', 'scope'):
+        if action in ('create', 'save', 'submit', 'handoff', 'scope', 'outline-save'):
             command.add_argument('--input', required=True, help='JSON file, or - for stdin')
         if action == 'context':
             command.add_argument('--target', required=True)
@@ -493,6 +525,8 @@ def command(root, args):
         return create(root, data)
     if args.action == 'submit':
         return submit(root, args.article, data)
+    if args.action == 'outline-save':
+        return outline_save(root, args.article, data)
     if args.action == 'scope':
         if set(data) != {'expected_basis', 'scope'}:
             raise ValueError('A scope change takes expected_basis and scope.')

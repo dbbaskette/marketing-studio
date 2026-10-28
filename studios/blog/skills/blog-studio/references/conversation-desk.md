@@ -62,7 +62,7 @@ result still has a basis. Submit the exact envelope below with `... desk submit
 | `research` | `research` | `case`: absolute local Harness Research case directory containing its complete independently reviewed `research/` bundle |
 
 Kinds and targets must match. Clearing prose does not reset existing work to an
-initial outline; use the checked outline editor to retain its sections and History. Research uses the existing bundle checker; raw
+initial outline; use `desk outline-save` to retain its sections and History. Research uses the existing bundle checker; raw
 assistant-written research is refused. Use the existing Harness Research contract
 when the person requested research, then submit its checked output. Source IDs,
 editorial notes and publishing gaps stay outside reader-facing prose. Examples
@@ -75,6 +75,18 @@ takes `{"seen":1,"part":"opening","text":"REQUESTED_TEXT"}` using the revision f
 show. History retains the replaced text. A same-part change refuses the old save;
 a different unchanged part may still save. A basis-bound submission refuses any
 changed input, worker or team ownership; read context again and reconcile.
+
+## Edit an existing outline
+
+Read `... desk context --article ID --target outline`, then use
+`... desk outline-save --article ID --input outline-edit.json` (or `--input -`).
+The JSON is `{"expected_basis":"VALUE_FROM_CONTEXT","rows":[{"id":"SECTION_ID",
+"heading":"REQUESTED_HEADING","brief":"REQUESTED_BRIEF"}]}`. Supply the complete
+ordered list: existing rows keep their returned IDs, new rows omit `id`, and a
+current row omitted from the list is removed only when the person requested it.
+Reorder rows to change order. Text and History follow existing IDs. Removed rows
+and their History remain readable in `desk show` and are retained for recovery. Changed inputs, an active worker or another driver
+refuse the save. The operation starts no work and grants no approval.
 
 ## Explicit scope change
 
