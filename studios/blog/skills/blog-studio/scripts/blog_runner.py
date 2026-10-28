@@ -2475,7 +2475,7 @@ class Engine:
             self.stop.clear()
             # Includes session metadata as well as run/documents: a parallel edit wins.
             directory, _, run = load(self.root, ident)
-            session = (directory / 'session.json').read_bytes()
+            session = studio.record_bytes(directory, 'articles')
             tie = found.get('research_tie')
             if found['next'] == 'research' and not research_draft(directory, tie):
                 # A draft from other inputs or another research version is not continued.
@@ -2591,7 +2591,7 @@ class Engine:
                     if pending and not self.closed.is_set():
                         keep_research(directory, target / research_contract.CASE, tie)
                     return
-                if (directory / 'session.json').read_bytes() != session:
+                if studio.record_bytes(directory, 'articles') != session:
                     raise ValueError(
                         'The blog changed while the worker ran. Your edit was kept. Retry from the latest version.'
                     )

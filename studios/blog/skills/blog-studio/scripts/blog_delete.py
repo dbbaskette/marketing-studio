@@ -94,7 +94,7 @@ def record_path(root, ident):
 def versions(root, ident):
     """The blog, and every version token a page may have shown for it."""
     directory, record = studio.item(root, 'articles', ident)
-    known = {studio.digest((directory / 'session.json').read_bytes())}
+    known = {studio.digest(studio.record_bytes(directory, 'articles'))}
     if studio.inside(directory, blog_runner.STATE).is_file():
         try:
             known.add(blog_runner.survey(root, ident)['expected'])

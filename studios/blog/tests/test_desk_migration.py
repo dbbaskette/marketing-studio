@@ -478,3 +478,209 @@ desk_chat.migrate(Path(sys.argv[1]), sys.argv[2], sys.argv[3])
                 )
                 self.assertEqual(self.snapshot(directory), before)
                 (directory / 'session.json').write_bytes(old)
+
+    def test_effective_record_tokens_refuse_old_forms_and_report_real_changes(self):
+        import blog_delete
+        import desk_jobs
+
+        ident, directory = self.eligible()
+        self.apply(ident)
+        original = (directory / 'session.json').read_bytes()
+        run = (directory / runner.STATE).read_bytes()
+        expected = desk_jobs.expected(self.root, ident)
+        self.assertEqual(management.detail(self.root, ident)['expected'], expected)
+        with patch('management.share', wraps=management.share) as shared:
+            saved = management.dispatch(
+                self.root, 'schedule', {'id': ident, 'expected': expected, 'owner': 'First editor'}
+            )
+            self.assertNotEqual(saved.get('status'), 'unchanged')
+            self.assertTrue(saved['receipts'])
+            self.assertEqual(shared.call_count, 1)
+            current = desk_jobs.expected(self.root, ident)
+            self.assertNotEqual(current, expected)
+            self.assertEqual(management.detail(self.root, ident)['expected'], current)
+            before = self.snapshot(directory)
+            with self.assertRaisesRegex(ValueError, 'changed'):
+                management.dispatch(
+                    self.root,
+                    'schedule',
+                    {'id': ident, 'expected': expected, 'owner': 'Outdated editor'},
+                )
+            with self.assertRaisesRegex(ValueError, 'changed'):
+                blog_delete.check(
+                    self.root,
+                    {
+                        'id': ident,
+                        'expected': expected,
+                        'title': studio.item(self.root, 'articles', ident)[1]['title'],
+                    },
+                )
+            self.assertEqual(self.snapshot(directory), before)
+            unchanged = management.dispatch(
+                self.root, 'schedule', {'id': ident, 'expected': current, 'owner': 'First editor'}
+            )
+            self.assertEqual(unchanged['status'], 'unchanged')
+            self.assertEqual(unchanged['receipts'], [])
+            self.assertEqual(shared.call_count, 1)
+            self.assertEqual(desk_jobs.expected(self.root, ident), current)
+            marker = directory / 'desk/migration.json'
+            marker.write_text(json.dumps(studio.read_json(marker), separators=(',', ':')))
+            self.assertEqual(
+                desk_jobs.expected(self.root, ident),
+                current,
+                'format-only writes do not change the effective record version',
+            )
+        self.assertEqual((directory / 'session.json').read_bytes(), original)
+        self.assertEqual((directory / runner.STATE).read_bytes(), run)
+
+    def test_ordinary_record_bytes_remain_the_raw_file_for_tokens(self):
+        import desk_jobs
+
+        ident, directory = self.eligible()
+        raw = (directory / 'session.json').read_bytes() + b'\n'
+        (directory / 'session.json').write_bytes(raw)
+        self.assertEqual(studio.record_bytes(directory, 'articles'), raw)
+        self.assertEqual(desk_jobs.expected(self.root, ident), studio.digest(raw))
+
+    def test_runner_settlement_keeps_a_parallel_record_edit(self):
+        import editorial
+
+        found = self.create(page=True)
+        ident = found['id']
+        directory, _ = studio.item(self.root, 'articles', ident)
+
+        def worker(*args, **kwargs):
+            with studio.locked(self.root):
+                editorial.schedule(self.root, ident, {'owner': 'New editor'})
+            return {'content': '# Late synthetic outline\n\nOld result.', 'notes': ''}
+
+        engine = runner.Engine(self.root, worker)
+        engine.control(ident, 'resume')
+        engine._once(ident)
+        self.assertEqual(engine.local(ident)['status'], 'failed')
+        self.assertIn('blog changed', engine.local(ident)['error'])
+        self.assertEqual(
+            studio.item(self.root, 'articles', ident)[1]['editorial']['owner'], 'New editor'
+        )
+        self.assertFalse((directory / 'OUTLINE.md').exists())
+
+    def test_original_session_schema_and_required_shapes_refuse_in_pure_and_snapshot(self):
+        import desk_migration
+
+        for name, value in (
+            ('schema', 999),
+            ('schema', True),
+            ('title', None),
+            ('mode', 'future-mode'),
+            ('voice', []),
+            ('sources', {}),
+            ('sources', [{'source_id': 'bad', 'revision': 'new', 'purposes': []}]),
+            ('artifact_hashes', []),
+            ('reviews', 'unknown'),
+            ('created_at', None),
+        ):
+            with self.subTest(field=name, value=value):
+                ident, directory = self.eligible()
+                record = studio.read_json(directory / 'session.json')
+                record[name] = value
+                studio.write_json(directory / 'session.json', record)
+                files = self.snapshot(directory)
+                prepared = desk_migration.prepare_migration(
+                    record, {'run': studio.read_json(directory / runner.STATE), 'files': files}
+                )
+                self.assertTrue(prepared['blockers'])
+                self.assertEqual(prepared['writes'], {})
+                shown = self.preview(ident)
+                self.assertFalse(shown['eligible'])
+                self.assertIn('session', ' '.join(shown['blockers']).lower())
+                with self.assertRaises(ValueError):
+                    self.apply(ident, shown)
+                self.assertEqual(self.snapshot(directory), files)
+                self.assertFalse((directory / 'desk').exists())
+
+    def test_sync_and_domain_agree_on_valid_json_migration_damage(self):
+        import desk_migration
+        from studio_core.sync_guard import worker_in_progress
+
+        ident, directory = self.eligible()
+        self.apply(ident)
+        marker = directory / 'desk/migration.json'
+        draft_path = directory / 'desk/draft.json'
+        meta = studio.read_json(marker)
+        draft = studio.read_json(draft_path)
+        self.assertFalse(worker_in_progress(self.root))
+        for change in (
+            'execution',
+            'scope',
+            'material',
+            'expected',
+            'schema',
+            'history-missing',
+            'history-changed',
+            'pipeline-missing',
+            'draft-schema',
+            'draft-id',
+            'draft-flag',
+            'image-dependency',
+        ):
+            with self.subTest(change=change):
+                damaged, changed_draft = copy.deepcopy(meta), copy.deepcopy(draft)
+                if change == 'execution':
+                    damaged['session'].pop('execution')
+                elif change == 'scope':
+                    damaged['session'].pop('conversation_scope')
+                elif change == 'material':
+                    damaged['material'] = 'future-format'
+                elif change == 'expected':
+                    damaged['expected'] = 'old'
+                elif change == 'schema':
+                    damaged['schema'] = True
+                elif change == 'history-missing':
+                    damaged.pop('historical_stages')
+                elif change == 'history-changed':
+                    damaged['historical_stages']['draft']['status'] = 'approved'
+                elif change == 'pipeline-missing':
+                    damaged.pop('historical_pipeline')
+                elif change == 'draft-schema':
+                    changed_draft['schema'] = 999
+                elif change == 'draft-id':
+                    changed_draft['id'] = 'another-blog'
+                elif change == 'draft-flag':
+                    changed_draft['unfinished_migration'] = 'yes'
+                elif change == 'image-dependency':
+                    changed_draft['images'] = {'image1': {'key': 'saved', 'size': 5}}
+                studio.write_json(marker, damaged)
+                studio.write_json(draft_path, changed_draft)
+                before = self.snapshot(directory)
+                with self.assertRaises(ValueError):
+                    desk_migration.metadata(directory)
+                with self.assertRaises(ValueError):
+                    studio.record_bytes(directory, 'articles')
+                with self.assertRaisesRegex(ValueError, 'could not be checked'):
+                    worker_in_progress(self.root)
+                self.assertEqual(self.snapshot(directory), before)
+
+    def test_preparation_and_registered_reader_share_supported_run_formats(self):
+        import desk_migration
+
+        for change in ('schema-bool', 'policy', 'pipeline'):
+            with self.subTest(change=change):
+                ident, directory = self.eligible()
+                record = studio.read_json(directory / 'session.json')
+                run = studio.read_json(directory / runner.STATE)
+                if change == 'schema-bool':
+                    run['schema'] = True
+                elif change == 'policy':
+                    run.update(schema=2, review_policy={'schema': 1, 'level': 'future'})
+                else:
+                    run['pipeline'] = [{'future': 'step'}]
+                studio.write_json(directory / runner.STATE, run)
+                before = self.snapshot(directory)
+                prepared = desk_migration.prepare_migration(record, {'run': run, 'files': before})
+                self.assertTrue(prepared['blockers'])
+                self.assertEqual(prepared['writes'], {})
+                shown = self.preview(ident)
+                self.assertFalse(shown['eligible'])
+                with self.assertRaises(ValueError):
+                    self.apply(ident, shown)
+                self.assertEqual(self.snapshot(directory), before)

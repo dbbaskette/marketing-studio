@@ -1287,7 +1287,7 @@ def detail(root, ident, location='local', revision=None):
     return {
         'record': record,
         'title': record['title'],
-        'expected': sha((directory / 'session.json').read_bytes()),
+        'expected': sha(studio.record_bytes(directory, 'articles')),
         'assets': editorial.derived_status(root, directory, record),
         'location': 'local',
         'sources': record.get('sources', [])[:20],
@@ -1994,7 +1994,7 @@ def _dispatch(root, route, data):
             ident = data.get('id')
             values = {k: v for k, v in data.items() if k != 'id'}
             directory, _ = studio.item(root, 'articles', ident)
-            before = (directory / 'session.json').read_bytes()
+            before = studio.record_bytes(directory, 'articles')
             record = editorial.schedule(root, ident, values, desk=True)
             import desk
 
@@ -2007,7 +2007,7 @@ def _dispatch(root, route, data):
             )
             library = {'library': kept} if kept else {}
             receipts = [kept.pop('receipt')] if kept and 'receipt' in kept else []
-            if (directory / 'session.json').read_bytes() == before:
+            if studio.record_bytes(directory, 'articles') == before:
                 if not receipts:
                     return dict(UNCHANGED, id=ident, **library)
                 return {'id': ident, 'status': 'saved', 'receipts': receipts, **library}

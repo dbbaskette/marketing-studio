@@ -191,6 +191,19 @@ def metadata_path(directory, kind):
     return directory / ('session.json' if kind == 'articles' else 'record.json')
 
 
+def record_bytes(directory, kind):
+    """One version boundary: ordinary raw records, or a validated live desk session."""
+    if kind == 'articles':
+        from desk_migration import metadata as migrated_metadata
+
+        migrated = migrated_metadata(directory)
+        if migrated is not None:
+            return json.dumps(
+                migrated['session'], sort_keys=True, ensure_ascii=False, separators=(',', ':')
+            ).encode()
+    return metadata_path(directory, kind).read_bytes()
+
+
 def persist(directory, kind, record):
     record['updated_at'] = now()
     if kind == 'articles':

@@ -12,12 +12,16 @@ import os
 from pathlib import Path
 
 import studio
+from studio_core.blog_migration import (
+    WRITES,
+    dependencies,
+    migration_supported,
+    run_supported,
+    session_supported,
+)
 
 META = 'migration.json'
 JOURNAL = 'migration.pending.json'
-WRITES = frozenset(
-    {'desk/migration.json', 'desk/draft.json', 'desk/images.json', 'desk/start.json'}
-)
 MAX_FILES = 2000
 MAX_BYTES = 32 * 1024 * 1024
 CHANGED = 'This blog or its inputs changed. Preview Open on the desk again before applying.'
@@ -59,58 +63,25 @@ def metadata(directory):
                 raise ValueError('Restore this blog’s missing migration record before continuing.')
         return None
     try:
-        if marker.stat().st_size > 1_000_000:
-            raise ValueError('oversized metadata')
-        value = studio.read_json(marker)
-        if (
-            not isinstance(value, dict)
-            or value.get('schema') != 1
-            or value.get('product') != 'Blog Studio'
-            or value.get('id') != directory.name
-            or not isinstance(value.get('session'), dict)
-            or value['session'].get('id') != directory.name
-            or value['session'].get('execution') not in ('conversation', 'runner')
-            or value.get('material') not in ('draft', 'outline', 'original')
-            or not isinstance(value.get('expected'), str)
-            or not value['expected'].startswith('bm1.')
-            or len(value['expected']) != 47
-            or not isinstance(value.get('files'), list)
-            or any(not isinstance(name, str) for name in value['files'])
-            or set(value['files']) - WRITES
-            or not {'desk/migration.json', 'desk/draft.json'} <= set(value['files'])
-        ):
-            raise ValueError('unsupported metadata')
-        for name, key in (
-            ('session.json', 'session_basis'),
-            ('derived/blog-run.json', 'run_basis'),
-        ):
-            path = directory / name
-            if (
-                path.is_symlink()
-                or path.parent.is_symlink()
-                or not path.is_file()
-                or path.stat().st_size > 1_000_000
-                or _hash(path.read_bytes()) != value.get(key)
-            ):
-                raise ValueError('original record changed or missing')
-        original_run = studio.read_json(directory / 'derived/blog-run.json')
-        if value.get('historical_stages') != original_run.get('stages') or value.get(
-            'historical_pipeline'
-        ) != original_run.get('pipeline'):
-            raise ValueError('historical approval interpretation changed')
-        for name in value['files']:
+
+        def bounded(path):
+            if path.is_symlink() or path.parent.is_symlink() or not path.is_file():
+                raise ValueError('missing or linked migration record')
+            with path.open('rb') as handle:
+                raw = handle.read(1_000_001)
+            if len(raw) > 1_000_000:
+                raise ValueError('oversized migration record')
+            return raw
+
+        value = json.loads(bounded(marker))
+        original = bounded(directory / 'session.json')
+        run = bounded(directory / 'derived/blog-run.json')
+        draft = json.loads(bounded(_fixed(directory, 'draft.json')))
+        if not migration_supported(value, original, run, draft, directory.name):
+            raise ValueError('unsupported migration metadata or original records')
+        for name in dependencies(value, draft):
             if not _fixed(directory, name.split('/')[1]).is_file():
                 raise ValueError('missing desk dependency')
-        draft = studio.read_json(_fixed(directory, 'draft.json'))
-        if (
-            not isinstance(draft, dict)
-            or draft.get('schema') != 1
-            or draft.get('id') != directory.name
-            or draft.get('unfinished_migration') is not True
-        ):
-            raise ValueError('unsupported migrated draft')
-        if draft.get('images') and not _fixed(directory, 'images.json').is_file():
-            raise ValueError('missing saved image data')
         return value
     except (OSError, ValueError, KeyError, TypeError) as error:
         raise ValueError(
@@ -141,39 +112,13 @@ def prepare_migration(record, saved_inputs):
     run = saved_inputs.get('run')
     files = saved_inputs.get('files', {})
     try:
-        if not isinstance(record, dict) or not isinstance(record.get('id'), str):
-            raise ValueError('Restore the original Blog Studio session record first.')
-        if (
-            not isinstance(run, dict)
-            or run.get('schema') not in (1, 2, 3)
-            or run.get('approval') not in ('page', 'conversation')
-        ):
+        if not session_supported(record):
+            raise ValueError('Restore a supported original Blog Studio session record first.')
+        if not run_supported(run):
             raise ValueError(
-                'This saved run needs a supported Blog Studio record before it can open on the desk.'
+                'Restore a supported saved Blog Studio run, including its review level and research contract, before opening on the desk.'
             )
-        pipeline, stages = run.get('pipeline'), run.get('stages')
-        if (
-            not isinstance(pipeline, list)
-            or not pipeline
-            or len(pipeline) > len(blog_runner.STAGES)
-            or len(set(pipeline)) != len(pipeline)
-            or any(not isinstance(s, str) or s not in blog_runner.STAGES for s in pipeline)
-            or not isinstance(stages, dict)
-            or set(stages) - set(blog_runner.STAGES)
-            or any(
-                not isinstance(v, dict) or v.get('status') not in ('pending', 'draft', 'approved')
-                for v in stages.values()
-            )
-        ):
-            raise ValueError(
-                'This saved run has an unsupported step format. Continue its saved flow.'
-            )
-        if run['schema'] == 2 and not isinstance(run.get('review_policy'), dict):
-            raise ValueError('Restore the run’s saved review level before opening it on the desk.')
-        if run['schema'] == 3 and (run.get('research_contract') or {}).get('schema') != 2:
-            raise ValueError(
-                'Restore the run’s saved research contract before opening it on the desk.'
-            )
+        pipeline, stages = run['pipeline'], run['stages']
         if all(stages.get(stage, {}).get('status') == 'approved' for stage in pipeline):
             raise ValueError(
                 'This blog already finished. Use its existing finished-blog Open on the desk action.'
@@ -351,8 +296,8 @@ def _snapshot(root, ident):
         )
     record = json.loads(original['session.json'])
     run = json.loads(original[blog_runner.STATE])
-    if not isinstance(record, dict) or record.get('id') != ident or not isinstance(run, dict):
-        raise ValueError('Restore this blog’s original session and run records first.')
+    if not session_supported(record, ident) or not isinstance(run, dict):
+        raise ValueError('Restore this blog’s supported original session and run records first.')
     if os.path.lexists(root / '.team-hub.json') or os.path.lexists(root / '.hub-workspace.json'):
         raise ValueError(
             'This older Team Hub workspace still needs its saved flow. A supported local ownership transform is required first.'

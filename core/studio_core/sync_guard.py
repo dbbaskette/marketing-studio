@@ -1,8 +1,9 @@
 """Conservative exclusion of canonical Studio workers during repository replay."""
 import json
-import hashlib
 import os
 from pathlib import Path
+
+from .blog_migration import dependencies, migration_supported
 
 SYNC_WAIT = ('A Studio step is still in progress in this repository. Stop it or wait for it '
              'to finish, then share again. A stopped or interrupted step can leave a marker; '
@@ -52,7 +53,7 @@ def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
                 unknown(error)
         return False
 
-    def small_record(path):
+    def small_bytes(path):
         try:
             # Metadata reached through a link cannot prove this folder owns caches.
             # Stop at the scanned root; ancestors outside it are not scan evidence.
@@ -63,8 +64,15 @@ def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
                     break
             with path.open('rb') as handle:
                 text = handle.read(1_000_001)
-            return json.loads(text) if len(text) <= 1_000_000 else None
+            return text if len(text) <= 1_000_000 else None
         except (OSError, ValueError):
+            return None
+
+    def small_record(path):
+        raw = small_bytes(path)
+        try:
+            return json.loads(raw) if raw is not None else None
+        except (ValueError, UnicodeError):
             return None
 
     def named_record(record, schemas):
@@ -116,27 +124,13 @@ def worker_in_progress(repo: Path, refusal=ValueError) -> bool:
         if present(marker):
             value = small_record(marker)
             draft = small_record(desk / 'draft.json')
-            if (not isinstance(value, dict) or value.get('schema') != 1
-                    or value.get('product') != 'Blog Studio' or value.get('id') != folder.name
-                    or not isinstance(value.get('session'), dict)
-                    or value['session'].get('id') != folder.name
-                    or not isinstance(draft, dict) or not draft.get('unfinished_migration')
-                    or not isinstance(value.get('files'), list)
-                    or any(not isinstance(name, str) or name not in (
-                        'desk/migration.json', 'desk/draft.json', 'desk/images.json', 'desk/start.json')
-                           for name in value['files'])
-                    or not {'desk/migration.json', 'desk/draft.json'} <= set(value['files'])
-                    or any(not present(folder / name) or (folder / name).is_symlink()
-                           for name in value['files'])):
+            if not migration_supported(value, small_bytes(folder / 'session.json'),
+                                       small_bytes(folder / 'derived/blog-run.json'), draft, folder.name):
                 unknown(ValueError('Incomplete Blog Studio migration'))
-            for name, key in (('session.json', 'session_basis'), ('derived/blog-run.json', 'run_basis')):
+            for name in dependencies(value, draft):
                 path = folder / name
-                try:
-                    if path.is_symlink() or path.stat().st_size > 1_000_000 \
-                            or hashlib.sha256(path.read_bytes()).hexdigest() != value.get(key):
-                        unknown(ValueError('Changed original Blog Studio migration record'))
-                except OSError as error:
-                    unknown(error)
+                if not present(path) or path.is_symlink() or path.parent.is_symlink() or not path.is_file():
+                    unknown(ValueError('Missing Blog Studio migration dependency'))
         elif present(desk / 'draft.json'):
             draft = small_record(desk / 'draft.json')
             if isinstance(draft, dict) and draft.get('unfinished_migration'):
