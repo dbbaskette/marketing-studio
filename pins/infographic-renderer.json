@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "name": "Chrome for Testing headless shell",
+  "version": "145.0.7632.6",
+  "purpose": "Infographic Studio feasibility baseline; production distribution is enabled only by its packaging milestone.",
+  "platforms": {
+    "macos-x64": {
+      "url": "https://storage.googleapis.com/chrome-for-testing-public/145.0.7632.6/mac-x64/chrome-headless-shell-mac-x64.zip",
+      "sha256": "4316f7f98213a173e2356406203359cd4ab5b2b2db36cb219b9d99edec746819",
+      "executable": "chrome-headless-shell-mac-x64/chrome-headless-shell",
+      "executable_sha256": "5271c5decc04f53cb011fec9309d5877807a4783f4f5b09256accfb47b2534b3"
+    }
+  },
+  "unverified_platforms": [
+    "macos-arm64",
+    "linux-x64"
+  ],
+  "unsupported_platforms": [
+    "linux-arm64",
+    "windows"
+  ]
+}
