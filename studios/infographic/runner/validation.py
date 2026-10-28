@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+from decimal import Decimal
 from pathlib import PurePosixPath
 import re
 import struct
@@ -339,6 +340,12 @@ def validate_project(project: dict) -> dict:
                         'Chart values must exactly match their numeric fact references.')
                 require(text(element.get('unit')) and all(element['unit'] == facts[key].get('unit') for key in refs),
                         'A chart cannot silently combine different units.')
+                if 'display_values' in element:
+                    shown = element['display_values']
+                    require(isinstance(shown, list) and len(shown) == len(values)
+                            and all(text(v, limit=100) and re.fullmatch(r'[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?', v)
+                                    and Decimal(v) == Decimal(str(value)) for v, value in zip(shown, values)),
+                            'Numeric labels must preserve the exact chart values.')
     briefs = records(project['image_briefs'], 'Image briefs')
     for image in briefs.values():
         require(scene is not None and image.get('story_id') == selected
@@ -380,6 +387,8 @@ def validate_project(project: dict) -> dict:
                 ('passed', 'failed', 'incomplete') and type(check.get('blocking')) is bool,
                 'Checks need a scene identity, status, and blocking decision.')
         input_basis(check.get('basis'))
+        require('review_digest' not in check or check['kind'] == 'visual' and sha(check['review_digest']),
+                'The visual check must name its exact review decision.')
     approval = project['approval']
     if approval is not None:
         require(isinstance(approval, dict) and type(approval.get('revision')) is int

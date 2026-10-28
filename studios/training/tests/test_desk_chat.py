@@ -952,6 +952,27 @@ class ConversationCompletionTests(ConversationReviewFixTests):
         desk.Page(0).write('/api/approval', {'path': str(root), 'mode': 'page'})
         self.assertEqual(workspace.load(root)['settings']['approval'], 'page')
 
+    def test_legacy_helper_can_borrow_only_the_exact_owned_workspace_lock(self):
+        import home
+        import write_guard
+        from studio_core.process_lock import ProcessRLock, workspace_lock_path
+        root = self.guide()
+        record = self.record(root)
+        record['execution'] = 'runner'
+        self.engine._store(root, record)
+        scope = workspace_lock_path(self.engine.space().repo, home.data_root())
+        with self.engine.files:
+            with write_guard.admitted(root, held=self.engine.files):
+                self.assertTrue(self.engine.files.protects(scope))
+            self.assertTrue(self.engine.files.protects(scope), 'Inner helper must not release the runner lock.')
+        with self.assertRaises(WorkspaceError):
+            with write_guard.admitted(root, held=self.engine.files):
+                self.fail('An unheld lock cannot authorize a helper write.')
+        wrong = ProcessRLock(lambda: home.data_root() / 'other-workspace.lock')
+        with wrong, self.assertRaises(WorkspaceError):
+            with write_guard.admitted(root, held=wrong):
+                self.fail('A different workspace lock cannot authorize this write.')
+
     def test_legacy_helper_handlers_wait_for_real_shared_process_lock(self):
         import os
         import subprocess

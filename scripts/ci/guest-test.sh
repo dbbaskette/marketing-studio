@@ -42,7 +42,56 @@ export PATH="$work/tools/bin:$PATH"
 # Real helper contract checks use source only, never an installed skill or provider.
 export STUDIO_TEST_RESEARCH_RUNTIME="$work/research-runtime"
 "$python" scripts/ci/research-runtime.py "$STUDIO_TEST_RESEARCH_RUNTIME" > "$results_dir/research-runtime.log" 2>&1
-if [[ "${1:-full}" == presentation-progress ]]; then
+if [[ "${1:-full}" == infographic || "${1:-full}" == infographic-finish || "${1:-full}" == infographic-after-root || "${1:-full}" == infographic-acceptance ]]; then
+  # These are explicit CI preparation steps in the disposable clone, not tests
+  # downloading software or touching a signed-in machine.
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
+  mkdir -p "$work/browser"
+  cp studios/infographic/tests/ui/package*.json "$work/browser/"
+  touch "$work/npm-user.conf" "$work/npm-global.conf"
+  env HOME="$work/home" NPM_CONFIG_USERCONFIG="$work/npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/npm-global.conf" \
+    npm ci --prefix "$work/browser" --ignore-scripts --no-audit --no-fund > "$results_dir/browser-tools.log" 2>&1
+  export NODE_PATH="$work/browser/node_modules"
+  export PYTHON="$python"
+  export INFOGRAPHIC_UI_RESULTS="$results_dir/infographic-ui"
+  if [[ "${1:-full}" == infographic-acceptance ]]; then
+    # All application suites passed except the now-corrected takeover fixture.
+    # Reuse unchanged evidence; repeat the changed group in the same guest OS.
+    {
+      (cd studios/training && PYTHONPATH=tests "$python" -m unittest test_runner_page.DeskTeamTests -v)
+      PYTHONPATH=tests "$python" -m unittest test_suite_link -v
+      bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+    } 2>&1 | tee "$results_dir/tests.log"
+  elif [[ "${1:-full}" == infographic-after-root ]]; then
+    # Root and Infographic Studio already passed on this unchanged application tree.
+    # Continue after repairing formatting in the newly integrated upstream tests.
+    {
+      (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio")
+      (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+      (cd studios/training && bash scripts/ci/check.sh "$python")
+      bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+    } 2>&1 | tee "$results_dir/tests.log"
+  elif [[ "${1:-full}" == infographic-finish ]]; then
+    # Reuse passing Blog Studio evidence. Verify shared folder concurrency and
+    # return navigation against root/native and both affected deck studios.
+    {
+      "$python" -m compileall -q studios/infographic/runner
+      node --check studios/infographic/runner/web/app.js
+      "$python" -m unittest discover -s studios/infographic/tests -v
+      "$python" -m unittest discover -s tests -v
+      (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+      (cd studios/training && bash scripts/ci/check.sh "$python")
+    } 2>&1 | tee "$results_dir/tests.log"
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee -a "$results_dir/tests.log"
+  else
+    bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+  fi
+  node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-browser.log"
+  node studios/infographic/tests/ui/suite-return.cjs 2>&1 | tee "$results_dir/suite-return-browser.log"
+  bundle="$(find dist -maxdepth 1 -name 'infographic-first-release-*-macos-arm64.zip' -print -quit)"
+  [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
+  "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"
+elif [[ "${1:-full}" == presentation-progress ]]; then
   (
     cd studios/presentation
     "$python" scripts/ci/run_tests.py --jobs 4

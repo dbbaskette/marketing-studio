@@ -1,4 +1,4 @@
-/* Golden Gate-inspired web UI, shared by all four studios.
+/* Golden Gate-inspired web UI, shared by Marketing Studio and the native studios.
    Material is reserved for navigation, toolbars, sheets and toasts. Content and
    forms use opaque surfaces. The existing token contrast and fallback checks
    cover both appearances; no native OS material or refraction is implied. */
@@ -36,6 +36,8 @@
   --presentation-wash: #fff0e8;
   --training: #7140b4;
   --training-wash: #f2eaff;
+  --infographic: #146970;
+  --infographic-wash: #e5f4f3;
   --on-studio: #ffffff;
 
   --glass: rgb(242 246 252 / 0.82);
@@ -96,6 +98,8 @@
     --presentation-wash: #452c24;
     --training: #d2b1ff;
     --training-wash: #342947;
+    --infographic: #8cdedb;
+    --infographic-wash: #1c383b;
     --on-studio: #151c29;
 
     --glass: rgb(30 36 46 / 0.86);
@@ -142,8 +146,13 @@ body[data-product="Training Studio"] {
   --studio-wash: var(--training-wash);
 }
 
+body[data-product="Infographic Studio"] {
+  --studio-color: var(--infographic);
+  --studio-wash: var(--infographic-wash);
+}
+
 body:is([data-product="Blog Studio"], [data-product="Presentation Studio"],
-    [data-product="Training Studio"]) {
+    [data-product="Training Studio"], [data-product="Infographic Studio"]) {
   --accent: var(--studio-color);
   --on-accent: var(--on-studio);
   --link: var(--studio-color);
@@ -152,7 +161,7 @@ body:is([data-product="Blog Studio"], [data-product="Presentation Studio"],
   --selection-line: color-mix(in srgb, var(--studio-color) 32%, var(--paper));
 }
 
-/* Marketing Studio shows all three studios on one page: each card wears its own colour. */
+/* Marketing Studio shows each native studio with its own identity. */
 [data-studio="blog"] {
   --studio-color: var(--blog);
   --studio-wash: var(--blog-wash);
@@ -166,6 +175,11 @@ body:is([data-product="Blog Studio"], [data-product="Presentation Studio"],
 [data-studio="training"] {
   --studio-color: var(--training);
   --studio-wash: var(--training-wash);
+}
+
+[data-studio="infographic"] {
+  --studio-color: var(--infographic);
+  --studio-wash: var(--infographic-wash);
 }
 
 .card[data-studio] {

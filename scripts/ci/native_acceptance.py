@@ -9,9 +9,9 @@ args=parser.parse_args()
 original_home=Path.home()
 def studio_root(identifier):
     return (original_home/'.local/share'/(identifier+'-studio')/'current').resolve() if args.installed else repo/'studios'/identifier
-for identifier in ('blog','presentation','training'):
+for identifier in ('blog','presentation','training','infographic'):
     if not studio_root(identifier).is_dir():
-        parser.error('Install or check out all three studios before running native acceptance.')
+        parser.error('Install or check out all four studios before running native acceptance.')
 with tempfile.TemporaryDirectory(prefix='marketing-native-') as tmp:
     root=Path(tmp)
     home=root/'home';home.mkdir()
@@ -23,7 +23,7 @@ with tempfile.TemporaryDirectory(prefix='marketing-native-') as tmp:
     shared={'schema':1,'person':{'name':'Synthetic Author'},'assistant':{'agent':'codex','model':None},
             'local':{'root':str(root/'work')},'output':'pptx'}
     (root/'shared.json').write_text(json.dumps(shared))
-    for identifier in ('blog','presentation','training'):
+    for identifier in ('blog','presentation','training','infographic'):
         env[identifier.upper()+'_STUDIO_DATA']=str(root/(identifier+'-data'))
         env['MARKETING_STUDIO_HANDOFF']=json.dumps({'token':'a'*40,'shared':shared})
         studio=studio_root(identifier)
@@ -35,6 +35,9 @@ with tempfile.TemporaryDirectory(prefix='marketing-native-') as tmp:
             code="import sys;sys.path.insert(0,sys.argv[1]);from studio_sync import gitstate;import blog_runner;print(gitstate.current().root);assert blog_runner.settings(gitstate.current().root)['configured'];print(blog_runner.settings(gitstate.current().root)['defaults']['engine'])"
             module=studio/'skills/blog-studio/scripts'
             if not module.is_dir(): module=studio/'scripts'
+        elif identifier=='infographic':
+            code="import sys;sys.path.insert(0,sys.argv[1]);from runner.workspace import Store;from runner.settings import snapshot;print(Store.current().root);print(snapshot()['assistant']['agent'])"
+            module=studio
         else:
             code="import sys;sys.path.insert(0,sys.argv[1]);from runner import gitstate,settings;print(gitstate.current().root);print(settings.load().agent)"
             module=studio
@@ -44,9 +47,9 @@ with tempfile.TemporaryDirectory(prefix='marketing-native-') as tmp:
             print(check.stderr[-3000:]);sys.exit(1)
     # Idempotence: a second prepare retains existing repositories, even with a new default.
     shared['local']['root']=str(root/'different')
-    for identifier in ('blog','presentation','training'):
+    for identifier in ('blog','presentation','training','infographic'):
         env['MARKETING_STUDIO_HANDOFF']=json.dumps({'token':'b'*40,'shared':shared})
         result=subprocess.run([sys.executable,str(repo/'marketing_studio/bridge.py'),identifier,str(studio_root(identifier)),'--prepare'],env=env,capture_output=True,text=True,timeout=30)
         assert result.returncode==0,(identifier,result.stdout,result.stderr)
     assert not (root/'different').exists()
-    print('PASS: all three native setups, independent settings, and existing-workspace preservation')
+    print('PASS: all four native setups, independent settings, and existing-workspace preservation')

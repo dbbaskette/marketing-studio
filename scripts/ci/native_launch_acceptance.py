@@ -16,7 +16,7 @@ with tempfile.TemporaryDirectory(prefix='marketing-launch-acceptance-') as tmp:
          'GIT_CONFIG_GLOBAL':str(root/'gitconfig'),'GIT_CONFIG_NOSYSTEM':'1',
          'GIT_AUTHOR_NAME':'Synthetic Author','GIT_AUTHOR_EMAIL':'synthetic@example.invalid',
          'GIT_COMMITTER_NAME':'Synthetic Author','GIT_COMMITTER_EMAIL':'synthetic@example.invalid'}
-    for identifier in ('blog','presentation','training'):
+    for identifier in ('blog','presentation','training','infographic'):
         env[identifier.upper()+'_STUDIO_DATA']=str(root/(identifier+'-data'))
     wrapper=root/'shim';(wrapper/'marketing_studio').mkdir(parents=True)
     # Test-only replacements disable background update/research actions. Native page,
@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory(prefix='marketing-launch-acceptance-') as tmp:
     code=f'''import sys,runpy
 from pathlib import Path
 root=Path(sys.argv[2]); identifier=sys.argv[1]
-if identifier != 'blog':
+if identifier not in ('blog','infographic'):
     sys.path.insert(0,str(root))
     from runner import engine,upkeep
     engine.Engine.resume=lambda *a,**kw: None
@@ -32,7 +32,7 @@ if identifier != 'blog':
 runpy.run_path({str(repo/'marketing_studio/bridge.py')!r},run_name='__main__')
 '''
     (wrapper/'marketing_studio/bridge.py').write_text(code)
-    paths={identifier:str(repo/'studios'/identifier) for identifier in ('blog','presentation','training')}
+    paths={identifier:str(repo/'studios'/identifier) for identifier in ('blog','presentation','training','infographic')}
     with mock.patch.dict(os.environ,env),mock.patch('marketing_studio.launcher.ROOT',wrapper):
         # Exercise the LAN bridge protocol on loopback with synthetic work only.
         with mock.patch('marketing_studio.network.private_address', return_value='127.0.0.1'):
@@ -47,7 +47,7 @@ runpy.run_path({str(repo/'marketing_studio/bridge.py')!r},run_name='__main__')
                     assert b'data-standalone="true"' not in body
                 address=urlsplit(link)
                 token=address.fragment.removeprefix('token=')
-                endpoint={'blog':'runs','presentation':'decks','training':'trainings'}[identifier]
+                endpoint={'blog':'runs','presentation':'decks','training':'trainings','infographic':'projects'}[identifier]
                 request=urllib.request.Request(link.split('#')[0]+'api/'+endpoint,
                     headers={TOKEN_HEADERS[identifier]:token,'Origin':'http://'+address.netloc})
                 with urllib.request.urlopen(request,timeout=5) as response:

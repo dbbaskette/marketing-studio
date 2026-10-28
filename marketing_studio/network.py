@@ -21,12 +21,12 @@ PRIVATE_NETWORKS = tuple(ipaddress.ip_network(value) for value in
                          ('10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'))
 TOKEN_HEADERS = {identifier: 'X-' + name + '-Studio-Token' for identifier, name in
                  (('marketing', 'Marketing'), ('blog', 'Blog'),
-                  ('presentation', 'Presentation'), ('training', 'Training'))}
+                  ('presentation', 'Presentation'), ('training', 'Training'), ('infographic', 'Infographic'))}
 # Native upload handlers retain their smaller, per-route limits.
 MAX_BODY = 120_000_000
 STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
                     '/blog.css', '/runner.js', '/desk.js', '/drafting.js', '/markdown.js',
-                    '/deck.css', '/favicon.ico',
+                    '/deck.css', '/infographic.css', '/favicon.ico',
                     '/onboarding/', '/onboarding/app.js', '/onboarding/style.css',
                     '/onboarding/home.css', '/deck-panels.js', '/deck-panels.css',
                     '/lists.js', '/deck-desk.js', '/drafts.js'))

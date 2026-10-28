@@ -1,4 +1,5 @@
 """Blog Studio and deck Studio synchronization share repository write exclusion."""
+
 import isolation  # noqa: F401
 import os
 from pathlib import Path
@@ -20,7 +21,7 @@ class SyncProcessLockTests(unittest.TestCase):
             repo = Path(temporary).resolve()
             (repo / '.git').mkdir()
             ready, release = repo / 'ready', repo / 'release'
-            code = '''from pathlib import Path
+            code = """from pathlib import Path
 import sys, time
 from studio_sync import support
 repo = Path(sys.argv[1])
@@ -30,18 +31,27 @@ with support.locked(repo / '.git/blog-studio.lock'):
   end = time.monotonic() + 5
   while not (repo / 'release').exists() and time.monotonic() < end:
    time.sleep(.01)
-'''
-            env = {**os.environ, 'PYTHONPATH': str(isolation.SCRIPTS),
-                   'HOME': str(repo / 'home'), 'TMPDIR': str(repo)}
-            child = subprocess.Popen([sys.executable, '-c', code, str(repo)], env=env,
-                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+"""
+            env = {
+                **os.environ,
+                'PYTHONPATH': str(isolation.SCRIPTS),
+                'HOME': str(repo / 'home'),
+                'TMPDIR': str(repo),
+            }
+            child = subprocess.Popen(
+                [sys.executable, '-c', code, str(repo)],
+                env=env,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
             try:
                 deadline = time.monotonic() + 5
                 while not ready.exists() and time.monotonic() < deadline:
-                    time.sleep(.01)
+                    time.sleep(0.01)
                 self.assertTrue(ready.exists())
                 deck = ProcessRLock(lambda: repo / '.git/studios-write.lock')
-                self.assertFalse(deck.acquire(timeout=.1))
+                self.assertFalse(deck.acquire(timeout=0.1))
                 release.touch()
                 out, err = child.communicate(timeout=10)
                 self.assertEqual(child.returncode, 0, out + err)
@@ -70,12 +80,17 @@ with support.locked(repo / '.git/blog-studio.lock'):
                     self.assertIn('Stop', deferred['notice'])
                     learned.assert_not_called()
                 marker.unlink()
-                with studio.locked(root), mock.patch.object(gitstate, 'on_branch', return_value='main'), \
-                        mock.patch.object(gitstate.hub, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')), \
-                        mock.patch.object(gitstate, '_tip', return_value='upstream'), \
-                        mock.patch.object(gitstate.hub, 'apart', return_value=(0, 1)), \
-                        mock.patch.object(gitstate.hub, 'ahead', return_value=0), \
-                        mock.patch.object(gitstate, '_replay', return_value=None) as replay:
+                with (
+                    studio.locked(root),
+                    mock.patch.object(gitstate, 'on_branch', return_value='main'),
+                    mock.patch.object(
+                        gitstate.hub, 'run', return_value=subprocess.CompletedProcess([], 0, '', '')
+                    ),
+                    mock.patch.object(gitstate, '_tip', return_value='upstream'),
+                    mock.patch.object(gitstate.hub, 'apart', return_value=(0, 1)),
+                    mock.patch.object(gitstate.hub, 'ahead', return_value=0),
+                    mock.patch.object(gitstate, '_replay', return_value=None) as replay,
+                ):
                     resumed = gitstate.sync(space, before=learned)
                 self.assertTrue(resumed['shared'])
                 learned.assert_called_once_with('upstream')

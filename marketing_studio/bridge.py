@@ -457,7 +457,7 @@ def connect_runner(identifier, shared):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('studio', choices=('blog', 'presentation', 'training'))
+    parser.add_argument('studio', choices=('blog', 'presentation', 'training', 'infographic'))
     parser.add_argument('root', type=Path)
     parser.add_argument('--prepare', action='store_true')
     parser.add_argument('--connect', action='store_true')
@@ -466,6 +466,40 @@ def main():
     args = parser.parse_args()
     handoff = json.loads(os.environ.pop('MARKETING_STUDIO_HANDOFF'))
     shared = handoff['shared']
+    if args.studio == 'infographic':
+        sys.path.insert(0, str(args.root))
+        from runner.workspace import Store, data_root, file_lock
+        from runner import server as infographic_server
+        current = Store.current()
+        if args.connect:
+            raise ValueError('Infographic Studio keeps supplied material locally in this release. Team connection is a follow-up; the existing workspace is kept.')
+        notice = None
+        if current is None:
+            target = workspace_setup.target(shared, 'infographic')
+            if 'repository' in target:
+                # Launch is explicit setup, but does not grant a repository write.
+                local = Path((shared.get('local') or {}).get('root') or '~/Studios').expanduser()
+                current = Store.setup(local / 'infographic-workspace')
+                notice = 'Infographic Studio uses local storage in this release. Shared team settings were kept.'
+            else:
+                current = Store.setup(Path(target['root']))
+        if args.prepare:
+            print(json.dumps({'prepared': True, 'workspace': {'root': str(current.root),
+                  'repository': None, 'branch': 'main'}, **({'notice': notice} if notice else {})}), flush=True)
+            return 0
+        with file_lock(data_root() / '.studio-running.lock'):
+            page = infographic_server.desk(current, standalone=True)
+            try:
+                page.start()
+                print(json.dumps({'link': page.url}), flush=True)
+                signal.signal(signal.SIGTERM, lambda *_: (_ for _ in ()).throw(KeyboardInterrupt()))
+                import threading
+                threading.Event().wait()
+            except KeyboardInterrupt:
+                pass
+            finally:
+                page.stop()
+        return 0
     if args.studio == 'blog':
         scripts = args.root / 'skills/blog-studio/scripts'
         sys.path.insert(0, str(scripts if scripts.is_dir() else args.root / 'scripts'))

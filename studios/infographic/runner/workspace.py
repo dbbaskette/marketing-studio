@@ -21,7 +21,7 @@ from studio_core import studios_config, workspace_setup
 
 from .contracts import (MAX_ASSET_BYTES, MAX_RECORD_BYTES, PRODUCT, Invalid,
                         advance, canonical, new_project)
-from .validation import identifier, image_size, relative_path, sha, validate_project
+from .validation import identifier, image_size, relative_path, require, sha, validate_project
 
 NOFOLLOW = getattr(os, 'O_NOFOLLOW', 0)
 DIRECTORY = getattr(os, 'O_DIRECTORY', 0)
@@ -40,13 +40,14 @@ def _directory(path: Path):
         raise Invalid('Infographic Studio needs a directory.')
 
 
-def _atomic(path: Path, data: bytes):
+def _atomic(path: Path, data: bytes, *, mode=0o600):
     _directory(path.parent)
     if path.is_symlink() or path.exists() and not path.is_file():
         raise Invalid('A link or directory blocks this save.')
     pending = path.with_name('.' + path.name + '-' + secrets.token_hex(8))
     try:
-        descriptor = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | NOFOLLOW, 0o600)
+        descriptor = os.open(pending, os.O_WRONLY | os.O_CREAT | os.O_EXCL | NOFOLLOW, mode)
+        os.fchmod(descriptor, mode)
         with os.fdopen(descriptor, 'wb') as stream:
             stream.write(data)
             stream.flush()
@@ -272,11 +273,25 @@ class Store:
         _atomic(folder / 'current.json', canonical({'schema': 1, 'id': project['id'],
                                                   'revision': project['revision'], 'sha256': value}))
 
-    def create(self, title: str, *, preset='a4', direction='suggest') -> dict:
+    def create(self, title: str, *, preset='a4', direction='suggest', request_id=None) -> dict:
         with self.locked():
-            project = new_project(self.owner, title, preset=preset, direction=direction)
+            require(request_id is None or identifier(request_id), 'Choose an owned creation request identity.')
+            project = new_project(self.owner, title, preset=preset, direction=direction, ident=request_id)
             if self._project(project['id']).exists():
-                raise Invalid('An infographic with that ID already exists.')
+                if request_id is None:
+                    raise Invalid('An infographic with that ID already exists.')
+                folder = self._project(project['id'])
+                if not (folder / 'current.json').exists():
+                    expected = '0-' + hashlib.sha256(canonical(project)).hexdigest() + '.json'
+                    require({p.name for p in folder.iterdir()} <= {'versions'}
+                            and {p.name for p in (folder / 'versions').iterdir()} <= {expected},
+                            'The interrupted creation contains other work. Restore its pointer explicitly; nothing was replaced.')
+                    self._publish(project)
+                    return project
+                original = self.history(project['id'], revision=0)
+                require(len(original) == 1 and original[0] == project,
+                        'This creation request was used for another brief. Open the saved draft rather than replacing it.')
+                return original[0]
             self._publish(project)
             return project
 
@@ -286,6 +301,78 @@ class Store:
                               expected_revision=expected_revision, owner=self.owner)
             self._publish(project)
             return project
+
+    def expect(self, project: dict, revision: int):
+        require(type(revision) is int and revision == project['revision'],
+                'This infographic changed. Reload it before saving.')
+        require(project['owner'] == self.owner, 'This infographic belongs to another workspace owner.')
+
+    def change_locked(self, project: dict, changes: dict) -> dict:
+        """Only native validated content mutations call this under the workspace lock."""
+        require(getattr(self._held, 'active', False), 'Hold the workspace lock before saving.')
+        current = self.read(project['id'])
+        self.expect(current, project['revision'])
+        result = advance(current, changes, expected_revision=current['revision'], owner=self.owner)
+        self._publish(result)
+        return result
+
+    def update(self, ident: str, changes: dict, *, expected_revision: int) -> dict:
+        with self.locked():
+            current = self.read(ident)
+            self.expect(current, expected_revision)
+            return self.change_locked(current, changes)
+
+    def commit_locked(self, previous: dict, result: dict) -> dict:
+        """Internal state transition, never a public arbitrary-record write endpoint."""
+        require(getattr(self._held, 'active', False), 'Hold the workspace lock before saving.')
+        self.expect(self.read(previous['id']), previous['revision'])
+        require(result['id'] == previous['id'] and result['owner'] == self.owner
+                and result['revision'] == previous['revision'] + 1,
+                'Internal state transitions need the exact next revision and owner.')
+        self._publish(result)
+        return result
+
+    def write_blob(self, ident: str, relative: str, data: bytes):
+        """Private immutable bytes. Callers choose generated names, never assistant paths."""
+        require(getattr(self._held, 'active', False), 'Hold the workspace lock before writing bytes.')
+        limit = 64_000_000 if isinstance(relative, str) and relative.startswith('exports/') else MAX_ASSET_BYTES
+        require(relative_path(relative) and relative.split('/')[0] in ('sources', 'assets', 'exports', 'jobs')
+                and type(data) is bytes and len(data) <= limit,
+                'Store bounded bytes only in an owned content folder.')
+        base = self._project(ident)
+        path = base / relative
+        for folder in reversed(path.parent.relative_to(base).parents):
+            _directory(base / folder)
+        _directory(path.parent)
+        if path.exists() or path.is_symlink():
+            require(_read(self.root, path.relative_to(self.root).as_posix(), limit) == data,
+                    'An immutable file already exists with different bytes.')
+        else:
+            _atomic(path, data)
+
+    def history(self, ident: str, *, revision=None, before=None, limit=100) -> list[dict]:
+        self.read(ident)
+        require(type(limit) is int and 1 <= limit <= 1000
+                and (revision is None or type(revision) is int and revision >= 0)
+                and (before is None or type(before) is int and before >= 0), 'Choose a bounded history page or exact revision.')
+        result = []
+        paths = self._project(ident).joinpath('versions').glob(str(revision) + '-*.json') if revision is not None else self._project(ident).joinpath('versions').iterdir()
+        candidates = []
+        for path in paths:
+            if path.suffix != '.json' or '-' not in path.stem:
+                continue
+            number, fingerprint = path.stem.split('-', 1)
+            if number.isdecimal() and sha(fingerprint) and (before is None or int(number) < before):
+                candidates.append((int(number), fingerprint, path))
+        for number, fingerprint, path in sorted(candidates, reverse=True)[:limit]:
+            raw = _read(self.root, path.relative_to(self.root).as_posix(), MAX_RECORD_BYTES)
+            require(hashlib.sha256(raw).hexdigest() == fingerprint, 'An immutable history entry is damaged.')
+            saved = json.loads(raw)
+            validate_project(saved)
+            require(saved['id'] == ident and saved['owner'] == self.owner
+                    and saved['revision'] == number, 'History identity does not match.')
+            result.append(saved)
+        return sorted(result, key=lambda item: item['revision'])
 
     def listing(self) -> list[dict]:
         projects = self.root / 'projects'

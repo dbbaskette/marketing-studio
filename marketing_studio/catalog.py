@@ -6,6 +6,7 @@ STUDIOS = {
     'blog': ('Blog Studio', 'blog-studio', 'Write blogs on one desk, from a topic, notes or a draft.', 'blogs'),
     'presentation': ('Presentation Studio', 'presentation-studio', 'Build a researched deck in your brand.', 'presentations'),
     'training': ('Training Studio', 'training-studio', 'Turn a topic into training people can use.', 'trainings'),
+    'infographic': ('Infographic Studio', 'infographic-studio', 'Turn supplied information into one clear, editable page.', 'infographics'),
 }
 
 

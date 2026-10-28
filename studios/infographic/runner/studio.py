@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Infographic Studio native foundation commands. No command starts a provider."""
+"""Infographic Studio checked editing desk. Provider work requires an explicit action."""
 import sys
 
 if sys.version_info < (3, 11):
@@ -20,7 +20,7 @@ from runner.workspace import Store, data_root, file_lock
 
 
 def parser():
-    top = argparse.ArgumentParser(description=PRODUCT + ' foundations; image generation is not implemented yet.')
+    top = argparse.ArgumentParser(description=PRODUCT + ': supplied information to a checked single-page export.')
     commands = top.add_subparsers(dest='command', required=True)
     commands.add_parser('status', help='Read local state without setup, accounts, or provider checks.')
     for name in ('setup', 'serve'):
@@ -39,15 +39,66 @@ def parser():
     edit.add_argument('id')
     edit.add_argument('--expected-revision', required=True, type=int)
     edit.add_argument('--file', required=True, type=Path, help='UTF-8 JSON brief, at most 64 KB.')
+    for name in ('action', 'inspect', 'history', 'computer', 'preferences'):
+        command = commands.add_parser(name, help={
+            'action': 'Run a checked desk action from JSON; see the native skill for action fields.',
+            'inspect': 'Read current content, findings, deliveries and recovery without provider work.',
+            'history': 'List immutable saved revisions.',
+            'computer': 'Show non-secret local prerequisites; never generate a test image.',
+            'preferences': 'Read page/image defaults; shared assistant and brand settings stay authoritative.'}[name])
+        if name in ('action', 'inspect', 'history'):
+            command.add_argument('id')
+        if name == 'history': command.add_argument('--before', type=int, help='Read an earlier page of immutable revisions.')
+        if name == 'action':
+            command.add_argument('--file', required=True, type=Path, help='JSON action with expected_revision and stage data.')
+    preview = commands.add_parser('csv-preview', help='Inspect UTF-8 CSV without capturing it or calling a provider.')
+    preview.add_argument('--file', required=True, type=Path)
+    for name in ('source', 'facts', 'stories', 'brand', 'image-brief', 'select', 'layout', 'suggest',
+                 'build', 'preview', 'check', 'inspect-images', 'approve', 'export', 'restore',
+                 'edit-text', 'review', 'image-start', 'image-cancel', 'revise-art', 'revise-story', 'repair'):
+        operation = commands.add_parser(name, help='Checked ' + name + ' action; existing work is preserved on failure.')
+        operation.add_argument('id')
+        operation.add_argument('--expected-revision', required=True, type=int)
+        if name in ('source', 'facts', 'stories', 'brand', 'image-brief'):
+            operation.add_argument('--file', required=True, type=Path)
+        if name == 'source':
+            operation.add_argument('--selection', type=Path, help='Confirmed CSV scope JSON, after csv-preview.')
+            operation.add_argument('--replace-id')
+        fields = {'select': ('story-id',), 'build': ('request-id',), 'repair': ('request-id',),
+                  'restore': ('revision',), 'edit-text': ('element-id', 'text'),
+                  'image-start': ('brief-id', 'provider', 'request-id'), 'image-cancel': ('request-id',),
+                  'revise-art': ('change', 'preserve', 'request-id'), 'revise-story': ('story-id', 'instruction')}
+        for field in fields.get(name, ()):
+            operation.add_argument('--' + field, required=True, type=int if field == 'revision' else str)
+        if name == 'layout': operation.add_argument('--arrangement', choices=('stack', 'columns'), default='stack')
+        if name == 'suggest': operation.add_argument('--automatic', action='store_true')
+        if name == 'export': operation.add_argument('--draft', action='store_true')
+        if name == 'restore': operation.add_argument('--sha256')
+        if name == 'revise-story': operation.add_argument('--block-id')
+        if name == 'review':
+            operation.add_argument('--export-id', required=True)
+            operation.add_argument('--observation', required=True, action='append', dest='observations')
     return top
 
 
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
-        if args.command == 'status':
+        if args.command == 'csv-preview':
+            from runner import sources
+            kind, raw = sources.read_file(args.file)
+            if kind != 'csv':
+                raise Invalid('Choose a CSV file to preview.')
+            value = sources.csv_preview(raw)
+        elif args.command == 'preferences':
+            from runner import settings
+            value = settings.snapshot()
+        elif args.command == 'computer':
+            from runner import computer
+            value = computer.inspect()
+        elif args.command == 'status':
             store = Store.current()
-            value = {'product': PRODUCT, 'foundation': True, 'configured': store is not None,
+            value = {'product': PRODUCT, 'foundation': False, 'configured': store is not None,
                      'providers': 'not-checked', 'generation_available': False,
                      'projects': store.listing() if store else []}
         elif args.command == 'setup':
@@ -56,13 +107,18 @@ def main(argv=None):
         elif args.command == 'serve':
             if not 0 <= args.port <= 65535:
                 raise Invalid('Choose a port from 0 to 65535.')
-            store = Store.setup(args.workspace)
+            from studio_core import onboarding
+            configured, problem = onboarding.config(PRODUCT).read()
+            store = Store.setup(args.workspace) if args.workspace is not None else Store.current()
+            if store is None and not problem and onboarding.preferences.ready(configured):
+                local = Path((configured.get('local') or {}).get('root') or '~/Studios').expanduser()
+                store = Store.setup(local / 'infographic-workspace')
             from runner import server
             with file_lock(data_root() / '.studio-running.lock'):
-                page = server.desk(store, args.port)
+                page = server.desk(store, args.port, standalone=True)
                 try:
                     page.start()
-                    value = {'product': PRODUCT, 'address': page.address, 'foundation': True}
+                    value = {'product': PRODUCT, 'address': page.address, 'foundation': False}
                     if sys.stdout.isatty():
                         value['url'] = page.url
                     print(json.dumps(value), flush=True)
@@ -84,6 +140,34 @@ def main(argv=None):
                 value = store.create(args.title, preset=args.preset, direction=args.direction)
             elif args.command == 'show':
                 value = store.read(args.id)
+            elif args.command == 'history':
+                from runner import history
+                value = history.entries(store, args.id, before=args.before)
+            elif args.command == 'inspect':
+                from runner.engine import Engine
+                value = Engine(store).inspect(args.id)
+            elif args.command == 'action':
+                from runner import api
+                sent = api.load_json(args.file)
+                if not isinstance(sent, dict) or sent.get('id', args.id) != args.id:
+                    raise Invalid('The action belongs to another infographic.')
+                costly = sent.get('action') in ('suggest', 'build', 'art-direct', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair')
+                from runner.engine import Engine
+                value = api.action(api.engine(store) if costly else Engine(store), {**sent, 'id': args.id})
+            elif args.command != 'edit-brief':
+                from runner import api, sources
+                from runner.engine import Engine
+                sent = {key: item for key, item in vars(args).items() if key not in ('command', 'file', 'selection') and item is not None}
+                sent['action'] = args.command
+                if hasattr(args, 'file'):
+                    if args.command == 'source':
+                        import base64
+                        kind, raw = sources.read_file(args.file)
+                        sent.update(data=base64.b64encode(raw).decode(), kind=kind, name=args.file.name)
+                        if args.selection: sent['selection'] = api.load_json(args.selection)
+                    else: sent['data'] = api.load_json(args.file)
+                costly = args.command in ('suggest', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair')
+                value = api.action(api.engine(store) if costly else Engine(store), sent)
             else:
                 with args.file.open('rb') as stream:
                     raw = stream.read(64_001)

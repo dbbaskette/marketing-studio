@@ -153,3 +153,16 @@ For late Stop/contract fixes after passing root, Blog Studio and Presentation
 Studio suites, `--guest scripts/ci/guest-research-finish.sh` repeats the affected
 shared and Presentation Studio integration checks, the full Training Studio suite
 and all CLI acceptance journeys.
+
+## Infographic Studio first release
+
+The shared full check includes its native offline suite. Set
+`INFOGRAPHIC_STUDIO_TEST_RENDERER` to an explicitly installed headless renderer to
+include actual font/decode/geometry and all six-form/three-preset export checks.
+`studios/infographic/tests/ui/journey.cjs` uses the locked Playwright test runtime,
+a real protected loopback desk and injected assistants; it never uses personal
+state or starts providers. The dedicated `guest-infographic.sh` Tart entry executes
+the full relevant suite, browser journey and prepared source-independent native
+package acceptance. Read [the acceptance matrix](../studios/infographic/docs/acceptance.md)
+for the precise distinction between offline functionality, real rendering, live
+provider validation and owner illustration-quality acceptance.

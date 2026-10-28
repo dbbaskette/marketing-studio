@@ -29,6 +29,8 @@ def inventory(root, studios):
     from .offline_install import names
     for folder in ('runtime', *(str(Path('companions') / name) for name in names(studios))):
         for path in files(root / folder):
+            if path.relative_to(root).parts[:2] == ('runtime', 'renderer') and 'infographic' not in studios:
+                continue
             if path.is_file() and path.suffix not in ('.pyc', '.pyo') and '__pycache__' not in path.parts:
                 extras[path.relative_to(root).as_posix()] = path
     for studio in studios:
@@ -64,7 +66,7 @@ def materialize(root, destination, studios):
 def build(root, output, selection=None):
     root, output = Path(root), Path(output)
     output.mkdir(parents=True, exist_ok=True)
-    available = [name for name in ('blog', 'presentation', 'training')
+    available = [name for name in ('blog', 'presentation', 'training', 'infographic')
                  if (root / 'studios' / name / 'installer/install.py').is_file()]
     groups = {'marketing-studio': selection or available}
     if selection is None:
@@ -83,6 +85,8 @@ def build(root, output, selection=None):
             record = json.loads(data)
             from .offline_install import names
             record['companions'] = {name: value for name, value in record['companions'].items() if name in names(studios)}
+            if 'infographic' not in studios:
+                record.pop('infographic_renderer', None)
             payload['distribution.json'] = ((json.dumps(record, indent=2) + '\n').encode(), mode)
         manifest = {'schema': 1, 'studios': studios,
                     'files': {name: hashlib.sha256(data).hexdigest() for name, (data, _) in sorted(payload.items())}}
