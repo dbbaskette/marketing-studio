@@ -24,6 +24,12 @@ TOKEN_HEADERS = {identifier: 'X-' + name + '-Studio-Token' for identifier, name 
                   ('presentation', 'Presentation'), ('training', 'Training'), ('infographic', 'Infographic'))}
 # Native upload handlers retain their smaller, per-route limits.
 MAX_BODY = 120_000_000
+UPSTREAM_TIMEOUT = 100
+# Native infographic actions can include two renders, a five-minute author call
+# and a ten-minute image call. Keep the bridge alive across those bounded stages.
+INFOGRAPHIC_ACTION_TIMEOUT = 1200
+# Google previews may perform account/token lookup and several fixed API reads.
+INFOGRAPHIC_REMOTE_TIMEOUT = 240
 STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
                     '/blog.css', '/runner.js', '/desk.js', '/drafting.js', '/markdown.js',
                     '/deck.css', '/infographic.css', '/favicon.ico',
@@ -34,6 +40,15 @@ STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
 # server checks the one-page ticket in its address instead. Every other check still holds.
 FRAMED = {'presentation': frozenset(('/api/deck-draft',)),
           'training': frozenset(('/api/deck-draft',))}
+
+
+def upstream_timeout(identifier, method, path):
+    if identifier == 'infographic' and method == 'POST':
+        if path == '/api/action':
+            return INFOGRAPHIC_ACTION_TIMEOUT
+        if path == '/api/remote-preview':
+            return INFOGRAPHIC_REMOTE_TIMEOUT
+    return UPSTREAM_TIMEOUT
 
 
 def private_address(value):
@@ -181,7 +196,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
                 headers[name] = values[0]
         if origins:
             headers['Origin'] = 'http://' + own.target
-        connection = http.client.HTTPConnection(own.target, timeout=100)
+        connection = http.client.HTTPConnection(
+            own.target, timeout=upstream_timeout(own.identifier, self.command, url.path))
         begun = False
         try:
             connection.request(self.command, self.path, body=body, headers=headers)
@@ -197,6 +213,11 @@ class BridgeHandler(BaseHTTPRequestHandler):
             self.end_headers()
             while chunk := response.read(64 * 1024):
                 self.wfile.write(chunk)
+        except TimeoutError:
+            if not begun:
+                self.send_error(504, 'This request took longer than the connection could wait. '
+                                'Work may still be running. Check the saved work before retrying. '
+                                'No request was resubmitted.')
         except (OSError, http.client.HTTPException):
             if not begun:
                 self.send_error(502, 'The studio is unavailable. Open it again from Marketing Studio.')

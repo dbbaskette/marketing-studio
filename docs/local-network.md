@@ -64,6 +64,11 @@ Restarting generates new session links. Existing project files stay on the host.
 - If another studio is already running independently, use its existing local page
   or close it before launching through Marketing Studio. Existing workspaces are
   never moved to enable phone access.
+- Infographic Studio planning and page builds can take several minutes. The phone
+  bridge waits up to 20 minutes for these actions and four minutes for remote
+  source previews. Other requests keep their existing 100-second limit. If a
+  connection times out, work may still finish on the computer: reopen the saved
+  infographic and check it before retrying. The bridge never resubmits a request.
 
 ## Verification
 
