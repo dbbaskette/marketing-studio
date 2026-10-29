@@ -388,6 +388,27 @@ class Workers:
     finish_humanize = finish_proposal
     finish_level = finish_proposal
 
+    def research_result(self, tools, job):
+        """Separate scripted author/reviewer invocations over confined source tools."""
+        from synthesis_fixture import captured_dossier, review
+        payload = json.loads(tools.read_input('research-task')[1])
+        if 'review_template' in payload:
+            for source in tools._index():
+                assert tools.read_source(source['id'])[0]
+                if source.get('original'):
+                    assert tools.read_source(source['id'], original=True)[0]
+            value = review(payload['review_template'])
+        else:
+            if tools.job['fetch']:
+                assert tools.save_source(URL)[0]
+            source = tools._index()[0]
+            read = tools.read_source(source['id'])
+            assert read[0], read[1]
+            text = (tools.folder / source['local']).read_text()
+            value = captured_dossier(payload['worker'], source, text, [item['id'] for item in self.plan['items']])
+        accepted = tools.submit_artifact('research-result', json.dumps(value))
+        assert accepted[0], accepted[1]
+
     def research_plan(self, tools, job):
         accepted = tools.submit_artifact('research-plan', json.dumps(self.plan))
         assert accepted[0], accepted[1]
@@ -1490,8 +1511,6 @@ class StudioCase(unittest.TestCase):
                                          'GIT_CONFIG_NOSYSTEM': '1'}),
             mock.patch.object(worker_tools, 'fetch_once', self.web.opener),
             mock.patch.object(worker_tools, 'resolve', self.web.resolver),
-            # The research stand-in is the legacy queue CLI.
-            mock.patch.object(engines, 'LEGACY_RESEARCH', True),
             # An engine made the ordinary way gets these too, so that no test can reach a
             # PDF reader, a converter or Google through the three real modules.
             mock.patch.multiple(engines, documents_kept=self.documents,
@@ -1520,6 +1539,7 @@ class StudioCase(unittest.TestCase):
             os.environ.pop(name, None)
         self.engines, self.gitstate = engines, gitstate
         self.research = research_stand_in.stand_in()
+        self.addCleanup(self.research._fixture.cleanup)
         self.workers = Workers()
         self.adapters = {'claude': Scripted(self.workers), 'codex': Scripted(self.workers)}
         self.space = self.set_up()
@@ -1576,7 +1596,44 @@ class StudioCase(unittest.TestCase):
 
     def start(self, **changes) -> Path:
         from runner import pipeline
-        return Path(self.engine.start(pipeline.check_form({**FORM, **changes}))['path'])
+        return Path(self.engine.start(pipeline.check_form({**FORM, 'flow': 'desk', **changes}))['path'])
+
+    def saved_start(self, engine=None, saved_contract=None, schema=None, **changes) -> Path:
+        """Construct a saved queue/policy session and run, then resume real readers."""
+        import home
+        import workspace
+        from runner import pipeline, settings, team
+        from studio_core import review_policy
+        engine = engine or self.engine
+        space = engine.space()
+        form = pipeline.check_form({**FORM, **changes, 'flow': None})
+        chosen = settings.load()
+        agent = form['agent'] or chosen.agent
+        model = form['model'] if form['agent'] else form['model'] or chosen.model
+        effort = settings.check_effort(form['effort'] if form['agent'] else form['effort'] or chosen.effort, agent, model)
+        root = pipeline.create(space, form)
+        record = self.engines.new_record(agent, model, chosen, form['source_scope'], effort, form.get('research_from'))
+        record['research_questions'] = form.get('research_questions') or []
+        if form.get('review_level'):
+            record['review_policy'] = {'schema': 1, 'level': form['review_level']}
+        record['schema'] = 1 if review_policy.level(record) == 'step_by_step' else 2
+        if saved_contract is not None:
+            record['research_contract'] = dict(saved_contract)
+            record['schema'] = 3
+        if schema is not None:
+            record['schema'] = schema
+        session = workspace.load(root)
+        session['review_policy'] = record['review_policy']
+        if saved_contract is not None:
+            session['research_contract'] = dict(saved_contract)
+        workspace.store(root, session)
+        record['driver'] = team.claim(space)
+        engine._tried(record, 'intake', home.now(), 0.0, 'kept')
+        engine._store(root, record)
+        engine._commit(root, 'start the training from the form')
+        engine._claimed(root, space)
+        engine.wake(root)
+        return root
 
     def view(self, root: Path) -> dict:
         return self.engine.view(root)

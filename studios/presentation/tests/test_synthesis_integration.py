@@ -70,9 +70,9 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertEqual(facts['review']['digest'], manifest['digest'])
 
     def test_existing_record_does_not_switch_formats_on_resume(self):
-        from stand_ins.research import stand_in
-        self.research = stand_in()
-        root = self.start(research=True)
+        from stand_ins.research import saved_queue
+        self.research = saved_queue()
+        root = self.saved_start(research=True)
         self.assertNotIn('research_contract', self.engine._load(root))
         self.research = research.Research(Path(RUNTIME))
         self.assertNotIn('research_contract', self.engine._load(root))

@@ -61,3 +61,23 @@ def research_stop(folder):
     sources = [*value['sources'], dict(id='mine-a', permission='selected'), dict(id='mine-b', permission='selected')]
     sources[0].update(context='partial', context_note='Pages 1 to 4 only.')
     return published_bundle(folder, findings=value['findings'], sources=sources, evidence=value['facts'])
+
+
+def captured_dossier(worker, source, text, finding_ids=None):
+    """Reuse the fictional dossier with a quote from this job's actual capture."""
+    quote = 'Capacity holds only when more than one instance is running.'
+    quote = quote if quote in text else text.strip()[:200]
+    value = dossier(worker, source['file'], source.get('origin', source.get('url')),
+                    source.get('permission') or ('selected' if source.get('supplied') else 'public'))
+    def replace(item):
+        if isinstance(item, str):
+            return item.replace('More than one instance keeps capacity.', quote)
+        if isinstance(item, list):
+            return [replace(part) for part in item]
+        if isinstance(item, dict):
+            return {key: replace(part) for key, part in item.items()}
+        return item
+    value = replace(value)
+    if finding_ids is not None:
+        value['findings'] = [{**copy.deepcopy(value['findings'][0]), 'id': ident} for ident in finding_ids]
+    return value

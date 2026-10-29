@@ -95,7 +95,7 @@ class ToTheEndTests(FlowCase):
         ):
             with self.subTest(materials=materials):
                 start = len(self.workers.jobs)
-                root = self.start(title='Only ' + materials[0], materials=materials)
+                root = self.saved_start(title='Only ' + materials[0], materials=materials)
                 self.assertEqual(self.to_end(root), ['research-plan', 'research', 'blueprint',
                                                      *gates])
                 kinds = self.kinds(start)
@@ -109,7 +109,7 @@ class ToTheEndTests(FlowCase):
 
     def test_a_plain_training_goes_from_the_form_to_finished(self):
         self.engine = self.make(at_once=1)
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.to_end(root), PLAIN)
         self.assertEqual(self.kinds(), [
             'research-plan', 'question:availability', 'question:instance-min',
@@ -140,7 +140,7 @@ class ToTheEndTests(FlowCase):
         self.assertEqual(self.git('status', '--porcelain'), '')
 
     def test_a_finished_training_is_filed_under_finished_by_the_desk(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         listed = page.RunnerPage(8765, self.engine).trainings()[0]
         self.assertEqual((listed['state'], listed['run']['state'], listed['ready']),
@@ -159,7 +159,7 @@ class ToTheEndTests(FlowCase):
             self.assertGreaterEqual(len(self.to_end(Path(made['path']))), expect)
 
     def test_with_levels_everything_after_the_blueprints_is_done_one_level_at_a_time(self):
-        root = self.start(levels=['201', '101'])
+        root = self.saved_start(levels=['201', '101'])
         self.assertEqual(self.to_end(root), [
             'research-plan', 'research', 'blueprint@101', 'blueprint@201', 'document@101',
             'brief@101', 'scenario:main@101', 'document@201', 'brief@201',
@@ -184,7 +184,7 @@ class ToTheEndTests(FlowCase):
         self.assertEqual(workspace.status(root)['level'], '201')
 
     def test_the_level_being_worked_on_is_recorded_through_the_core(self):
-        root = self.start(levels=['101', '301'])
+        root = self.saved_start(levels=['101', '301'])
         self.to_gate(root, 'document@101')
         self.assertEqual(workspace.status(root)['level'], '101')
         self.to_gate(root, 'document@301')
@@ -192,7 +192,7 @@ class ToTheEndTests(FlowCase):
         self.assertEqual((status['level'], status['stage']), ('301', 'document'))
 
     def test_earlier_levels_are_given_to_a_guide_as_what_to_assume(self):
-        root = self.start(levels=['101', '201'])
+        root = self.saved_start(levels=['101', '201'])
         self.to_gate(root, 'document@201')
         found = pipeline.survey(root, self.record(root))
         step = next(step for step in found.steps if step.id == 'document@201')
@@ -209,7 +209,7 @@ class WorkerTests(FlowCase):
 
     def setUp(self):
         super().setUp()
-        self.root = self.start(yoodli=True)
+        self.root = self.saved_start(yoodli=True)
         self.to_end(self.root)
         self.jobs = {kind: (job, spec) for kind, job, spec in self.workers.jobs}
 
@@ -293,7 +293,7 @@ class ReviewTests(FlowCase):
     """What the review at each new gate carries."""
 
     def test_gate_4_says_what_was_checked_and_that_coverage_is_declared(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'document')
         note = self.review(root, 'document')
         self.assertIn('> Checked for you: 1 check passed.\n> - Every objective and every '
@@ -310,7 +310,7 @@ class ReviewTests(FlowCase):
         self.assertNotIn('beside', shown)
 
     def test_gate_5_carries_where_the_worker_thinks_the_brief_is_weakest(self):
-        root = self.start()
+        root = self.saved_start()
         self.workers.then('brief', lambda tools, job: tools.submit_artifact('brief', BRIEF))
         self.to_gate(root, 'brief')
         self.assertIn('> The worker left no notes, so nothing here says where the brief is '
@@ -327,7 +327,7 @@ class ReviewTests(FlowCase):
                       note)
 
     def test_gate_7_says_whose_file_it_is(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'scenario:main')
         note = self.review(root, 'scenario:main')
         self.assertIn('> The runner drafted this file, from the practice plan and the brief. '
@@ -337,7 +337,7 @@ class ReviewTests(FlowCase):
         self.assertEqual(self.record(root)['drafted'], ['scenario:main'])
 
     def test_gate_8_names_the_goals_the_counts_and_the_copy_to_upload(self):
-        root = self.start(yoodli=True)
+        root = self.saved_start(yoodli=True)
         self.to_gate(root, 'yoodli:main')
         note = self.review(root, 'yoodli:main')
         self.assertIn('> Checked for you: 3 checks passed.', note)
@@ -363,7 +363,7 @@ class ReviewTests(FlowCase):
 
     def test_nothing_a_person_reads_about_the_later_stages_uses_the_words_the_page_avoids(self):
         self.copies.refuse['word'] = 'This computer has no converter for Word files.'
-        root = self.start(yoodli=True, deck_target='pptx', copies=['word'])
+        root = self.saved_start(yoodli=True, deck_target='pptx', copies=['word'])
         self.to_end(root)
         view = self.view(root)
         said = [view['sentence'], view['deck_left']['says'],
@@ -382,7 +382,7 @@ class ReviewTests(FlowCase):
 
 class YoodliTests(FlowCase):
     def test_with_yoodli_each_approved_scenario_is_laid_out_and_put_to_the_person(self):
-        root = self.start(yoodli=True)
+        root = self.saved_start(yoodli=True)
         self.assertEqual(self.to_end(root), PLAIN + ['yoodli:main'])
         self.assertEqual(self.kinds(6), ['document', 'brief', 'scenario', 'yoodli'])
         ids = [step['id'] for step in self.view(root)['steps']]
@@ -403,14 +403,14 @@ class YoodliTests(FlowCase):
         self.assertEqual(assess.run_checks(root)['practice']['basis'], 'Yoodli goals')
 
     def test_without_yoodli_no_scenario_is_laid_out(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         self.assertEqual(self.workers.of('yoodli'), [])
         self.assertNotIn('yoodli:main', workspace.status(root)['artifacts'])
 
     def test_with_no_copy_of_the_brief_gate_8_says_the_handoff_is_incomplete(self):
         self.copies.refuse['word'] = 'This computer has no converter for Word files.'
-        root = self.start(yoodli=True)
+        root = self.saved_start(yoodli=True)
         self.to_gate(root, 'yoodli:main')
         self.assertIn('No copy of the brief is ready to upload: This computer has no '
                       'converter for Word files. Name no file under AI assets.',
@@ -427,7 +427,7 @@ class YoodliTests(FlowCase):
 
     def test_with_only_a_google_doc_to_upload_it_is_not_ready_until_the_doc_is_made(self):
         self.copies.refuse['google'] = 'Google access is not set up on this computer.'
-        root = self.start(yoodli=True, copies=['google'])
+        root = self.saved_start(yoodli=True, copies=['google'])
         self.to_end(root)
         view = self.view(root)
         self.assertEqual((view['state'], view['sentence']), (
@@ -453,7 +453,7 @@ class YoodliTests(FlowCase):
                          'finished')
 
     def test_leaving_the_brief_out_with_yoodli_on_is_refused_by_the_core(self):
-        root = self.start(yoodli=True)
+        root = self.saved_start(yoodli=True)
         self.to_gate(root, 'brief')
         self.assertNotIn('skip', self.gate(root, 'brief')['decisions'])
         with self.assertRaisesRegex(WorkspaceError, 'Turn Yoodli off before skipping the '
@@ -464,7 +464,7 @@ class YoodliTests(FlowCase):
 
 class DeckTests(FlowCase):
     def test_no_deck_on_the_form_leaves_the_deck_out_through_the_core(self):
-        root = self.start()
+        root = self.saved_start()
         session = workspace.load(root)
         self.assertNotIn('deck', session['settings']['stages'])
         skipped = [event for event in session['events'] if event['event'] == 'skip']
@@ -475,7 +475,7 @@ class DeckTests(FlowCase):
         self.assertNotIn('deck', [step['id'] for step in self.view(root)['steps']])
 
     def test_a_training_that_wants_a_deck_stops_when_the_deck_is_all_that_is_left(self):
-        root = self.start(deck_target='pptx')
+        root = self.saved_start(deck_target='pptx')
         self.assertIn('deck', workspace.load(root)['settings']['stages'])
         self.assertEqual(self.to_end(root), PLAIN)
         view, status = self.view(root), workspace.status(root)
@@ -498,7 +498,7 @@ class DeckTests(FlowCase):
         self.assertEqual(self.engine.brief(root)['needs'], False)
 
     def test_leaving_the_deck_out_at_the_end_finishes_the_training(self):
-        root = self.start(deck_target='pptx')
+        root = self.saved_start(deck_target='pptx')
         self.to_end(root)
         said = self.decide(root, self.view(root)['deck_left']['artifact'], 'skip',
                            'No slides for this one.')
@@ -515,14 +515,14 @@ class DeckTests(FlowCase):
             'one.', 'Rolling restarts: write the index; the training is finished'])
 
     def test_with_levels_one_decision_leaves_every_levels_deck_out(self):
-        root = self.start(deck_target='google', levels=['101', '201'])
+        root = self.saved_start(deck_target='google', levels=['101', '201'])
         self.to_end(root)
         self.assertEqual(self.view(root)['deck_left']['artifact'], 'deck')
         self.decide(root, 'deck', 'skip', 'No slides.')
         self.assertEqual(self.view(root)['finished']['ready'], True)
 
     def test_a_deck_approved_in_a_conversation_lets_the_index_be_written(self):
-        root = self.start(deck_target='pptx')
+        root = self.saved_start(deck_target='pptx')
         self.to_end(root)
         desk_page = page.RunnerPage(8765, self.engine)
         self.assertEqual(desk_page.move_approval(str(root), 'chat'), {'approval': 'chat'})
@@ -541,7 +541,7 @@ class DeckTests(FlowCase):
         self.assertTrue((root / 'README.md').is_file())
 
     def test_a_deck_that_is_there_but_not_approved_is_said_to_need_finishing(self):
-        root = self.start(deck_target='pptx')
+        root = self.saved_start(deck_target='pptx')
         self.to_end(root)
         (root / 'deck.pptx').write_bytes(b'PK\x03\x04 a deck made in a conversation\n')
         self.assertEqual(self.view(root)['deck_left']['says'], left(pipeline.DECK_AGAIN))
@@ -549,7 +549,7 @@ class DeckTests(FlowCase):
                       left(pipeline.DECK_AGAIN))
 
     def test_bringing_the_deck_back_to_a_finished_training_waits_for_the_deck_again(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         self.decide(root, 'deck', 'restore')
         view = self.view(root)
@@ -560,7 +560,7 @@ class DeckTests(FlowCase):
 
 class LeftOutTests(FlowCase):
     def test_a_stage_the_person_left_out_is_passed_over(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'document')
         said = self.decide(root, 'document', 'skip', 'The brief is all we need.')
         self.assertEqual(said['said'], 'This stage is left out. You can bring it back from '
@@ -576,7 +576,7 @@ class LeftOutTests(FlowCase):
                           'out'])
 
     def test_a_stage_left_out_before_it_is_reached_is_never_started(self):
-        root = self.start()
+        root = self.saved_start()
         self.decide(root, 'brief', 'skip', 'No brief.')
         self.decide(root, 'scenario', 'skip', 'No practice.')
         self.assertEqual(self.to_end(root), ['research-plan', 'research', 'blueprint',
@@ -586,7 +586,7 @@ class LeftOutTests(FlowCase):
         self.assertEqual(self.view(root)['finished']['ready'], True)
 
     def test_a_scenario_is_drafted_without_a_brief_when_the_brief_is_left_out(self):
-        root = self.start()
+        root = self.saved_start()
         self.decide(root, 'brief', 'skip', 'No brief.')
         self.to_gate(root, 'scenario:main')
         job, spec = self.workers.jobs[-1][1:]
@@ -596,7 +596,7 @@ class LeftOutTests(FlowCase):
                       "blueprint's key points say.", job.task)
 
     def test_a_stage_brought_back_is_made_and_put_to_the_person(self):
-        root = self.start()
+        root = self.saved_start()
         self.decide(root, 'brief', 'skip', 'No brief.')
         self.to_end(root)
         self.assertEqual(self.workers.of('brief'), [])
@@ -610,7 +610,7 @@ class LeftOutTests(FlowCase):
     def test_a_training_whose_blueprint_plans_no_practice_is_not_ready_and_says_why(self):
         self.workers.blueprint_text = BLUEPRINT.partition('## Practice plan')[0] \
             + '## Open gaps' + BLUEPRINT.partition('## Open gaps')[2]
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.to_end(root), PLAIN[:-1])
         view = self.view(root)
         self.assertEqual((view['state'], view['sentence']), (
@@ -628,7 +628,7 @@ class RequestTests(FlowCase):
     """Asking for changes or a rebuild at the new gates works as it does at gates 1 to 3."""
 
     def test_a_change_asked_for_at_each_new_gate_has_the_step_done_again(self):
-        root = self.start(yoodli=True)
+        root = self.saved_start(yoodli=True)
         for name, kind, thing in (('document', 'document', 'the guide'),
                                   ('brief', 'brief', 'the brief'),
                                   ('scenario:main', 'scenario', 'the scenario'),
@@ -652,7 +652,7 @@ class RequestTests(FlowCase):
         self.assertEqual(self.record(root)['drafted'], ['scenario:main'])
 
     def test_a_rebuild_asked_for_at_a_new_gate_starts_the_step_again(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'document')
         self.decide(root, 'document', 'rebuild')
         self.assertIn('The person asked for the guide to be made again from the start.',
@@ -662,7 +662,7 @@ class RequestTests(FlowCase):
         self.assertEqual(workspace.status(root)['gate'], 'document')
 
     def test_a_worker_on_a_later_stage_can_ask_the_person_a_question(self):
-        root = self.start()
+        root = self.saved_start()
         self.workers.then('brief', asks('Which product is the brief about?'))
         self.to_gate(root, 'document')
         self.decide(root, 'document')
@@ -673,7 +673,7 @@ class RequestTests(FlowCase):
         self.assertIn('Answer: The platform itself.', self.workers.of('brief')[1].task)
 
     def test_changes_asked_of_a_finished_training_are_made_and_it_finishes_again(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         index = (root / 'README.md').stat().st_mtime_ns
         self.workers.then('document', lambda tools, job: tools.submit_artifact(
@@ -695,7 +695,7 @@ class LaterChangeTests(FlowCase):
     """An earlier approval that changes, and what is done again because of it."""
 
     def test_a_blueprint_changed_and_approved_again_has_what_it_built_done_again(self):
-        root = self.start(yoodli=True)
+        root = self.saved_start(yoodli=True)
         self.to_end(root)
         jobs = len(self.workers.jobs)
         self.workers.blueprint_text = other_blueprint()
@@ -727,7 +727,7 @@ class LaterChangeTests(FlowCase):
         self.assertEqual(self.record(root)['drafted'], ['scenario:main'])
 
     def test_accepting_as_it_is_stays_the_persons_decision(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'brief')
         self.engine.act(root, 'stop')
         self.workers.blueprint_text = other_blueprint()
@@ -748,7 +748,7 @@ class LaterChangeTests(FlowCase):
             tools.submit_finding('health-checks', 'supported', 'Readiness is checked too.',
                                  evidence=[{'source_id': 's1', 'quote': QUOTE}])
 
-        root = self.start(levels=['101', '201'])
+        root = self.saved_start(levels=['101', '201'])
         self.to_gate(root, 'brief@101')
         jobs = len(self.workers.jobs)
         self.workers.then('question:health-checks', again)
@@ -759,7 +759,7 @@ class LaterChangeTests(FlowCase):
         self.assertEqual(workspace.status(root)['gate'], 'blueprint@101')
 
     def test_a_setting_that_changes_has_what_uses_it_made_again(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         workspace.checkpoint(root, brief_kind='competitive')
         self.assertEqual(workspace.status(root)['artifacts']['brief'], 'not-started')
@@ -781,7 +781,7 @@ class OwnScenarioTests(FlowCase):
         return file
 
     def test_a_scenario_the_person_wrote_is_put_to_them_as_it_is(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'blueprint')
         file = self.own(root)
         self.to_gate(root, 'scenario:main')
@@ -803,7 +803,7 @@ class OwnScenarioTests(FlowCase):
         self.assertEqual(self.git('status', '--porcelain'), '')
 
     def test_a_file_that_is_not_in_shape_is_put_to_them_with_what_the_check_found(self):
-        root = self.start()
+        root = self.saved_start()
         file = self.own(root, NOTES)
         self.to_gate(root, 'scenario:main')
         self.assertEqual((file.read_text(), self.workers.of('scenario')), (NOTES, []))
@@ -818,7 +818,7 @@ class OwnScenarioTests(FlowCase):
                          'scenario:main.sections')
 
     def test_their_own_wording_is_laid_out_only_when_they_ask(self):
-        root = self.start()
+        root = self.saved_start()
         file = self.own(root, NOTES)
         self.to_gate(root, 'scenario:main')
         self.workers.then('scenario', asks('What does the platform lead say first?'))
@@ -852,7 +852,7 @@ class OwnScenarioTests(FlowCase):
                       'what they wrote is kept')
 
     def test_a_scenario_of_theirs_beside_the_one_the_plan_names_gets_a_gate_of_its_own(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'blueprint')
         self.own(root, OWN, 'scenarios/dropped-requests.md')
         approved = self.to_end(root)
@@ -868,7 +868,7 @@ class OwnScenarioTests(FlowCase):
         self.assertEqual((root / 'scenarios' / 'dropped-requests.md').read_text(), OWN)
 
     def test_a_file_of_theirs_changed_after_it_was_taken_in_is_taken_in_again(self):
-        root = self.start()
+        root = self.saved_start()
         file = self.own(root)
         self.to_gate(root, 'scenario:main')
         file.write_text(OWN.replace('10 minutes', '15 minutes'))
@@ -879,7 +879,7 @@ class OwnScenarioTests(FlowCase):
         self.assertEqual(self.view(root)['finished']['ready'], True)
 
     def test_a_mode_other_than_the_practice_plans_is_noted_and_their_file_decides(self):
-        root = self.start()
+        root = self.saved_start()
         self.own(root, OWN.replace('## Mode\n\nroleplay', '## Mode\n\npitch'))
         self.to_gate(root, 'scenario:main')
         self.assertIn('> Worth a look: the practice plan lists this scenario as roleplay; '
@@ -896,7 +896,7 @@ class CopiesTests(FlowCase):
                 for entry in self.view(root)['copies']}
 
     def test_the_copies_a_training_asked_for_are_made_after_each_approval(self):
-        root = self.start(copies=['google', 'word'])
+        root = self.saved_start(copies=['google', 'word'])
         self.to_gate(root, 'document')
         self.assertEqual(len(self.copies.wanted(root)), 4)
         self.assertEqual((self.view(root)['copies'], self.copies.calls), ([], 0),
@@ -926,7 +926,7 @@ class CopiesTests(FlowCase):
         self.assertEqual(self.git('status', '--porcelain'), '')
 
     def test_a_training_that_asked_for_no_copies_has_no_copies_steps(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         self.assertEqual((self.view(root)['copies'], self.copies.calls), ([], 0))
         self.assertEqual([step for step in self.steps(root) if step.startswith('copies:')],
@@ -936,7 +936,7 @@ class CopiesTests(FlowCase):
         self.copies.refuse.update(
             google='Google access is not set up on this computer.',
             word='This computer has no converter for Word files.')
-        root = self.start(copies=['google', 'word'])
+        root = self.saved_start(copies=['google', 'word'])
         self.to_gate(root, 'brief')
         made = self.shown(root)
         self.assertEqual((made['document', 'google']['state'],
@@ -960,7 +960,7 @@ class CopiesTests(FlowCase):
 
     def test_trying_the_copies_again_makes_those_that_were_not_made(self):
         self.copies.refuse['google'] = 'Google access is not set up on this computer.'
-        root = self.start(copies=['google'])
+        root = self.saved_start(copies=['google'])
         self.to_end(root)
         self.assertEqual({entry['state'] for entry in self.view(root)['copies']},
                          {'not-made'})
@@ -981,7 +981,7 @@ class CopiesTests(FlowCase):
             self.engine.copies_again(self.base / 'elsewhere')
 
     def test_a_copy_is_made_again_when_its_document_is_approved_again(self):
-        root = self.start(copies=['word'])
+        root = self.saved_start(copies=['word'])
         self.to_gate(root, 'brief')
         first = (root / 'document.docx').read_bytes()
         self.workers.then('document', lambda tools, job: tools.submit_artifact(
@@ -1000,7 +1000,7 @@ class DocumentTests(FlowCase):
     """Research from documents the person supplies."""
 
     def test_a_training_from_the_persons_documents_waits_for_them_first(self):
-        root = self.start(source_scope='supplied-only')
+        root = self.saved_start(source_scope='supplied-only')
         view = self.view(root)
         self.assertEqual((view['state'], view['sentence'], self.workers.jobs), (
             'waiting', 'Add your documents, then say that is all of them. Nothing is '
@@ -1024,7 +1024,7 @@ class DocumentTests(FlowCase):
         self.assertEqual(self.workers.jobs, [])
 
     def test_a_training_from_the_public_web_takes_no_documents(self):
-        root = self.start()
+        root = self.saved_start()
         self.assertIsNone(self.view(root)['documents'])
         self.assertIsNone(self.record(root)['documents'])
         with self.assertRaisesRegex(WorkspaceError, engine_module.NO_DOCUMENTS):
@@ -1035,7 +1035,7 @@ class DocumentTests(FlowCase):
             self.engine.supply(self.base / 'elsewhere', 'done')
 
     def test_documents_are_added_shown_and_removed_until_the_person_says_that_is_all(self):
-        root = self.start(source_scope='supplied-only')
+        root = self.saved_start(source_scope='supplied-only')
         after = self.send(root, 'handbook.txt')
         self.assertEqual(after['documents']['added'], [
             {'name': 'handbook.txt', 'bytes': 60, 'readable': True, 'problem': None}])
@@ -1069,7 +1069,7 @@ class DocumentTests(FlowCase):
 
     def settled(self) -> Path:
         """A training researched from documents, with one added and the research planned."""
-        root = self.start(source_scope='supplied-only')
+        root = self.saved_start(source_scope='supplied-only')
         self.send(root, 'handbook.txt')
         self.engine.supply(root, 'done')
         return root
@@ -1136,13 +1136,13 @@ class DocumentTests(FlowCase):
             run.workers.pop('research-plan', None)
 
     def test_a_web_only_training_still_takes_no_documents(self):
-        root = self.start()
+        root = self.saved_start()
         with self.assertRaises(WorkspaceError) as refused:
             self.send(root, 'more.txt')
         self.assertEqual(str(refused.exception), engine_module.NO_DOCUMENTS)
 
     def test_the_questions_are_drafted_for_what_the_documents_can_answer(self):
-        root = self.start(source_scope='supplied-only')
+        root = self.saved_start(source_scope='supplied-only')
         self.send(root, 'handbook.txt')
         self.send(root, 'runbook.md')
         self.engine.supply(root, 'done')
@@ -1163,7 +1163,7 @@ class DocumentTests(FlowCase):
              'original_file': 'sources/supplied/runbook.md', 'limits': 'none'}])
 
     def test_a_worker_on_documents_only_cannot_reach_the_web(self):
-        root = self.start(source_scope='supplied-only')
+        root = self.saved_start(source_scope='supplied-only')
         self.send(root, 'handbook.txt')
         self.engine.supply(root, 'done')
         self.decide(root, 'research-plan')
@@ -1186,7 +1186,7 @@ class DocumentTests(FlowCase):
         self.assertEqual(self.view(root)['finished']['ready'], True)
 
     def test_a_job_that_may_not_fetch_is_refused_a_page_by_its_own_tools(self):
-        root = self.start(source_scope='supplied-only')
+        root = self.saved_start(source_scope='supplied-only')
         self.send(root, 'handbook.txt')
         self.engine.supply(root, 'done')
         seen = []
@@ -1204,7 +1204,7 @@ class DocumentTests(FlowCase):
         self.assertIn('read_source', seen[1])
 
     def test_with_the_web_and_documents_a_worker_has_both(self):
-        root = self.start(source_scope='both')
+        root = self.saved_start(source_scope='both')
         self.assertIn('## Source scope\n\nThe public web and your documents\n',
                       (root / 'intake.md').read_text())
         self.assertNotIn('researched from them alone', self.view(root)['sentence'])
@@ -1227,7 +1227,7 @@ class DocumentTests(FlowCase):
         self.assertEqual(workspace.status(root)['gate'], 'research')
 
     def test_research_from_documents_alone_needs_one_that_can_be_read(self):
-        root = self.start(source_scope='supplied-only')
+        root = self.saved_start(source_scope='supplied-only')
         self.send(root, 'slides.docx')
         with self.assertRaisesRegex(WorkspaceError, 'Add at least one document that can be '
                                     'read first. This training is researched from your '
@@ -1237,7 +1237,7 @@ class DocumentTests(FlowCase):
                          (True, []))
 
     def test_with_the_web_as_well_no_document_at_all_is_an_answer(self):
-        root = self.start(source_scope='both')
+        root = self.saved_start(source_scope='both')
         done = self.engine.supply(root, 'done')
         self.assertEqual((done['documents']['waiting'], workspace.status(root)['gate']),
                          (False, 'research-plan'))
@@ -1248,13 +1248,13 @@ class DocumentTests(FlowCase):
 
     def test_a_computer_that_can_read_a_pdf_takes_one(self):
         self.documents.pdf = True
-        root = self.start(source_scope='both')
+        root = self.saved_start(source_scope='both')
         shown = self.view(root)['documents']
         self.assertIn('.pdf', shown['types'])
         self.assertNotIn('PDF', shown['note'])
 
     def test_on_another_computer_research_waits_for_the_documents_again(self):
-        root = self.start(source_scope='supplied-only')
+        root = self.saved_start(source_scope='supplied-only')
         self.send(root, 'handbook.txt')
         self.engine.supply(root, 'done')
         self.to_gate(root, 'blueprint')
@@ -1284,7 +1284,7 @@ class AwayTests(FlowCase):
     """A training whose decisions were moved to a conversation."""
 
     def test_it_is_left_alone_until_its_decisions_come_back_to_the_page(self):
-        root = self.start(deck_target='pptx')
+        root = self.saved_start(deck_target='pptx')
         self.to_end(root)
         desk_page = page.RunnerPage(8765, self.engine)
         desk_page.move_approval(str(root), 'chat')
@@ -1308,7 +1308,7 @@ class AwayTests(FlowCase):
                          ('waiting', 'document'))
 
     def test_decisions_cannot_move_to_a_conversation_while_the_run_has_work_to_do(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'document')
         with self.assertRaisesRegex(desk.Refusal, 'The runner is driving this training'):
             page.RunnerPage(8765, self.engine).move_approval(str(root), 'chat')

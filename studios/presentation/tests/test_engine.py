@@ -49,28 +49,28 @@ class ReviewLevelFormTests(StudioCase):
 
     def test_a_deck_keeps_the_level_its_form_chose(self):
         from studio_core import review_policy
-        root = self.start(review_level='step_by_step', review_seen='balanced')
+        root = self.start(flow=None, review_level='step_by_step', review_seen='balanced')
         self.assertEqual(review_policy.level(decks.read_run(root)), 'step_by_step')
         self.assertEqual(self.view(root)['review_level'], 'step_by_step')
         self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
         self.assertNotIn('review_level', decks.read_run(root)['form'])
         with self.assertRaisesRegex(WorkspaceError, 'Choose Balanced, Automatic draft, or Step by step'):
-            self.start(title='Another deck', review_level='fast', review_seen='balanced')
+            self.start(flow=None, title='Another deck', review_level='fast', review_seen='balanced')
         # Without a choice on the form, a deck takes the shared level, as before.
-        self.assertEqual(review_policy.level(decks.read_run(self.start(title='Plain deck'))),
+        self.assertEqual(review_policy.level(decks.read_run(self.start(flow=None, title='Plain deck'))),
                          'balanced')
 
     def test_the_shared_default_is_written_only_with_the_chip_and_refused_when_stale(self):
         from studio_core import review_policy
-        self.start(review_level='automatic', review_seen='balanced')
+        self.start(flow=None, review_level='automatic', review_seen='balanced')
         self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
-        self.start(title='Second deck', review_level='automatic', review_seen='balanced',
+        self.start(flow=None, title='Second deck', review_level='automatic', review_seen='balanced',
                    review_default=True)
         self.assertEqual(self.shared.read()[0]['review'], {'level': 'automatic'})
         self.shared.update({'review': {'level': 'step_by_step'}})
         before = self.made()
         with self.assertRaises(WorkspaceError) as caught:
-            self.start(title='Stale deck', review_level='balanced', review_seen='automatic',
+            self.start(flow=None, title='Stale deck', review_level='balanced', review_seen='automatic',
                        review_default=True)
         self.assertEqual(str(caught.exception), review_policy.STALE)
         self.assertEqual(self.made(), before, 'nothing is made')
@@ -84,9 +84,8 @@ class SynthesisAtStartTests(StudioCase):
 
     def setUp(self):
         super().setUp()
-        patch = mock.patch.object(self.engines, 'LEGACY_RESEARCH', False)
-        patch.start()
-        self.addCleanup(patch.stop)
+        from stand_ins.research import saved_queue
+        self.research = saved_queue()
 
     def made(self):
         """What a start could leave behind: the workspace's folders, the decks this computer
@@ -121,7 +120,7 @@ class SynthesisAtStartTests(StudioCase):
         (runtime / 'scripts' / 'lib').mkdir(parents=True)
         (runtime / 'package.json').write_text('{"version": "1.0.0"}\n', encoding='utf-8')
         (runtime / 'scripts' / 'lib' / 'synthesis-cli.mjs').write_text('', encoding='utf-8')
-        self.research = tool.Research(runtime=runtime, run=research_stand_in.StandIn())
+        self.research = tool.Research(runtime=runtime, run=research_stand_in.SavedQueueStandIn())
         from studio_core import research_contract
         with mock.patch.object(research_contract, 'snapshot', return_value=None):
             self.refused()
@@ -296,7 +295,7 @@ class AheadTests(StudioCase):
     under its own level, and what its agent's jobs have spent so far."""
 
     def test_runner_only_steps_do_not_claim_a_reported_zero_cost(self):
-        root = self.start()
+        root = self.saved_start()
         record = decks.read_run(root)
         record['steps'] = {name: entry for name, entry in record['steps'].items()
                            if (stages.BY_NAME.get(name) or
@@ -310,7 +309,7 @@ class AheadTests(StudioCase):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(research=True)
+            root = self.saved_start(research=True)
         shown = self.view(root)
         ahead = shown['ahead']
         self.assertEqual(ahead['next_stop'], 'Review the direction')
@@ -341,7 +340,7 @@ class AheadTests(StudioCase):
         # Step by step stops at the next gate there is, the outline.
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'step_by_step'}):
-            plain = self.start(title='Plain deck')
+            plain = self.saved_start(title='Plain deck')
         self.assertEqual(self.view(plain)['ahead']['next_gate'], 'gate:outline')
         self.assertEqual(self.view(plain)['ahead']['next_stop'], 'Approve the outline')
 
@@ -351,7 +350,7 @@ class NoCostYetTests(StudioCase):
     is said as $0.00."""
 
     def test_a_deck_that_ran_only_its_own_steps_reports_no_cost_yet(self):
-        root = self.start()
+        root = self.saved_start()
         run = decks.read_run(root)
         run['steps'] = {'intake-source': {'failed': 0, 'done': True,
                                           'tries': [{'seconds': 2, 'dollars': None}]}}
@@ -390,7 +389,7 @@ class RedoTests(StudioCase):
     """Ask for changes says, before it is sent, what it draws again and what that took."""
 
     def test_redo_counts_the_steps_reopen_runs_again(self):
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.waiting(root), 'gate:outline')
         record = decks.read_run(root)
         redo = self.view(root)['gate']['redo']
@@ -422,7 +421,7 @@ class RedoTests(StudioCase):
         # The research stops keep their own wording: Phase 3 prices them.
         with mock.patch('studio_core.review_policy.capture',
                         return_value={'schema': 1, 'level': 'step_by_step'}):
-            searched = self.start(title='Searched deck', research=True)
+            searched = self.saved_start(title='Searched deck', research=True)
         self.assertEqual(self.waiting(searched), 'gate:research-plan')
         self.assertIsNone(self.view(searched)['gate'].get('redo'))
 
@@ -433,7 +432,7 @@ class HonestStopTests(StudioCase):
         before = self.engine.decks()
         with mock.patch.object(type(self.engine), '_google_ready', lambda me: False):
             with self.assertRaises(WorkspaceError) as caught:
-                self.start(route='document', source={
+                self.saved_start(route='document', source={
                     'kind': 'google', 'link': 'https://docs.google.com/document/d/abc/edit'})
         self.assertEqual(str(caught.exception), existing.NOT_READY)
         self.assertEqual(existing.NOT_READY, 'Sign in to Google first: Status → Check this '
@@ -441,7 +440,7 @@ class HonestStopTests(StudioCase):
         self.assertEqual(self.engine.decks(), before, 'nothing is made')
 
     def test_an_unexpected_failure_says_its_message_without_its_class(self):
-        root = self.start()
+        root = self.saved_start()
         self.engine._trouble(root, ValueError('boom'))
         problem = self.view(root)['problem']
         self.assertEqual(problem['why'], 'The runner could not go on: boom.')
@@ -450,7 +449,7 @@ class HonestStopTests(StudioCase):
 
 class ScratchTests(StudioCase):
     def test_a_scratch_deck_stops_at_each_gate_and_is_delivered(self):
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.waiting(root), 'gate:outline')
         view = self.view(root)
         self.assertEqual(view['state'], 'waiting')
@@ -505,7 +504,7 @@ class ScratchTests(StudioCase):
         self.assertEqual(self.git('status', '--porcelain'), '')
 
     def test_every_decision_is_a_commit(self):
-        root = self.start()
+        root = self.saved_start()
         for gate in ('gate:outline', 'gate:look', 'gate:build'):
             count = int(self.git('rev-list', '--count', 'HEAD'))
             head = self.git('rev-parse', 'HEAD')
@@ -519,7 +518,7 @@ class ScratchTests(StudioCase):
             self.assertIn('run.json', decided)
 
     def test_changes_at_the_outline_run_it_again_with_the_note(self):
-        root = self.start()
+        root = self.saved_start()
         self.decide(root, 'gate:outline', 'changes', 'Make the objection its own section.')
         self.assertEqual(len(self.workers.of('outline')), 2)
         again = self.workers.of('outline')[-1]
@@ -531,7 +530,7 @@ class ScratchTests(StudioCase):
         self.assertIn('Rolling restarts: ask for changes to the outline', self.log())
 
     def test_a_note_is_needed_to_ask_for_changes_and_only_a_waiting_gate_moves(self):
-        root = self.start()
+        root = self.saved_start()
         with self.assertRaises(WorkspaceError) as caught:
             self.engine.decide(root, 'gate:outline', 'changes', '  ', None)
         self.assertEqual(str(caught.exception), 'Say what should change.')
@@ -542,7 +541,7 @@ class ScratchTests(StudioCase):
             self.engine.decide(root, 'gate:classify', 'changes', 'No.', None)
 
     def test_another_brand_is_chosen_at_the_brand_and_its_cover_drawn_again(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:look')
         exported = json.loads((root / build.CONTRACT).read_text())
         self.assertEqual(exported['identity']['variant'], 'light')
@@ -570,7 +569,7 @@ class ScratchTests(StudioCase):
         self.assertEqual(self.waiting(root), 'gate:build')
 
     def test_an_edited_outline_is_checked_and_kept_with_the_approval(self):
-        root = self.start()
+        root = self.saved_start()
         slides = self.view(root)['gate']['slides']
         moved = [*slides[:2], slides[3], slides[2], *slides[4:]]
         self.engine.decide(root, 'gate:outline', 'approve', None, {'edited': moved})
@@ -580,7 +579,7 @@ class ScratchTests(StudioCase):
         self.assertEqual(self.waiting(root), 'gate:look')
 
     def test_an_edited_outline_is_kept_before_its_worker_is_asked_for_changes(self):
-        root = self.start()
+        root = self.saved_start()
         slides = self.view(root)['gate']['slides']
         moved = [*slides[:2], slides[3], slides[2], *slides[4:]]
         seen = []
@@ -597,7 +596,7 @@ class ScratchTests(StudioCase):
         self.assertIn('Shorten the close.', self.workers.of('outline')[-1].task)
 
     def test_changes_to_the_deck_draw_only_the_sections_of_the_named_slides(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         drawn = len(self.workers.of('section'))
         self.engine.decide(root, 'gate:build', 'changes', 'Give slide 2 more room.',
@@ -609,7 +608,7 @@ class ScratchTests(StudioCase):
         self.assertEqual(self.record(root)['gates']['gate:build']['round'], 2)
 
     def test_changes_after_delivery_build_and_deliver_a_new_revision(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         self.assertEqual(self.state(root), 'finished')
         self.engine.decide(root, 'gate:build', 'changes', 'Shorter titles, please.', None)
@@ -622,7 +621,7 @@ class ScratchTests(StudioCase):
 
     def test_a_review_that_finds_a_grave_drawing_has_its_section_drawn_again(self):
         self.workers.found = [grave]
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         state = build.read_state(root)
         self.assertEqual(len(state['rounds']), 2)
@@ -633,7 +632,7 @@ class ScratchTests(StudioCase):
 class RetryTests(StudioCase):
     def test_a_step_that_fails_three_times_stops_and_retry_carries_on(self):
         self.workers.then('outline', fails(), fails(), fails('The model gave up again.'))
-        root = self.start()
+        root = self.saved_start()
         view = self.view(root)
         self.assertEqual(view['state'], 'failed')
         self.assertIn('This step did not work in 3 tries: Draft the outline. The last one: '
@@ -650,13 +649,13 @@ class RetryTests(StudioCase):
         def wrong(tools, job):
             tools.submit_outline(json.dumps({'version': 1, 'slides': []}))
         self.workers.then('outline', wrong)
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.waiting(root), 'gate:outline')
         self.assertIn('did not pass the checks', self.workers.of('outline')[1].task)
 
     def test_an_agent_that_cannot_be_used_stops_at_once(self):
         self.workers.then('outline', fails('Not signed in.', reason='unavailable'))
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.state(root), 'failed')
         self.assertIn('could not be used. Not signed in. Check this computer, on the Status '
                       'screen, says what it needs.', self.view(root)['sentence'])
@@ -664,7 +663,7 @@ class RetryTests(StudioCase):
 
     def test_an_account_at_its_usage_limit_stops_at_once_and_says_where_to_look(self):
         self.workers.then('outline', fails("You've hit your usage limit.", reason='limit'))
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.state(root), 'failed')
         self.assertEqual(self.view(root)['sentence'], "scripted's account reached a usage or "
                          'rate limit. Wait until it resets, then Try again.')
@@ -673,7 +672,7 @@ class RetryTests(StudioCase):
     def test_a_step_that_runs_out_of_time_offers_more_time_for_this_deck(self):
         from dataclasses import replace
         self.workers.then('outline', *[fails('It did not finish in 900 seconds, so it was stopped.', reason='timeout')] * 3)
-        root = self.start()
+        root = self.saved_start()
         view = self.view(root)
         self.assertEqual(view['problem'], {
             'state': 'failed', 'action': 'more-time', 'seconds': 900,
@@ -698,7 +697,7 @@ class RetryTests(StudioCase):
 class QuestionTests(StudioCase):
     def test_a_workers_question_waits_for_an_answer_which_goes_into_the_task(self):
         self.workers.then('outline', asks('Who presents it?'))
-        root = self.start()
+        root = self.saved_start()
         view = self.view(root)
         self.assertEqual(view['state'], 'waiting')
         self.assertEqual(view['question']['text'], 'Who presents it?')
@@ -711,7 +710,7 @@ class NoteTests(StudioCase):
     """A note for the next step goes with the next job that starts, once, and stops nothing."""
 
     def test_a_note_goes_with_the_next_job_only_and_is_kept_in_history(self):
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.waiting(root), 'gate:outline')
         before = len(self.workers.jobs)
         shown = self.view(root)['note']
@@ -756,7 +755,7 @@ class NoteTests(StudioCase):
             self.engine.note(root, 'Say who runs the restarts.')
             return self.workers.outline(tools, job)
         self.workers.then('outline', noting)
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.waiting(root), 'gate:outline')
         self.assertNotIn('Note from the author', self.workers.of('outline')[0].task,
                          'nothing reaches a job already running')
@@ -769,7 +768,7 @@ class NoteTests(StudioCase):
 
     def test_a_note_reaches_every_section_drawn_together_and_a_try_again(self):
         self.workers.then('section', fails())
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:look')
         self.engine.note(root, 'Name the operator on each slide.\r\nKeep the second short.')
         self.decide(root, 'gate:look')
@@ -792,7 +791,7 @@ class NoteTests(StudioCase):
             self.engine.note(root, 'Say who restarts what.')
             return self.workers.section(tools, job)
         self.workers.then('section', *[noting] * 8)
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         review = self.workers.of('review')[-1]
         self.assertNotIn('Note from the author', review.task)
@@ -802,7 +801,7 @@ class NoteTests(StudioCase):
         self.assertEqual(self.record(root).get('notes_used', []), [])
 
     def test_a_note_reaches_every_question_researched_together(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         self.assertEqual(self.waiting(root), 'gate:research-plan')
         self.engine.note(root, 'Prefer the vendor\'s own pages.')
         self.decide(root, 'gate:research-plan')
@@ -834,7 +833,7 @@ class NoteTests(StudioCase):
                 evidence=[{'source_id': saved, 'quote': QUOTE}])[0])
         self.workers.queued['question'] = [question] * 8
         chosen = {'documents': False, 'sites': ['https://docs.example.com'], 'web': False}
-        root = self.start(research=True, research_from={'sites': ['docs.example.com/']})
+        root = self.saved_start(research=True, research_from={'sites': ['docs.example.com/']})
         self.assertEqual(self.record(root)['form']['research_from'], chosen)
         self.decide(root, 'gate:research-plan')
         self.assertEqual(self.waiting(root), 'gate:research')
@@ -852,7 +851,7 @@ class NoteTests(StudioCase):
         self.assertIn('yes, from 1 of your sites (docs.example.com)', (root / 'intake.md').read_text())
 
     def test_a_note_is_refused_when_empty_too_long_finished_or_stopped(self):
-        root = self.start()
+        root = self.saved_start()
         with self.assertRaisesRegex(WorkspaceError, 'Write the note first'):
             self.engine.note(root, '   ')
         with self.assertRaisesRegex(WorkspaceError, 'at most 2000 characters'):
@@ -879,7 +878,7 @@ class SharedDataTests(StudioCase):
             self.assertIn('PRESENTATION_STUDIO_DATA', said)
             self.assertNotIn('staging', said)
             self.assertEqual(self.engine.status()['problem'], said)
-            root = self.start()
+            root = self.saved_start()
             record = self.record(root)
             self.assertEqual(self.state(root), 'stopped')
             self.assertEqual(record['halted']['why'], said)
@@ -893,7 +892,7 @@ class SharedDataTests(StudioCase):
 
 class HaltTests(StudioCase):
     def test_pause_stop_resume_and_what_is_refused(self):
-        root = self.start()
+        root = self.saved_start()
         with self.assertRaises(WorkspaceError) as caught:
             self.engine.act(root, 'pause')
         self.assertIn('Only a deck that is working can be paused', str(caught.exception))
@@ -911,7 +910,7 @@ class HaltTests(StudioCase):
         self.settings.save(replace(self.settings.load(), deck_dollars=1.0))
         self.workers.cost = 0.75
         self.workers.then('outline', asks('One thing first?'))
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.record(root)['limits'], {'step_seconds': 900, 'dollars': 1.0})
         self.engine.answer(root, self.view(root)['question']['id'], 'Yes.')
         self.assertEqual(self.waiting(root), 'gate:outline')
@@ -934,7 +933,7 @@ class HaltTests(StudioCase):
         self.workers.then('outline', lambda tools, job: Outcome(
             False, 'limit', 'It stopped without finishing: its spending limit was reached',
             cost=1.0, budget=True))
-        root = self.start()
+        root = self.saved_start()
         view = self.view(root)
         self.assertEqual((view['state'], len(self.workers.of('outline'))), ('stopped', 1))
         self.assertEqual(view['problem']['why'], (
@@ -953,7 +952,7 @@ class HaltTests(StudioCase):
         from dataclasses import replace
         self.settings.save(replace(self.settings.load(), deck_dollars=20.0))
         self.workers.cost = 19.7
-        root = self.start()
+        root = self.saved_start()
         self.decide(root, 'gate:outline')
         self.decide(root, 'gate:look')
         view = self.view(root)
@@ -965,7 +964,7 @@ class HaltTests(StudioCase):
     def test_a_research_job_that_runs_out_of_time_offers_more_time(self):
         from runner import research_steps
         from runner.agents import Outcome
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         record = self.engine._load(root)
         record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         self.engine._store(root, record)
@@ -979,7 +978,7 @@ class HaltTests(StudioCase):
             'The research ran out of the time a step may take: it was stopped after 15 minutes.'))
 
     def test_undo_takes_back_the_last_step(self):
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.log()[-1], 'Rolling restarts: keep the outline')
         self.engine.act(root, 'undo')
         self.assertEqual(len(self.workers.of('outline')), 2)
@@ -1044,7 +1043,7 @@ class OlderSlidesToolTests(StudioCase):
         self.assertNotIn(said, needs['missing'], 'it holds up no deck already exported')
         [item] = [item for item in needs['items'] if item['id'] == 'deck-brand']
         self.assertEqual((item['state'], item['fix']), ('problem', said))
-        root = self.start()
+        root = self.saved_start()
         for _ in range(10):
             view = self.view(root)
             if view['state'] != 'waiting':
@@ -1057,7 +1056,7 @@ class OlderSlidesToolTests(StudioCase):
         self.assertNotIn(said, json.dumps(self.engine.deck_needs(fresh=True)['items']))
 
     def test_a_begun_deck_carries_on_with_an_old_brand_skill(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:outline')
         self.brand.version = '0.13.2'
         self.engine.deck_needs(fresh=True)
@@ -1067,7 +1066,7 @@ class OlderSlidesToolTests(StudioCase):
         self.assertNotEqual(view['state'], 'failed', view.get('problem'))
 
     def test_a_deck_begun_on_an_older_tool_stops_at_its_next_step_and_keeps_its_files(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:outline')
         before = sorted(str(path.relative_to(root)) for path in root.rglob('*'))
         with self.too_old():
@@ -1083,7 +1082,7 @@ class OlderSlidesToolTests(StudioCase):
 
 class BrandTests(StudioCase):
     def test_a_brand_that_changed_stops_the_deck_before_the_next_step_that_uses_it(self):
-        root = self.start()
+        root = self.saved_start()
         rules = self.brand.run.home / 'references' / 'brand-rules.md'
         rules.write_text(rules.read_text() + 'Round corners now.\n')
         self.decide(root, 'gate:outline')
@@ -1100,7 +1099,7 @@ class BrandTests(StudioCase):
     def test_without_a_brand_skill_a_deck_runs_until_it_needs_its_brand(self):
         from runner import engine
         self.without_a_brand_skill()
-        root = self.start(research=True, brand='', variant='')
+        root = self.saved_start(research=True, brand='', variant='')
         self.assertIn('your brand, chosen when the brand skill is installed',
                       (root / 'intake.md').read_text())
         self.assertEqual(self.waiting(root), 'gate:research-plan')
@@ -1122,7 +1121,7 @@ class BrandTests(StudioCase):
         from dataclasses import replace
         self.settings.save(replace(self.settings.load(), brand='example', variant='dark'))
         self.without_a_brand_skill()
-        root = self.start(brand='', variant='')
+        root = self.saved_start(brand='', variant='')
         self.assertEqual(self.state(root), 'stopped')
         self.brand = self.installed
         self.engine.act(root, 'retry')
@@ -1133,7 +1132,7 @@ class BrandTests(StudioCase):
         from runner import engine
         self.without_a_brand_skill()
         with mock.patch.dict('os.environ', {'BRAND_SKILL_RUNTIME': str(self.base / 'nowhere')}):
-            root = self.start(brand='', variant='')
+            root = self.saved_start(brand='', variant='')
         view = self.view(root)
         self.assertNotEqual(view['sentence'], engine.NO_BRAND)
         self.assertEqual(view['sentence'], f"BRAND_SKILL_RUNTIME names {self.base / 'nowhere'}, "
@@ -1150,7 +1149,7 @@ class BrandTests(StudioCase):
                  named.NO_VARIANT.format(variant='neon', brand='example',
                                          listed='light, dark'))):
             self.brand = None
-            root = self.start(title=f"Restarts in {form['variant'] or form['brand']}", **form)
+            root = self.saved_start(title=f"Restarts in {form['variant'] or form['brand']}", **form)
             self.brand = self.installed
             self.engine.act(root, 'retry')
             view = self.view(root)
@@ -1162,7 +1161,7 @@ class BrandTests(StudioCase):
 
     def test_the_brand_chosen_for_a_deck_is_said_in_its_intake(self):
         self.without_a_brand_skill()
-        root = self.start(brand='', variant='')
+        root = self.saved_start(brand='', variant='')
         self.brand = self.installed
         self.engine.act(root, 'retry')
         self.assertIn('## Brand\nexample (light)\n', (root / 'intake.md').read_text())
@@ -1171,7 +1170,7 @@ class BrandTests(StudioCase):
 
     def test_without_a_brand_skill_an_existing_deck_is_still_listed_slide_by_slide(self):
         self.without_a_brand_skill()
-        root = self.start(route='existing', level='polish', brand='', variant='',
+        root = self.saved_start(route='existing', level='polish', brand='', variant='',
                           source={'kind': 'upload', 'name': 'old.pptx'},
                           uploads={'old.pptx': ExistingTests.DECK})
         self.assertEqual(self.waiting(root), 'gate:classify')
@@ -1179,7 +1178,7 @@ class BrandTests(StudioCase):
 
 class ResearchTests(StudioCase):
     def test_research_is_planned_approved_done_and_reported(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         self.assertEqual(self.waiting(root), 'gate:research-plan')
         gate = self.view(root)['gate']
         self.assertEqual([q['id'] for q in gate['questions']], ['instance-min', 'health-checks'])
@@ -1193,7 +1192,7 @@ class ResearchTests(StudioCase):
         self.assertIn('Research report', self.workers.of('outline')[0].task)
 
     def test_changes_at_the_research_redo_the_questions_the_note_names(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         self.to_gate(root, 'gate:research')
         self.engine.decide(root, 'gate:research', 'changes', 'Look again at health-checks.',
                            None)
@@ -1204,7 +1203,7 @@ class ResearchTests(StudioCase):
         self.assertEqual(self.waiting(root), 'gate:research')
 
     def test_marks_at_the_research_are_kept_on_its_stop_and_a_note_alone_clears_them(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         self.to_gate(root, 'gate:research')
         self.engine.decide(root, 'gate:research', 'changes', 'Find a second page.',
                            {'again': {'health-checks': ''}})
@@ -1221,7 +1220,7 @@ class ResearchTests(StudioCase):
                          (None, None, 'Look again at health-checks.'))
 
     def test_each_finding_s_headline_is_kept_with_the_research(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         self.to_gate(root, 'gate:research')
         record = json.loads((root / '.harness-research' / 'research.json').read_text())
         self.assertEqual({ident: result.get('headline')
@@ -1230,7 +1229,7 @@ class ResearchTests(StudioCase):
                           'health-checks': 'The page answers health-checks.'})
 
     def test_the_research_stops_list_each_question_and_finding(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         plan = self.view(root)['gate']
         self.assertEqual(plan['questions'][0], {
             'id': 'instance-min', 'title': 'Instance min',
@@ -1275,7 +1274,7 @@ class SynthesisStopTests(StudioCase):
               'access_error': 'There is no tool to read it.'}]
 
     def synthesis(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         record = self.engine._load(root)
         record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         self.engine._store(root, record)
@@ -1342,7 +1341,7 @@ class SynthesisStopTests(StudioCase):
 
     def test_a_dry_read_reads_each_original_as_the_check_would(self):
         from studio_core import research_contract
-        root = self.start(route='document', source={'kind': 'upload', 'name': 'handbook.html'},
+        root = self.saved_start(route='document', source={'kind': 'upload', 'name': 'handbook.html'},
                           uploads={'handbook.html': b'<p>Restart one batch at a time.</p>'})
         self.assertIsNone(research_contract.dry_read(self.engine, root, self.CAUSE))
         with mock.patch.object(worker_tools.WorkerTools, '_original',
@@ -1359,7 +1358,7 @@ class ResearchRoundTests(StudioCase):
     count under the research step, and the page says which round is in hand."""
 
     def synthesis(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         record = self.engine._load(root)
         record['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
         tried = lambda at, seconds, dollars, outcome='kept': {
@@ -1433,7 +1432,7 @@ class FormPlanRevisionTests(StudioCase):
         from studio_core import research_contract
         with mock.patch.object(
                 research_contract, 'snapshot', return_value={'schema': 2}):
-            root = self.start(title='Supplied ' + str(structured), route='document',
+            root = self.saved_start(title='Supplied ' + str(structured), route='document',
                               research=True, research_questions=['Why?'],
                               source={'kind': 'paste', 'text': 'Synthetic source notes.'})
         self.decide(root, 'gate:classify')
@@ -1466,7 +1465,7 @@ class PlanMarkTests(StudioCase):
                 json.loads((root / 'research' / 'plan.json').read_text())['items']]
 
     def test_dropped_questions_go_with_the_approval(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         self.engine.decide(root, 'gate:research-plan', 'approve', None,
                            {'dropped': ['health-checks']})
         self.assertEqual(self.questions(root), ['instance-min'])
@@ -1475,7 +1474,7 @@ class PlanMarkTests(StudioCase):
         self.assertEqual(self.waiting(root), 'gate:research')
 
     def test_rewording_and_adding_go_back_to_the_planner_as_one_note(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         self.engine.decide(root, 'gate:research-plan', 'changes', 'Keep it short.', {
             'dropped': ['health-checks'],
             'reword': {'instance-min': 'How many instances keep capacity?'},
@@ -1491,7 +1490,7 @@ class PlanMarkTests(StudioCase):
         self.assertEqual((gate['state'], gate['round']), ('waiting', 2))
 
     def test_marks_that_say_nothing_or_need_a_worker_with_approve_are_refused(self):
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         for decision, extra, said in (
                 ('approve', {'add': ['Why?']}, marks.AS_CHANGES),
                 ('approve', {'dropped': ['instance-min', 'health-checks']}, marks.ALL_DROPPED),
@@ -1509,7 +1508,7 @@ class FindingMarkTests(StudioCase):
     def researched(self):
         self.workers.then('question', unsettled(self.workers, 'health-checks'),
                           unsettled(self.workers, 'health-checks'))
-        root = self.start(research=True)
+        root = self.saved_start(research=True)
         self.decide(root, 'gate:research-plan')
         self.assertEqual(self.waiting(root), 'gate:research')
         return root
@@ -1574,7 +1573,7 @@ class FindingMarkTests(StudioCase):
         root = self.researched()
         before = len(self.workers.of('question'))
         # As when a file the research rests on changed: harness-research keeps nothing.
-        with mock.patch.object(research_stand_in.StandIn, '_kept', lambda *given: {}):
+        with mock.patch.object(research_stand_in.SavedQueueStandIn, '_kept', lambda *given: {}):
             self.engine.decide(root, 'gate:research', 'changes', None,
                                {'add': ['What does a restart cost?']})
         self.assertEqual(sorted(self.asked(before)),
@@ -1636,7 +1635,7 @@ class FindingMarkTests(StudioCase):
 
 class OutlineMarkTests(StudioCase):
     def test_slides_marked_for_changes_reach_the_outline_worker(self):
-        root = self.start()
+        root = self.saved_start()
         slides = self.view(root)['gate']['slides']
         moved = [slides[0], slides[2], slides[1], *slides[3:]]
         # The scripted workers draw the outline they are given, as it now stands.
@@ -1659,7 +1658,7 @@ class OutlineMarkTests(StudioCase):
         self.assertEqual(self.record(root)['gates']['gate:outline']['round'], 2)
 
     def test_a_slide_the_outline_does_not_have_is_refused(self):
-        root = self.start()
+        root = self.saved_start()
         with self.assertRaises(WorkspaceError) as caught:
             self.engine.decide(root, 'gate:outline', 'changes', None,
                                {'slides': {'no-such-slide': 'Split it.'}})
@@ -1684,7 +1683,7 @@ class SuppliedPictureTests(StudioCase):
             self.slides = slides_stand_in.stand_in(assets=True)   # with its asset manifest
 
     def at_outline(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:outline')
         gate = self.view(root)['gate']
         return root, gate, gate['slides']
@@ -1852,7 +1851,7 @@ class SuppliedPictureTests(StudioCase):
 
 class DocumentTests(StudioCase):
     def test_a_pasted_document_is_classified_and_a_correction_switches_the_branch(self):
-        root = self.start(route='document', research=True,
+        root = self.saved_start(route='document', research=True,
                           source={'kind': 'paste', 'text': '- a\n- b\n- c\n- d\n- e\n'})
         self.assertFalse((root / 'sources' / 'incoming').exists())
         self.assertNotIn('- a', (root / 'run.json').read_text())
@@ -1872,7 +1871,7 @@ class DocumentTests(StudioCase):
             self.workers.classification(tools, job)
 
         self.workers.then('classification', reads)
-        root = self.start(route='document', source={'kind': 'upload', 'name': 'notes.md'},
+        root = self.saved_start(route='document', source={'kind': 'upload', 'name': 'notes.md'},
                           uploads={'notes.md': b'# Notes\n\nCapacity holds with two.\n'})
         self.assertEqual(self.waiting(root), 'gate:classify')
         self.assertIn('Capacity holds with two.', read[0])
@@ -1882,7 +1881,7 @@ class DocumentTests(StudioCase):
     def test_an_upload_that_was_not_sent_starts_nothing(self):
         before = self.log()
         with self.assertRaises(WorkspaceError) as caught:
-            self.start(route='document', source={'kind': 'upload', 'name': 'notes.md'})
+            self.saved_start(route='document', source={'kind': 'upload', 'name': 'notes.md'})
         self.assertIn('"notes.md" was not sent', str(caught.exception))
         self.assertEqual(self.log(), before)
         self.assertEqual(self.engine.every(), [])
@@ -1892,7 +1891,7 @@ class ExistingTests(StudioCase):
     DECK = b'PK\x03\x04' + b'stand-in deck'
 
     def test_the_inventory_shows_the_original_slides(self):
-        root = self.start(route='existing', level='polish',
+        root = self.saved_start(route='existing', level='polish',
                           source={'kind': 'upload', 'name': 'old.pptx'},
                           uploads={'old.pptx': self.DECK})
         gate = self.view(root)['gate']
@@ -1902,7 +1901,7 @@ class ExistingTests(StudioCase):
         self.assertTrue(self.engine.picture(root, 'original', 2).startswith(b'\x89PNG'))
 
     def test_balanced_redesign_says_it_stops_for_the_look(self):
-        root = self.existing_deck('balanced', 'redesign')
+        root = self.saved_existing_deck('balanced', 'redesign')
         ahead = self.view(root)['ahead']
         self.assertEqual(ahead['next_gate'], 'gate:look')
         from studio_core import review_policy
@@ -1917,7 +1916,7 @@ class ExistingTests(StudioCase):
         self.slides.run.drive = False
         before = self.log()
         with self.assertRaises(WorkspaceError) as caught:
-            self.start(route='existing', level='polish',
+            self.saved_start(route='existing', level='polish',
                        source={'kind': 'google', 'link': 'abc123'})
         self.assertIn('Sign in to Google', str(caught.exception))
         self.assertEqual(self.log(), before)
@@ -1926,7 +1925,7 @@ class ExistingTests(StudioCase):
 class PictureTests(StudioCase):
     def test_progress_images_are_named_by_current_refs_and_do_not_replace_the_gate(self):
         from runner import build_progress
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         basis = build.read_state(root)['start']['folder']
         shown = build_progress.view(root, basis)
@@ -1938,7 +1937,7 @@ class PictureTests(StudioCase):
             self.engine.picture(root, 'progress', '../../private')
 
     def test_only_pictures_the_steps_recorded_are_served(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         (root / 'secret.png').write_bytes(runner_support.png())
         for kind, ref in (('build', 99), ('build', '../secret'), ('look', 7),
@@ -1952,7 +1951,7 @@ class PictureTests(StudioCase):
 
 class LockTests(StudioCase):
     def test_a_render_in_hand_never_holds_up_a_decision_on_another_deck(self):
-        slow, other = self.start(), self.start(title='Another deck')
+        slow, other = self.saved_start(), self.saved_start(title='Another deck')
         entered, release, real = threading.Event(), threading.Event(), build.render
 
         def held(root, *args, **named):
@@ -1980,8 +1979,8 @@ class LockTests(StudioCase):
 
 class ListTests(StudioCase):
     def test_decks_are_listed_by_what_they_need(self):
-        waiting = self.start()
-        done = self.start(title='Second deck')
+        waiting = self.saved_start()
+        done = self.saved_start(title='Second deck')
         self.to_end(done)
         listed = self.engine.decks()
         self.assertEqual([entry['id'] for entry in listed['needs']], [waiting.name])
@@ -1993,7 +1992,7 @@ class ListTests(StudioCase):
 
 class DrivenTests(StudioCase):
     def test_a_deck_folder_reached_through_a_link_or_dots_is_not_driven(self):
-        root = self.start()
+        root = self.saved_start()
         space = self.engine.space().root
         self.assertEqual(self.engine.driven(root), root)
         self.assertEqual(self.engine.every(), [root])
@@ -2026,7 +2025,7 @@ class ModelProfileTests(StudioCase):
         from runner import setup
         self.assertEqual(setup.describe(self.engine)['shared']['models']['mode'], 'by_task')
         self.workers.found = [grave]
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.workers.of('outline')[0].model, 'quick-model')
         studios_config.update({'models': {'profiles': {'main': {'model': 'later'}}}})
         self.to_gate(root, 'gate:build')
@@ -2043,10 +2042,10 @@ class ModelProfileTests(StudioCase):
 
     def test_codex_and_explicit_work_override(self):
         self.configure('codex')
-        root = self.start(title='By task')
+        root = self.saved_start(title='By task')
         self.assertEqual(self.record(root)['model_profiles']['mode'], 'by_task')
         self.assertEqual(self.workers.of('outline')[-1].model, 'quick-model')
-        other = self.start(title='Work override', agent='codex', model='own-model', effort='high')
+        other = self.saved_start(title='Work override', agent='codex', model='own-model', effort='high')
         self.assertEqual(self.record(other)['model_profiles']['mode'], 'single')
         self.assertEqual(self.workers.of('outline')[-1].model, 'own-model')
 
@@ -2067,7 +2066,7 @@ class SayingTests(StudioCase):
         return slides
 
     def test_changing_what_a_slide_says_reopens_the_outline_and_redraws_its_section(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         drawn = len(self.workers.of('section'))
         self.engine.decide(root, 'gate:build', 'changes', None,
@@ -2093,7 +2092,7 @@ class SayingTests(StudioCase):
         self.assertEqual(self.record(root)['gates']['gate:build']['round'], 2)
 
     def test_changing_what_a_delivered_slide_says_builds_and_delivers_a_new_revision(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         self.engine.decide(root, 'gate:build', 'changes', 'Say it plainly.',
                            {'direction_target': 'gate:outline', 'slides': [6]})
@@ -2112,7 +2111,7 @@ class SayingTests(StudioCase):
         self.assertEqual(len(view['deliver']['revisions']), 2)
 
     def test_changing_what_slides_say_needs_their_numbers(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         with self.assertRaises(WorkspaceError) as caught:
             self.engine.decide(root, 'gate:build', 'changes', 'Say it plainly.',
@@ -2126,7 +2125,7 @@ class SayingTests(StudioCase):
 
     def test_a_delivered_deck_shows_its_slides_and_what_the_last_build_cost(self):
         self.workers.cost = 0.25
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         shown = self.view(root)['deliver']
         self.assertEqual([slide['number'] for slide in shown['slides']],
@@ -2141,7 +2140,7 @@ class SayingTests(StudioCase):
 
 
     def test_asking_to_change_words_names_the_slides_and_clears_the_deck_s_note(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         self.engine.decide(root, 'gate:build', 'changes', 'Tighter.', {'slides': [2]})
         self.to_gate(root, 'gate:build')
@@ -2153,14 +2152,14 @@ class SayingTests(StudioCase):
         self.assertIn('Rolling restarts: approve the outline', self.log())
 
     def test_one_slide_s_words_are_said_in_the_singular(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         self.engine.decide(root, 'gate:build', 'changes', None,
                            {'direction_target': 'gate:outline', 'slides': [3]})
         self.assertEqual(self.log()[-1], 'Rolling restarts: ask to change what slide 3 says')
 
     def test_the_outline_worker_changes_only_the_marked_slide_and_one_section_is_drawn(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         drawn = len(self.workers.of('section'))
         self.engine.decide(root, 'gate:build', 'changes', None,
@@ -2181,7 +2180,7 @@ class SayingTests(StudioCase):
                          ['Draw section 2 of'])
 
     def test_a_deck_without_an_outline_keeps_its_words_where_they_came_from(self):
-        root = self.start(route='existing', level='polish',
+        root = self.saved_start(route='existing', level='polish',
                           source={'kind': 'upload', 'name': 'old.pptx'},
                           uploads={'old.pptx': b'PK\x03\x04' + b'stand-in deck'})
         # The stand-in workers cannot rebuild the stand-in deck, so it is asked at its first
@@ -2198,7 +2197,7 @@ class SayingTests(StudioCase):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(research=True)
+            root = self.saved_start(research=True)
         self.to_gate(root, 'gate:build')
         self.engine.decide(root, 'gate:build', 'changes', None,
                            {'direction_target': 'gate:outline', 'slides': [3]})
@@ -2211,7 +2210,7 @@ class SayingTests(StudioCase):
 
     def test_what_the_last_build_cost_counts_every_section_after_a_partial_rebuild(self):
         self.workers.cost = 0.25
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         self.engine.decide(root, 'gate:build', 'changes', None,
                            {'direction_target': 'gate:outline', 'slides': [6]})
@@ -2239,7 +2238,7 @@ class LookStepTests(StudioCase):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': level}):
-            return self.start()
+            return self.saved_start()
 
     def paused(self, root, gates=('gate:outline', 'gate:look', 'gate:build')):
         """Each gate this deck stopped at for the person, in order, approving each with a
@@ -2443,7 +2442,7 @@ class PreviewRepairEngineTests(StudioCase):
         second = OUTLINE['slides'][1]['id']
         self.slides.run.screens = {second: [
             {'severity': 'error', 'code': 'text-overflow', 'detail': 'Text runs off.'}]}
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         state = build.read_state(root)
         # The first round went back to its composer before any review; later rounds within
@@ -2459,7 +2458,7 @@ class PreviewRepairEngineTests(StudioCase):
 
 class HoldingTests(StudioCase):
     def test_the_decks_gate_is_held_by_grave_findings_and_audit_errors(self):
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.engine._holding(root, 'gate:outline'), [])
         self.assertEqual(self.engine._holding(root, 'gate:build'), [])
         state = build.read_state(root)
@@ -2477,7 +2476,7 @@ class HoldingTests(StudioCase):
 
 class PreviewLinkTests(StudioCase):
     def test_a_pooled_preview_is_never_listed_as_a_file_the_deck_left(self):
-        root = self.start()
+        root = self.saved_start()
         kept = root / build.BUILD / 'drive-preview.json'
         kept.parent.mkdir(parents=True, exist_ok=True)
         own = {'name': 'Preview: Rolling restarts', 'id': 'file-1',
@@ -2496,7 +2495,7 @@ class SlideNoteTests(StudioCase):
         self.workers.outline_said = LONG_OUTLINE   # two sections: slides 2-4 and 5-7
 
     def test_a_note_on_a_slide_at_the_deck_gate_reaches_its_composer(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         drawn = len(self.workers.of('section'))
         self.engine.decide(root, 'gate:build', 'changes', None,
@@ -2511,7 +2510,7 @@ class SlideNoteTests(StudioCase):
         self.assertEqual(self.waiting(root), 'gate:build')
 
     def test_a_noted_slide_is_marked_even_when_only_its_note_names_it(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         drawn = len(self.workers.of('section'))
         self.engine.decide(root, 'gate:build', 'changes', 'Calmer.',
@@ -2523,7 +2522,7 @@ class SlideNoteTests(StudioCase):
         self.assertEqual(self.record(root)['gates']['gate:build']['slides'], [6])
 
     def test_feedback_after_a_section_finished_is_kept_as_the_slide_s_mark(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         self.engine.build_feedback(root, 'a' * 32, 'Name the batch size.', number=3)
         shown = self.view(root)
@@ -2544,7 +2543,7 @@ class SlideNoteTests(StudioCase):
 
 
     def test_a_slide_the_deck_does_not_have_is_refused_at_its_gate(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         drawn = len(self.workers.of('section'))
         for extra in ({'slides': [99]}, {'slide_notes': {'99': 'Nowhere.'}}):
@@ -2555,7 +2554,7 @@ class SlideNoteTests(StudioCase):
         self.assertEqual(self.waiting(root), 'gate:build')
 
     def test_a_kept_note_is_withdrawn_when_the_page_sends_its_lines_without_it(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_gate(root, 'gate:build')
         self.engine.build_feedback(root, 'a' * 32, 'Name the batch size.', number=3)
         drawn = len(self.workers.of('section'))
@@ -2579,7 +2578,7 @@ class DirectionClassifyTests(StudioCase):
             with self.subTest(research=research):
                 with mock.patch.object(review_policy, 'capture',
                                        return_value={'schema': 1, 'level': 'balanced'}):
-                    root = self.start(route='document', research=research,
+                    root = self.saved_start(route='document', research=research,
                                       title=f'Read {research}',
                                       **({'research_sources': 'both'} if research else {}),
                                       source={'kind': 'paste', 'text': 'A slide script.'})
@@ -2592,7 +2591,7 @@ class DirectionClassifyTests(StudioCase):
 
     def test_the_synthesis_research_stop_says_how_many_questions_it_takes(self):
         from synthesis_fixture import research_stop
-        root = self.start(research=True, title='Room for questions')
+        root = self.saved_start(research=True, title='Room for questions')
         self.decide(root, 'gate:research-plan')
         research_stop(root / 'research')
         plan = json.loads((root / 'research' / 'plan.json').read_text())
@@ -2610,7 +2609,7 @@ class DirectionClassifyTests(StudioCase):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(route='document', research=True, research_sources='both',
+            root = self.saved_start(route='document', research=True, research_sources='both',
                               source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
         shown = self.view(root)['gate']
         self.assertEqual(shown['name'], 'gate:outline')

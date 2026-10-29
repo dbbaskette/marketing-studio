@@ -55,7 +55,7 @@ class DeckContractTests(StudioCase):
         paused at; `self.root` is the deck."""
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': level}):
-            root = self.root = self.start(title=f"Contract {level}{' failing' if failing else ''}")
+            root = self.root = self.saved_start(title=f"Contract {level}{' failing' if failing else ''}")
         paused = []
         for _ in range(12):
             shown = self.view(root)

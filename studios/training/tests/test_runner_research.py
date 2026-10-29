@@ -205,7 +205,7 @@ class StandInTests(helpers.TrainingCase):
 
     def setUp(self):
         super().setUp()
-        self.research = research_stand_in.stand_in()
+        self.research = research_stand_in.saved_queue()
         self.plan_file = self.write('.training-studio/research-plan.json', json.dumps(PLAN))
         self.write('sources/docs-example-com-0123456789ab.txt', SNAPSHOT)
 
@@ -547,3 +547,101 @@ class StandInTests(helpers.TrainingCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SynthesisStandInTests(unittest.TestCase):
+    """The disposable helper exercises the pinned executable and real bundle reader."""
+
+    def setUp(self):
+        holder = tempfile.TemporaryDirectory()
+        self.addCleanup(holder.cleanup)
+        self.root = Path(holder.name)
+        self.tool = research_stand_in.stand_in(self.root / 'runtime')
+
+    def test_capability_pins_the_executable_and_references(self):
+        from studio_core import research_contract as contract
+        pin = contract.snapshot(self.tool)
+        self.assertEqual(pin['schema'], 2)
+        self.assertIs(contract.matching(self.tool, pin), self.tool)
+        (self.tool.runtime / 'references/synthesize.md').write_text('Changed synthetic guidance')
+        self.assertNotEqual(contract.snapshot(self.tool), pin)
+        self.assertIsNone(contract.matching(self.tool, pin))
+
+    def test_separate_review_exports_validated_state_and_retains_rejected_draft(self):
+        from studio_core import research_contract as contract
+        from synthesis_fixture import TEXT, dossier, review
+        capture = self.root / 'capture.txt'
+        capture.write_text(TEXT)
+        phases, workers = [], []
+        accepted = False
+
+        def invoke(phase, guidance, payload, sources, fetch):
+            phases.append(phase)
+            workers.append(payload['worker'])
+            if phase == 'author':
+                value = dossier(payload['worker'])
+                return json.dumps(value), [dict(file='sources/source.txt', path=capture,
+                    origin='https://example.invalid/docs', permission='public')]
+            return json.dumps(review(payload['review_template'], accepted)), []
+
+        task = dict(topic='Synthetic', audience='Operators', purpose='Teach',
+                    scope='Synthetic only', source_mode='public')
+        workflow = contract.Workflow(self.tool.runtime, self.tool._json)
+        with self.assertRaises(contract.ReviewRefused):
+            workflow.run(self.root, task, invoke)
+        case = self.root / contract.CASE
+        self.assertTrue((case / 'dossier.json').is_file())
+        self.assertTrue((case / 'review.json').is_file())
+        with self.assertRaisesRegex(ValueError, 'draft|review'):
+            contract.read_bundle(case / 'research')
+        accepted = True
+        facts, manifest = workflow.run(self.root, task, invoke)
+        self.assertEqual(phases[-2:], ['author', 'review'])
+        self.assertNotEqual(workers[-2], workers[-1])
+        self.assertEqual(facts['review']['worker'], workers[-1])
+        self.assertEqual(facts['review']['digest'], manifest['digest'])
+        contract.adopt_case(case, self.root)
+        contract.read_bundle(self.root / 'research')
+        state = json.loads((case / '.harness-research/synthesis.json').read_text())
+        self.assertEqual(state['digest'], manifest['digest'])
+        (self.root / 'research/brief.md').write_text('Damaged')
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            contract.read_bundle(self.root / 'research')
+
+    def test_author_preflight_runs_the_pinned_subprocess_and_refuses_bad_evidence(self):
+        from studio_core import research_contract as contract
+        from synthesis_fixture import TEXT, dossier
+        source = self.root / 'sources/source.txt'
+        source.parent.mkdir()
+        source.write_text(TEXT)
+        value = dossier('author-fixture')
+        spec = dict(folder=str(self.root), runtime=str(self.tool.runtime),
+                    worker='author-fixture', captures=[dict(file='sources/source.txt',
+                    local='sources/source.txt', permission='public')])
+        self.assertEqual(contract.refused(value, spec), [])
+        value['facts'][0]['citations'][0]['quote'] = 'Not in the captured source'
+        self.assertIn('Harness Research refused', contract.refused(value, spec)[0])
+
+
+from runner_support import StudioCase
+
+
+class SynthesisStartTests(StudioCase):
+    def test_ordinary_desk_start_uses_pinned_author_and_reviewer(self):
+        from studio_core import research_contract as contract
+        root = self.start(research=True) if hasattr(self, 'settings') else self.start()
+        record = self.record(root)
+        self.assertEqual(record['flow'], 'desk')
+        self.assertEqual(record['research_contract'], contract.snapshot(self.research))
+        self.assertNotIn('review_policy', record)
+        self.assertIsNone(self.view(root)['problem'], self.view(root))
+        self.assertEqual(len(self.workers.of('research-result')), 2, self.view(root))
+        contract.read_bundle(root / 'research')
+        self.assertFalse((root / '.harness-research/research.json').exists())
+
+    def test_saved_queue_setup_never_calls_public_start_and_resumes_saved_reader(self):
+        with mock.patch.object(self.engine, 'start', side_effect=AssertionError('public start')):
+            root = self.saved_start(research=True) if hasattr(self, 'settings') else self.saved_start()
+        self.assertNotIn('research_contract', self.record(root))
+        self.assertIsNotNone(self.view(root).get('gate') if hasattr(self, 'settings') else __import__('workspace').status(root)['gate'])
+        self.assertEqual(len(self.workers.of('research-result')), 0)

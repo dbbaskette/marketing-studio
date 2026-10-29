@@ -251,7 +251,7 @@ class RunTests(StudioCase):
         self.shared(TANZU)
         self.assertEqual(setup.shared()[0]['research'], {'sites': [TANZU]})
         # A site added for this training does not change the shared list.
-        root = self.start(research_from={'documents': False, 'sites': [TANZU, DOCS + '/'],
+        root = self.saved_start(research_from={'documents': False, 'sites': [TANZU, DOCS + '/'],
                                          'web': False})
         self.assertEqual(studios_config.read()[0]['research'], {'sites': [TANZU]})
         pinned = {'documents': False, 'sites': [TANZU, DOCS], 'web': False}
@@ -277,7 +277,7 @@ class RunTests(StudioCase):
             return self.workers.question(tools, job)
 
         self.workers.then('question:availability', wanders)
-        root = self.start(research_from={'sites': [DOCS], 'web': False})
+        root = self.saved_start(research_from={'sites': [DOCS], 'web': False})
         self.to_gate(root, 'research')
         plan, = self.workers.jobs[:1]
         self.assertEqual(plan[2]['artifacts']['research-plan']['scope'], 'public-web')
@@ -298,7 +298,7 @@ class RunTests(StudioCase):
                          said)
 
     def test_a_training_started_with_the_older_words_researches_as_before(self):
-        root = self.start(source_scope='public-web')
+        root = self.saved_start(source_scope='public-web')
         self.to_gate(root, 'research')
         self.assertEqual(self.record(root)['research_from'], WEB)
         kind, job, spec = self.workers.jobs[1]
@@ -321,7 +321,7 @@ class RunTests(StudioCase):
             with self.subTest(chosen), \
                     mock.patch.object(research_contract, 'snapshot', return_value=contract), \
                     mock.patch.object(research_contract, 'native', native):
-                root = self.start(title=f'Restarts {number}', research_from=chosen)
+                root = self.saved_start(title=f'Restarts {number}', research_from=chosen, saved_contract=contract)
                 if documents:
                     self.send(root, 'handbook.md')
                     self.engine.supply(root, 'done')
@@ -351,7 +351,7 @@ class RunTests(StudioCase):
         contract = {'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}
         with mock.patch.object(research_contract, 'snapshot', return_value=contract), \
                 mock.patch.object(research_contract, 'native', native):
-            root = self.start(source_scope='public-web')
+            root = self.saved_start(source_scope='public-web', saved_contract=contract)
             with self.engine.files:   # as a run record written before the choice was saved
                 record = self.engine._load(root)
                 record.pop('research_from')

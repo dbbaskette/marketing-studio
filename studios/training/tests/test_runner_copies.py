@@ -774,7 +774,7 @@ class DeskCopyTests(runner_support.StudioCase):
         self.assertEqual(self.copies.drive.docs, {})
 
     def test_a_saved_run_s_copies_follow_its_approvals(self):
-        root = self.start(levels=['101'], copies=['google'])
+        root = self.saved_start(levels=['101'], copies=['google'])
         self.to_end(root)
         self.assertEqual(self.docs(root), ['brief@101', 'document@101'])
         with self.assertRaisesRegex(WorkspaceError, '^This training is not on the desk.'):

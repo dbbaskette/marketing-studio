@@ -20,7 +20,7 @@ class SourceTests(DeckCase):
 
     def test_row_150_a_source_added_after_research_updates_it(self):
         root = self.finished(levels=['101', '201'])
-        before = len(self.workers.of('question'))
+        before = len(self.workers.of('research-result'))
         session = workspace.load(root)
         plan_file = root / workspace.artifact(root, session, 'research-plan')['file']
         plan_before = plan_file.read_bytes()
@@ -30,7 +30,7 @@ class SourceTests(DeckCase):
         self.engine.add_source(root, [{'name': 'capacity.txt', 'data': QUOTE.encode()}])
         self.to_end(root)
         self.assertIsNone(self.record(root)['problem'])
-        self.assertEqual(len(self.workers.of('question')), before + 4)
+        self.assertEqual(len(self.workers.of('research-result')), before + 2)
         self.assertTrue(all(not entry['failed'] for name, entry in self.record(root)['steps'].items()
                             if name.startswith('research:')))
         self.assertEqual(len(self.workers.of('blueprint')), 2)
@@ -217,7 +217,7 @@ class SourceTests(DeckCase):
                              (before, session, commits, jobs))
             self.assertIn(root, self.engine.pending_commit)
         refuse()
-        self.workers.then('question:instance-min', fails('Not signed in.', 'unavailable'))
+        self.workers.then('research-result', fails('Not signed in.', 'unavailable'))
         self.engine.carry_on(root)
         self.assertIsNotNone(self.record(root)['problem'])
         self.assertTrue(any(item.get('artifact') == 'research' and item.get('refresh')
@@ -242,7 +242,7 @@ class SourceTests(DeckCase):
         self.assertFalse(drafts.updates(self.record(root)))
 
     def saved_with_later_document(self):
-        root = self.begin(source_scope='supplied-only')
+        root = self.saved_begin(source_scope='supplied-only')
         self.send(root, 'first.txt')
         self.engine.supply(root, 'done')
         self.send(root, 'later.txt')

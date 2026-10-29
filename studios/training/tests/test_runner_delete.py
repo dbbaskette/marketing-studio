@@ -80,7 +80,7 @@ class DeleteTests(Deleting, StudioCase):
             self.workers.research_plan(tools, job)
 
         self.workers.then('research-plan', pauses)
-        root = self.start(source_scope='both')
+        root = self.saved_start(source_scope='both')
         self.send(root, 'handbook.txt')
         self.engine.supply(root, 'done')
         self.assertEqual(self.state(root), 'paused')
@@ -102,10 +102,10 @@ class DeleteTests(Deleting, StudioCase):
         self.assertEqual(self.git('status', '--porcelain'), '')
         self.nothing_left(root)
         # The name is free again.
-        self.assertEqual(self.start(), root)
+        self.assertEqual(self.saved_start(), root)
 
     def test_a_stopped_training_is_deleted(self):
-        root = self.start()
+        root = self.saved_start()
         self.engine.act(root, 'stop')
         self.assertEqual(self.engine.leaving(root)['state'], 'stopped')
         self.deleted(root)
@@ -113,13 +113,13 @@ class DeleteTests(Deleting, StudioCase):
         self.assertRegex(self.log()[-1], DELETED.format(name='Alex'))
 
     def test_a_training_waiting_at_a_gate_is_deleted(self):
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.state(root), 'waiting')
         self.deleted(root)
         self.assertFalse(root.exists())
 
     def test_a_finished_published_training_is_deleted_and_its_revisions_and_drive_files_stay(self):
-        root = self.start(copies=['google'])
+        root = self.saved_start(copies=['google'])
         self.to_end(root)
         self.assertEqual(self.state(root), 'done')
         self.assertEqual(self.engine.publish(root)['revision'], 1)
@@ -153,7 +153,7 @@ class DeleteTests(Deleting, StudioCase):
                          'Drive files are never touched, and Settings still lists them')
 
     def test_a_google_slides_deck_is_named_among_the_drive_files(self):
-        root = self.start()
+        root = self.saved_start()
         (root / 'deck-link.md').write_text(
             '# Slide deck: Rolling restarts\n\n- URL: https://slides.example.com/d/9\n'
             '- Title: Rolling restarts\n- ID: 9\n')
@@ -162,14 +162,14 @@ class DeleteTests(Deleting, StudioCase):
                       self.engine.leaving(root)['drive'])
 
     def test_the_title_must_be_the_one_the_page_showed(self):
-        root = self.start()
+        root = self.saved_start()
         log = self.log()
         with self.assertRaisesRegex(WorkspaceError, 'Nothing was deleted'):
             self.engine.delete(root, 'Health checks')
         self.assertEqual((self.log(), self.state(root)), (log, 'waiting'))
 
     def test_nothing_is_deleted_while_the_runner_is_still_looking(self):
-        root = self.start()
+        root = self.saved_start()
         self.engine._checking = True
         with self.assertRaisesRegex(WorkspaceError, 'still looking'):
             self.deleted(root)
@@ -242,7 +242,7 @@ class LiveDeleteTests(Deleting, StudioCase):
     def test_a_working_training_is_stopped_first_and_deleted_once_nothing_of_it_runs(self):
         script, entered, go = self.held(self.workers.research_plan)
         self.workers.then('research-plan', script)
-        root = self.start()
+        root = self.saved_start()
         self.assertTrue(entered.wait(30))
         self.assertEqual(self.engine.leaving(root)['stops'], True)
         run, said = self.engine._run(root), []
@@ -265,9 +265,9 @@ class LiveDeleteTests(Deleting, StudioCase):
         settings.save(replace(settings.load(), parallel=1))
         script, entered, go = self.held(self.workers.research_plan)
         self.workers.then('research-plan', script)
-        first = self.start()
+        first = self.saved_start()
         self.assertTrue(entered.wait(30))
-        second = self.start(title='Health checks')
+        second = self.saved_start(title='Health checks')
         self.until(lambda: self.view(second)['sentence'].startswith('Waiting for its turn'))
         self.assertEqual(self.engine.leaving(second)['stops'], True)
         started = time.monotonic()
@@ -283,7 +283,7 @@ class LiveDeleteTests(Deleting, StudioCase):
     def test_a_run_that_does_not_end_in_time_is_left_stopped_and_nothing_is_deleted(self):
         script, entered, go = self.held(self.workers.research_plan)
         self.workers.then('research-plan', script)
-        root = self.start()
+        root = self.saved_start()
         self.assertTrue(entered.wait(30))
         with mock.patch.object(engines, 'STOP_WAIT', 0.2), \
                 self.assertRaisesRegex(WorkspaceError, 'has not ended yet'):
@@ -336,7 +336,7 @@ class TeamDeleteTests(Deleting, Asking, TeamCase):
     def started(self, person=None, **changes) -> Path:
         person = person or self.alex
         with self.be(person):
-            return Path(person.engine.start(pipeline.check_form({**FORM, **changes}))['path'])
+            return self.saved_start(engine=person.engine, **changes)
 
     def fetch(self, person) -> dict:
         return self.as_(person, person.engine.fetch)
