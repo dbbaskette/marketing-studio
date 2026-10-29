@@ -63,6 +63,16 @@ const assert = require('node:assert/strict');
     assert(!(await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).isDisabled()));
     assert.equal((await calls()).calls.length,2,'Failure must not retry automatically');
 
+    await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).click();
+    await running();await release('timeout');
+    await page.locator('#notice').filter({hasText:'five-minute limit and has stopped'}).waitFor();
+    assert(!(await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).isDisabled()));
+    assert.equal((await calls()).calls.length,3,'A timed-out request must not retry automatically');
+    await page.reload();
+    await page.getByRole('button',{name:'Open Synthetic failed planning',exact:true}).click();
+    await page.locator('#notice').filter({hasText:'five-minute limit and has stopped'}).waitFor();
+    assert.equal((await calls()).calls.length,3,'Opening a failed request must preserve its reason without running it');
+
     // Forward once, then lose only the browser's POST connection while the
     // synthetic assistant is blocked. Recovery must use GET status requests.
     await page.getByRole('button',{name:'Infographics',exact:true}).first().click();
@@ -80,10 +90,10 @@ const assert = require('node:assert/strict');
       await route.abort('failed');
     });
     await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).click();
-    await running();assert.equal((await calls()).calls.length,3);
+    await running();assert.equal((await calls()).calls.length,4);
     await release();await forwarded;
     await page.getByRole('button',{name:'Use this story',exact:true}).waitFor();
-    assert.equal((await calls()).calls.length,3,'Connection recovery must not repeat the POST');
+    assert.equal((await calls()).calls.length,4,'Connection recovery must not repeat the POST');
     await page.unroute('**/api/action');
 
     // A pending remote read must remain visible inside the open modal.
@@ -100,7 +110,7 @@ const assert = require('node:assert/strict');
     unblock();await page.getByRole('heading',{name:'Synthetic Google source',exact:true}).waitFor();
     assert.equal(await status().count(),0);
     assert.deepEqual(errors,[]);
-    console.log('PASS: persistent phone status, real stages and elapsed time, refresh recovery, one-request disconnect recovery, failure cleanup, modal source progress, 320/390/1280 dark/light and reduced motion; no providers.');
+    console.log('PASS: persistent phone status, real stages and elapsed time, refresh recovery, one-request disconnect recovery, safe timeout diagnostics after reopening and explicit retry, failure cleanup, modal source progress, 320/390/1280 dark/light and reduced motion; no providers.');
   }finally{
     if(browser)await browser.close();child.kill('SIGTERM');
     await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve();},5000);child.once('exit',()=>{clearTimeout(timer);resolve();});});

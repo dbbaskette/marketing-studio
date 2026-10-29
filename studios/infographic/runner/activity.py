@@ -5,6 +5,7 @@ import threading
 import time
 
 from .validation import require
+from .assistant_failure import AssistantFailure
 
 LABELS = {
     'suggest': 'Finding the story', 'build': 'Building the page',
@@ -45,9 +46,11 @@ class Activity:
 
         try:
             yield report
-        except BaseException:
+        except BaseException as failure:
             with self.lock:
                 item.update(state='failed', ended=self.clock())
+                if isinstance(failure, AssistantFailure):
+                    item.update(reason=failure.reason, problem=str(failure))
             raise
         else:
             with self.lock:
@@ -66,5 +69,5 @@ class Activity:
             item = self.items.get(ident)
             if item is None:
                 return None
-            return {key: item[key] for key in ('id', 'action', 'label', 'state')} | {
+            return {key: item[key] for key in ('id', 'action', 'label', 'state', 'reason', 'problem') if key in item} | {
                 'elapsed_seconds': max(0, int((self.clock() if item['ended'] is None else item['ended']) - item['started']))}

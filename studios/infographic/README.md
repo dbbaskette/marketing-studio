@@ -69,6 +69,14 @@ without repeating the request. A second long operation on that infographic is
 refused while the first is active. Source previews also show immediate activity.
 These notices describe the current server session; restarting the server clears
 them. Saved projects and durable image/Google recovery records remain authoritative.
+Planning has a five-minute worker limit. Its errors distinguish timeout, sign-in,
+usage limits, unavailable models and invalid output. A timeout ends and collects
+the owned worker before offering an explicit retry; no retry starts automatically.
+The proposal selects at most 12 source-backed facts for one page. Exact quotations
+are located by the application, rather than asking the assistant to count character
+offsets. Codex planning uses the CLI's [JSON output schema](https://learn.chatgpt.com/docs/developer-commands#codex-exec);
+native evidence, calculation and story validation still decide what can be saved.
+The shared model and reasoning settings are preserved.
 Actual-page inspection uses the selected assistant's multimodal path, or you can
 record your own review after viewing the current PNG at intended size. CLI help
 and capability discovery are not proof of account access or successful generation.
