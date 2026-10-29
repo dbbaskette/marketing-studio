@@ -149,6 +149,7 @@ async function check(){
   await deskPublishKeeps();
   await deskGoogleDoc();
   await deskStartReopensALinkedDoc();
+  await deskStartShowsTheSelectedGoogleTab();
   await deskStartReadsAGoogleDocAgainAfterAFailure();
   await deskReviewDocSuggestions();
   await oldIntakeAddressesOpenTheDeskStart();
@@ -4533,6 +4534,17 @@ async function deskStartReopensALinkedDoc(){
     assert.equal(t.requests.some(r=>r.url==='/api/desk-create'),false,'nothing is made again');
     assert.equal(t.requests.some(r=>['/api/google-start','/api/upload'].includes(r.url)),false,'nothing is imported again');
   }
+}
+async function deskStartShowsTheSelectedGoogleTab(){
+  const url='https://docs.google.com/document/d/fixture-doc?tab=t.focus';
+  const preview={status:'preview',preview:'d'.repeat(32),expected:'v1',title:'Synthetic Doc',linked_document:url,content:'Only the selected blog.',summary:{structure:{paragraphs:1},selected_tab:{id:'t.focus',title:'Blog draft'}}};
+  const t=deskStartFixture(asked=>asked==='/api/google-preview'?preview:null);
+  await t.f.run("sDeskBegin({have:'draft',source:'google'})");
+  t.type('desk-google',url);
+  await t.submit();
+  assert.equal(t.requests.find(r=>r.url==='/api/google-preview').data.url,url);
+  assert.ok(t.nodes().some(n=>n.textContent==='Only the tab “Blog draft” is included. Other tabs are not imported. Check the text below, then start.'));
+  assert.equal(t.nodes().some(n=>n.textContent==='This view could not be read'),false);
 }
 // A Google Doc read that fails says why, and Read Google Doc reads again: a second failure
 // is said afresh, and a read that then works shows the Doc.

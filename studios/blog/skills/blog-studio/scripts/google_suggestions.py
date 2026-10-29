@@ -1404,7 +1404,10 @@ def plan(client, root, article_id, kind, findings, output, mode='auto'):
         raise GoogleError('Select 1–100 proofreading findings.')
     inline, accepted, mode = read_for_review(client, target['document_id'], mode)
     # The proofread Google baseline must still match, including formatting.
-    observed = rt.fingerprint(content(accepted), target.get('format_version', 1))
+    baseline_view = accepted
+    if [t['tabProperties']['tabId'] for t in rt.tabs(accepted)] != target['tab_ids']:
+        baseline_view = rt.select_tabs(accepted, target['tab_ids'])
+    observed = rt.fingerprint(content(baseline_view), target.get('format_version', 1))
     if not target.get('format_sha256') or observed != target['format_sha256']:
         raise GoogleError(
             'Pull the latest Google Doc and reconcile local changes before refreshing findings '

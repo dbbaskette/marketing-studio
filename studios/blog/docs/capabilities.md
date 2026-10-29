@@ -80,7 +80,7 @@ checked against the parser, with `--help` giving exact flags and required values
 
 | Operation | Implemented route and limit | Evidence |
 | --- | --- | --- |
-| Start from a Doc | Preview/confirm single-tab accepted text, original and formatted baseline | Synthetic page/transport tests |
+| Start from a Doc | Preview/confirm accepted text from a single-tab Doc or one explicitly linked tab, with original and native formatted baseline | Synthetic page/transport tests |
 | Pull/reconcile | Three-way comparison, explicit conflict resolution, fresh revision guard, local save only | Synthetic compare/accept/stale/pending-review tests |
 | Comments / wording suggestions | Existing guarded send, explicit fallback, readback/recovery | Synthetic tests; historical live observations are scoped in [Google capabilities](google-capabilities.md) |
 | Direct edits | Separate low-level explicit operation; never reconciliation | Capability/access must be checked in current session |

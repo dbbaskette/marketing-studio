@@ -54,8 +54,15 @@ def evaluate(store, project, *, measurement=None, visual=None):
                             for m in evidence.NUMBERS.finditer(f.get(key, '')))
     for element in scene['elements']:
         if element['kind'] == 'text':
+            checked_text = element['text']
+            for index, block in enumerate((story or {}).get('blocks', [])):
+                prefix = str(index + 1) + '. '
+                if block['kind'] == 'process' and element['id'] == block['id'] + '_heading' \
+                        and checked_text.startswith(prefix):
+                    checked_text = checked_text[len(prefix):]
+                    break
             if element['role'] != 'source' and any(Decimal(m.group()) not in supplied_numbers
-                    for m in evidence.NUMBERS.finditer(element['text'])):
+                    for m in evidence.NUMBERS.finditer(checked_text)):
                 flag('facts', element['id'] + ': a displayed numeric assertion is not backed by the saved evidence.')
             body_floor, source_floor = brand.type_floors(project['brand'], digital)
             floor = source_floor if element['role'] == 'source' else body_floor

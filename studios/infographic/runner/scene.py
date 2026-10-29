@@ -72,7 +72,8 @@ def plan(project: dict, *, arrangement='stack') -> dict:
         x = margin + (index % columns) * (block_width + gap)
         top = y + (index // columns) * (block_height + gap)
         cursor = top
-        prefix = str(index + 1) + '. ' if block['kind'] == 'process' else ''
+        ordinal = str(index + 1) + '. '
+        prefix = ordinal if block['kind'] == 'process' and not block['title'].startswith(ordinal) else ''
         if block['kind'] == 'timeline':
             prefix = ' / '.join(dict.fromkeys(facts[key]['period'] for key in block['fact_ids'])) + ' · '
         cursor += words(block['id'] + '_heading', prefix + block['title'], x, cursor, block_width,
@@ -124,3 +125,19 @@ def adopt(store, ident, *, expected_revision, arrangement='stack'):
         project = store.read(ident)
         store.expect(project, expected_revision)
         return store.change_locked(project, {'scene': plan(project, arrangement=arrangement)})
+
+
+def adopt_best(store, ident, *, expected_revision):
+    """Choose a fitting arrangement before provider work; never shrink or drop text."""
+    with store.locked():
+        project = store.read(ident)
+        store.expect(project, expected_revision)
+        failures = []
+        for arrangement in ('stack', 'columns'):
+            try:
+                planned = plan(project, arrangement=arrangement)
+            except Invalid as failure:
+                failures.append(failure)
+            else:
+                return store.change_locked(project, {'scene': planned})
+        raise failures[0]

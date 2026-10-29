@@ -214,11 +214,15 @@ Try: “Bring the Google edits back, including heading sizes and spacing. Save t
 formatted DOCX snapshot and readable Markdown to our Hub.” Then: “Send these
 wording changes back while preserving the team’s Google formatting.”
 
-The automatic capture requires a single-tab Doc. Pending suggestions, yours or a
+Automatic capture supports a single-tab Doc or one explicitly selected tab from
+a multi-tab Doc. A tab link (`?tab=…`) selects only that tab for editing; its
+native formatting and accepted Markdown are saved without exporting the whole
+document or copying other tabs into a DOCX backup. Pending suggestions, yours or a
 teammate's, do not block it: the returned text is the accepted text only. Docs
 with tables, images or footnotes are captured through Google's own Markdown
-export, and only while no suggestion is pending; multi-tab or structural changes
-use the scoped native workflow. Renaming the Doc or a tab does not count as a
+export, and only while no suggestion is pending. Selected-tab captures use only
+native selected content; structural changes use scoped native operations.
+Renaming the Doc or a tab does not count as a
 change. DOCX fidelity still needs inspection. No live document is modified by
 installing or upgrading.
 
@@ -331,5 +335,9 @@ Importing does not edit Google or create a duplicate document. Repeating the
 request resumes the saved blog and preserves local edits. **“Use this as a
 source”** still adds reference material without changing the working Doc.
 
-Automatic formatted intake supports single-tab Docs; unsupported content or
-ambiguous tabs need resolution before a linked baseline can be established.
+For a Doc with several tabs, paste the address of the tab you want to polish.
+Only that tab is imported, including when it is nested; the preview names it.
+Suggestions, comment anchors and later comparisons retain the selected tab ID.
+Unselected tabs are not exported or copied into the local manuscript. A general
+Doc link still reads all tabs when adding reference material. Unsupported content
+or ambiguous tabs need resolution before a linked baseline can be established.

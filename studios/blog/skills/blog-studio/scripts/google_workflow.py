@@ -18,7 +18,7 @@ import shutil
 import tempfile
 from pathlib import Path
 import re
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 import uuid
 
 import studio
@@ -132,6 +132,11 @@ def observation(value, body):
         'url': 'https://docs.google.com/document/d/' + document_id + '/edit',
         'tab_ids': tabs,
     }
+    linked_tab = (parse_qs(url.query).get('tab') or [None])[0]
+    if linked_tab is not None:
+        if tabs != [linked_tab]:
+            raise ValueError('Document or selected tabs disagree with the Google tab link.')
+        result['url'] += '?tab=' + tabs[0]
     for name in ('revision_id', 'folder_id'):
         if result.get(name) is not None:
             token(result[name])
@@ -470,12 +475,18 @@ def formatted_snapshot(path, obs, body):
 
     for name in ('document.md', 'native.json', 'snapshot.json'):
         load(name)
-    load('document.docx', 10 * 1024 * 1024)
     meta = json.loads(files['snapshot.json'])
-    if not isinstance(meta, dict) or meta.get('schema') != 3:
+    if not isinstance(meta, dict) or meta.get('schema') not in (3, 4):
         raise ValueError(
             'This capture was made by a different runtime version. Capture the Doc again.'
         )
+    if meta['schema'] == 3:
+        load('document.docx', 10 * 1024 * 1024)
+    elif len(obs.get('tab_ids', [])) != 1 or meta.get('projection') not in (
+        PROJECTION,
+        OBJECTS_PROJECTION,
+    ):
+        raise ValueError('A tab-only capture needs one explicit tab and native-rendered text.')
     identity = (
         'document_id',
         'tab_ids',
@@ -513,7 +524,8 @@ def formatted_snapshot(path, obs, body):
     native = json.loads(files['native.json'])
     accepted = json.loads(files['accepted.json']) if 'accepted.json' in files else native
     try:
-        validate_docx(files['document.docx'])
+        if 'document.docx' in files:
+            validate_docx(files['document.docx'])
         for view in (native, accepted):
             if (
                 not view.get('tabs')
@@ -812,11 +824,28 @@ def sync_status(root, directory, record, kind='draft', online=False, account=Non
             before = local_body(directory, kind)
             client = Client(account_for(root, account))
             from google_suggestions import review_counts
+            from google_roundtrip import select_tabs, suggestion_ids
 
             inline, remote = read_views(client, target['document_id'])
+            whole_scope = [t['tabProperties']['tabId'] for t in tabs(remote)] == target['tab_ids']
+            if not whole_scope:
+                inline, remote = (
+                    select_tabs(inline, target['tab_ids']),
+                    select_tabs(remote, target['tab_ids']),
+                )
             if remote is not inline:
                 # Suggestions are pending: compare accepted text only, and count what is waiting.
-                _, result['review_state'], _ = review_counts(client, target['document_id'], inline)
+                if whole_scope:
+                    _, result['review_state'], _ = review_counts(
+                        client, target['document_id'], inline
+                    )
+                else:
+                    result['review_state'] = {
+                        'pending': len(suggestion_ids(inline)),
+                        'accepted': 0,
+                        'rejected': 0,
+                        'unresolved_comments': 0,
+                    }
                 if inline_read(client, target['document_id'])['revisionId'] != inline['revisionId']:
                     raise GoogleError('Google changed during the check. Check again.')
             if [tab['tabProperties']['tabId'] for tab in tabs(remote)] != target['tab_ids']:

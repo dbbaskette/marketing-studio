@@ -6,6 +6,7 @@ from runner import brand, evidence, scene, sources, stories
 from runner.contracts import Invalid, PRESETS
 from runner.workspace import Store
 from runner.engine import Engine
+from runner.assistant_failure import AssistantFailure
 
 
 class QualitativeVisualTests(Isolated):
@@ -127,7 +128,12 @@ class QualitativeVisualTests(Isolated):
             stories.verify(self.project, [bad, good])
         before = self.store.read(self.project['id'])
         reply['stories'] = [bad]
-        with self.assertRaisesRegex(Invalid, 'numeric source values'):
+        with self.assertRaises(AssistantFailure) as failure:
             engine.propose(before['id'], expected_revision=before['revision'])
+        self.assertEqual(failure.exception.reason, 'proposal-review')
+        self.assertIn('numeric source values', str(failure.exception.__cause__))
         self.assertEqual(self.store.read(before['id']), before)
         self.assertEqual(calls, ['propose', 'propose'])
+        with self.assertRaises(AssistantFailure):
+            engine.propose(before['id'], expected_revision=before['revision'])
+        self.assertEqual(calls, ['propose', 'propose'], 'A saved response is rechecked without starting a new request.')

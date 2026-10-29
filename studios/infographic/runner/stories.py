@@ -27,8 +27,8 @@ def verify(project: dict, proposals: list[dict]) -> list[dict]:
             require(text(block.get('title')) and text(block.get('text')), 'Give every story block a title and content.')
             require(block.get('kind') in KINDS, 'Choose a supported visual explanation.')
             require(isinstance(block.get('fact_ids'), list) and bool(block['fact_ids'])
-                    and all(key in facts for key in block['fact_ids']), 'Each story block needs captured evidence.')
-            require(isinstance(block.get('required_ids'), list) and all(key in requirements for key in block['required_ids']),
+                    and all(isinstance(key, str) and key in facts for key in block['fact_ids']), 'Each story block needs captured evidence.')
+            require(isinstance(block.get('required_ids'), list) and all(isinstance(key, str) and key in requirements for key in block['required_ids']),
                     'Map required content to existing requirement IDs.')
             require(type(block.get('illustration')) is bool and text(block.get('illustration_role'), empty=True),
                     'Say whether artwork helps and describe its explanatory role.')
@@ -37,6 +37,8 @@ def verify(project: dict, proposals: list[dict]) -> list[dict]:
             used = [facts[key] for key in block['fact_ids']]
             if evidence.quantitative(block, used):
                 evidence.comparable(used)
+                require(block['kind'] == 'numbers' or all(f['value'] >= 0 for f in used),
+                        'Signed measurements need number callouts rather than proportional bars or parts.')
             if block['kind'] == 'timeline':
                 require(all(text(facts[key].get('period')) for key in block['fact_ids']),
                         'A timeline needs supplied dates or periods, not invented chronology.')
@@ -44,6 +46,7 @@ def verify(project: dict, proposals: list[dict]) -> list[dict]:
             words.extend((block['title'], block['text']))
             visual_signature.append((block['kind'], tuple(block['fact_ids']), block['text']))
         omissions = story.get('omissions', [])
+        require(isinstance(omissions, list) and all(isinstance(key, str) for key in omissions), 'List omitted requirement IDs explicitly.')
         require(set(omissions) == requirements - covered, 'List every omitted required idea before building.')
         if project['brief']['direction'] == 'hybrid':
             require(not omissions, 'Hybrid suggestions must retain the required ideas; ask the user to prioritize first.')

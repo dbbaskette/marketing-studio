@@ -81,6 +81,12 @@ Preserve user-required ideas and exact wording. Hybrid cannot omit requirements.
 The browser's `suggest` asks a confined assistant to author the same two arrays;
 a conversation authors them directly, avoiding a nested planning job.
 `--automatic` selects the first valid recommendation; it never approves a page.
+An unsuccessful native planning response is saved privately, bound to the same
+source, brief and project revision. Repeating `suggest` revalidates that response
+locally; use `suggest ID --fresh --expected-revision N` only when you intend a new
+assistant request. The action JSON equivalent is `"fresh": true`. Manual `facts`
+and `stories` adoption remains strict: it requires literal values, exact captured
+locations or reproducible calculations rather than generated-field normalization.
 
 ## Compose and edit
 

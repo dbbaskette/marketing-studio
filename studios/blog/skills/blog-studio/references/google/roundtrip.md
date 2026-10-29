@@ -23,9 +23,15 @@ reads native content, renders accepted text as Markdown, exports DOCX, and check
 the document revision and Drive version again. It writes `document.md`,
 `document.docx`, `native.json`, `snapshot.json` and a bounded `observation.json`,
 without credentials or expiring image-download URLs, and returns the folder with a
-short `summary`. It refuses a changing document, existing output, or multiple
-tabs: document exports cannot safely stand in for a selected-tab return. Use the
-scoped native workflow for multi-tab documents; do not export other tabs silently.
+short `summary`. It refuses a changing document or existing output.
+
+For a multi-tab Doc, pass `--tab-id <id>` to capture exactly that tab, including
+a nested tab. The editing page takes this ID from `?tab=…` in the pasted address
+and names the selected tab in its preview. Children and siblings are excluded.
+No whole-document export is made: a schema 4 capture keeps the selected native
+formatting and accepted Markdown, without a DOCX file. General document links
+still read all tabs when adding reference/source material; editing requires an
+explicit tab. Missing or ambiguous tabs are refused without falling back to all.
 
 Pending suggestions, including a teammate's, do not block a capture and need no
 flag. Accepted text comes from Google's suggestions-excluded view; proposed
@@ -59,7 +65,7 @@ Run `google compare --id <article> --snapshot <capture>`, then `google accept`
 observation and Markdown; identity, scope, revision and artifact hashes must
 match. Once a blog has a formatted baseline, accept and confirm require a
 capture: a hand-built observation is refused because it would discard that
-baseline. `document.md`, `document.docx` and `snapshot.json` become article
+baseline. `document.md`, optional `document.docx` and `snapshot.json` become article
 history artifacts and sync to the selected private Team Hub with the checkpoint.
 `native.json` and `accepted.json` are raw Docs JSON and can contain reviewers'
 comment threads, so they stay in the blog folder's `.google-native/` on this

@@ -7,7 +7,8 @@ const assert = require('node:assert/strict');
 (async()=>{
   const renderer=process.env.INFOGRAPHIC_STUDIO_TEST_RENDERER;
   if(!renderer)throw Error('Supply an explicitly installed renderer. No download is performed by this test.');
-  const child=spawn(process.env.PYTHON||'python3',[path.join(__dirname,'fixture_server.py'),'--renderer',renderer,...(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE?['--remote','--bridge']:[]),...(process.env.INFOGRAPHIC_STUDIO_TEST_VISUAL?['--visual',process.env.INFOGRAPHIC_STUDIO_TEST_VISUAL]:[])],{stdio:['ignore','pipe','pipe']});
+  const scenario=process.env.INFOGRAPHIC_STUDIO_TEST_SCENARIO;
+  const child=spawn(process.env.PYTHON||'python3',[path.join(__dirname,'fixture_server.py'),'--renderer',renderer,...(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE?['--remote','--bridge']:[]),...(process.env.INFOGRAPHIC_STUDIO_TEST_VISUAL?['--visual',process.env.INFOGRAPHIC_STUDIO_TEST_VISUAL]:[]),...(scenario?['--scenario',scenario]:[])],{stdio:['ignore','pipe','pipe']});
   let browser, page, errors=[];
   try{
     const url=await new Promise((resolve,reject)=>{let buf='';const timer=setTimeout(()=>reject(Error('Fixture startup timed out')),15000);child.stdout.on('data',b=>{buf+=b;const line=buf.split('\n')[0];if(line.startsWith('http://')&&buf.includes('\n')){clearTimeout(timer);resolve(line);}});child.on('exit',code=>{clearTimeout(timer);reject(Error('Fixture exited '+code));});});
@@ -28,7 +29,7 @@ const assert = require('node:assert/strict');
       assert.equal(await page.getByLabel('Google account email',{exact:true}).count(),0);
       await page.getByRole('button',{name:'Read and preview',exact:true}).click();
       await page.getByRole('heading',{name:process.env.INFOGRAPHIC_STUDIO_TEST_SLIDES?'Synthetic Google slides':'Synthetic Google source',exact:true}).waitFor();
-    }else await page.getByLabel('Notes or text',{exact:true}).fill('One instance restarts while the others serve.');
+    }else await page.getByLabel('Notes or text',{exact:true}).fill((await page.evaluate(()=>request('/api/fixture-source'))).text);
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByLabel('How should we find the story?',{exact:true}).selectOption('direct');
     await page.getByLabel('Audience and prior knowledge',{exact:true}).fill('Technical practitioners');
@@ -37,11 +38,35 @@ const assert = require('node:assert/strict');
     await page.getByRole('button',{name:'Save brief',exact:true}).click();
     await page.getByRole('heading',{name:'Find a useful story',exact:true}).waitFor();
     await page.locator('#actions').getByRole('button',{name:'Find the story',exact:true}).click();
+    if(scenario==='recovery'){
+      const saved=page.getByRole('heading',{name:'Planning response saved',exact:true});
+      await saved.waitFor();
+      assert.equal((await page.evaluate(()=>request('/api/fixture-calls'))).calls.length,1);
+      await page.reload();await saved.waitFor();
+      await page.locator('#actions').getByRole('button',{name:'Check saved proposal',exact:true}).click();
+      await page.getByText('The saved planning response needs a source or story correction.',{exact:false}).first().waitFor();
+      await page.waitForFunction(()=>!document.querySelector('[data-work-status]:not([hidden])'));
+      assert.equal((await page.evaluate(()=>request('/api/fixture-calls'))).calls.length,1,'Local recheck must not use assistant allowance');
+      await page.getByRole('button',{name:'Review source material',exact:true}).click();
+      assert(await page.getByText('Sources and facts',{exact:true}).evaluate(n=>n.parentElement.open));
+      assert.equal(await page.getByRole('dialog').count(),0,'Source review should open captured sources, not a new-source form');
+      await page.getByRole('button',{name:'Ask for a new plan',exact:true}).click();
+      await page.waitForFunction(()=>!document.querySelector('[data-work-status]:not([hidden])'));
+      assert.equal((await page.evaluate(()=>request('/api/fixture-calls'))).calls.length,2,'Only the explicit new-plan action may call the assistant');
+      assert.deepEqual(errors,[]);
+      console.log('PASS: rejected response retained across refresh; local recheck makes no provider request; captured source review; explicit new planning only.');
+      return;
+    }
     await page.getByRole('button',{name:'Use this story',exact:true}).click();
     await page.locator('#actions').getByRole('button',{name:'Build page',exact:true}).click();
     await page.getByRole('dialog').getByRole('button',{name:'Build page',exact:true}).click();
     await page.locator('.ig-preview').waitFor();
     await page.waitForFunction(()=>{const i=document.querySelector('.ig-preview');return i&&i.complete&&i.naturalWidth===1080;});
+    if(scenario){
+      await page.locator('#main').getByRole('button',{name:'Run checks',exact:true}).click();
+      const beforeEdit=await page.evaluate(()=>request('/api/desk?id='+held.project.id));
+      assert(beforeEdit.project.checks.filter(c=>c.kind!=='visual').every(c=>c.status==='passed'),JSON.stringify(beforeEdit.project.checks));
+    }
     if(process.env.INFOGRAPHIC_STUDIO_TEST_VISUAL){
       const current=await page.evaluate(()=>request('/api/desk?id='+held.project.id));
       assert.equal(current.project.stories[0].blocks[0].kind,process.env.INFOGRAPHIC_STUDIO_TEST_VISUAL);
