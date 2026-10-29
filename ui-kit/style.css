@@ -3440,3 +3440,103 @@ input.desk-text {
 .gap-items > li::marker {
   color: var(--yours);
 }
+
+/* Liquid pilot: deliberately opt-in. The other studio pages retain their tokens. */
+body[data-pilot="liquid"] {
+  --ground: #f5f5f7;
+  --solid: #f5f5f7;
+  --ink: #191b20;
+  --quiet: #606570;
+  --glass: rgb(250 251 253 / 0.78);
+  --material-light: rgb(255 255 255 / 0.72);
+  --material-tint: rgb(135 156 187 / 0.035);
+  --glass-line: rgb(36 43 56 / 0.12);
+  --paper-line: rgb(36 43 56 / 0.085);
+  --card-round: 24px;
+  --sheet-fill: var(--paper);
+  --pilot-shadow: 0 2px 8px rgb(20 30 45 / 0.035);
+  --pilot-selection: rgb(255 255 255 / 0.88);
+  --pilot-control: rgb(255 255 255 / 0.88);
+  --pilot-edge: inset 0 1px 0 rgb(255 255 255 / 0.82);
+  --pilot-preview: #e9ebef;
+}
+body[data-pilot="liquid"] .window { grid-template-columns: 15.5rem minmax(0, 1fr); }
+body[data-pilot="liquid"] .sidebar { padding: 2rem 1rem; gap: .4rem; }
+body[data-pilot="liquid"] .brand { gap: .8rem; padding: 0 .6rem 2rem; font-weight: 650; letter-spacing: -.025em; }
+body[data-pilot="liquid"] .nav-item { min-height: 46px; border-radius: 14px; padding: .65rem .8rem; font-size: .92rem; }
+body[data-pilot="liquid"] .nav-item[aria-current="page"] { background: var(--pilot-selection); box-shadow: var(--pilot-edge), var(--pilot-shadow); }
+body[data-pilot="liquid"] .toolbar { min-height: 4.6rem; border-bottom-color: var(--paper-line); }
+body[data-pilot="liquid"] .toolbar-title { font-size: 1rem; font-weight: 600; }
+body[data-pilot="liquid"] .page { max-width: 76rem; padding-top: 2.8rem; }
+body[data-pilot="liquid"] .large-title { font-size: clamp(2rem, 3.1vw, 2.8rem); font-weight: 700; letter-spacing: -.055em; line-height: 1.12; }
+body[data-pilot="liquid"] .lede { color: var(--quiet); line-height: 1.6; }
+body[data-pilot="liquid"] .intro { margin-bottom: 1.8rem; }
+body[data-pilot="liquid"] .card { padding: 1.5rem; border-color: var(--paper-line); box-shadow: var(--pilot-shadow); }
+body[data-pilot="liquid"] .card-title { color: var(--ink); font-size: 1.1rem; line-height: 1.3; font-weight: 650; letter-spacing: -.025em; }
+body[data-pilot="liquid"] .button { min-height: 44px; border-radius: 999px; padding: .55rem 1.15rem; background: var(--pilot-control); box-shadow: var(--pilot-edge), var(--pilot-shadow); font-size: .9rem; font-weight: 600; }
+body[data-pilot="liquid"] .button-filled { background: var(--accent); color: var(--on-accent); border-color: transparent; }
+body[data-pilot="liquid"] .button-quiet { background: transparent; box-shadow: none; }
+body[data-pilot="liquid"] .button[aria-pressed="true"] { background: var(--selection); color: var(--link); border-color: var(--selection-line); box-shadow: none; }
+body[data-pilot="liquid"] .button-danger { background: var(--late); color: var(--paper); }
+body[data-pilot="liquid"] .input { border-radius: 14px; background: var(--paper); border-color: var(--glass-line); }
+body[data-pilot="liquid"] details > summary { min-height: 44px; padding-block: .6rem; line-height: 1.45; cursor: pointer; }
+body[data-pilot="liquid"] .dialog,
+body[data-pilot="liquid"] .sheet { border-radius: 28px; }
+body[data-pilot="liquid"] .tag { border-radius: 999px; font-size: .75rem; background: var(--well); border-color: transparent; padding: .25rem .65rem; }
+body[data-pilot="liquid"] .studio-card .studio-symbol { border-radius: 17px; box-shadow: var(--pilot-edge); }
+body[data-pilot="liquid"] .studio-card .studio-open { background: var(--studio-wash); color: var(--studio-color); border-color: transparent; box-shadow: none; }
+body[data-pilot="liquid"] .studio-readiness { font-size: .8rem; font-weight: 550; gap: .45rem; }
+body[data-pilot="liquid"] .studio-readiness .bead,
+body[data-pilot="liquid"] .studio-link .bead { width: .5rem; height: .5rem; box-shadow: none; vertical-align: 0; }
+body[data-pilot="liquid"] .studio-readiness .bead .icon,
+body[data-pilot="liquid"] .studio-link .bead .icon { display: none; }
+body[data-pilot="liquid"] .studio-running { font-size: .75rem; font-variant-numeric: tabular-nums; }
+body[data-pilot="liquid"] .studio-repository > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--quiet); }
+body[data-pilot="liquid"] .studio-repository[open] > summary { color: var(--ink); }
+body[data-pilot="liquid"] .studio-repository > summary::after { content: '+'; margin-left: .6rem; }
+body[data-pilot="liquid"] .studio-repository[open] > summary::after { content: '−'; }
+body[data-pilot="liquid"] .studio-repository .studio-link-detail { padding: .2rem 0 .5rem; overflow-wrap: anywhere; }
+body[data-pilot="liquid"] .ig-preview-scroll { padding: 1.4rem; border-radius: 18px; background: var(--pilot-preview); }
+body[data-pilot="liquid"] .ig-preview { box-shadow: 0 8px 28px rgb(10 20 40 / .12); }
+body[data-pilot="liquid"] .ig-page-tools { padding: .6rem 0 0; }
+body[data-pilot="liquid"] .ig-project-card { border-radius: 22px; }
+body[data-pilot="liquid"] .ig-work { border-radius: 18px; background: var(--paper); }
+body[data-pilot="liquid"] .ig-story-grid .card { box-shadow: none; }
+body[data-pilot="liquid"] .ig-story-grid .ig-thumbnail { height: 6rem; }
+@media (prefers-color-scheme: dark) {
+  body[data-pilot="liquid"] {
+    --ground: #141519;
+    --solid: #141519;
+    --card: #202227;
+    --paper: #202227;
+    --ink: #f4f5f7;
+    --quiet: #b3b7c2;
+    --glass: rgb(31 33 39 / .85);
+    --material-light: rgb(255 255 255 / .025);
+    --material-tint: rgb(135 156 187 / .025);
+    --paper-line: rgb(255 255 255 / .08);
+    --glass-line: rgb(255 255 255 / .14);
+    --pilot-selection: #30333b;
+    --pilot-control: #30333b;
+    --pilot-edge: inset 0 1px 0 rgb(255 255 255 / .08);
+    --pilot-shadow: 0 2px 8px rgb(0 0 0 / .08);
+    --pilot-preview: #191b20;
+  }
+}
+@media (max-width: 52rem) {
+  body[data-pilot="liquid"] .sidebar { padding: .5rem .5rem calc(.5rem + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; gap: .4rem; }
+  body[data-pilot="liquid"] .nav-item { min-height: 49px; padding: .35rem .25rem; font-size: .73rem; }
+  body[data-pilot="liquid"] .page { padding-top: 1.6rem; }
+  body[data-pilot="liquid"] .toolbar { min-height: 4.4rem; }
+  body[data-pilot="liquid"] .card { padding: 1.25rem; }
+  body[data-pilot="liquid"] .ig-preview-scroll { padding: .75rem; }
+  body[data-pilot="liquid"] .dialog,
+  body[data-pilot="liquid"] .sheet { border-radius: 24px; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  body[data-pilot="liquid"] { --glass: var(--solid); --material-light: transparent; --material-tint: transparent; }
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  body[data-pilot="liquid"] { --glass: var(--solid); --material-light: transparent; --material-tint: transparent; --paper-line: var(--quiet); --glass-line: var(--quiet); --pilot-selection: var(--paper); --pilot-control: var(--paper); --pilot-shadow: none; }
+  body[data-pilot="liquid"] .glass { backdrop-filter: none; -webkit-backdrop-filter: none; }
+}

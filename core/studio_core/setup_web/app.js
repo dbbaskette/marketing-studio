@@ -2,6 +2,7 @@
 const $ = selector => document.querySelector(selector);
 const standalone = document.body.dataset.standalone === 'true';
 const product = document.body.dataset.product;
+if (['Marketing Studio', 'Infographic Studio'].includes(product)) document.body.dataset.pilot = 'liquid';
 const tokenHeader = document.body.dataset.tokenHeader;
 const sessionKey = standalone ? product.toLowerCase().replaceAll(' ', '-') + '-setup-token' : 'marketing-studio-token';
 const launchOptions = new URLSearchParams(location.hash.slice(1));
@@ -378,9 +379,14 @@ function renderHome(refreshPaths = true) {
     const link = studio.workspace;
     if (link) {
       // Where its work lives, read from the studio's own records.
-      const line = element('p', '', 'studio-link');
-      line.append(stateLine(link.state === 'connected' ? 'done' : link.state === 'disconnected' ? 'review' : 'none', link.summary));
-      if (link.detail) line.append(element('span', link.detail, 'studio-link-detail quiet'));
+      const line = element('div', '', 'studio-link');
+      const connected=link.state === 'connected' && product === 'Marketing Studio';
+      line.append(stateLine(link.state === 'connected' ? 'done' : link.state === 'disconnected' ? 'review' : 'none', connected ? 'Shared repository connected' : link.summary));
+      if (connected) {
+        const details=element('details','','studio-repository');
+        details.append(element('summary','Repository details'),element('p',[link.summary,link.detail].filter(Boolean).join('\n'),'studio-link-detail quiet'));
+        line.append(details);
+      } else if (link.detail) line.append(element('span', link.detail, 'studio-link-detail quiet'));
       card.append(line);
     }
     if (studio.installed && link?.connect) {
@@ -426,7 +432,7 @@ function renderHome(refreshPaths = true) {
         finally { button.disabled = false; button.textContent = label; }
       }); card.append(button);
     } else {
-      const link = element('a', `Install ${studio.name}`, 'button'); link.href = studio.repository; link.target = '_blank'; link.rel = 'noreferrer'; card.append(link);
+      const link = element('a', `Install ${studio.name}`, 'button studio-open'); link.href = studio.repository; link.target = '_blank'; link.rel = 'noreferrer'; card.append(link);
     }
     list.append(card);
   }

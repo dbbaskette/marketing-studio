@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
+from html.parser import HTMLParser
 from pathlib import Path
 from unittest import mock
 
@@ -61,8 +62,27 @@ PORTS = [
     ('', ''),
     (None, ''),
 ]
-LINK = ('<a id="go-suite" class="nav-item suite-link" target="marketing-studio" hidden>'
-        '<span class="nav-label">Marketing Studio</span></a>')
+class SuiteLinks(HTMLParser):
+    """Inspect the return-link contract while allowing decorative child icons."""
+
+    def __init__(self, source):
+        super().__init__()
+        self.links = []
+        self.active = None
+        self.feed(source)
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'a' and dict(attrs).get('id') == 'go-suite':
+            self.active = {'attrs': dict(attrs), 'text': ''}
+            self.links.append(self.active)
+
+    def handle_data(self, data):
+        if self.active is not None:
+            self.active['text'] += data
+
+    def handle_endtag(self, tag):
+        if tag == 'a':
+            self.active = None
 
 
 def function(source: str, name: str) -> str:
@@ -189,7 +209,14 @@ const invalid = suiteReturn(home, '#home=' + encodeURIComponent(home) + '&homeTo
     def test_studio_pages_hold_a_hidden_link_back(self):
         for folder in STUDIOS:
             with self.subTest(studio=folder.relative_to(ROOT).as_posix()):
-                self.assertIn(LINK, (folder / 'index.html').read_text())
+                links = SuiteLinks((folder / 'index.html').read_text()).links
+                self.assertEqual(len(links), 1)
+                attrs = links[0]['attrs']
+                self.assertEqual(set(attrs['class'].split()), {'nav-item', 'suite-link'})
+                self.assertEqual(attrs['target'], 'marketing-studio')
+                self.assertIn('hidden', attrs)
+                self.assertNotIn('href', attrs)
+                self.assertEqual(links[0]['text'].strip(), 'Marketing Studio')
 
 
 class SuitePortTests(unittest.TestCase):
