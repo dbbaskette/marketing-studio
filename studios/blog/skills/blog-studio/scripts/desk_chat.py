@@ -395,7 +395,71 @@ def _research(root, ident, payload):
     facts, _ = research_contract.read_bundle(bundle)
     if any(not isinstance(facts.get(key), list) for key in ('findings', 'facts', 'sources')):
         raise ValueError('The reviewed research must include findings, facts and sources lists.')
-    directory, _ = studio.item(root, 'articles', ident)
+    import blog_library
+    import blog_runner
+    import synthesis_research
+    from studio_core import research_sites
+
+    directory, record = studio.item(root, 'articles', ident)
+    draft = desk.read(root, ident)
+    brief = draft.get('brief') or {}
+    run = {
+        'brief': {
+            'goal': brief.get('point') or draft['title'],
+            'audience': brief.get('audience') or 'Blog readers',
+        }
+    }
+    inputs = blog_runner.inputs(root, record, run)
+    chosen = (
+        research_sites.effective({})
+        if 'research_from' in record and record['research_from'] is None
+        else synthesis_research.research_from(inputs)
+    )
+    selected = {
+        'sources/' + item['id'] + '.txt': item
+        for item in inputs['sources']
+        if synthesis_research.offered(item)
+    }
+    for source in facts['sources']:
+        if not isinstance(source, dict):
+            raise ValueError('The research includes an unreadable source.')
+        permission = source.get('permission')
+        if permission == 'selected':
+            name = source.get('file')
+            item = selected.get(name) if isinstance(name, str) else None
+            snapshot = source.get('snapshot')
+            original = source.get('original_snapshot')
+            if (
+                not chosen['documents']
+                or not item
+                or source.get('origin') != item['origin']
+                or not isinstance(snapshot, str)
+                or not snapshot.startswith('research/')
+                or research_contract.inside(bundle, snapshot[len('research/') :]).read_bytes()
+                != item['text'].encode()
+                or (
+                    original is not None
+                    and (
+                        not isinstance(original, str)
+                        or not original.startswith('research/')
+                        or research_contract.inside(
+                            bundle, original[len('research/') :]
+                        ).read_bytes()
+                        != item['text'].encode()
+                    )
+                )
+            ):
+                raise ValueError('The research includes a capture outside the pinned documents.')
+        elif permission == 'public':
+            if not isinstance(source.get('origin'), str):
+                raise ValueError('The research includes an unreadable public origin.')
+            blog_library.canonical(source['origin'])
+            if not chosen['web'] and not research_sites.under(
+                source.get('origin'), chosen['sites']
+            ):
+                raise ValueError('The research exceeds the pinned source scope.')
+        else:
+            raise ValueError('The research includes an unknown source permission.')
     previous = studio.inside(directory, 'research', 'output.json')
     if previous.is_file():
         # Keep a previous reviewed output byte-for-byte before replacing it, just as
