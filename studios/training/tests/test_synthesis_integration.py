@@ -79,6 +79,30 @@ class SynthesisIntegrationTests(StudioCase):
         capture.write_text('Changed evidence')
         self.assertFalse(workspace.research_intact(root, workspace.load(root)))
 
+    def test_source_handle_is_reconciled_before_handoff_and_independent_review_still_runs(self):
+        def handled(tools, job):
+            payload = json.loads(tools.read_input('research-task')[1])
+            self.assertIn(research_contract.SOURCE_IDS, payload['return'])
+            ok, shown = tools.save_source(URL)
+            self.assertTrue(ok)
+            self.assertIn('Dossier source ID: s1', shown)
+            source = tools._index()[0]
+            value = dossier(payload['worker'], source['file'], source['url'])
+            for finding_id in ('availability', 'zero-downtime'):
+                value['findings'].append({**value['findings'][0], 'id': finding_id})
+            value['facts'][0]['citations'][0]['source'] = source['id']
+            ok, said = tools.submit_artifact('research-result', json.dumps(value))
+            self.assertTrue(ok, said)
+
+        self.workers.queued['research-result'] = [handled, self.checker]
+        root = self.start()
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown)
+        facts, _ = research_contract.read_bundle(root / 'research')
+        self.assertEqual(facts['facts'][0]['citations'][0]['source'], 'source-a')
+        self.assertTrue(facts['review']['accepted'])
+        self.assertEqual(len(self.workers.of('research-result')), 2)
+
     def test_research_change_request_gets_a_new_review_and_returns_to_gate(self):
         root = self.saved_start(saved_contract=research_contract.snapshot(self.research))
         self.to_gate(root, 'research')
@@ -133,6 +157,9 @@ class SynthesisIntegrationTests(StudioCase):
         holder = tempfile.TemporaryDirectory()
         self.addCleanup(holder.cleanup)
         shared, old = updated_helper(Path(holder.name).resolve())
+        isolated = mock.patch.dict(os.environ, {'HARNESS_RESEARCH_RUNTIME': str(shared / 'current')})
+        isolated.start()
+        self.addCleanup(isolated.stop)
         self.research = research.Research(shared / 'current')
         root = self.saved_start(saved_contract=research_contract.snapshot(self.research))
         self.to_gate(root, 'research')

@@ -45,8 +45,13 @@ REFRESHED = ("Bring the evidence up to date: re-read each source with the studio
 REFRESH_HERE = ("The studio's tools save every capture and the studio arranges the review: "
                 'write no files yourself.')
 CAPTURED = ("The studio's tools have saved every capture for you: that is the capture "
-            '`investigate.md` asks for. Cite each source by the file path the tools gave it, '
-            'exactly. Write no files yourself.')
+            '`investigate.md` asks for. Set each sources[].file to the exact Capture file '
+            'path the tools returned. Write no files yourself.')
+SOURCE_IDS = ('Use the saved tool IDs, such as s1, as sources[].id and repeat those exact '
+              'IDs in facts[].citations[].source. A citation is {source, quote}: source '
+              'names an entry in sources, not a file path or URL; quote is copied exactly '
+              'from that source. Sections and brief refer to fact or finding IDs instead. '
+              'Never invent a missing source.')
 
 
 def compares(goal) -> bool:
@@ -372,7 +377,8 @@ class Workflow:
                                      + CAPTURED + ' Copy each source\'s origin exactly as the capture showed it. '
                                      'Dossier format: sources, facts, findings, sections and brief are arrays; '
                                      'sections and brief hold {id, title, blocks: [{text, kind, refs}]}. '
-                                     'Set every fact author to this worker ID. Do not write finished studio content.'}
+                                     'Set every fact author to this worker ID. Do not write finished studio content. '
+                                     + SOURCE_IDS}
                 if any(isinstance(q, dict) and q.get('id') for q in task.get('planning_questions') or ()):
                     payload['return'] += ' ' + IDS_FOR_QUESTIONS
                 if refreshing:
@@ -389,6 +395,9 @@ class Workflow:
                     dossier[key] = task[key]
                 if any(f.get('author') != worker for f in dossier.get('facts', [])):
                     raise ValueError('Research facts must identify their actual author invocation.')
+                dossier, problems, _ = citation_sources(dossier, captures)
+                if problems:
+                    raise ValueError(' '.join(problems))
                 allowed = {s['file']: s for s in captures}
                 for source in dossier.get('sources', []):
                     captured = allowed.get(source.get('file'))
@@ -655,18 +664,82 @@ def took(seconds, dollars):
 
 def check_json(text, spec):
     problems = []
+    warnings = []
+    kept = text
+    matched = 0
     try:
         value = json.loads(text)
         if not isinstance(value, dict) or value.get('schema') != 2:
             problems.append('Return a schema-2 JSON object.')
         elif 'captures' in spec and isinstance(value.get('sources'), list):
             problems += uncaptured(value['sources'], spec['captures'])
+            if not problems:
+                value, problems, matched = citation_sources(value, spec['captures'])
+                if matched:
+                    kept = json.dumps(value)
             if not problems and spec.get('runtime'):
                 problems += refused(value, spec)
+            if not problems and matched:
+                warnings.append(f'Matched {matched} citation source handle(s) to the same '
+                                'captured source in the dossier. Claims and quotations are unchanged.')
     except (TypeError, ValueError):
         problems.append('Return valid JSON, without Markdown fences.')
     return problems, [{'check': 'research.json', 'status': 'failed' if problems else 'passed',
-                       'problems': problems}], [], text
+                       'problems': problems}], warnings, kept
+
+
+def citation_sources(value, captures):
+    """Resolve only exact job handles to a unique, verified dossier source identity.
+
+    The worker's s1 handle and its own source-a ID may describe the same saved file.
+    This bridge changes IDs only, never quotations or evidence. Unknown, ambiguous,
+    unsaved or mismatched sources must be corrected by the author; the pinned helper
+    still validates every quote and the independent reviewer still checks support.
+    """
+    result = copy.deepcopy(value)
+    rows = result.get('sources')
+    sources = [s for s in rows if isinstance(s, dict)] if isinstance(rows, list) else []
+    ids = {s['id'] for s in sources if isinstance(s.get('id'), str) and s['id']}
+    known = ', '.join(repr(name[:64]) for name in sorted(ids)[:40]) or 'none'
+    handles = {}
+    for capture in captures:
+        handle = capture.get('id')
+        if isinstance(handle, str) and handle:
+            handles.setdefault(handle, []).append(capture)
+    problems, matched = [], 0
+    facts = result.get('facts')
+    for fact in facts if isinstance(facts, list) else []:
+        if not isinstance(fact, dict) or not isinstance(fact.get('citations'), list):
+            continue  # The helper diagnoses schema errors, rather than this ID bridge.
+        for index, citation in enumerate(fact['citations']):
+            if not isinstance(citation, dict):
+                continue
+            ref = citation.get('source')
+            if isinstance(ref, str) and ref in ids:
+                continue
+            found = handles.get(ref, []) if isinstance(ref, str) else []
+            candidates = []
+            if len(found) == 1:
+                capture = found[0]
+                permission = capture.get('permission') or (
+                    'selected' if capture.get('offered', True) else 'public')
+                candidates = [s for s in sources if isinstance(s.get('id'), str)
+                              and s['id'] in ids
+                              and s.get('file') == capture.get('file')
+                              and s.get('file')
+                              and s.get('origin') == capture.get('origin', capture.get('url'))
+                              and s.get('permission') == permission]
+            if len(candidates) == 1:
+                citation['source'] = candidates[0]['id']
+                matched += 1
+            elif len(problems) < 20:
+                label = repr(str(fact.get('id', '?'))[:64])
+                missing = repr(ref[:100]) if isinstance(ref, str) else repr(ref)[:100]
+                problems.append(f'facts[{label}].citations[{index}].source {missing} does not '
+                                f'identify one dossier source. Use sources[].id exactly. '
+                                f'Available source IDs: {known}. Do not guess from a quote '
+                                'or invent a source; correct the citation and resubmit the dossier.')
+    return result, problems, matched
 
 
 def uncaptured(sources, captures):
