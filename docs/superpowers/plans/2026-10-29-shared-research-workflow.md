@@ -194,5 +194,16 @@ work without false completion. Portable verified handoffs with no implicit shari
   present. The Python packet merger prototype has been removed. Focused real-helper
   checks cover concurrency, peer reuse, located repair, exact-digest handoff and
   unconfirmed termination; the source component uses synthetic captures only.
-- Integration verification is in progress; no active installation has been updated
-  or restarted, and no provider jobs have been started for verification.
+- Ownership is centralized in Marketing Studio: both the execution modules and
+  reusable source/progress UI are shared. Product adapters supply authenticated
+  routes, native job accounting and the final authoring action; standalone packages
+  carry the shared implementation without requiring a running Marketing Studio.
+- Integration verification completed using disposable macOS guests: all five
+  relevant full suites ran, followed by affected checks for the regressions they
+  exposed. Package validation, authenticated phone research/preview/import, all
+  four native setup/launch paths and disposable CLI/Hub journeys passed. The phone
+  journey used the real pinned helper with synthetic authors and selected text.
+- The scheduling benchmark measures controlled synthetic work only. Live Google
+  credentials, provider behavior and live content quality were not tested. No
+  active installation was updated or restarted and no provider jobs were started
+  for verification. Publication and deployment remain separate actions.
