@@ -210,7 +210,7 @@ class RuleTests(PageCase):
     def setUp(self):
         super().setUp()
         self.path = self.saved_started()
-        self.bodies = {'/api/setup/check': {'path': str(self.base / 'elsewhere')},
+        self.bodies = {'/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
                        '/api/setup': {'limits': {'parallel': 4}},
                        '/api/trainings': {**FORM, 'title': 'Health checks'},
                        '/api/run': {'path': self.path, 'action': 'stop'},
@@ -2065,12 +2065,13 @@ class LaterTests(PageCase):
         self.assertEqual(self.page.body_limit('/api/documents', headers), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/documents?x=1', headers), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/asset', headers), 12_000_000)
+        self.assertEqual(self.page.body_limit('/api/research-sources', headers), 12_000_000)
         for token in (False, 'not-the-key'):
-            for target in ('/api/documents', '/api/asset'):
+            for target in ('/api/documents', '/api/asset', '/api/research-sources'):
                 self.assertEqual(self.page.body_limit(target, self.headers(token=token)),
                                  desk.BODY_LIMIT, 'a stranger is never read at length')
         for target in (*desk.WRITES, *(path for path in POSTS
-                                       if path not in ('/api/documents', '/api/asset')),
+                                       if path not in ('/api/documents', '/api/asset', '/api/research-sources')),
                        '/api/documents/more', '/api/nothing', '/', '//[', ''):
             self.assertEqual(self.page.body_limit(target, headers), 64_000, target)
         self.assertEqual(desk.Page(self.PORT).body_limit('/api/documents', headers), 64_000,

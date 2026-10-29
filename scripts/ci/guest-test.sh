@@ -182,15 +182,10 @@ elif [[ "${1:-full}" == bundles ]]; then
   [[ -n "$bundle" ]] || { echo 'A real Apple Silicon platform bundle is required.' >&2; exit 1; }
   "$python" scripts/ci/bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/bundle-acceptance.log"
 elif [[ "${1:-full}" == shared-research-finish ]]; then
-  # Reuse unchanged checks from the full root and all three completed native
-  # product runs (Blog Studio, Infographic Studio and Presentation Studio). Finish their affected repairs, then the remaining complete native suites.
+  # All five complete suites have run. Recheck the repaired Training Studio
+  # expectations, then finish the real synthetic browser and CLI acceptance gates.
   {
-    PYTHONPATH=tests "$python" -m unittest test_network_static test_ui_consistency test_research_session test_research_sources test_research_page -v
-    (cd studios/infographic && PYTHONPATH=tests "$python" -m unittest test_research_jobs test_remote_documents test_server -v)
-    (cd studios/blog && PYTHONPATH=tests "$python" -m unittest test_editorial_tools.ManagementTests.test_ui_treats_data_as_text_and_has_no_external_assets test_management_ui test_synthesis_integration test_desk_migration -v)
-    (cd studios/blog && node scripts/ci/check-management.cjs)
-    (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_page_app.LinkTests test_runner_page.CapabilityTests test_runner_page.SharedResearchPageTests test_parallel_research -v && "$python" skills/presentation-studio/scripts/validate_package.py)
-    (cd studios/training && bash scripts/ci/check.sh "$python")
+    (cd studios/training && PYTHONPATH=tests "$python" -m unittest test_runner_page.RuleTests test_runner_page.LaterTests test_desk.RunnerScreenTests.test_a_run_is_watched_from_working_to_a_gate_to_a_failure_to_done -v && "$python" skills/training-studio/scripts/validate_package.py)
   } 2>&1 | tee "$results_dir/shared-research-finish.log"
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/research-graphics" --cache "$work/research-graphics-cache")"
   mkdir -p "$work/research-browser"

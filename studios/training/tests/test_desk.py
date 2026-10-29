@@ -4624,7 +4624,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       # What trying again does, and roughly what it costs, before it is pressed.
                       'Try again researches the questions still unanswered and keeps the '
                       'answered ones. The tries so far took 13 minutes and $1.28.',
-                      'Failed', '3 tries · 13 minutes · $1.28',
+                      'Failed', '3 tries · 13 minutes assistant time · $1.28',
                       'The agent could not be reached.'):
             self.assertIn(shown, down['text'])
         self.assertEqual(down['filled'], ['Try the research again'])
