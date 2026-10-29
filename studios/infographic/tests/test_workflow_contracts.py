@@ -46,7 +46,7 @@ class WorkflowContractTests(Isolated):
                 delivery = engine.build(p['id'], expected_revision=chosen['revision'], request_id='owned_build_' + name)
                 current = self.store.read(p['id'])
                 if name == 'process':
-                    headings = [e['text'] for e in current['scene']['elements'] if e['role'] == 'heading']
+                    headings = [e['text'] for e in current['scene']['elements'] if e.get('role') == 'heading']
                     self.assertIn('1. Buffer', headings); self.assertNotIn('1. 1. Buffer', headings)
                     forged = deepcopy(current)
                     next(e for e in forged['scene']['elements'] if e['id'] == 'b1_heading')['text'] = '1. 99 requests'

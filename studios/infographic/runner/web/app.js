@@ -73,6 +73,8 @@ function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div'
 function closeSheet() { $('sheet').close(); paintWork(); }
 let work = null, workTimer = null;
 const workLabels = {'suggest':'Finding the story','build':'Building the page','art-direct':'Writing the art direction','image-start':'Generating artwork','inspect-images':'Inspecting the page','revise-story':'Revising the story','revise-art':'Revising the artwork','repair':'Repairing the page','preview':'Rendering the preview','export':'Preparing your files','google-deliver':'Delivering the Google Doc'};
+workLabels['image-recover']='Recovering saved artwork locally';
+workLabels['visual-layout']='Building the visual diagram layout';
 function paintWork() {
   $('main').setAttribute('aria-busy',String(!!work));
   for(const surface of document.querySelectorAll('[data-work-status]')) {
@@ -106,7 +108,7 @@ function progressNotice(progress,owner,id) {
   if(work!==owner)return;
   const current=progress.activity;
   if(work===owner&&current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail='Working on this computer. This can take a few minutes. Your saved work is kept.';paintWork();}
-  const pending=progress.recovery?.[0];
+  const pending=progress.recovery?.find(r=>!r.local_artwork_available&&['queued','running','unknown'].includes(r.state));
   if(pending&&owner.pending!==pending.attempt_id){owner.pending=pending.attempt_id;
     owner.cancel=async()=>{try{const latest=await request('/api/activity?id='+encodeURIComponent(id));await request('/api/action',{action:'image-cancel',id,expected_revision:latest.revision,request_id:pending.attempt_id});toast('Local adoption cancelled. Remote charges may remain unknown.');}catch(f){error(f.message);}};
     paintWork();
@@ -146,7 +148,7 @@ async function action(verb, values={}, revision=null) {
   const polling=setInterval(async()=>{if(checking)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
   try {
     const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
-    closeSheet(); await openProject(id); if(answer.result?.state==='unknown')error('The image request outcome is uncertain. Do not repeat it; use the recovery controls.'); else if(answer.result?.state==='failed')error('The image provider could not finish. Your earlier work is kept.'); else if(answer.result?.state==='outdated')toast('The earlier result was kept privately and did not replace newer work.');else toast('Saved.'); return answer.result;
+    closeSheet(); await openProject(id); if(answer.result?.state==='unknown')error('The image worker did not confirm completion. Check Image work needs attention for saved artwork or cancellation. No request was repeated.'); else if(answer.result?.state==='failed')error(answer.result.reason==='image-tool-unavailable'?'The image worker finished without handing back a usable image. Check Image work needs attention for local recovery.':'The image provider could not finish. Your earlier work is kept.'); else if(answer.result?.state==='outdated')toast('The earlier result was kept privately and did not replace newer work.');else toast('Saved.'); return answer.result;
   } catch (failure) {
     if(workLabels[verb]&&(!failure.status||failure.status>=500)){
       clearInterval(polling);connectionUncertain(owner);
@@ -291,13 +293,23 @@ async function download(manifest,format,view=false) {
 }
 function renderProject() {
   const p=held.project, selected=p.stories.find(s=>s.id===p.selected_story);
+  const nativeReady=selected&&selected.blocks.every(b=>b.visual||b.kind==='numbers'||b.quantitative===true||(b.quantitative!==false&&b.fact_ids.every(id=>typeof p.facts.find(f=>f.id===id)?.value==='number'))||(b.fact_ids.length<=4&&b.fact_ids.every(id=>(p.facts.find(f=>f.id===id)?.statement||'').split(/\s+/).length<=8)));
   const currentDelivery=held.deliveries.find(d=>d.current), checked=held.review_checked&&p.checks.length&&p.checks.every(c=>c.status==='passed'), approved=p.approval&&checked, needsArtwork=p.scene?.art_regions?.length&&!p.scene.elements.some(e=>e.kind==='artwork');
   const savedPlan=held.planning_response?.available;
   let next=[savedPlan?'Check saved proposal':'Find the story',()=>action('suggest')];
   if(p.stories.length)next=!selected?['Choose a story',()=>document.querySelector('#story-choice').scrollIntoView({behavior:'smooth'})]:!p.scene||needsArtwork?['Build page',compose]:!currentDelivery?['Create preview',()=>action('preview')]:approved?(!currentDelivery.approved_current?['Export files',()=>action('export',{draft:false})]:['Downloads',()=>document.querySelector('.ig-page-tools').scrollIntoView({behavior:'smooth'})]):checked?['Approve page',()=>action('approve')]:held.visual_review?.status==='passed'?['Run checks',()=>action('check')]:['Review page',()=>reviewSheet(currentDelivery)];
+  if(selected&&!nativeReady&&(!p.scene||!p.scene.visual_version))next=['Make this story visual',()=>reviseStorySheet(selected,true)];
+  else if(selected&&p.scene&&!p.scene.visual_version)next=['Rebuild visual layout',()=>action('visual-layout')];
+  const recoverable=held.recovery.find(r=>r.local_artwork_available);
+  if(recoverable)next=['Recover saved artwork',()=>action('image-recover',{request_id:recoverable.attempt_id})];
   heading(p.brief.title,button('Infographics',home),button(...next,true));
   const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.')];
-  if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.state+': '+r.message),button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
+  if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.message),r.local_artwork_available?button('Recover saved artwork',()=>action('image-recover',{request_id:r.attempt_id}),true):button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
+  if(selected&&((p.scene&&!p.scene.visual_version)||!nativeReady)){
+    parts.push(card('Make this a visual infographic',make('p','','Earlier versions and captured facts are kept. A visual plan uses concise labels, diagrams and comparisons rather than paragraph blocks.'),
+      button('Make this story visual',()=>reviseStorySheet(selected,true),true),
+      nativeReady?button('Rebuild visual layout',()=>action('visual-layout')):make('p','quiet','This older plan uses sentence-length labels. Make a visual plan first so the diagrams remain readable.')));
+  }
   if(!p.stories.length)parts.push(savedPlan?card('Planning response saved',make('p','','Check the saved response locally, without using assistant allowance. Asking for a new plan starts a new assistant request.'),held.planning_response.detail?detail('What needs attention',make('p','',held.planning_response.detail)):null,button('Check saved proposal',()=>action('suggest')),button('Review source material',reviewCapturedSources),button('Ask for a new plan',()=>action('suggest',{fresh:true}))):card('Find a useful story',make('p','','Your supplied information is saved. The assistant proposes source-backed explanations; generation is a later explicit action.'),button('Find the story',()=>action('suggest')),detail('Author in your conversation',make('p','','Use native action JSON to save located facts and story proposals directly. A browser and nested planning assistant are not required.'))));
   if(held.planning_response?.problem)parts.push(card('Saved planning response needs attention',make('p','problem',held.planning_response.problem)));
   if(p.stories.length){
@@ -321,7 +333,7 @@ function renderProject() {
   }
   if(p.scene) {
     const edit=make('div','stack');for(const e of p.scene.elements.filter(e=>e.kind==='text')) {const f=field(e.id,e.text,'textarea');edit.append(add(make('div','stack'),f.wrap,button('Save '+e.id,()=>action('edit-text',{element_id:e.id,text:f.input.value}))));}
-    parts.push(detail('Edit words directly',edit),detail('Layout alternatives',button('Stacked blocks',()=>action('layout',{arrangement:'stack'})),button('Two columns',()=>action('layout',{arrangement:'columns'}))));
+    parts.push(detail('Edit words directly',edit),detail('Layout alternatives',button('Visual infographic',()=>nativeReady?action('visual-layout'):reviseStorySheet(selected,true)),button('Stacked blocks',()=>action('layout',{arrangement:'stack'})),button('Two columns',()=>action('layout',{arrangement:'columns'}))));
     if(p.scene.art_regions?.length)parts.push(detail('Artwork and image brief',card('Explanatory artwork',button('Revise this artwork',reviseArtSheet),make('p','','Artwork is raster; labels and chart marks stay editable. Review the exact art direction before starting or editing an image.'),...p.assets.map(a=>button('Compose saved image '+a.id,()=>action('compose-image',{asset_id:a.id}))),button('Suggest precise art direction',()=>action('art-direct')),detail('Write the art direction yourself',button('Describe subjects and relationships',artSheet)),...p.image_briefs.map(b=>detail('Saved image brief',make('pre','ig-csv-preview',b.prompt),button('Generate artwork using selected provider',()=>startImage(b)))))));
     if(delivery?.current)parts.push(card('Review and finish',make('p','','Inspect the actual page at its intended size: facts and qualifications, objects and relationships, crop and resolution, label clearance and brand.'),button('Inspect page with assistant',()=>action('inspect-images')),button('Record my visual review',()=>reviewSheet(delivery)),button('Run checks',()=>action('check')),button('Repair findings',repairSheet),approved?button('Export approved files',()=>action('export',{draft:false})):checked?button('Approve this checked revision',()=>action('approve')):make('p','quiet','Approval becomes available when the current checks pass against the latest visual review.')));
   }
@@ -412,7 +424,7 @@ if (homeLink) {
 }
 async function startDesk() {
   let id='';try{id=sessionStorage.getItem('infographic-studio-project')||'';}catch(f){}
-  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id));if(progress.activity?.state==='running'||(await request('/api/desk?id='+encodeURIComponent(id))).planning_response?.available){await openProject(id);return;}}catch(f){}}
+  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id)),desk=await request('/api/desk?id='+encodeURIComponent(id));if(progress.activity?.state==='running'||desk.planning_response?.available||desk.recovery?.length){await openProject(id);return;}}catch(f){}}
   await home();
 }
 $('sheet').addEventListener('close',paintWork);
@@ -459,10 +471,34 @@ async function sourceTextSheet(source,start=0){
   }catch(failure){error(failure.message);}
 }
 
-function reviseStorySheet(story){const scope=field('Scope','','select'),instruction=field('What should change?','','textarea');const all=make('option','','Whole story');all.value='';scope.input.append(all);for(const block of story.blocks){const option=make('option','',block.title);option.value=block.id;scope.input.append(option);}sheet('Refine this story',make('p','','Your selected assistant revises the supplied explanation. A named block preserves all other content. Review and choose the revised story before rebuilding.'),scope.wrap,instruction.wrap,add(make('div','bar'),button('Suggest revision',()=>action('revise-story',{story_id:story.id,block_id:scope.input.value||null,instruction:instruction.input.value}),true),button('Cancel',closeSheet)));}
+function reviseStorySheet(story,visual=false){const scope=field('Scope','','select'),instruction=field('What should change?',visual?'Make this an infographic with concise labels, diagrams, component maps and visual comparisons. Keep the meaning and required wording. Use charts only for supplied numbers.':'','textarea');const all=make('option','','Whole story');all.value='';scope.input.append(all);for(const block of story.blocks){const option=make('option','',block.title);option.value=block.id;scope.input.append(option);}scope.wrap.hidden=visual;sheet(visual?'Make this story visual':'Refine this story',make('p','',visual?'Uses your configured assistant to revise the saved facts into a visual plan. No new research or image generation. Review and choose the result before rebuilding.':'Your selected assistant revises the supplied explanation. A named block preserves all other content. Review and choose the revised story before rebuilding.'),scope.wrap,instruction.wrap,add(make('div','bar'),button(visual?'Suggest visual plan':'Suggest revision',()=>action('revise-story',{story_id:story.id,block_id:scope.input.value||null,instruction:instruction.input.value}),true),button('Cancel',closeSheet)));}
 function repairSheet(){sheet('Repair current findings',make('p','','Apply the recorded artwork correction, or try the other layout. Artwork correction uses your selected provider and the original as a reference. Layout and image repairs share a two-attempt budget; nothing is approved automatically.'),add(make('div','bar'),button('Apply bounded repair',()=>action('repair',{request_id:requestId()}),true),button('Cancel',closeSheet)));}
 
-function storyThumbnail(story){const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');svg.setAttribute('viewBox','0 0 360 100');svg.setAttribute('class','ig-thumbnail');svg.setAttribute('role','img');svg.setAttribute('aria-label','Story structure: '+story.blocks.map(b=>b.title).join(', '));for(const [i,block]of story.blocks.entries()){const rect=document.createElementNS(ns,'rect');rect.setAttribute('x',String(i*360/story.blocks.length+3));rect.setAttribute('y','12');rect.setAttribute('width',String(360/story.blocks.length-6));rect.setAttribute('height','76');rect.setAttribute('rx','6');rect.setAttribute('class','ig-outline-block');svg.append(rect);const text=document.createElementNS(ns,'text');text.setAttribute('x',String(i*360/story.blocks.length+9));text.setAttribute('y','48');text.setAttribute('class','ig-outline-label');text.textContent=block.kind;svg.append(text);}return svg;}
+function storyThumbnail(story){
+  const ns='http://www.w3.org/2000/svg',svg=document.createElementNS(ns,'svg');
+  const node=(tag,attrs)=>{const e=document.createElementNS(ns,tag);for(const[k,v]of Object.entries(attrs))e.setAttribute(k,String(v));svg.append(e);return e;};
+  svg.setAttribute('viewBox','0 0 360 150');svg.setAttribute('class','ig-thumbnail');svg.setAttribute('role','img');
+  svg.setAttribute('aria-label','Visual story: '+story.blocks.map(b=>b.title+': '+(b.visual?.nodes||[]).map(n=>n.label).join(', ')).join('; '));
+  const names={process:'Process flow',timeline:'Timeline',parts:'Component map',comparison:'Visual comparison',numbers:'Number callouts',concept:'Concept diagram'};
+  for(const[i,b]of story.blocks.entries()){
+    const x=i*360/story.blocks.length+3,w=360/story.blocks.length-6;
+    node('rect',{x,y:8,width:w,height:132,rx:12,class:'ig-outline-block'});
+    const label=node('text',{x:x+8,y:30,class:'ig-outline-label'});label.textContent=names[b.kind];
+    const boxes=b.visual?.nodes||b.fact_ids.slice(0,3).map((id,j)=>({id:'n'+j,label:''}));
+    if(b.kind==='numbers'){
+      const f=held.project.facts.find(f=>f.id===b.fact_ids[0]);
+      const value=node('text',{x:x+8,y:90,class:'ig-outline-value'});value.textContent=f?String(f.literal??f.value)+' '+f.unit:'Exact values';
+    }else{
+      const count=Math.min(4,boxes.length), positions=[];
+      for(let j=0;j<count;j++)positions.push([x+10+(j%2)*(w-20)/2,48+Math.floor(j/2)*42]);
+      for(let j=1;j<count;j++)if(['process','timeline','parts'].includes(b.kind)){
+        const a=positions[j-1],c=positions[j];node('line',{x1:a[0]+(w-28)/4,y1:a[1]+15,x2:c[0]+(w-28)/4,y2:c[1]+15,class:'ig-outline-link'});
+      }
+      for(const[px,py]of positions){node('rect',{x:px,y:py,width:(w-28)/2,height:30,rx:7,class:'ig-outline-node'});node('circle',{cx:px+12,cy:py+15,r:5,class:'ig-outline-dot'});}
+    }
+  }
+  return svg;
+}
 
 async function imageRequestSheet(id){try{const saved=await request('/api/image-request?id='+encodeURIComponent(held.project.id)+'&request='+encodeURIComponent(id));sheet('Saved image request',make('p','',saved.provider+' · '+saved.operation),make('pre','ig-csv-preview',saved.brief.prompt),make('p','quiet','Remote cancellation and cost remain unknown unless the provider reported them.'),button('Done',closeSheet));}catch(f){error(f.message);}}
 async function olderHistory(){try{const last=held.history.at(-1);const result=await request('/api/history-before?id='+encodeURIComponent(held.project.id)+'&before='+last.revision);held.history.push(...result.history);renderProject();document.querySelectorAll('details').forEach(d=>{if(d.firstChild.textContent==='History')d.open=true;});}catch(f){error(f.message);}}

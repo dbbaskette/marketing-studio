@@ -33,6 +33,17 @@ def case(name):
     elif name == 'process':
         proposals = [story([block('process', ['f1'], title='1. Buffer', text='The queue buffers messages.'),
                             block('process', ['f2'], id='b2', title='Route', text='The router selects destinations.')])]
+    elif name == 'diagram_nodes':
+        source = 'The queue hands messages to the router. The router selects destinations.'
+        facts = [fact('f1','Queue hands messages onward.','The queue hands messages to the router.',
+                      'The queue hands messages to the router.'),
+                 fact('f2','Router selects destinations.','The router selects destinations.',
+                      'The router selects destinations.')]
+        visual = {'nodes':[{'id':'queue','label':'Queue','caption':'','icon':'layers','fact_ids':['f1']},
+                           {'id':'router','label':'Router','caption':'','icon':'network','fact_ids':['f2']}],
+                  'links':[{'from':'queue','to':'router','label':'passes to','fact_ids':['f1']}]}
+        proposals = [story([block('process', title='Message path',text='Follow the supplied message path.',visual=visual)],
+                           takeaway='Keep the supplied routing relationship visible.')]
     elif name == 'whitespace':
         source = 'A\u00a0queue\nbuffers   messages. A router selects destinations.'
     elif name == 'typography':
@@ -80,7 +91,7 @@ def case(name):
     return {'name': name, 'source': source, 'answer': {'facts': facts, 'stories': proposals}}
 
 
-NAMES = ('paraphrase', 'comparison', 'components', 'process', 'whitespace', 'typography',
+NAMES = ('paraphrase', 'comparison', 'components', 'process', 'diagram_nodes', 'whitespace', 'typography',
          'timeline', 'numeric_strings', 'zeros', 'calculation', 'negative', 'attached_units', 'partial', 'omission_notes')
 
 

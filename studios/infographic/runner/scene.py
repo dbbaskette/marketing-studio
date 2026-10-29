@@ -6,8 +6,8 @@ import math
 import textwrap
 
 from . import evidence, brand
-from .contracts import PRESETS, Invalid, digest
-from .validation import require, text, validate_project
+from .contracts import PRESETS, digest
+from .validation import require, validate_project
 
 
 def wrapped(value: str, width: float, size: float) -> list[str]:
@@ -19,6 +19,9 @@ def wrapped(value: str, width: float, size: float) -> list[str]:
 
 
 def plan(project: dict, *, arrangement='stack') -> dict:
+    if arrangement == 'infographic':
+        from .visual_scene import plan as infographic
+        return infographic(project)
     require(project['brand'] is not None, 'Select a pinned brand before composing the page.')
     story = next((s for s in project['stories'] if s['id'] == project['selected_story']), None)
     require(story is not None and not story.get('omissions'), 'Choose a story with all required content first.')
@@ -128,16 +131,9 @@ def adopt(store, ident, *, expected_revision, arrangement='stack'):
 
 
 def adopt_best(store, ident, *, expected_revision):
-    """Choose a fitting arrangement before provider work; never shrink or drop text."""
+    """Build an information-bearing visual before provider work; never drop text."""
     with store.locked():
         project = store.read(ident)
         store.expect(project, expected_revision)
-        failures = []
-        for arrangement in ('stack', 'columns'):
-            try:
-                planned = plan(project, arrangement=arrangement)
-            except Invalid as failure:
-                failures.append(failure)
-            else:
-                return store.change_locked(project, {'scene': planned})
-        raise failures[0]
+        planned = plan(project, arrangement='infographic')
+        return store.change_locked(project, {'scene': planned})

@@ -126,6 +126,19 @@ file paths or generic decorative prompts.
 
 ## Review, approve, export and recover
 
+Build now composes an editable visual infographic: pictograms, connected process
+stages, component maps, comparisons and source-exact numeric marks. New story
+blocks describe `visual:{nodes,links}`. Each concise node has `id`, `label`,
+`caption`, a supported `icon` and captured `fact_ids`; each link names `from`,
+`to`, a short `label` and the facts supporting that relationship. Numeric charts
+can use `visual:null`. Keep paragraph summaries short; the diagram carries the
+explanation. Existing proposals without visual metadata remain readable.
+
+For an existing text layout, `visual-layout ID --expected-revision N` rebuilds and
+previews a native diagram draft locally, without another assistant or image call.
+The page offers **Rebuild visual layout**. Sources and earlier revisions are kept;
+required illustration regions still need their planned artwork before approval.
+
 ```sh
 python3 runner/studio.py inspect-images ID --expected-revision N
 python3 runner/studio.py check ID --expected-revision N
@@ -161,6 +174,15 @@ invalidated the visible attempt array. It never resubmits. Cancel with
 `image-cancel ID --request-id REQUEST --expected-revision N`; local adoption is
 revoked, while remote cancellation and charges can remain unknown. A repeated
 request identity cannot spend again. A new explicit attempt needs a new identity.
+
+When completed Codex artwork is found for the exact recorded worker thread,
+`inspect` offers local recovery. Use **Recover saved artwork** on the page or
+`image-recover ID --request-id REQUEST --expected-revision N`. This collects,
+composes and previews already saved output; it never executes an image worker.
+The original result receipt remains immutable, with a separate recovery receipt.
+Cancelled, incomplete, linked, invalid or stale output cannot replace current work.
+New image intents instruct the worker to make one request, without self-directed
+variants or corrective generations.
 `repair ID --request-id UNIQUE --expected-revision N` applies a specific recorded
 art correction or a layout alternative, within a shared two-attempt automatic
 repair budget. Smaller/manual revisions remain possible afterward.

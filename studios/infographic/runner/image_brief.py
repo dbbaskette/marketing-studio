@@ -21,7 +21,7 @@ def make(project: dict, direction: dict, *, edit=None) -> dict:
         regions.append({'id': region['id'], 'bounds': [x / width, y / height, w / width, h / height],
                         'owner': 'image', 'purpose': region['role']})
     for element in scene['elements']:
-        if element['kind'] in ('text', 'chart'):
+        if element['kind'] in ('text', 'chart', 'connector') or element.get('glyph'):
             x, y, w, h = element['bounds']
             regions.append({'id': element['id'], 'bounds': [x / width, y / height, w / width, h / height],
                             'owner': 'compositor'})
@@ -52,11 +52,22 @@ def make(project: dict, direction: dict, *, edit=None) -> dict:
     output = dimensions(project['brief']['preset'])
     info['target_output_pixels'] = [output['width_px'], output['height_px']]
     compositor = [e['text'] for e in scene['elements'] if e['kind'] == 'text']
-    prompt = ('Create explanatory artwork for this one-page composition. Return a high-resolution portrait PNG, artwork only. '
-              'Keep every compositor-owned region empty. Do not draw words, numbers, chart marks, '
+    placement = planned[0]['id'] if scene.get('visual_version') and len(planned) == 1 else None
+    artwork_info = info
+    if placement:
+        _, _, rw, rh = planned[0]['bounds']
+        artwork_info = {**info, 'canvas': {'width':rw,'height':rh,'unit':scene['unit']},
+            'target_output_pixels': [round(output['width_px'] * rw / width), round(output['height_px'] * rh / height)],
+            'regions': [{'id':placement,'bounds':[0,0,1,1],'owner':'image','purpose':planned[0]['role']}]}
+    framing = ('Fill the illustration canvas with the requested explanatory subjects. '
+               'Return a tightly framed high-resolution PNG for this illustration alone; the compositor places it on the page. '
+               'Do not create a mostly blank page or reproduce the page layout. ') if placement else (
+               'Create explanatory artwork for this one-page composition. Return a high-resolution portrait PNG, artwork only. '
+               'Keep every compositor-owned region empty. ')
+    prompt = (framing + 'Do not draw words, numbers, chart marks, '
               'logos or identity artwork. Counts indicate illustrative composition, not measured '
               'product or customer evidence. Do not fetch references, search, or use outside sources. '
-              'Use only the attached reference images identified below.\n' + canonical(info).decode())
+              'Use only the attached reference images identified below.\n' + canonical(artwork_info).decode())
     require(len(prompt) <= 60_000, 'Art direction is too large; reduce the requested image scope.')
     image = {'id': 'image_' + digest(info)[:20], 'story_id': story['id'], 'scene_id': scene['id'],
              'basis': basis(project), 'prompt': prompt, 'goal': story['takeaway'],
@@ -66,6 +77,9 @@ def make(project: dict, direction: dict, *, edit=None) -> dict:
              'objects': info['objects'], 'reference_assets': references,
              'fact_ids': list(dict.fromkeys(key for block in story['blocks'] for key in block['fact_ids'])),
              'compositor_text': compositor, 'edit': edit}
+    if placement:
+        image['placement_region_id'] = placement
+        image['id'] = 'image_' + digest(artwork_info)[:20]
     candidate = deepcopy(project)
     candidate.update(image_briefs=[image], attempts=[], checks=[], approval=None)
     validate_project(candidate)

@@ -14,6 +14,8 @@ LABELS = {
     'revise-art': 'Revising the artwork', 'repair': 'Repairing the page',
     'preview': 'Rendering the preview', 'export': 'Preparing your files',
     'google-deliver': 'Delivering the Google Doc',
+    'image-recover': 'Recovering saved artwork locally',
+    'visual-layout': 'Building the visual diagram layout',
 }
 
 

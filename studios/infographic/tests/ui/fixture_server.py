@@ -18,13 +18,14 @@ from workflow_cases import NAMES, case, captured_answer
 
 
 class Assistant:
-    def __init__(self, slow=False, visual='concept', scenario=None):
+    def __init__(self, slow=False, visual='concept', scenario=None, art=False):
         self.calls = []
         self.slow = slow
         self.release = threading.Event()
         self.fail = False
         self.visual = visual
         self.scenario = scenario
+        self.art = art
     def propose(self, brief, captured):
         self.calls.append('story')
         if self.slow:
@@ -58,8 +59,25 @@ class Assistant:
                  'rationale': 'Explain the supplied relationship without inventing a metric.', 'qualifications': [], 'omissions': [],
                  'blocks': [{'id': 'b1', 'kind': self.visual, 'title': 'Rolling restart',
                              'text': 'Other instances continue serving requests.', 'fact_ids': ['f1'], 'required_ids': [],
-                             'illustration': False, 'illustration_role': ''}]}
+                             'illustration': self.art, 'illustration_role': 'Show the service instances.' if self.art else ''}]}
         return {'facts': [fact], 'stories': [story]}
+    def art_direction(self, project):
+        self.calls.append('art')
+        return {'style':'Flat explanatory schematic.','reading_order':'Follow the supplied service relationship.',
+                'acceptance':'Service subjects are visible and exact label regions are clear.','reference_assets':[],
+                'objects':[{'id':'obj'+str(i),'region_id':r['id'],'count':1,'description':'Illustrative service instance.',
+                            'relationships':'The service continues serving.','preserve':'Keep native labels and diagrams clear.'}
+                           for i,r in enumerate(project['scene']['art_regions'])]}
+    def revise_story(self, project, story, block_id, instruction):
+        from copy import deepcopy
+        self.calls.append('revision')
+        revised=deepcopy(story)
+        for block in revised['blocks']:
+            if block_id is not None and block['id'] != block_id:continue
+            block.update(illustration=False,illustration_role='',visual={'nodes':[
+                {'id':'service','label':'Service instances','caption':'','icon':'server','fact_ids':block['fact_ids']}],
+                'links':[]})
+        return revised
     def inspect_images(self, context, images):
         self.calls.append('inspection')
         assert images[0].startswith(b'\x89PNG')
@@ -77,6 +95,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--renderer', required=True, type=Path)
     parser.add_argument('--suite', action='store_true')
+    parser.add_argument('--recover-image', action='store_true')
     parser.add_argument('--remote',action='store_true')
     parser.add_argument('--bridge',action='store_true')
     parser.add_argument('--slow', action='store_true')
@@ -88,6 +107,7 @@ def main():
         path = os.environ.get('PATH', '')
         os.environ.clear()
         os.environ.update(PATH=path, HOME=str(home), INFOGRAPHIC_STUDIO_DATA=str(root / 'data'),
+                          CODEX_HOME=str(root / 'codex'),
                           MARKETING_STUDIO_DATA=str(root / 'marketing-data'),
                           STUDIOS_CONFIG=str(root / 'settings.json'), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
         (root / 'settings.json').write_text(json.dumps({'schema': 1, 'assistant': {'agent': 'codex', 'model': None},
@@ -113,8 +133,24 @@ def main():
                     assert payload.startswith(b'PK')
                     return {'id':'synthetic_delivered','mimeType':DOC_MIME,'appProperties':{'infographic_request':values['request_key'],'infographic_payload':values['payload_hash']}}
             remote_sources.Client=google_delivery.Client=Google
-        engine = Engine(store, executable=args.renderer, assistant=Assistant(slow=args.slow, visual=args.visual, scenario=args.scenario))
+        engine = Engine(store, executable=args.renderer, assistant=Assistant(slow=args.slow, visual=args.visual, scenario=args.scenario, art=args.recover_image))
         engine.configuration = {'image_provider': 'codex'}
+        if args.recover_image:
+            from runner.images.base import result
+            from graphics_fixtures import png
+            class EarlierAdapter:
+                configuration = {}
+                def __init__(self, folder): self.folder = folder
+                def generate(self, *, attempt_id, brief):
+                    engine.assistant.calls.append('image')
+                    thread = '01234567-1234-7123-8123-0123456789ab'
+                    output = root / 'codex/generated_images' / thread
+                    output.mkdir(parents=True)
+                    (output / 'image.png').write_bytes(png())
+                    (self.folder / 'events.jsonl').write_text('\n'.join(map(json.dumps,[
+                        {'type':'thread.started','thread_id':thread},{'type':'turn.completed'}])))
+                    return result('codex','generate',attempt_id,state='failed',reason='image-tool-unavailable')
+            engine.adapters = {'codex': EarlierAdapter}
         class Page(server.Page):
             reads = (*server.Page.reads, '/api/fixture-calls', '/api/fixture-source')
             writes = (*server.Page.writes, '/api/fixture-release')

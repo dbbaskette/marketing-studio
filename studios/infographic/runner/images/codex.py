@@ -4,18 +4,51 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import threading
 import time
 
 from .base import result, save_asset
-from ..contracts import MAX_ASSET_BYTES, Invalid
+from ..contracts import MAX_ASSET_BYTES
 from ..provider_capabilities import codex_image_command, private_child_environment
 from ..validation import identifier, image_size, require, text
 
 _ACTIVE = {}
 _ACTIVE_LOCK = threading.Lock()
+
+
+def generated_root():
+    return Path(os.environ.get('CODEX_HOME') or Path.home() / '.codex') / 'generated_images'
+
+
+def saved_output(folder, *, root=None):
+    """Only a completed worker's exact system-reported thread, never prose paths."""
+    from ..workspace import _read
+    folder = Path(folder)
+    events = _read(folder, 'events.jsonl', 64_000_000).decode('utf-8', errors='replace')
+    parsed = []
+    for line in events.splitlines():
+        try:
+            event = json.loads(line)
+            if isinstance(event, dict):parsed.append(event)
+        except ValueError:
+            continue
+    threads = [event.get('thread_id') for event in parsed if event.get('type') == 'thread.started']
+    require(len(threads) == 1 and isinstance(threads[0], str)
+            and re.fullmatch(r'[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}', threads[0])
+            and any(event.get('type') == 'turn.completed' for event in parsed)
+            and not any(event.get('type') in ('turn.failed', 'error') for event in parsed),
+            'A completed owned image thread is required for local recovery.')
+    output = Path(root) / threads[0] if root is not None else generated_root() / threads[0]
+    require(output.is_dir() and not any(p.is_symlink() for p in (output, *output.parents)),
+            'The saved image output is missing or linked.')
+    paths = list(output.iterdir())
+    require(0 < len(paths) <= 16 and all(p.suffix.lower() == '.png' and p.is_file()
+            and not p.is_symlink() and 0 < p.stat().st_size <= MAX_ASSET_BYTES for p in paths),
+            'The completed worker has no bounded safe image output.')
+    return output
 
 
 def stop_owned(prefix):
@@ -81,9 +114,10 @@ def execute(command, prompt, folder, seconds, stop=None):
 
 
 class Codex:
-    def __init__(self, folder, *, run=execute, seconds=300, model=None, effort=None, stop=None):
+    def __init__(self, folder, *, run=execute, seconds=300, model=None, effort=None, stop=None, output_root=None):
         require(type(seconds) is int and 1 <= seconds <= 600, 'Choose an image timeout of 1–600 seconds.')
         self.folder, self.run, self.seconds, self.model, self.effort, self.stop = Path(folder), run, seconds, model, effort, stop
+        self.output_root = output_root
 
     def readiness(self):
         import shutil
@@ -125,7 +159,10 @@ class Codex:
                         'Choose a bounded explicit assistant configuration.')
                 command[-1:-1] = [key, value]
         try:
-            done = self.run(command, brief['prompt'], self.folder, self.seconds, self.stop)
+            prompt = (brief['prompt'] + '\nMake exactly one image-generation request. Do not generate variants, '
+                      'self-correct, or run another image request. Return the resulting artifact for review. '
+                      'Use the built-in image tool; do not use shell, outside sources or tools to redraw it.')
+            done = self.run(command, prompt, self.folder, self.seconds, self.stop)
         except FileNotFoundError:
             return result('codex', operation, attempt_id, state='unavailable', reason='assistant-missing')
         except (OSError, ValueError):
@@ -137,18 +174,31 @@ class Codex:
             reason = 'sign-in-required' if any(w in events for w in ('not logged in', 'unauthorized', 'please run /login')) else (
                 'quota' if any(w in events for w in ('usage limit', 'rate limit', 'quota')) else 'image-tool-unavailable')
             return result('codex', operation, attempt_id, state='failed', reason=reason)
+        return self._collect(operation, attempt_id, done.get('events', ''))
+
+    def recover(self, *, attempt_id, operation='generate'):
+        """Collect already completed output only; this method never executes a worker."""
+        from ..workspace import _read
+        events = _read(self.folder, 'events.jsonl', 64_000_000).decode('utf-8', errors='replace')
+        saved_output(self.folder, root=self.output_root)
+        return self._collect(operation, attempt_id, events)
+
+    def _collect(self, operation, attempt_id, events):
+        from ..workspace import _read
         try:
-            require(output.is_dir() and not output.is_symlink(), 'The installed Codex did not expose saved built-in image output.')
+            output = self.folder / 'generated_images'
+            if not output.exists():
+                output = saved_output(self.folder, root=self.output_root)
+            require(output.is_dir() and not any(p.is_symlink() for p in (output, *output.parents)),
+                    'The generated image output must be an owned regular directory.')
             paths = list(output.iterdir())
-            require(0 < len(paths) <= 4, 'The built-in image tool did not return a bounded set of files.')
-            assets = []
-            for path in paths:
-                require(path.suffix.lower() in ('.png', '.jpg', '.jpeg') and path.is_file() and not path.is_symlink()
-                        and path.stat().st_size <= MAX_ASSET_BYTES, 'The generated image file is unsafe or oversized.')
-                raw = path.read_bytes()
-                assets.append(save_asset(self.folder, raw, 'image/png' if path.suffix.lower() == '.png' else 'image/jpeg'))
+            require(0 < len(paths) <= 16 and all(path.suffix.lower() == '.png' and path.is_file()
+                    and not path.is_symlink() for path in paths), 'The generated image output is unsafe or unbounded.')
+            # Older workers could iterate. Keep their originals, collect the final saved PNG.
+            path = max(paths, key=lambda p: (p.stat().st_mtime_ns, p.name))
+            assets = [save_asset(self.folder, _read(output, path.name, MAX_ASSET_BYTES), 'image/png')]
             usage = None
-            for line in done.get('events', '').splitlines():
+            for line in events.splitlines():
                 try:
                     event = json.loads(line)
                 except ValueError:

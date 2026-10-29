@@ -44,6 +44,8 @@ def verify(project: dict, proposals: list[dict]) -> list[dict]:
                         'A timeline needs supplied dates or periods, not invented chronology.')
             covered.update(block['required_ids'])
             words.extend((block['title'], block['text']))
+            from .visuals import validate as validate_visual
+            words.extend(validate_visual(block))
             visual_signature.append((block['kind'], tuple(block['fact_ids']), block['text']))
         omissions = story.get('omissions', [])
         require(isinstance(omissions, list) and all(isinstance(key, str) for key in omissions), 'List omitted requirement IDs explicitly.')

@@ -29,7 +29,7 @@ ATTRS = {'id', 'viewBox', 'width', 'height', 'x', 'y', 'x1', 'x2', 'y1', 'y2', '
          'r', 'rx', 'ry', 'd', 'points', 'fill', 'stroke', 'stroke-width', 'opacity',
          'fill-opacity', 'stroke-opacity', 'transform', 'font-family', 'font-size',
          'font-weight', 'text-anchor', 'dominant-baseline', 'dx', 'dy', 'href',
-         'preserveAspectRatio', 'data-box', 'data-id', 'role', 'aria-label'}
+         'preserveAspectRatio', 'data-box', 'data-id', 'role', 'aria-label', 'clip-path'}
 
 
 def safe_svg(text: str) -> str:
@@ -50,12 +50,18 @@ def safe_svg(text: str) -> str:
     if len(viewbox) != 4 or not all(math.isfinite(v) for v in viewbox) \
             or viewbox[:2] != [0, 0] or min(viewbox[2:]) <= 0:
         raise ValueError('The SVG needs a finite positive page viewBox starting at zero.')
+    clips = {element.get('id') for element in root.iter() if element.tag == '{' + SVG + '}clipPath'}
     for element in root.iter():
         if not element.tag.startswith('{' + SVG + '}') or element.tag.split('}', 1)[1] not in TAGS:
             raise ValueError('The SVG contains an unsupported element.')
         if element.tag.endswith('}image') and not element.get('href'):
             raise ValueError('Every SVG image needs an embedded reference.')
         for key, value in element.attrib.items():
+            if key == 'clip-path':
+                match = re.fullmatch(r'url\(#([A-Za-z][A-Za-z0-9_-]{0,100})\)', value)
+                if not match or match[1] not in clips:
+                    raise ValueError('An artwork clip must name an existing internal clipping path.')
+                continue
             if key not in ATTRS or any(word in value.lower() for word in ('url(', 'javascript:', 'file:')):
                 raise ValueError('The SVG contains an unsafe attribute or resource.')
             if key == 'href':

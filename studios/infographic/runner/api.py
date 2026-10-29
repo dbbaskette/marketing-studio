@@ -64,9 +64,9 @@ FIELDS = {
     'team-share': {'export_id', 'include_editable', 'source_ids', 'asset_ids','inventory_digest','expected_head','expected_claim','expected_connection','confirm_private'},
     'google-deliver': {'export_id', 'request_id', 'account', 'folder', 'reconcile'},
     'facts': {'data'}, 'stories': {'data'}, 'select': {'story_id'}, 'brand': {'data'},
-    'layout': {'arrangement'}, 'image-brief': {'data', 'edit'},
+    'layout': {'arrangement'}, 'visual-layout': set(), 'image-brief': {'data', 'edit'},
     'image-start': {'brief_id', 'provider', 'request_id', 'operation', 'parent'},
-    'image-cancel': {'request_id'}, 'art-direct': set(), 'build': {'request_id'}, 'compose-image': {'asset_id'},
+    'image-cancel': {'request_id'}, 'image-recover': {'request_id'}, 'art-direct': set(), 'build': {'request_id'}, 'compose-image': {'asset_id'},
     'suggest': {'automatic', 'fresh'}, 'edit-text': {'element_id', 'text'},
     'preview': set(), 'check': set(), 'review': {'export_id', 'observations'}, 'approve': set(),
     'export': {'draft'}, 'restore': {'revision', 'sha256'},
@@ -113,7 +113,10 @@ def action(found, sent):
     if verb == 'stories': return stories.adopt(store, ident, sent.get('data'), expected_revision=revision)
     if verb == 'select': return stories.select(store, ident, sent.get('story_id'), expected_revision=revision)
     if verb == 'brand': return brand.adopt(store, ident, sent.get('data'), expected_revision=revision)
-    if verb == 'layout': return scene.adopt(store, ident, expected_revision=revision, arrangement=sent.get('arrangement', 'stack'))
+    if verb == 'layout': return scene.adopt(store, ident, expected_revision=revision, arrangement=sent.get('arrangement', 'infographic'))
+    if verb == 'visual-layout':
+        project = scene.adopt(store, ident, expected_revision=revision, arrangement='infographic')
+        return found.preview(ident, expected_revision=project['revision'])
     if verb == 'art-direct': return found.prepare_art(ident, expected_revision=revision)
     if verb == 'inspect-images': return found.inspect_images(ident, expected_revision=revision)
     if verb == 'repair': return found.repair(ident, expected_revision=revision, request_id=sent.get('request_id'))
@@ -135,6 +138,14 @@ def action(found, sent):
                     request_id=sent.get('request_id'), operation=sent.get('operation', 'generate'), parent=sent.get('parent'))
         return jobs.execute(ident, sent['request_id'])
     if verb == 'image-cancel': return Jobs(store, found.adapters).cancel(ident, sent.get('request_id'), expected_revision=revision)
+    if verb == 'image-recover':
+        recovered = Jobs(store, found.adapters).recover(ident, sent.get('request_id'), expected_revision=revision)
+        if recovered['adopted']:
+            project = store.read(ident)
+            attempt = next(a for a in project['attempts'] if a['id'] == sent['request_id'])
+            project = found.compose_asset(ident, attempt['asset_ids'][0], expected_revision=project['revision'])
+            return found.preview(ident, expected_revision=project['revision'])
+        return recovered
     if verb == 'compose-image': return found.compose_asset(ident, sent.get('asset_id'), expected_revision=revision)
     if verb == 'suggest':
         require(type(sent.get('automatic', False)) is bool, 'Automatic draft must be an explicit boolean choice.')
