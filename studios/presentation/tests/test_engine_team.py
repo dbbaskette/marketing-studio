@@ -14,7 +14,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest import mock
 
-from runner_support import FORM, StudioCase, TeamCase
+from runner_support import StudioCase, TeamCase
 
 import home
 import hub
@@ -311,10 +311,9 @@ class DriverTests(Team):
 
     def test_an_upload_kept_on_the_computer_that_started_the_deck_stops_it_elsewhere(self):
         with self.be(self.alex):
-            root = Path(self.engine.start(
-                {**FORM, 'route': 'document',
-                 'source': {'kind': 'upload', 'name': 'notes.md'}},
-                {'notes.md': b'# Notes\n\nCapacity holds with two.\n'})['path'])
+            root = self.saved_start(route='document',
+                source={'kind': 'upload', 'name': 'notes.md'},
+                uploads={'notes.md': b'# Notes\n\nCapacity holds with two.\n'})
         self.drive(self.alex, root, 'hand-over')
         self.fetch(self.blake)
         view = self.drive(self.blake, root)
@@ -327,9 +326,8 @@ class DriverTests(Team):
         """A deck from Google Slides whose inventory Alex approved before handing it over.
         Its extract fails with these workers, which leaves it stopped on a problem."""
         with self.be(self.alex):
-            root = Path(self.engine.start(
-                {**FORM, 'route': 'existing', 'level': 'polish',
-                 'source': {'kind': 'google', 'link': 'abc123'}})['path'])
+            root = self.saved_start(route='existing', level='polish',
+                source={'kind': 'google', 'link': 'abc123'})
             self.engine.decide(root, 'gate:classify', 'approve')
         self.drive(self.alex, root, 'hand-over')
         self.fetch(self.blake)

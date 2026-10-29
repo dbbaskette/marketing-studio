@@ -65,7 +65,9 @@ def _parsed(where: Path, text: str) -> tuple[dict, str | None]:
     schema = found.get('schema', SCHEMA)
     if type(schema) is not int or schema != SCHEMA:
         return {}, _unreadable(where, 'it is written for a newer version of the studios')
-    if STRICT_GROUPS and any(key in found and not isinstance(found[key], dict) for key in GROUPS):
+    # Retired review data is preserved even when malformed; its reader falls back safely.
+    if STRICT_GROUPS and any(key in found and not isinstance(found[key], dict)
+                             for key in GROUPS if key != 'review'):
         return {}, _unreadable(where, 'a settings section is not an object')
     return found, None
 

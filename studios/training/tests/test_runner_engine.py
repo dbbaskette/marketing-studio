@@ -36,61 +36,17 @@ class Crash(BaseException):
 
 
 class WhereThisTrainingStopsTests(StudioCase):
-    """Where a training stops is chosen on its form. The shared level, in a studios config of
-    the test's own, is written only with the chip, and refused when another studio changed it
-    since the form read it. Matrix rows 119 and 120."""
+    """Retired form choices cannot change the saved shared review setting."""
 
-    def setUp(self):
-        super().setUp()
-        self.review_capture.stop()    # the test's own studios config is read for real
+    def test_old_review_fields_refuse_without_writing(self):
         from runner import studios_config
-        self.shared = studios_config
-        self.shared.update({'review': {'level': 'balanced'}})
-
-    def test_row_119_where_this_training_stops_is_chosen_on_the_form(self):
-        root = self.start(flow=None, review_level='automatic', review_seen='balanced')
-        self.assertEqual(self.engine._load(root)['review_policy'],
-                         {'schema': 1, 'level': 'automatic'})
-        self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
-
-    def test_row_119_a_per_training_choice_survives_a_new_shared_default(self):
-        self.shared.update({'review': {'level': 'step_by_step'}})
-        root = self.start(flow=None, review_level='automatic', review_seen='balanced',
-                          review_default=False)
-        self.assertEqual(self.engine._load(root)['review_policy']['level'], 'automatic')
-        self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
-
-    def test_row_120_a_start_refused_after_the_chip_wrote_can_be_tried_again(self):
-        self.start(flow=None, title='Taken title', review_level='step_by_step', review_seen='balanced')
-        self.shared.update({'review': {'level': 'balanced'}})
-        with self.assertRaises(WorkspaceError):
-            self.start(flow=None, title='Taken title', review_level='automatic', review_seen='balanced',
-                       review_default=True)
-        self.assertEqual(self.shared.read()[0]['review'], {'level': 'automatic'})
-        # The same form, its title put right: with the chip, or without it.
-        root = self.start(flow=None, title='Free title', review_level='automatic', review_seen='balanced',
-                          review_default=True)
-        self.assertEqual(self.engine._load(root)['review_policy']['level'], 'automatic')
-        root = self.start(flow=None, title='Another free title', review_level='automatic',
-                          review_seen='balanced')
-        self.assertEqual(self.engine._load(root)['review_policy']['level'], 'automatic')
-
-    def test_row_120_the_shared_default_is_written_only_with_the_chip(self):
-        from studio_core import review_policy
-        self.start(flow=None, title='Second training', review_level='automatic', review_seen='balanced',
-                   review_default=True)
-        self.assertEqual(self.shared.read()[0]['review'], {'level': 'automatic'})
-        self.shared.update({'review': {'level': 'step_by_step'}})
-        before = sorted(self.space.repo.iterdir())
-        with self.assertRaises(WorkspaceError) as caught:
-            self.start(flow=None, title='Stale training', review_level='balanced',
-                       review_seen='automatic', review_default=True)
-        self.assertEqual(str(caught.exception), review_policy.STALE)
-        self.assertEqual(sorted(self.space.repo.iterdir()), before, 'nothing is made')
-        self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
-        with self.assertRaisesRegex(WorkspaceError, 'true or false'):
-            pipeline.check_form({**FORM, 'review_default': 'yes'})
-
+        studios_config.update({'review': {'level': 'balanced'}})
+        before = (self.base / 'studios.json').read_bytes()
+        for field in ('review_level', 'review_seen', 'review_default'):
+            with self.subTest(field=field), self.assertRaisesRegex(WorkspaceError, 'review'):
+                self.start(**{field: 'automatic'})
+        self.assertEqual((self.base / 'studios.json').read_bytes(), before)
+        self.assertEqual(self.engine.trainings(), [])
 
 class SynthesisAtStartTests(StudioCase):
     """A training is not started on a Harness Research that cannot synthesize: the start is
@@ -113,7 +69,7 @@ class SynthesisAtStartTests(StudioCase):
     def test_row_137_a_training_is_not_started_without_synthesis(self):
         before = self.made()
         with self.assertRaises(WorkspaceError) as caught:
-            self.start(review_level='automatic', review_seen='automatic', review_default=True)
+            self.start()
         self.assertEqual(str(caught.exception), self.engines.NO_SYNTHESIS)
         self.assertEqual(self.made(), before, 'nothing is made')
         # A read error is refused the same way, with a real-looking Harness Research found.
@@ -594,9 +550,7 @@ class FormToGateThreeTests(StudioCase):
                          'Alex <alex@example.com>')
 
     def test_with_levels_every_blueprint_is_drafted_and_each_is_reviewed_in_turn(self):
-        made = self.engine.start(pipeline.check_form({**FORM, 'levels': ['301', '101']}))
-        root = Path(made['path'])
-        self.assertEqual(made, {'path': str(root), 'id': 'rolling-restarts', 'gates': 8})
+        root = self.saved_start(levels=['301', '101'])
         self.assertEqual([step['id'] for step in self.view(root)['steps']][7:11],
                          ['blueprint@101', 'blueprint@301', 'gate:blueprint@101',
                           'gate:blueprint@301'])

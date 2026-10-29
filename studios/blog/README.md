@@ -203,3 +203,5 @@ repair, or other problems, use the [setup help](docs/troubleshooting.md).
 | Understand where your content goes | [Privacy details](docs/privacy-review.md) |
 
 [What's new](CHANGELOG.md) · [Developer guide](docs/development.md)
+
+Saved older work and its retained paths are described in [saved work compatibility](../../docs/saved-work-compatibility.md).

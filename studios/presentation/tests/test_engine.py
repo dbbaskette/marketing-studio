@@ -33,48 +33,14 @@ class DispatchTests(unittest.TestCase):
 
 
 class ReviewLevelFormTests(StudioCase):
-    """Where a deck stops is chosen on its own form. The shared level, in a studios config
-    of the test's own, is written only with the chip, and refused when another studio
-    changed it since the form read it."""
-
-    def setUp(self):
-        super().setUp()
-        self.review_capture.stop()    # the test's own studios config is read for real
-        import studios_config
-        self.shared = studios_config
-        self.shared.update({'review': {'level': 'balanced'}})
-
-    def made(self):
-        return sorted(entry['path'] for entry in self.engine.status()['decks'])
-
-    def test_a_deck_keeps_the_level_its_form_chose(self):
+    def test_saved_policy_continues_but_new_desk_work_has_none(self):
         from studio_core import review_policy
-        root = self.start(flow=None, review_level='step_by_step', review_seen='balanced')
+        root = self.saved_start(review_level='step_by_step')
         self.assertEqual(review_policy.level(decks.read_run(root)), 'step_by_step')
-        self.assertEqual(self.view(root)['review_level'], 'step_by_step')
-        self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
-        self.assertNotIn('review_level', decks.read_run(root)['form'])
-        with self.assertRaisesRegex(WorkspaceError, 'Choose Balanced, Automatic draft, or Step by step'):
-            self.start(flow=None, title='Another deck', review_level='fast', review_seen='balanced')
-        # Without a choice on the form, a deck takes the shared level, as before.
-        self.assertEqual(review_policy.level(decks.read_run(self.start(flow=None, title='Plain deck'))),
-                         'balanced')
-
-    def test_the_shared_default_is_written_only_with_the_chip_and_refused_when_stale(self):
-        from studio_core import review_policy
-        self.start(flow=None, review_level='automatic', review_seen='balanced')
-        self.assertEqual(self.shared.read()[0]['review'], {'level': 'balanced'})
-        self.start(flow=None, title='Second deck', review_level='automatic', review_seen='balanced',
-                   review_default=True)
-        self.assertEqual(self.shared.read()[0]['review'], {'level': 'automatic'})
-        self.shared.update({'review': {'level': 'step_by_step'}})
-        before = self.made()
-        with self.assertRaises(WorkspaceError) as caught:
-            self.start(flow=None, title='Stale deck', review_level='balanced', review_seen='automatic',
-                       review_default=True)
-        self.assertEqual(str(caught.exception), review_policy.STALE)
-        self.assertEqual(self.made(), before, 'nothing is made')
-        self.assertEqual(self.shared.read()[0]['review'], {'level': 'step_by_step'})
+        current = self.start(title='Current desk')
+        self.assertNotIn('review_policy', decks.read_run(current))
+        with self.assertRaisesRegex(WorkspaceError, 'review preferences'):
+            self.start(review_level='automatic')
 
 
 class SynthesisAtStartTests(StudioCase):
@@ -99,8 +65,7 @@ class SynthesisAtStartTests(StudioCase):
     def refused(self, **changes):
         before = self.made()
         with self.assertRaises(WorkspaceError) as caught:
-            self.start(research=True, review_level='automatic', review_seen='automatic',
-                       review_default=True, **changes)
+            self.start(research=True, **changes)
         self.assertEqual(str(caught.exception), self.engines.NO_SYNTHESIS)
         self.assertEqual(self.made(), before, 'nothing is made')
 

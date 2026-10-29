@@ -1886,10 +1886,6 @@ def _dispatch(root, route, data):
             from blog_runner import settings
 
             return settings(root, data)
-        if route == 'review-level':
-            from blog_runner import review_level
-
-            return review_level(root, data)
         if route == 'blog-restore':
             import blog_delete
 
@@ -2318,7 +2314,7 @@ def dispatch(root, route, data):
         from team_workspace import kept_locally
 
         result['team_sync'] = kept_locally(root, result['id'], data.get('session'))
-    elif space(root) and route not in ('run-settings', 'review-level', 'desk-angles', 'desk-skip'):
+    elif space(root) and route not in ('run-settings', 'desk-angles', 'desk-skip'):
         if route == 'tool-action':
             # A tool result may be a job or a profile, whose IDs are not blogs: the blog
             # a tool worked on is the one the request named.

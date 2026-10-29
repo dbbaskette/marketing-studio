@@ -27,6 +27,83 @@ class MigrationTests(runner_support.DeskCase):
         self.assertEqual(preview['blockers'], [])
         return desk_chat.migrate(self.engine, root, preview['expected'])
 
+    def test_unverified_index_restoration_keeps_recovery_journal(self):
+        from runner import desk_migration, gitstate
+        root = self.gated()
+        marker = self.space.root / gitstate.MARKER
+        relative = gitstate.inside(self.space, marker)
+        self.git('rm', '--cached', '--', relative)
+        token = self.preview(root)['expected']
+        write = desk_migration._write
+        run = gitstate.hub.run
+        def fail(path, data):
+            if Path(path).name == 'migration.json':
+                raise OSError('synthetic publication failure')
+            write(path, data)
+        def pretend_remove(repo, *args, **kwargs):
+            if args[:2] == ('update-index', '--force-remove'):
+                self.git('reset', '-q', 'HEAD', '--', relative)
+                return run(repo, 'status', '--porcelain')
+            return run(repo, *args, **kwargs)
+        with mock.patch.object(desk_migration, '_write', side_effect=fail), \
+                mock.patch.object(gitstate.hub, 'run', side_effect=pretend_remove):
+            with self.assertRaisesRegex(WorkspaceError, 'index.*verified'):
+                desk_chat.migrate(self.engine, root, token)
+        self.assertTrue((root / desk_migration.format.PENDING).exists())
+
+    def test_staged_marker_deletion_survives_failed_publication_and_recovery(self):
+        import os
+        import subprocess
+        import sys
+        from runner import desk_migration, gitstate
+        for crash in (False, True):
+            with self.subTest(crash=crash):
+                root = self.gated(title='Deletion ' + str(crash))
+                marker = self.space.root / gitstate.MARKER
+                relative = gitstate.inside(self.space, marker)
+                self.git('rm', '--cached', '--', relative)
+                unrelated = self.space.repo / 'unrelated-staged.txt'
+                unrelated.write_text('Unrelated staged content')
+                self.git('add', '--', str(unrelated))
+                before_index = self.git('ls-files', '--stage', '-z')
+                before_marker = marker.read_bytes()
+                before_files = self.snapshot(root)
+                token = self.preview(root)['expected']
+                self.assertEqual(self.preview(root)['blockers'], [])
+                if crash:
+                    code = """import os, sys
+from pathlib import Path
+from runner import desk_chat, desk_migration, engine
+original = desk_migration._write
+def crash(path, data):
+    original(path, data)
+    if Path(path).name == 'migration.json': os._exit(71)
+desk_migration._write = crash
+desk_chat.migrate(engine.Engine(background=False), Path(sys.argv[1]), sys.argv[2])
+"""
+                    result = subprocess.run([sys.executable, '-c', code, str(root), token],
+                        cwd=Path(__file__).resolve().parents[1], env={**os.environ, 'PYTHONPATH': '.:tests'},
+                        capture_output=True, text=True, timeout=30)
+                    self.assertEqual(result.returncode, 71, result.stderr)
+                    self.assertTrue((root / desk_migration.format.PENDING).exists())
+                    with self.assertRaisesRegex(WorkspaceError, 'rolled back'):
+                        desk_chat.migrate(self.engine, root, token)
+                else:
+                    original = desk_migration._write
+                    def fail(path, data):
+                        if Path(path).name == 'migration.json':
+                            raise OSError('synthetic publication failure')
+                        original(path, data)
+                    with mock.patch.object(desk_migration, '_write', side_effect=fail), self.assertRaises(OSError):
+                        desk_chat.migrate(self.engine, root, token)
+                self.assertEqual(self.git('ls-files', '--stage', '-z'), before_index)
+                self.assertEqual(marker.read_bytes(), before_marker)
+                self.assertEqual(self.snapshot(root), before_files)
+                self.assertFalse((root / desk_migration.format.PENDING).exists())
+                self.git('reset', '-q', 'HEAD', '--', relative)
+                self.git('reset', '-q', 'HEAD', '--', str(unrelated))
+                unrelated.unlink()
+
     def test_preview_cancel_is_pure_even_older_document_index_and_no_identity(self):
         root = self.gated()
         index = root / 'sources/supplied/index.json'

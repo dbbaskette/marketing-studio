@@ -5,9 +5,7 @@ cannot be opened. Classes built on PageCase ask the same questions without a soc
 rules for decisions are tested everywhere.
 """
 import base64
-import contextlib
 import hashlib
-import io
 import json
 import os
 import re
@@ -31,7 +29,6 @@ import assess
 import cmd_desk
 import computer
 import desk
-import training
 import validate_package
 import workspace
 from studio_core import research_sites
@@ -84,10 +81,7 @@ class Registry(test_cli.Flow):
         """A second training in its own folder, registered like the first."""
         root = self.root.parent / name
         root.mkdir()
-        with contextlib.redirect_stdout(io.StringIO()):
-            code = training.main(['--dir', str(root), 'init', '--title', name.title(),
-                                  *init_args])
-        self.assertEqual(code, 0)
+        helpers.saved_init(root, '--title', name.title(), *init_args)
         return root
 
     def on_disk(self) -> dict:
@@ -198,7 +192,7 @@ class ListTests(DeskCase):
                                   'skipped': 1, 'unavailable': 0})
 
     def test_the_most_recently_touched_training_comes_first(self):
-        self.cli('init', '--title', 'First')
+        helpers.saved_init(self.root, '--title', 'First')
         other = self.another('second')
         self.seen({self.root: '2990-01-01T00:00:00Z', other: '2991-01-01T00:00:00Z'})
         listed = self.api('trainings')['trainings']
@@ -212,7 +206,7 @@ class ListTests(DeskCase):
         self.assertEqual(listed[0]['touched_at'], '2995-01-01T00:00:00Z')
 
     def test_an_unreadable_record_is_listed_with_its_error_and_hides_nothing(self):
-        self.cli('init', '--title', 'Broken')
+        helpers.saved_init(self.root, '--title', 'Broken')
         other = self.another('whole')
         (self.root / '.training-studio' / 'session.json').write_text('{not json')
         listed = self.listed()
@@ -224,7 +218,7 @@ class ListTests(DeskCase):
         self.assertNotIn('error', listed[str(other)])
 
     def test_a_record_that_fails_in_an_unexpected_way_is_listed_too(self):
-        self.cli('init', '--title', 'Odd')
+        helpers.saved_init(self.root, '--title', 'Odd')
         other = self.another('whole')
         self.write('intake.md', 'v1\n')
         record = self.root / '.training-studio' / 'session.json'
@@ -273,7 +267,7 @@ class DetailTests(DeskCase):
         self.assertTrue(failed['blueprint.citations']['problems'])
 
     def test_an_unreadable_record_is_answered_with_its_error(self):
-        self.cli('init', '--title', 'Broken')
+        helpers.saved_init(self.root, '--title', 'Broken')
         (self.root / '.training-studio' / 'session.json').write_text('{not json')
         shown = self.api('training', path=str(self.root))
         self.assertIn('not valid JSON', shown['error'])
@@ -305,7 +299,7 @@ class FileTests(DeskCase):
         self.assertEqual(brief['file'], '101/product-brief.md')
 
     def test_the_file_served_is_the_one_the_workspace_names(self):
-        self.cli('init', '--title', 'Topic')
+        helpers.saved_init(self.root, '--title', 'Topic')
         self.write('scenarios/main.md', 'In the folder.\n')
         shown = self.api('file', path=str(self.root), artifact='scenario:main')
         self.assertEqual((shown['file'], shown['text']), ('scenarios/main.md', 'In the folder.\n'))
@@ -318,7 +312,7 @@ class FileTests(DeskCase):
                           'size': len(helpers.DECK.encode())})
 
     def test_a_text_file_that_is_not_text_is_not_sent(self):
-        self.cli('init', '--title', 'Topic')
+        helpers.saved_init(self.root, '--title', 'Topic')
         content = b'\xff\xfe\x00 not utf-8'
         (self.root / 'intake.md').write_bytes(content)
         shown = self.api('file', path=str(self.root), artifact='intake')
@@ -326,12 +320,12 @@ class FileTests(DeskCase):
         self.assertNotIn('text', shown)
 
     def test_an_artifact_with_no_file_yet_is_not_found(self):
-        self.cli('init', '--title', 'Topic')
+        helpers.saved_init(self.root, '--title', 'Topic')
         missing = self.api('file', expect=404, path=str(self.root), artifact='blueprint')
         self.assertEqual(missing, {'error': 'blueprint.md does not exist yet.'})
 
     def test_a_long_file_is_cut_short_and_says_so(self):
-        self.cli('init', '--title', 'Topic')
+        helpers.saved_init(self.root, '--title', 'Topic')
         self.write('intake.md', 'abcdefghé and the rest')
         with mock.patch.object(desk, 'PREVIEW_LIMIT', 9):
             shown = self.api('file', path=str(self.root), artifact='intake')
@@ -340,7 +334,7 @@ class FileTests(DeskCase):
                          ('abcdefgh', True, 23))
 
     def test_markup_in_a_file_comes_back_as_data_never_as_a_page(self):
-        self.cli('init', '--title', '<script>alert(0)</script>')
+        helpers.saved_init(self.root, '--title', '<script>alert(0)</script>')
         self.write('intake.md', MARKUP)
         query = urlencode({'path': str(self.root), 'artifact': 'intake'})
         for target in (f'/api/file?{query}', '/api/trainings',
@@ -354,7 +348,7 @@ class FileTests(DeskCase):
         self.assertEqual(self.listed()[str(self.root)]['title'], '<script>alert(0)</script>')
 
     def test_a_record_that_cannot_be_read_has_no_files_to_show(self):
-        self.cli('init', '--title', 'Broken')
+        helpers.saved_init(self.root, '--title', 'Broken')
         self.write('intake.md', 'v1\n')
         (self.root / '.training-studio' / 'session.json').write_text('{not json')
         refused = self.api('file', expect=409, path=str(self.root), artifact='intake')
@@ -366,7 +360,7 @@ class RefusalTests(DeskCase):
 
     def setUp(self):
         super().setUp()
-        self.cli('init', '--title', 'Topic')
+        helpers.saved_init(self.root, '--title', 'Topic')
         self.write('intake.md', 'The intake.\n')
         self.targets = ('/api/trainings',
                         '/api/training?' + urlencode({'path': str(self.root)}),
@@ -653,7 +647,7 @@ class ListRuleTests(PageCase):
         self.assertEqual((second['to_make'], second['counts']['not-started']), (11, 11))
 
     def test_the_last_activity_counts_the_runs_tries_as_well_as_touches(self):
-        self.cli('init', '--title', 'First')
+        helpers.saved_init(self.root, '--title', 'First')
         self.seen({self.root: '2990-01-01T00:00:00Z'})
         listed = self.get('trainings')['trainings']
         # With no run, the last activity is the last touch.
@@ -668,10 +662,9 @@ class ListRuleTests(PageCase):
         listed = self.get('trainings')['trainings']
         self.assertEqual((listed[0]['activity_at'], listed[0]['touched_at']),
                          ('2990-01-02T00:05:00Z', '2990-01-01T00:00:00Z'))
-        # A record that cannot be read leaves the touch as the last activity.
+        # An unreadable record is reported instead of guessed as healthy.
         (self.root / '.training-studio' / 'run.json').write_text('{not json')
-        self.assertEqual(self.get('trainings')['trainings'][0]['activity_at'],
-                         '2990-01-01T00:00:00Z')
+        self.assertIn('error', self.get('trainings')['trainings'][0])
 
 
 class WriteRuleTests(PageCase):
@@ -1000,7 +993,7 @@ class GateTests(PageCase):
                          (True, False))
 
     def test_a_question_with_nothing_to_review_still_needs_the_user(self):
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.cli('checkpoint', '--question', 'Who is this for?')
         shown = self.listed()[str(self.root)]
         self.assertEqual(shown['waiting'], {'artifact': None, 'label': None,
@@ -1190,7 +1183,7 @@ class PlainWordsTests(PageCase):
         return self.listed()[str(self.root)]
 
     def test_a_training_is_in_progress_then_waiting_then_finished(self):
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         first = self.shown()
         self.assertEqual((first['state'], first['sentence'], first['stage_name'],
                           first['approval']), ('in-progress', 'Complete intake', 'Start', 'chat'))
@@ -1231,7 +1224,7 @@ class PlainWordsTests(PageCase):
         self.assertEqual(self.get('trainings')['needs'], 0)
 
     def test_yoodli_is_in_the_row_only_when_it_is_wanted(self):
-        self.cli('init', '--title', 'Rolling restarts', '--yoodli')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts', '--yoodli')
         self.assertIn('Yoodli', [stage['name'] for stage in self.shown()['stages']])
         detail = self.get('training', path=str(self.root))
         self.assertEqual(detail['view']['left_out'], [])
@@ -1472,7 +1465,7 @@ class ComputerTests(PageCase):
         result = self.looked(missing, google=True)
         self.assertEqual((result['ready'], result['wrong']), (False, ['Google Cloud CLI']))
         self.assertFalse(desk.uses_google())
-        self.cli('init', '--title', 'Rolling restarts', '--copies', 'google')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts', '--copies', 'google')
         self.assertTrue(desk.uses_google())
 
     def test_the_page_looks_only_when_asked_and_keeps_the_answer_briefly(self):
@@ -2226,8 +2219,7 @@ class PageScriptTests(ScriptedPage, PageCase):
         self.at_the_blueprint_gate()
         other = self.root.parent / 'markup'
         other.mkdir()
-        with contextlib.redirect_stdout(io.StringIO()):
-            training.main(['--dir', str(other), 'init', '--title', MARKUP_TITLE])
+        helpers.saved_init(other, '--title', MARKUP_TITLE)
         workspace.checkpoint(other, question='Who is it for?')
         gate = {'path': str(self.root), 'artifact': 'blueprint'}
         answers = {'GET /api/trainings': [self.read('trainings')],
@@ -3087,27 +3079,11 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         for gone in ('review_level', 'review_seen', 'review_default'):
             self.assertNotIn(gone, sent[0])
 
-    def test_settings_saves_where_new_work_stops_at_once(self):
-        from studio_core import review_policy
-        balanced = {**SET_UP, 'review_level': 'balanced'}
-        result = self.run_page(self.answers(balanced, **{
-            'POST /api/review-level': [ok({**SET_UP, 'review_level': 'automatic'}),
-                                       {'status': 409, 'body': {'error': review_policy.STALE}}]}), [
-            {'click': 'Settings'}, {'snapshot': 'settings'},
-            {'click': 'Automatic draft'}, {'snapshot': 'saved'},
-            {'click': 'Step by step'}, {'snapshot': 'refused'}])
-        shots = result['snapshots']
-        self.assertIn('Where new work stops', shots['settings']['text'])
-        # Training Studio's own trainings start on the desk: the level is not chosen at a start.
-        self.assertIn('Training Studio starts each training on its desk, where nothing stops: '
-                      'you mark each material ready.', shots['settings']['text'])
-        self.assertNotIn('A start form can choose', shots['settings']['text'])
-        self.assertIn('Balanced', shots['settings']['pressed'])
-        sent = [body for address, body in self.posts(result) if address == '/api/review-level']
-        self.assertEqual(sent, [{'level': 'automatic', 'seen': 'balanced'},
-                                {'level': 'step_by_step', 'seen': 'automatic'}])
-        self.assertIn('Automatic draft', shots['saved']['pressed'])
-        self.assertIn(review_policy.STALE, shots['refused']['text'])
+    def test_settings_has_no_review_preference_control(self):
+        result = self.run_page(self.answers({**SET_UP, 'review_level': 'balanced'}), [
+            {'click': 'Settings'}, {'snapshot': 'settings'}])
+        self.assertNotIn('Where new work stops', result['snapshots']['settings']['text'])
+        self.assertFalse(any(address == '/api/review-level' for address, _ in self.posts(result)))
 
     def test_a_refused_start_reads_the_setup_again_and_keeps_every_answer(self):
         setup = {**SET_UP, 'review_level': 'step_by_step'}
@@ -3632,7 +3608,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
     def started(self, *init) -> None:
         """A training as the runner leaves it once the form is in: its start approved."""
-        self.cli('init', '--title', 'Rolling restarts', *init)
+        helpers.saved_init(self.root, '--title', 'Rolling restarts', *init)
         self.make('intake', 'intake.md', '# Intake\n\n## Topic\nRolling restarts\n')
         self.cli('checkpoint', '--approval', 'page', '--stage', 'research-plan',
                  '--next', 'Draft the research questions')
@@ -4990,7 +4966,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         # Where a training is decided is offered only for one that no run drives.
         settings = shots['settings']
         # Where new work stops, then where each training is decided.
-        self.assertEqual(settings['pressed'], ['Step by step', 'In the conversation'])
+        self.assertEqual(settings['pressed'], ['In the conversation'])
         self.assertIn('By Hand', settings['text'].split('Where each training is decided')[1])
         self.assertNotIn('Held', settings['text'].split('Where each training is decided')[1])
         self.assertEqual(self.asked(result, 'run'), [])
@@ -10201,7 +10177,7 @@ class CommandTests(DeskCase):
 
     @unittest.skipIf(os.name == 'nt', 'signals are delivered differently on Windows')
     def test_to_anything_but_a_terminal_it_prints_no_key_and_opens_the_page_itself(self):
-        self.cli('init', '--title', 'Topic')
+        helpers.saved_init(self.root, '--title', 'Topic')
         for how in self.usable_signals():
             with self.subTest(signal.Signals(how).name):
                 opened = self.root.parent / f'opened-{int(how)}.txt'
@@ -10236,7 +10212,7 @@ class CommandTests(DeskCase):
     def test_to_a_terminal_it_prints_the_link_whole_and_opens_nothing(self):
         import pty
         import select
-        self.cli('init', '--title', 'Topic')
+        helpers.saved_init(self.root, '--title', 'Topic')
         opened = self.root.parent / 'opened.txt'
         primary, secondary = pty.openpty()
         self.addCleanup(os.close, primary)

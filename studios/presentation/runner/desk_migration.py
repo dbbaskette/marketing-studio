@@ -413,8 +413,12 @@ def _restore_index(space, root, writes, before, check=False):
     paths = [gitstate.inside(space, _path(space, root, name)) for name in writes]
     if not isinstance(before, str):
         raise WorkspaceError('The saved migration index cannot be verified.')
+    entries = before.split('\0')
+    if before and (entries[-1] != '' or any(not entry for entry in entries[:-1])
+                   or entries[:-1] != sorted(entries[:-1], key=lambda entry: entry.partition('\t')[2])):
+        raise WorkspaceError('The saved migration index has an unsupported entry.')
     seen = set()
-    for entry in before.split('\0'):
+    for entry in entries:
         if entry:
             header, _, name = entry.partition('\t')
             if name not in paths or name in seen or not re.fullmatch(r'100(?:644|755) [a-f0-9]{40,64} 0', header):
@@ -422,11 +426,14 @@ def _restore_index(space, root, writes, before, check=False):
             seen.add(name)
     if check:
         return
-    gitstate.hub.git(space.repo, 'reset', '-q', 'HEAD', '--', *paths)
-    if before:
-        result = gitstate.hub.run(space.repo, 'update-index', '-z', '--index-info', input=before)
-        if result.returncode:
-            raise WorkspaceError('The migration index could not be restored; keep its recovery record.')
+    removed = gitstate.hub.run(space.repo, 'update-index', '--force-remove', '--', *paths)
+    if removed.returncode:
+        raise WorkspaceError('The migration index could not be restored; keep its recovery record.')
+    if before and gitstate.hub.run(space.repo, 'update-index', '-z', '--index-info', input=before).returncode:
+        raise WorkspaceError('The migration index could not be restored; keep its recovery record.')
+    restored = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *paths)
+    if restored != before:
+        raise WorkspaceError('The migration index could not be verified; keep its recovery record.')
 
 
 def migrate(engine, path, expected):

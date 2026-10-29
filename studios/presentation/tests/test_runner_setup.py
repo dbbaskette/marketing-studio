@@ -88,7 +88,7 @@ class SetUpTests(FirstTimeCase):
                          ({'on': False, 'can': True, 'problem': None}, {'look': True}, None))
         self.assertEqual(said['previews'], {'how': None, 'pool': False, 'drive': True, 'local': True})
         self.assertIn('No workspace is set up on this computer yet',
-                      self.post('decks', {'form': FORM}, 409)['error'])
+                      self.post('decks', {'form': {**FORM, 'flow': 'desk'}}, 409)['error'])
         self.assertIn('No workspace is set up', self.post('share', {}, 409)['error'])
         self.assertEqual(self.get('decks'), {'needs': [], 'working': [], 'finished': [],
                                              'elsewhere': []})
@@ -115,7 +115,7 @@ class SetUpTests(FirstTimeCase):
         self.assertEqual(self.get('setup'), made)
         marker = json.loads((folder / 'presentations' / 'hub.json').read_text())
         self.assertEqual((marker['tool'], marker['name']), ('presentation-studio', 'my-work'))
-        path = self.post('decks', {'form': {**FORM, 'agent': 'codex'}})['path']
+        path = self.post('decks', {'form': {**FORM, 'flow': 'desk', 'agent': 'codex'}})['path']
         self.assertEqual(Path(path), folder / 'presentations' / 'rolling-restarts')
         self.assertEqual(self.get('run', path=path)['agent'], 'codex')
 
@@ -206,7 +206,7 @@ class SetUpTests(FirstTimeCase):
             settings.save(settings.Settings(previews='local'))
             theirs = self.make()
             gitstate.join(str(remote))
-            theirs.start(FORM)
+            theirs.start({**FORM, 'flow': 'desk'})
             self.assertTrue(theirs.share()['shared'])
         self.post('setup', {'repository': str(remote)})
         listed = self.get('decks')
@@ -285,27 +285,11 @@ class SharedConfigTests(FirstTimeCase):
         self.assertIn('Send the site', self.post('research-site', {'sites': []}, 400)['error'])
         self.assertEqual(self.config.read_text(), before)
 
-    def test_review_level_route_saves_and_refuses_a_stale_level(self):
-        from studio_core import review_policy
-        self.review_capture.stop()    # the test's own studios config is read for real
-        self.write_config('{"schema": 1, "share": "asked"}')
-        self.assertEqual(self.get('setup')['review_level'], 'balanced')
-        shown = self.post('review-level', {'level': 'automatic', 'seen': 'balanced'})
-        self.assertEqual(shown['review_level'], 'automatic')
-        self.assertEqual(json.loads(self.config.read_text()),
-                         {'schema': 1, 'share': 'asked', 'review': {'level': 'automatic'}})
-        before = self.config.read_text()
-        refused = self.post('review-level', {'level': 'step_by_step', 'seen': 'balanced'}, 409)
-        self.assertEqual(refused['error'], review_policy.STALE)
-        bad = self.post('review-level', {'level': 'fast', 'seen': 'automatic'}, 400)
-        self.assertEqual(bad['error'], 'Choose Balanced, Automatic draft, or Step by step.')
-        self.assertEqual(self.config.read_text(), before)
-        # An unreadable file shows Step by step, and refuses with its own sentence.
-        self.write_config('{')
-        self.assertEqual(self.get('setup')['review_level'], 'step_by_step')
-        refused = self.post('review-level', {'level': 'balanced', 'seen': 'step_by_step'}, 409)
-        self.assertIn('could not be read', refused['error'])
-        self.assertEqual(self.config.read_text(), '{')
+    def test_review_level_route_is_removed_without_writing(self):
+        self.write_config('{"schema": 1, "review": {"level": "automatic"}, "share": "asked"}')
+        before = self.config.read_bytes()
+        self.post('review-level', {'level': 'balanced', 'seen': 'automatic'}, 405)
+        self.assertEqual(self.config.read_bytes(), before)
 
     def test_the_set_up_says_whether_previews_share_a_pool(self):
         self.assertIs(self.get('setup')['previews']['pool'], False)

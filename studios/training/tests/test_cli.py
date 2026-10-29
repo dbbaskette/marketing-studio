@@ -8,6 +8,7 @@ import subprocess
 import sys
 import unittest
 from unittest import mock
+from pathlib import Path
 
 import helpers
 from helpers import TrainingCase
@@ -64,7 +65,7 @@ class Flow(TrainingCase):
         self.cli('approve', artifact)
 
     def research(self, *init_args, yoodli: bool = True, copies=('word',)) -> None:
-        self.cli('init', '--title', 'Rolling restarts', *init_args,
+        helpers.saved_init(self.root, '--title', 'Rolling restarts', *init_args,
                  *(['--yoodli'] if yoodli else []), *(['--copies', *copies] if copies else []))
         self.make('intake', 'intake.md', '# Intake\n\n## Topic\nRolling restarts\n')
         self.make('research-plan', '.training-studio/research-plan.json',
@@ -125,19 +126,33 @@ class ContractTests(TrainingCase):
         self.assertEqual(done.returncode, expect, done.stdout + done.stderr)
         return json.loads(done.stdout)
 
+    def test_public_init_refuses_without_writes(self):
+        target = self.root.parent / 'new-training'
+        roots = [self.root.parent, Path(os.environ['TRAINING_STUDIO_DATA']),
+                 Path(os.environ['HOME']), Path(os.environ['STUDIOS_CONFIG']).parent]
+        def contents():
+            return [{p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+                    for root in roots]
+        before = contents()
+        for directory in (target, self.root):
+            result = self.run_cli('--dir', str(directory), 'init', '--title', 'Topic', expect=2)
+            self.assertIn('desk', result['error'].lower())
+            self.assertEqual(before, contents())
+        self.assertFalse(target.exists())
+
     def test_status_before_init_is_a_refusal_with_exit_code_2(self):
         self.assertEqual(self.run_cli('status', expect=2),
-                         {'error': 'No training in this directory. Run init first.'})
+                         {'error': 'No training in this directory. Use checked desk commands for new work.'})
 
-    def test_init_works_from_the_current_directory(self):
-        report = self.run_cli('init', '--title', 'Valkey', '--levels', '301,101',
+    def test_saved_fixture_retains_levels_and_brief(self):
+        report = helpers.saved_init(self.root, '--title', 'Valkey', '--levels', '301,101',
                               '--brief-kind', 'competitive')
         self.assertEqual(report['levels'], ['101', '301'])
         self.assertEqual(report['files']['brief@101'], '101/competitive-brief.md')
         self.assertEqual(report['artifacts']['blueprint@301'], 'not-started')
 
     def test_row_35_a_broken_record_is_a_structured_error(self):
-        self.run_cli('init', '--title', 'Topic')
+        helpers.saved_init(self.root, '--title', 'Topic')
         record = self.root / '.training-studio' / 'session.json'
         record.write_text('{not json')
         for command in (('status',), ('check',), ('save', 'intake')):
@@ -149,7 +164,7 @@ class ContractTests(TrainingCase):
         self.assertIn('invalid choice', self.run_cli('publish', expect=2)['error'])
 
     def test_unreadable_input_is_a_structured_error(self):
-        self.run_cli('init', '--title', 'Topic')
+        helpers.saved_init(self.root, '--title', 'Topic')
         self.write('deck.pptx', helpers.DECK)
         bad = self.write('coverage.json', '{not json')
         self.assertIn('error', self.run_cli('save', 'deck', '--coverage', str(bad), expect=2))
@@ -184,27 +199,28 @@ class FoundationTests(TrainingCase):
     def test_list_names_the_trainings_on_this_computer(self):
         other = self.root.parent / 'another'
         other.mkdir()
-        self.run_at(CLI, 'init', '--title', 'First training')
-        self.run_at(CLI, 'init', '--title', 'Second', '--levels', '101', cwd=other)
+        helpers.saved_init(self.root, '--title', 'First training')
+        helpers.saved_init(other, '--title', 'Second', '--levels', '101')
         listed = {item['path']: item for item in self.run_at(CLI, 'list')['trainings']}
         self.assertEqual(listed[str(self.root)]['title'], 'First training')
         self.assertEqual(listed[str(other)]['levels'], ['101'])
 
     def test_list_forgets_a_training_whose_directory_no_longer_holds_one(self):
         import shutil
-        self.run_at(CLI, 'init', '--title', 'Short lived')
+        helpers.saved_init(self.root, '--title', 'Short lived')
         shutil.rmtree(self.root / '.training-studio')
         paths = [item['path'] for item in self.run_at(CLI, 'list')['trainings']]
         self.assertNotIn(str(self.root), paths)
 
     def test_status_says_which_guidance_a_training_follows(self):
-        report = self.run_at(CLI, 'init', '--title', 'Topic')
+        report = helpers.saved_init(self.root, '--title', 'Topic')
         self.assertIn('guidance', report)
+        self.assertEqual(self.run_at(CLI, 'status')['guidance'], report['guidance'])
 
 
 class CommandTests(Flow):
     def test_approving_research_warns_about_pending_questions(self):
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.make('intake', 'intake.md', 'v1\n')
         self.make('research-plan', '.training-studio/research-plan.json', '{}')
         self.write('.harness-research/research.json', json.dumps(helpers.RESEARCH))
@@ -233,7 +249,7 @@ class CommandTests(Flow):
         self.assertEqual(self.cli('status')['artifacts']['document'], 'approved')
 
     def test_settings_skips_pins_and_checkpoints_round_trip(self):
-        self.cli('init', '--title', 'Topic', '--levels', '101')
+        helpers.saved_init(self.root, '--title', 'Topic', '--levels', '101')
         self.cli('skip', 'deck', '--reason', 'Not needed')
         self.cli('checkpoint', '--stage', 'blueprint', '--level', '101', '--next', 'Draft it',
                  '--question', 'Approve?', '--brand', 'Acme', '--deck-target', 'google',
@@ -273,14 +289,14 @@ class CheckTests(Flow):
         self.check('--complete', expect=1)
 
     def test_check_before_a_blueprint_reports_what_is_missing(self):
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         report = self.check()
         self.assertEqual((report['checks_passed'], report['ready'], report['passed']),
                          (True, False, 0))
         self.assertIn('intake is not-started', report['blocking'])
 
     def test_a_scenario_is_checked_before_any_blueprint_exists(self):
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.write('scenario.md', example('scenario.md').replace('## Opening', '## Start'))
         report = self.check(expect=1)
         self.assertEqual(self.by_name(report)['scenario:main.sections']['problems'],
@@ -326,7 +342,7 @@ class CheckTests(Flow):
         self.assertIn('blueprint.citations failed', report['blocking'])
 
     def test_a_check_that_cannot_run_blocks_readiness(self):
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.write('blueprint.md', example('blueprint.md'))
         report = self.check()
         self.assertTrue(report['checks_passed'])
@@ -594,7 +610,7 @@ class DryRunFindingTests(Flow):
                       'The note changes nothing taught', report['limitations'])
 
     def test_row_53_an_invalid_research_plan_fails_its_check(self):
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.make('intake', 'intake.md', 'v1\n')
         plan = dict(helpers.PLAN, input_files=['intake.md'],
                     items=[{'id': 'Q0', 'question': ''}])
@@ -614,7 +630,7 @@ class DryRunFindingTests(Flow):
         self.assertEqual(self.cli('status')['artifacts']['deck'], 'draft')
 
     def test_row_55_each_level_pins_its_own_deck_task(self):
-        self.cli('init', '--title', 'Topic', '--levels', '101,201')
+        helpers.saved_init(self.root, '--title', 'Topic', '--levels', '101,201')
         self.cli('pin', 'harness-slides', '--task', 'a', '--runtime', '/r', '--level', '101')
         pins = self.cli('pin', 'harness-slides', '--task', 'b', '--runtime', '/r',
                         '--level', '201')
@@ -650,7 +666,7 @@ class DryRunFindingTests(Flow):
         self.assertEqual(self.cli('approve', 'deck')['failing_checks'], ['deck.coverage'])
 
     def test_status_summarises_the_approved_research(self):
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.assertIsNone(self.cli('status')['research'])
         self.cli('skip', 'deck', '--unavailable', '--reason', 'Not installed')
         self.research_only()
@@ -663,7 +679,7 @@ class DryRunFindingTests(Flow):
 
     def test_row_73_research_is_summarised_before_it_is_approved(self):
         counts = {'supported': 5, 'insufficient': 1, 'pending': 1, 'contradicted': 1}
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.make('intake', 'intake.md', 'v1\n')
         self.make('research-plan', '.training-studio/research-plan.json',
                   json.dumps(helpers.PLAN))
@@ -755,7 +771,7 @@ class PageApprovalTests(Flow):
                                                  expect=2)['error'])
 
     def test_row_78_a_training_started_on_the_page_still_approves_intake_in_chat(self):
-        report = self.cli('init', '--title', 'Rolling restarts', '--approval', 'page')
+        report = helpers.saved_init(self.root, '--title', 'Rolling restarts', '--approval', 'page')
         self.assertEqual(report['approval'], 'page')
         self.write('intake.md', '# Intake\n')
         self.cli('save', 'intake', '--built')
@@ -935,7 +951,7 @@ class FlagTests(Flow):
         self.assertEqual(self.cli('status')['artifacts']['document'], 'stale')
 
     def test_lists_are_space_separated_and_commas_still_work(self):
-        report = self.cli('init', '--title', 'Topic', '--levels', '301', '101',
+        report = helpers.saved_init(self.root, '--title', 'Topic', '--levels', '301', '101',
                           '--copies', 'word', 'google')
         self.assertEqual((report['levels'], report['settings']['copies']),
                          (['101', '301'], ['google', 'word']))

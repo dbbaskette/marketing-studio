@@ -1545,6 +1545,32 @@ class StudioCase(unittest.TestCase):
         self.space = self.set_up()
         self.engine = self.make()
 
+    def in_process_synthesis(self):
+        """Run only the disposable synthesis protocol in Python, without a helper process."""
+        from unittest import mock
+        from stand_ins import synthesis
+        original_run = self.research.run
+        def fake(command, cwd=None):
+            if command[2:3] != ['synthesis']:
+                return original_run(command, cwd)
+            try:
+                result = synthesis.command([str(part) for part in command[2:]])
+                return 0, json.dumps(result), ''
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                return 1, '', str(error)
+        self.research.run = fake
+        real_run = subprocess.run
+        def preflight(command, *args, **kwargs):
+            if (len(command) >= 3 and Path(command[1]) ==
+                    self.research.runtime / 'scripts/harness-research.mjs'
+                    and command[2] == 'synthesis'):
+                code, out, err = fake(command)
+                return subprocess.CompletedProcess(command, code, out, err)
+            return real_run(command, *args, **kwargs)
+        patcher = mock.patch.object(subprocess, 'run', preflight)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def which(self, program: str) -> str | None:
         """Where a program is, on the computer a test describes: Python always, and
         LibreOffice and the programs that make pictures as the slides stand-in says."""
@@ -1606,7 +1632,8 @@ class StudioCase(unittest.TestCase):
         from studio_core import review_policy
         engine = engine or self.engine
         space = engine.space()
-        form = pipeline.check_form({**FORM, **changes, 'flow': None})
+        form = pipeline.check_form({**FORM, **{k: v for k, v in changes.items()
+            if k not in ('review_level', 'review_seen', 'review_default')}, 'flow': None})
         chosen = settings.load()
         agent = form['agent'] or chosen.agent
         model = form['model'] if form['agent'] else form['model'] or chosen.model
@@ -1614,8 +1641,8 @@ class StudioCase(unittest.TestCase):
         root = pipeline.create(space, form)
         record = self.engines.new_record(agent, model, chosen, form['source_scope'], effort, form.get('research_from'))
         record['research_questions'] = form.get('research_questions') or []
-        if form.get('review_level'):
-            record['review_policy'] = {'schema': 1, 'level': form['review_level']}
+        if changes.get('review_level'):
+            record['review_policy'] = {'schema': 1, 'level': changes['review_level']}
         record['schema'] = 1 if review_policy.level(record) == 'step_by_step' else 2
         if saved_contract is not None:
             record['research_contract'] = dict(saved_contract)

@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "minimum_runtime": "4.9.0",
+  "minimum_runtime": "4.9.1",
   "entry": "skills/blog-studio/SKILL.md",
   "content_root": "skills/blog-studio",
   "description": "Blog Studio 2.0 installs the whole skill and no longer fetches guidance. This file only tells 1.x installations to update: download the installer from the latest release and run it."

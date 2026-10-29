@@ -15,12 +15,12 @@ from unittest import mock
 from urllib.parse import urlencode
 
 import helpers  # noqa: F401
-from runner_support import (FORM, LEAVES, StudioCase, TeamCase, still_running, written)
+from runner_support import (LEAVES, StudioCase, TeamCase, still_running, written)
 
 import desk
 import home
 import workspace
-from runner import agents, companion, engine as engines, gitstate, page, pipeline, settings
+from runner import agents, companion, engine as engines, gitstate, page, settings
 from runner import team
 from workspace import WorkspaceError
 
@@ -202,7 +202,7 @@ class DeleteTests(Deleting, StudioCase):
         deleting = threading.Thread(target=deletes)
         deleting.start()
         started = time.monotonic()
-        root = Path(self.engine.start(pipeline.check_form(FORM))['path'])
+        root = self.saved_start()
         deleting.join(20)
         self.assertLess(time.monotonic() - started, 20)
         self.assertEqual(still_running(written(pids)), [], 'nothing it started is left')

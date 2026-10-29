@@ -363,6 +363,12 @@ class SharedSitesTests(IsolatedHome):
 
 
 class SettingsPageTests(unittest.TestCase):
+    def test_review_controls_are_retired(self):
+        from pathlib import Path
+        web = Path(__file__).resolve().parents[1] / 'core/studio_core/setup_web'
+        self.assertNotIn('name="review.level"', (web / 'index.html').read_text())
+        self.assertNotIn("wanted.review", (web / 'app.js').read_text())
+
     def test_settings_page_has_the_research_sites_card(self):
         from pathlib import Path
         web = Path(__file__).resolve().parents[1] / 'core/studio_core/setup_web'
@@ -441,6 +447,25 @@ class SettingsPageJourneyTests(unittest.TestCase):
         self.assertNotIn('id="paths-form"', html)
         self.assertNotIn('Save installation folders', html)
 
+    def test_readiness_refresh_keeps_unsaved_settings_paths_and_seen(self):
+        shots = self.page([
+            {'run': self.SHOWN + " setup = false; fill(); renderHome(); show('settings');"},
+            {'run': "form.elements['person.name'].value = 'Bea';"
+                    " $('#path-fields').children[0].children[1].value = '/srv/blog'; view = 'home';"},
+            {'responses': {'home': {'studios': [{'id': 'blog', 'name': 'Blog Studio',
+                'configured_path': '', 'path': '/new/location', 'installed': True}]}}},
+            {'run': "refreshHomeStatus()"},
+            {'run': "$('#probe-0').textContent = JSON.stringify({name: form.elements['person.name'].value, "
+                    "path: $('#path-fields').children[0].children[1].value, "
+                    "shared: snapshot.shared, changes: changesForStep()});"},
+            {'snapshot': 'held', 'read': ['#probe-0']}])
+        held = json.loads(shots['held']['read']['#probe-0']['text'])
+        self.assertEqual((held['name'], held['path']), ('Bea', '/srv/blog'))
+        self.assertEqual(held['shared']['person']['name'], 'Ana')
+        self.assertEqual(held['shared']['review']['level'], 'balanced')
+        self.assertEqual(held['changes']['person']['name'], 'Bea')
+        self.assertNotIn('review', held['changes'])
+
     def test_a_folder_that_fails_says_the_settings_were_saved(self):
         shots = self.page([
             {'run': self.SHOWN + " setup = false; fill(); renderHome(); show('settings');"},
@@ -455,15 +480,13 @@ class SettingsPageJourneyTests(unittest.TestCase):
     def test_blog_studio_s_own_setup_asks_only_what_it_uses(self):
         shots = self.page([
             {'run': self.SHOWN + " setup = true; step = 0; fill(); show('settings');"},
-            {'run': "form.elements['review.level'].value = 'automatic';"
-                    " form.elements['output'].value = 'google';"
+            {'run': "form.elements['output'].value = 'google';"
                     " $('#probe-0').textContent = JSON.stringify(changesForStep());"
                     " step = 2; show('settings');"
                     " $('#probe-2').textContent = JSON.stringify(changesForStep());"},
-            {'snapshot': 'first', 'read': ['#review-part', '#delivery-part', '#probe-0',
+            {'snapshot': 'first', 'read': ['#delivery-part', '#probe-0',
                                            '#probe-2']}], product='Blog Studio', standalone=True)
         read = shots['first']['read']
-        self.assertTrue(read['#review-part']['hidden'])
         self.assertTrue(read['#delivery-part']['hidden'])
         first, last = json.loads(read['#probe-0']['text']), json.loads(read['#probe-2']['text'])
         self.assertNotIn('review', first)
@@ -473,10 +496,9 @@ class SettingsPageJourneyTests(unittest.TestCase):
     def test_blog_studio_s_shared_settings_after_setup_keep_every_choice(self):
         shots = self.page([
             {'run': self.SHOWN + " setup = false; fill(); show('settings');"},
-            {'snapshot': 'later', 'read': ['#review-part', '#delivery-part']}],
+            {'snapshot': 'later', 'read': ['#delivery-part']}],
             product='Blog Studio', standalone=True)
         read = shots['later']['read']
-        self.assertFalse(read['#review-part']['hidden'])
         self.assertFalse(read['#delivery-part']['hidden'])
 
     def test_add_remove_refuse_and_save_the_list(self):

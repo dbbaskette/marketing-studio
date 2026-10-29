@@ -75,6 +75,16 @@ class ConversationTests(DeckCase):
     def test_scope_and_take_preserve_materials_and_ready_facts(self):
         root = self.create()
         self.submit(root, 'blueprint', 'outline', {'text': BLUEPRINT})
+        # A runner-owned desk has a real pinned contract; contract-free focused
+        # conversations cannot be handed to the runner.
+        from studio_core import research_contract
+        contract = research_contract.snapshot(self.research)
+        session = workspace.load(root)
+        session['research_contract'] = contract
+        workspace.store(root, session)
+        record = self.record(root)
+        record['research_contract'] = contract
+        self.engine._store(root, record)
         before = (root / 'blueprint.md').read_bytes(), workspace.load(root)
         context = desk_chat.context(self.engine, root, 'scope')
         desk_chat.set_scope(self.engine, root, context['expected_basis'], ['outline', 'part'])

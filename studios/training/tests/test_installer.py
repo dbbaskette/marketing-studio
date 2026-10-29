@@ -350,18 +350,20 @@ class CheckTests(InstallerCase):
 
 
 class InstalledCopyTests(InstallerCase):
-    def test_the_installed_helper_refuses_to_start_a_training_above_itself(self):
+    def test_the_installed_helper_refuses_new_gated_training(self):
         self.run_installer('install', '--yes')
         helper = self.claude / 'training-studio' / 'scripts' / 'training.py'
         asked = subprocess.run([sys.executable, str(helper), '--dir', str(self.home), 'init',
                                 '--title', 'Topic'], capture_output=True, text=True)
         self.assertEqual(asked.returncode, 2)
-        self.assertIn('holds the Training Studio skill', asked.stdout)
+        self.assertIn('checked desk', asked.stdout)
         elsewhere = self.base / 'valkey-training'
         elsewhere.mkdir()
         made = subprocess.run([sys.executable, str(helper), '--dir', str(elsewhere), 'init',
                                '--title', 'Topic', '--yoodli'], capture_output=True, text=True)
-        self.assertEqual(made.returncode, 0, made.stdout)
+        self.assertEqual(made.returncode, 2, made.stdout)
+        self.assertIn('checked desk', made.stdout)
+        self.assertEqual(list(elsewhere.iterdir()), [])
 
     def test_the_installed_helper_finds_the_profile_in_its_guidance_folder(self):
         self.run_installer('install', '--yes')

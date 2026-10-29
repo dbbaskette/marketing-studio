@@ -388,6 +388,10 @@ class FinishingTests(DeckCase):
 class FinishingJobTests(DeckCase):
     NAME = FinishingTests.NAME
     desk, card, ask = FinishingTests.desk, FinishingTests.card, FinishingTests.ask
+    def setUp(self):
+        super().setUp()
+        self.in_process_synthesis()
+
     # Reuse fixture helpers without rerunning the in-process cases in this subclass.
     def proposal(self, root, kind, *, verdict=None, replacement=None):
         card = self.card(root)
@@ -418,7 +422,13 @@ class FinishingJobTests(DeckCase):
         item = result['finishing']['sources']['items'][0]
         self.assertEqual(item['verdict'], 'contradicted')
         self.assertEqual(item['finding'], 'zero-downtime')
-        self.assertIn('downtime', item['source'].lower())
+        facts = json.loads((root / 'research/facts.json').read_text())
+        finding = next(row for row in facts['findings'] if row['id'] == item['finding'])
+        self.assertEqual(item['source'], finding['title'])
+        self.assertEqual(finding['support'], ['fact-a'])
+        evidence = next(row for row in facts['facts'] if row['id'] == 'fact-a')
+        self.assertEqual(evidence['citations'][0]['quote'],
+                         'Capacity holds only when more than one instance is running.')
         self.assertEqual((root / '101/document.md').read_bytes(), before)
         self.assertEqual(len(self.workers.of('question')), research)
 
@@ -588,6 +598,10 @@ class FinishingJobTests(DeckCase):
 class FinishingRemovalTests(DeckCase):
     NAME = FinishingTests.NAME
     desk, card, ask = FinishingTests.desk, FinishingTests.card, FinishingTests.ask
+    def setUp(self):
+        super().setUp()
+        self.in_process_synthesis()
+
 
     def cut(self, root, text, quote, tool='sources', start=None):
         card = self.card(root)

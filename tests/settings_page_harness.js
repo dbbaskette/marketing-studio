@@ -106,7 +106,7 @@ for (const step of steps) {
     context.homeSnapshot = step.home;
     run('snapshot = homeSnapshot; renderHome();');
   } else if (step.run) {
-    run(step.run);
+    await run(step.run);
   } else if (step.responses) {
     responses = step.responses;
   } else if (step.submit) {

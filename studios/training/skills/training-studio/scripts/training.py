@@ -12,7 +12,6 @@ import json
 from pathlib import Path
 
 import home
-import sync_guidance
 import workspace
 from assess import decide, describe, run_checks
 
@@ -109,7 +108,7 @@ def parser() -> argparse.ArgumentParser:
                              help='copies to keep of each document and brief, separated by '
                                   'spaces; alone, none')
 
-    init = commands.add_parser('init', help='start a training in this directory')
+    init = commands.add_parser('init', help='retired; use checked desk commands for new work')
     init.add_argument('--title', required=True, help='the title of the training')
     init.add_argument('--levels', action=ListOf, options=workspace.LEVELS, nargs='+',
                       default=[], help='the levels, separated by spaces, for example 101 301; '
@@ -219,10 +218,7 @@ def _dispatch(args: argparse.Namespace, root: Path) -> dict:
     if args.command == 'list':
         return {'trainings': home.trainings()}
     if args.command == 'init':
-        workspace.init(root, args.title, args.levels, args.brief_kind, args.deck_target,
-                       args.brand, args.yoodli, args.copies, args.approval, args.delivery)
-        sync_guidance.adopt(root)
-        return summarise(root)
+        raise workspace.WorkspaceError('New training cannot use init. Use the checked desk commands for new work.')
     if args.command == 'status':
         return summarise(root)
     if args.command == 'research-import':

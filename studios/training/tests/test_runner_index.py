@@ -522,7 +522,7 @@ class NotReadyTests(Indexed):
         self.assertIn('### Open gaps\n\nThe blueprint is not written yet.', self.page())
 
     def test_before_there_is_any_research_the_index_says_so(self):
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.assertFalse(self.written()['ready'])
         self.assertEqual(self.section('Research').strip().splitlines()[0],
                          'No research has been recorded yet.')
@@ -618,7 +618,7 @@ class RecordTests(Indexed):
                          '- Sources: the public web.')
 
     def test_the_audience_and_purpose_are_the_persons_own_answers_when_intake_has_them(self):
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.make('intake', 'intake.md', '## Topic\n\nRolling restarts on the platform\n\n'
                   '## Audience\n\nSolutions engineers\nwho deploy apps\n\n## Purpose\n\n'
                   'Field enablement\n')
