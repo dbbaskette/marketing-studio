@@ -371,11 +371,12 @@ class StartTests(PageCase):
                          ([], [], []))
 
     def test_an_upload_is_sent_in_base64_and_taken_in(self):
-        path = self.saved_started(uploads={'notes.md': NOTES}, route='document',
+        path = self.started(uploads={'notes.md': NOTES}, route='document',
                             source={'kind': 'upload', 'name': 'notes.md'})
-        gate = self.run_of(path)['gate']
-        self.assertEqual((gate['name'], gate['documents'][0]['name']),
-                         ('gate:classify', 'notes.md'))
+        from runner import documents
+        entry = documents.listed(Path(path))[0]
+        self.assertEqual(entry['name'], 'notes.md')
+        self.assertEqual((Path(path) / entry['file']).read_bytes(), NOTES)
         self.assertNotIn(encoded(NOTES), (Path(path) / 'run.json').read_text())
 
     def test_a_form_that_makes_no_sense_starts_nothing(self):

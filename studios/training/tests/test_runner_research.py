@@ -11,7 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import helpers
-from runner_support import PAGE, Web
+from runner_support import PAGE, StudioCase, Web
 
 import workspace
 from runner import research, worker_tools
@@ -621,9 +621,6 @@ class SynthesisStandInTests(unittest.TestCase):
         self.assertEqual(contract.refused(value, spec), [])
         value['facts'][0]['citations'][0]['quote'] = 'Not in the captured source'
         self.assertIn('Harness Research refused', contract.refused(value, spec)[0])
-
-
-from runner_support import StudioCase
 
 
 class SynthesisStartTests(StudioCase):

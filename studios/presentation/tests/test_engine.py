@@ -1879,7 +1879,7 @@ class DocumentTests(StudioCase):
     def test_an_upload_that_was_not_sent_starts_nothing(self):
         before = self.log()
         with self.assertRaises(WorkspaceError) as caught:
-            self.saved_start(route='document', source={'kind': 'upload', 'name': 'notes.md'})
+            self.start(route='document', source={'kind': 'upload', 'name': 'notes.md'})
         self.assertIn('"notes.md" was not sent', str(caught.exception))
         self.assertEqual(self.log(), before)
         self.assertEqual(self.engine.every(), [])
