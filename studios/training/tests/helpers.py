@@ -96,6 +96,18 @@ PLAN = {
 CHAIN = ('intake', 'research-plan', 'research', 'blueprint', 'document')
 
 
+def saved_init(root, *args):
+    """Construct an existing gated-format fixture; exercise saved operations separately."""
+    import sync_guidance
+    import training
+    import workspace
+    parsed = training.parser().parse_args(['init', *args])
+    workspace.init(root, parsed.title, parsed.levels, parsed.brief_kind, parsed.deck_target,
+                   parsed.brand, parsed.yoodli, parsed.copies, parsed.approval, parsed.delivery)
+    sync_guidance.adopt(root)
+    return training.summarise(root)
+
+
 class TrainingCase(unittest.TestCase):
     """A test with an empty training directory at self.root and a private Yoodli profile."""
 

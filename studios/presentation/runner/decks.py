@@ -278,29 +278,6 @@ def _desk_form(sent: dict, checked: dict) -> None:
         checked['reading'] = reading
 
 
-def review_choice(sent: dict) -> tuple:
-    """Where the form says this deck stops: (level, seen, default). `level` is None when the
-    form chose none, and the deck then takes the shared level. `seen` is the shared level the
-    form read, and `default` whether to make `level` the one new work starts at in every
-    studio. None of them is kept in the deck's form."""
-    from studio_core import review_policy
-    sent = sent if isinstance(sent, dict) else {}
-    level = sent.get('review_level')
-    if level in (None, ''):
-        level = None
-    else:
-        try:
-            review_policy.check({'level': level})
-        except ValueError as error:
-            raise WorkspaceError(str(error)) from None
-    default = sent.get('review_default', False)
-    if default not in (True, False):
-        raise WorkspaceError('Say whether to use this level for new work: true or false.')
-    if default and level is None:
-        raise WorkspaceError('Choose where this deck stops before using it for new work.')
-    return level, sent.get('review_seen'), default
-
-
 # --- ids -----------------------------------------------------------------------------------
 
 def deck_id(space, title: str) -> str:

@@ -39,20 +39,21 @@ VERSION = (helpers.SKILL / 'VERSION').read_text().strip()
 GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/decks',
         '/api/run', '/api/slide', '/api/download', '/api/status', '/api/published',
         '/api/delete', '/api/file', '/api/computer', '/api/known-decks', '/api/storyboard',
-        '/api/desk-outline-price', '/api/desk-versions')
+        '/api/desk-outline-price', '/api/desk-versions', '/api/desk-migration-preview',
+        '/api/desk-ready-context')
 DESK_POSTS = ('/api/desk-note', '/api/desk-deck-note', '/api/desk-stop', '/api/desk-deliver',
               '/api/desk-draw-here', '/api/desk-outline', '/api/desk-reread', '/api/desk-look',
               '/api/desk-look-again', '/api/desk-words', '/api/desk-notes',
               '/api/desk-selection', '/api/desk-redraw-words', '/api/desk-discard',
               '/api/desk-restore', '/api/desk-research-again', '/api/desk-leave-out',
               '/api/desk-finish', '/api/desk-apply', '/api/desk-skip', '/api/desk-source',
-              '/api/desk-open')
+              '/api/desk-open', '/api/desk-migrate', '/api/desk-ready')
 POSTS = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
          '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
          '/api/shared', '/api/deliver', '/api/storyboard', '/api/review-draft', '/api/build-feedback', '/api/progress-seen',
-         '/api/note', '/api/review-level', '/api/research-site', '/api/picture',
+         '/api/note', '/api/research-site', '/api/picture',
          '/api/picture-remove', '/api/desk-outline-price', *DESK_POSTS)
 BOTH = ('/api/setup', '/api/decks', '/api/run', '/api/delete', '/api/computer', '/api/storyboard',
         '/api/desk-outline-price')
@@ -358,17 +359,12 @@ class AgentTests(PageCase):
 
 
 class StartTests(PageCase):
-    def test_the_form_starts_a_deck_and_its_run_at_once(self):
-        made = self.post('decks', {'form': FORM})
+    def test_the_form_starts_a_desk_deck(self):
+        made = self.post('decks', {'form': {**FORM, 'flow': 'desk'}})
         root = self.space.deck('rolling-restarts')
         self.assertEqual(made, {'path': str(root), 'id': 'rolling-restarts'})
-        run = self.run_of(made['path'])
-        self.assertEqual((run['state'], run['gate']['name'], run['route']),
-                         ('waiting', 'gate:outline', 'scratch'))
-        listed = self.get('decks')
-        self.assertEqual([item['id'] for item in listed['needs']], ['rolling-restarts'])
-        self.assertEqual((listed['working'], listed['finished'], listed['elsewhere']),
-                         ([], [], []))
+        self.assertEqual(decks.read_run(root)['flow'], 'desk')
+        self.assertNotIn('review_policy', decks.read_run(root))
 
     def test_an_upload_is_sent_in_base64_and_taken_in(self):
         path = self.started(uploads={'notes.md': NOTES}, route='document',
@@ -393,7 +389,7 @@ class StartTests(PageCase):
                 ({'form': FORM, 'uploads': {'notes.md': ''}}, '"notes.md" arrived empty')):
             with self.subTest(sent=sent):
                 self.assertIn(said, self.post('decks', sent, 400)['error'])
-        said = self.post('decks', {'form': {**FORM, 'route': 'document',
+        said = self.post('decks', {'form': {**FORM, 'flow': 'desk', 'route': 'document',
                                             'source': {'kind': 'upload',
                                                        'name': 'notes.md'}}}, 409)
         self.assertIn('"notes.md" was not sent with the form', said['error'])
@@ -403,7 +399,7 @@ class StartTests(PageCase):
         away = agents.Readiness('claude', False, problem='Claude Code is not installed. '
                                 'Install it and sign in, then try again.')
         with mock.patch.object(self.engine.adapters['claude'], 'ready', return_value=away):
-            said = self.post('decks', {'form': FORM}, 409)
+            said = self.post('decks', {'form': {**FORM, 'flow': 'desk'}}, 409)
         self.assertEqual(said['error'], away.problem)
         self.assertEqual(self.engine.every(), [])
 
@@ -1258,9 +1254,7 @@ class WireTests(WireCase):
         self.assertTrue(self.server.url.endswith(f'#token={self.server.token}'))
 
     def test_a_deck_is_started_decided_pictured_and_downloaded_over_the_wire(self):
-        status, _, body = self.ask('/api/decks', {'form': FORM})
-        self.assertEqual(status, 200, body)
-        path = json.loads(body)['path']
+        path = str(self.saved_start())
         query = urlencode({'path': path})
         for gate in ('gate:outline', 'gate:look', 'gate:build'):
             run = json.loads(self.ask(f'/api/run?{query}')[2])
@@ -1283,14 +1277,14 @@ class WireTests(WireCase):
         self.assertTrue(deck.startswith(b'PK\x03\x04'))
 
     def test_something_that_cannot_be_done_is_answered_with_a_sentence_and_409(self):
-        path = json.loads(self.ask('/api/decks', {'form': FORM})[2])['path']
+        path = str(self.saved_start())
         status, _, body = self.ask('/api/run', {'path': path, 'action': 'retry'})
         self.assertEqual((status, json.loads(body)), (409, {
             'error': 'Nothing here failed, so there is nothing to try again.'}))
 
     def test_a_decks_form_is_the_only_long_body_and_only_with_the_key(self):
         large = os.urandom(300_000)
-        sent = {'form': {**FORM, 'route': 'document',
+        sent = {'form': {**FORM, 'flow': 'desk', 'route': 'document',
                          'source': {'kind': 'upload', 'name': 'notes.md'}},
                 'uploads': {'notes.md': encoded(NOTES + large.hex().encode())}}
         self.assertGreater(len(json.dumps(sent)), server.BODY_LIMIT)
@@ -1343,9 +1337,7 @@ class LiveWireTests(WireCase):
         self.fail(f'It did not happen in time: {run}')
 
     def test_a_deck_goes_from_the_form_to_finished_on_the_page(self):
-        status, _, body = self.ask('/api/decks', {'form': FORM})
-        self.assertEqual(status, 200, body)
-        path = json.loads(body)['path']
+        path = str(self.saved_start())
         for gate in ('gate:outline', 'gate:look', 'gate:build'):
             run = self.until(path, lambda run: run['state'] == 'waiting'
                              and (run['gate'] or {}).get('name') == gate)

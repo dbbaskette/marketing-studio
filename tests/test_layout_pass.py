@@ -126,7 +126,7 @@ class StaticLayoutTests(unittest.TestCase):
                  if node.tag == 'section' and 'card' in node.classes]
         self.assertEqual(cards, [
             ('0', 'You and your assistant'), ('0', 'Models for your work'),
-            ('0', 'Where new work stops'), ('1', 'Your workspace'), ('2', 'Brand'),
+            ('1', 'Your workspace'), ('2', 'Brand'),
             ('2', 'Delivery and previews'), ('settings', 'Research sites'),
             ('settings', 'Studio installations')])
         self.assertNotIn('setup-part', (WEB / 'index.html').read_text())
@@ -140,8 +140,7 @@ class StaticLayoutTests(unittest.TestCase):
 
     def test_moved_setup_controls_are_in_their_new_cards(self):
         html = page()
-        for control, title, step in (('review-level', 'Where new work stops', '0'),
-                                     ('model-profiles', 'Models for your work', '0'),
+        for control, title, step in (('model-profiles', 'Models for your work', '0'),
                                      ('output', 'Delivery and previews', '2')):
             with self.subTest(control=control):
                 node = html.find(control)
@@ -233,10 +232,10 @@ class PageLayoutTests(unittest.TestCase):
 
     def test_moved_setup_controls_are_reachable(self):
         shots = self.page([{'home': self.SHOWN}, {'show': 'settings'},
-                           {'snapshot': 'settings', 'ids': ['review-part', 'delivery-part', 'installations', 'save']},
+                           {'snapshot': 'settings', 'ids': ['delivery-part', 'installations', 'save']},
                            {'show': 'computer'}, {'snapshot': 'computer', 'ids': ['check']}])
         settings = shots['settings']['hidden']
-        self.assertEqual(settings, {'review-part': False, 'delivery-part': False, 'installations': False,
+        self.assertEqual(settings, {'delivery-part': False, 'installations': False,
                                     'save': False})
         self.assertFalse(shots['computer']['hidden']['check'])
         self.assertEqual(shots['settings']['words']['save'], 'Save settings')

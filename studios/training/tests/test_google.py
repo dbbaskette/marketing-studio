@@ -826,8 +826,8 @@ class ContractTests(TrainingCase):
 
     def test_the_google_commands_are_found_without_editing_the_helper(self):
         self.assertEqual(self.run_cli('google', 'status', '--offline', expect=2),
-                         {'error': 'No training in this directory. Run init first.'})
-        self.run_cli('init', '--title', 'Topic')
+                         {'error': 'No training in this directory. Use checked desk commands for new work.'})
+        helpers.saved_init(self.root, '--title', 'Topic')
         self.assertEqual(self.run_cli('google', 'status', '--offline'),
                          {'docs': {}, 'offline': True})
         self.assertEqual(self.run_cli('google', 'status'), {'docs': {}, 'offline': False})

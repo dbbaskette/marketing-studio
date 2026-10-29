@@ -4,7 +4,7 @@ New conversation work uses [checked desk commands](conversation.md), including f
 
 ## The directory
 
-A training needs a directory of its own. If this one is the skill's repository, a home directory or a folder of unrelated projects, say so and ask the user to launch in a directory made for the topic. `training.py init` refuses the skill's own directory and any directory above it.
+These steps apply only to an existing saved intake in its training directory. Public `training.py init` is retired and cannot create or migrate a training; use [checked desk commands](conversation.md) for new work.
 
 ## Ask once
 
@@ -34,7 +34,7 @@ List the files, ignoring dot-directories.
 
 ## Record it
 
-1. `training.py init --title "<title>"`, adding `--levels 101 301`, `--brief-kind competitive`, `--deck-target pptx` or `google`, `--delivery reading` for a deck read on its own (a talk, `live`, is the default), `--brand "<brand>"`, `--yoodli` and `--copies google word` as they apply. If it refuses, show the user why and stop.
+1. Open the existing saved training and check its status. Preserve its recorded settings; do not initialize a replacement.
 2. Write `intake.md` with these `##` headings and nothing else: Topic, Levels, Brief, Audience, Purpose, Source scope, Time limit. Under Source scope, name sites on a line `Sites: host/path, host/path`. Settings such as the deck target stay out of it, so changing them later does not mark the research stale.
 3. `training.py save intake --built`, then `training.py approve intake`. The user's answers are the approval for this stage, and the training moves on to `research-plan`.
 4. For each stage they do not want: `training.py skip <stage> --reason "<their words>"`.

@@ -47,7 +47,7 @@ GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/r
 POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
-         '/api/note', '/api/review-level', '/api/research-site')
+         '/api/note', '/api/research-site')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'ahead', 'can_migrate_desk', 'can_open_desk', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'flow', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
@@ -216,7 +216,6 @@ class RuleTests(PageCase):
                        '/api/run': {'path': self.path, 'action': 'stop'},
                        '/api/answer': {'path': self.path, 'id': 'x', 'answer': 'Yes.'},
                        '/api/note': {'path': self.path, 'expected': '0', 'text': 'Keep it short.'},
-                       '/api/review-level': {'level': 'balanced', 'seen': 'step_by_step'},
                        '/api/research-site': {'site': 'docs.example.com'},
                        '/api/documents': {'path': self.path, 'action': 'add',
                                           'name': 'handbook.txt', 'content': 'V29yZHMu'},
@@ -321,7 +320,7 @@ class SetUpTests(FirstTimeCase):
             'updates': {'look': True}, 'upkeep': None,
             'brand': {'found': False, 'name': None, 'brands': [], 'skills': [],
                       'problem': NO_BRAND_SKILL, 'repository': None, 'release': None}})
-        said = self.post('trainings', FORM, 409)
+        said = self.post('trainings', {**FORM, 'flow': 'desk'}, 409)
         self.assertIn('No workspace is set up on this computer yet', said['error'])
         self.assertIn('No workspace is set up', self.post('share', {}, 409)['error'])
         self.assertEqual(self.get('trainings'), {'trainings': [], 'needs': 0})
@@ -486,7 +485,7 @@ class SetUpTests(FirstTimeCase):
                                           'STUDIOS_CONFIG': str(self.base / 'theirs.json')}):
             theirs = self.make()
             gitstate.join(str(remote))
-            made = theirs.start(pipeline.check_form(FORM))
+            made = theirs.start(pipeline.check_form({**FORM, 'flow': 'desk'}))
             self.assertTrue(theirs.share()['shared'])
         self.assertEqual(self.get('trainings')['trainings'], [])
         self.post('setup', {'repository': str(remote)})
@@ -1250,33 +1249,20 @@ class AgentTests(PageCase):
         away = agents.Readiness('claude', False, problem='Claude Code is not installed. '
                                 'Install it and sign in, then try again.')
         with mock.patch.object(self.engine.adapters['claude'], 'ready', return_value=away):
-            said = self.post('trainings', FORM, 409)
+            said = self.post('trainings', {**FORM, 'flow': 'desk'}, 409)
         self.assertEqual(said['error'], away.problem)
         self.assertEqual(self.get('trainings')['trainings'], [])
 
 
 class StartTests(PageCase):
-    def test_the_form_starts_a_training_and_its_run_at_once(self):
-        made = self.post('trainings', {**FORM, 'levels': ['101', '201'], 'agent': 'codex',
-                                       'model': 'a-model', 'effort': 'xhigh',
-                                       'brief_kind': 'competitive',
-                                       'deck_target': 'google', 'brand': CHOSEN,
-                                       'copies': ['google'], 'yoodli': True})
+    def test_the_form_starts_a_desk_training(self):
+        made = self.post('trainings', {**FORM, 'flow': 'desk', 'levels': ['101'],
+                                       'materials': ['document']})
         root = self.space.training('rolling-restarts')
-        self.assertEqual(made, {'path': str(root), 'id': 'rolling-restarts', 'gates': 8})
-        run = self.get('run', path=made['path'])
-        self.assertEqual((run['state'], run['agent'], run['model'], run['effort']),
-                         ('waiting', 'codex', 'a-model', 'xhigh'))
-        status = workspace.status(root)
-        self.assertEqual((status['levels'], status['approval'], status['gate']),
-                         (['101', '201'], 'page', 'research-plan'))
-        self.assertEqual(status['settings'], {
-            'approval': 'page', 'brand': 'example-co/light', 'brief_kind': 'competitive',
-            'copies': ['google'], 'deck_target': 'google', 'delivery': 'reading', 'walkthrough': False,
-            'stages': ['document', 'brief', 'deck', 'scenario', 'yoodli']})
-        self.assertEqual(self.post('trainings', {'title': 'Health checks', 'topic': 'Health '
-                                                 'checks', 'audience': 'Operators',
-                                                 'purpose': 'Upskilling'})['gates'], 5)
+        self.assertEqual((made['path'], made['id'], made['gates']),
+                         (str(root), 'rolling-restarts', 0))
+        self.assertEqual(self.get('run', path=made['path'])['flow'], 'desk')
+        self.assertNotIn('review_policy', self.record(root))
 
     def test_the_form_says_where_research_may_look(self):
         for scope, title in (('supplied-only', 'From documents'), ('both', 'From both')):
@@ -1320,7 +1306,7 @@ class StartTests(PageCase):
                 ({'agent': 'claude', 'model': 'claude-opus-4-6', 'effort': 'xhigh'},
                  'Opus 4.6 takes one of these reasoning levels: low, medium, high, max,')):
             with self.subTest(changes=changes):
-                self.assertIn(said, self.post('trainings', {**FORM, **changes}, 400)['error'])
+                self.assertIn(said, self.post('trainings', {**FORM, 'flow': 'desk', **changes}, 400)['error'])
         self.assertEqual((self.get('trainings')['trainings'], self.workers.jobs), ([], []))
         self.assertFalse(self.space.training('rolling-restarts').exists())
 
@@ -1344,7 +1330,7 @@ class StartTests(PageCase):
 
     def test_a_second_training_with_the_same_title_is_refused(self):
         self.saved_started()
-        said = self.post('trainings', FORM, 409)
+        said = self.post('trainings', {**FORM, 'flow': 'desk'}, 409)
         self.assertIn('already has a training in trainings/rolling-restarts', said['error'])
 
 
@@ -2243,9 +2229,7 @@ class WireTests(WireCase):
         self.assertNotIn(self.server.token, self.server.address)
 
     def test_a_training_is_started_decided_and_watched_over_the_wire(self):
-        status, _, body = self.ask('/api/trainings', FORM)
-        self.assertEqual(status, 200, body)
-        path = json.loads(body)['path']
+        path = str(self.saved_start())
         run = json.loads(self.ask('/api/run?' + urlencode({'path': path}))[2])
         self.assertEqual((run['state'], sorted(run)), ('waiting', RUN_KEYS))
         seen = workspace.sha256_file(Path(path) / pipeline.PLAN)
@@ -2278,11 +2262,11 @@ class WireTests(WireCase):
         self.assertEqual((len(self.engine.trainings()), self.workers.jobs), (before, []))
 
     def test_something_that_cannot_be_done_is_answered_with_a_sentence_and_409(self):
-        path = json.loads(self.ask('/api/trainings', FORM)[2])['path']
+        path = str(self.saved_start())
         status, _, body = self.ask('/api/run', {'path': path, 'action': 'retry'})
         self.assertEqual((status, json.loads(body)), (409, {
             'error': 'Nothing here failed, so there is nothing to try again.'}))
-        status, _, body = self.ask('/api/trainings', {**FORM, 'source_scope': 'the-moon'})
+        status, _, body = self.ask('/api/trainings', {**FORM, 'flow': 'desk', 'source_scope': 'the-moon'})
         self.assertEqual((status, json.loads(body)['error']), (400, 'The source scope is one '
                          'of: public-web, supplied-only, both'))
         # Where research may look: something that applies, and sites that are sites.
@@ -2291,11 +2275,11 @@ class WireTests(WireCase):
                               'the public web.'),
                              ({'sites': ['localhost/docs']}, '"localhost/docs" is not a public '
                               'site. Research never reads this computer or a private network.')):
-            status, _, body = self.ask('/api/trainings', {**FORM, 'research_from': chosen})
+            status, _, body = self.ask('/api/trainings', {**FORM, 'flow': 'desk', 'research_from': chosen})
             self.assertEqual((status, json.loads(body)['error']), (400, said))
 
     def test_a_document_is_the_only_long_body_and_only_with_the_key(self):
-        path = json.loads(self.ask('/api/trainings', {**FORM, 'source_scope': 'both'})[2])[
+        path = json.loads(self.ask('/api/trainings', {**FORM, 'flow': 'desk', 'source_scope': 'both'})[2])[
             'path']
         # Just over what any other change may carry. A body refused unread has to fit in
         # what the connection holds, or the sender never gets to read the refusal.
@@ -2359,10 +2343,8 @@ class LiveWireTests(WireCase):
         self.fail(f'It did not happen in time: {run}')
 
     def test_a_training_goes_from_the_form_to_finished_on_the_page(self):
-        status, _, body = self.ask('/api/trainings', {**FORM, 'levels': ['101', '201']})
-        self.assertEqual(status, 200, body)
-        made = json.loads(body)
-        path, root, decided = made['path'], Path(made['path']), 0
+        root = self.saved_start(levels=['101', '201'])
+        path, decided = str(root), 0
         for gate in ('research-plan', 'research', 'blueprint@101', 'blueprint@201',
                      'document@101', 'brief@101', 'scenario:main@101', 'document@201',
                      'brief@201', 'scenario:main@201'):
@@ -2377,7 +2359,7 @@ class LiveWireTests(WireCase):
             self.assertEqual(status, 200, body)
             decided += 1
         done = self.until(path, lambda run: run['state'] == 'done')
-        self.assertEqual((decided, made['gates']), (10, 8))
+        self.assertEqual(decided, 10)
         self.assertEqual({step['status'] for step in done['steps']}, {'done'})
         self.assertEqual((done['workers'], done['finished']['ready']), ([], True))
         self.assertEqual(len(self.workers.jobs), 13)
@@ -3261,8 +3243,12 @@ class DeskTeamTests(TeamCase):
                 said = self.ask(self.blake, f'drafts/{route}', {'path': str(theirs), **sent},
                                 409)
                 self.assertEqual(said['error'], str(caught.exception))
-        self.assertEqual(workspace.person_statuses(theirs, workspace.load(theirs))[name],
-                         'draft')
+        session = workspace.load(theirs)
+        self.assertEqual(workspace.person_statuses(theirs, session)[name], 'draft',
+                         {key: ((session['artifacts'].get(key) or {}).get('built_from'),
+                                workspace.inputs(theirs, session, key))
+                          for key, status in workspace.statuses(theirs, session).items()
+                          if status == 'stale'})
 
     def test_a_finished_desk_training_is_still_its_person_s(self):
         name = 'document@101'
@@ -3402,8 +3388,10 @@ class DeskTeamTests(TeamCase):
                 # The next fixture starts under Alex again; leave this training Blake's.
 
     def test_a_finished_saved_training_must_be_claimed_before_opening(self):
+        from stand_ins.research import saved_queue
+        self.research = saved_queue()
         with self.be(self.alex):
-            root = self.start(levels=['101'], materials=['document'])
+            root = self.saved_start(levels=['101'], materials=['document'])
             self.to_end(root)
             self.assertEqual(self.engine.view(root)['state'], 'done')
             self.engine.share()

@@ -107,7 +107,6 @@ function show(next) {
   });
   form.querySelectorAll('[data-step]').forEach(section => { section.hidden = setup && Number(section.dataset.step) !== step; });
   // Blog Studio's own first run asks only what Blog Studio uses.
-  $('#review-part').hidden = blogAlone() || (setup && step !== 0);
   $('#delivery-part').hidden = blogAlone() || (setup && step !== 2);
   $('#back').hidden = !setup || step === 0;
   $('#save').textContent = setup ? (step === 2 ? 'Finish setup' : 'Continue') : 'Save settings';
@@ -205,7 +204,7 @@ function fill() {
   for (const input of form.querySelectorAll('input[name], select[name]')) {
     if (input.name === 'storage' || input.name === 'assistant.effort' || input.name.startsWith('models.')) continue;
     const keys = input.name.split('.'); let value = keys.length === 2 ? shared[keys[0]]?.[keys[1]] : shared[keys[0]];
-    value ??= ({'assistant.agent': 'claude', 'review.level': 'balanced', 'local.root': '~/Studios', 'team.branch': 'main', output: 'pptx', share: 'decision'})[input.name] || '';
+    value ??= ({'assistant.agent': 'claude', 'local.root': '~/Studios', 'team.branch': 'main', output: 'pptx', share: 'decision'})[input.name] || '';
     input.value = value;
   }
   form.elements.storage.value = shared.team?.repository ? 'remote' : 'local';
@@ -457,7 +456,6 @@ function changesForStep() {
   if (!setup || step === 0) {
     wanted.models = {schema: 1, agent: profileAgent, mode: form.elements['models.mode'].value, profiles: {}};
     for (const name of profileNames) wanted.models.profiles[name] = {selection: value(`models.${name}.selection`), model: value(`models.${name}.model`), effort: value(`models.${name}.effort`)};
-    if (!blogAlone()) wanted.review = {level: value('review.level')};
     wanted.person = {name: value('person.name')};
     wanted.assistant = {agent: value('assistant.agent'), model: value('assistant.model'), effort: value('assistant.effort')};
   }

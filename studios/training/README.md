@@ -19,14 +19,14 @@ You can ask for one or more **levels**, from 101 (introduction) to 401 (expert).
 
 ## Two ways to work
 
-You can make a training in either of two ways. Both use the same file formats. The desk lets you work as materials arrive; a conversation keeps its explicit checkpoints.
+You can make a training in either of two ways. Both use the configured workspace and let you work as materials arrive.
 
 | | On the page | In a conversation |
 | --- | --- | --- |
-| How you start | Open Training Studio and fill in a short form | Ask your assistant for a training, in a folder of your own |
+| How you start | Open Training Studio and fill in a short form | Ask your assistant for focused work in the configured workspace |
 | Who does the work | The runner starts an assistant for each step by itself | Your assistant, in the conversation |
-| Where you approve | On a page in your browser | In the conversation, or on the page if you choose |
-| Working with a team | Built in: your team shares one workspace | Through a [team hub](docs/team-hub.md) |
+| Where you approve | On a page in your browser | Only you can approve; checked submissions do not approve |
+| Working with a team | Built in: your team shares one workspace | In the workspace; older conversation work can use the [team hub](docs/team-hub.md) |
 | Best for | Getting a training made while you get on with other things | Steering each step closely |
 
 Start on the desk for a guided workflow, or use a conversation when you want to steer each stage closely.
@@ -89,63 +89,19 @@ See [the runner](docs/runner.md) for every step, the slide deck, working as a te
 
 ## Your first training, in a conversation
 
-**1. Make a folder for the topic.** One folder is one training. Do not use the Training Studio folder you downloaded.
+**1. Set up the workspace.** Complete Training Studio setup first. New conversation work uses that configured workspace; it does not start in an arbitrary topic folder.
 
-```bash
-mkdir valkey-training
-cd valkey-training
-```
+**2. Ask for the work you want.** Start your assistant and say, for example:
 
-**2. Add anything you already have.** Put source documents in the folder if you want the research to use them. If you already know the practice situation you want, write it as `scenario.md` (see [writing a scenario](#writing-your-own-scenario)). Both are optional.
+> Use training-studio to make a teaching plan for a 101 training on Valkey for teams running Redis.
 
-**3. Start your assistant in that folder and ask for the training.** Run `claude` or `codex`, then say, for example:
+Describe the audience, purpose, levels, and materials you need. Your assistant chooses a finite scope for that request: an outline-only request does not also authorize research or drawings. Tell it about any local documents you want used; original uploads and source scope are pinned. Google and Word copies and Yoodli are off unless you explicitly request them.
 
-> Use training-studio to build a 101 training on Valkey for teams running Redis, with a competitive brief.
+**3. Work through the checked desk.** Your assistant creates the work with `studio desk create`, reads its context with `studio desk context`, and submits material with `studio desk submit`. The [conversation instructions](skills/training-studio/references/conversation.md) explain the inputs and checks. Creation starts no worker and does not check assistant readiness; conversation work needs no nested assistant. Answer questions and make decisions yourself. A checked submission is not approval or Ready: only you can approve, and work remains Draft when requirements are unmet.
 
-**4. Answer a few questions.** It asks about the audience, what they already know, which levels you want, whether the brief is about one product or a comparison, and which of your documents to use. If you want the learner guide and the brief kept as Google Docs, or as Word files, say so here; by default it makes neither.
+**4. Come back or hand over deliberately.** Ask your assistant to continue the work in the workspace. A page visit or restart does not transfer it to the runner. If you want the runner to take over, explicitly request a handoff; it checks the remaining plan, scope and readiness first. See [conversation handoff](docs/runner.md#conversation-handoff-and-saved-work).
 
-**5. Review each stage.** It stops seven times and waits for you:
-
-| It shows you | What to look for |
-| --- | --- |
-| The research questions | Are these the right things to find out? |
-| The research findings | What was confirmed, and what could not be |
-| The blueprint | Are these the right objectives, at the right size? |
-| The learner guide | Does it teach what the blueprint promises? |
-| The brief | Is it honest about weaknesses as well as strengths? |
-| The deck | Does it cover every objective? |
-| The scenarios | Is this the conversation you want people to practise? |
-
-At each stop you can approve it, ask for changes, or skip that stage. What you were shown, and what you decided, is also saved under `reviews/` in your folder.
-
-You decide in the conversation, by telling your assistant. If you would rather decide on [the page](docs/page.md), where the document is laid out to read and your assistant cannot approve anything for you, say so when you start.
-
-**6. Find your files.** They are ordinary files: `document.md`, `product-brief.md` or `competitive-brief.md`, the deck, and `scenario.md`, in a folder for each level such as `101/`. If you chose Google Docs or Word copies, the guide and the brief are there too. If you asked for Yoodli scenarios there is a `yoodli/` folder too. `README.md` at the top of your training folder lists everything and says whether the training is complete. [How it works](docs/how-it-works.md#the-training-folder) describes every file.
-
-### Things you can say
-
-- "Where are we?" shows the current stage and what is waiting on you.
-- "Is it done?" checks the whole training and lists anything missing.
-- "Redo the deck." rebuilds one stage.
-- "Skip the deck." leaves a stage out.
-- "Just the document." builds only the learner guide.
-- "Add a scenario." adds another practice situation.
-- "More research on licensing." extends the research.
-- "Put the guide in a Google Doc." sends the learner guide or the brief out for review. "Pull the Google Doc." brings the edits back.
-- "Keep the guide and the brief in Google Docs." does that for every one from now on. "Make Word copies too." adds Word files. Neither is made unless you ask.
-- "What trainings do I have?" lists the trainings on this computer.
-- "Open the page." shows what needs you, and every training, in your browser.
-- "I want to approve on the page." moves the decisions for this training to that page. From then on only you can approve a stage, there.
-- "Publish this to the team hub." shares what you have approved with your team, through a private git repository you control.
-- "What is in the hub about Redis?" finds scenarios, audiences and research your team has shared, to reuse in a new training.
-
-### Coming back later
-
-Start your assistant in the same folder and ask for the training again. It picks up where it stopped.
-
-You can edit any file yourself. The next time you ask, Training Studio notices the change, marks anything built from that file as out of date, and asks whether to rebuild it or keep it.
-
-To carry on a training on the page instead, open it there and press "Run this from here". See [bringing a training in](docs/runner.md#bringing-a-training-in).
+Older saved conversation trainings can still follow their saved seven-stop review and import path; that is compatibility for existing work, not a new start. See [saved-work compatibility](../../docs/saved-work-compatibility.md).
 
 ## Levels
 
@@ -227,3 +183,5 @@ The programs that track your files, and the runner behind the page, have automat
 ## Licence
 
 [MIT](LICENSE).
+
+Saved older work and its retained paths are described in [saved work compatibility](../../docs/saved-work-compatibility.md).

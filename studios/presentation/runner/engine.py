@@ -770,6 +770,12 @@ class Engine(Jobs, Researching, DeskActions):
               execution: str = 'runner', scope=None) -> dict:
         """Make a deck from the form as the page sent it, and start its run. `uploads` maps
         an uploaded file's name to its bytes. Returns {'path', 'id'}."""
+        if not isinstance(form, dict):
+            raise WorkspaceError('Start new work on the desk with a form.')
+        if {'review_level', 'review_seen', 'review_default'} & form.keys():
+            raise WorkspaceError('New desk work does not accept review preferences. Remove those fields.')
+        if execution == 'runner' and form.get('flow') != 'desk':
+            raise WorkspaceError('New work starts on the desk. Use flow: desk; saved runs can still continue.')
         if execution == 'conversation':
             from runner import desk_chat
             return desk_chat._start(self, form, uploads, desk_chat.scope_of(scope))
@@ -778,9 +784,6 @@ class Engine(Jobs, Researching, DeskActions):
         space, chosen = self.space(), settings.load()
         gitstate.identity(space.repo)
         checked = decks.check_form(form, self.brands())
-        # A desk deck has no review level: its start chose the one pause it has.
-        level, seen, default = (None, None, False) if checked.get('flow') \
-            else decks.review_choice(form)
         given = self._given(form, checked, uploads or {})
         named = isinstance(form, dict) and form.get('agent') not in (None, '')
         agent = settings.check_agent(form['agent']) if named else chosen.agent
@@ -812,13 +815,6 @@ class Engine(Jobs, Researching, DeskActions):
             if gitstate.workspace_identity(self.workspace) != gitstate.workspace_identity(space):
                 raise WorkspaceError('The workspace changed while this start was being checked. '
                                      'Open the current workspace and try again.')
-            if default:
-                # Refused, with nothing made, when another studio changed the level the form read.
-                import studios_config
-                try:
-                    review_policy.change(studios_config.update, level, seen)
-                except ValueError as error:
-                    raise WorkspaceError(str(error)) from None
             root = decks.create(space, checked)
             try:
                 for name, data in given.items():
@@ -830,9 +826,6 @@ class Engine(Jobs, Researching, DeskActions):
                               model_profiles=profiles, driver=team.claim(space),
                               limits={'step_seconds': chosen.step_seconds,
                                       'dollars': chosen.deck_dollars})
-                if not checked.get('flow'):
-                    record['review_policy'] = ({'schema': 1, 'level': level} if level
-                                               else review_policy.capture())
                 if contract:
                     record['research_contract'] = contract
                 if review_policy.level(record) != 'step_by_step':

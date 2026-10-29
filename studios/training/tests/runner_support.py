@@ -1606,7 +1606,8 @@ class StudioCase(unittest.TestCase):
         from studio_core import review_policy
         engine = engine or self.engine
         space = engine.space()
-        form = pipeline.check_form({**FORM, **changes, 'flow': None})
+        form = pipeline.check_form({**FORM, **{k: v for k, v in changes.items()
+            if k not in ('review_level', 'review_seen', 'review_default')}, 'flow': None})
         chosen = settings.load()
         agent = form['agent'] or chosen.agent
         model = form['model'] if form['agent'] else form['model'] or chosen.model
@@ -1614,8 +1615,8 @@ class StudioCase(unittest.TestCase):
         root = pipeline.create(space, form)
         record = self.engines.new_record(agent, model, chosen, form['source_scope'], effort, form.get('research_from'))
         record['research_questions'] = form.get('research_questions') or []
-        if form.get('review_level'):
-            record['review_policy'] = {'schema': 1, 'level': form['review_level']}
+        if changes.get('review_level'):
+            record['review_policy'] = {'schema': 1, 'level': changes['review_level']}
         record['schema'] = 1 if review_policy.level(record) == 'step_by_step' else 2
         if saved_contract is not None:
             record['research_contract'] = dict(saved_contract)

@@ -143,7 +143,7 @@ def load(root: Path) -> dict:
             migration_records.pair(root)
         except (ValueError, OSError, KeyError) as error:
             raise WorkspaceError(str(error)) from error
-        raise WorkspaceError('No training in this directory. Run init first.')
+        raise WorkspaceError('No training in this directory. Use checked desk commands for new work.')
     try:
         import migration_records
         session = migration_records.record(root, f'{STATE_DIR}/session.json')
@@ -246,7 +246,7 @@ def mutating(function):
     @functools.wraps(function)
     def wrapper(root: Path, *args, **kwargs):
         if not session_path(root).is_file():
-            raise WorkspaceError('No training in this directory. Run init first.')
+            raise WorkspaceError('No training in this directory. Use checked desk commands for new work.')
         with locked(root):
             return function(root, *args, **kwargs)
     return wrapper

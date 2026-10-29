@@ -1906,8 +1906,6 @@ function drawSettings(fresh) {
       + 'studio shares is changed in Shared settings.')],
     ['shared-settings', [held.configured, held.person, held.brand && held.brand.default,
       held.output], sharedCard],
-    ['review-level', [view.setup && view.setup.review_level, view.reviewRefused],
-      reviewLevelCard],
     ['workspace', around(), workspaceCard],
     ['brand-source', [view.setup && view.setup.brand && [view.setup.brand.repository,
       view.setup.brand.release], view.brandRefused, view.savingBrand], brandSourceCard],
@@ -2996,31 +2994,7 @@ function paintChosenLater(node) {
     + ', ' + megabytes(draft.upload.size) + '.') : make('p', 'quiet', 'Nothing chosen yet.'));
 }
 
-const LEVELS_SHOWN = Object.keys(REVIEW_WORDS);
 
-// Settings: where new work stops in every studio, saved at once. A refusal, such as a level
-// another studio changed since this page read it, is said in the card.
-function reviewLevelCard() {
-  const problem = alertLine('review-level-problem');
-  if (view.reviewRefused) say(problem, view.reviewRefused);
-  const level = (view.setup && view.setup.review_level) || 'step_by_step';
-  return add(card('Where new work stops'),
-    make('p', '', 'Where new work stops for you, in every studio. A start form can choose '
-      + 'differently for one deck.'),
-    choice('Review level', LEVELS_SHOWN.map((one) => REVIEW_WORDS[one]),
-      LEVELS_SHOWN.indexOf(level), async (index) => {
-        const chosen = LEVELS_SHOWN[index];
-        try {
-          view.setup = await send('review-level', { level: chosen, seen: level });
-          view.reviewRefused = '';
-          toast('New work in every studio now starts at ' + REVIEW_WORDS[chosen] + '.');
-        } catch (failure) {
-          view.reviewRefused = failure.message;
-        }
-        draw(false);
-      }, 'review-level'),
-    problem);
-}
 
 // --- where research may look -------------------------------------------------------------
 // Your documents (a deck made from a document), your sites (the shared list, which a deck

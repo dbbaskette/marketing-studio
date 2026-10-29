@@ -125,7 +125,7 @@ class HubCase(Flow):
 
     def start(self, *init_args, title: str = 'Rolling restarts') -> None:
         """A training with approved research and nothing built from it yet."""
-        self.cli('init', '--title', title, *init_args)
+        helpers.saved_init(self.root, '--title', title, *init_args)
         self.make('intake', 'intake.md', '# Intake\n\n## Audience\nPlatform leads.\n')
         self.make('research-plan', '.training-studio/research-plan.json',
                   json.dumps(helpers.PLAN))
@@ -283,7 +283,7 @@ class ChoosingTests(HubCase):
     def test_use_needs_a_training_and_a_hub_that_is_joined(self):
         self.founded()
         self.assertIn('No training', self.hub('use', 'team', expect=2)['error'])
-        self.cli('init', '--title', 'Topic')
+        helpers.saved_init(self.root, '--title', 'Topic')
         self.assertIn('No hub called "field"', self.hub('use', 'field', expect=2)['error'])
 
     def test_the_only_joined_hub_is_used_and_remembered(self):
@@ -401,7 +401,7 @@ class PublishTests(HubCase):
 
     def test_publishing_refuses_when_nothing_is_approved(self):
         self.founded()
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.write('blueprint.md', example('blueprint.md'))
         self.write('scenario.md', example('scenario.md'))
         self.assertIn('Nothing in this training is approved',
@@ -564,7 +564,7 @@ class LevelTests(HubCase):
 
         self.be('blake')
         self.hub('sync')
-        self.cli('init', '--title', 'Blue-green deploys', '--levels', '201,401')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys', '--levels', '201,401')
         self.assertIn('--level', self.hub('get', 'scenario', 'outage', expect=2)['error'])
         self.assertIn('--level', self.hub('get', 'scenario', 'outage', '--level', '101',
                                           expect=2)['error'])
@@ -974,7 +974,7 @@ class FindTests(HubCase):
         report.unlink()
         report.symlink_to(private)
         self.assertEqual(self.hub('find', 'TOP-SECRET-TOKEN')['found'], [])
-        self.cli('init', '--title', 'Blue-green deploys')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys')
         for args in (('audience', 'leak'), ('scenario', 'leak'),
                      ('research', 'rolling-restarts')):
             refusal = self.hub('get', *args, expect=2)['error']
@@ -998,7 +998,7 @@ class ScenarioTests(HubCase):
         self.hub('publish')
         self.be('blake')
         self.hub('sync')
-        self.cli('init', '--title', 'Blue-green deploys')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys')
         got = self.hub('get', 'scenario', 'rolling-restarts/main')
         self.assertEqual((got['artifact'], got['file']), ('scenario:main', 'scenario.md'))
         self.assertEqual(got['from'], {'hub': 'team', 'id': 'rolling-restarts/main',
@@ -1017,7 +1017,7 @@ class ScenarioTests(HubCase):
         self.hub('share', 'scenario', 'main', '--as', 'objection')
         self.be('blake')
         self.hub('sync')
-        self.cli('init', '--title', 'Blue-green deploys')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys')
         mine = self.write('scenario.md', '# Scenario: Mine\n')
         refusal = self.hub('get', 'scenario', 'rolling-restarts/main', expect=2)['error']
         self.assertIn('already has a scenario called main', refusal)
@@ -1043,7 +1043,7 @@ class ScenarioTests(HubCase):
         self.be('alex', 'second')
         self.assertIn('No training', self.hub('get', 'scenario', 'rolling-restarts/main',
                                               expect=2)['error'])
-        self.cli('init', '--title', 'Blue-green deploys')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys')
         for ident in ('nothing', 'rolling-restarts/nothing', 'no-training/main',
                       'rolling-restarts/main@101'):
             self.assertIn('hub find', self.hub('get', 'scenario', ident, expect=2)['error'],
@@ -1079,7 +1079,7 @@ class ScenarioTests(HubCase):
 
     def test_only_an_approved_scenario_can_be_shared(self):
         self.founded()
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         self.write('scenario.md', example('scenario.md'))
         refusal = self.hub('share', 'scenario', 'main', expect=2)['error']
         self.assertIn('scenario:main is draft', refusal)
@@ -1101,7 +1101,7 @@ class ScenarioTests(HubCase):
         self.assertIn('already has this scenario', again['notice'])
         self.be('blake')
         self.hub('sync')
-        self.cli('init', '--title', 'Blue-green deploys')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys')
         self.make('scenario:main', 'scenario.md', example('scenario.md') + '\nMine differs.\n')
         refusal = self.hub('share', 'scenario', 'main', '--as', 'objection', expect=2)['error']
         self.assertIn('already has a different scenario called objection', refusal)
@@ -1115,7 +1115,7 @@ class ScenarioTests(HubCase):
         self.founded()
         self.small()
         self.be('blake')
-        self.cli('init', '--title', 'Blue-green deploys')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys')
         self.make('scenario:main', 'scenario.md', example('scenario.md') + '\nMine differs.\n')
         self.assertTrue(self.hub('share', 'scenario', 'main', '--as', 'objection')['added'])
         self.be('alex')
@@ -1150,7 +1150,7 @@ class AudienceTests(HubCase):
 
     def test_an_audience_is_never_replaced_or_taken_from_private_folders(self):
         self.founded()
-        self.cli('init', '--title', 'Rolling restarts')
+        helpers.saved_init(self.root, '--title', 'Rolling restarts')
         first = self.write('audience.md', AUDIENCE)
         self.hub('share', 'audience', 'platform-leads', '--file', str(first))
         same = self.hub('share', 'audience', 'platform-leads', '--file', str(first))
@@ -1189,7 +1189,7 @@ class ResearchTests(HubCase):
         self.hub('publish')
         self.be('blake')
         self.hub('sync')
-        self.cli('init', '--title', 'Blue-green deploys')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys')
         got = self.hub('get', 'research', 'rolling-restarts')
         self.assertEqual((got['file'], got['copied']),
                          ('sources/rolling-restarts-research-report-r1.md', True))
@@ -1221,7 +1221,7 @@ class ResearchTests(HubCase):
         self.cli('approve', 'research')
         self.assertEqual(self.hub('publish')['revision'], 2)
         self.be('alex', 'second')
-        self.cli('init', '--title', 'Blue-green deploys')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys')
         self.assertEqual(self.hub('get', 'research', 'rolling-restarts')['from']['revision'], 2)
         first = self.hub('get', 'research', 'rolling-restarts', '--revision', '1')
         self.assertEqual(first['file'], 'sources/rolling-restarts-research-report-r1.md')
@@ -1233,13 +1233,13 @@ class ResearchTests(HubCase):
 
     def test_research_that_is_not_there_is_refused(self):
         self.founded()
-        self.cli('init', '--title', 'Scenario only')
+        helpers.saved_init(self.root, '--title', 'Scenario only')
         self.make('scenario:main', 'scenario.md', example('scenario.md'))
         self.hub('publish')
         self.be('alex', 'second')
         self.assertIn('No training', self.hub('get', 'research', 'scenario-only',
                                               expect=2)['error'])
-        self.cli('init', '--title', 'Blue-green deploys')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys')
         self.assertIn('without a research report',
                       self.hub('get', 'research', 'scenario-only', expect=2)['error'])
         self.assertIn('hub find', self.hub('get', 'research', 'unknown', expect=2)['error'])
@@ -1271,7 +1271,7 @@ class ContractTests(HubCase):
         self.assertEqual(self.run_cli('hub', 'publish')['revision'], 1)
         self.be('blake')
         self.assertEqual(self.run_cli('hub', 'join', str(self.remote))['trainings'], 1)
-        self.run_cli('init', '--title', 'Blue-green deploys')
+        helpers.saved_init(self.root, '--title', 'Blue-green deploys')
         self.assertEqual(self.run_cli('hub', 'get', 'scenario', 'rolling-restarts/main')['file'],
                          'scenario.md')
         self.assertEqual(self.run_cli('hub', 'publish', expect=2),

@@ -1116,17 +1116,6 @@ def save(root, directory, record, run, event):
     receipt(root, 'Guided blog', result, 'article')
 
 
-def review_level(root, data):
-    """Settings' Where new work stops: write the level new work starts at in every studio,
-    refused when another studio changed the one the page read. Answers the settings."""
-    import studios_config
-
-    if not isinstance(data, dict) or set(data) != {'level', 'seen'}:
-        raise ValueError('Give the level and the level the page read.')
-    review_policy.change(studios_config.update, data['level'], data['seen'])
-    return settings(root)
-
-
 def redo(found, jobs):
     """What Ask for changes at each writing stage draws again: that stage and every one
     after it, with what they took the last time each ran on this computer. The research
@@ -3541,34 +3530,6 @@ def command(root, args):
     if args.action == 'status':
         return engine(root).describe(args.id)
     with studio.locked(root):
-        if args.action == 'create':
-            data = {
-                k: v
-                for k, v in vars(args).items()
-                if k
-                not in (
-                    'root',
-                    'group',
-                    'action',
-                    'source',
-                    'example',
-                    'messaging',
-                    'compact',
-                    'research_from',
-                    'site',
-                )
-                and v is not None
-            }
-            data['sources'] = args.source
-            if args.research_from is not None or args.site:
-                data['research_from'] = research_from_words(
-                    args.research_from or 'sites', args.site
-                )
-            library = [{'id': ident, 'role': 'example'} for ident in args.example]
-            library += [{'id': ident, 'role': 'messaging'} for ident in args.messaging]
-            if library:
-                data['library'] = library
-            return create(root, data)
         if args.action == 'submit':
             if args.gap and args.stage not in NOTED:
                 # Only a draft and a handoff keep gaps; elsewhere one would be dropped unsaid.

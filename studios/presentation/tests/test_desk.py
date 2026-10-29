@@ -774,24 +774,11 @@ class ScreenTests(ScriptedPage, PageCase):
                     'At every decision after the first'):
             self.assertNotIn(old, text)
 
-    def test_settings_saves_where_new_work_stops_at_once(self):
-        from studio_core import review_policy
-        answers = self.answers(**{
-            'GET /api/setup': [self.setup_with(review_level='balanced')],
-            'POST /api/review-level': [self.setup_with(review_level='automatic'),
-                                       {'status': 409, 'body': {'error': review_policy.STALE}}]})
-        result = self.run_page(answers, [
-            {'click': 'Settings'}, {'snapshot': 'settings'},
-            {'click': 'Automatic draft'}, {'snapshot': 'saved'},
-            {'click': 'Step by step'}, {'snapshot': 'refused'}])
-        shots = result['snapshots']
-        self.assertIn('Where new work stops', shots['settings']['text'])
-        self.assertIn('Balanced', shots['settings']['pressed'])
-        sent = [body for address, body in self.posts(result) if address == '/api/review-level']
-        self.assertEqual(sent, [{'level': 'automatic', 'seen': 'balanced'},
-                                {'level': 'step_by_step', 'seen': 'automatic'}])
-        self.assertIn('Automatic draft', shots['saved']['pressed'])
-        self.assertIn(review_policy.STALE, shots['refused']['text'])
+    def test_settings_has_no_review_preference_control(self):
+        answers = self.answers(**{'GET /api/setup': [self.setup_with(review_level='balanced')]})
+        result = self.run_page(answers, [{'click': 'Settings'}, {'snapshot': 'settings'}])
+        self.assertNotIn('Where new work stops', result['snapshots']['settings']['text'])
+        self.assertFalse(any(address == '/api/review-level' for address, _ in self.posts(result)))
 
     def test_a_deck_calls_its_look_stage_look(self):
         path = self.saved_started(title='Rolling restarts')

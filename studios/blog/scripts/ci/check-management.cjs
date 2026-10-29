@@ -1362,29 +1362,15 @@ async function contextualTools(){
   const slow=deferred(),h=fixture(()=>slow.promise);h.loadRunner();const reading=h.run("sPrepublishTool('fixture')");h.run('sCloseSheet()');slow.resolve({findings:[],coverage:'Local'});await reading;assert.equal(h.run('studio.sheet'),null);
 }
 
-// Where new work stops, in every studio: Settings saves it at once, and a refusal shows in its
-// own card. A blog on the desk has no stops.
+// Settings keeps the shared-settings link without a review-level writer.
 async function whereThisRunStops(){
-  const requests=[];let refuse=false;const found={id:'synthetic',title:'Synthetic blog',status:'queued',expected:'version-1',stages:[],decisions:[],brief:{goal:'Explain',audience:'Authors'},seconds:600,engine:'codex',mode:'write'};
-  const f=fixture((url,options)=>{const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});if(url==='/api/review-level'){if(refuse)return {__http:400,error:'Another studio changed where new work stops. Reload the page and try again.'};return {defaults,workspace:'/synthetic',shared_before:{},review_level:data.level};}return url.startsWith('/api/run?')?found:{};});f.loadRunner();
+  const requests=[];const f=fixture((url,options)=>{requests.push({url,options});return {};});f.loadRunner();
   const defaults={engine:'codex',seconds:600,research:'none',tone:'Clear',author:''};f.set('defaults',defaults);
-  const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent);
-  // Settings: Where new work stops, saved at once; a refusal shows in its own problem line.
   f.run("studio.settings={defaults,workspace:'/synthetic',shared_before:{},review_level:'balanced'};studio.team={};studio.brand=null;studio.screen='settings';sSettings()");
-  const shared=nodes().find(e=>e.tagName==='a'&&e.textContent==='Change shared settings');assert.ok(shared&&shared.href.startsWith('/onboarding/'),'Settings keeps its way to the shared settings');
-  const where=nodes().find(e=>e.tagName==='section'&&e.children[0]?.textContent==='Where new work stops');assert.ok(where,'Settings shows Where new work stops: '+text().join('|'));
-  assert.ok(descendants(where).some(e=>/A blog on the writing desk has no stops/.test(e.textContent)),'and says the desk has none');
-  const choices=descendants(where).filter(e=>e.className==='seg-option');assert.deepEqual(choices.map(e=>e.textContent),['Balanced','Automatic draft','Step by step']);
-  await choices[1].listeners.click();
-  assert.deepEqual(requests.filter(r=>r.url==='/api/review-level').pop().data,{level:'automatic',seen:'balanced'});
-  assert.ok(descendants(f.get('toasts')).some(e=>e.textContent==='New decks, trainings and blogs run step by step in chat now start at Automatic draft.'),'the toast names what it changes');
-  assert.equal(f.run('studio.settings.review_level'),'automatic');
-  refuse=true;
-  const again=nodes().find(e=>e.tagName==='section'&&e.children[0]?.textContent==='Where new work stops');
-  await descendants(again).filter(e=>e.className==='seg-option')[2].listeners.click();
-  assert.deepEqual(requests.filter(r=>r.url==='/api/review-level').pop().data,{level:'step_by_step',seen:'automatic'});
-  const after=nodes().find(e=>e.tagName==='section'&&e.children[0]?.textContent==='Where new work stops');
-  assert.ok(descendants(after).some(e=>e.className==='problem'&&e.textContent==='Another studio changed where new work stops. Reload the page and try again.'),'the refusal is in the card: '+descendants(after).map(e=>e.textContent).join('|'));
+  const nodes=descendants(f.get('studio-page'));
+  assert.ok(nodes.some(e=>e.tagName==='a'&&e.textContent==='Change shared settings'));
+  assert.ok(!nodes.some(e=>e.textContent==='Where new work stops'));
+  assert.ok(!requests.some(r=>r.url==='/api/review-level'));
 }
 
 // One name for each thing: the handoff, Record in team repository, the research choice, the

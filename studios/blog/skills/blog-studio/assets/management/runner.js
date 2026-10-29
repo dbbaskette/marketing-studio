@@ -5,7 +5,6 @@ const STAGE_STATUSES={draft:'Waiting for you',approved:'Approved',pending:'Not s
 const BLOG_MODES=[['ideas','Explore ideas'],['from-files','New blog from my files'],['from-outline','Use my outline'],['write','Write a blog'],['outline','Outline only'],['revise','Revise a draft'],['review','Review a draft']];
 const STUDIO_ICONS={home:['M4 11.5 12 4.5l8 7','M6.5 10.5V19.5h11V10.5'],blogs:['M12 4 3.5 8.5 12 13l8.5-4.5z','M3.5 12.5 12 17l8.5-4.5','M3.5 16.5 12 21l8.5-4.5'],status:['M3 12.5h4l2.5-6.5 4.5 12 2.5-5.5H21'],voices:['M12 4a3 3 0 0 0-3 3v5a3 3 0 0 0 6 0V7a3 3 0 0 0-3-3z','M6 11.5a6 6 0 0 0 12 0','M12 17.5V20.5'],settings:['M4.5 7.5h7','M16.5 7.5h3','M14 5.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z','M4.5 16.5h3','M12.5 16.5h7','M10 14.5a2 2 0 1 0 0 4 2 2 0 0 0 0-4z'],back:['M14.5 5.5 8 12l6.5 6.5'],check:['M5.5 12.5 10 17l8.5-10'],eye:['M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z','M12 9.2a2.8 2.8 0 1 0 0 5.6 2.8 2.8 0 0 0 0-5.6z'],warn:['M12 6v7.5','M12 17.5h.01']};
 const REVIEW_WORDS={balanced:'Balanced',automatic:'Automatic draft',step_by_step:'Step by step'};
-const LEVEL_CHOICES=Object.entries(REVIEW_WORDS);
 // Where research may look, said one way wherever it is chosen: your documents, your sites
 // (the shared list in Shared settings) and/or the public web. Older words read as they meant.
 const OLD_RESEARCH={none:{documents:false,sites:false,web:false},'supplied-only':{documents:true,sites:false,web:false},'web-allowed':{documents:true,sites:false,web:true}};
@@ -67,9 +66,6 @@ function sResearchDefault(held){const ticks={...(OLD_RESEARCH[held.research]||he
 // One line under the beads: how many steps are left, where the run next stops for the person
 // under its own level, and what it has spent so far, all as the runner says them.
 function sAhead(found){const ahead=found.ahead;if(!ahead||found.complete)return null;const parts=[];if(ahead.steps_left)parts.push(ahead.steps_left+' step'+(ahead.steps_left===1?'':'s')+' left');if(ahead.next_gate)parts.push('Next stop: '+(found.mode==='ideas'&&ahead.next_gate==='outline'?'the ideas':STAGE_WORDS[ahead.next_gate]||ahead.next_stop));if(ahead.spent)parts.push('So far '+(found.team?'on this computer ':'')+ahead.spent);return parts.length?sNode('p','quiet ahead-line',parts.join(' · ')):null;}
-// Settings: where new work stops in every studio, saved at once, refused when another studio
-// changed it since this page read it.
-function sWhereNewWorkStops(){const card=sNode('section','card'),fill=said=>{const held={level:studio.settings.review_level||'step_by_step'},problem=sNode('p','problem',said);problem.setAttribute('role','alert');card.replaceChildren(sNode('h2','card-title','Where new work stops'),sNode('p','quiet','Where a new deck, a new training or a blog run step by step in chat stops for you, in every studio. A blog on the writing desk has no stops: you edit it when you choose.'),sChoice('Review level',LEVEL_CHOICES,held,'level',async value=>{let said='';try{studio.settings=await api('review-level',{level:value,seen:studio.settings.review_level});if(studio.options?.settings)studio.options.settings.review_level=studio.settings.review_level;sToast('New decks, trainings and blogs run step by step in chat now start at '+REVIEW_WORDS[value]+'.');}catch(error){said=error.message;}fill(said);}),problem);};fill('');return card;}
 // What it is doing now, and for how long: under the title while a job works.
 const RESEARCH_PHASES={author:'writing the report',review:'the independent check'};
 // Research says its round: 0 while public sources are found, then each author and check.
@@ -146,7 +142,7 @@ function sSharedFailure(error,problem,reload){
 }
 function sSettings(setup=false,privateDraft={}){
   const draft={...studio.settings.defaults,...privateDraft},held={...draft,minutes:String(draft.seconds/60)},form=sNode('form','narrow'),problem=sNode('p','problem');problem.setAttribute('role','alert');sFrame(setup?'Set up Blog Studio':'Settings',[],setup?'Choose the defaults for this computer':'');
-  const sharedSettings=sNode('a','button','Change shared settings');sharedSettings.href='/onboarding/#'+token;form.append(sCard('Shared settings',sNode('p','','Your assistant, work folder, brand and delivery choices apply across all studios.'),sharedSettings),sWhereNewWorkStops());
+  const sharedSettings=sNode('a','button','Change shared settings');sharedSettings.href='/onboarding/#'+token;form.append(sCard('Shared settings',sNode('p','','Your assistant, work folder, brand and delivery choices apply across all studios.'),sharedSettings));
   const workspace=sCard('Where your blogs are kept',sNode('p','path',studio.settings.workspace),sNode('p','quiet','The page is open for this writing workspace. Existing sources, voices and its selected Team Hub stay here.'),sNode('p','quiet','To use another workspace, open Blog Studio there with your assistant or the page command.'),sNode('p','',access.message));
   // The default voice: a confirmed voice a new blog writes as unless another is chosen, or none.
   const voices=studio.settings.voices||[];held.voice=voices.some(voice=>voice.id===studio.settings.voice?.profile_id)?studio.settings.voice.profile_id:'';

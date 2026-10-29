@@ -373,3 +373,5 @@ The config chooses the repository URLs and destination directory; the sample put
 Marketing Studio and its related checkouts under `~/Projects/`. Missing checkouts
 are cloned, local work is preserved, and failures are reported while the other
 updates continue. See [repository sync](docs/repository-sync.md) for all options.
+
+Saved older work and its retained paths are described in [saved work compatibility](docs/saved-work-compatibility.md).

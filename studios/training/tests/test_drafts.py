@@ -106,10 +106,7 @@ class DeskStartTests(DeckCase):
         studios_config.update({'review': {'level': 'balanced'}})
         config = self.base / 'studios.json'
         before = config.read_bytes()
-        with mock.patch.object(review_policy, 'change',
-                               side_effect=AssertionError('the shared level was changed')):
-            root = self.start(flow='desk', review_level='automatic', review_seen='balanced',
-                              review_default=True)
+        root = self.start(flow='desk')
         self.assertEqual(config.read_bytes(), before)
         record = self.record(root)
         self.assertNotIn('review_policy', record)

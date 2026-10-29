@@ -1355,6 +1355,12 @@ class Engine(Reviewing):
 
     def start(self, form: dict, *, execution='runner', scope=None, uploads=None) -> dict:
         """Make a training from the form's answers and start its run."""
+        if not isinstance(form, dict):
+            raise WorkspaceError('Start new work on the desk with a form.')
+        if {'review_level', 'review_seen', 'review_default'} & form.keys():
+            raise WorkspaceError('New desk work does not accept review preferences. Remove those fields.')
+        if execution == 'runner' and form.get('flow') != 'desk':
+            raise WorkspaceError('New work starts on the desk. Use flow: desk; saved runs can still continue.')
         if execution == 'conversation':
             from runner import desk_chat
             return desk_chat._start(self, form, scope, uploads)
@@ -1393,20 +1399,6 @@ class Engine(Reviewing):
             if desk:
                 record.pop('review_policy')
                 record.pop('review_layout')
-            elif form.get('review_default'):
-                # Use this for new work in every studio: written under the studios config's
-                # lock, or refused, with nothing made, when another studio changed the level
-                # the form read.
-                from runner import studios_config
-                try:
-                    review_policy.change(studios_config.update, form['review_level'],
-                                         form.get('review_seen'))
-                except ValueError as error:
-                    raise WorkspaceError(str(error)) from None
-            # A per-training choice does not write shared settings and stays valid even
-            # when another studio changes the default while this form is open.
-            if form.get('review_level') and not desk:  # this training's own, saved with it
-                record['review_policy'] = {'schema': 1, 'level': form['review_level']}
             root = pipeline.create(space, form)
             try:
                 if review_policy.level(record) != 'step_by_step':
