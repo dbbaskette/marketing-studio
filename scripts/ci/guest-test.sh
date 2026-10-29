@@ -181,6 +181,16 @@ elif [[ "${1:-full}" == bundles ]]; then
   bundle="$(find dist -maxdepth 1 -name 'marketing-studio-*-macos-arm64.zip' -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A real Apple Silicon platform bundle is required.' >&2; exit 1; }
   "$python" scripts/ci/bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/bundle-acceptance.log"
+elif [[ "${1:-full}" == research-citation-finish ]]; then
+  # The full root, Blog Studio, Presentation Studio and remaining Training Studio
+  # classes passed. Finish the CLI class after isolating its HOME snapshot, then
+  # run the package check and all disposable CLI acceptance journeys.
+  (
+    cd studios/training
+    "$python" scripts/ci/run_tests.py test_cli.ContractTests
+    "$python" skills/training-studio/scripts/validate_package.py
+  ) 2>&1 | tee "$results_dir/research-citation-final-tests.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == research-finish ]]; then
   # Reuse the passing full root, Blog Studio and Presentation Studio evidence.
   # Repeat Training Studio after its contract expectation repair; verify Stop

@@ -127,18 +127,22 @@ class ContractTests(TrainingCase):
         return json.loads(done.stdout)
 
     def test_public_init_refuses_without_writes(self):
-        target = self.root.parent / 'new-training'
-        roots = [self.root.parent, Path(os.environ['TRAINING_STUDIO_DATA']),
-                 Path(os.environ['HOME']), Path(os.environ['STUDIOS_CONFIG']).parent]
-        def contents():
-            return [{p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}
-                    for root in roots]
-        before = contents()
-        for directory in (target, self.root):
-            result = self.run_cli('--dir', str(directory), 'init', '--title', 'Topic', expect=2)
-            self.assertIn('desk', result['error'].lower())
-            self.assertEqual(before, contents())
-        self.assertFalse(target.exists())
+        home = self.root.parent / 'home'
+        home.mkdir()
+        (home / 'keep.txt').write_text('Synthetic existing home content.\n')
+        with mock.patch.dict(os.environ, {'HOME': str(home)}):
+            target = self.root.parent / 'new-training'
+            roots = [self.root.parent, Path(os.environ['TRAINING_STUDIO_DATA']),
+                     Path(os.environ['HOME']), Path(os.environ['STUDIOS_CONFIG']).parent]
+            def contents():
+                return [{p.relative_to(root): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+                        for root in roots]
+            before = contents()
+            for directory in (target, self.root):
+                result = self.run_cli('--dir', str(directory), 'init', '--title', 'Topic', expect=2)
+                self.assertIn('desk', result['error'].lower())
+                self.assertEqual(before, contents())
+            self.assertFalse(target.exists())
 
     def test_status_before_init_is_a_refusal_with_exit_code_2(self):
         self.assertEqual(self.run_cli('status', expect=2),
