@@ -124,7 +124,7 @@ async function recoverActivity(id,owner) {
 function recoveredNotice(result) {
   if(result?.state==='complete')toast('Finished. Your saved work is ready to review.');
   else if(result?.state==='outdated')toast('The earlier result was kept and did not replace newer work.');
-  else error(result?.state==='failed'?'The operation could not finish. Your saved work is kept.':result?.state==='cancelled'?'The image request was cancelled. Remote charges may remain unknown.':'The earlier outcome could not be confirmed. Check the saved work and recovery controls before retrying.');
+  else error(result?.state==='failed'?(result.problem||'The operation could not finish. Your saved work is kept.'):result?.state==='cancelled'?'The image request was cancelled. Remote charges may remain unknown.':'The earlier outcome could not be confirmed. Check the saved work and recovery controls before retrying.');
 }
 async function resumeActivity(id,current) {
   busy=true;const unlock=lockControls(),owner=beginWork(current.label,current.elapsed_seconds);
@@ -265,6 +265,7 @@ async function openProject(id) {
   try { resetPicture(); held=await request('/api/desk?id='+encodeURIComponent(id)); renderProject();
     try{sessionStorage.setItem('infographic-studio-project',id);}catch(f){}
     if(!busy&&held.activity?.state==='running')void resumeActivity(id,held.activity);
+    else if(!busy&&held.activity?.state==='failed'&&held.activity.problem)error(held.activity.problem);
   }
   catch(failure) {error(failure.message);}
 }

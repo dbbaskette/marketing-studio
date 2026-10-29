@@ -29,6 +29,9 @@ class Assistant:
             self.release.clear()
             if not self.release.wait(60):
                 raise RuntimeError('Synthetic assistant was not released.')
+            if self.fail == 'timeout':
+                from runner.assistant_failure import AssistantFailure
+                raise AssistantFailure('timeout')
             if self.fail:
                 from runner.contracts import Invalid
                 raise Invalid('Synthetic planning failure. Your saved work is kept.')
@@ -94,7 +97,7 @@ def main():
                 return super().read(route, one)
             def write(self, route, sent):
                 if route == '/api/fixture-release':
-                    engine.assistant.fail = bool(sent.get('fail'))
+                    engine.assistant.fail = sent.get('fail', False)
                     engine.assistant.release.set()
                     return server.shared.as_json(200, {'released': True})
                 if route == '/api/brand-current':

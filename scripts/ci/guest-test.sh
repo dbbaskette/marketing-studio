@@ -42,7 +42,7 @@ export PATH="$work/tools/bin:$PATH"
 # Real helper contract checks use source only, never an installed skill or provider.
 export STUDIO_TEST_RESEARCH_RUNTIME="$work/research-runtime"
 "$python" scripts/ci/research-runtime.py "$STUDIO_TEST_RESEARCH_RUNTIME" > "$results_dir/research-runtime.log" 2>&1
-if [[ "${1:-full}" == infographic-activity || "${1:-full}" == infographic-activity-finish || "${1:-full}" == infographic-google-finish || "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic-followups || "${1:-full}" == infographic || "${1:-full}" == infographic-finish || "${1:-full}" == infographic-after-root || "${1:-full}" == infographic-acceptance ]]; then
+if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activity || "${1:-full}" == infographic-activity-finish || "${1:-full}" == infographic-google-finish || "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic-followups || "${1:-full}" == infographic || "${1:-full}" == infographic-finish || "${1:-full}" == infographic-after-root || "${1:-full}" == infographic-acceptance ]]; then
   # These are explicit CI preparation steps in the disposable clone, not tests
   # downloading software or touching a signed-in machine.
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
@@ -54,13 +54,16 @@ if [[ "${1:-full}" == infographic-activity || "${1:-full}" == infographic-activi
   export NODE_PATH="$work/browser/node_modules"
   export PYTHON="$python"
   export INFOGRAPHIC_UI_RESULTS="$results_dir/infographic-ui"
-  if [[ "${1:-full}" == infographic-activity || "${1:-full}" == infographic-activity-finish ]]; then
+  if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activity || "${1:-full}" == infographic-activity-finish ]]; then
     {
       node --check studios/infographic/runner/web/app.js
-      if [[ "${1:-full}" == infographic-activity-finish ]]; then
-        # Full 692 shared and 148 native cases passed. Only modal message
-        # visibility changed; retain that evidence and repeat affected UI gates.
+      if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activity-finish ]]; then
+        # Retain the passing full shared suite for unchanged core/home code.
+        # Cover affected UI gates; planning also repeats the full native suite.
         PYTHONPATH=tests "$python" -m unittest test_ui_consistency test_layout_pass -v
+        if [[ "${1:-full}" == infographic-planning ]]; then
+          "$python" -m unittest discover -s studios/infographic/tests -v
+        fi
       else
         "$python" -m unittest discover -s tests -v
         "$python" -m unittest discover -s studios/infographic/tests -v
@@ -128,7 +131,7 @@ if [[ "${1:-full}" == infographic-activity || "${1:-full}" == infographic-activi
   node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-browser.log"
   node studios/infographic/tests/ui/suite-return.cjs 2>&1 | tee "$results_dir/suite-return-browser.log"
   pattern='infographic-first-release-*-macos-arm64.zip'
-  if [[ "${1:-full}" == infographic-activity || "${1:-full}" == infographic-activity-finish || "${1:-full}" == infographic-followups || "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic-google-finish ]]; then pattern='infographic-followups-*-macos-arm64.zip'; fi
+  if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activity || "${1:-full}" == infographic-activity-finish || "${1:-full}" == infographic-followups || "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic-google-finish ]]; then pattern='infographic-followups-*-macos-arm64.zip'; fi
   bundle="$(find dist -maxdepth 1 -name "$pattern" -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
   "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"
