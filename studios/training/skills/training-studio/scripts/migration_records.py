@@ -101,11 +101,9 @@ def record(root, name):
     return value
 
 
-def write(root, name, value, atomic):
-    selected = pair(root)
+def _replacement(root, name, value, selected):
     if selected is None:
-        atomic(Path(root) / name, (json.dumps(value, indent=2, sort_keys=True) + '\n').encode())
-        return
+        return Path(root) / name, (json.dumps(value, indent=2, sort_keys=True) + '\n').encode()
     origin, session, run = selected
     if name == format.SESSION:
         session = value
@@ -114,7 +112,58 @@ def write(root, name, value, atomic):
     a, b = {'origin': origin, 'record': session}, {'origin': origin, 'record': run}
     format.validated(origin, a, b, _bytes(Path(root) / format.SESSION), _bytes(Path(root) / format.RUN), Path(root).name)
     path = format.DESK_SESSION if name == format.SESSION else format.DESK_RUN
-    atomic(Path(root) / path, (json.dumps(a if name == format.SESSION else b, indent=2, sort_keys=True) + '\n').encode())
+    return Path(root) / path, (json.dumps(a if name == format.SESSION else b, indent=2, sort_keys=True) + '\n').encode()
+
+
+def write(root, name, value, atomic):
+    atomic(*_replacement(root, name, value, pair(root)))
+
+
+def replace_local_deck(root, name, session, data, atomic):
+    """Advance one native local draft and its marker, preserving failures under the caller's lock."""
+    import workspace
+    root = Path(root)
+    # Read/check the CURRENT pair before replacing any file it certifies. Thereafter
+    # check the PROPOSED session against its proposed bytes, not the old marker.
+    selected = pair(root)
+    path, record = _replacement(root, format.SESSION, session, selected)
+    file = workspace.managed(root, workspace.prefix(workspace.split(name)[1]) + 'deck/local-draft.pptx')
+    previous = _bytes(path)
+    old = _bytes(file, 64_000_000) if file.exists() else None
+    history = workspace.history_file(root, name, format.digest(old), '.pptx') if old is not None else None
+    kept = _bytes(history, 64_000_000) if history is not None and history.exists() else None
+    if kept is not None and kept != old:
+        raise ValueError('The kept local drawing changed. Restore its History before continuing.')
+    # Only these native paths may be changed or rolled back. Existing History is
+    # immutable; a failed save removes only its own newly added content-addressed copy.
+    before = {path: previous, file: old}
+    after = {path: record, file: data}
+    if history is not None and kept is None:
+        before[history], after[history] = None, old
+    try:
+        if history is not None and kept is None:
+            atomic(history, old)
+        atomic(file, data)
+        workspace.pending_local_deck(root, session, name)
+        if selected is not None:
+            origin, _, run = selected
+            format.shared_inputs(origin, lambda name: _bytes(root / name, format.input_limit(name)), session)
+            local_inputs(root, origin, session, run)
+        atomic(path, record)
+        if selected is not None:
+            pair(root)
+    except BaseException:
+        current = {item: _bytes(item, 64_000_000) if item.exists() else None for item in before}
+        if any(current[item] not in (before[item], after[item]) for item in before):
+            raise workspace.WorkspaceError('The local drawing changed during saving. Preserve its files and restore its saved record.') from None
+        for item in reversed(before):
+            if current[item] == before[item]:
+                continue
+            if before[item] is None:
+                item.unlink()
+            else:
+                atomic(item, before[item])
+        raise
 
 
 def from_snapshot(files, name, ident=None):

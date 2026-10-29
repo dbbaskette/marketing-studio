@@ -12,6 +12,8 @@ from runner import desk_chat, engine as engines, gitstate, pipeline, settings, s
 from runner_support import StudioCase, TeamCase, FORM, BLUEPRINT
 from test_desk import ScriptedPage, ok, SET_UP, RUNNER, AGENTS_FOUND, MODELS
 from test_runner_page import PageCase
+from test_runner_deck import DeckCase
+from test_desk_chat import ConversationTests
 from workspace import WorkspaceError
 
 SESSION = '.training-studio/session.json'
@@ -635,9 +637,8 @@ desk_chat.migrate(engine.Engine(background=False),Path(sys.argv[1]),sys.argv[2])
             self.assertEqual(child.returncode, 0, stderr)
         self.assertEqual(sum('open unfinished work' in message for message in self.log()), 1)
 
-    def test_pending_google_restore_binding_and_return_use_effective_pair(self):
+    def pending_google(self):
         import zipfile
-        from runner import desk_migration
         root = self.saved()
         session = workspace.load(root)
         session['settings']['deck_target'] = 'google'
@@ -652,6 +653,60 @@ desk_chat.migrate(engine.Engine(background=False),Path(sys.argv[1]),sys.argv[2])
         with zipfile.ZipFile(source, 'w') as archive:
             archive.writestr('ppt/slides/slide1.xml', '<synthetic/>')
         workspace.stage_local_deck(root, 'deck', source, restore_sha256=__import__('hashlib').sha256(restore).hexdigest())
+        return root, restore, before
+
+    def test_pending_google_replacement_preserves_state_on_failure(self):
+        import zipfile
+        root, restore, _ = self.pending_google()
+        self.apply(root)
+        first = workspace.load(root)['pending_local_decks']['deck']
+        source = self.base / 'replacement.pptx'
+        with zipfile.ZipFile(source, 'w') as archive:
+            archive.writestr('ppt/slides/slide1.xml', '<changed-synthetic/>')
+        original = self.snapshot(root)
+        atomic = workspace.write_atomic
+        session_path = root / SIDES[1]
+        draft_path = root / 'deck/local-draft.pptx'
+        history_path = workspace.history_file(root, 'deck', first['sha256'], '.pptx')
+        for target, after in ((history_path, False), (history_path, True), (draft_path, False), (draft_path, True),
+                              (session_path, False), (session_path, True)):
+            with self.subTest(target=target.name, after=after):
+                failed = False
+
+                def failing(path, data):
+                    nonlocal failed
+                    if path == target and not failed:
+                        failed = True
+                        if after:
+                            atomic(path, data)
+                        raise OSError('synthetic local draft publication failure')
+                    atomic(path, data)
+
+                with mock.patch.object(workspace, 'write_atomic', side_effect=failing):
+                    with self.assertRaisesRegex((OSError, WorkspaceError), 'synthetic local draft'):
+                        workspace.stage_local_deck(root, 'deck', source, restore_sha256=first['restore_sha256'])
+                self.assertEqual(self.snapshot(root), original)
+                self.assertEqual(workspace.load(root)['pending_local_decks']['deck'], first)
+                self.assertEqual(engines.read_record(root)['delivered_restore']['deck'], first['restore_sha256'])
+        workspace.stage_local_deck(root, 'deck', source, restore_sha256=first['restore_sha256'])
+        current = workspace.load(root)['pending_local_decks']['deck']
+        self.assertEqual(draft_path.read_bytes(), source.read_bytes())
+        self.assertNotEqual(current['sha256'], first['sha256'])
+        self.assertEqual(current['restore_sha256'], first['restore_sha256'])
+        self.assertEqual((root / 'deck/delivered-state.json').read_bytes(), restore)
+        self.assertEqual(workspace.history_file(root, 'deck', first['sha256'], '.pptx').read_bytes(), original['deck/local-draft.pptx'])
+        for path in (SESSION, RUN, SIDES[0], SIDES[2], 'deck-link.md'):
+            self.assertEqual((root / path).read_bytes(), original[path])
+        # Damaged current bytes remain a refusal; the replacement is no repair bypass.
+        draft_path.write_bytes(b'PK\x03\x04 damaged current drawing')
+        damaged = self.snapshot(root)
+        with self.assertRaises(WorkspaceError):
+            workspace.stage_local_deck(root, 'deck', source, restore_sha256=first['restore_sha256'])
+        self.assertEqual(self.snapshot(root), damaged)
+
+    def test_pending_google_restore_binding_and_return_use_effective_pair(self):
+        from runner import desk_migration
+        root, restore, before = self.pending_google()
         original_session, original_run = (root / SESSION).read_bytes(), (root / RUN).read_bytes()
         self.apply(root)
         self.assertEqual((root / 'deck/delivered-state.json').read_bytes(), restore)
@@ -676,6 +731,66 @@ desk_chat.migrate(engine.Engine(background=False),Path(sys.argv[1]),sys.argv[2])
         self.assertEqual(desk_migration.CONSEQUENCES.count('4.7.0'), 1)
 
 
+
+
+class MigrationGoogleTests(DeckCase):
+    snapshot = MigrationTests.snapshot
+    preview = MigrationTests.preview
+    apply = MigrationTests.apply
+    submit = ConversationTests.submit
+
+    def record(self, root):
+        return engines.read_record(root)
+
+    def test_checked_conversation_repeated_local_edits_preserve_delivered_state(self):
+        root = self.begin(deck_target='google')
+        self.drawn(root)
+        self.assertNotEqual(workspace.load(root)['stage'], 'done')
+        (root / '.training-studio/google-baseline.json').write_text('{"revision":"synthetic-existing-google-revision"}\n')
+        original = self.snapshot(root)
+        self.apply(root)
+        migrated = self.snapshot(root)
+        with mock.patch.object(self.engine, '_deck_here', side_effect=AssertionError('passive tool probe')), \
+                mock.patch.object(self.documents, 'listed', side_effect=AssertionError('passive source repair')):
+            self.engine._survey(root, self.record(root))
+            self.engine.view(root)
+        self.assertEqual(self.snapshot(root), migrated)
+        count = len(self.workers.jobs)
+        survey = engines.Engine._deck_here
+        checked = []
+
+        def checked_survey(staged, path, record):
+            self.assertTrue(staged._local_decks_only)
+            self.assertNotEqual(path, root)
+            self.assertEqual(path.name, root.name)
+            checked.append(path)
+            return survey(staged, path, record)
+
+        with mock.patch.object(self.slides, 'drive_import', side_effect=AssertionError('delivery')), \
+                mock.patch.object(engines.Engine, '_deck_here', checked_survey):
+            self.submit(root, 'deck/check-yourself/notes', 'part', {'text': 'First checked local note.'})
+            first = workspace.load(root)['pending_local_decks']['deck']
+            first_bytes = (root / 'deck/local-draft.pptx').read_bytes()
+            before = self.snapshot(root)
+            from runner import gitstate
+            with mock.patch.object(gitstate, 'commit', side_effect=WorkspaceError('synthetic checked publication failure')):
+                with self.assertRaisesRegex(WorkspaceError, 'synthetic checked publication'):
+                    self.submit(root, 'deck/check-yourself/notes', 'part', {'text': 'Second checked local note.'})
+            self.assertEqual(self.snapshot(root), before)
+            self.assertEqual(workspace.load(root)['pending_local_decks']['deck'], first)
+            self.submit(root, 'deck/check-yourself/notes', 'part', {'text': 'Second checked local note.'})
+        current = workspace.load(root)['pending_local_decks']['deck']
+        self.assertNotEqual(current['sha256'], first['sha256'])
+        self.assertNotEqual((root / 'deck/local-draft.pptx').read_bytes(), first_bytes)
+        self.assertEqual(current['restore_sha256'], first['restore_sha256'])
+        self.assertEqual(workspace.history_file(root, 'deck', first['sha256'], '.pptx').read_bytes(), first_bytes)
+        for path in (SESSION, RUN, 'deck-link.md', '.training-studio/google-baseline.json'):
+            self.assertEqual((root / path).read_bytes(), original[path])
+        self.assertEqual(len(self.workers.jobs), count)
+        self.assertFalse(self.record(root).get('drafts', {}).get('jobs'))
+        self.assertEqual(workspace.person_statuses(root, workspace.load(root))['deck'], 'draft')
+        self.assertTrue(checked)
+        self.assertEqual((root / SIDES[0]).read_bytes(), migrated[SIDES[0]])
 
 
 class MigrationTeamTests(TeamCase):

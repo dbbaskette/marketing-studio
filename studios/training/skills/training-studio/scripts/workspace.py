@@ -454,19 +454,20 @@ def stage_local_deck(root: Path, name: str, source: Path, delivered_approval=Non
     data = source.read_bytes()
     if data[:4] != PPTX_SIGNATURE:
         raise WorkspaceError('The local drawing is not a usable PowerPoint deck.')
-    file = managed(root, prefix(level) + 'deck/local-draft.pptx')
     link = managed(root, prefix(level) + 'deck-link.md')
     if not re.fullmatch(r'[a-f0-9]{64}', str(restore_sha256)):
         raise WorkspaceError('Keep the proven original delivered state before saving a local deck draft.')
     marker = dict(old) if old else {'schema': 2, 'restore_sha256': restore_sha256, 'delivered_sha256': sha256_file(link),
         'delivered_approval': delivered_approval if delivered_approval is not None else
                               (session['artifacts'].get(name) or {}).get('approved')}
-    snapshot(root, name, file)
-    write_atomic(file, data)
     marker.update(sha256=hashlib.sha256(data).hexdigest(), at=now())
     session.setdefault('pending_local_decks', {})[name] = marker
     log(session, 'keep-local-deck-draft', artifact=name, sha256=marker['sha256'])
-    store(root, session)
+    import migration_records
+    try:
+        migration_records.replace_local_deck(root, name, session, data, write_atomic)
+    except (ValueError, OSError, KeyError) as error:
+        raise WorkspaceError(str(error)) from error
 
 
 def artifact(root: Path, session: dict, name: str) -> dict:

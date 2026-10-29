@@ -756,9 +756,11 @@ class Engine(Reviewing):
     def _survey(self, root: Path, record: dict, copies=None) -> pipeline.Survey:
         """Where a training is, with its copies and the person's documents looked at.
         `copies` saves looking at the copies again when the caller just has."""
-        if record.get('unfinished_migration') and drafts.in_conversation(record):
+        if record.get('unfinished_migration') and drafts.in_conversation(record) \
+                and not getattr(self, '_local_decks_only', False):
             # Retained saved inputs only; reading a migrated conversation never probes tools
-            # or repairs the canonical document index. Explicit content checks use scratch.
+            # or repairs the canonical document index. Explicit content checks use the
+            # existing local-only scratch engine and need its native deck/tool survey.
             source_index = home.read_json(root / documents_kept.INDEX, {}) if record.get('documents') else {}
             supplied = source_index.get('documents', [])
             return pipeline.survey(root, record, self._wanted(root, record) if copies is None else copies, supplied, None)
