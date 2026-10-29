@@ -27,7 +27,8 @@ class PlanningTests(Isolated):
                  'stories': [{'id': 's1', 'headline': 'Keep serving', 'takeaway': quote,
                   'rationale': 'Explain only the supplied relationship.', 'qualifications': [], 'omissions': [],
                   'blocks': [{'id': 'b1', 'kind': 'concept', 'title': 'One at a time', 'text': quote,
-                   'fact_ids': ['f1'], 'required_ids': [], 'illustration': False, 'illustration_role': ''}]}]}
+                   'fact_ids': ['f1'], 'required_ids': [], 'quantitative': False,
+                   'illustration': False, 'illustration_role': ''}]}]}
         calls = []
 
         def run(command, prompt, folder, timeout):

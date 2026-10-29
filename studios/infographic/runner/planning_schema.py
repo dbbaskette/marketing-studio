@@ -27,5 +27,6 @@ PLAN = record(
         blocks=array(record(
             id=TEXT, kind={'type': 'string', 'enum': ['comparison', 'process', 'timeline', 'numbers', 'parts', 'concept']},
             title=TEXT, text=TEXT, fact_ids=array(TEXT, minItems=1), required_ids=array(TEXT),
+            quantitative={'type': 'boolean', 'description': 'True for measured numeric charts; false for descriptive comparisons and component explanations.'},
             illustration={'type': 'boolean'}, illustration_role=TEXT), minItems=1, maxItems=5)),
         minItems=1, maxItems=3))

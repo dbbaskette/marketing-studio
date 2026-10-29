@@ -69,6 +69,14 @@ one to three suggested/hybrid stories. Each has `id`, `headline`, `takeaway`,
 ```
 
 Kinds are `comparison`, `process`, `timeline`, `numbers`, `parts`, `concept`.
+Comparison and parts blocks can describe ideas or components without measurements:
+set `quantitative:false` for these unscaled explanations. Set it to `true` for
+numeric comparisons or measured proportions; units, periods, denominators and
+conditions must then be comparable. Number callouts always need numeric values.
+Older blocks without the flag keep their numeric chart behavior when they refer
+to numeric facts, and descriptive-only comparisons/components stay qualitative.
+Mixed numeric/text facts need an explicit qualitative choice; they never silently
+become chart data. No conversion invents a count, percentage or measurement.
 Preserve user-required ideas and exact wording. Hybrid cannot omit requirements.
 The browser's `suggest` asks a confined assistant to author the same two arrays;
 a conversation authors them directly, avoiding a nested planning job.

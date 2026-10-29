@@ -6,8 +6,8 @@ page; make focused edits; approve the exact revision and download PNG, one-page
 PDF, editable SVG and accessible text. Explanatory artwork stays raster inside
 SVG; labels and chart marks remain editable.
 
-The first release implements comparison, process, timeline, number callouts,
-parts-to-whole and conceptual explanations in A4, US Letter and 1080 × 1350 digital
+The first release implements qualitative and measured comparison, process, timeline,
+number callouts, component and measured parts-to-whole explanations, and conceptual explanations in A4, US Letter and 1080 × 1350 digital
 portrait. Remote reads, reviewed research imports and selected team sharing are explicit actions.
 The app does not start public research or OCR implicitly. Sources and generated files
 stay in the local workspace; connecting a team library keeps an independent private clone.
@@ -77,6 +77,10 @@ are located by the application, rather than asking the assistant to count charac
 offsets. Codex planning uses the CLI's [JSON output schema](https://learn.chatgpt.com/docs/developer-commands#codex-exec);
 native evidence, calculation and story validation still decide what can be saved.
 The shared model and reasoning settings are preserved.
+Descriptive comparisons and component explanations do not need measurements or a
+numeric scale. Generated plans keep fully checked useful alternatives when another
+option is unsupported, without repeating the assistant request. Explicit numeric
+charts still require actual, comparable source measurements.
 Actual-page inspection uses the selected assistant's multimodal path, or you can
 record your own review after viewing the current PNG at intended size. CLI help
 and capability discovery are not proof of account access or successful generation.
