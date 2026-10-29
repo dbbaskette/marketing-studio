@@ -61,6 +61,9 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
         # Retain the passing full shared suite for unchanged core/home code.
         # Cover affected UI gates; planning also repeats the full native suite.
         PYTHONPATH=tests "$python" -m unittest test_ui_consistency test_layout_pass -v
+        if [[ -n "${MARKETING_STUDIO_TEST_SHARED_INTEGRATION:-}" ]]; then
+          PYTHONPATH=tests "$python" -m unittest test_bridge_connect test_sync_guard test_companion_versions test_shared_runner test_network -v
+        fi
         if [[ "${1:-full}" == infographic-planning ]]; then
           "$python" -m unittest discover -s studios/infographic/tests -v
         fi
@@ -135,6 +138,7 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
   node studios/infographic/tests/ui/suite-return.cjs 2>&1 | tee "$results_dir/suite-return-browser.log"
   pattern='infographic-first-release-*-macos-arm64.zip'
   if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activity || "${1:-full}" == infographic-activity-finish || "${1:-full}" == infographic-followups || "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic-google-finish ]]; then pattern='infographic-followups-*-macos-arm64.zip'; fi
+  if [[ -n "${INFOGRAPHIC_STUDIO_TEST_VISUAL:-}" ]]; then pattern="infographic-followups-$(cat VERSION)-macos-arm64.zip"; fi
   bundle="$(find dist -maxdepth 1 -name "$pattern" -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
   "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"
