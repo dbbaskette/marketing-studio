@@ -76,9 +76,22 @@ class PublicationTests(TrainingCase):
                     edit.publish()
         self.assertEqual(calls[0].read_text(), 'someone else')
         self.assertTrue((edit.folder / 'PUBLISHING.txt').is_file())
+        self.assertEqual(edit.root.name, self.root.name)
+        self.assertIn('Prepared: prepared/' + self.root.name + '/', (edit.folder / 'PUBLISHING.txt').read_text())
         self.assertEqual((edit.before / calls[0].name).read_text(), 'old ' + calls[0].stem)
         with self.assertRaisesRegex(WorkspaceError, 'interrupted slide save needs recovery'):
             deck_edit.PreparedEdit(self.root)
+
+    def test_historical_recovery_folder_still_blocks_without_mutation(self):
+        folder = deck_edit.storage(self.root) / 'edit-historical'
+        (folder / 'prepared').mkdir(parents=True)
+        (folder / 'prepared/a.txt').write_text('historical prepared bytes')
+        journal = folder / 'PUBLISHING.txt'
+        journal.write_text('Training Studio slide edit\nBefore: before/\nPrepared: prepared/\n')
+        before = {path.relative_to(folder): path.read_bytes() for path in folder.rglob('*') if path.is_file()}
+        with self.assertRaisesRegex(WorkspaceError, 'interrupted slide save needs recovery'):
+            deck_edit.PreparedEdit(self.root)
+        self.assertEqual({path.relative_to(folder): path.read_bytes() for path in folder.rglob('*') if path.is_file()}, before)
 
     def test_another_training_command_prevents_publication(self):
         from workspace import locked

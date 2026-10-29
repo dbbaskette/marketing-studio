@@ -222,13 +222,13 @@ PART_LIMIT = 1_000_000   # bytes: one part of the largest size, as JSON
 READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run',
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
-         f'{DRAFTS}/proofread')
+         f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview')
 WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
-          '/api/review-level', '/api/research-site', f'{DRAFTS}/open',
+          '/api/review-level', '/api/research-site', f'{DRAFTS}/open', f'{DRAFTS}/migrate',
           f'{DRAFTS}/slide-note', f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes', f'{DRAFTS}/slide-words-decide',
           f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
           f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop',
@@ -300,6 +300,11 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK, {'agents': self.agents()})
         if path == '/api/models':
             return desk.as_json(HTTPStatus.OK, shaped(self.engine.models, one('agent')))
+        if path == f'{DRAFTS}/migration-preview':
+            from runner import desk_chat
+            training = one('path')
+            desk.registered(training)
+            return desk.as_json(HTTPStatus.OK, desk_chat.migration_preview(self.engine, training))
         if path == '/api/run':
             return desk.as_json(HTTPStatus.OK, self.run(one('path')))
         if path == '/api/delete':
@@ -595,6 +600,8 @@ class RunnerPage(desk.Page):
         if found and (found.get('flow') == 'desk' or found['state'] == 'done'):
             item['run'].update(flow=found.get('flow'),
                                can_open_desk=found.get('can_open_desk', False))
+        if found and found.get('can_migrate_desk') and not found.get('flow') and found['state'] != 'done':
+            item['run']['can_migrate_desk'] = True
         item['driver'] = found and found['driver']
         item['mine'] = None if found is None else found['mine']
         item['notice'] = found and found['notice']
@@ -787,6 +794,15 @@ class RunnerPage(desk.Page):
             except (ValueError, WorkspaceError) as refusal:
                 raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
             return desk.as_json(HTTPStatus.OK, result)
+        if path == f'{DRAFTS}/migrate':
+            from runner import desk_chat
+            training = desk.text(sent, 'path')
+            desk.registered(training)
+            try:
+                desk_chat.migrate(self.engine, training, desk.text(sent, 'expected'))
+                return desk.as_json(HTTPStatus.OK, self.engine.view(training))
+            except (WorkspaceError, ValueError, KeyError) as refusal:
+                raise desk.Refusal(HTTPStatus.CONFLICT, str(refusal)) from None
         if path == f'{DRAFTS}/open':
             training = desk.text(sent, 'path')
             desk.registered(training)

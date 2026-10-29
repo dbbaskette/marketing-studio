@@ -1502,7 +1502,7 @@ function drawSheet() {
     || TEAM_SHEETS.includes(view.sheet)
     || (view.sheet === 'new' && view.draft) || (view.sheet === 'picture' && view.picture)
     || ['delete', 'bulk-delete', 'companions', 'upgrade', 'redesign', 'brand', 'copy-choice',
-      'update-research', 'stop-run'].includes(view.sheet)
+      'update-research', 'stop-run', 'desk-migration'].includes(view.sheet)
     || (DESK_SHEETS.includes(view.sheet) && view.run)
     || (view.sheet === 'approve-combined' && view.run && view.run.review)));
   holder.hidden = !shown;
@@ -1517,6 +1517,7 @@ function drawSheet() {
   }
   let body;
   if (view.after) body = afterSheet();
+  else if (view.sheet === 'desk-migration') body = trainingMigrationSheet();
   else if (view.sheet === 'delete') body = deleteSheet();
   else if (view.sheet === 'bulk-delete') body = bulkDeleteSheet();
   else if (view.sheet === 'new') body = newSheet();
@@ -3279,8 +3280,51 @@ function folderCard(training) {
       'copy-sentence')));
 }
 
-function openDeskButton(path, kind) {
+async function previewTrainingMigration(path) {
+  view.migration = null;
+  view.migrationError = '';
+  view.migrationPath = path;
+  openSheet('desk-migration', 'unfinished-desk-open')();
+  try {
+    const found = await ask('drafts/migration-preview', { path });
+    if (view.sheet === 'desk-migration' && view.migrationPath === path) {
+      view.migration = found;
+      drawSheet();
+    }
+  } catch (error) {
+    if (view.sheet === 'desk-migration') { view.migrationError = error.message; drawSheet(); }
+  }
+}
+
+function trainingMigrationSheet() {
+  const found = view.migration;
+  const form = make('form', 'create-flow card');
+  const problem = problemLine();
+  add(form, make('p', '', 'Keep the saved materials and continue editing in conversation.'));
+  if (!found) add(form, make('p', 'quiet', view.migrationError || 'Reading saved work…'));
+  else {
+    add(form, make('p', '', found.consequences), bullets(found.retained || []));
+    if (list(found.blockers).length) add(form, make('p', 'problem', 'Before opening:'), bullets(found.blockers));
+  }
+  const apply = submitButton('Apply', 'migration-apply');
+  apply.disabled = !found || !found.expected || list(found.blockers).length > 0;
+  add(form, problem, add(make('div', 'bar create-foot'), apply,
+    capsule('Cancel', 'quiet', closeSheet, 'cancel')));
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (apply.disabled) return;
+    apply.disabled = true;
+    try {
+      view.run = await send('drafts/migrate', { path: view.migrationPath, expected: found.expected });
+      closeSheet(); show('run', { path: view.migrationPath });
+    } catch (error) { say(problem, error.message); apply.disabled = false; }
+  });
+  return [add(make('div', 'sheet-heading'), sheetTitle('Open on the desk')), form];
+}
+
+function openDeskButton(path, kind, unfinished = false) {
   return capsule('Open on the desk', kind, async () => {
+    if (unfinished) return previewTrainingMigration(path);
     try {
       await send('drafts/open', { path });
       show('run', { path });
@@ -3311,8 +3355,8 @@ function paintTraining(fresh) {
   const known = listed(training.path) || training;
   const watch = training.run || watched(known) ? capsule('Watch the run', '',
     () => show('run', { path: training.path }), 'watch') : null;
-  const openDesk = training.run && training.run.can_open_desk
-    ? openDeskButton(training.path, 'filled') : null;
+  const openDesk = training.run && (training.run.can_open_desk || training.run.can_migrate_desk)
+    ? openDeskButton(training.path, lead && !theirs ? '' : 'filled', !training.run.can_open_desk) : null;
   place({ title: training.title || 'Untitled', above, back: true, actions: [watch, lead, openDesk] },
     [add(make('div', 'intro'), state(shape, words), beads(training.stages, false),
       make('p', 'lede', saysOf(training)), whoLine(known)),
@@ -6741,6 +6785,9 @@ function paintRun(fresh) {
       nextGate(run), Boolean(run.problem), runStanding(run), supplying, outline, theirs,
       run.queue, run.steps, run.workers, run.spent],
     () => runIntro(run, training)],
+    run.can_migrate_desk ? ['migration', [view.path, run.can_migrate_desk], () => add(card('Continue saved work'),
+      make('p', '', 'Preview which saved materials can open for editing in conversation.'),
+      add(make('div', 'bar'), openDeskButton(view.path, '', true)))] : null,
     brought ? ['brought', brought, () => broughtPart(brought)] : null,
     theirs && (driver || !run.finished) ? ['theirs', [driver, lead, run.taken, run.notice,
       run.last_shared, run.kept, title], () => theirsPart(run, lead === 'take')] : null,

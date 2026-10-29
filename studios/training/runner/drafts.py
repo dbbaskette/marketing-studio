@@ -542,7 +542,7 @@ def close_updates(root: Path, session: dict, run: dict | None, state: dict | Non
 def run_of(root: Path) -> dict | None:
     """A training's run record as it is on disk, read for what the desk keeps in it, or
     None when no run is driving it. The engine reads and checks it for everything else."""
-    record = home.read_json(Path(root) / RECORD, None)
+    record = workspace.read_run(Path(root))
     return record if isinstance(record, dict) else None
 
 
@@ -808,6 +808,8 @@ def view(engine, root) -> dict:
                     shown, says, card_actions = 'writing', UPDATING, []
                 elif name == failing and problem:
                     shown, says = 'needs', problem.get('what') or NEEDS
+                elif seen is None and in_conversation(record):
+                    shown, says, card_actions = 'needs', 'Not provided. No work is scheduled; continue explicitly in conversation.', []
                 elif seen is None:
                     shown, says = (('needs', pipeline.deck_says(found))
                                    if kind == 'deck' and found.missing
@@ -834,6 +836,8 @@ def view(engine, root) -> dict:
                                 if job.get('name') == name), None)
                 if changed and changed.get('dropped'):
                     says = f"{says} {changed.get('says') or ''}".strip()
+                if record.get('unfinished_migration') and in_conversation(record):
+                    card_actions = [action for action in card_actions if action in ('ready', 'download')]
                 cards.append({
                     'name': name, 'level': level or '', 'kind': kind,
                     'label': workspace.label(name), 'state': shown, 'says': says,
@@ -846,7 +850,8 @@ def view(engine, root) -> dict:
                        if kind == 'deck' and seen else {})})
     needed = []
     if mine:
-        needed = [card['label'] for card in cards if card['state'] in ('held', 'needs')]
+        needed = [card['label'] for card in cards if card['state'] in ('held', 'needs')
+                  and (card['seen'] or not (record.get('unfinished_migration') and in_conversation(record)))]
         if question:
             needed.append(QUESTION.format(text=question['text']))
         if problem.get('what'):
@@ -866,6 +871,7 @@ def view(engine, root) -> dict:
     listed = engine.documents.listed(root) if record.get('documents') else ()
     jobs = (record.get('drafts') or {}).get('jobs') or ()
     return {
+        **({'execution': record.get('execution'), 'saved_status': record.get('migration_saved_status')} if record.get('unfinished_migration') else {}),
         'flow': FLOW, 'title': session['title'], 'levels': [level or '' for level in levels],
         'progress': {'running': running, 'doing': doing,
                      'started_at': record.get('started_at'), 'minutes': minutes,

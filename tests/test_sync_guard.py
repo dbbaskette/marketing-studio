@@ -90,6 +90,34 @@ class SyncGuardTests(unittest.TestCase):
             marker.unlink()
             self.assertFalse(worker_in_progress(self.repo))
 
+    def test_presentation_recovery_shape_exempts_only_its_exact_pending_target(self):
+        item = self.presentation_item()
+        pending = item / 'work/desk/migration-transaction.json'
+        pending.parent.mkdir(parents=True)
+        journal = {'schema': 1, 'expected': 'pm1.' + 'A' * 43, 'original': 'synthetic',
+            'after': {}, 'before_workspace': '', 'index_before': '', 'index_prepared': '', 'shared': {}, 'head_before': {}}
+        pending.write_text(json.dumps(journal))
+        self.assertTrue(worker_in_progress(self.repo))
+        self.assertFalse(worker_in_progress(self.repo, recovering_presentation=pending))
+        self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
+        prior = {name: value for name, value in journal.items() if name != 'head_before'}
+        pending.write_text(json.dumps(prior))
+        self.assertFalse(worker_in_progress(self.repo, recovering_presentation=pending))
+        for changed in ({**journal, 'unknown': True}, {**journal, 'expected': 'tm1.' + 'A' * 43}):
+            pending.write_text(json.dumps(changed))
+            self.assertTrue(worker_in_progress(self.repo, recovering_presentation=pending))
+        pending.write_text(json.dumps(journal))
+        other = self.repo / 'other/work/step.lock'
+        other.parent.mkdir(parents=True)
+        other.write_text('drawing')
+        self.assertTrue(worker_in_progress(self.repo, recovering_presentation=pending))
+        other.unlink()
+        unknown = self.repo / 'other/.blog-runs/unknown.json'
+        unknown.parent.mkdir()
+        unknown.write_text('{unreadable')
+        with self.assertRaises(ValueError):
+            worker_in_progress(self.repo, recovering_presentation=pending)
+
     def test_blog_run_and_tool_statuses_are_checked(self):
         for shape in ('.blog-runs/one.json', '.blog-runs/tools/abc.json'):
             record = self.repo / 'blogs' / shape
@@ -224,3 +252,131 @@ class SyncGuardTests(unittest.TestCase):
                         self.assertTrue(worker_in_progress(self.repo))
                         marker.unlink()
                         path.unlink()
+
+    def test_training_receipt_half_pair_and_product_bound_recovery(self):
+        import base64
+        from studio_core import training_migration as migration
+        item = self.repo / 'training'
+        item.mkdir()
+        session = {'schema': 1, 'id': item.name, 'title': 'Synthetic Training Studio',
+            'levels': [], 'sizing': {}, 'stage': 'blueprint', 'settings': {
+                'deck_target': None, 'brand': None, 'brief_kind': 'product', 'stages': []},
+            'unavailable': {}, 'pins': {}, 'artifacts': {}, 'exports': {}, 'decisions': [], 'events': []}
+        run = {'schema': 1, 'agent': 'test', 'steps': {}, 'limits': {}, 'answers': {},
+               'copies': {}, 'deck': {}, 'driver': None, 'halt': None}
+        raw_session, raw_run = json.dumps(session).encode(), json.dumps(run).encode()
+        for name, data in ((migration.SESSION, raw_session), (migration.RUN, raw_run)):
+            file = item / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(data)
+        plan = b'# Plan\n## M1 - Basics\n### O1 - Explain\n'
+        (item / 'blueprint.md').write_bytes(plan)
+        session['artifacts']['blueprint'] = {'file': 'blueprint.md', 'sha256': migration.digest(plan), 'built_from': {}}
+        raw_session = json.dumps(session).encode()
+        (item / migration.SESSION).write_bytes(raw_session)
+        token = 'tm1.' + 'A' * 43
+        origin = migration.receipt(raw_session, raw_run, item.name, token, [migration.SESSION, migration.RUN, 'blueprint.md'], ['blueprint'])
+        session.update(flow='desk')
+        run.update(flow='desk', execution='conversation', conversation_scope=['part'], migration_targets=['blueprint'], unfinished_migration=True)
+        after = {migration.ORIGIN: json.dumps(origin).encode(),
+                 migration.DESK_SESSION: json.dumps({'origin': origin, 'record': session}).encode(),
+                 migration.DESK_RUN: json.dumps({'origin': origin, 'record': run}).encode(),
+                 '@training-workspace/hub.json': b'{}'}
+        for name in migration.WRITES:
+            file = item / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_bytes(after[name])
+        self.assertFalse(worker_in_progress(self.repo))
+        for name in migration.WRITES:
+            file = item / name
+            file.unlink()
+            with self.assertRaises(ValueError):
+                worker_in_progress(self.repo)
+            file.write_bytes(after[name])
+        pending = item / migration.PENDING
+        pending.parent.mkdir(parents=True)
+        journal = {'schema': 1, 'product': 'Training Studio', 'id': item.name,
+                   'expected': token, 'after': {name: base64.b64encode(data).decode() for name, data in after.items()},
+                   'originals': {migration.SESSION: migration.digest(raw_session), migration.RUN: migration.digest(raw_run)},
+                   'before_workspace': base64.b64encode(b'{}').decode(), 'index_before': '', 'index_prepared': '',
+                   'head_before': {**dict.fromkeys(migration.WRITES, ''), '@training-workspace/hub.json': ''}}
+        pending.write_text(json.dumps(journal))
+        self.assertTrue(worker_in_progress(self.repo))
+        self.assertFalse(worker_in_progress(self.repo, recovering_training=pending))
+        for key in ('head_before', 'index_prepared', 'originals'):
+            old = {name: value for name, value in journal.items() if name != key}
+            pending.write_text(json.dumps(old))
+            self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
+        for head in ({}, {**journal['head_before'], migration.ORIGIN: 'unproven'},
+                     {**journal['head_before'], '@training-workspace/hub.json': 'unknown'}):
+            pending.write_text(json.dumps({**journal, 'head_before': head}))
+            self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
+        for key, value in (('product', 'Presentation Studio'), ('id', 'other')):
+            changed = {**journal, key: value}
+            pending.write_text(json.dumps(changed))
+            self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
+        pending.write_text(json.dumps(journal))
+        other = self.repo / 'other/work/step.lock'
+        other.parent.mkdir(parents=True)
+        other.write_text('drawing')
+        self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
+
+    def test_training_unknown_update_chain_is_never_idle(self):
+        path = self.repo / 'training/.training-studio/run.json'
+        path.parent.mkdir(parents=True)
+        for chain in ({'status': 'unknown'}, {'id': 'a' * 24, 'level': None},
+                      {'id': 'a' * 24, 'level': None, 'status': 'done', 'blocked': 'blueprint'}):
+            path.write_text(json.dumps({'schema': 1, 'steps': {}, 'drafts': {'update_chain': chain}}))
+            with self.assertRaises(ValueError):
+                worker_in_progress(self.repo)
+        for status in ('done', 'stopped', 'working'):
+            path.write_text(json.dumps({'schema': 1, 'steps': {}, 'drafts': {'update_chain': {
+                'id': 'a' * 24, 'level': None, 'status': status, 'blocked': []}}}))
+            self.assertEqual(worker_in_progress(self.repo), status == 'working')
+
+    def test_training_declared_shared_inputs_and_effective_chain_are_validated(self):
+        from studio_core import training_migration as migration
+        item = self.repo / 'training'
+        session = {'schema': 1, 'id': item.name, 'title': 'Synthetic Training Studio',
+            'levels': [], 'sizing': {}, 'stage': 'blueprint', 'settings': {
+                'deck_target': None, 'brand': None, 'brief_kind': 'product', 'stages': []},
+            'unavailable': {}, 'pins': {}, 'artifacts': {
+                'blueprint': {'file': 'blueprint.md', 'sha256': 'a' * 64, 'built_from': {'research': 'b' * 64}},
+                'research': {'file': '.harness-research/research-report.md', 'sha256': 'c' * 64, 'built_from': {}}},
+            'exports': {}, 'decisions': [], 'events': []}
+        run = {'schema': 1, 'agent': 'test', 'steps': {}, 'limits': {}, 'answers': {}, 'copies': {}, 'deck': {}}
+        files = {migration.SESSION: json.dumps(session).encode(), migration.RUN: json.dumps(run).encode(),
+            'blueprint.md': b'# Plan\n## M1 - Basics\n### O1 - Explain\n',
+            '.harness-research/research.json': json.dumps({'schema': 1, 'owner': 'harness-research', 'items': [], 'results': {}}).encode(),
+            '.harness-research/research-report.md': b'# Research\n', 'research-report.md': b'# Approved research\n'}
+        origin = migration.receipt(files[migration.SESSION], files[migration.RUN], item.name, 'tm1.' + 'A' * 43,
+                                   [migration.SESSION, migration.RUN, 'blueprint.md'], ['blueprint'], sources=True)
+        session = {**session, 'flow': 'desk'}
+        run.update(flow='desk', execution='conversation', conversation_scope=['part'], migration_targets=['blueprint'], unfinished_migration=True)
+        files.update({migration.ORIGIN: json.dumps(origin).encode(), migration.DESK_SESSION: json.dumps({'origin': origin, 'record': session}).encode(),
+                      migration.DESK_RUN: json.dumps({'origin': origin, 'record': run}).encode()})
+        for name, data in files.items():
+            path = item / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        self.assertFalse(worker_in_progress(self.repo), 'Explicitly private source files need not exist in a peer clone.')
+        for name in ('.harness-research/research.json', 'research-report.md'):
+            path = item / name
+            original = path.read_bytes()
+            for data in (None, b'{}' if name.endswith('.json') else b''):
+                if data is None:
+                    path.unlink()
+                else:
+                    path.write_bytes(data)
+                with self.assertRaises(ValueError):
+                    worker_in_progress(self.repo)
+                path.write_bytes(original)
+        for chain in ({'status': 'unknown'}, {'id': 'a' * 24, 'level': None, 'status': 'working'},
+                      {'id': 'a' * 24, 'level': None, 'status': 'stopped'}):
+            changed = {**run, 'drafts': {'update_chain': chain}}
+            (item / migration.DESK_RUN).write_text(json.dumps({'origin': origin, 'record': changed}))
+            if chain['status'] == 'unknown':
+                with self.assertRaises(ValueError):
+                    worker_in_progress(self.repo)
+            else:
+                self.assertEqual(worker_in_progress(self.repo), chain['status'] == 'working')

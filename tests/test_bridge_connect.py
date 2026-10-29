@@ -30,6 +30,147 @@ def git(folder, *arguments):
 
 @unittest.skipUnless(shutil.which('git'), 'git is needed to join a repository.')
 class BridgeConnectTests(unittest.TestCase):
+    def migrated_carry(self, identifier, scenario='valid', installed=False):
+        script = '''
+import importlib.util, json, shutil, subprocess, sys
+from pathlib import Path
+from unittest import mock
+root, identifier, scenario, installed = Path(sys.argv[1]), sys.argv[2], sys.argv[3], sys.argv[4] == 'True'
+product = root / 'studios' / identifier
+sys.path[:0] = [str(product), str(product / 'tests')]
+import test_desk_migration
+case = test_desk_migration.MigrationTests('test_preview_cancel_is_pure_even_older_document_index_and_no_identity' if identifier == 'presentation' else 'test_row_190_preview_cancel_is_pure_and_bounded')
+case.setUp()
+try:
+ from runner import desk_chat, gitstate, team
+ import home
+ if identifier == 'presentation':
+  from runner import decks as records
+  top = case.gated()
+  originals = ('run.json',)
+  side, receipt = 'desk/migration.json', 'desk/migration-origin.json'
+ else:
+  import workspace as records
+  top = case.pending_google()[0] if scenario == 'valid' else case.saved()
+  originals = ('.training-studio/session.json', '.training-studio/run.json')
+  side, receipt = '.training-studio/desk/run.json', '.training-studio/desk/migration-origin.json'
+ baseline = top / ('work/build/drive-preview.json' if identifier == 'presentation' else '.training-studio/google-baseline.json')
+ baseline.parent.mkdir(parents=True, exist_ok=True)
+ baseline.write_text('{"revision":"synthetic-saved-google-baseline"}\\n')
+ # A native local-only migration can retain a dirty original absent from HEAD.
+ for name in originals:
+  path = top / name
+  path.write_bytes(path.read_bytes() + b' ')
+ preview = desk_chat.migration_preview(case.engine, top)
+ assert not preview['blockers'], preview
+ desk_chat.migrate(case.engine, top, preview['expected'])
+ original = {name: (top / name).read_bytes() for name in (*originals, receipt)}
+ original[baseline.relative_to(top).as_posix()] = baseline.read_bytes()
+ effective = records.read_run(top)
+ source = case.snapshot(top)
+ # Assemble the supported native installed layout without installation/startup.
+ if installed:
+  spec = importlib.util.spec_from_file_location('native_installer', product / 'installer/install.py')
+  installer = importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(installer)
+  payload = case.base / 'assembled'
+  installer.assemble(product / ('skills/' + identifier + '-studio'), installer.BOOTSTRAP, payload)
+  # Verify in a fresh child; overlapping product names never cross interpreters.
+  program = """import importlib.util, sys
+from pathlib import Path
+sys.path.insert(0,sys.argv[1])
+import runner
+spec=importlib.util.spec_from_file_location('bridge', Path(sys.argv[3]) / 'marketing_studio/bridge.py')
+bridge=importlib.util.module_from_spec(spec)
+spec.loader.exec_module(bridge)
+assert bridge.runner_records(sys.argv[4], Path(sys.argv[2])).read_run(Path(sys.argv[2]))['execution'] == 'conversation'
+"""
+  result = subprocess.run([sys.executable, '-c', program, str(payload), str(top), str(root), identifier], capture_output=True, text=True)
+  assert result.returncode == 0, result.stderr
+ spec = importlib.util.spec_from_file_location('bridge', root / 'marketing_studio/bridge.py')
+ bridge = importlib.util.module_from_spec(spec)
+ spec.loader.exec_module(bridge)
+ if scenario == 'pending':
+  pending = top / 'work/desk/migration-transaction.json'
+  pending.parent.mkdir(parents=True, exist_ok=True)
+  pending.write_text('{}')
+ elif scenario == 'partial':
+  (top / receipt).unlink()
+ elif scenario == 'unknown':
+  value = json.loads((top / side).read_bytes())
+  value['schema'] = 999
+  (top / side).write_text(json.dumps(value))
+ elif scenario == 'capability':
+  if identifier == 'presentation': records.migration = None
+  else: records.read_run = None
+ remote = case.base / 'carry-remote.git'
+ subprocess.run(['git', 'init', '--quiet', '--bare', str(remote)], check=True)
+ subprocess.run(['git', '-C', str(remote), 'symbolic-ref', 'HEAD', 'refs/heads/main'], check=True)
+ shared = {'schema':1, 'team':{'repository':str(remote),'branch':'main'}, 'share':'asked'}
+ copies = []
+ copy_in = team.copy_in
+ def copying(*args):
+  copies.append(args[1])
+  if scenario not in ('valid', 'corrupt-copy'): raise AssertionError('Invalid migrated source reached copy')
+  result = copy_in(*args)
+  if scenario == 'corrupt-copy': (args[1] / receipt).unlink()
+  return result
+ with mock.patch.object(team, 'copy_in', side_effect=copying):
+  if scenario == 'corrupt-copy':
+   try: bridge.connect_runner(identifier, shared)
+   except ValueError as error: assert 'was not switched' in str(error), error
+   else: raise AssertionError('Damaged destination was accepted')
+  else:
+   done = bridge.connect_runner(identifier, shared)
+ if scenario == 'corrupt-copy':
+  assert len(copies) == 1 and not copies[0].exists(), copies
+  assert gitstate.current().root == top.parent
+  assert case.snapshot(top) == source
+ elif scenario != 'valid':
+  assert not copies, copies
+  assert done['carried'][bridge.NOUNS[identifier]] == 0, done
+  assert len(done['left']) == 1, done
+  assert not (Path(done['to']['root']) / top.name).exists(), done
+ else:
+  assert done['carried'][bridge.NOUNS[identifier]] == 1 and not done['left'], done
+  destination = Path(done['to']['root']) / top.name
+  changed = records.read_run(destination)
+  assert changed['driver']['computer'] == team.computer(), changed
+  assert changed['driver']['name'] == gitstate.identity(destination.parent.parent), changed
+  assert {k:v for k,v in changed.items() if k != 'driver'} == {k:v for k,v in effective.items() if k != 'driver'}
+  for name, data in original.items(): assert (destination / name).read_bytes() == data, name
+  assert case.snapshot(top) == source, 'Connect changed its original source'
+  peer = case.base / 'carry-peer'
+  subprocess.run(['git', 'clone', '--quiet', str(remote), str(peer)], check=True)
+  copied = peer / gitstate.current().folder / top.name
+  assert records.read_run(copied) == changed
+  for name, data in original.items():
+   if not name.startswith('work/'): assert (copied / name).read_bytes() == data, name
+ print(json.dumps({'ok':True, 'scenario':scenario, 'product':identifier, 'installed':installed}))
+finally:
+ case.doCleanups()
+'''
+        done = subprocess.run([sys.executable, '-c', script, str(ROOT), identifier, scenario, str(installed)],
+                              cwd=ROOT, capture_output=True, text=True, timeout=90)
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertTrue(json.loads(done.stdout.splitlines()[-1])['ok'])
+
+    def test_migrated_local_dirty_decks_connect_with_effective_owner_and_peer_proof(self):
+        for identifier in ('presentation', 'training'):
+            with self.subTest(identifier=identifier):
+                self.migrated_carry(identifier, installed=True)
+
+    def test_invalid_migrated_decks_are_refused_before_copy(self):
+        for identifier in ('presentation', 'training'):
+            for scenario in ('pending', 'partial', 'unknown', 'capability'):
+                with self.subTest(identifier=identifier, scenario=scenario):
+                    self.migrated_carry(identifier, scenario)
+
+    def test_damaged_migrated_destination_rolls_connect_back_before_commit(self):
+        for identifier in ('presentation', 'training'):
+            with self.subTest(identifier=identifier):
+                self.migrated_carry(identifier, 'corrupt-copy')
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='marketing-connect-')
         self.addCleanup(self.temp.cleanup)

@@ -24,9 +24,23 @@ def admitted(root, *, held=None):
     with lock:
         if held is None and worker_in_progress(repo or root, refusal=workspace.WorkspaceError):
             raise workspace.WorkspaceError(SYNC_WAIT)
+        saved_workspace = home.read_json(home.data_root() / 'workspace.json', {})
+        if isinstance(saved_workspace, dict) and saved_workspace.get('repo') == str(repo):
+            import sync_guidance
+            folder = saved_workspace.get('folder')
+            marker_path = repo / folder / 'hub.json' if isinstance(folder, str) else None
+            marker = home.read_json(marker_path, None) if marker_path is not None and not marker_path.is_symlink() else None
+            try:
+                valid = isinstance(marker, dict) and type(marker.get('schema')) is int and marker['schema'] == 1 and marker.get('tool') == 'training-studio' and marker.get('folder') == folder and all(isinstance(marker.get(key), str) for key in ('name', 'branch')) and sync_guidance.as_tuple(marker['minimum_runtime']) <= sync_guidance.as_tuple(sync_guidance.runtime_version())
+            except (KeyError, sync_guidance.SyncError):
+                valid = False
+            if not valid:
+                raise workspace.WorkspaceError('The Training Studio workspace record is missing, unsupported or requires a newer runtime.')
+        # Validate migration evidence even when the raw run was removed.
+        workspace.read_run(root)
         path = root / workspace.STATE_DIR / 'run.json'
         if path.exists():
-            record = home.read_json(path, None)
+            record = workspace.read_run(root)
             if not isinstance(record, dict):
                 raise workspace.WorkspaceError('The saved execution owner cannot be read.')
             drafts = record.get('drafts', {})
