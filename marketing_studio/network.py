@@ -31,7 +31,7 @@ INFOGRAPHIC_ACTION_TIMEOUT = 1200
 # Google previews may perform account/token lookup and several fixed API reads.
 INFOGRAPHIC_REMOTE_TIMEOUT = 240
 STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
-                    '/blog.css', '/runner.js', '/desk.js', '/drafting.js', '/markdown.js',
+                    '/blog.css', '/runner.js', '/desk.js', '/drafting.js', '/markdown.js', '/research.js',
                     '/deck.css', '/infographic.css', '/favicon.ico',
                     '/onboarding/', '/onboarding/app.js', '/onboarding/style.css',
                     '/onboarding/home.css', '/deck-panels.js', '/deck-panels.css',
@@ -43,6 +43,8 @@ FRAMED = {'presentation': frozenset(('/api/deck-draft',)),
 
 
 def upstream_timeout(identifier, method, path):
+    if method == 'POST' and path == '/api/research-sources':
+        return INFOGRAPHIC_REMOTE_TIMEOUT
     if identifier == 'infographic' and method == 'POST':
         if path == '/api/action':
             return INFOGRAPHIC_ACTION_TIMEOUT
@@ -171,6 +173,8 @@ class BridgeHandler(BaseHTTPRequestHandler):
         limit = 64_000
         if own.identifier == 'blog' and not url.path.startswith('/onboarding/'):
             limit = 15 * 1024 * 1024
+        elif own.identifier in ('presentation', 'training', 'infographic') and url.path == '/api/research-sources':
+            limit = 12_000_000
         elif own.identifier == 'presentation' and url.path == '/api/decks':
             limit = MAX_BODY
         elif own.identifier == 'infographic' and url.path in ('/api/source-preview','/api/action','/api/csv-preview','/api/csv-selection'):

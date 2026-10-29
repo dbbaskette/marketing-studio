@@ -3560,4 +3560,4 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .research-area{display:flex;justify-content:space-between;gap:1rem;padding:.7rem 0;border-top:1px solid var(--hair)}
 .research-preview-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}
 .research-source-editor .check{min-height:2.75rem;align-items:center}
-@media(max-width:40rem){.research-link-entry{grid-template-columns:1fr}.research-area{flex-direction:column;gap:.25rem}.research-sources,.research-captured,.research-progress{padding:1rem}}
+@media (max-width:40rem){.research-link-entry{grid-template-columns:1fr}.research-area{flex-direction:column;gap:.25rem}.research-sources,.research-captured,.research-progress{padding:1rem}}

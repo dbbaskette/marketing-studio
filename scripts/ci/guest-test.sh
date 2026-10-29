@@ -181,6 +181,17 @@ elif [[ "${1:-full}" == bundles ]]; then
   bundle="$(find dist -maxdepth 1 -name 'marketing-studio-*-macos-arm64.zip' -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A real Apple Silicon platform bundle is required.' >&2; exit 1; }
   "$python" scripts/ci/bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/bundle-acceptance.log"
+elif [[ "${1:-full}" == shared-research-finish ]]; then
+  # Reuse the full root suite's unchanged checks from a7068cc7. Repair checks
+  # cover its CSS/static gateway findings and rerun the existing process guard.
+  {
+    PYTHONPATH=tests "$python" -m unittest test_network test_network_static test_ui_consistency test_research_page test_launcher.LauncherTests.test_force_ends_a_job_started_in_its_own_session -v
+    "$python" -m unittest discover -s studios/infographic/tests -v
+    (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio")
+    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+  } 2>&1 | tee "$results_dir/shared-research-finish.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == research-citation-finish ]]; then
   # The full root, Blog Studio, Presentation Studio and remaining Training Studio
   # classes passed. Finish the CLI class after isolating its HOME snapshot, then

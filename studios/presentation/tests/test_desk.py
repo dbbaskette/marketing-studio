@@ -64,7 +64,7 @@ class PageFileTests(unittest.TestCase):
         self.assertEqual(set(server.PAGE), {'/', '/index.html', '/app.js', '/markdown.js',
                                             '/style.css', '/deck.css', '/deck-panels.js',
                                             '/deck-panels.css', '/lists.js', '/deck-desk.js',
-                                            '/drafting.js'})
+                                            '/drafting.js', '/research.js'})
 
     def test_the_page_has_nothing_its_own_policy_would_block(self):
         page = self.read('index.html')

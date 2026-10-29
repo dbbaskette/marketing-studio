@@ -1517,7 +1517,7 @@ class PageFileTests(unittest.TestCase):
         # The deck panels are the shared core's, served beside the page from its own origin.
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', page)),
                          ['#main', 'app.js', 'deck-panels.css', 'deck-panels.js',
-                          'drafting.js', 'drafts.js', 'lists.js', 'markdown.js', 'style.css'])
+                          'drafting.js', 'drafts.js', 'lists.js', 'markdown.js', 'research.js', 'style.css'])
         # The list kit is the shared core's, loaded after the deck panels and before app.js.
         scripts = re.findall(r'<script src="([^"]+)"', page)
         self.assertLess(scripts.index('deck-panels.js'), scripts.index('lists.js'))
