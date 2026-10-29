@@ -23,11 +23,11 @@ const assert = require('node:assert/strict');
     await page.getByRole('button',{name:'New infographic',exact:true}).click();
     await page.getByLabel('Working title',{exact:true}).fill('Synthetic rolling restart');
     if(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE){
-      await page.getByRole('button',{name:'Add a Google Doc or public page',exact:true}).click();
-      await page.getByLabel('Document or page link',{exact:true}).fill('https://docs.google.com/document/d/synthetic_source/edit');
-      await page.getByLabel('Google account email',{exact:true}).fill('editor@example.invalid');
+      await page.getByRole('button',{name:'Add a Google Doc, Slides or public page',exact:true}).click();
+      await page.getByLabel('Document or page link',{exact:true}).fill(process.env.INFOGRAPHIC_STUDIO_TEST_SLIDES?'https://docs.google.com/presentation/d/synthetic_slides/edit':'https://docs.google.com/document/d/synthetic_source/edit');
+      assert.equal(await page.getByLabel('Google account email',{exact:true}).count(),0);
       await page.getByRole('button',{name:'Read and preview',exact:true}).click();
-      await page.getByRole('heading',{name:'Synthetic Google source',exact:true}).waitFor();
+      await page.getByRole('heading',{name:process.env.INFOGRAPHIC_STUDIO_TEST_SLIDES?'Synthetic Google slides':'Synthetic Google source',exact:true}).waitFor();
     }else await page.getByLabel('Notes or text',{exact:true}).fill('One instance restarts while the others serve.');
     await page.getByRole('button',{name:'Continue',exact:true}).click();
     await page.getByLabel('How should we find the story?',{exact:true}).selectOption('direct');
@@ -63,7 +63,9 @@ const assert = require('node:assert/strict');
     const source=fs.readFileSync(await file.path(),'utf8');assert(source.includes('One at a time'));assert(!source.includes('DRAFT — not approved'));
     if(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE){
       await page.getByRole('button',{name:'Deliver Google Doc or PDF',exact:true}).click();
-      await page.getByLabel('Google account email',{exact:true}).fill('editor@example.invalid');
+      assert.equal(await page.getByLabel('Google account email',{exact:true}).count(),0);
+      assert.equal(await page.getByLabel('Output',{exact:true}).inputValue(),'google');
+      await page.getByLabel('Output',{exact:true}).selectOption('both');
       const deliveredPdf=page.waitForEvent('download');
       await page.getByRole('button',{name:'Deliver approved page',exact:true}).click();
       assert.equal((await deliveredPdf).suggestedFilename(),'infographic.pdf');

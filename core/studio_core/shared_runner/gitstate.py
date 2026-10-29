@@ -96,6 +96,7 @@ ITEM = globals().get('ITEM', 'item')
 ITEMS = globals().get('ITEMS', 'items')
 README = globals().get('README', '')
 studios_config = globals().get('studios_config')
+REQUIRE_WORKSPACE_MARKER = globals().get('REQUIRE_WORKSPACE_MARKER', False)
 
 SCHEMA = 1
 MARKER = 'hub.json'
@@ -710,7 +711,7 @@ WORKSPACE_CHANGED = ('The workspace changed while sharing was being checked. '
 def require_workspace(workspace):
     if workspace_identity(current()) != workspace_identity(workspace):
         raise WorkspaceError(WORKSPACE_CHANGED)
-    if TOOL in ('presentation-studio', 'training-studio') and marker(workspace.repo, workspace.folder) is None:
+    if REQUIRE_WORKSPACE_MARKER and marker(workspace.repo, workspace.folder) is None:
         raise WorkspaceError(WORKSPACE_CHANGED)
 
 
@@ -758,7 +759,7 @@ def sync(workspace: Workspace, push: bool = True, before=None, held=None) -> dic
     held = held or ProcessRLock(lambda: workspace_lock_path(workspace.repo, home.data_root()),
                                 refusal=WorkspaceError)
     repo, branch = workspace.repo, workspace.branch
-    # Match Blog Studio's literal path exactly. Its current runtime cannot start
+    # Match the writing driver's literal lock path exactly. It cannot start
     # writers in a .git-file worktree; copied worker records are still checked.
     blog = ProcessRLock(lambda: repo / '.git' / 'blog-studio.lock', refusal=WorkspaceError) \
         if (repo / '.git').is_dir() else nullcontext()

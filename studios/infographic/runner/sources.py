@@ -16,7 +16,7 @@ from .contracts import MAX_SOURCE_BYTES, Invalid, canonical, digest
 from .validation import require, text
 
 KINDS = {'.txt': 'text', '.md': 'markdown', '.csv': 'csv', '.pdf': 'pdf', '.docx': 'docx', '.html': 'html', '.htm': 'html'}
-SOURCE_KINDS = set(KINDS.values()) | {'google-doc', 'url', 'research', 'handoff'}
+SOURCE_KINDS = set(KINDS.values()) | {'google-doc', 'google-slides', 'url', 'research', 'handoff'}
 MAX_ROWS = 20_000
 MAX_COLUMNS = 100
 DECIMAL = re.compile(r'[+-]?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?\Z')

@@ -158,7 +158,7 @@ Local previews never start providers:
 
 ```sh
 python3 runner/studio.py source-preview --file /absolute/material.docx
-python3 runner/studio.py remote-preview --kind google-doc --url https://docs.google.com/document/d/ID/edit --account editor@example.com
+python3 runner/studio.py remote-preview --kind google-doc --url https://docs.google.com/document/d/ID/edit
 python3 runner/studio.py remote-preview --kind url --url https://public.example.com/page
 python3 runner/studio.py source-import ID --capture-id PREVIEW --expected-revision REV
 python3 runner/studio.py source-show ID --source-id SOURCE
@@ -171,13 +171,13 @@ python3 runner/studio.py research-preview ID --case /absolute/reviewed-case --so
 When a preview names extraction gaps, inspect them before adding
 `--acknowledge-warnings` to `source-import`. Use `--replace-id SOURCE` for an explicit
 refresh. The raw and normalized capture, locations and origin revision are immutable;
-replacement clears dependent story/page approval. Google tab selection uses repeated
+replacement clears dependent story/page approval. Google Docs and Slides links use the existing default Google sign-in. `--account` is optional for a deliberate override; import and delivery do not ask for email. Shared Marketing Studio output selects the initial delivery choice. Google tab/slide selection uses repeated
 `--tab TAB_ID`; leaving it empty includes all tabs. Pasted links do not trigger a fetch.
 
 After current checks, visual review, user approval and final local export:
 
 ```sh
-python3 runner/studio.py google-deliver ID --expected-revision REV --export-id EXPORT --request-id UNIQUE_REQUEST --account editor@example.com
+python3 runner/studio.py google-deliver ID --expected-revision REV --export-id EXPORT --request-id UNIQUE_REQUEST
 ```
 
 Use optional `--folder FOLDER_ID` for a checked explicit destination. Creates a new Doc;

@@ -22,3 +22,9 @@
 }
 .ig-outline-block { fill: var(--solid); stroke: var(--hair); }
 .ig-outline-label { fill: var(--quiet); font: 12px var(--plain); }
+.ig-work { margin: .6rem 1rem; min-width: 0; overflow-wrap: anywhere; }
+.ig-work[hidden] { display: none; }
+.ig-work-heading { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; }
+.ig-work-heading .bead { flex: 0 0 auto; }
+.ig-work-clock { margin-left: auto; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.ig-sheet .ig-work { margin-inline: 0; }

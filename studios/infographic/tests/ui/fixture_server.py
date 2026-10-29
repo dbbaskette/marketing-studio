@@ -17,9 +17,24 @@ from helpers import visual_answer
 
 
 class Assistant:
-    def __init__(self): self.calls = []
+    def __init__(self, slow=False):
+        self.calls = []
+        self.slow = slow
+        self.release = threading.Event()
+        self.fail = False
     def propose(self, brief, captured):
         self.calls.append('story')
+        if self.slow:
+            self.fail = False
+            self.release.clear()
+            if not self.release.wait(60):
+                raise RuntimeError('Synthetic assistant was not released.')
+            if self.fail == 'timeout':
+                from runner.assistant_failure import AssistantFailure
+                raise AssistantFailure('timeout')
+            if self.fail:
+                from runner.contracts import Invalid
+                raise Invalid('Synthetic planning failure. Your saved work is kept.')
         source = captured[0]
         fact = {'id': 'f1', 'statement': source['text'], 'value': source['text'], 'unit': '', 'status': 'supplied',
                 'evidence': [{'source_id': source['id'], 'start': 0, 'end': len(source['text']), 'quote': source['text']}]}
@@ -41,6 +56,7 @@ def main():
     parser.add_argument('--suite', action='store_true')
     parser.add_argument('--remote',action='store_true')
     parser.add_argument('--bridge',action='store_true')
+    parser.add_argument('--slow', action='store_true')
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='infographic-browser-') as folder:
         root = Path(folder).resolve(); home = root / 'home'; home.mkdir()
@@ -50,30 +66,40 @@ def main():
                           MARKETING_STUDIO_DATA=str(root / 'marketing-data'),
                           STUDIOS_CONFIG=str(root / 'settings.json'), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
         (root / 'settings.json').write_text(json.dumps({'schema': 1, 'assistant': {'agent': 'codex', 'model': None},
-            'person': {'name': 'Synthetic Author'}, 'local': {'root': str(root / 'work')}}))
+            'output':'google' if args.remote else 'pptx', 'person': {'name': 'Synthetic Author'}, 'local': {'root': str(root / 'work')}}))
         store = Store.setup()
         settings.save({'renderer': str(args.renderer)}, expected=settings.snapshot()['native_revision'])
         if args.remote:
             from runner import remote_sources,google_delivery
-            from studio_core.google_api import DOC_MIME
+            from studio_core.google_api import DOC_MIME,SLIDES_MIME
             class Google:
                 def __init__(self,account):
-                    assert account=='editor@example.invalid'
+                    assert account in (None,'editor@example.invalid')
+                    self.account='editor@example.invalid'
+                def selected_account(self):return self.account
                 def file(self,ident):
-                    return {'id':ident,'mimeType':DOC_MIME,'name':'Synthetic Google source','version':'7','modifiedTime':'2026-10-28T00:00:00Z','capabilities':{'canDownload':True}}
+                    return {'id':ident,'mimeType':SLIDES_MIME if ident=='synthetic_slides' else DOC_MIME,'name':'Synthetic Google slides' if ident=='synthetic_slides' else 'Synthetic Google source','version':'7','modifiedTime':'2026-10-28T00:00:00Z','capabilities':{'canDownload':True}}
                 def document(self,ident):
                     return {'documentId':ident,'tabs':[{'tabProperties':{'tabId':'main','title':'Main'},'documentTab':{'body':{'content':[{'paragraph':{'elements':[{'textRun':{'content':'One instance restarts while the others serve.'}}]}}]}}}]}
+                def presentation(self,ident):
+                    return {'presentationId':ident,'slides':[{'objectId':'slide_a','pageElements':[{'objectId':'body','shape':{'text':{'textElements':[{'textRun':{'content':'One instance restarts while the others serve.'}}]}}}]}]}
                 def create_document(self,payload,**values):
                     assert payload.startswith(b'PK')
                     return {'id':'synthetic_delivered','mimeType':DOC_MIME,'appProperties':{'infographic_request':values['request_key'],'infographic_payload':values['payload_hash']}}
             remote_sources.Client=google_delivery.Client=Google
-        engine = Engine(store, executable=args.renderer, assistant=Assistant())
+        engine = Engine(store, executable=args.renderer, assistant=Assistant(slow=args.slow))
         engine.configuration = {'image_provider': 'codex'}
         class Page(server.Page):
+            reads = (*server.Page.reads, '/api/fixture-calls')
+            writes = (*server.Page.writes, '/api/fixture-release')
             def read(self, route, one):
                 if route == '/api/fixture-calls': return server.shared.as_json(200, {'calls': engine.assistant.calls})
                 return super().read(route, one)
             def write(self, route, sent):
+                if route == '/api/fixture-release':
+                    engine.assistant.fail = sent.get('fail', False)
+                    engine.assistant.release.set()
+                    return server.shared.as_json(200, {'released': True})
                 if route == '/api/brand-current':
                     project = brand.adopt(store, sent['id'], contract(), expected_revision=sent['expected_revision'])
                     return server.shared.as_json(200, {'project': project})

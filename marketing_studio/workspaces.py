@@ -84,7 +84,7 @@ def connection(identifier, shared):
     if identifier == 'infographic':
         return {'state': 'local' if found else 'none', 'connect': False, 'workspace': found, 'to': to,
                 'summary': 'Local supplied-information workspace' if found else 'A local workspace is set up when you open Infographic Studio.',
-                'detail': 'Team connection is a follow-up for Infographic Studio. Shared team settings are kept.'}
+                'detail': 'Drafts stay local. Use Infographic Studio’s Team library to connect the shared repository and share selected files.'}
     if found is None:
         return {'state': 'none', 'connect': False, 'workspace': None, 'to': to,
                 'summary': 'No workspace yet. It is set up when you open the studio.',

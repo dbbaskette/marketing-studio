@@ -62,6 +62,21 @@ reported token/cost data is shown; unknown prices are not estimated.
 
 Assistant work starts only after an explicit action. Building an illustrated page
 can use planning and image allowances; review the disclosure before starting it.
+Long page operations show a persistent activity notice with the real current step
+and elapsed time, including inside an open dialog. Refreshing the same tab restores
+an active operation's notice. If the POST connection is lost, the page checks status
+without repeating the request. A second long operation on that infographic is
+refused while the first is active. Source previews also show immediate activity.
+These notices describe the current server session; restarting the server clears
+them. Saved projects and durable image/Google recovery records remain authoritative.
+Planning has a five-minute worker limit. Its errors distinguish timeout, sign-in,
+usage limits, unavailable models and invalid output. A timeout ends and collects
+the owned worker before offering an explicit retry; no retry starts automatically.
+The proposal selects at most 12 source-backed facts for one page. Exact quotations
+are located by the application, rather than asking the assistant to count character
+offsets. Codex planning uses the CLI's [JSON output schema](https://learn.chatgpt.com/docs/developer-commands#codex-exec);
+native evidence, calculation and story validation still decide what can be saved.
+The shared model and reasoning settings are preserved.
 Actual-page inspection uses the selected assistant's multimodal path, or you can
 record your own review after viewing the current PNG at intended size. CLI help
 and capability discovery are not proof of account access or successful generation.
@@ -108,8 +123,8 @@ separate release gates, never inferred from fixture success.
 
 1. **New infographic → Add information.** Paste text, upload one or more files, or choose
    **Add a Google Doc or public page**. Review the captured text and any extraction gaps.
-   Google reads use the explicitly selected existing gcloud account and stable Drive version;
-   all tabs are included unless you choose tab IDs. Import uses that exact preview, without
+   Google Docs and Slides reads use the existing default gcloud account (like Blog Studio) and stable Drive version;
+   all document tabs or slides are included unless you choose their IDs. Slide text, table text and speaker notes are captured; visual-only content is identified as an extraction gap. Import uses that exact preview, without
    refetching. PDF requires an explicitly installed `pdftotext`; scanned pages need a readable
    text copy. Word means `.docx`, without OCR, linked-resource reads or embedded-object analysis.
 2. Set the audience, takeaway and must-show information. Choose a story, build the page,
@@ -120,8 +135,9 @@ separate release gates, never inferred from fixture success.
    raster; the local SVG retains editable labels/charts. Inspect Google conversion in Docs
    before relying on its layout. The original source Doc is never overwritten or shared.
 
-Native defaults accept a Google account email and optional destination folder ID. The
-account must already be signed in through an explicitly installed gcloud CLI with Drive/Docs
+Google actions use the existing sign-in without an email prompt. Optional account/folder
+overrides remain in advanced defaults. Delivery starts with Marketing Studio’s shared
+Google/local choice. The account must already be signed in through an explicitly installed gcloud CLI with Drive/Docs
 access. Settings/status never read credentials or initiate login. Tokens and resumable upload
 session URLs remain in memory. A saved delivery intent precedes writes; after interruption,
 **Reconcile Google delivery** performs reads only and never blindly creates another Doc.

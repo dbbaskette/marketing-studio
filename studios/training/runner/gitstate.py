@@ -21,4 +21,5 @@ Change a training through Training Studio, not by hand, so its record stays true
 
 sys.modules[__name__] = for_product(
     __name__, 'Training Studio', TOOL='training-studio', FOLDER='trainings',
-    ITEM='training', ITEMS='trainings', README=README, studios_config=studios_config)
+    ITEM='training', ITEMS='trainings', README=README, studios_config=studios_config,
+    REQUIRE_WORKSPACE_MARKER=True)

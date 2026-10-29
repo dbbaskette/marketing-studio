@@ -70,3 +70,13 @@ class GoogleDeliveryTests(Isolated):
         with self.assertRaises(Invalid):self.send(delivery,client,folder='other_folder')
         client.find_delivery.return_value=[{},{}]
         with self.assertRaises(Invalid):self.send(delivery,client,reconcile=True)
+
+
+    def test_default_google_account_is_pinned_without_an_email_form(self):
+        delivery=self.ready();client=self.client();client.selected_account.return_value='default@example.invalid'
+        result=google_delivery.execute(self.store,self.ident,expected_revision=self.current()['revision'],export_id=delivery['id'],request_id='synthetic_delivery',client=client)
+        self.assertEqual(result['state'],'delivered');client.selected_account.assert_called_once()
+        self.assertEqual(google_delivery.listing(self.store,self.ident)[0]['account'],'default@example.invalid')
+        client.selected_account.reset_mock()
+        again=google_delivery.execute(self.store,self.ident,expected_revision=self.current()['revision'],export_id=delivery['id'],request_id='synthetic_delivery',client=client)
+        self.assertEqual(again,result);client.selected_account.assert_not_called()
