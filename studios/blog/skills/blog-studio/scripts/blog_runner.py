@@ -560,11 +560,16 @@ def load(root, ident):
     if not path.is_file():
         raise ValueError('This blog has no step-by-step run. Open it from Blogs.')
     run = studio.read_json(path)
-    if run.get('schema') not in (1, 2, 3) or run.get('approval') not in ('page', 'conversation'):
+    if run.get('schema') not in (1, 2, 3, 4) or run.get('approval') not in ('page', 'conversation'):
         raise ValueError('This run needs a newer Blog Studio runtime.')
+    if run.get('schema') == 4:
+        from studio_core import research_session
+
+        if not research_session.protocol(run):
+            raise ValueError('This research execution record is not supported.')
     if run.get('schema') == 2 and not run.get('review_policy'):
         raise ValueError('This run is missing its saved review level. Restore its run record.')
-    if run.get('schema') == 3 and (run.get('research_contract') or {}).get('schema') != 2:
+    if run.get('schema') in (3, 4) and (run.get('research_contract') or {}).get('schema') != 2:
         raise ValueError('This run is missing its saved research contract. Restore its run record.')
     return directory, record, run
 
@@ -1475,7 +1480,13 @@ def create(root, data, approval='conversation'):
     if review_policy.level(run) != 'step_by_step':
         run['schema'] = 2
     if contract:
+        from studio_core import research_session
+
         run['schema'] = 3
+        runtime = research_contract.runtime_for(contract)
+        execution = research_session.execution(runtime) if runtime else None
+        if execution:
+            run.update(schema=4, research_execution=execution)
     run['model_profiles'] = model_profiles.snapshot(
         shared,
         engine,

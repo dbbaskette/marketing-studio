@@ -542,7 +542,10 @@ function documentsPart(draft, changed = retell) {
 
 // Where research looks, in one line, said again whenever a document or a choice changes.
 function researchLine(draft, line) {
-  draft.research.documents = list(draft.files).length > 0;
+  if (draft.sourceEditor) {
+    const chosen = draft.sourceEditor.choice();
+    draft.research = {documents: chosen.documents, sites: Boolean(chosen.sites.length), web: chosen.web, picked: chosen.sites, added: []};
+  } else draft.research.documents = list(draft.files).length > 0;
   line.textContent = researchProblem(draft)
     || 'Research ' + researchSummary(researchChoice(draft)) + '.';
 }
@@ -556,7 +559,12 @@ function sourcesStep(draft, brand, looks) {
   };
   told();
   researchLine(draft, looks);
-  return [documentsPart(draft), researchFields(draft, retell, ['documents']), looks,
+  if (!draft.sourceEditor && typeof StudioResearch !== 'undefined') {
+    draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent),
+      onChange: () => { if (draft.retell) draft.retell(); }});
+  }
+  return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft),
+    ...(draft.sourceEditor ? [] : [researchFields(draft, retell, ['documents'])]), looks,
     questionsField(draft), brand, copiesOption(draft),
     trainingOptions('Assistant and limits', 'training-assistant',
       ...agentFields(draft, 'new', 'For this training', told), drafted,
@@ -609,7 +617,8 @@ function deskBody(draft) {
     levels: LEVELS.filter((level) => draft.levels.includes(level)),
     brief_kind: draft.brief ? 'competitive' : 'product',
     time_limit: draft.time.trim() || null,
-    research_from: researchChoice(draft),
+    research_from: draft.sourceEditor ? draft.sourceEditor.choice() : researchChoice(draft),
+    ...(draft.sourceEditor ? {research_inputs: draft.sourceEditor.spec()} : {}),
     research_questions: (draft.researchQuestions || '').split('\n'),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,

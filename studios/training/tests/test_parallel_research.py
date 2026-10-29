@@ -9,7 +9,7 @@ import unittest
 
 from runner_support import StudioCase, URL
 from runner import engine as engines, research
-from studio_core import research_contract as contract, research_parallel as parallel
+from studio_core import research_contract as contract, research_session as parallel
 from synthesis_fixture import TEXT, dossier, review
 
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')

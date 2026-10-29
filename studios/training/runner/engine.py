@@ -223,7 +223,7 @@ import runner  # noqa: F401  puts the core on the import path
 import computer
 import checks
 import home
-from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_parallel, research_parallel_native, research_timing, research_view, research_sites, step_times, stops
+from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -1356,7 +1356,7 @@ class Engine(Reviewing):
 
     # --- starting and picking up ---------------------------------------------------------
 
-    def start(self, form: dict, *, execution='runner', scope=None, uploads=None) -> dict:
+    def start(self, form: dict, *, execution='runner', scope=None, uploads=None, research_inputs=None) -> dict:
         """Make a training from the form's answers and start its run."""
         if not isinstance(form, dict):
             raise WorkspaceError('Start new work on the desk with a form.')
@@ -1392,6 +1392,10 @@ class Engine(Reviewing):
         # A training on the desk has no review level: none is saved with it, and the shared
         # one is never written from its form.
         desk = drafts.on_desk(form)
+        selected_sources = research_sources.prepare_start(space.root, research_inputs) if research_inputs else None
+        if selected_sources:
+            form = {**form, 'research_from': selected_sources['research_from'],
+                    'source_scope': pipeline.scope_of(selected_sources['research_from'])}
         with self.files:
             if gitstate.workspace_identity(self.workspace) != gitstate.workspace_identity(space):
                 raise WorkspaceError('The workspace changed while this start was being checked. '
@@ -1412,9 +1416,15 @@ class Engine(Reviewing):
                 if desk:
                     record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
                         'jobs': [], 'updates': {}, 'findings_before': None})
-                if contract and self.parallel_research:
-                    record.update(schema=research_parallel.RECORD_SCHEMA,
-                                  research_execution=dict(research_parallel.PROTOCOL))
+                parallel = research_parallel.execution(self.research().runtime) if contract and self.parallel_research else None
+                if parallel:
+                    record.update(schema=research_parallel.RECORD_SCHEMA, research_execution=parallel)
+                if selected_sources:
+                    record['research_inputs'] = research_sources.install(selected_sources, root)
+                    if parallel:
+                        record['research_execution']['workers'] = selected_sources['workers']
+                    if record.get('documents') is not None:
+                        record['documents'].update(done=home.now(), count=len(selected_sources['sources']))
                 session = workspace.load(root)
                 if contract:
                     session['research_contract'] = contract
@@ -4271,7 +4281,7 @@ class Engine(Reviewing):
                 tool = self.research()
                 # Verify with the helper version that did the research, while it is retained.
                 tool = research_contract.matching(tool, record['research_contract']) or tool
-                verified = tool._json('synthesis', 'verify', '--project', str(root / research_contract.CASE))
+                verified = tool._json('synthesis', 'verify', '--project', str(research_parallel.case_for(root)))
                 if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
                     raise WorkspaceError('Research needs independent review before authoring can continue.')
                 facts, manifest = research_contract.publish(root / research_contract.CASE, root / 'research')
@@ -5985,6 +5995,8 @@ class Engine(Reviewing):
         """The person's documents as research is given them: every readable one but those
         added after the research, which are read only once the research is updated."""
         plan, offered = self.documents.sources(root)
+        extra, inputs = research_sources.sources(root, record.get('research_inputs'))
+        plan, offered = [*plan, *extra], [*offered, *inputs]
         later = {entry.get('name') for entry in (record.get('documents') or {}).get('later')
                  or () if isinstance(entry, dict)}
         if not later:
@@ -6366,8 +6378,8 @@ class Engine(Reviewing):
     def _drafted(root: Path | None) -> bool:
         """Whether research done as one report and an independent check has a saved draft
         that Try again carries on from."""
-        return bool(root) and (Path(root) / research_contract.CASE / '.harness-research'
-                               / 'synthesis.json').is_file()
+        return bool(root) and (research_contract.working_case(Path(root) / research_contract.CASE)
+                               / '.harness-research/synthesis.json').is_file()
 
     def research_price(self, path):
         root = self.driven(path)

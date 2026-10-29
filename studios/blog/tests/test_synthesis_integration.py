@@ -26,6 +26,7 @@ def saved_selected_research(root, data, approval):
     ]
     run['research_contract'] = research_contract.snapshot()
     run['schema'] = 3
+    run.pop('research_execution', None)
     __import__('studio').write_json(directory / blog_runner.STATE, run)
     return blog_runner.survey(root, shown['id'])
 

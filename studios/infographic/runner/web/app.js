@@ -341,7 +341,7 @@ function renderProject() {
   if(held.visual_review)parts.push(detail('Visual review: '+held.visual_review.status,list(held.visual_review.observations),...held.visual_review.findings.map(f=>card(f.region_id+': '+(f.blocking?'Needs correction':'Suggestion'),make('p','',f.message),make('p','',f.correction)))));
   if(p.checks.length)parts.push(card('Checks for this page',...p.checks.map(c=>add(make('div','stack'),make('strong','',({'coverage':'Required content','facts':'Factual support','layout':'Page layout','brand-accessibility':'Brand and accessibility','visual':'Visual review'}[c.kind]||c.kind)+': '+c.status),list(c.findings || [])))));
   parts.push(detail('Brief and requirements',button('Edit brief',briefSheet),make('p','',p.brief.audience||'Audience not specified'),list(p.brief.must_show.map(r=>r.text))));
-  parts.push(detail('Sources and facts',button('Add or update supplied information',sourceSheet),button('Import selected studio material',()=>handoffSheet(preview=>sourceImportSheet(preview))),button('Use reviewed research',researchSheet),...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
+  parts.push(detail('Sources and facts',button('Add or update supplied information',sourceSheet),button('Import selected studio material',()=>handoffSheet(preview=>sourceImportSheet(preview))),button('Research this topic',researchSheet),...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
   if(held.image_history?.length)parts.push(detail('Image requests and usage',...held.image_history.map(a=>add(make('div','stack'),make('p','',a.provider+' · '+a.operation+' · '+a.state),make('p','quiet',a.usage?'Reported tokens: '+(a.usage.input_tokens??'unknown')+' in / '+(a.usage.output_tokens??'unknown')+' out. Cost: '+(a.usage.cost??'not reported')+'.':'Usage not reported; no estimate was invented.'),button('Inspect saved image request',()=>imageRequestSheet(a.id))))));
   parts.push(detail('History',...held.history.map(v=>add(make('div','bar'),make('span','','Revision '+v.revision+(v.approved?' · approved then':'')),button('Compare with current',()=>compareSheet(v)),button('Restore revision '+v.revision,()=>restoreSheet(v)))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
   $('main').replaceChildren(...parts.filter(Boolean));
@@ -552,6 +552,39 @@ async function handoffSheet(done){
   sheet('Import a selected studio material',make('p','','Lists readable materials from the studio-owned folder. Select one file to preview; nothing else is imported or shared.'),studio.wrap,root.wrap,scan,problem,results,button('Cancel',()=>{closeSheet();if(!held)newSheet();}));
 }
 async function researchSheet(){
+  const ident=held.project.id,revision=held.project.revision;
+  const problem=make('p','problem'),status=make('div','stack');
+  const editor=new StudioResearch.Editor({request:sent=>request('/api/research-sources',sent)});
+  const control=async action=>{try{const result=await request('/api/research-control',{id:ident,action});if(action==='preview'){sourceImportSheet(result);return;}await poll();}catch(f){problem.textContent=f.message;}};
+  async function poll(){
+    if(!$('sheet').open||!$('sheet-body').contains(status))return;
+    try{
+      const state=await request('/api/research-status?id='+encodeURIComponent(ident));
+      status.replaceChildren();
+      if(state){
+        const hooks={};
+        if(['working','stopping'].includes(state.state)){
+          if(state.state==='working')hooks.pause=()=>control('pause');
+          if(state.state!=='stopping')hooks.stop=()=>control('stop');
+        }else if(state.state==='complete')hooks.use=()=>control('preview');
+        else if(state.state==='paused')hooks.resume=()=>control('resume');
+        else if(['failed','stopped'].includes(state.state))hooks.retry=()=>control('retry');
+        status.append(StudioResearch.progress({...state.progress,phase:state.state==='complete'?'complete':state.state==='working'?state.progress.phase:state.state,timing:{...state.progress.timing,elapsed_seconds:state.elapsed_seconds}},hooks));
+        if(state.problem)status.append(make('p','problem',state.problem));
+        if(['working','stopping'].includes(state.state))setTimeout(poll,1500);
+      }
+    }catch(f){problem.textContent=f.message;}
+  }
+  const start=button('Start research',async()=>{
+    if(!editor.valid()){problem.textContent='Add readable sources or allow additional external search first.';return;}
+    start.disabled=true;problem.textContent='';
+    try{await request('/api/research-job',{id:ident,expected_revision:revision,research_inputs:editor.spec()});await poll();}
+    catch(f){problem.textContent=f.message;}finally{start.disabled=false;}
+  },true);
+  sheet('Research this topic',make('p','quiet','Optional: collect evidence, combine findings, then independently check the report. Your infographic stays unchanged until you choose Use research and import the preview.'),editor.node,start,status,problem,detail('Already have reviewed research?',button('Import a reviewed case',researchImportSheet)),button('Done',closeSheet));
+  await poll();
+}
+async function researchImportSheet(){
   const mode=field('Research source mode','selected','select');for(const[value,label]of[['selected','Supplied documents only'],['mixed','Supplied documents and public sources'],['public','Public sources']]){const option=make('option','',label);option.value=value;mode.input.append(option);}mode.input.value='selected';
   const task=make('pre','ig-csv-preview'),path=field('Reviewed Harness Research case folder'),problem=make('p','problem');
   async function show(){try{task.textContent=JSON.stringify(await request('/api/research-task?id='+encodeURIComponent(held.project.id)+'&source_mode='+mode.input.value),null,2);}catch(f){problem.textContent=f.message;}}

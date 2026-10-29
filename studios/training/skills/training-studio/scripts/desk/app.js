@@ -805,6 +805,7 @@ function measuredTime(run) {
 }
 
 function researchActivity(run) {
+  if (run.research_progress && typeof StudioResearch !== 'undefined') return StudioResearch.progress(run.research_progress, {timing: run.timing});
   const research = run.research_progress;
   if (!research || research.phase === 'complete') return null;
   const names = { investigate: 'Investigating', synthesize: 'Combining findings', review: 'Independent check' };
@@ -4625,6 +4626,7 @@ function researchSummary(chosen) {
 
 // Why this choice cannot start, or nothing when it can.
 function researchProblem(draft) {
+  if (draft.sourceEditor) return draft.sourceEditor.valid() ? '' : 'Add readable sources or allow additional external search before starting.';
   const research = draft.research;
   if (research.sites && !researchChoice(draft).sites.length) return RESEARCH_NO_SITES;
   const chosen = researchChoice(draft);

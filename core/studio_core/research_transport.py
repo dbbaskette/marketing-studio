@@ -1,13 +1,12 @@
-"""Training Studio's confined native transport for the opt-in parallel protocol."""
+"""Shared confined native transport for the opted-in collection protocol."""
 import copy
-import hashlib
 import json
 from pathlib import Path
 import secrets
 import shutil
 import threading
 
-from studio_core import research_contract as rc, research_parallel as parallel
+from studio_core import research_contract as rc, research_session as parallel
 
 
 class Reservations:
@@ -52,14 +51,19 @@ def describe(progress):
                 phase, 'Preparing the research areas.')
 
 
-def native(engine, root, run, task, sources):
+def native(engine, root, run, task, sources, product='training'):
     from runner import agents, companion, documents
-    import home
-    from runner.pipeline import Work, Step
+    if product == 'presentation':
+        from runner.steps import Work
+    else:
+        from runner.pipeline import Work, Step
     from workspace import WorkspaceError
 
     root = Path(root)
     record = engine._load(root)
+    task = copy.deepcopy(task)
+    focus = (record.get('research_inputs') or {}).get('focus')
+    if focus: task['scope'] += '\nResearch focus: ' + focus
     tool = rc.matching(engine.research(), record.get('research_contract'))
     if tool is None:
         raise WorkspaceError('This research run needs its saved Harness Research version. Restore it before continuing.')
@@ -72,10 +76,13 @@ def native(engine, root, run, task, sources):
     attempt = secrets.token_hex(16)
     driver = copy.deepcopy(record.get('driver'))
 
+    identity = copy.deepcopy({key: record.get(key) for key in ('form', 'brief', 'research_contract', 'research_inputs')})
+
     def cancelled():
         with engine.files:
             current = engine._load(root)
             return run.stop.is_set() or run.gone or current.get('driver') != driver \
+                or any(current.get(key) != value for key, value in identity.items()) \
                 or current.get('execution') == 'conversation'
     folders, lock = [], threading.RLock()
 
@@ -120,12 +127,16 @@ def native(engine, root, run, task, sources):
                     {'inputs': {'research-task': json.dumps(sent)}, 'sources': offered,
                      'fetch': fetch, 'ask': False, 'artifacts': {'research-result': result}}, 'research-result')
         reservation, cap = budget.take(phase, execution.get('workers', 1))
-        step = Step(name, 'agent', doing, doing, 'research')
+        step = name if product == 'presentation' else Step(name, 'agent', doing, doing, 'research')
         with engine.files:
             seconds = engine._load(root)['limits']['step_seconds']
         try:
-            outcome, handed, started, folder = engine._job(
-                root, run, step, work, limits=agents.Limits(seconds=seconds, dollars=cap))
+            if product == 'presentation':
+                outcome, handed, started, folder = engine._job(root, run, name, doing, work, deck=False,
+                    limits=agents.Limits(seconds=seconds, dollars=cap))
+            else:
+                outcome, handed, started, folder = engine._job(root, run, step, work,
+                    limits=agents.Limits(seconds=seconds, dollars=cap))
             with lock:
                 folders.append(folder)
             if outcome.reason == 'stopped' or run.stop.is_set():
@@ -139,7 +150,8 @@ def native(engine, root, run, task, sources):
                 current = engine._load(root)
                 tried = engine._tried(current, name, started, outcome.seconds, ended,
                                       None if accepted else outcome.detail or None, **cost)
-                tried['attempts'][-1]['research_attempt'] = attempt
+                tried['tries' if product == 'presentation' else 'attempts'][-1].update(
+                    research_attempt=attempt, invocation=execution.get('invocation'))
                 engine._store(root, current)
                 engine._commit(root, 'record research job: ' + phase)
             if not accepted:
@@ -153,13 +165,14 @@ def native(engine, root, run, task, sources):
         finally:
             budget.release(reservation)
 
-    cache = home.data_root() / 'research-checkpoints' / hashlib.sha256(str(root.resolve()).encode()).hexdigest()
     try:
+        if parallel.capability(tool.runtime) != record['research_execution']['capability']:
+            raise WorkspaceError('Restore the saved Harness Research collection capability before continuing.')
         return parallel.Workflow(tool.runtime, tool._json).run(
-            root, task, invoke, sources, cache_root=cache,
+            root, task, invoke, sources,
             limit=min(3, engine.at_once, record['research_execution'].get('workers', 3)),
             progress=progress, allowed=lambda: not cancelled() and engine._may_go(root),
-            cancelled=cancelled, readable=lambda cause: rc.dry_read(engine, root, cause))
+            cancelled=cancelled, restart_stopped=True, readable=lambda cause: rc.dry_read(engine, root, cause))
     except (InterruptedError, companion.Stopped):
         raise companion.Stopped()
     except (rc.ReviewRefused, rc.CheckCouldNotFinish) as refusal:

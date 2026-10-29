@@ -1073,7 +1073,11 @@ def research_run(engine, job):
     plan = ask(job['payload'], job['guidance'], 'research-plan')['content']
     if not isinstance(plan, str) or len(plan) > 200_000:
         raise ValueError('The research questions came back unreadable. Retry it.')
-    payload = {**job['payload'], 'documents': {'research-plan': plan}}
+    payload = {
+        **job['payload'],
+        'documents': {'research-plan': plan},
+        'research_focus': (job['metadata']['desk'].get('research_inputs') or {}).get('focus'),
+    }
     contract = job['metadata']['desk'].get('contract')
     if contract:
         import synthesis_research
@@ -1083,28 +1087,60 @@ def research_run(engine, job):
             'brief': payload['brief'],
             'research_contract': contract,
             'model_profiles': job.get('model_profiles'),
+            'research_execution': job['metadata']['desk'].get('research_execution'),
         }
+        from studio_core import research_sources
+
+        directory, _ = studio.item(root, 'articles', ident)
+        _, selected = research_sources.sources(
+            directory, job['metadata']['desk'].get('research_inputs')
+        )
         with tempfile.TemporaryDirectory(prefix='blog-desk-research-') as scratch:
             target = Path(scratch)
-            result = synthesis_research.generate(
-                target,
-                run,
-                payload,
-                engine.worker,
-                seconds=left(),
-                stop=stop,
-                progress=lambda event: (
-                    _note_phase(root, job, _round_words(event)) if _round_words(event) else None
-                ),
-            )
-            with studio.locked(root):
-                if tool_jobs._working(root, job['id']) is not None and not stop.is_set():
-                    kept = staging(root, ident)
-                    shutil.rmtree(kept, ignore_errors=True)
-                    kept.mkdir(parents=True)
-                    research_contract.copy_case(
-                        target / research_contract.CASE, kept / research_contract.CASE
-                    )
+            previous = staging(root, ident) / research_contract.CASE
+            if previous.is_dir():
+                research_contract.copy_case(previous, target / research_contract.CASE)
+
+            def progress(event):
+                words = _round_words(event)
+                if words:
+                    _note_phase(root, job, words)
+                if event.get('streams'):
+                    try:
+                        with studio.locked(root):
+                            _keep_transient(root, ident, research_progress=event)
+                    except (ValueError, OSError):
+                        pass
+
+            try:
+                result = synthesis_research.generate(
+                    target,
+                    run,
+                    payload,
+                    engine.worker,
+                    seconds=left(),
+                    stop=stop,
+                    selected_sources=selected,
+                    owned=lambda: tool_jobs._working(root, job['id']) is not None,
+                    progress=progress,
+                )
+            finally:
+                # Preserve checked peer packets even when a different area or final check fails.
+                # Staging is private; landing still requires the original job/driver decision.
+                with studio.locked(root):
+                    current = desk.read_start(root, ident)
+                    if (
+                        current
+                        and current.get('job') == job['id']
+                        and (target / research_contract.CASE).is_dir()
+                    ):
+                        kept = staging(root, ident)
+                        shutil.rmtree(kept, ignore_errors=True)
+                        kept.mkdir(parents=True)
+                        research_contract.copy_case(
+                            target / research_contract.CASE, kept / research_contract.CASE
+                        )
+
         return {
             'content': result['content'][:200_000],
             'notes': result['notes'][:10_000],
@@ -1389,6 +1425,7 @@ def _start_view(root, ident, rows):
         **timing,
         **{key: value for key, value in start.items() if key not in ('notes', 'contract')},
         'phase': transient(root, ident).get('phase') or '',
+        'research_progress': transient(root, ident).get('research_progress'),
         'problem': detail['problem'],
         # Why it stopped and what the page offers: more time, no research, or Status.
         'reason': detail['reason'],

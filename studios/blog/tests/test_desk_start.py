@@ -1257,3 +1257,32 @@ class SecondReviewTests(SourcesStayWithTheBlogTests):
 
         self.read_link('https://docs.example.com/guide', fetched)
         self.assertEqual(seen, [False])
+
+
+class SharedSourcesTests(StartCase):
+    def test_selected_only_research_keeps_shared_scope_and_sources(self):
+        from studio_core import research_sources
+
+        source = research_sources.Sources(self.root / '.research-sources')
+        draft = source.create()
+        draft = source.mutate(
+            draft['id'],
+            draft['revision'],
+            'capture',
+            kind='text',
+            text='Synthetic supplied source.',
+        )
+        made = self.start(
+            way='topic',
+            point='A synthetic point',
+            research_inputs={'id': draft['id'], 'expected': draft['revision']},
+        )
+        start = desk.read_start(self.root, made['id'])
+        self.assertEqual(start['steps'][0], 'research')
+        self.assertEqual(start['research_from'], {'documents': True, 'sites': [], 'web': False})
+        self.assertEqual(
+            research_sources.sources(self.folder(made['id']), start['research_inputs'])[1][0][
+                'text'
+            ],
+            'Synthetic supplied source.\n',
+        )

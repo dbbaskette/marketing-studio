@@ -75,7 +75,7 @@ class PageFileTests(unittest.TestCase):
         # markdown.js, the desk kit, the shared deck panels, app.js and the deck desk: each a
         # file, none inline.
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', '', '', '', '', ''])
+                         ['', '', '', '', '', '', ''])
 
     def test_the_shell_names_its_controls_and_its_regions(self):
         page = self.read('index.html')

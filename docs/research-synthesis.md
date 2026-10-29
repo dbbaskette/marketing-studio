@@ -5,7 +5,7 @@ helper supports it. Blog Studio, Presentation Studio and Training Studio share
 `studio_core.research_contract`; they keep their own source permissions, worker
 confinement, model profiles, stop controls and review levels.
 
-The companion lock selects the stable **1.0.1** release at an exact commit and
+The companion lock selects the stable **1.1.0** release at an exact commit and
 checksum. Harness Research accepts newer stable releases through `>=1.0.0`;
 Harness Slides also retains stable `>=` selection. Prerelease tags are excluded,
 and each resolved release is locked to its commit and source checksum.
@@ -174,3 +174,45 @@ belongs to the blocked-research view: Harness Research cannot accept such a chec
 Blog Studio claims maps read only ready factual references and material. Examples of a kind
 of post and voice-only samples supply no claims; a new run without eligible material skips
 the map. Changing a file’s role updates the start form’s predicted stops.
+
+## Shared source picker and bounded collection
+
+All four studios use Marketing Studio's shared source and progress component.
+Add multiple public/Google links, PDF/DOCX/text/Markdown/HTML files, pasted text,
+or a previously reviewed local report. Capture and preview read only those
+selected sources. They never start an assistant, change Google documents, share
+files or generate artwork. Supported files are limited to 8 MB apiece. Native
+Google capture uses the existing account/defaults and retains only the chosen
+content. A tab-specific Doc URL selects that tab; a full reference URL visibly
+includes all tabs until the selection is narrowed. Missing tabs never fall back
+to the whole document. Unsupported objects are disclosed as capture limitations.
+
+“Search for additional external sources” starts unchecked. Approved sites remain
+an optional stricter search boundary, including paths and redirects. A selected
+URL is a reference, not permission to explore its links. Keep unreadable rows by
+retrying, or explicitly remove/exclude them before starting. Source revisions and
+bytes are checked again at start; unrelated ready sources survive a failed read.
+
+New supported research runs use up to three investigators (one or two can be
+chosen under Research options), then synthesis and a distinct independent review.
+Every invocation has a host-issued identity. The pinned helper validates its
+capture receipts and investigation packet, then assembles the evidence registry.
+Checked areas survive a peer failure; prose correction reuses the registry and
+located fact correction retries the affected area. An unchanged complete request
+can resume without another assistant request. Changed sources, task permissions
+or ownership cannot adopt an old or late response. A missing terminal observation
+blocks a blind retry; a process cancellation request is never called confirmation.
+
+Progress distinguishes elapsed time from observed active time and total assistant
+time. Overlapping assistants do not multiply wall time, and missing cost remains
+unknown. Native budgets reserve allowance across concurrent workers. The optional
+Infographic Studio text research adapter keeps its existing 300-second per-call
+limit and a 30-minute whole-request ceiling; it never invokes image tools.
+
+Blog Studio proofreading and direct manuscript editing, existing presentation
+editing, and supplied-only infographic planning remain outside research. Choosing
+a previously reviewed report as reference preserves its purpose, evidence and
+qualifications; research for another task is checked again. Explicit reviewed-case
+handoffs support both legacy `research/` outputs and new topic-root outputs without
+rewriting their reviewed bytes. Google/provider live acceptance is separate from
+the synthetic suite and is not implied by its results.

@@ -66,9 +66,13 @@ def once(url, address):
         plain.close()
 
 
-def fetch(value, *, resolver=resolve, transport=once):
+def fetch(value, *, resolver=resolve, transport=once, scope=None):
     current = canonical(value)
     for _ in range(5):
+        if scope is not None:
+            reason = scope.refuse(current)
+            if reason:
+                raise ValueError(reason)
         addresses = resolver(urlsplit(current).hostname)
         if not addresses or not all(
             (getattr(a := ipaddress.ip_address(v), "ipv4_mapped", None) or a).is_global

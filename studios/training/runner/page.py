@@ -223,7 +223,7 @@ READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview')
-WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+WRITES = ('/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
@@ -482,7 +482,7 @@ class RunnerPage(desk.Page):
         desk, by whoever holds the key. Anyone else's request there is held to the desk's
         limit, so it is refused unread."""
         address = target.partition('?')[0]
-        if address in (DOCUMENTS, ASSET, f'{DRAFTS}/save', f'{DRAFTS}/source'):
+        if address in ('/api/research-sources', DOCUMENTS, ASSET, f'{DRAFTS}/save', f'{DRAFTS}/source'):
             try:
                 self.check_token(headers)
             except desk.Refusal:
@@ -689,6 +689,12 @@ class RunnerPage(desk.Page):
     # --- writes --------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path == '/api/research-sources':
+            from studio_core.research_sources import Sources
+            try:
+                return desk.as_json(HTTPStatus.OK, Sources(self.engine.space().root / '.research-sources').dispatch(sent))
+            except ValueError as error:
+                raise desk.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
         if path == '/api/drive':
             return desk.as_json(HTTPStatus.OK, self.drive(sent))
@@ -737,8 +743,9 @@ class RunnerPage(desk.Page):
             return desk.as_json(HTTPStatus.OK,
                                 setup.apply(self.engine, shaped(setup.read, sent)))
         if path == '/api/trainings':
-            form = shaped(pipeline.check_form, sent, self.engine.brands())
-            return desk.as_json(HTTPStatus.OK, self.engine.start(form))
+            reference = sent.get('research_inputs')
+            form = shaped(pipeline.check_form, {k: v for k, v in sent.items() if k != 'research_inputs'}, self.engine.brands())
+            return desk.as_json(HTTPStatus.OK, self.engine.start(form, research_inputs=reference))
         if path == '/api/run':
             return desk.as_json(HTTPStatus.OK, self.act(sent))
         if path == '/api/answer':

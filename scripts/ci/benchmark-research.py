@@ -14,10 +14,11 @@ sys.path[:0] = [str(ROOT), str(ROOT / 'tests')]
 
 def measure(runtime, workers):
     os.environ['STUDIO_TEST_RESEARCH_RUNTIME'] = str(runtime)
-    from test_research_parallel import ParallelWorkflowTests
-    case = ParallelWorkflowTests()
+    from test_research_session import SessionTests
+    case = SessionTests()
     case.setUp()
     case.task['planning_questions'] = [{'id': f'q{i}', 'question': f'Synthetic question {i}'} for i in range(9)]
+    case.barrier = None
     original = case.invoke
     intervals = []
 
@@ -40,7 +41,7 @@ def measure(runtime, workers):
     case.invoke = invoke
     start = time.monotonic()
     try:
-        facts, _ = case.run_workflow(limit=workers)
+        facts, _ = case.workflow.run(case.root, case.task, case.invoke, limit=workers)
         elapsed = time.monotonic() - start
         collection = [row for row in intervals if row[0] == 'investigate']
         return {'workers': workers, 'questions': 9, 'facts': len(facts['facts']),
