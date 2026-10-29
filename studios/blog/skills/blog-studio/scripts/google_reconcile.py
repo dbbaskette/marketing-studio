@@ -28,6 +28,7 @@ def preview(root, data):
             current['google']['document_id'],
             _tab(root, current['id']),
             snapshot,
+            manuscript=_manuscript(root, current['id']),
         )
         observation, body = workflow.observed(
             SimpleNamespace(snapshot=str(snapshot), observation=None, file=None)
@@ -107,6 +108,7 @@ def accept(root, data):
             current['google']['document_id'],
             _tab(root, current['id']),
             fresh,
+            manuscript=_manuscript(root, current['id']),
         )
         observation, body = workflow.observed(
             SimpleNamespace(snapshot=str(fresh), observation=None, file=None)
@@ -154,6 +156,13 @@ def accept(root, data):
         return saved['result']
     finally:
         drive.discard(root, fresh)
+
+
+def _manuscript(root, ident):
+    from google_manuscript import PROJECTION
+
+    _, record = studio.item(root, 'articles', ident)
+    return record['google']['baselines']['draft']['document'].get('projection') == PROJECTION
 
 
 def _tab(root, ident):

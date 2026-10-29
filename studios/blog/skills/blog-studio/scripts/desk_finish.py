@@ -2868,12 +2868,17 @@ def _base_of(paragraph, start):
     return ''.join(text), positions
 
 
-def _paragraph_texts(inline, tabs):
+def _paragraph_texts(inline, tabs, manuscript=False):
     """[(key, paragraph, text, settled)] for each Doc body paragraph, in order: its words as
     the Doc had them (without suggested insertions, suggested deletions as they stand), and
     whether nothing waits in it, nor in a paragraph a suggested break split it from. Each
     entry's `positions` gives the Doc's index of each character, around images and chips."""
     import google_roundtrip as rt
+
+    if manuscript:
+        from google_manuscript import view
+
+        inline = view(inline)
 
     found, split = [], False
     for key, paragraph in rt.paragraphs(inline).items():
@@ -3111,6 +3116,10 @@ def _not_pending(inline, document, proposals, expected, ours=None):
     import json
 
     tabs = document['tab_ids']
+    from google_manuscript import PROJECTION, view
+
+    if document.get('projection') == PROJECTION:
+        inline = view(inline)
     texts = _paragraph_texts(inline, tabs)
     # Only this blog's own suggestions hold their paragraphs: a change in a paragraph that
     # holds only someone else's goes as a comment instead, theirs untouched.

@@ -5,6 +5,14 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **Polish the blog without its approval form.** Google dropdowns read as their
+  selected text. New manuscript imports leave clearly labelled leading approver
+  and reviewer chip fields out of the editing copy and explain this in the
+  preview. Their original Google content and coordinates are preserved; suggestions
+  and comment fallback stay within the manuscript. Ambiguous fields, bylines and
+  dropdowns in the article remain visible. Reference intake retains all content,
+  and older linked blogs retain their original capture scope.
+
 - **Preview opening eligible unfinished blogs on the writing desk.** Supported
   manuscripts and lossless heading-based outlines open only after explicit preview
   and guarded apply. Original session/run records, decisions, source pins, History

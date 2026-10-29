@@ -119,7 +119,6 @@ def journey(starter):
             assert status == 403
             wanted = {'local': {'root': str(case / 'work')}, 'person': {'name': 'Synthetic Author'},
                       'assistant': {'agent': 'codex', 'model': 'gpt-6-luna', 'effort': 'high'},
-                      'review': {'level': 'step_by_step'},
                       'output': 'pptx', 'render': {'previews': 'local'}, 'share': 'asked',
                       'models': {'schema': 1, 'agent': 'codex', 'mode': 'by_task', 'profiles': {
                           'quick': {'selection': 'explicit', 'model': 'fixture-quick', 'effort': 'low'},

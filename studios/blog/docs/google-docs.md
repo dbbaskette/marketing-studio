@@ -341,3 +341,17 @@ Suggestions, comment anchors and later comparisons retain the selected tab ID.
 Unselected tabs are not exported or copied into the local manuscript. A general
 Doc link still reads all tabs when adding reference material. Unsupported content
 or ambiguous tabs need resolution before a linked baseline can be established.
+
+Dropdown chips read as their selected value, including in a selected reference
+tab. When importing a manuscript, Blog Studio leaves clearly labelled leading
+approver/reviewer chip fields and approval-only tables out of the editing copy.
+The preview explains when it does this. Check that the blog is complete before
+starting. Byline fields, ambiguous text, mixed content tables and dropdowns within
+the article remain visible. The original capture retains the fields and native
+Google coordinates; editing and suggestions do not remove the approval form.
+Later comparisons use the same manuscript view. Existing linked blogs keep their
+previous full-content view; reference documents keep their approval information.
+
+For CLI manuscript captures, use `google_roundtrip.py capture --manuscript` and
+keep that option on later captures of the same blog. Omit it for an existing
+baseline that used the full document. The page remembers this choice itself.

@@ -158,38 +158,31 @@ class GoogleIntakeTests(unittest.TestCase):
             self.assertEqual((self.root / name).read_bytes(), content)
 
     def test_image_payloads_are_hidden_in_preview_but_preserved_in_import_and_downloads(self):
-        body = (
-            '# Synthetic manuscript\n\nKeep the readable paragraph.\n\n![Synthetic chart][image1]\n\n[image1]: <data:image/png;base64,'
-            + 'A' * 250_000
-            + '>\n'
-        )
-        original_export = self.client.export
-        with (
-            patch(
-                'google_suggestions.accepted_markdown',
-                side_effect=drive.GoogleError('Synthetic image structure'),
-            ),
-            patch.object(
-                self.client,
-                'export',
-                side_effect=lambda file_id, kind: (
-                    body.encode() if kind == 'md' else original_export(file_id, kind)
-                ),
-            ),
-        ):
-            preview = self.preview()
+        import base64
+        import google_model as gm
+
+        self.client = gm.Model(gm.objects_doc())
+        self.factory.return_value = self.client
+        large = gm.PNG + b'\0' * 180_000
+        self.client.images = {
+            'https://lh3.googleusercontent.com/one': large,
+            'https://lh3.googleusercontent.com/two': gm.PNG,
+        }
+        preview = self.preview()
+        body = (self.snapshot(preview) / 'document.md').read_text()
+        self.assertIn(base64.b64encode(large).decode(), body)
         self.assertTrue(preview['images_omitted'])
-        self.assertIn('Keep the readable paragraph.', preview['content'])
+        self.assertIn('An opening paragraph about harbours.', preview['content'])
         self.assertNotIn('data:image', preview['content'])
         self.assertNotIn('image1', preview['content'])
-        self.assertLess(len(preview['content']), 100)
+        self.assertLess(len(preview['content']), 1500)
         result = self.start(preview)
         folder, record = studio.item(self.root, 'articles', result['id'])
         self.assertEqual((folder / 'ORIGINAL.md').read_text(), body)
         self.assertEqual((folder / 'DRAFT.md').read_text(), body)
         self.assertEqual(self.client.writes, 0)
         # A small supplied draft exercises the same preview on the review screen.
-        small = body.replace('A' * 250_000, 'AAAA')
+        small = body.replace(base64.b64encode(large).decode(), base64.b64encode(gm.PNG).decode())
         studio.save_artifact(folder, 'draft', small, record)
         studio.persist(folder, 'articles', record)
         blog_runner.create(
