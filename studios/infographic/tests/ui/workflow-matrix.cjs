@@ -1,7 +1,7 @@
 /* Raw provider-shaped replies through the real phone UI, compositor and renderer. */
 const {execFileSync} = require('node:child_process');
 const path = require('node:path');
-for(const scenario of ['paraphrase','process','numeric_strings','zeros','calculation','recovery']){
+for(const scenario of ['paraphrase','process','numeric_strings','zeros','calculation','omission_notes','recovery']){
   console.log('Workflow contract: '+scenario);
   execFileSync(process.execPath,[path.join(__dirname,'journey.cjs')],{
     stdio:'inherit',timeout:180000,

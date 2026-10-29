@@ -78,6 +78,7 @@ def usable_proposals(project: dict, proposals: list[dict]) -> list[dict]:
     accepted, problems = [], []
     for proposal in proposals:
         try:
+            proposal = generated_scope_notes(project, proposal)
             verified = verify(project, accepted + [proposal])
         except Invalid as failure:
             problems.append(str(failure))
@@ -85,6 +86,24 @@ def usable_proposals(project: dict, proposals: list[dict]) -> list[dict]:
             accepted = verified
     require(bool(accepted), problems[0] if problems else 'No usable story was proposed.')
     return accepted
+
+
+def generated_scope_notes(project, proposal):
+    """Optional source exclusions are notes, never missing must-show requirements."""
+    result = deepcopy(proposal)
+    omissions = result.get('omissions', [])
+    require(isinstance(omissions, list) and all(text(key) for key in omissions),
+            'List omitted requirement IDs explicitly.')
+    requirements = {item['id'] for item in project['brief']['must_show']}
+    notes = list(dict.fromkeys(key for key in omissions if key not in requirements))
+    if notes:
+        qualifications = result.get('qualifications')
+        require(isinstance(qualifications, list) and all(text(note) for note in qualifications),
+                'Record source qualifications, including unresolved factual gaps.')
+        result['qualifications'] = list(dict.fromkeys([*qualifications,
+            *('Not included in this story: ' + note.replace('_', ' ').replace('-', ' ') for note in notes)]))
+        result['omissions'] = [key for key in omissions if key in requirements]
+    return result
 
 
 def adopt(store, ident: str, proposals: list[dict], *, expected_revision: int) -> dict:

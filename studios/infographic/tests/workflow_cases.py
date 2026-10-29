@@ -73,13 +73,15 @@ def case(name):
         facts.append(fact('bad', 'An unsupported claim.', 'Invented wording', 'This sentence is absent.'))
         bad = story([block(refs=['bad'])], id='unsupported')
         proposals.insert(0, bad)
+    elif name == 'omission_notes':
+        proposals[0]['omissions'] = ['load-test-numbers', 'vendor_screenshots', 'licensing_details']
     elif name != 'paraphrase':
         raise ValueError('Unknown synthetic workflow case: ' + name)
     return {'name': name, 'source': source, 'answer': {'facts': facts, 'stories': proposals}}
 
 
 NAMES = ('paraphrase', 'comparison', 'components', 'process', 'whitespace', 'typography',
-         'timeline', 'numeric_strings', 'zeros', 'calculation', 'negative', 'attached_units', 'partial')
+         'timeline', 'numeric_strings', 'zeros', 'calculation', 'negative', 'attached_units', 'partial', 'omission_notes')
 
 
 def captured_answer(example, ident):

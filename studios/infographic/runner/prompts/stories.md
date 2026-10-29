@@ -4,6 +4,10 @@ than duplicate layouts. Use only captured fact IDs. Keep exact locked phrases,
 required IDs, exclusions and qualifications; hybrid proposals retain all must-show
 ideas. Record omissions explicitly and ask for prioritization when content cannot
 fit. Use one takeaway, one to five primary blocks and at most 250 visible words.
+The omissions array contains only IDs from brief.must_show that this story leaves
+out. It is [] when brief.must_show is empty. Optional details left out of the
+source belong as readable notes in qualifications, never as invented omissions
+or required_ids. Block required_ids likewise name only brief.must_show IDs.
 Prefer two or three concise blocks and about 100–160 visible words. Leave room
 for source notes, qualifications, labels and explanatory artwork. Do not request
 an illustration for every block. Process step numbers are added by the compositor;

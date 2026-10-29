@@ -14,6 +14,7 @@ verification separate from signed-in provider acceptance.
 | Model → measurements | Exact numeric strings, missing context fields and display precision differed from native records. | Canonicalize only source-backed quantities or explicit calculations; retain literal source precision. Unknown context stays unknown. |
 | Facts → calculations | Reproducible dependent facts could arrive before operands or omit derivable metadata. | Verify operands first, resolve the dependency graph, infer only the operation's defined unit and identical operand context, then rerun native arithmetic validation. |
 | Alternatives → selection | One unsupported generated assertion could discard unrelated supported alternatives. | Only verified facts and fully valid alternatives reach selection. Requirements, locked wording, exclusions and omission rules still apply. |
+| Source exclusions → brief coverage | Generated plans put optional source exclusions into omitted requirement IDs, blocking briefs with no must-show requirements. | Preserve those optional notes in qualifications; bind generated omission and coverage fields to actual brief requirement IDs. Real required omissions still block selection. Saved responses can recover locally. |
 | Selection → composition | The first arrangement could fail even when another supported arrangement fit. | Try stack and columns before requesting prioritization. No text is discarded and readable type floors stay enforced. |
 | Composition → checks | Generated process ordinals were treated as unsupported numeric assertions; pre-numbered titles were duplicated. | Apply the compositor's expected ordinal once and exclude only that structural prefix from assertion checks. Other numbers remain checked. |
 | Measurements → render | An all-zero series passed evidence checks but failed positive-scale rendering. | Render exact zero labels with zero-length marks; signed values require number callouts instead of proportional bars. |
@@ -25,7 +26,7 @@ verification separate from signed-in provider acceptance.
 ## Regression coverage
 
 `tests/workflow_cases.py` supplies raw provider-shaped responses rather than
-prevalidated native records. Thirteen cases cover paraphrases, descriptive
+prevalidated native records. Fourteen cases cover paraphrases, descriptive
 comparisons and components, processes, whitespace, quotation typography,
 timelines, numeric strings, zero measurements, calculations, signed callouts,
 attached units and partly unsupported alternatives.
