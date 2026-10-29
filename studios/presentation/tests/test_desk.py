@@ -266,8 +266,8 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['saved']['heading'], 'Home')
 
     def test_home_puts_each_deck_where_it_stands_and_a_finished_one_with_its_link(self):
-        waiting = self.started(title='Waiting deck')
-        done = self.started(title='Finished deck')
+        waiting = self.saved_started(title='Waiting deck')
+        done = self.saved_started(title='Finished deck')
         for _ in range(20):
             gate = self.run_of(done)['gate']
             if gate is None:
@@ -505,7 +505,7 @@ class ScreenTests(ScriptedPage, PageCase):
     def test_the_research_stop_names_the_sites_a_page_was_refused_from(self):
         from synthesis_fixture import research_stop
         # The stand-in worker saves a page from docs.example.com, which is under the site.
-        path = self.started(research=True, research_from={'sites': ['docs.example.com']})
+        path = self.saved_started(research=True, research_from={'sites': ['docs.example.com']})
         self.decided(path, 'gate:research-plan')
         research_stop(Path(path) / 'research')
         record = self.engine._load(Path(path))
@@ -522,7 +522,7 @@ class ScreenTests(ScriptedPage, PageCase):
     def test_the_research_stop_leads_with_the_brief_and_the_check(self):
         from synthesis_fixture import research_stop
         from studio_core import research_view
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         self.decided(path, 'gate:research-plan')
         research_stop(Path(path) / 'research')
         record = self.engine._load(Path(path))
@@ -541,7 +541,7 @@ class ScreenTests(ScriptedPage, PageCase):
         from studio_core import review_policy
         from synthesis_fixture import research_stop
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.started(research=True)
+            path = self.saved_started(research=True)
         research_stop(Path(path) / 'research')
         record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
         self.engine._store(Path(path), record)
@@ -558,7 +558,7 @@ class ScreenTests(ScriptedPage, PageCase):
 
     def test_asking_about_a_finding_says_the_whole_research_runs_again(self):
         from synthesis_fixture import research_stop
-        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        path = self.saved_started(research=True); self.decided(path, 'gate:research-plan')
         research_stop(Path(path) / 'research')
         record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
         self.engine._store(Path(path), record)
@@ -570,7 +570,7 @@ class ScreenTests(ScriptedPage, PageCase):
 
     def test_the_research_sheet_offers_to_bring_the_evidence_up_to_date(self):
         from synthesis_fixture import research_stop
-        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        path = self.saved_started(research=True); self.decided(path, 'gate:research-plan')
         research_stop(Path(path) / 'research')
         record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
         self.engine._store(Path(path), record)
@@ -597,7 +597,7 @@ class ScreenTests(ScriptedPage, PageCase):
 
     def test_sending_a_marked_finding_shows_the_research_price_before_it_posts(self):
         from synthesis_fixture import research_stop
-        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        path = self.saved_started(research=True); self.decided(path, 'gate:research-plan')
         research_stop(Path(path) / 'research')
         record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
         self.engine._store(Path(path), record)
@@ -615,7 +615,7 @@ class ScreenTests(ScriptedPage, PageCase):
     def test_the_direction_review_prices_its_research_request(self):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.started(research=True)
+            path = self.saved_started(research=True)
         record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
         self.engine._store(Path(path), record)
         result = self.deck_screen(path, [{'snapshot': 'research'}])
@@ -683,7 +683,7 @@ class ScreenTests(ScriptedPage, PageCase):
                     self.assertNotIn(gone, shot['text'])
 
     def test_the_plan_says_where_each_question_is_answered_from(self):
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         shown = self.run_of(path)
         self.assertEqual(shown['gate']['name'], 'gate:research-plan')
         self.assertIn('looks', shown['gate'])
@@ -753,7 +753,7 @@ class ScreenTests(ScriptedPage, PageCase):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.started()
+            path = self.saved_started()
         shown = self.run_of(path)
         look = next(row for row in shown['timeline'] if row['name'] == 'gate:look')
         self.assertIs(look.get('automatic'), True)
@@ -794,7 +794,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn(review_policy.STALE, shots['refused']['text'])
 
     def test_a_deck_calls_its_look_stage_look(self):
-        path = self.started(title='Rolling restarts')
+        path = self.saved_started(title='Rolling restarts')
         result = self.deck_screen(path, [{'snapshot': 'deck'}])
         self.assertIn('Look: Still to come', result['snapshots']['deck']['text'].split('\n'))
         self.assertNotIn('Check the brand', result['snapshots']['deck']['text'])
@@ -816,14 +816,14 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(posted[0]['form']['delivery'], 'reading')
 
     def test_the_goal_text_does_not_flip_the_first_draft_in_the_runner(self):
-        path = self.started(goal='Skip AI review on the first build.')
+        path = self.saved_started(goal='Skip AI review on the first build.')
         self.assertFalse(self.run_of(path)['unreviewed'])
         self.assertNotIn('initial_review', json.loads((Path(path) / 'run.json').read_text())
                          .get('form', {}))
 
     def test_a_working_deck_says_what_it_does_now_and_for_how_long(self):
         import datetime
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         current = next(row for row in shown['timeline'] if row['state'] != 'done')
         current['state'] = 'current'
@@ -842,7 +842,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Stop loses the step in hand; Pause lets it finish.', text)
 
     def test_a_note_for_the_next_step_is_sent_from_the_deck_screen_and_replaced(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         shown.update(state='working', gate=None, sentence='Drafting the outline.')
         noted = {**shown, 'note': {'pending': {'text': 'Lead with the risks.', 'at': 'now'},
@@ -872,7 +872,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(sent['fields'][box], '')
 
     def test_a_used_note_is_listed_with_the_saved_inputs_and_a_finished_deck_takes_none(self):
-        path = self.started()
+        path = self.saved_started()
         self.to_end(Path(path))
         shown = self.run_of(path)
         self.assertEqual(shown['state'], 'finished')
@@ -887,7 +887,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Lead with the risks. Went with: Build the slides.', done['text'])
 
     def test_a_retry_says_what_it_re_runs_and_what_the_last_try_took(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         row = next(row for row in shown['timeline'] if row['state'] != 'done')
         row.update(state='current', failed=True, seconds=120, dollars=0.3)
@@ -901,7 +901,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       'took 2 minutes and $0.30.', shot['text'])
 
     def test_an_unusable_assistant_offers_open_status(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         row = next(row for row in shown['timeline'] if row['state'] != 'done')
         row.update(state='current', failed=True)
@@ -919,7 +919,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['status']['heading'], 'Status')
 
     def test_a_step_that_ran_out_of_time_offers_more_time(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         row = next(row for row in shown['timeline'] if row['state'] != 'done')
         row.update(state='current', failed=True, seconds=2700, dollars=0.9)
@@ -940,7 +940,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [('/api/run', {'path': path, 'action': 'more-time'})])
 
     def test_a_research_stop_opens_every_objection(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         row = next(row for row in shown['timeline'] if row['state'] != 'done')
         row.update(state='current', failed=True)
@@ -956,7 +956,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('f01: Too broad.', result['snapshots']['read']['text'])
 
     def test_a_research_retry_carries_on_from_the_draft_and_lists_what_was_kept(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         row = next(row for row in shown['timeline'] if row['state'] != 'done')
         row.update(state='current', failed=True, seconds=2880, dollars=9.8)
@@ -981,7 +981,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       'the last round took 50 seconds.', result['snapshots']['failed']['text'])
 
     def test_a_build_retry_says_how_many_sections_are_kept(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         self.assertIsNone(shown['build_sections'], 'nothing built yet')
         row = next(row for row in shown['timeline'] if row['stage'] == 'build')
@@ -998,7 +998,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       'far took 5 minutes and $1.10.', result['snapshots']['failed']['text'])
 
     def test_one_approve_decides_and_the_review_bar_only_counts(self):
-        path = self.started()
+        path = self.saved_started()
         result = self.deck_screen(path, [{'snapshot': 'gate'}])
         shot = result['snapshots']['gate']
         self.assertEqual(shot['buttons'].count('Approve'), 1)
@@ -1006,7 +1006,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('0 slides to change', shot['text'])
 
     def test_home_says_where_an_older_powerpoint_file_is(self):
-        path = self.started(output='pptx')
+        path = self.saved_started(output='pptx')
         self.to_end(Path(path))
         listed = self.get('decks')
         for where, said in (('maker', 'A .pptx on the computer that made it.'),
@@ -1022,7 +1022,7 @@ class ScreenTests(ScriptedPage, PageCase):
                 self.assertIn(said, result['snapshots']['decks']['text'])
 
     def test_undo_is_not_offered_once_the_last_step_is_shared(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         self.assertIs(shown['undo'], True)
         shown['undo'] = False
@@ -1031,7 +1031,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('Undo the last step', result['snapshots']['deck']['buttons'])
 
     def test_undo_names_the_last_step_with_its_time_and_cost(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         shown['undo'] = True
         done = [row for row in shown['timeline'] if row['state'] == 'done'][-1]
@@ -1042,12 +1042,12 @@ class ScreenTests(ScriptedPage, PageCase):
                       result['snapshots']['undo']['sheet'])
 
     def test_the_timeline_captions_the_stage_it_is_at_for_a_phone(self):
-        path = self.started()
+        path = self.saved_started()
         result = self.deck_screen(path, [{'snapshot': 'gate'}])
         self.assertEqual(result['snapshots']['gate']['captions'], ['Outline: Waiting for you'])
 
     def test_outline_rows_keep_one_button_and_fold_the_rest(self):
-        path = self.started()
+        path = self.saved_started()
         first = self.run_of(path)['gate']['slides'][0]['title']
         result = self.deck_screen(path, [{'snapshot': 'closed'}, {'click': f'More for “{first}”'},
                                          {'snapshot': 'open'}])
@@ -1057,7 +1057,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn(f'Move down: “{first}”', opened['buttons'])
 
     def test_the_deck_says_steps_left_its_next_stop_and_what_it_has_spent(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         ahead = shown['ahead']
         result = self.deck_screen(path, [{'snapshot': 'deck'}])
@@ -1079,7 +1079,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('steps left', result['snapshots']['old']['text'])
 
     def test_asking_for_changes_at_the_deck_stop_with_nothing_marked_says_the_whole_deck_is_drawn_again(self):
-        path = self.started()
+        path = self.saved_started()
         for _ in range(10):
             if self.run_of(path)['gate']['name'] == 'gate:build':
                 break
@@ -1095,7 +1095,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       'minutes, as the last build took).', result['snapshots']['sheet']['sheet'])
 
     def test_the_whole_deck_sentence_says_when_no_cost_was_reported(self):
-        path = self.started()
+        path = self.saved_started()
         for _ in range(10):
             if self.run_of(path)['gate']['name'] == 'gate:build':
                 break
@@ -1115,7 +1115,7 @@ class ScreenTests(ScriptedPage, PageCase):
                 self.assertNotIn('$0.00', sheet)
 
     def test_a_now_line_never_says_nothing_was_spent(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         working = {**shown, 'state': 'working', 'gate': None,
                    'spent': {**shown['spent'], 'dollars': 0}}
@@ -1124,7 +1124,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('$0.00', result['snapshots']['deck']['text'])
 
     def test_asking_for_changes_at_the_outline_says_what_is_drawn_again(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         self.assertEqual(shown['gate']['name'], 'gate:outline')
         result = self.deck_screen(path, [{'click': 'Ask for changes'}, {'snapshot': 'sheet'}])
@@ -1145,7 +1145,7 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertIn(said, result['snapshots']['first']['text'])
 
     def test_a_deck_says_only_what_it_does(self):
-        path = self.started()
+        path = self.saved_started()
         self.to_gate(Path(path), 'gate:build')
         shown = self.run_of(path)
         progress = {'incomplete': False, 'slides': [
@@ -1163,7 +1163,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Details for troubleshooting', deck['buttons'])
 
     def test_a_refused_approval_is_said_beside_the_gate(self):
-        path = self.started()
+        path = self.saved_started()
         refused = {'status': 409, 'body': {'error': 'The outline changed since you opened it.'}}
         result = self.deck_screen(path, [{'click': 'Approve'}, {'snapshot': 'refused'}],
                                   **{'POST /api/decide': [refused]})
@@ -1176,7 +1176,7 @@ class ScreenTests(ScriptedPage, PageCase):
         said = ('Google is not connected on this computer, so approving makes a PowerPoint '
                 'file. Sign in to Google (Status → Check this computer says how), then choose '
                 'Send to Google Slides.')
-        path = self.started(output='google')
+        path = self.saved_started(output='google')
         self.to_gate(Path(path), 'gate:build')
         unsigned = self.setup_with(google=False)
         result = self.deck_screen(path, [{'snapshot': 'deck'}],
@@ -1194,7 +1194,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn(said, result['snapshots']['signed']['text'])
 
     def test_a_phone_wraps_every_toolbar_action_under_the_title(self):
-        path = self.started()
+        path = self.saved_started()
         result = self.deck_screen(path, [{'snapshot': 'phone'}], narrow=True)
         phone = result['snapshots']['phone']
         self.assertEqual(phone['filled'], ['Approve'])
@@ -1207,7 +1207,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('More', phone['buttons'])
 
     def test_every_gate_of_a_deck_from_scratch_is_drawn_and_decided(self):
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         seen = []
         for _ in range(12):
             gate = self.run_of(path)['gate']
@@ -1298,7 +1298,7 @@ class ScreenTests(ScriptedPage, PageCase):
             request['address'] for request in result['requests']))
 
     def test_a_question_dropped_on_the_page_goes_with_the_approval(self):
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         result = self.deck_screen(path, [
             {'snapshot': 'plan'}, {'click': 'Drop “Health checks”'}, {'snapshot': 'dropped'},
             {'click': 'Approve without 1 question'}],
@@ -1321,7 +1321,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:research')
 
     def test_a_reworded_and_an_added_question_are_sent_as_changes(self):
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         result = self.deck_screen(path, [
             {'click': 'Reword “Instance min”'}, {'snapshot': 'rewording'},
             {'hold': 'Keep the wording of “Instance min”'},
@@ -1349,7 +1349,7 @@ class ScreenTests(ScriptedPage, PageCase):
 
     def test_a_question_can_be_added_at_the_synthesis_research_stop(self):
         from synthesis_fixture import research_stop
-        path = self.started(research=True); self.decided(path, 'gate:research-plan')
+        path = self.saved_started(research=True); self.decided(path, 'gate:research-plan')
         research_stop(Path(path) / 'research')
         record = self.engine._load(Path(path)); record['research_contract'] = {'schema': 2}
         self.engine._store(Path(path), record)
@@ -1371,7 +1371,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Add the question', result['snapshots']['full']['off'])
 
     def test_no_more_questions_are_added_than_the_runner_takes_at_once(self):
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         steps = []
         for number in range(1, marks.ADDED + 1):
             steps += [{'fill': 'A question to add', 'value': f'Question {number}?'},
@@ -1390,7 +1390,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.run_of(path)['gate']['round'], 2)
 
     def test_a_line_takes_as_many_characters_as_the_runner_does(self):
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         result = self.deck_screen(path, [{'click': 'Reword “Instance min”'},
                                          {'snapshot': 'rewording'}])
         limits = result['snapshots']['rewording']['limits']
@@ -1400,7 +1400,7 @@ class ScreenTests(ScriptedPage, PageCase):
     def test_findings_that_need_a_look_come_first_and_marks_go_as_changes(self):
         self.workers.then('question', unsettled(self.workers, 'health-checks'),
                           unsettled(self.workers, 'health-checks'))
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         self.decided(path, 'gate:research-plan')
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:research')
         result = self.deck_screen(path, [
@@ -1431,7 +1431,7 @@ class ScreenTests(ScriptedPage, PageCase):
             'again': {'health-checks': 'Look for the platform docs.'}, 'add': []}))
 
     def test_the_last_finding_kept_cannot_be_left_out(self):
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         self.decided(path, 'gate:research-plan')
         result = self.deck_screen(path, [
             {'click': 'Health checks'}, {'click': 'Leave out “Health checks”'},
@@ -1452,7 +1452,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:outline')
 
     def test_a_finding_researched_again_is_sent_without_the_leave_outs(self):
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         self.decided(path, 'gate:research-plan')
         result = self.deck_screen(path, [
             {'click': 'Health checks'}, {'click': 'Research again: “Health checks”'},
@@ -1470,7 +1470,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.run_of(path)['gate']['round'], 2)
 
     def test_a_picture_is_given_to_a_slide_at_the_outline(self):
-        path = self.started()
+        path = self.saved_started()
         gate = self.run_of(path)['gate']
         content = next(one for one in gate['slides'] if one.get('kind') == 'content')
         closing = next(one for one in gate['slides'] if one.get('kind') == 'closing')
@@ -1503,7 +1503,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Pictures you give a slide stay on this computer', shots['form']['text'])
 
     def test_a_picture_is_taken_off_a_slide_at_the_outline(self):
-        path = self.started()
+        path = self.saved_started()
         run = self.run_of(path)
         gate = run['gate']
         content = next(one for one in gate['slides'] if one.get('kind') == 'content')
@@ -1539,7 +1539,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn(f'Remove the picture from “{title}”', refused['off'])
 
     def test_a_slide_added_and_moved_on_the_page_is_an_outline_the_slides_tool_takes(self):
-        path = self.started(delivery='reading')   # a handout: an added slide needs no notes
+        path = self.saved_started(delivery='reading')   # a handout: an added slide needs no notes
         drafted = self.run_of(path)['gate']['slides']
         title = 'Watch each batch of the restart closely'
         result = self.deck_screen(path, [
@@ -1569,7 +1569,7 @@ class ScreenTests(ScriptedPage, PageCase):
         said = 'Say why each batch is watched.'
         with mock.patch.object(build, 'DELIVERY', 'live'):
             self.workers.outline_said = {**self.workers.outline_said, 'delivery': 'live'}
-            path = self.started()
+            path = self.saved_started()
             self.assertEqual(self.run_of(path)['gate']['delivery'], 'live')
             result = self.deck_screen(path, [
                 {'fill': 'A new slide’s title', 'value': title}, {'click': 'Add the slide'},
@@ -1595,7 +1595,7 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertEqual(kept['slides'][-1]['notes'], said)
 
     def test_a_slide_marked_on_the_page_is_sent_with_what_should_change(self):
-        path = self.started()
+        path = self.saved_started()
         second = self.run_of(path)['gate']['slides'][1]
         result = self.deck_screen(path, [
             {'snapshot': 'outline'},
@@ -1618,7 +1618,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       self.workers.of('outline')[-1].task)
 
     def test_typing_in_a_slide_s_box_or_its_title_leaves_the_rows_as_they_are(self):
-        path = self.started()
+        path = self.saved_started()
         second = self.run_of(path)['gate']['slides'][1]
         keep = f"Keep it as it is: “{second['title']}”"
         result = self.deck_screen(path, [
@@ -1640,7 +1640,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [])
 
     def test_a_mark_follows_its_slide_and_goes_when_the_slide_is_removed(self):
-        path = self.started()
+        path = self.saved_started()
         drafted = self.run_of(path)['gate']['slides']
         second, fourth = drafted[1], drafted[3]
         result = self.deck_screen(path, [
@@ -1674,7 +1674,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn(fourth['id'], said)
 
     def test_storyboard_preview_sends_the_current_unsaved_outline(self):
-        path = self.started()
+        path = self.saved_started()
         gate = self.run_of(path)['gate']
         result = self.deck_screen(path, [
             {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
@@ -1687,7 +1687,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('A clearer proposed title', result['snapshots']['shown']['fields'].values())
 
     def test_unreviewed_native_draft_offers_review_or_explicit_as_is_export(self):
-        path = self.started(initial_review='user-first', output='pptx')
+        path = self.saved_started(initial_review='user-first', output='pptx')
         for _ in range(8):
             gate = self.run_of(path)['gate']
             if gate['name'] == 'gate:build': break
@@ -1705,7 +1705,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(body, {'path': path, 'expected': shown['gate']['expected_deck']})
 
     def test_an_outline_put_back_as_drafted_is_approved_as_it_was(self):
-        path = self.started()
+        path = self.saved_started()
         second = self.run_of(path)['gate']['slides'][1]
         result = self.deck_screen(path, [
             {'click': f"Ask for changes to “{second['title']}”"},
@@ -1728,7 +1728,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertNotIn('extra', body)
 
     def test_a_deck_made_as_powerpoint_is_sent_to_google_slides_from_its_screen(self):
-        path = self.started()
+        path = self.saved_started()
         self.slides.run.drive = False
         for gate in ('gate:outline', 'gate:look', 'gate:build'):
             self.decided(path, gate)
@@ -1750,7 +1750,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Revision 2.', result['snapshots']['sent']['text'])
 
     def test_powerpoint_by_choice_offers_google_and_an_explicit_change_sheet(self):
-        path = self.started(output='pptx')
+        path = self.saved_started(output='pptx')
         for gate in ('gate:outline', 'gate:look', 'gate:build'):
             self.decided(path, gate)
         shown = {**self.run_of(path), 'driver': None, 'mine': True}
@@ -1760,7 +1760,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('It runs from this computer again, and your team sees that.', result['snapshots']['changes']['text'])
 
     def test_an_existing_deck_shows_its_slides_at_classify(self):
-        path = self.started(route='existing', level='polish',
+        path = self.saved_started(route='existing', level='polish',
                             source={'kind': 'upload', 'name': 'old.pptx'},
                             uploads={'old.pptx': DECK})
         result = self.deck_screen(path, [{'snapshot': 'classify'}])
@@ -1776,7 +1776,7 @@ class ScreenTests(ScriptedPage, PageCase):
             self.assertIn('kind=original&number=1', picture['of'])
 
     def test_the_build_gate_shows_a_slide_s_note(self):
-        path = self.started()
+        path = self.saved_started()
         self.to_gate(Path(path), 'gate:build')
         view = self.run_of(path)
         said = ("This slide is drawn with a title because its picture can't be carried onto "
@@ -1788,7 +1788,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn(said, result['snapshots']['build']['text'])
 
     def test_live_previews_are_unreviewed_without_another_approval_gate(self):
-        path = self.started()
+        path = self.saved_started()
         view = self.run_of(path)
         view.update(state='working', gate=None, build_progress={
             'incomplete': True, 'slides': [{'number': 3, 'id': 'first', 'title': 'First slide',
@@ -1807,7 +1807,7 @@ class ScreenTests(ScriptedPage, PageCase):
     def test_a_deck_built_from_an_existing_one_shows_each_slide_before_and_after(self):
         # The stand-in workers cannot rebuild the stand-in deck, so the build gate of a deck
         # from scratch is given the before and after an existing deck's gate has.
-        path = self.started()
+        path = self.saved_started()
         self.to_gate(Path(path), 'gate:build')
         view = self.run_of(path)
         view['gate']['pairs'] = [{'number': 1, 'before': {'kind': 'original', 'ref': 1},
@@ -1823,7 +1823,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(kinds, {'original', 'build'})
 
     def test_another_brand_chosen_on_the_page_has_its_cover_drawn_again(self):
-        path = self.started()
+        path = self.saved_started()
         self.decided(path, 'gate:outline')
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:look')
         result = self.deck_screen(path, [
@@ -1844,7 +1844,7 @@ class ScreenTests(ScriptedPage, PageCase):
 
     def test_the_brands_looks_are_shown_and_the_pick_is_sent_in_the_persons_words(self):
         self.brand.run.offers_looks = True
-        path = self.started()
+        path = self.saved_started()
         self.decided(path, 'gate:outline')
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:look')
         result = self.deck_screen(path, [
@@ -1874,7 +1874,7 @@ class ScreenTests(ScriptedPage, PageCase):
         from studio_core import review_policy
         self.brand.run.offers_looks = True
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.started()
+            path = self.saved_started()
         result = self.deck_screen(path, [{'snapshot': 'unpicked'}, {'see': 'Every look'},
             {'see': 'Clear'}, {'click': 'Clear'}, {'snapshot': 'picked'},
             {'fill': 'Title of slide 2', 'value': 'An edited synthetic claim'}, {'snapshot': 'edited'}],
@@ -1892,7 +1892,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.brand.run.offers_looks = True
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.started()
+            path = self.saved_started()
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['label']), ('gate:outline', 'Review the direction'))
         result = self.deck_screen(path, [
@@ -1909,7 +1909,7 @@ class ScreenTests(ScriptedPage, PageCase):
     def test_looks_that_cannot_be_rendered_offer_to_try_again_or_carry_on(self):
         self.brand.run.offers_looks = True
         self.brand.run.unrenderable = 'No renderer here.'
-        path = self.started()
+        path = self.saved_started()
         self.decided(path, 'gate:outline')
         result = self.deck_screen(path, [
             {'snapshot': 'failed'}, {'click': 'Try again'},
@@ -1928,13 +1928,13 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn(deck_flow.UNREVIEWED, shot['text'])
 
     def test_an_older_brand_says_it_offers_no_looks(self):
-        path = self.started()
+        path = self.saved_started()
         self.decided(path, 'gate:outline')
         result = self.deck_screen(path, [{'snapshot': 'look'}])
         self.assertIn('too old to offer looks', result['snapshots']['look']['text'])
 
     def test_an_approval_that_is_refused_is_said_on_the_deck_s_screen(self):
-        path = self.started()
+        path = self.saved_started()
         refused = {'status': 409, 'body': {'error': 'The outline is not waiting for a '
                                                     'decision.'}}
         result = self.deck_screen(path, [{'click': 'Approve'}, {'snapshot': 'refused'}],
@@ -1946,7 +1946,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertIn('Approve', shot['buttons'])
 
     def test_a_document_said_to_be_wrong_is_corrected_with_the_approval(self):
-        path = self.started(route='document', research=False,
+        path = self.saved_started(route='document', research=False,
                             source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['verdict']), ('gate:classify', 'material'))
@@ -1968,8 +1968,8 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.record(Path(path))['classified'], 'spec')
 
     def test_decks_status_settings_and_published_are_drawn_from_the_runners_answers(self):
-        self.started(title='Rolling restarts')
-        self.started(title='Capacity planning')
+        self.saved_started(title='Rolling restarts')
+        self.saved_started(title='Capacity planning')
         answers = self.answers(**{'GET /api/status': [ok(self.get('status'))],
                                   'GET /api/published': [ok(self.get('published'))]})
         result = self.run_page(answers, [
@@ -1994,8 +1994,8 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [])
 
     def test_a_deck_is_deleted_from_the_decks_list_through_its_own_sheet(self):
-        path = self.started(title='Rolling restarts')
-        self.started(title='Capacity planning')
+        path = self.saved_started(title='Rolling restarts')
+        self.saved_started(title='Capacity planning')
         before = self.get('decks')
         leaving = self.get('delete', path=path)
         deleted = self.post('delete', {'path': path, 'title': 'Rolling restarts'})
@@ -2035,8 +2035,8 @@ class ScreenTests(ScriptedPage, PageCase):
 
     def test_a_list_offers_delete_only_where_the_runner_would_allow_it_and_says_its_refusal(
             self):
-        path = self.started(title='Rolling restarts')
-        other = self.started(title='Capacity planning')
+        path = self.saved_started(title='Rolling restarts')
+        other = self.saved_started(title='Capacity planning')
         listed = self.get('decks')
         theirs = next(brief for brief in listed['needs'] + listed['working']
                       if brief['path'] == other)
@@ -2093,7 +2093,7 @@ class ScreenTests(ScriptedPage, PageCase):
                          ['/api/setup/check'])
 
     def test_a_deck_is_paused_and_a_refusal_changes_nothing(self):
-        path = self.started()
+        path = self.saved_started()
         refused = {'status': 409, 'body': {'error': 'Only a deck that is working can be '
                                                     'paused. This one is waiting for you.'}}
         result = self.deck_screen(path, [{'snapshot': 'waiting'}, {'click': 'Stop'},
@@ -2127,7 +2127,7 @@ class ScreenTests(ScriptedPage, PageCase):
         said = ('Marketing Studio installs and updates this studio. To update it, unpack a newer '
          'Marketing Studio release and run marketing-studio update --from <the '
          'unpacked folder> --yes.')
-        self.started()
+        self.saved_started()
         found = self.brand_upkeep()
         found = {**found, 'update': {**found['update'], 'offered': False},
                  'versions': {**found['versions'], 'suite': 'marketing-studio'}}
@@ -2143,7 +2143,7 @@ class ScreenTests(ScriptedPage, PageCase):
                     self.assertNotIn(button, shot['buttons'])
 
     def test_home_offers_the_brand_skill_and_asks_before_it_is_installed(self):
-        self.started()
+        self.saved_started()
         found = self.brand_upkeep()
         offer = found['versions']['brand']
         self.assertEqual((offer['offered'], offer['action'], offer['release']),
@@ -2276,7 +2276,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.workers.found = [lambda slides: [{
             'slide': slides[1]['id'], 'question': 1, 'severity': 'major', 'about': 'content',
             'note': 'The title claims more than the points say.'}]]
-        path = self.started()
+        path = self.saved_started()
         self.to_gate(Path(path), 'gate:build')
         second = self.run_of(path)['gate']['slides'][1]
         result = self.deck_screen(path, [
@@ -2316,7 +2316,7 @@ class ScreenTests(ScriptedPage, PageCase):
                          ('changes', {gate['slides'][1]['id']: 'Claim only what the points say.'}))
 
     def test_a_slide_is_marked_to_be_drawn_again_or_to_say_something_else_not_both(self):
-        path = self.started()
+        path = self.saved_started()
         self.to_gate(Path(path), 'gate:build')
         result = self.deck_screen(path, [
             {'click': 'Ask for changes to this slide'},
@@ -2335,7 +2335,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(self.posts(result), [])
 
     def test_a_deck_without_an_outline_offers_no_change_to_what_a_slide_says(self):
-        path = self.started()
+        path = self.saved_started()
         self.to_gate(Path(path), 'gate:build')
         view = self.run_of(path)
         # As an existing deck polished has it: no outline step in its timeline.
@@ -2348,7 +2348,7 @@ class ScreenTests(ScriptedPage, PageCase):
 
     def test_a_delivered_deck_marks_slides_and_says_what_a_whole_build_costs(self):
         self.workers.cost = 0.25
-        path = self.started()
+        path = self.saved_started()
         self.to_end(Path(path))
         result = self.deck_screen(path, [
             {'snapshot': 'delivered'}, {'click': 'Ask for changes'}, {'snapshot': 'whole'},
@@ -2369,7 +2369,7 @@ class ScreenTests(ScriptedPage, PageCase):
                          ('gate:build', 'changes', 'Tighter.', {'slides': [1]}))
 
     def test_a_delivered_slide_s_words_go_back_to_the_outline(self):
-        path = self.started()
+        path = self.saved_started()
         self.to_end(Path(path))
         result = self.deck_screen(path, [
             {'click': 'Next slide'}, {'click': 'Change what it says'},
@@ -2388,7 +2388,7 @@ class ScreenTests(ScriptedPage, PageCase):
                                    'slides': 2}
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.started(route='document', research=True, research_sources='both',
+            path = self.saved_started(route='document', research=True, research_sources='both',
                                 source={'kind': 'paste', 'text': 'A slide script.'})
         gate = self.run_of(path)['gate']
         price = gate['reclassify_price']['says']
@@ -2410,7 +2410,7 @@ class ScreenTests(ScriptedPage, PageCase):
         from studio_core import review_policy
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.started(route='document', research=True, research_sources='both',
+            path = self.saved_started(route='document', research=True, research_sources='both',
                                 source={'kind': 'paste', 'text': 'Notes to build a talk from.'})
         gate = self.run_of(path)['gate']
         self.assertEqual((gate['name'], gate['classify']['verdict']), ('gate:outline', 'material'))
@@ -2430,7 +2430,7 @@ class ScreenTests(ScriptedPage, PageCase):
                       self.deck_screen(path, [{'snapshot': 'again'}])['snapshots']['again']['text'])
 
     def test_the_storyboard_redraws_itself_after_the_last_edit(self):
-        path = self.started()
+        path = self.saved_started()
         gate = self.run_of(path)['gate']
         result = self.deck_screen(path, [
             {'fill': 'Title of slide 2', 'value': 'A clearer proposed title'},
@@ -2450,7 +2450,7 @@ class ScreenTests(ScriptedPage, PageCase):
         self.assertEqual(body['expected'], gate['expected'])
 
     def test_the_build_gate_shows_saved_feedback_and_takes_a_line_on_each_slide(self):
-        path = self.started()
+        path = self.saved_started()
         self.to_gate(Path(path), 'gate:build')
         self.post('build-feedback', {'path': path, 'ref': 'a' * 32,
                                      'note': 'Name the batch size.', 'number': 3})

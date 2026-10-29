@@ -42,7 +42,7 @@ class DeckContract(DeckCase):
         self.brand.cannot_render = failing
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': level}):
-            root = self.begin(title=f'Contract {level}{" failing" if failing else ""}')
+            root = self.saved_begin(title=f'Contract {level}{" failing" if failing else ""}')
         self.root = root
         paused = []
         for _ in range(40):

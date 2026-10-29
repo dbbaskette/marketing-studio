@@ -663,7 +663,7 @@ class DraftJobTests(DeckCase):
         self.assertIsNone(self.record(root)['problem'], self.record(root)['problem'])
 
     def test_saved_runs_do_not_recover_or_run_desk_job_metadata(self):
-        root = self.begin()
+        root = self.saved_begin()
         with self.engine.files:
             record = self.record(root)
             record['drafts'] = {'jobs': [{'id': 'synthetic', 'status': 'working'}]}

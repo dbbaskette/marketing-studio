@@ -76,7 +76,8 @@ class RouteCase(PageCase):
             else:
                 self.workers.outline(tools, job)
         self.workers.queued['outline'] = [extract] * 4
-        path = self.started(route='existing', level=level, title='Old deck',
+        start = self.started if more.get('flow') == 'desk' else self.saved_started
+        path = start(route='existing', level=level, title='Old deck',
                             source={'kind': 'upload', 'name': 'old.pptx'},
                             uploads={'old.pptx': DECK}, **more)
         inventory = outlines.inventory_of(path)
@@ -146,13 +147,13 @@ class RouteCase(PageCase):
 
 class ScratchRouteTests(RouteCase):
     def test_from_scratch_without_research(self):
-        path = self.started()
+        path = self.saved_started()
         seen = self.walk(path, 'Rolling restarts')
         self.delivered(path, seen)
         self.assertEqual(seen, self.stops('scratch'))
 
     def test_from_scratch_with_research(self):
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         seen = self.walk(path, 'Rolling restarts')
         self.delivered(path, seen)
         self.assertEqual(seen, self.stops('scratch-research'))
@@ -163,7 +164,7 @@ class DocumentRouteTests(RouteCase):
     def test_a_finished_script(self):
         self.workers.classified = {'kind': 'spec', 'reason': 'Already a slide script.',
                                    'slides': 2}
-        path = self.started(route='document', research=True,
+        path = self.saved_started(route='document', research=True,
                             source={'kind': 'upload', 'name': 'script.md'},
                             uploads={'script.md': SCRIPT.encode()})
         seen = self.walk(path, 'Rolling restarts')
@@ -176,7 +177,7 @@ class _MaterialRoute:
     """A document read as material to build from, researched first, at the case's level."""
 
     def test_material_to_build_from(self):
-        path = self.started(route='document', research=True, research_sources='both',
+        path = self.saved_started(route='document', research=True, research_sources='both',
                             source={'kind': 'paste', 'text': 'Notes: capacity holds with two.'})
         seen = self.walk(path, 'Rolling restarts')
         record = self.delivered(path, seen)
@@ -234,7 +235,7 @@ class StepByStepCorrectionTests(RouteCase):
     def test_raw_material_the_studio_took_for_a_script_is_corrected(self):
         self.workers.classified = {'kind': 'spec', 'reason': 'Reads as a slide script.',
                                    'slides': 2}
-        path = self.started(route='document', research=True, research_sources='both',
+        path = self.saved_started(route='document', research=True, research_sources='both',
                             source={'kind': 'paste', 'text': 'Notes: capacity holds with two.'})
         self.assertEqual(self.run_of(path)['gate']['verdict'], 'spec')
         seen = self.walk(path, 'Rolling restarts',

@@ -45,6 +45,8 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertTrue(tools.save_source(URL)[0])
         source = tools._index()[0]
         value = dossier(payload['worker'], source['file'], source['url'])
+        for finding_id in ('availability', 'zero-downtime'):
+            value['findings'].append({**value['findings'][0], 'id': finding_id})
         accepted = tools.submit_artifact('research-result', json.dumps(value))
         self.assertTrue(accepted[0], accepted)
 
@@ -56,10 +58,9 @@ class SynthesisIntegrationTests(StudioCase):
 
     def test_new_training_saves_schema_two_and_retains_stable_citations(self):
         root = self.start()
-        self.to_gate(root, 'research')
         shown = self.view(root)
         self.assertIsNone(shown['problem'], shown)
-        self.assertEqual(self.engine._load(root)['schema'], 3)
+        self.assertEqual(self.engine._load(root)['schema'], 4)
         facts, manifest = research_contract.read_bundle(root / 'research')
         self.assertEqual(facts['topic'], 'Rolling restarts on the platform')
         self.assertIn('Selected materials:', facts['scope'])
@@ -69,7 +70,9 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertFalse((root / '.harness-research/research.json').exists())
         import workspace
         self.assertEqual(workspace.research_record(root)['schema'], 2)
-        self.decide(root, 'research')
+        self.assertIsNone(workspace.status(root)['gate'])
+        self.assertEqual(next(step['status'] for step in shown['steps']
+                              if step['id'] == 'blueprint'), 'done')
         self.assertEqual(workspace.load(root)['findings']['instance-min'], 'supported')
         self.assertTrue(workspace.research_intact(root, workspace.load(root)))
         capture = root / 'research' / facts['sources'][0]['snapshot'].removeprefix('research/')
@@ -77,7 +80,7 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertFalse(workspace.research_intact(root, workspace.load(root)))
 
     def test_research_change_request_gets_a_new_review_and_returns_to_gate(self):
-        root = self.start()
+        root = self.saved_start(saved_contract=research_contract.snapshot(self.research))
         self.to_gate(root, 'research')
         before = research_contract.read_bundle(root / 'research')[1]['digest']
         self.workers.then('research-result', self.author, self.checker)
@@ -89,7 +92,7 @@ class SynthesisIntegrationTests(StudioCase):
 
     def test_explicit_conversation_import_uses_typed_findings(self):
         import workspace
-        root = self.start()
+        root = self.saved_start(saved_contract=research_contract.snapshot(self.research))
         self.to_gate(root, 'research')
         session = workspace.load(root)
         session['settings']['approval'] = 'chat'
@@ -114,7 +117,7 @@ class SynthesisIntegrationTests(StudioCase):
         self.workers.queued['research-result'] = [lambda tools, job: Outcome(
             False, 'limit', 'It stopped without finishing: its spending limit was reached',
             cost=0.5, budget=True), self.author, self.checker]
-        root = self.start()
+        root = self.saved_start(saved_contract=research_contract.snapshot(self.research))
         self.to_gate(root, 'research-plan')
         self.decide(root, 'research-plan')
         problem = self.view(root)['problem']
@@ -131,7 +134,7 @@ class SynthesisIntegrationTests(StudioCase):
         self.addCleanup(holder.cleanup)
         shared, old = updated_helper(Path(holder.name).resolve())
         self.research = research.Research(shared / 'current')
-        root = self.start()
+        root = self.saved_start(saved_contract=research_contract.snapshot(self.research))
         self.to_gate(root, 'research')
         before = research_contract.read_bundle(root / 'research')[1]['digest']
         update(shared)
@@ -177,7 +180,8 @@ class SuppliedOriginalTests(StudioCase):
         self.assertTrue(accepted[0], accepted)
 
     def researched(self):
-        root = self.start(source_scope='supplied-only')
+        root = self.saved_start(source_scope='supplied-only',
+                                saved_contract=research_contract.snapshot(self.research))
         self.send(root, 'handbook.md', TEXT)
         self.engine.supply(root, 'done')
         self.to_gate(root, 'research')

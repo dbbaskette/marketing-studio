@@ -54,12 +54,11 @@ class SynthesisIntegrationTests(StudioCase):
         accepted = tools.submit_artifact('research-result', json.dumps(review(payload['review_template'])))
         self.assertTrue(accepted[0], accepted)
 
-    def test_new_deck_uses_reviewed_report_then_combined_direction_gate(self):
-        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(research=True)
+    def test_new_deck_uses_reviewed_report_then_desk_build_gate(self):
+        root = self.start(research=True)
         shown = self.view(root)
         self.assertIsNone(shown['problem'], shown)
-        self.assertEqual(shown['gate']['name'], 'gate:outline')
+        self.assertEqual(shown['gate']['name'], 'gate:build')
         self.assertEqual(self.engine._load(root)['schema'], 3)
         facts, manifest = research_contract.read_bundle(root / 'research')
         self.assertIn('presentation', facts['purpose'])
@@ -70,9 +69,9 @@ class SynthesisIntegrationTests(StudioCase):
         self.assertEqual(facts['review']['digest'], manifest['digest'])
 
     def test_existing_record_does_not_switch_formats_on_resume(self):
-        from stand_ins.research import stand_in
-        self.research = stand_in()
-        root = self.start(research=True)
+        from stand_ins.research import saved_queue
+        self.research = saved_queue()
+        root = self.saved_start(research=True)
         self.assertNotIn('research_contract', self.engine._load(root))
         self.research = research.Research(Path(RUNTIME))
         self.assertNotIn('research_contract', self.engine._load(root))
@@ -128,7 +127,7 @@ class SynthesisIntegrationTests(StudioCase):
             value['brief'][0]['blocks'][0]['refs'] = ['finding-first']
             self.assertTrue(tools.submit_artifact('research-result', json.dumps(value))[0])
         self.workers.queued['research-result'] = [authored, self.checker, authored, self.checker]
-        root = self.start(research=True)
+        root = self.saved_start(research=True, saved_contract=research_contract.snapshot(self.research))
         self.decide(root)  # research plan
         self.assertEqual(self.waiting(root), 'gate:research')
         self.decide(root, decision='changes', note='Explain this boundary.',
@@ -148,7 +147,7 @@ class SynthesisIntegrationTests(StudioCase):
         self.addCleanup(holder.cleanup)
         shared, old = updated_helper(Path(holder.name).resolve())
         self.research = research.Research(shared / 'current')
-        root = self.start(research=True)
+        root = self.saved_start(research=True, saved_contract=research_contract.snapshot(self.research))
         update(shared)
         self.decide(root)  # research plan
         self.assertIsNone(self.view(root)['problem'], self.view(root))

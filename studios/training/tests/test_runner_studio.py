@@ -215,11 +215,11 @@ class ServeTests(StudioCase):
 
     def test_starting_picks_every_training_up_where_its_files_say_it_is(self):
         self.workers.then('research-plan', fails())
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(len(self.workers.jobs), 2)
         (root / 'blueprint.md').write_text('# Left by a step that never finished\n')
         self.workers.then('research-plan', fails(), fails(), fails())
-        failing = self.start(title='Health checks')
+        failing = self.saved_start(title='Health checks')
         self.engine.close()
         self.engine = self.make()
         self.serve(True)
@@ -229,7 +229,7 @@ class ServeTests(StudioCase):
         self.assertEqual(len(self.workers.jobs), 5, 'nothing is done twice')
 
     def test_the_page_answers_while_the_workspace_is_still_fetched(self):
-        root = self.start()
+        root = self.saved_start()
         (root / engines.IN_HAND).write_text('research-plan\n')
         self.engine.close()
         self.engine = self.make(background=True)
@@ -261,7 +261,7 @@ class ServeTests(StudioCase):
         self.assertEqual(woken, [root], 'picked up once the fetch is done')
 
     def test_what_goes_wrong_picking_trainings_up_is_said_and_the_rest_still_carry_on(self):
-        first, second = self.start(), self.start(title='Health checks')
+        first, second = self.saved_start(), self.saved_start(title='Health checks')
         self.engine.close()
         self.engine = self.make(background=True)
         woken = []
@@ -345,8 +345,8 @@ class StatusTests(StudioCase):
 
     def test_status_is_json_for_a_script(self):
         self.workers.then('research-plan', fails(), fails(), fails())
-        failing = self.start()
-        waiting = self.start(title='Health checks')
+        failing = self.saved_start()
+        waiting = self.saved_start(title='Health checks')
         found = self.status()
         self.assertEqual(sorted(found), ['agent', 'brand', 'configured', 'limits', 'notify',
                                      'previews', 'review_level', 'shared', 'shared_notice',
@@ -378,7 +378,7 @@ class StatusTests(StudioCase):
 
 class SavedWorkTests(StudioCase):
     def test_saved_work_prints_the_report_and_changes_nothing(self):
-        root = self.start()   # begun on the legacy queue, at its research plan
+        root = self.saved_start()   # begun on the legacy queue, at its research plan
         jobs = len(self.workers.jobs)
         files = {path: path.read_bytes() for path in sorted(self.base.rglob('*'))
                  if path.is_file() and '.git' not in path.parts}

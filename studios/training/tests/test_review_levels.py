@@ -22,7 +22,7 @@ class ReviewLevelsTests(DeckCase):
             self.workers.section(tools, job)
 
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.begin(levels=['101'])
+            root = self.saved_begin(levels=['101'])
         self.workers.then('document', preparing)
         self.decide(root, 'research-plan')
         self.workers.then('section', building)
@@ -65,7 +65,7 @@ class ReviewLevelsTests(DeckCase):
 
     def choose(self, mode, **changes):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': mode}):
-            root = self.begin(**changes)
+            root = self.saved_begin(**changes)
         if mode == 'balanced':  # the research plan is read first, before anything is spent
             self.assertEqual(workspace.status(root)['gate'], 'research-plan', self.view(root))
             self.decide(root, 'research-plan')
@@ -183,8 +183,8 @@ class ReviewLevelsTests(DeckCase):
         with mock.patch.object(review_policy, 'automatic', before):
             self.workers.then('research-plan', fails(), fails(), fails())  # every try
             with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-                early = self.begin(title='Started earlier')
-                past = self.begin(title='Already past its plan')
+                early = self.saved_begin(title='Started earlier')
+                past = self.saved_begin(title='Already past its plan')
             self.assertEqual(self.view(early)['state'], 'failed')
             self.assertEqual(self.view(past)['review']['phase'], 'direction')
         self.assertEqual(self.engine._load(early)['review_policy'], {'schema': 1, 'level': 'balanced'})
@@ -281,7 +281,7 @@ class ReviewLevelsTests(DeckCase):
             with self.subTest(mode=mode):
                 with mock.patch.object(review_policy, 'capture',
                                        return_value={'schema': 1, 'level': mode}):
-                    root = self.begin(title=f'Deck stop {mode}')
+                    root = self.saved_begin(title=f'Deck stop {mode}')
                 if mode == 'balanced':
                     self.decide(root, 'research-plan')
                     shown = self.view(root)
@@ -540,7 +540,7 @@ class ReviewLevelsTests(DeckCase):
 class NoDeckReviewTests(StudioCase):
     def test_automatic_without_deck_stops_for_finished_documents(self):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'automatic'}):
-            root = self.start()
+            root = self.saved_start()
         shown = self.view(root)
         self.assertIsNone(shown['problem'], shown)
         self.assertEqual(shown['review']['phase'], 'final')
@@ -553,7 +553,7 @@ class FormPlanPolicyTests(StudioCase):
         from studio_core import research_contract
         for level in ('balanced', 'automatic'):
             with self.subTest(level=level), mock.patch.object(research_contract, 'snapshot', return_value={'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}):
-                root = self.start(title='Supplied ' + level, source_scope='supplied-only', review_level=level)
+                root = self.saved_start(title='Supplied ' + level, source_scope='supplied-only', review_level=level, saved_contract={'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'})
             self.send(root, 'synthetic.md')
             self.engine.supply(root, 'done')
             session = workspace.load(root)

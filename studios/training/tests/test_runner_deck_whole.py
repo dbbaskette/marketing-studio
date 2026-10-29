@@ -109,7 +109,7 @@ class WholeCase(DeckCase):
         return outcome[1]
 
     def begin(self, **changes) -> Path:
-        return self.start(**{'deck_target': 'pptx', 'brand': CHOSEN,
+        return self.saved_start(**{'deck_target': 'pptx', 'brand': CHOSEN,
                              'walkthrough': self.WALKTHROUGH, **changes})
 
     def asked(self, name: str) -> list[list[str]]:

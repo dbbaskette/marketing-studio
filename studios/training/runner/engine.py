@@ -359,9 +359,6 @@ CANDIDATE = ('asset-unresolved', 'provider-missing', 'asset-conflict')
 ASSETS_WAIT = ('The deck is not drawn until what its approved design uses is to hand. {said}')
 # Every start is refused so, on the desk or not: one check and one sentence.
 NO_SYNTHESIS = drafts.NEEDS_SYNTHESIS
-# True lets a new run start on the legacy question queue. Only the test suites that still
-# drive the queue through its stand-in set it; piece 7 removes it with the queue.
-LEGACY_RESEARCH = False
 ASSETS_KEPT = ('What you approved the deck should say, and how it is drawn, is kept, and so is '
                'everything made before. Nothing needs approving again.')
 NOT_SUPPLIED = ('{asset} is not a picture the approved design of this deck asks you for. '
@@ -435,11 +432,9 @@ def read_record(root: Path) -> dict | None:
     if record.get('schema') == 2 and not record.get('review_policy'):
         raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
     contracted = (record.get('research_contract') or {}).get('schema') == 2
-    # A desk run is started with a research contract, as every run is, except on the legacy
-    # queue the test suites still drive.
+    # Runner desk records require a contract; focused conversations may be contract-free.
     if record.get('schema') == drafts.SCHEMA:
-        contracted = drafts.on_desk(record) and (contracted or LEGACY_RESEARCH
-                                                 or drafts.in_conversation(record))
+        contracted = drafts.on_desk(record) and (contracted or drafts.in_conversation(record))
     if record.get('schema') in (3, drafts.SCHEMA) and not contracted:
         raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
@@ -1383,7 +1378,7 @@ class Engine(Reviewing):
             contract = research_contract.snapshot(self.research())
         except WorkspaceError:
             contract = None
-        if contract is None and not LEGACY_RESEARCH:
+        if contract is None:
             raise WorkspaceError(NO_SYNTHESIS)
         # A training on the desk has no review level: none is saved with it, and the shared
         # one is never written from its form.

@@ -1,10 +1,7 @@
-"""A stand-in for the harness-research command line, for tests.
+"""Disposable synthesis runtime and saved-format queue command stand-in.
 
-    research = stand_in()      # the runner's Research, with StandIn behind it
-
-StandIn behaves like the real command for plan, record and status and needs neither Node
-nor an installed skill. `stand_in()` reads `Research` from the runner's module when it is
-called, so a test that has replaced that class gets its replacement.
+Ordinary starts use stand_in(); explicit old records can use saved_queue(). Both
+stay local, with scripted evidence and no installed skill or provider calls.
 """
 from __future__ import annotations
 
@@ -28,10 +25,34 @@ JS_SPACE = ('\t\n\v\f\r \u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u
             '\u2009\u200a\u2028\u2029\u202f\u205f\u3000\ufeff')
 
 
-def stand_in() -> tool.Research:
-    """A Research that needs nothing installed."""
-    return tool.Research(runtime=Path('stand-in'), run=StandIn())
+def saved_queue() -> tool.Research:
+    """Queue-only helper for explicitly constructed saved records."""
+    return tool.Research(runtime=Path('saved-queue-stand-in'), run=SavedQueueStandIn())
 
+
+def stand_in(runtime=None) -> tool.Research:
+    """A disposable pinned synthesis runtime; never an installed research tool."""
+    import sys
+    import tempfile
+    holder = tempfile.TemporaryDirectory(prefix='synthetic-research-') if runtime is None else None
+    runtime = Path(holder.name) if holder else Path(runtime)
+    (runtime / 'scripts/lib').mkdir(parents=True)
+    (runtime / 'references').mkdir()
+    (runtime / 'package.json').write_text('{"version":"1.0.1"}')
+    # Embed the Python command body in the pinned executable, so edits change its pin.
+    body = Path(__file__).with_name('synthesis.py').read_text()
+    script = ("import {spawnSync} from 'node:child_process';\n"
+              "const p = spawnSync(" + json.dumps(sys.executable) + ", ['-c', " +
+              json.dumps(body) + ", ...process.argv.slice(2)], {encoding:'utf8'});\n"
+              "process.stdout.write(p.stdout || ''); process.stderr.write(p.stderr || '');\n"
+              "process.exit(p.status ?? 1);\n")
+    (runtime / 'scripts/harness-research.mjs').write_text(script)
+    (runtime / 'scripts/lib/synthesis-cli.mjs').write_text('// Synthetic synthesis capability\n')
+    for name in ('investigate.md', 'synthesize.md', 'studio-handoff.md', 'review-synthesis.md'):
+        (runtime / 'references' / name).write_text('Synthetic guidance: ' + name)
+    result = tool.Research(runtime=runtime, run=SynthesisStandIn())
+    result._fixture = holder
+    return result
 
 
 class _Said(Exception):
@@ -58,7 +79,7 @@ def _digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-class StandIn:
+class SavedQueueStandIn:
     """Behaves like the real command line for plan, record and status, in Python.
 
     It keeps the same record and report, in the same places, returns the same JSON and
@@ -312,3 +333,16 @@ class StandIn:
 
 def _now() -> str:
     return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+
+
+class SynthesisStandIn(SavedQueueStandIn):
+    """Synthesis uses the executable, including the same preflight as production.
+
+    Queue commands remain available only to continue records without a saved contract.
+    """
+
+    def __call__(self, command, cwd=None):
+        if command[2:3] != ['synthesis']:
+            return super().__call__(command, cwd)
+        self.calls.append([str(part) for part in command[2:]])
+        return tool.run_command(command, cwd)
