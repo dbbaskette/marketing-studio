@@ -569,6 +569,120 @@ class ConversationTests(DeskCase):
                         self.assertEqual(saved['facts'][0]['author'], 'independent-author')
                         self.assertEqual(saved['review']['reviewer'], 'independent-reviewer')
 
+    def test_large_context_capture_is_accepted_and_stale_basis_is_refused(self):
+        import hashlib
+        from studio_core import research_contract
+        from synthesis_fixture import dossier, published_bundle
+
+        text = ('Ordinary synthetic paragraph. ' * 90 + '\n\n') * 120
+        text += ('Needle goal relevant synthetic paragraph. ' * 90 + '\n\n') * 10
+        self.assertGreater(len(text), 240_000)
+        selected = self.source(text)
+        with patch('studio_core.research_contract.snapshot', return_value={'version': 'synthetic'}):
+            made = desk_chat.create(
+                self.root,
+                {
+                    'title': 'Synthetic large document',
+                    'way': 'topic',
+                    'point': 'Needle goal relevant',
+                    'scope': 'research',
+                    'sources': [selected],
+                    'research_from': {'sites': ['https://allowed.example'], 'web': False},
+                },
+            )
+            ident = made['id']
+            context = desk_chat.context(self.root, ident, 'research')
+            offered = context['inputs']['sources'][0]
+            _, record = studio.item(self.root, 'articles', ident)
+            worker = blog_runner.inputs(
+                self.root,
+                record,
+                {'brief': {'goal': 'Needle goal relevant', 'audience': 'Blog readers'}},
+            )['sources'][0]
+            self.assertNotEqual(offered['text'], worker['text'])
+            source = dossier('independent-author')['sources'][0]
+            source.update(
+                permission='selected',
+                file='sources/' + offered['id'] + '.txt',
+                origin=offered['origin'],
+                snapshot='research/captures/source.txt',
+            )
+            bundle = self.base / 'large-case' / 'research'
+            value = dossier('independent-author')
+            _, manifest = published_bundle(
+                bundle,
+                sources=[source],
+                findings=value['findings'],
+                evidence=value['facts'],
+                review={
+                    'accepted': True,
+                    'digest': 'synthetic-digest',
+                    'reviewer': 'independent-reviewer',
+                },
+            )
+            capture = bundle / 'captures/source.txt'
+            capture.parent.mkdir()
+            capture.write_text(offered['text'])
+            manifest['artifacts'].append(
+                {
+                    'file': 'captures/source.txt',
+                    'sha256': hashlib.sha256(capture.read_bytes()).hexdigest(),
+                }
+            )
+            (bundle / 'output.json').write_text(json.dumps(manifest))
+            request = {
+                'kind': 'research',
+                'target': 'research',
+                'expected_basis': context['expected_basis'],
+                'payload': {'case': str(bundle.parent)},
+            }
+            source_folder, _ = studio.item(self.root, 'sources', selected)
+            changed = source_folder / 'content.md'
+            original = changed.read_bytes()
+            changed.write_bytes(original + b'\nChanged synthetic pinned bytes.')
+            before = {
+                str(p.relative_to(self.root)): p.read_bytes()
+                for p in self.root.rglob('*')
+                if p.is_file()
+            }
+            with patch('desk_jobs.begin', side_effect=AssertionError('nested job')):
+                with self.assertRaisesRegex(ValueError, 'changed'):
+                    desk_chat.submit(self.root, ident, request)
+                self.assertEqual(
+                    before,
+                    {
+                        str(p.relative_to(self.root)): p.read_bytes()
+                        for p in self.root.rglob('*')
+                        if p.is_file()
+                    },
+                )
+                self.assertEqual(desk.read_start(self.root, ident)['step'], 'research')
+                request['expected_basis'] = desk_chat.context(self.root, ident, 'research')[
+                    'expected_basis'
+                ]
+                with self.assertRaisesRegex(ValueError, 'capture outside'):
+                    desk_chat.submit(self.root, ident, request)
+                self.assertEqual(
+                    before,
+                    {
+                        str(p.relative_to(self.root)): p.read_bytes()
+                        for p in self.root.rglob('*')
+                        if p.is_file()
+                    },
+                )
+                changed.write_bytes(original)
+                request['expected_basis'] = context['expected_basis']
+                self.assertEqual(
+                    desk_chat.context(self.root, ident, 'research')['expected_basis'],
+                    request['expected_basis'],
+                )
+                desk_chat.submit(self.root, ident, request)
+            self.assertIsNone(desk.read_start(self.root, ident)['step'])
+            saved, _ = research_contract.read_bundle(self.folder(ident) / 'research')
+            self.assertEqual(saved['sources'], [source])
+            self.assertEqual(saved['facts'][0]['author'], 'independent-author')
+            self.assertEqual(saved['review']['reviewer'], 'independent-reviewer')
+
     def test_author_change_invalidates_handoff_context(self):
         made = desk_chat.create(
             self.root, {'title': 'Synthetic', 'way': 'topic', 'point': 'Retry.'}

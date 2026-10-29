@@ -320,7 +320,7 @@ def submit(root, ident, request):
                 {'notes': notes, 'gaps': gaps},
             )
         else:
-            _research(root, ident, payload)
+            _research(root, ident, payload, current)
         start = desk.read_start(root, ident)
         if start and request['target'] in ('draft', 'outline', 'research'):
             completed = {
@@ -360,7 +360,7 @@ def desk_images_hold(text):
     return desk_images.holds(text)
 
 
-def _research(root, ident, payload):
+def _research(root, ident, payload, current):
     from studio_core import research_contract
 
     if (
@@ -396,28 +396,20 @@ def _research(root, ident, payload):
     if any(not isinstance(facts.get(key), list) for key in ('findings', 'facts', 'sources')):
         raise ValueError('The reviewed research must include findings, facts and sources lists.')
     import blog_library
-    import blog_runner
     import synthesis_research
     from studio_core import research_sites
 
     directory, record = studio.item(root, 'articles', ident)
-    draft = desk.read(root, ident)
-    brief = draft.get('brief') or {}
-    run = {
-        'brief': {
-            'goal': brief.get('point') or draft['title'],
-            'audience': brief.get('audience') or 'Blog readers',
-        }
-    }
-    inputs = blog_runner.inputs(root, record, run)
+    # The checked context is the exact pinned selection exposed to the conversation.
+    # Keep the saved choice from the article record: context inputs omit that policy.
     chosen = (
         research_sites.effective({})
         if 'research_from' in record and record['research_from'] is None
-        else synthesis_research.research_from(inputs)
+        else synthesis_research.research_from(record)
     )
     selected = {
         'sources/' + item['id'] + '.txt': item
-        for item in inputs['sources']
+        for item in current['inputs']['sources']
         if synthesis_research.offered(item)
     }
     for source in facts['sources']:
