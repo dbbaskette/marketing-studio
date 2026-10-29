@@ -155,10 +155,11 @@ def _snapshot(engine, path):
     scope = [gitstate.inside(space, _path(space, root, name)) for name in (format.ORIGIN, format.RECORD, WORKSPACE)]
     guard['index'] = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *scope)
     _restore_index(space, root, (format.ORIGIN, format.RECORD, WORKSPACE), guard['index'], check=True)
+    guard['head_before'] = _scoped_head(space, root)
     blockers = []
     for name in (format.ORIGIN, format.RECORD):
         relative = gitstate.inside(space, root / name)
-        if gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', relative) or _head_entry(space, relative):
+        if gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', relative) or guard['head_before'][name]:
             blockers.append('Saved desk metadata already exists in Git. Restore its paired records before continuing.')
     if busy or any(local.values()) or pending or engine._checking:
         blockers.append(SYNC_WAIT)
@@ -270,6 +271,42 @@ def _committed(space, root, writes):
     return True
 
 
+def _scoped_head(space, root):
+    paths = {gitstate.inside(space, _path(space, root, name)): name
+             for name in (format.ORIGIN, format.RECORD, WORKSPACE)}
+    entries = gitstate.hub.git(space.repo, 'ls-tree', '-z', 'HEAD', '--', *paths)
+    result = dict.fromkeys(paths.values(), '')
+    for entry in entries.split('\0'):
+        if entry:
+            relative = entry.partition('\t')[2]
+            if relative not in paths or result[paths[relative]]:
+                raise WorkspaceError('The original migration publication basis cannot be verified.')
+            result[paths[relative]] = entry + '\0'
+    return result
+
+
+def _validate_head_before(space, root, basis):
+    relative = gitstate.inside(space, _path(space, root, WORKSPACE))
+    if not isinstance(basis, dict) or set(basis) != {format.ORIGIN, format.RECORD, WORKSPACE} \
+            or basis[format.ORIGIN] != '' or basis[format.RECORD] != '' \
+            or not isinstance(basis[WORKSPACE], str) or (basis[WORKSPACE] and not re.fullmatch(
+                r'100(?:644|755) blob [a-f0-9]{40,64}\t' + re.escape(relative) + '\0', basis[WORKSPACE])):
+        raise WorkspaceError('The original migration publication basis cannot be verified. Keep its recovery record.')
+
+
+def _check_rollback_head(space, root, basis, before_workspace):
+    if basis is None:
+        # Older journals can prove only this ordinary, unchanged marker state.
+        # A dirty local marker needs the explicitly captured HEAD in a new journal.
+        relative = gitstate.inside(space, _path(space, root, WORKSPACE))
+        basis = {format.ORIGIN: '', format.RECORD: '',
+                 WORKSPACE: f'100644 blob {_blob(space, before_workspace)}\t{relative}\0'}
+    _validate_head_before(space, root, basis)
+    if _scoped_head(space, root) != basis:
+        raise WorkspaceError('The migration publication state cannot be verified. '
+                             'Keep the recovery record and saved files; nothing was rolled back.')
+
+
 def _prepared_index(space, root, writes):
     entries = [f'100644 {_blob(space, data)} 0\t{gitstate.inside(space, _path(space, root, name))}\0'
                for name, data in writes.items()]
@@ -336,7 +373,7 @@ def _recover(space, root, expected):
         raise WorkspaceError('The migration recovery record is too large. Keep its saved files.')
     journal = json.loads((root / format.PENDING).read_bytes())
     fields = {'schema', 'expected', 'original', 'after', 'before_workspace', 'index_before'}
-    if set(journal) not in (fields, fields | {'shared', 'index_prepared'}) or type(journal['schema']) is not int or journal['schema'] != 1 \
+    if set(journal) not in (fields, fields | {'shared', 'index_prepared'}, fields | {'shared', 'index_prepared', 'head_before'}) or type(journal['schema']) is not int or journal['schema'] != 1 \
             or journal['expected'] != expected \
             or hashlib.sha256((root / 'run.json').read_bytes()).hexdigest() != journal['original']:
         raise WorkspaceError('The interrupted opening cannot be verified. Keep the saved files and inspect its recovery record.')
@@ -344,6 +381,8 @@ def _recover(space, root, expected):
         raise WorkspaceError('The interrupted opening has unsupported writes.')
     after = {name: base64.b64decode(data, validate=True) for name, data in journal['after'].items()}
     before_workspace = base64.b64decode(journal['before_workspace'], validate=True)
+    if 'head_before' in journal:
+        _validate_head_before(space, root, journal['head_before'])
     _check_workspace_change(space, before_workspace, after[WORKSPACE], legacy=set(journal) == fields)
     _check_recovery_index(space, root, after, journal['index_before'],
                           journal.get('index_prepared', _prepared_index(space, root, after)))
@@ -356,6 +395,7 @@ def _recover(space, root, expected):
     if durable:
         (root / format.PENDING).unlink()
         return True
+    _check_rollback_head(space, root, journal.get('head_before'), before_workspace)
     for name in after:
         if name != WORKSPACE:
             (root / name).unlink(missing_ok=True)
@@ -419,6 +459,7 @@ def migrate(engine, path, expected):
             raise WorkspaceError(' '.join(prepared['blockers'] + blockers))
         if not expected or _token(files, guard) != expected:
             raise WorkspaceError(CHANGED)
+        _validate_head_before(space, root, guard['head_before'])
         # Validate pinned research through its existing pure consumer on canonical local files.
         if record.get('research_contract') and (record['steps'].get('research-report') or {}).get('done'):
             research_contract.read_bundle(root / 'research')
@@ -450,6 +491,7 @@ def migrate(engine, path, expected):
                    'before_workspace': base64.b64encode(before_workspace).decode(),
                    'index_before': guard['index'],
                    'index_prepared': _prepared_index(space, root, writes), 'shared': guard['shared'],
+                   'head_before': guard['head_before'],
                    'after': {name: base64.b64encode(data).decode() for name, data in writes.items()}}
         journal_bytes = json.dumps(journal).encode()
         if len(journal_bytes) > 8_000_000 or len(after) > 2_000_000:
@@ -476,6 +518,7 @@ def migrate(engine, path, expected):
             from runner.desk_chat import _files
             _check_shared_recovery(space, root, _files(root), guard['shared'], writes, before_workspace)
             if not durable:
+                _check_rollback_head(space, root, guard['head_before'], before_workspace)
                 for name in writes:
                     if name != WORKSPACE:
                         (root / name).unlink(missing_ok=True)

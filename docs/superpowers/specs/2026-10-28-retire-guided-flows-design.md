@@ -190,7 +190,9 @@ the intended files with Git, then preview again. Migration never adds those orig
 its three-path commit. Preview and locked apply bind the relevant entries; unrelated
 repository commits and staging do not invalidate that evidence. Explicit recovery checks
 the retained committed basis and exact prior/prepared output index before rollback or
-settlement; unexpected staging keeps the journal and all bytes intact. Local-only dirty
+settlement; unexpected staging keeps the journal and all bytes intact. Rollback also
+requires the exact prior scoped HEAD entries; partial or changed committed migration
+outputs refuse intact. Unrelated commits remain permitted. Local-only dirty
 saved work stays supported and is not a self-contained historical Git snapshot.
 
 Marketing Studio Connect uses each deck product's validated effective reader and writer

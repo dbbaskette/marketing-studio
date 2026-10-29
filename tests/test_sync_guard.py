@@ -95,11 +95,14 @@ class SyncGuardTests(unittest.TestCase):
         pending = item / 'work/desk/migration-transaction.json'
         pending.parent.mkdir(parents=True)
         journal = {'schema': 1, 'expected': 'pm1.' + 'A' * 43, 'original': 'synthetic',
-            'after': {}, 'before_workspace': '', 'index_before': '', 'index_prepared': '', 'shared': {}}
+            'after': {}, 'before_workspace': '', 'index_before': '', 'index_prepared': '', 'shared': {}, 'head_before': {}}
         pending.write_text(json.dumps(journal))
         self.assertTrue(worker_in_progress(self.repo))
         self.assertFalse(worker_in_progress(self.repo, recovering_presentation=pending))
         self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
+        prior = {name: value for name, value in journal.items() if name != 'head_before'}
+        pending.write_text(json.dumps(prior))
+        self.assertFalse(worker_in_progress(self.repo, recovering_presentation=pending))
         for changed in ({**journal, 'unknown': True}, {**journal, 'expected': 'tm1.' + 'A' * 43}):
             pending.write_text(json.dumps(changed))
             self.assertTrue(worker_in_progress(self.repo, recovering_presentation=pending))

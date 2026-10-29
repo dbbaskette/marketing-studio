@@ -302,6 +302,85 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         self.assertEqual(original, (root / 'run.json').read_bytes())
         self.assertFalse((root / 'work/desk/migration-transaction.json').exists())
 
+    def recovery_state(self, root):
+        return (self.snapshot(root), (self.space.root / 'hub.json').read_bytes(),
+                self.git('ls-files', '--stage', '-z'), self.git('rev-parse', 'HEAD'))
+
+    def publish_part(self, paths, kind):
+        selected = paths[{'receipt': 0, 'record': 1, 'marker': 2,
+                          'changed-receipt': 0, 'changed-marker': 2}[kind]]
+        prepared = selected.read_bytes()
+        if kind == 'changed-marker':
+            value = json.loads(prepared)
+            value['person_setting'] = 'A separately committed change'
+            selected.write_text(json.dumps(value))
+        elif kind == 'changed-receipt':
+            selected.write_bytes(prepared + b' ')
+        self.git('add', '--', *map(str, paths))
+        self.git('commit', '--only', '-qm', 'Synthetic partial transaction publication', '--', str(selected))
+        if kind.startswith('changed-'):
+            selected.write_bytes(prepared)
+            self.git('add', str(selected))
+
+    def test_partial_publication_retry_preserves_journal_files_index_and_head(self):
+        from runner import desk_migration, gitstate
+        for kind in ('receipt', 'record', 'marker', 'changed-receipt', 'changed-marker'):
+            with self.subTest(kind=kind):
+                root = self.gated(title='Partial retry ' + kind)
+                marker = self.space.root / gitstate.MARKER
+                value = json.loads(marker.read_bytes())
+                value['minimum_runtime'] = '4.8.0'
+                marker.write_text(json.dumps(value))
+                self.git('add', str(marker))
+                self.git('commit', '--allow-empty', '-qm', 'Synthetic pre-publication marker')
+                baseline = self.git('rev-parse', 'HEAD')
+                token = self.preview(root)['expected']
+                pending = root / 'work/desk/migration-transaction.json'
+                try:
+                    with mock.patch.object(gitstate, 'commit', side_effect=OSError('synthetic interruption')), \
+                            mock.patch.object(desk_migration, '_committed', return_value=True):
+                        with self.assertRaisesRegex(OSError, 'interruption'):
+                            desk_chat.migrate(self.engine, root, token)
+                    paths = [root / 'desk/migration-origin.json', root / 'desk/migration.json', marker]
+                    self.publish_part(paths, kind)
+                    before = self.recovery_state(root)
+                    with self.assertRaisesRegex(WorkspaceError, 'publication|committed|HEAD'):
+                        desk_chat.migrate(self.engine, root, token)
+                    self.assertEqual(self.recovery_state(root), before)
+                    self.assertTrue(pending.exists())
+                finally:
+                    self.git('reset', '--hard', baseline)
+                    pending.unlink(missing_ok=True)
+
+    def test_partial_publication_exception_preserves_journal_files_index_and_head(self):
+        from runner import gitstate
+        for kind in ('receipt', 'record', 'marker', 'changed-receipt', 'changed-marker'):
+            with self.subTest(kind=kind):
+                root = self.gated(title='Partial exception ' + kind)
+                marker = self.space.root / gitstate.MARKER
+                value = json.loads(marker.read_bytes())
+                value['minimum_runtime'] = '4.8.0'
+                marker.write_text(json.dumps(value))
+                self.git('add', str(marker))
+                self.git('commit', '--allow-empty', '-qm', 'Synthetic pre-publication marker')
+                baseline = self.git('rev-parse', 'HEAD')
+                token = self.preview(root)['expected']
+                pending = root / 'work/desk/migration-transaction.json'
+                before = []
+                def fail(space, message, paths):
+                    self.publish_part(paths, kind)
+                    before.append(self.recovery_state(root))
+                    raise OSError('synthetic partial commit')
+                try:
+                    with mock.patch.object(gitstate, 'commit', side_effect=fail):
+                        with self.assertRaisesRegex(WorkspaceError, 'publication|committed|HEAD'):
+                            desk_chat.migrate(self.engine, root, token)
+                    self.assertEqual(self.recovery_state(root), before[0])
+                    self.assertTrue(pending.exists())
+                finally:
+                    self.git('reset', '--hard', baseline)
+                    pending.unlink(missing_ok=True)
+
     def test_recovery_never_discards_new_output_staging(self):
         for boundary in ('prepared', 'committed'):
             for change in ('staged', 'unmerged'):
@@ -393,6 +472,8 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         value = json.loads(marker.read_bytes())
         value['minimum_runtime'] = '4.7.1'
         marker.write_text(json.dumps(value))
+        self.git('add', str(marker))
+        self.git('commit', '-qm', 'Synthetic committed legacy workspace marker')
         token = self.preview(root)['expected']
         with mock.patch.object(gitstate, 'commit', side_effect=OSError('synthetic interruption')), \
                 mock.patch.object(desk_migration, '_committed', return_value=True):
@@ -402,6 +483,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         journal = json.loads(pending.read_bytes())
         journal.pop('shared')
         journal.pop('index_prepared')
+        journal.pop('head_before')
         value['minimum_runtime'] = '4.8.0'
         data = json.dumps(value).encode()
         marker.write_bytes(data)
@@ -436,6 +518,27 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         self.assertEqual((root / 'run.json').read_bytes(), original)
         self.assertFalse((root / 'desk/migration.json').exists())
         self.assertFalse((root / 'work/desk/migration-transaction.json').exists())
+
+    def test_legacy_dirty_marker_without_scoped_head_refuses_intact(self):
+        from runner import desk_migration, gitstate
+        root = self.gated()
+        marker = self.space.root / gitstate.MARKER
+        value = json.loads(marker.read_bytes())
+        value['minimum_runtime'] = '4.8.0'
+        marker.write_text(json.dumps(value))
+        token = self.preview(root)['expected']
+        with mock.patch.object(gitstate, 'commit', side_effect=OSError('synthetic interruption')), \
+                mock.patch.object(desk_migration, '_committed', return_value=True):
+            with self.assertRaisesRegex(OSError, 'interruption'):
+                desk_chat.migrate(self.engine, root, token)
+        pending = root / 'work/desk/migration-transaction.json'
+        journal = json.loads(pending.read_bytes())
+        journal.pop('head_before')
+        pending.write_text(json.dumps(journal))
+        before = self.recovery_state(root)
+        with self.assertRaisesRegex(WorkspaceError, 'publication'):
+            desk_chat.migrate(self.engine, root, token)
+        self.assertEqual(self.recovery_state(root), before)
 
     def test_selected_changes_preserves_original_copy_and_google_preview_baseline(self):
         from test_desk_words import planned
@@ -671,6 +774,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
                     value = json.loads(pending.read_bytes())
                     value.pop('shared')
                     value.pop('index_prepared')
+                    value.pop('head_before')
                     pending.write_text(json.dumps(value))
                 else:
                     path = self.space.root / gitstate.MARKER if change == 'marker' else root / 'outline.json'
@@ -714,6 +818,11 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
                         mock.patch.object(desk_migration, '_committed', return_value=True):
                     with self.assertRaisesRegex(OSError, 'interruption'):
                         desk_chat.migrate(self.engine, root, token)
+                independent = self.space.repo / 'independent-commit.txt'
+                independent.write_text('Unrelated recovery commit ' + str(committed))
+                self.git('add', str(independent))
+                self.git('commit', '--only', '-qm', 'Synthetic unrelated recovery commit', '--', str(independent))
+                head = self.git('rev-parse', 'HEAD')
                 unrelated = self.space.repo / 'unrelated-recovery.txt'
                 unrelated.write_text('Keep my staging')
                 self.git('add', str(unrelated))
@@ -726,6 +835,7 @@ class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
                         desk_chat.migrate(self.engine, root, token)
                     self.assertEqual(marker.read_bytes(), before_marker)
                 self.assertEqual(self.git('ls-files', '--stage', '--', str(unrelated)), index)
+                self.assertEqual(self.git('rev-parse', 'HEAD'), head)
                 self.assertFalse((root / 'work/desk/migration-transaction.json').exists())
                 self.git('reset', '--', str(unrelated))
                 unrelated.unlink()
