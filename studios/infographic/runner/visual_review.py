@@ -64,13 +64,14 @@ def inspect(engine, ident, *, expected_revision):
     kinds = {'counts', 'relationships', 'crop', 'resolution', 'label_clearance', 'brand', 'factual_implications'}
     for observation in answer['observations']:
         require(isinstance(observation, dict) and set(observation) == {'kind', 'region_id', 'text'}
-                and observation['kind'] in kinds and observation['region_id'] in allowed
+                and isinstance(observation['kind'], str) and observation['kind'] in kinds
+                and isinstance(observation['region_id'], str) and observation['region_id'] in allowed
                 and text(observation['text'], limit=2000), 'Image observations must locate what was actually inspected.')
     require(kinds <= {o['kind'] for o in answer['observations']},
             'Pixel inspection did not cover the complete image-review checklist. Your page is unchanged; inspect manually or retry explicitly.')
     for finding in answer['findings']:
         require(isinstance(finding, dict) and set(finding) == {'region_id', 'blocking', 'message', 'correction'}
-                and finding['region_id'] in allowed and type(finding['blocking']) is bool
+                and isinstance(finding['region_id'], str) and finding['region_id'] in allowed and type(finding['blocking']) is bool
                 and text(finding['message'], limit=2000) and text(finding['correction'], limit=2000),
                 'Image findings must identify an actual scene region and a precise correction.')
     with engine.store.locked():

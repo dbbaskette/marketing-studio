@@ -33,7 +33,9 @@ def compose(store, project: dict, *, draft=False) -> str:
             group = ET.SubElement(root, 'g', common)
             values, size = element['values'], element['font_size']
             maximum = 1 if element['form'] == 'numbers' else sum(values) if element['form'] == 'parts' else max(values)
-            require(maximum > 0, 'A numeric chart needs a positive scale; show zero values as text instead.')
+            # All-zero data has no positive extent. Show its exact zero labels
+            # with zero-length marks, never inventing a positive measurement.
+            maximum = maximum or 1
             row_height = height / len(values)
             offset = 0
             for i, (label, value) in enumerate(zip(element['labels'], values)):

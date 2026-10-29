@@ -140,7 +140,8 @@ async function request(route, data) {
 }
 async function action(verb, values={}, revision=null) {
   if (busy) return; busy = true; error(''); const id = held.project.id;
-  const unlock=lockControls(),owner=beginWork(workLabels[verb]||'Saving your changes');
+  const label=verb==='suggest'&&held.planning_response?.available&&!values.fresh?'Checking the saved proposal':workLabels[verb];
+  const unlock=lockControls(),owner=beginWork(label||'Saving your changes');
   let checking=false;
   const polling=setInterval(async()=>{if(checking)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
   try {
@@ -150,12 +151,16 @@ async function action(verb, values={}, revision=null) {
     if(workLabels[verb]&&(!failure.status||failure.status>=500)){
       clearInterval(polling);connectionUncertain(owner);
       try{const result=await recoverActivity(id,owner);await openProject(id);if(result)recoveredNotice(result);else error(failure.message);}catch(f){error(f.message);}
-    }else error(failure.message);
+    }else{await openProject(id);error(failure.message);}
   }
   finally { clearInterval(polling); endWork(owner);busy = false;unlock(); }
 }
 function heading(title, ...actions) { for(const id of ['home','settings']){if((id==='settings')===title.startsWith('Settings'))$(id).setAttribute('aria-current','page');else $(id).removeAttribute('aria-current');} $('title').textContent = title; $('actions').replaceChildren(...actions); $('title').focus({preventScroll:true}); }
 function resetPicture() { if (picture) URL.revokeObjectURL(picture); picture = null; }
+function reviewCapturedSources(){
+  const section=[...$('main').querySelectorAll('details')].find(node=>node.firstElementChild?.textContent==='Sources and facts');
+  if(section){error('');section.open=true;section.scrollIntoView({block:'start'});section.firstElementChild.focus();}
+}
 async function home() {
   if (busy) return; resetPicture(); held = null; error(''); heading('Infographics', button('New infographic', () => newSheet(), true),button('Team library',teamSheet));
   try { const data = await request('/api/projects'); const cards = data.projects.map(p => card(p.title || 'Unreadable infographic', make('p', 'quiet', p.problem || 'Revision ' + p.revision), button('Open ' + (p.title || p.id), () => openProject(p.id)))); $('main').replaceChildren(make('p','lede','Turn supplied information into one clear page.'), ...cards); if (!cards.length) $('main').append(card('Make your first infographic', make('p','','Add notes, choose what matters, and review the page before exporting.'))); } catch (failure) { error(failure.message); }
@@ -278,12 +283,14 @@ async function download(manifest,format,view=false) {
 function renderProject() {
   const p=held.project, selected=p.stories.find(s=>s.id===p.selected_story);
   const currentDelivery=held.deliveries.find(d=>d.current), checked=held.review_checked&&p.checks.length&&p.checks.every(c=>c.status==='passed'), approved=p.approval&&checked, needsArtwork=p.scene?.art_regions?.length&&!p.scene.elements.some(e=>e.kind==='artwork');
-  let next=['Find the story',()=>action('suggest')];
+  const savedPlan=held.planning_response?.available;
+  let next=[savedPlan?'Check saved proposal':'Find the story',()=>action('suggest')];
   if(p.stories.length)next=!selected?['Choose a story',()=>document.querySelector('#story-choice').scrollIntoView({behavior:'smooth'})]:!p.scene||needsArtwork?['Build page',compose]:!currentDelivery?['Create preview',()=>action('preview')]:approved?(!currentDelivery.approved_current?['Export files',()=>action('export',{draft:false})]:['Downloads',()=>document.querySelector('.ig-page-tools').scrollIntoView({behavior:'smooth'})]):checked?['Approve page',()=>action('approve')]:held.visual_review?.status==='passed'?['Run checks',()=>action('check')]:['Review page',()=>reviewSheet(currentDelivery)];
   heading(p.brief.title,button('Infographics',home),button(...next,true));
   const parts=[make('p','lede','Choose the explanation, review the actual page, then approve its exact revision.')];
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.state+': '+r.message),button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
-  if(!p.stories.length)parts.push(card('Find a useful story',make('p','','Your supplied information is saved. The assistant proposes source-backed explanations; generation is a later explicit action.'),button('Find the story',()=>action('suggest')),detail('Author in your conversation',make('p','','Use native action JSON to save located facts and story proposals directly. A browser and nested planning assistant are not required.'))));
+  if(!p.stories.length)parts.push(savedPlan?card('Planning response saved',make('p','','Check the saved response locally, without using assistant allowance. Asking for a new plan starts a new assistant request.'),held.planning_response.detail?detail('What needs attention',make('p','',held.planning_response.detail)):null,button('Check saved proposal',()=>action('suggest')),button('Review source material',reviewCapturedSources),button('Ask for a new plan',()=>action('suggest',{fresh:true}))):card('Find a useful story',make('p','','Your supplied information is saved. The assistant proposes source-backed explanations; generation is a later explicit action.'),button('Find the story',()=>action('suggest')),detail('Author in your conversation',make('p','','Use native action JSON to save located facts and story proposals directly. A browser and nested planning assistant are not required.'))));
+  if(held.planning_response?.problem)parts.push(card('Saved planning response needs attention',make('p','problem',held.planning_response.problem)));
   if(p.stories.length){const choices=card('Choose the story',add(make('div','ig-story-grid'),...p.stories.map(s=>card(s.headline,storyThumbnail(s),make('p','',s.takeaway),make('p','quiet',s.rationale),list(s.blocks.map(b=>b.title+': '+b.text)),...(s.qualifications.length?[list(s.qualifications)]:[]),s.omissions.length?make('p','problem','Required omissions: '+s.omissions.join(', ')):null,button('Ask for a revision',()=>reviseStorySheet(s)),button(s.id===p.selected_story?'Selected':'Use this story',()=>action('select',{story_id:s.id}))))));choices.id='story-choice';parts.push(p.scene?detail('Story: '+selected.headline,choices):choices);}
   if(selected && !p.scene)parts.push(card('Make the page',make('p','',p.brand?'Using pinned '+p.brand.identity.name+'.':'Compose with your configured brand. Brand settings are pinned when you choose this action.'),button('Build page',compose)));
   const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
@@ -389,7 +396,7 @@ if (homeLink) {
 }
 async function startDesk() {
   let id='';try{id=sessionStorage.getItem('infographic-studio-project')||'';}catch(f){}
-  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id));if(progress.activity?.state==='running'){await openProject(id);return;}}catch(f){}}
+  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id));if(progress.activity?.state==='running'||(await request('/api/desk?id='+encodeURIComponent(id))).planning_response?.available){await openProject(id);return;}}catch(f){}}
   await home();
 }
 $('sheet').addEventListener('close',paintWork);

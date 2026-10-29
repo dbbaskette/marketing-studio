@@ -67,7 +67,7 @@ FIELDS = {
     'layout': {'arrangement'}, 'image-brief': {'data', 'edit'},
     'image-start': {'brief_id', 'provider', 'request_id', 'operation', 'parent'},
     'image-cancel': {'request_id'}, 'art-direct': set(), 'build': {'request_id'}, 'compose-image': {'asset_id'},
-    'suggest': {'automatic'}, 'edit-text': {'element_id', 'text'},
+    'suggest': {'automatic', 'fresh'}, 'edit-text': {'element_id', 'text'},
     'preview': set(), 'check': set(), 'review': {'export_id', 'observations'}, 'approve': set(),
     'export': {'draft'}, 'restore': {'revision', 'sha256'},
     'inspect-images': set(), 'revise-art': {'change', 'preserve', 'request_id'},
@@ -138,7 +138,7 @@ def action(found, sent):
     if verb == 'compose-image': return found.compose_asset(ident, sent.get('asset_id'), expected_revision=revision)
     if verb == 'suggest':
         require(type(sent.get('automatic', False)) is bool, 'Automatic draft must be an explicit boolean choice.')
-        return found.propose(ident, expected_revision=revision, automatic=sent.get('automatic', False))
+        return found.propose(ident, expected_revision=revision, automatic=sent.get('automatic', False), fresh=sent.get('fresh', False))
     if verb == 'edit-text': return found.edit_text(ident, sent.get('element_id'), sent.get('text'), expected_revision=revision)
     if verb == 'preview': return found.preview(ident, expected_revision=revision)
     if verb == 'check': return found.check(ident, expected_revision=revision)

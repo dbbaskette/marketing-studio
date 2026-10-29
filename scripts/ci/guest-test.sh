@@ -73,6 +73,9 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
       fi
     } 2>&1 | tee "$results_dir/activity-tests.log"
     node studios/infographic/tests/ui/activity.cjs 2>&1 | tee "$results_dir/activity-browser.log"
+    if [[ -n "${INFOGRAPHIC_STUDIO_TEST_CONTRACTS:-}" ]]; then
+      node studios/infographic/tests/ui/workflow-matrix.cjs 2>&1 | tee "$results_dir/workflow-contracts-browser.log"
+    fi
     INFOGRAPHIC_STUDIO_TEST_REMOTE=1 node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-google-browser.log"
     if [[ -n "${INFOGRAPHIC_STUDIO_TEST_VISUAL:-}" ]]; then
       INFOGRAPHIC_STUDIO_TEST_VISUAL=parts INFOGRAPHIC_STUDIO_TEST_REMOTE=1 node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-components-browser.log"

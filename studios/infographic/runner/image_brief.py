@@ -28,14 +28,15 @@ def make(project: dict, direction: dict, *, edit=None) -> dict:
     names = {region['id'] for region in planned}
     objects = records(direction['objects'], 'Image objects')
     for item in objects.values():
-        require(item.get('region_id') in names and text(item.get('description'))
+        require(isinstance(item.get('region_id'), str) and item['region_id'] in names and text(item.get('description'))
                 and type(item.get('count')) is int and 0 < item['count'] <= 100,
                 'Describe each subject, explicit count and its planned artwork region.')
         require(text(item.get('relationships')) and text(item.get('preserve')),
                 'Specify relationships and elements that must be preserved, not a generic image prompt.')
     require(names <= {item['region_id'] for item in objects.values()}, 'Describe every planned artwork region.')
     references = direction.get('reference_assets', [])
-    require(isinstance(references, list) and set(references) <= {a['id'] for a in project['assets']},
+    require(isinstance(references, list) and all(isinstance(ref, str) for ref in references)
+            and set(references) <= {a['id'] for a in project['assets']},
             'Reference actual owned permitted assets, not inaccessible paths.')
     if edit is not None:
         require(isinstance(edit, dict) and text(edit.get('change')) and text(edit.get('preserve'))

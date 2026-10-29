@@ -14,15 +14,17 @@ from runner.engine import Engine
 from runner.workspace import Store
 from test_composition import contract
 from helpers import visual_answer
+from workflow_cases import NAMES, case, captured_answer
 
 
 class Assistant:
-    def __init__(self, slow=False, visual='concept'):
+    def __init__(self, slow=False, visual='concept', scenario=None):
         self.calls = []
         self.slow = slow
         self.release = threading.Event()
         self.fail = False
         self.visual = visual
+        self.scenario = scenario
     def propose(self, brief, captured):
         self.calls.append('story')
         if self.slow:
@@ -36,6 +38,19 @@ class Assistant:
             if self.fail:
                 from runner.contracts import Invalid
                 raise Invalid('Synthetic planning failure. Your saved work is kept.')
+        if self.scenario:
+            from runner.author import Author
+            example = case('paraphrase' if self.scenario == 'recovery' else self.scenario)
+            answer = captured_answer(example, captured[0]['id'])
+            if self.scenario == 'recovery':
+                for fact in answer['facts']:
+                    fact['evidence'][0]['quote'] = 'This quotation is deliberately absent.'
+            def run(command, prompt, folder, timeout):
+                assert '--output-schema' in command
+                events = [{'type': 'item.completed', 'item': {'type': 'agent_message', 'text': json.dumps(answer)}},
+                          {'type': 'turn.completed'}]
+                return {'state': 'complete', 'returncode': 0, 'events': '\n'.join(map(json.dumps, events))}
+            return Author({'agent': 'codex'}, run=run).propose(brief, captured)
         source = captured[0]
         fact = {'id': 'f1', 'statement': source['text'], 'value': source['text'], 'unit': '', 'status': 'supplied',
                 'evidence': [{'source_id': source['id'], 'start': 0, 'end': len(source['text']), 'quote': source['text']}]}
@@ -48,6 +63,13 @@ class Assistant:
     def inspect_images(self, context, images):
         self.calls.append('inspection')
         assert images[0].startswith(b'\x89PNG')
+        if self.scenario:
+            from runner.author import Author
+            def run(command, prompt, folder, timeout):
+                assert '--output-schema' in command and '--image' in command
+                event = {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': json.dumps(visual_answer())}}
+                return {'state': 'complete', 'returncode': 0, 'events': json.dumps(event)}
+            return Author({'agent': 'codex'}, run=run).inspect_images(context, images)
         return visual_answer()
 
 
@@ -59,6 +81,7 @@ def main():
     parser.add_argument('--bridge',action='store_true')
     parser.add_argument('--slow', action='store_true')
     parser.add_argument('--visual', choices=('concept', 'comparison', 'parts'), default='concept')
+    parser.add_argument('--scenario', choices=(*NAMES, 'recovery'))
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='infographic-browser-') as folder:
         root = Path(folder).resolve(); home = root / 'home'; home.mkdir()
@@ -70,6 +93,7 @@ def main():
         (root / 'settings.json').write_text(json.dumps({'schema': 1, 'assistant': {'agent': 'codex', 'model': None},
             'output':'google' if args.remote else 'pptx', 'person': {'name': 'Synthetic Author'}, 'local': {'root': str(root / 'work')}}))
         store = Store.setup()
+        source_text = case('paraphrase' if args.scenario == 'recovery' else args.scenario)['source'] if args.scenario else 'One instance restarts while the others serve.'
         settings.save({'renderer': str(args.renderer)}, expected=settings.snapshot()['native_revision'])
         if args.remote:
             from runner import remote_sources,google_delivery
@@ -82,20 +106,21 @@ def main():
                 def file(self,ident):
                     return {'id':ident,'mimeType':SLIDES_MIME if ident=='synthetic_slides' else DOC_MIME,'name':'Synthetic Google slides' if ident=='synthetic_slides' else 'Synthetic Google source','version':'7','modifiedTime':'2026-10-28T00:00:00Z','capabilities':{'canDownload':True}}
                 def document(self,ident):
-                    return {'documentId':ident,'tabs':[{'tabProperties':{'tabId':'main','title':'Main'},'documentTab':{'body':{'content':[{'paragraph':{'elements':[{'textRun':{'content':'One instance restarts while the others serve.'}}]}}]}}}]}
+                    return {'documentId':ident,'tabs':[{'tabProperties':{'tabId':'main','title':'Main'},'documentTab':{'body':{'content':[{'paragraph':{'elements':[{'textRun':{'content':source_text}}]}}]}}}]}
                 def presentation(self,ident):
-                    return {'presentationId':ident,'slides':[{'objectId':'slide_a','pageElements':[{'objectId':'body','shape':{'text':{'textElements':[{'textRun':{'content':'One instance restarts while the others serve.'}}]}}}]}]}
+                    return {'presentationId':ident,'slides':[{'objectId':'slide_a','pageElements':[{'objectId':'body','shape':{'text':{'textElements':[{'textRun':{'content':source_text}}]}}}]}]}
                 def create_document(self,payload,**values):
                     assert payload.startswith(b'PK')
                     return {'id':'synthetic_delivered','mimeType':DOC_MIME,'appProperties':{'infographic_request':values['request_key'],'infographic_payload':values['payload_hash']}}
             remote_sources.Client=google_delivery.Client=Google
-        engine = Engine(store, executable=args.renderer, assistant=Assistant(slow=args.slow, visual=args.visual))
+        engine = Engine(store, executable=args.renderer, assistant=Assistant(slow=args.slow, visual=args.visual, scenario=args.scenario))
         engine.configuration = {'image_provider': 'codex'}
         class Page(server.Page):
-            reads = (*server.Page.reads, '/api/fixture-calls')
+            reads = (*server.Page.reads, '/api/fixture-calls', '/api/fixture-source')
             writes = (*server.Page.writes, '/api/fixture-release')
             def read(self, route, one):
                 if route == '/api/fixture-calls': return server.shared.as_json(200, {'calls': engine.assistant.calls})
+                if route == '/api/fixture-source': return server.shared.as_json(200, {'text': source_text})
                 return super().read(route, one)
             def write(self, route, sent):
                 if route == '/api/fixture-release':
