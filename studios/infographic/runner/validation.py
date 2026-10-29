@@ -307,6 +307,8 @@ def validate_project(project: dict) -> dict:
                 require(type(block['quantitative']) is bool, 'A quantitative visual choice must be an explicit boolean.')
             references(block.get('fact_ids'), facts, 'Story facts')
             references(block.get('required_ids'), requirements, 'Required story ideas')
+            from .visuals import validate as validate_visual
+            validate_visual(block)
         references(story.get('omissions', []), requirements, 'Recorded omissions')
         all_blocks.update(blocks)
     selected = project['selected_story']
@@ -344,12 +346,22 @@ def validate_project(project: dict) -> dict:
             require(x + width <= scene['width'] and y + height <= scene['height'],
                     'Scene elements must fit the page.')
             references(element.get('fact_ids', []), facts, 'Scene facts')
+            if 'glyph' in element:
+                from .visuals import ICONS
+                require(element['kind'] == 'shape' and element['glyph'] in ICONS, 'Use a supported illustrative pictogram.')
+            if element['kind'] == 'connector' and 'points' in element:
+                require(isinstance(element['points'], list) and 2 <= len(element['points']) <= 8
+                        and all(isinstance(point, list) and len(point) == 2 and all(number(v) for v in point)
+                                and x <= point[0] <= x + width and y <= point[1] <= y + height
+                                for point in element['points']), 'Keep diagram connectors inside their recorded bounds.')
             if element['kind'] == 'artwork':
                 require(member(element.get('asset_id'), assets), 'Artwork refers to a missing asset.')
             if element['kind'] == 'text':
                 require(text(element.get('text')) and text(element.get('font'))
                         and number(element.get('font_size')) and element['font_size'] > 0,
                         'Text elements need words and explicit typography.')
+                require('background' not in element or isinstance(element['background'], str)
+                        and re.fullmatch(r'#[0-9a-fA-F]{6}', element['background']), 'Text needs a literal color for contrast verification.')
             if element['kind'] == 'chart':
                 values = element.get('values')
                 refs = element.get('fact_ids', [])
@@ -366,6 +378,9 @@ def validate_project(project: dict) -> dict:
                             'Numeric labels must preserve the exact chart values.')
     briefs = records(project['image_briefs'], 'Image briefs')
     for image in briefs.values():
+        if image.get('placement_region_id') is not None:
+            require(scene is not None and image['placement_region_id'] in {r['id'] for r in scene.get('art_regions', [])},
+                    'Place generated artwork only in its planned native illustration region.')
         require(scene is not None and image.get('story_id') == selected
                 and image.get('scene_id') == scene['id'], 'Pin the image brief to its story and scene.')
         require(text(image.get('prompt'), limit=60_000), 'Record the exact provider-ready prompt.')

@@ -70,7 +70,7 @@ def evaluate(store, project, *, measurement=None, visual=None):
                 flag('layout', element['id'] + ': text is below its readable size floor.')
             if element['font'] != project['brand']['font']:
                 flag('brand-accessibility', element['id'] + ': font differs from the pinned brand.')
-            if contrast(element['color'], scene['background']) < 4.5:
+            if contrast(element['color'], element.get('background', scene['background'])) < 4.5:
                 flag('brand-accessibility', element['id'] + ': text contrast is below 4.5:1.')
         if element['kind'] == 'chart':
             used = [f for key in element['fact_ids'] for f in project['facts'] if f['id'] == key]
@@ -84,7 +84,8 @@ def evaluate(store, project, *, measurement=None, visual=None):
             from .render import dimensions
             target = dimensions(project['brief']['preset'])
             minimum = .5 if digital else 1 / 3
-            if asset['width'] < target['width_px'] * minimum or asset['height'] < target['height_px'] * minimum:
+            if asset['width'] < target['width_px'] * element['bounds'][2] / scene['width'] * minimum \
+                    or asset['height'] < target['height_px'] * element['bounds'][3] / scene['height'] * minimum:
                 flag('visual', element['id'] + ': artwork resolution is below the useful output floor; request a larger original.')
     if not measurement or not measurement.get('complete'):
         flag('layout', 'Actual font, asset decoding and one-page output measurements are required.', incomplete=True)

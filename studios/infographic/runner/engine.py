@@ -220,7 +220,8 @@ class Engine:
                 expected_revision=expected_revision, request_id=request_id, automatic=True)
         require(project['scene'] is not None, 'Build a scene before requesting repair.')
         visual_review.consume_repair(self.store, ident, expected_revision=expected_revision, kind='layout')
-        arrangement = 'columns' if project['scene'].get('arrangement') != 'columns' else 'stack'
+        arrangement = 'infographic' if project['scene'].get('visual_version') else (
+            'columns' if project['scene'].get('arrangement') != 'columns' else 'stack')
         changed = scene.adopt(self.store, ident, expected_revision=expected_revision, arrangement=arrangement)
         return self.preview(ident, expected_revision=changed['revision'])
 
@@ -268,7 +269,17 @@ class Engine:
             layer = {'id': 'artwork_layer', 'kind': 'artwork', 'bounds': [0, 0, planned['width'], planned['height']],
                      'asset_id': asset_id, 'fact_ids': [], 'fit': 'contain',
                      'alt': '; '.join(region['role'] for region in planned['art_regions'])}
-            planned['elements'] = [layer] + [e for e in planned['elements'] if e['id'] != 'artwork_layer']
+            completed = [a for a in project['attempts'] if a['state'] == 'complete' and asset_id in a['asset_ids']]
+            brief = next((b for b in project['image_briefs'] if b.get('placement_region_id')
+                          and any(a['image_brief_id'] == b['id'] for a in completed)), None)
+            if brief:
+                layer['bounds'] = next(r['bounds'][:] for r in planned['art_regions'] if r['id'] == brief['placement_region_id'])
+            content = [e for e in planned['elements'] if e['id'] != 'artwork_layer']
+            if planned.get('visual_version'):
+                planned['elements'] = [e for e in content if e['kind'] in ('shape', 'connector')] + [layer] + [
+                    e for e in content if e['kind'] not in ('shape', 'connector')]
+            else:
+                planned['elements'] = [layer] + content
             for region in planned['art_regions']:
                 region['asset_id'] = asset_id
             return self.store.change_locked(project, {'scene': planned})

@@ -3502,7 +3502,11 @@ body[data-pilot="liquid"] .ig-page-tools { padding: .6rem 0 0; }
 body[data-pilot="liquid"] .ig-project-card { border-radius: 22px; }
 body[data-pilot="liquid"] .ig-work { border-radius: 18px; background: var(--paper); }
 body[data-pilot="liquid"] .ig-story-grid .card { box-shadow: none; }
-body[data-pilot="liquid"] .ig-story-grid .ig-thumbnail { height: 6rem; }
+body[data-pilot="liquid"] .ig-story-grid .ig-thumbnail { height: 10rem; }
+body[data-pilot="liquid"] .ig-outline-link { stroke: var(--studio-color); stroke-width: 2; }
+body[data-pilot="liquid"] .ig-outline-node { fill: var(--paper); stroke: var(--studio-color); stroke-width: 1; }
+body[data-pilot="liquid"] .ig-outline-dot { fill: var(--studio-color); }
+body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 20px var(--plain); }
 @media (prefers-color-scheme: dark) {
   body[data-pilot="liquid"] {
     --ground: #141519;

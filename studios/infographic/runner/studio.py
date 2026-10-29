@@ -70,7 +70,7 @@ def parser():
     preview.add_argument('--selection', type=Path)
     for name in ('source', 'source-import', 'facts', 'stories', 'brand', 'image-brief', 'select', 'layout', 'suggest',
                  'build', 'preview', 'check', 'inspect-images', 'approve', 'export', 'restore',
-                 'google-deliver', 'edit-text', 'review', 'image-start', 'image-cancel', 'revise-art', 'revise-story', 'repair'):
+                 'google-deliver', 'edit-text', 'review', 'image-start', 'image-cancel', 'image-recover', 'visual-layout', 'revise-art', 'revise-story', 'repair'):
         operation = commands.add_parser(name, help='Checked ' + name + ' action; existing work is preserved on failure.')
         operation.add_argument('id')
         operation.add_argument('--expected-revision', required=True, type=int)
@@ -86,7 +86,7 @@ def parser():
             operation.add_argument('--acknowledge-warnings', action='store_true')
         fields = {'select': ('story-id',), 'build': ('request-id',), 'repair': ('request-id',),
                   'restore': ('revision',), 'edit-text': ('element-id', 'text'),
-                  'image-start': ('brief-id', 'provider', 'request-id'), 'image-cancel': ('request-id',),
+                  'image-start': ('brief-id', 'provider', 'request-id'), 'image-cancel': ('request-id',), 'image-recover': ('request-id',),
                   'revise-art': ('change', 'preserve', 'request-id'), 'revise-story': ('story-id', 'instruction')}
         for field in fields.get(name, ()):
             operation.add_argument('--' + field, required=True, type=int if field == 'revision' else str)
@@ -95,7 +95,7 @@ def parser():
             operation.add_argument('--account')
             operation.add_argument('--folder')
             operation.add_argument('--reconcile', action='store_true')
-        if name == 'layout': operation.add_argument('--arrangement', choices=('stack', 'columns'), default='stack')
+        if name == 'layout': operation.add_argument('--arrangement', choices=('infographic', 'stack', 'columns'), default='infographic')
         if name == 'suggest':
             operation.add_argument('--automatic', action='store_true')
             operation.add_argument('--fresh', action='store_true', help='Explicitly request a new assistant response instead of checking a saved one.')
@@ -209,7 +209,7 @@ def main(argv=None):
                 sent = api.load_json(args.file)
                 if not isinstance(sent, dict) or sent.get('id', args.id) != args.id:
                     raise Invalid('The action belongs to another infographic.')
-                costly = sent.get('action') in ('suggest', 'build', 'art-direct', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair')
+                costly = sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'build', 'art-direct', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair')
                 from runner.engine import Engine
                 value = api.action(api.engine(store) if costly else Engine(store), {**sent, 'id': args.id})
             elif args.command != 'edit-brief':
@@ -224,7 +224,7 @@ def main(argv=None):
                         sent.update(data=base64.b64encode(raw).decode(), kind=kind, name=args.file.name)
                         if args.selection: sent['selection'] = api.load_json(args.selection)
                     else: sent['data'] = api.load_json(args.file)
-                costly = args.command in ('suggest', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair')
+                costly = args.command in ('visual-layout', 'image-recover', 'suggest', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair')
                 value = api.action(api.engine(store) if costly else Engine(store), sent)
             else:
                 with args.file.open('rb') as stream:

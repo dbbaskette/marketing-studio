@@ -1,5 +1,6 @@
 """Bounded authoring outputs; native evidence and page checks remain authoritative."""
 from copy import deepcopy
+from .visuals import ICONS
 
 TEXT = {'type': 'string', 'maxLength': 10000}
 CONTEXT_TEXT = {'type': 'string', 'maxLength': 1000}
@@ -13,6 +14,14 @@ def record(**properties):
 
 def array(items, **limits):
     return {'type': 'array', 'items': items, **limits}
+
+
+VISUAL = record(
+    nodes=array(record(id=ID, label={'type': 'string', 'maxLength': 150},
+        caption={'type': 'string', 'maxLength': 300}, icon={'type': 'string', 'enum': list(ICONS)},
+        fact_ids=array(ID, minItems=1)), minItems=1, maxItems=4),
+    links=array(record(**{'from': ID, 'to': ID, 'label': {'type': 'string', 'maxLength': 100},
+                         'fact_ids': array(ID, minItems=1)}), maxItems=6))
 
 
 PLAN = record(
@@ -33,7 +42,8 @@ PLAN = record(
             id=ID, kind={'type': 'string', 'enum': ['comparison', 'process', 'timeline', 'numbers', 'parts', 'concept']},
             title=TEXT, text=TEXT, fact_ids=array(ID, minItems=1), required_ids=array(ID),
             quantitative={'type': 'boolean', 'description': 'True for measured numeric charts; false for descriptive comparisons and component explanations.'},
-            illustration={'type': 'boolean'}, illustration_role=TEXT), minItems=1, maxItems=5)),
+            illustration={'type': 'boolean'}, illustration_role=TEXT,
+            visual={'anyOf': [VISUAL, {'type': 'null'}]}), minItems=1, maxItems=5)),
         minItems=1, maxItems=3))
 
 

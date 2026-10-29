@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import math
 import xml.etree.ElementTree as ET
 
 from . import render, sources
@@ -17,7 +18,7 @@ def compose(store, project: dict, *, draft=False) -> str:
     root = ET.Element('{' + NS + '}svg', {'viewBox': f'0 0 {scene["width"]} {scene["height"]}',
                       'role': 'img', 'aria-label': project['brief']['title']})
     ET.SubElement(root, 'title').text = project['brief']['title']
-    ET.SubElement(root, 'desc').text = 'Single-page infographic. Text and chart marks are editable; embedded artwork is raster.'
+    ET.SubElement(root, 'desc').text = 'Single-page infographic. Text, diagrams, pictograms and chart marks are editable; embedded artwork is raster.'
     ET.SubElement(root, 'rect', {'width': str(scene['width']), 'height': str(scene['height']), 'fill': scene['background']})
     for element in scene['elements']:
         x, y, width, height = element['bounds']
@@ -25,12 +26,17 @@ def compose(store, project: dict, *, draft=False) -> str:
                   'data-box': ' '.join(str(v) for v in element['bounds'])}
         if element['kind'] == 'text':
             attrs = {**common, 'x': str(x), 'y': str(y + element['font_size']),
-                     'font-family': element['font'], 'font-size': str(element['font_size']), 'fill': element['color']}
+                     'font-family': element['font'], 'font-size': str(element['font_size']), 'fill': element['color'],
+                     'font-weight': str(element.get('weight', 400)), 'aria-label': element['text']}
             node = ET.SubElement(root, 'text', attrs)
             for index, line in enumerate(element['lines']):
                 ET.SubElement(node, 'tspan', {'x': str(x), 'y': str(y + element['font_size'] * (1 + 1.4 * index))}).text = line
         elif element['kind'] == 'chart':
             group = ET.SubElement(root, 'g', common)
+            if element.get('visual'):
+                from .native_charts import draw
+                draw(group, element, project['brand']['colors'])
+                continue
             values, size = element['values'], element['font_size']
             maximum = 1 if element['form'] == 'numbers' else sum(values) if element['form'] == 'parts' else max(values)
             # All-zero data has no positive extent. Show its exact zero labels
@@ -71,15 +77,42 @@ def compose(store, project: dict, *, draft=False) -> str:
                               'width': str(width * value / maximum), 'height': str(size * .5), 'fill': element['color']})
         elif element['kind'] == 'artwork':
             mime, raw = store.read_asset(project['id'], element['asset_id'])
-            ET.SubElement(root, 'image', {**common, 'x': str(x), 'y': str(y), 'width': str(width), 'height': str(height),
+            attrs = {**common, 'x': str(x), 'y': str(y), 'width': str(width), 'height': str(height),
                           'href': 'data:' + mime + ';base64,' + base64.b64encode(raw).decode(),
-                          'preserveAspectRatio': 'xMidYMid meet', 'aria-label': element.get('alt', 'Illustrative artwork')})
+                          'preserveAspectRatio': 'xMidYMid meet', 'aria-label': element.get('alt', 'Illustrative artwork')}
+            if scene.get('visual_version'):
+                ident = 'art_clip_' + element['id']
+                clip = ET.SubElement(ET.SubElement(root, 'defs'), 'clipPath', {'id': ident})
+                for region in scene['art_regions']:
+                    rx, ry, rw, rh = region['bounds']
+                    ET.SubElement(clip, 'rect', {'x':str(rx),'y':str(ry),'width':str(rw),'height':str(rh)})
+                attrs['clip-path'] = 'url(#' + ident + ')'
+            ET.SubElement(root, 'image', attrs)
         elif element['kind'] == 'connector':
-            ET.SubElement(root, 'line', {**common, 'x1': str(x), 'y1': str(y), 'x2': str(x + width),
-                          'y2': str(y + height), 'stroke': element['color'], 'stroke-width': '1'})
+            points = element.get('points', [[x, y], [x + width, y + height]])
+            group = ET.SubElement(root, 'g', common)
+            ET.SubElement(group, 'polyline', {'points': ' '.join(f'{a},{b}' for a, b in points),
+                'fill': 'none', 'stroke': element['color'], 'stroke-width': str(element.get('stroke_width', 1))})
+            if element.get('arrow'):
+                (ax, ay), (bx, by) = points[-2:]
+                angle = math.atan2(by - ay, bx - ax)
+                size = element.get('arrow_size', 6)
+                back = (bx - math.cos(angle) * size, by - math.sin(angle) * size)
+                corners = [(bx, by), (back[0] - math.sin(angle) * size * .45, back[1] + math.cos(angle) * size * .45),
+                           (back[0] + math.sin(angle) * size * .45, back[1] - math.cos(angle) * size * .45)]
+                ET.SubElement(group, 'polygon', {'points': ' '.join(f'{a},{b}' for a, b in corners), 'fill': element['color']})
         elif element['kind'] == 'shape':
-            ET.SubElement(root, 'rect', {**common, 'x': str(x), 'y': str(y), 'width': str(width),
-                          'height': str(height), 'fill': element['color']})
+            from .pictograms import PATHS, draw
+            if element.get('glyph') in PATHS:
+                group = ET.SubElement(root, 'g', common)
+                ET.SubElement(group, 'title').text = element.get('alt', 'Illustrative ' + element['glyph'] + ' symbol')
+                draw(group, NS, element['glyph'], element['bounds'], element['color'])
+            else:
+                attrs = {**common, 'x': str(x), 'y': str(y), 'width': str(width), 'height': str(height),
+                         'fill': element['color'], 'rx': str(element.get('radius', 0))}
+                if element.get('outline'):
+                    attrs.update(stroke=element['outline'], **{'stroke-width': '1'})
+                ET.SubElement(root, 'rect', attrs)
     if draft:
         ET.SubElement(root, 'text', {'x': '8', 'y': str(scene['height'] - 8),
                       'font-family': project['brand']['font'], 'font-size': '18' if scene['unit'] == 'px' else '9',

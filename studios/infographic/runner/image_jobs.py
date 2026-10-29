@@ -4,9 +4,8 @@ from __future__ import annotations
 from copy import deepcopy
 import hashlib
 import json
-from pathlib import Path
 
-from .contracts import MAX_ASSET_BYTES, Invalid, basis, canonical, digest
+from .contracts import MAX_ASSET_BYTES, basis, canonical, digest
 from .validation import identifier, require, validate_image_result
 from .workspace import _read
 
@@ -95,11 +94,37 @@ class Jobs:
             # The remote outcome may be unknown. Do not leak exception text or retry.
             from .images.base import result
             answer = result(record['provider'], record['operation'], request_id, state='unknown', reason='provider-refusal')
+        return self._adopt(ident, request_id, answer, revision, expected_basis)
+
+    def recover(self, ident, request_id, *, expected_revision):
+        """Recover completed owned Codex output locally, with no provider execution."""
         with self.store.locked():
             current = self.store.read(ident)
-            self.store.write_blob(ident, f'jobs/{request_id}/result.json', canonical(answer))
+            self.store.expect(current, expected_revision)
+            details = self._details(ident, request_id)
+            attempt = next((a for a in current['attempts'] if a['id'] == request_id), None)
+            require(details['provider'] == 'codex' and not details['cancelled_locally'] and attempt is not None
+                    and attempt['state'] in ('failed', 'unknown') and attempt['basis'] == basis(current),
+                    'Only completed saved artwork for the unchanged current page can be recovered. Cancelled work stays cancelled.')
+            state, expected_basis = attempt['state'], basis(current)
+        from .images.codex import Codex
+        folder = self.store._project(ident) / 'jobs' / request_id
+        answer = Codex(folder).recover(attempt_id=request_id, operation=details['operation'])
+        require(answer['state'] == 'complete', 'No usable completed artwork was found. No image request was repeated.')
+        return self._adopt(ident, request_id, answer, expected_revision, expected_basis, state=state)
+
+    def _adopt(self, ident, request_id, answer, revision, expected_basis, *, state='running'):
+        folder = self.store._project(ident) / 'jobs' / request_id
+        with self.store.locked():
+            current = self.store.read(ident)
+            if state != 'running':
+                require(current['revision'] == revision and basis(current) == expected_basis,
+                        'The page changed during recovery. Its newer work is kept.')
+            # The original outcome is immutable. Recovery has its own receipt.
+            result_name = 'recovered-result.json' if state != 'running' else 'result.json'
+            self.store.write_blob(ident, f'jobs/{request_id}/{result_name}', canonical(answer))
             found = next((a for a in current['attempts'] if a['id'] == request_id), None)
-            if found is None or found['state'] != 'running' or current['revision'] != revision or basis(current) != expected_basis:
+            if found is None or found['state'] != state or current['revision'] != revision or basis(current) != expected_basis:
                 return {'adopted': False, 'state': 'outdated', 'attempt_id': request_id}
             updated = deepcopy(current)
             updated['revision'] += 1
@@ -123,7 +148,7 @@ class Jobs:
             updated['checks'] = []
             updated['approval'] = None
             self.store.commit_locked(current, updated)
-            return {'adopted': True, 'state': landed['state'], 'attempt_id': request_id, 'reason': landed['reason'], 'provider': record['provider']}
+            return {'adopted': True, 'state': landed['state'], 'attempt_id': request_id, 'reason': landed['reason'], 'provider': landed['provider']}
 
     def cancel(self, ident, request_id, *, expected_revision):
         with self.store.locked():
@@ -163,13 +188,25 @@ class Jobs:
             if (folder / 'cancelled.json').exists() or found.get(folder.name) == 'cancelled': continue
             state = found.get(folder.name)
             if state is None:
-                if (folder / 'result.json').exists():
-                    answer = json.loads(_read(self.store.root, f'projects/{ident}/jobs/{folder.name}/result.json', 100_000))
+                result_name = 'recovered-result.json' if (folder / 'recovered-result.json').exists() else 'result.json'
+                if (folder / result_name).exists():
+                    answer = json.loads(_read(self.store.root, f'projects/{ident}/jobs/{folder.name}/{result_name}', 100_000))
                     state = answer['state']
                 else: state = 'unknown'
-            if state in ('queued', 'running', 'unknown'):
+            local = False
+            if state in ('failed', 'unknown') and record['provider'] == 'codex':
+                from .images.codex import saved_output
+                try:
+                    saved_output(folder)
+                    attempt = next((a for a in project['attempts'] if a['id'] == folder.name), None)
+                    local = bool(attempt and attempt['basis'] == basis(project))
+                except (ValueError, OSError):
+                    pass
+            if state in ('queued', 'running', 'unknown') or local:
                 result.append({'attempt_id': folder.name, 'state': state, 'automatic_retry': False,
-                     'message': 'No request was resubmitted. Pending or interrupted work requires explicit cancellation and new intent.'})
+                     'local_artwork_available': local,
+                     'message': 'Completed artwork was found. Recover it locally without another image request.' if local else
+                         'No request was resubmitted. Pending or interrupted work requires explicit cancellation and new intent.'})
         return result
 
     def details(self, ident, request_id):
@@ -182,7 +219,8 @@ class Jobs:
         record = json.loads(_read(self.store.root, prefix + 'intent.json', 100_000))
         require(record['owner'] == self.store.owner and record['project_id'] == ident, 'Image request ownership changed.')
         folder = self.store._project(ident) / 'jobs' / request_id
-        answer = json.loads(_read(self.store.root, prefix + 'result.json', 100_000)) if (folder / 'result.json').exists() else None
+        result_name = 'recovered-result.json' if (folder / 'recovered-result.json').exists() else 'result.json'
+        answer = json.loads(_read(self.store.root, prefix + result_name, 100_000)) if (folder / result_name).exists() else None
         return {'id': request_id, 'provider': record['provider'], 'operation': record['operation'],
                 'configuration': record['assistant_configuration'],
                 'revision': record['expected_revision'], 'brief': record['brief'],

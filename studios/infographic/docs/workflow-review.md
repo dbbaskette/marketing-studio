@@ -15,7 +15,10 @@ verification separate from signed-in provider acceptance.
 | Facts → calculations | Reproducible dependent facts could arrive before operands or omit derivable metadata. | Verify operands first, resolve the dependency graph, infer only the operation's defined unit and identical operand context, then rerun native arithmetic validation. |
 | Alternatives → selection | One unsupported generated assertion could discard unrelated supported alternatives. | Only verified facts and fully valid alternatives reach selection. Requirements, locked wording, exclusions and omission rules still apply. |
 | Source exclusions → brief coverage | Generated plans put optional source exclusions into omitted requirement IDs, blocking briefs with no must-show requirements. | Preserve those optional notes in qualifications; bind generated omission and coverage fields to actual brief requirement IDs. Real required omissions still block selection. Saved responses can recover locally. |
-| Selection → composition | The first arrangement could fail even when another supported arrangement fit. | Try stack and columns before requesting prioritization. No text is discarded and readable type floors stay enforced. |
+| Selection → composition | Qualitative forms became headings and paragraphs, even when called diagrams. | Build editable process flows, component maps, comparisons and pictograms. Try fitting visual arrangements and readable type sizes before requesting prioritization; never silently fall back to a paragraph page or discard text. |
+| Image worker → local output | The adapter looked only in its job folder while native Codex saved output beneath its recorded thread. | Bind output collection to the exact system-reported thread UUID. Recover completed saved output locally, preserve immutable receipts, reject stale/cancelled/linked output and never resubmit on refresh. |
+| Generation → iteration | An image worker could request corrective variants within one intent. | Request one generation per explicit intent; later revisions remain explicit and separately recorded. |
+| Diagram → editing | Exact-size title boxes blocked a reasonable wrapped edit. | Reserve two readable title/label lines; retain complete accessible SVG labels across wrapped spans. |
 | Composition → checks | Generated process ordinals were treated as unsupported numeric assertions; pre-numbered titles were duplicated. | Apply the compositor's expected ordinal once and exclude only that structural prefix from assertion checks. Other numbers remain checked. |
 | Measurements → render | An all-zero series passed evidence checks but failed positive-scale rendering. | Render exact zero labels with zero-length marks; signed values require number callouts instead of proportional bars. |
 | Failure → recovery | Valid JSON responses disappeared after validation failure; another attempt spent allowance again. | Retain private, revision-bound responses before validation. Recheck locally; make a new assistant request only through an explicit fresh action. |
@@ -26,7 +29,8 @@ verification separate from signed-in provider acceptance.
 ## Regression coverage
 
 `tests/workflow_cases.py` supplies raw provider-shaped responses rather than
-prevalidated native records. Fourteen cases cover paraphrases, descriptive
+prevalidated native records. Fifteen cases cover paraphrases, evidence-linked
+diagram nodes and connections, descriptive
 comparisons and components, processes, whitespace, quotation typography,
 timelines, numeric strings, zero measurements, calculations, signed callouts,
 attached units and partly unsupported alternatives.

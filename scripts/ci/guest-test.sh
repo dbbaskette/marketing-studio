@@ -76,6 +76,11 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
     if [[ -n "${MARKETING_STUDIO_TEST_LIQUID_PILOT:-}" ]]; then
       node studios/infographic/tests/ui/liquid-pilot.cjs 2>&1 | tee "$results_dir/liquid-pilot-browser.log"
     fi
+    if [[ -n "${INFOGRAPHIC_STUDIO_TEST_VISUAL_PAGES:-}" ]]; then
+      node studios/infographic/tests/ui/image-recovery.cjs 2>&1 | tee "$results_dir/image-recovery-browser.log"
+      "$python" studios/infographic/tests/visual_gallery.py --renderer "$INFOGRAPHIC_STUDIO_TEST_RENDERER" \
+        --output "$results_dir/visual-gallery" 2>&1 | tee "$results_dir/visual-gallery.log"
+    fi
     if [[ -n "${INFOGRAPHIC_STUDIO_TEST_CONTRACTS:-}" ]]; then
       node studios/infographic/tests/ui/workflow-matrix.cjs 2>&1 | tee "$results_dir/workflow-contracts-browser.log"
     fi
