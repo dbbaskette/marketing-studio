@@ -25,6 +25,34 @@ class DraftJobTests(DeckCase):
         self.assertIsNone(self.record(root)['problem'])
         return root
 
+    def saved_queue_desk(self, ident):
+        # Exercise a finished, explicitly saved queue-format training on the desk.
+        from stand_ins.research import saved_queue
+        from runner import draft_jobs
+        self.research = saved_queue()
+        self.jobs = draft_jobs
+        self.workers.plan = {**self.workers.plan, 'items': [
+            *self.workers.plan['items'], {'id': ident, 'question': 'Extra finding'}]}
+        root = self.saved_begin(levels=['101'])
+        self.to_end(root)
+        self.engine.outline(root, '101', 'approve')
+        self.to_end(root)
+        self.assertEqual(self.state(root), 'done', self.view(root))
+        self.engine.open_on_desk(root)
+        self.assertNotIn('research_contract', workspace.load(root))
+        return root
+
+    def add_queue_finding(self, root, ident):
+        record = workspace.research_record(root)
+        source = root / 'extra-source.txt'
+        source.write_text('A supported fact.', encoding='utf-8')
+        self.research.record(root, record['run'], ident, {
+            'status': 'supported', 'summary': 'A supported fact.', 'limits': 'Synthetic example.',
+            'evidence': [{'file': 'extra-source.txt', 'title': 'Extra source',
+                          'origin': 'https://example.invalid/extra', 'date': '2026-01-01',
+                          'locator': 'Full text',
+                          'quote': 'A supported fact.', 'start': 0}]})
+
     def card(self, root, name=NAME):
         return self.engine.draft_card(root, name)
 
@@ -282,12 +310,8 @@ class DraftJobTests(DeckCase):
         self.assertEqual(draft_jobs.NEXT, 'Next, after {doing}.')
 
     def test_a_cited_finding_joins_sources(self):
-        root = self.desk()
-        research = workspace.research_record(root)
-        research['items'].append({'id': 'added', 'question': 'Extra finding'})
-        research['results']['added'] = {'status': 'supported', 'summary': 'A supported fact.',
-                                        'evidence': [{'origin': 'https://example.invalid/extra'}]}
-        home.write_json(root / workspace.research_record_file(root), research)
+        root = self.saved_queue_desk('added')
+        self.add_queue_finding(root, 'added')
         card = self.card(root)
         # The covers objective's module names this supported finding.
         blueprint = root / '101/blueprint.md'
@@ -308,13 +332,15 @@ class DraftJobTests(DeckCase):
         import checks
         self.assertEqual(checks.citations(text, 'document')['status'], 'passed')
         # A later section job must reuse the number the runner just added.
+        reused = []
         def reuse(tools, job):
-            extra = next(f for f in tools.job['artifacts']['part']['findings'] if f['id'] == 'added')
-            self.assertEqual(extra['number'], 4)
+            reused.extend(tools.job['artifacts']['part']['findings'])
             return tools.submit_part(tools.job['artifacts']['part']['before'] + ' Another fact [4].')
         self.workers.then('part', reuse)
         card = self.card(root)
         self.ask(root, part=card['sections'][1]['id'], seen=card['revision'])
+        self.assertTrue(any(f['id'] == 'added' for f in reused), (reused, self.last(root)))
+        self.assertEqual(next(f['number'] for f in reused if f['id'] == 'added'), 4)
         self.assertTrue(self.last(root)['applied'], self.last(root))
         source = next(s for s in self.card(root)['sections'] if s.get('locked'))
         self.assertEqual(source['text'].count('Extra finding,'), 1)
@@ -628,14 +654,10 @@ class DraftJobTests(DeckCase):
 
     def test_research_only_update_describes_its_changed_input(self):
         from runner import pipeline
-        root = self.desk()
+        root = self.saved_queue_desk('extra')
         found = self.engine._survey(root, self.record(root))
         step = next(s for s in found.steps if s.artifact == 'brief@101')
-        research = workspace.research_record(root)
-        research['items'].append({'id': 'extra', 'question': 'Extra finding'})
-        research['results']['extra'] = {'status': 'supported', 'summary': 'A supported fact.',
-                                         'evidence': [{'origin': 'https://example.invalid/extra'}]}
-        home.write_json(root / workspace.research_record_file(root), research)
+        self.add_queue_finding(root, 'extra')
         self.assertEqual(drafts.input_of(root, found.session, 'brief@101'), ['research'])
         work = pipeline.brief_work(root, found, step, None, None, [], update=True)
         self.assertNotIn(drafts.UPDATE_RULE, work.task)

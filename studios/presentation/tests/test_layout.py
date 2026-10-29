@@ -124,10 +124,9 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertEqual(shot['ledes'], ['How Presentation Studio works on this computer; what '
                                          'every studio shares is changed in Shared settings.'])
         self.assertNotIn('What a new deck starts with', shot['parts'])
-        self.assertEqual(shot['parts'][:3], ['Shared settings', 'Where new work stops',
-                                             'Workspace'])
+        self.assertEqual(shot['parts'][:3], ['Shared settings', 'Workspace', 'Brand skill'])
         shared = shot['text'][shot['text'].index('Shared settings'):
-                              shot['text'].index('Where new work stops')]
+                              shot['text'].index('Workspace')]
         self.assertIn('Alex Doe', shared)
         self.assertIn('example', shared)
         self.assertIn('Change shared settings', shot['buttons'])
