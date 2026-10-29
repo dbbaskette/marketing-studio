@@ -1570,9 +1570,9 @@ function progressPart(found, held, lead) {
   // The line is blank while something on the desk needs the person.
   const line = progress.line ? make('p', '', progress.line) : null;
   if (line) line.setAttribute('role', 'status');
-  return callout('', line, controls.childNodes.length ? controls : null, progress.doing ? make('p', 'row-says', progress.doing) : null,
-    progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
-      : null);
+  return add(make('div'), callout('', line, controls.childNodes.length ? controls : null, progress.doing ? make('p', 'row-says', progress.doing) : null,
+    run.timing ? (!run.research_progress || run.research_progress.phase === 'complete' ? measuredTime(run) : null) : progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
+      : null), researchActivity(run));
 }
 
 function unsentPart(held, lead) {

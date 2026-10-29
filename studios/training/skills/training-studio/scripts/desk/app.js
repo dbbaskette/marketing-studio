@@ -792,6 +792,35 @@ function nowLine(run) {
   return parts.length ? make('p', 'now-line', parts.join(' · ')) : null;
 }
 
+// Server-measured interval unions distinguish overlapping work from elapsed time.
+function measuredTime(run) {
+  const time = run.timing;
+  if (!time) return null;
+  const parts = [];
+  if (given(time.elapsed_seconds)) parts.push(lasted(time.elapsed_seconds) + ' elapsed');
+  parts.push(lasted(time.active_seconds) + ' actively working');
+  parts.push(lasted(time.assistant_seconds) + ' total assistant time');
+  if (time.incomplete) parts.push('earlier timing history is incomplete');
+  return make('p', 'quiet measured-time', parts.join(' · '));
+}
+
+function researchActivity(run) {
+  const research = run.research_progress;
+  if (!research || research.phase === 'complete') return null;
+  const names = { investigate: 'Investigating', synthesize: 'Combining findings', review: 'Independent check' };
+  const node = add(card(names[research.phase] || 'Research'),
+    make('p', 'quiet', 'Completed research areas are kept for retry.'));
+  const rows = make('ul', 'plain');
+  const words = { waiting: 'Waiting', working: 'Working', kept: 'Evidence kept', failed: 'Needs retry' };
+  for (const area of list(research.streams)) {
+    add(rows, add(make('li', 'row'), make('span', 'row-text',
+      list(area.questions).join(' · ') || 'Research area ' + area.id.slice(-1)),
+    make('span', 'quiet', words[area.status] || 'Waiting')));
+  }
+  return add(node, rows, measuredTime(run), make('p', 'quiet',
+    'Elapsed includes waiting and stopped time. Total assistant time adds overlapping jobs.'));
+}
+
 function money(dollars) {
   return '$' + Number(dollars).toFixed(2);
 }
@@ -5143,11 +5172,12 @@ function actionSays(run, found) {
 // on from the saved draft for up to as many more rounds, and the last rounds' time and money
 // say what that may take.
 function researchAgain(research) {
-  const took = [research.seconds ? lasted(research.seconds) : '',
+  const took = [research.seconds ? lasted(research.seconds) + (research.parallel ? ' total assistant time' : '') : '',
     given(research.dollars) ? money(research.dollars) : ''].filter(Boolean);
   const rounds = research.rounds === 1 ? 'the last round' : research.rounds
     ? 'the last ' + count(research.rounds, 'round', 'rounds') : 'the last try';
   const most = research.most || 3;
+  if (research.parallel) return 'Try again reuses checked research areas, retries missing or refused areas, and then combines and independently checks the report, for up to ' + count(most, 'round', 'rounds') + (took.length ? '; the last try used ' + took.join(' and ') : '') + '.';
   return (research.drafted
     ? 'Try again continues from the saved draft and runs up to '
       + count(most, 'more round', 'more rounds')
@@ -5338,7 +5368,7 @@ function stepFacts(step) {
   const facts = [];
   if (step.kind === 'gate') facts.push('Your decision');
   if (step.attempts > 1) facts.push(count(step.attempts, 'try', 'tries'));
-  if (given(step.seconds)) facts.push(lasted(step.seconds));
+  if (given(step.seconds)) facts.push(lasted(step.seconds) + (step.id === 'research' ? ' assistant time' : ''));
   if (given(step.dollars)) facts.push(money(step.dollars));
   return facts.join(' · ');
 }
@@ -6798,6 +6828,7 @@ function paintRun(fresh) {
     // While a deck is drawn, its sections and their latest previews are what there is to see.
     run.deck ? ['deck', [run.deck, run.outline && run.outline.level],
       () => deckCard(run)] : null,
+    run.research_progress ? ['research-progress', [run.research_progress, run.timing], () => researchActivity(run)] : null,
     list(run.workers).length ? ['workers', run.workers, () => workersCard(run)] : null,
     ['made', [training.path, training.view && training.view.files, theirs],
       () => madeCard(training, theirs)],

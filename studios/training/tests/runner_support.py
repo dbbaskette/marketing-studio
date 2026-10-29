@@ -1615,7 +1615,9 @@ class StudioCase(unittest.TestCase):
         """An engine as the runner would start one, with nothing real behind it."""
         options = {'adapters': self.adapters, 'research': lambda: self.research,
                    'documents': self.documents, 'copies': self.copies, 'index': self.index,
-                   'background': self.BACKGROUND, **options}
+                   # Historic fixtures exercise the saved serial protocol. New protocol
+                   # integration tests explicitly use the production default.
+                   'background': self.BACKGROUND, 'parallel_research': False, **options}
         engine = self.engines.Engine(**options)
         self.addCleanup(engine.close)
         return engine

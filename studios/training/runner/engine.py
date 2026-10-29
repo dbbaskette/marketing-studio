@@ -190,7 +190,7 @@ What a caller needs to know
 - `bring` copies a training's folder into the workspace under the name its title gives,
   moves its decisions to the page, gives it a run record that takes it, and commits. The
   folder it came from is only read. The run then carries on from what the files say.
-- A form with `flow: 'desk'` starts the training on the desk: a run of schema 4 with
+- A form with `flow: 'desk'` starts the training on the desk: a run of schema 4 (serial) or 5 (parallel) with
   `flow: 'desk'` in the run and the session, and no review level. None is saved with it and
   the shared one is never written from its form, so its start promises no stops. The engine
   carries a desk run past every gate, deck outline and look (`_desk_gate`), each with a desk
@@ -223,7 +223,7 @@ import runner  # noqa: F401  puts the core on the import path
 import computer
 import checks
 import home
-from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, research_sites, step_times, stops
+from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_parallel, research_parallel_native, research_timing, research_view, research_sites, step_times, stops
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -425,7 +425,7 @@ def read_record(root: Path) -> dict | None:
     record = workspace.read_run(root)
     if record is None:
         return None
-    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA) \
+    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA) \
             or not isinstance(record.get('steps'), dict):
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
                              'will not drive this training.')
@@ -435,7 +435,9 @@ def read_record(root: Path) -> dict | None:
     # Runner desk records require a contract; focused conversations may be contract-free.
     if record.get('schema') == drafts.SCHEMA:
         contracted = drafts.on_desk(record) and (contracted or drafts.in_conversation(record))
-    if record.get('schema') in (3, drafts.SCHEMA) and not contracted:
+    if record.get('schema') == research_parallel.RECORD_SCHEMA and not research_parallel.protocol(record):
+        raise WorkspaceError('This run is missing its saved parallel research protocol. Restore its run record.')
+    if record.get('schema') in (3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA) and not contracted:
         raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
 
@@ -619,7 +621,7 @@ class Engine(Reviewing):
 
     def __init__(self, adapters=None, research=None, background: bool = True,
                  at_once: int = AT_ONCE, documents=None, copies=None, index=None,
-                 slides=None, brand=None, notifier=None):
+                 slides=None, brand=None, notifier=None, parallel_research=True):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.upkeep = None    # what `studio serve` keeps of the skills here; see `upkeep`
@@ -641,6 +643,7 @@ class Engine(Reviewing):
         self.copies = copies or copies_made
         self.index = index or index_written
         self.background, self.at_once = background, at_once
+        self.parallel_research = parallel_research
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._preparing_decks: dict[Path, deck_edit.PreparedEdit] = {}
         # What was typed on each desk and not committed yet, by the training's folder:
@@ -1409,6 +1412,9 @@ class Engine(Reviewing):
                 if desk:
                     record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
                         'jobs': [], 'updates': {}, 'findings_before': None})
+                if contract and self.parallel_research:
+                    record.update(schema=research_parallel.RECORD_SCHEMA,
+                                  research_execution=dict(research_parallel.PROTOCOL))
                 session = workspace.load(root)
                 if contract:
                     session['research_contract'] = contract
@@ -3762,7 +3768,7 @@ class Engine(Reviewing):
         return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(
             text='\n\n'.join(quoted(text) for text in carried)))
 
-    def _job(self, root: Path, run: _Run, step: pipeline.Step, work: pipeline.Work):
+    def _job(self, root: Path, run: _Run, step: pipeline.Step, work: pipeline.Work, *, limits=None):
         """Run one worker on one job. Returns how the agent ended, what the worker tools
         accepted from it, when it started and the job's folder. A note the person left for
         the next step goes with it, once."""
@@ -3781,8 +3787,10 @@ class Engine(Reviewing):
         # A deck's worker is given the slides tool and the brand skill this engine uses.
         worker_tools.prepare(folder, **{**work.prepared, 'runtimes': dict(
             self._look()['runtimes']) if step.stage == 'deck' else {}})
-        limits = agents.Limits(record['limits']['step_seconds'],
-                               max(0.01, self._left(record)))
+        ceiling = agents.Limits(record['limits']['step_seconds'],
+                                max(0.01, self._left(record)))
+        limits = ceiling if limits is None else agents.Limits(
+            min(limits.seconds, ceiling.seconds), min(limits.dollars, ceiling.dollars))
         job = agents.Job(work.guidance, work.task, folder, work.profile,
                          tuple(worker_tools.command(folder)), limits, record.get('model'),
                          record.get('effort'))
@@ -4082,7 +4090,9 @@ class Engine(Reviewing):
                 action=stops.agent_action(outcome))
         if outcome.reason == 'timeout':
             return self._out_of_time(root, 'research', 'The research', record, 1)
-        self._problem(root, 'research', 'failed', str(refusal), KEPT)
+        kept = ('Completed, checked research areas are kept privately for retry. Only missing or refused areas run again.'
+                if research_parallel.protocol(record) else KEPT)
+        self._problem(root, 'research', 'failed', str(refusal), kept)
 
     def _check_unfinished(self, root: Path, refusal: WorkspaceError) -> None:
         """The independent check could not read an original it must attest to, and that is
@@ -4162,7 +4172,8 @@ class Engine(Reviewing):
                         'worked examples and limits. Research supplies evidence; the teaching '
                         'plan and materials are authored afterward.'),
                     'scope': about,
-                    'planning_questions': found.research.questions,
+                    'planning_questions': (home.read_json(root / pipeline.PLAN, {}).get('items') or []
+                                           if research_parallel.protocol(record) else found.research.questions),
                     'requested_changes': step.request,
                     # Asked for at the research stop: the sources read again.
                     'refresh': (step.request or {}).get('refresh') is True,
@@ -4170,7 +4181,10 @@ class Engine(Reviewing):
                     # 'mixed', sites alone 'public', documents alone 'selected'.
                     'source_mode': research_sites.source_mode(looks)}
             try:
-                research_contract.native(self, root, run, task, offered, 'training')
+                if research_parallel.enabled(record, task):
+                    research_parallel_native.native(self, root, run, task, offered)
+                else:
+                    research_contract.native(self, root, run, task, offered, 'training')
             except WorkspaceError as refusal:
                 if getattr(refusal, 'outcome', None) is not None:
                     return self._research_job_failed(root, refusal)
@@ -6376,13 +6390,17 @@ class Engine(Reviewing):
         tried = research_contract.last_rounds({name: entry.get('attempts', [])
                                                for name, entry in record['steps'].items()})
         return {'research': {**(tried or {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None}),
-                             'most': research_contract.ROUNDS, 'drafted': self._drafted(root)}}
+                             'most': research_contract.ROUNDS, 'drafted': self._drafted(root),
+                             **({'parallel': True} if research_parallel.protocol(record) else {})}}
 
     def _synthesis_doing(self, record: dict, run: _Run | None) -> str:
         """Where research done as one authored report and one independent check stands:
         which of the two jobs is in hand, and its round of the three. Between jobs, the
         next one is worked out from the last job kept since this research began: the
         hand-over of the plan, or the last change the person asked for."""
+        progress = (record.get('research_execution') or {}).get('progress')
+        if progress:
+            return research_parallel_native.describe(progress)
         with self._lock:
             live = [name for name in (run.workers if run else ())
                     if research_contract.job_round(name)]
@@ -6778,6 +6796,16 @@ class Engine(Reviewing):
         outline = pipeline.outline_view(root, found, level) if drawing else None
         if outline is not None:
             outline['redo'] = self._redo_view(root, record, found, 'outline:' + (level or ''))
+        workers = self._workers(run)
+        timing_attempts = attempts(record)
+        # Completed runs stop the clock; waiting and stopped runs retain elapsed time.
+        timing_now = None
+        if state == 'done' and not workers:
+            stamps = [research_timing.stamp(a.get('ended_at')) for a in timing_attempts]
+            if any(s is not None for s in stamps):
+                from datetime import datetime, timezone
+                timing_now = datetime.fromtimestamp(max(s for s in stamps if s is not None), timezone.utc)
+        timing = research_timing.account(record.get('started_at'), timing_attempts, workers, now=timing_now)
         return {
             'state': state, 'sentence': sentence, 'agent': record['agent'],
             'decided': (record.get('last_decision') if state == 'working' and not asked
@@ -6797,7 +6825,9 @@ class Engine(Reviewing):
             'review_level': None if drafts.on_desk(record) else review_policy.level(record),
             'review': self._review_view(root, record, found),
             'steps': self._steps(record, found, state, root),
-            'workers': self._workers(run),
+            'workers': workers,
+            'research_progress': (record.get('research_execution') or {}).get('progress'),
+            'timing': timing,
             'spent': {'dollars': dollars, 'tokens': tokens, 'stops_at': stops_at},
             'ahead': self._still_to_come(record, found),
             'note': self._note_view(record),

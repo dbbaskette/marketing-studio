@@ -1,6 +1,6 @@
 # Bounded parallel research: implementation plan
 
-Status: proposed. Contract: `../specs/2026-10-29-parallel-research.md`.
+Status: approved by the user; implementation and verification in progress. Contract: `../specs/2026-10-29-parallel-research.md`.
 
 ## 1. Freeze protocol and measurement boundaries
 
@@ -104,3 +104,35 @@ never interrupt the current research to deploy the change.
 - Resume avoids unnecessary repeated collection and preserves existing runs.
 - Active time is measured without double-counting parallel jobs or hiding retry time.
 - Synthetic concurrency results are not presented as measured provider speedups.
+
+## Execution state transitions
+
+| Action / condition | Saved state and next work | Verification |
+| --- | --- | --- |
+| New runner training | Schema 5 pins parallel protocol 1, at most 3 investigators | `ParallelNativeTests` |
+| Saved serial training resumes | Original schema/transport retained | `test_saved_serial_run_does_not_acquire_parallel_protocol` |
+| One investigator fails | Other checked packets retained privately; retry missing area | `test_failed_area_reuses_other_checkpointed_areas_after_restart` |
+| Pause after collection | Finished packets retained; synthesis waits for resume | `test_pause_can_checkpoint_but_does_not_begin_synthesis` |
+| Stop or ownership changes | Late results cannot publish checkpoint pointers | cancellation and native ownership guard |
+| Capture changes / explicit refresh | Hash mismatch invalidates packet; request creates new input-bound generation | capture/refresh tests |
+| Fact review objection | Only owning area recollects; whole final digest gets new review | targeted correction test |
+| Prose review objection | Evidence retained; synthesis and independent check repeat | prose correction test |
+| Unknown parallel protocol | Resume refused; no fallback to serial execution | native protocol regression |
+| Overlapping workers | Active wall time uses interval union; assistant time uses sum | `TimingTests`, phone progress journey |
+
+Implementation uses existing Harness Research schema 2. No helper format or published
+training material format changes. Schema 5 is the runner execution record version,
+so older runners refuse it instead of accidentally resuming it serially. The CLI's
+existing standalone skill workflow and older run records are unchanged.
+
+## Synthetic baseline
+
+`scripts/ci/benchmark-research.py` runs the same nine fictional questions and facts
+with one and three investigators, the pinned real helper, and fixed simulated work
+per question. Three repetitions gave median collection 0.7484s / 0.2690s and whole
+workflow 1.2663s / 0.7722s. Synthesis/review simulated work was 0.1230s / 0.1210s;
+the remainder includes helper validation and checkpoint coordination. All six runs
+completed without failure. Tokens and provider costs are unavailable: no provider
+was called. This demonstrates overlap and coordination overhead, not live-model
+speed or training quality. Uneven real questions and serial synthesis/review remain
+on the critical path.

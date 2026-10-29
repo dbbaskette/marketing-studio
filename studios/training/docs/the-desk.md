@@ -43,3 +43,16 @@ Unfinished saved trainings offer **Open on the desk** with a read-only preview a
 Migration requires Training Studio 4.7.0 or newer and raises the existing workspace requirement. Close older running instances first: older already-configured runtimes may ignore the new requirement. Nothing installs or updates automatically. An interrupted opening requires explicit retry with its original preview token; changed recovery records refuse. Losing one receipt or effective record blocks reading and execution; externally deleting every migration trace cannot be detected from unchanged originals alone. See the [migration commands](../skills/training-studio/references/migration.md).
 
 Shared migration requires original records, retained shared inputs and the existing workspace record to match their committed version and index. Commit those saved inputs through the existing workspace workflow first; migration never includes their edits in its metadata commit. Private source/drawing files stay local. A local-only workspace has no peer-replay prerequisite.
+
+New runner trainings with several research questions use up to three investigators.
+Each gathers evidence for part of the approved plan. One writer combines it into a
+report and brief, and a separate reviewer checks the captured sources and originals.
+The progress band shows which areas are working or kept. If an area fails, Retry
+reuses the checked areas. Fact objections revisit their area; wording objections
+return to synthesis. Every changed report receives an independent check.
+
+Elapsed time includes waiting and stopped time. Active time counts overlapping
+workers once; total assistant time adds their durations. Incomplete older timing
+history is identified. Existing trainings continue with their saved workflow.
+The existing allowance is shared across workers; parallelism does not raise it.
+Providers that do not report dollar cost still cannot supply a precise dollar total.

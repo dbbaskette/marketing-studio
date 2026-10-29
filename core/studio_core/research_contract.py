@@ -671,6 +671,17 @@ def check_json(text, spec):
         value = json.loads(text)
         if not isinstance(value, dict) or value.get('schema') != 2:
             problems.append('Return a schema-2 JSON object.')
+        elif spec.get('research_mode'):
+            from studio_core.research_parallel import preparation
+
+            value = preparation(value, spec)
+            kept = json.dumps(value)
+            problems += uncaptured(value['sources'], spec.get('captures', []))
+            if not problems:
+                value, problems, matched = citation_sources(value, spec.get('captures', []))
+                kept = json.dumps(value)
+            if not problems and spec.get('runtime'):
+                problems += refused(value, spec)
         elif 'captures' in spec and isinstance(value.get('sources'), list):
             problems += uncaptured(value['sources'], spec['captures'])
             if not problems:
@@ -682,8 +693,10 @@ def check_json(text, spec):
             if not problems and matched:
                 warnings.append(f'Matched {matched} citation source handle(s) to the same '
                                 'captured source in the dossier. Claims and quotations are unchanged.')
-    except (TypeError, ValueError):
+    except (TypeError, json.JSONDecodeError):
         problems.append('Return valid JSON, without Markdown fences.')
+    except ValueError as error:
+        problems.append(str(error))
     return problems, [{'check': 'research.json', 'status': 'failed' if problems else 'passed',
                        'problems': problems}], warnings, kept
 
@@ -771,8 +784,14 @@ def refused(value, spec):
     can still correct it then; afterwards a refusal would end the whole research step."""
     dossier = {**copy.deepcopy(value), **(spec.get('task') or {})}
     worker = spec.get('worker')
-    if any(not isinstance(fact, dict) or fact.get('author') != worker
-           for fact in dossier.get('facts') or []):
+    if spec.get('research_mode') == 'compose':
+        from studio_core.research_parallel import check_frozen
+
+        frozen = check_frozen(dossier, spec)
+        if frozen is None or frozen:
+            return frozen or ['Synthesis needs the registered investigator evidence.']
+    elif any(not isinstance(fact, dict) or fact.get('author') != worker
+             for fact in dossier.get('facts') or []):
         return [f'Set every fact author to {worker}.']
     folder = Path(spec['folder'])
     saved = {entry['file']: entry for entry in spec['captures'] if entry.get('file')}
@@ -819,6 +838,9 @@ def job_round(name):
     before rounds were named has round None."""
     if name in LEGACY_JOBS:
         return name.partition('-')[2], None
+    parallel = re.fullmatch(r'research:(investigate|synthesize)-(\d+)(?:-area[123])?', str(name))
+    if parallel:
+        return parallel[1], int(parallel[2])
     head, _, rest = str(name).partition(':')
     phase, _, number = rest.rpartition('-')
     if head == 'research' and phase in ('author', 'review') and number.isdigit():
@@ -845,6 +867,11 @@ def last_rounds(attempts_by_name):
              if job_round(name) for attempt in attempts]
     if not tried:
         return None
+    groups = [attempt for _, attempt in tried if attempt.get('research_attempt')]
+    if groups:
+        last = max(groups, key=lambda a: a.get('started_at') or '')['research_attempt']
+        tried = [(found, attempt) for found, attempt in tried
+                 if attempt.get('research_attempt') == last]
     starts = [attempt.get('started_at') or '' for (phase, number), attempt in tried
               if phase == 'author' and number == 1]
     since = max(starts) if starts else ''

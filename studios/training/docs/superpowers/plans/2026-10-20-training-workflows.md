@@ -73,6 +73,9 @@ production detail. Reading a document or expanding details approves nothing.
 | Refresh a review while reading | Expanded and collapsed sections chosen by the reader | Preserve both disclosure states | Grouped disclosure regression and phone walkthrough |
 | Enter final grouped review | Finished materials and supporting records | Materials first, first material expanded; research and planning still available | Final-review ordering regression |
 | Open finished training, including a teammate's | Ready to use | Index action stays in the toolbar while reading | Finished and team page journeys |
+| New research start with multiple approved questions | Schema 5 parallel protocol: up to 3 investigators, synthesis and independent review | `ParallelNativeTests`, `ParallelWorkflowTests` |
+| Interrupted parallel research | Revalidate private packets by input generation and byte hashes; retry only missing/refused areas | partial failure, pause, cancel and changed-capture regressions |
+| Phone progress during parallel research | Show area status and collection/synthesis/review; distinguish elapsed, active and summed assistant time | parallel research phone journey |
 
 ## Yoodli extraction decision
 
