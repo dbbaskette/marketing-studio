@@ -215,7 +215,7 @@ def validate_project(project: dict) -> dict:
     require(all(text(v.get('text')) for v in requirements.values()), 'Describe each required idea.')
     sources = records(project['sources'], 'Sources')
     for source in sources.values():
-        require(source.get('kind') in ('text', 'markdown', 'csv', 'pdf', 'docx', 'html', 'google-doc', 'url', 'research', 'handoff') and sha(source.get('sha256')),
+        require(source.get('kind') in ('text', 'markdown', 'csv', 'pdf', 'docx', 'html', 'google-doc', 'google-slides', 'url', 'research', 'handoff') and sha(source.get('sha256')),
                 'Sources need a supported type and captured hash.')
         require(relative_path(source.get('file')), 'Source files must be workspace-relative paths.')
         require(type(source.get('bytes')) is int and 0 <= source['bytes'] <= MAX_SOURCE_BYTES,
@@ -223,7 +223,7 @@ def validate_project(project: dict) -> dict:
         require(type(source.get('characters')) is int and source['characters'] >= 0,
                 'Record the captured source character count.')
         coverage = source.get('coverage')
-        if source['kind'] in ('pdf', 'docx', 'html', 'google-doc', 'url', 'research', 'handoff'):
+        if source['kind'] in ('pdf', 'docx', 'html', 'google-doc', 'google-slides', 'url', 'research', 'handoff'):
             require(isinstance(coverage, dict), 'Document sources need explicit extraction coverage.')
         if coverage is not None:
             require(isinstance(coverage, dict) and set(coverage) == {'extractor', 'locations', 'warnings', 'acknowledged'}

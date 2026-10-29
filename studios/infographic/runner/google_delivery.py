@@ -79,8 +79,8 @@ def execute(
     expected_revision,
     export_id,
     request_id,
-    account,
-    folder="",
+    account=None,
+    folder=None,
     reconcile=False,
     client=None,
 ):
@@ -89,7 +89,8 @@ def execute(
         "Choose saved delivery and request identities.",
     )
     try:
-        valid_account(account)
+        if account:
+            valid_account(account)
         if folder:
             google_id(folder)
     except GoogleError as failure:
@@ -98,11 +99,20 @@ def execute(
         type(reconcile) is bool,
         "Choose an explicit delivery or read-only reconciliation.",
     )
+    from . import settings
+
+    defaults = settings.snapshot()["google"]
+    if folder is None:
+        folder = defaults["folder"]
+    if not account:
+        account = defaults["account"]
     root = store._project(ident) / "jobs" / ("google_" + request_id)
     with file_lock(root / "operation.lock"):
         intent_path = root / "delivery-intent.json"
         if intent_path.exists():
             intent = _json(root, "delivery-intent.json")
+            if not account:
+                account = intent["account"]
             require(
                 intent["request_id"] == request_id
                 and intent["account"] == account
@@ -122,6 +132,8 @@ def execute(
         else:
             require(not reconcile, "There is no saved Google delivery to reconcile.")
             project, delivery = approved(store, ident, export_id, expected_revision)
+            client = client or Client(account)
+            account = valid_account(account or client.selected_account())
             png = exports.read(store, ident, export_id, "png")[1]
             text = exports.read(store, ident, export_id, "text")[1].decode()
             text += "\n\nCaptured sources\n" + "\n".join(

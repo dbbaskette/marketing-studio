@@ -64,11 +64,12 @@ let responses = {};
 const document = {
   body: { dataset: { standalone: String(Boolean(early.standalone)),
     product: early.product || 'Marketing Studio', tokenHeader: 'X-Test' }, classList: { toggle() {} } },
+  addEventListener() {},
   querySelector: find, querySelectorAll: () => [], createElement: tag => new El(tag),
   createElementNS: (space, tag) => new El(tag), createTextNode: text => ({ textContent: text }),
 };
 const context = {
-  document, console, setTimeout: () => 0, clearTimeout() {}, URL, URLSearchParams, JSON,
+  document, console, setInterval: () => 0, setTimeout: () => 0, clearTimeout() {}, URL, URLSearchParams, JSON,
   location: { hash: '', pathname: '/', origin: 'http://127.0.0.1:1', hostname: '127.0.0.1' },
   history: { replaceState() {} }, sessionStorage: { getItem: () => '', setItem() {} },
   navigator: {}, Option: class extends El { constructor(text, value) { super('option'); this.text = text; this.value = value; } },
@@ -136,7 +137,8 @@ for (const step of steps) {
           filled: buttons.filter(part => /\bbutton-filled\b/.test(part.className)).map(part => part.textContent),
           plain: buttons.filter(part => !/\bbutton-filled\b/.test(part.className)).map(part => part.textContent),
           order: card.children.map(part => part.className),
-          status: state ? [state.children[0].dataset.state, state.children[1].textContent] : null };
+          status: state ? [state.children[0].dataset.state, state.children[1].textContent] : null,
+          running: card.children.find(part => /\bstudio-running\b/.test(part.className || ''))?.textContent || '' };
       }),
       ...(step.ids ? { hidden: Object.fromEntries(step.ids.map(id => [id, find('#' + id).hidden])),
         words: Object.fromEntries(step.ids.map(id => [id, find('#' + id).textContent])) } : {}),

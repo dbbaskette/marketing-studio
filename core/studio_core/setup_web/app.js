@@ -77,7 +77,9 @@ function stateLine(kind, text) {
 }
 function show(next) {
   window.scrollTo(0, 0);
+  const previousView=view;
   view = setup ? 'settings' : next;
+  if(view==='home'&&previousView!=='home'&&snapshot)void refreshHomeStatus();
   for (const name of ['loading', 'home', 'settings', 'computer']) $(`#${name}`).hidden = name !== view;
   $('#view-title').textContent = setup ? `Welcome to ${product}` : ({home: 'Studios', settings: 'Shared settings', computer: 'This computer'})[view];
   document.querySelectorAll('[data-view]').forEach(button => {
@@ -340,15 +342,40 @@ function savedWords() {
   showNotices();
   return names.length ? `Shared settings saved. Connect ${names.join(' and ')} from the studio cards to use the new storage.` : 'Shared settings saved.';
 }
-function renderHome() {
+function studioReadiness(studio){
+  return studio.readiness || (studio.installed?{state:'done',label:'Ready to open',detail:'Local launch available; account access is checked when used.'}:{state:'off',label:'Not installed',detail:'Install this studio explicitly.'});
+}
+let homeRefreshing=false;
+async function refreshHomeStatus(){
+  if(standalone||!snapshot||setup||view!=='home'||document.hidden||homeRefreshing)return;
+  homeRefreshing=true;
+  try{
+    const found=await api('home');
+    if(setup||view!=='home'||document.hidden)return;
+    const structural=JSON.stringify(snapshot.studios.map(s=>[s.id,s.installed,s.path]))!==JSON.stringify(found.studios.map(s=>[s.id,s.installed,s.path]));
+    snapshot.studios=found.studios;
+    if(structural){renderHome(false);return;}
+    for(const studio of found.studios){
+      const card=$(`#studio-list [data-studio="${studio.id}"]`);if(!card)continue;
+      const ready=studioReadiness(studio),line=card.querySelector('.studio-readiness');
+      if(line){line.querySelector('.bead').dataset.state=ready.state;line.lastElementChild.textContent=ready.label;line.title=ready.detail;}
+      const running=card.querySelector('.studio-running');if(running)running.textContent=`${studio.running?'Running · ':''}${studio.version||''}`;
+      const button=card.querySelector('.studio-open');if(button&&!button.disabled)button.textContent=studio.running?`Return to ${studio.name}`:`Open ${studio.name}`;
+    }
+  }catch(failure){
+    // Retain the last readable state while reconnecting, but never show stale green lights.
+    for(const line of document.querySelectorAll('.studio-readiness')){line.querySelector('.bead').dataset.state='review';line.lastElementChild.textContent='Status unavailable';line.title='Reopen the current private link if the app was restarted.';}
+  }finally{homeRefreshing=false;}
+}
+function renderHome(refreshPaths = true) {
   const list = $('#studio-list'); list.replaceChildren();
   for (const studio of snapshot.studios) {
     const card = element('article', '', 'card studio-card');
     card.dataset.studio = studio.id;
     card.append(studioSymbol(studio.id), element('h3', studio.name, 'studio-name'), element('p', studio.description, 'studio-says'));
-    card.append(studio.running ? stateLine('done', 'Running')
-      : studio.installed ? stateLine('none', `Ready${studio.version ? ` · ${studio.version}` : ''}`)
-        : stateLine('off', 'Not installed'));
+    const readiness=studioReadiness(studio);
+    const readyLine=stateLine(readiness.state,readiness.label);readyLine.classList.add('studio-readiness');readyLine.title=readiness.detail;
+    card.append(readyLine,element('p',`${studio.running?'Running · ':''}${studio.version||''}`,'quiet studio-running'));
     const link = studio.workspace;
     if (link) {
       // Where its work lives, read from the studio's own records.
@@ -373,7 +400,7 @@ function renderHome() {
     }
     if (studio.installed) {
       const label = studio.running ? `Return to ${studio.name}` : `Open ${studio.name}`;
-      const button = element('button', label, link?.connect ? 'button' : 'button button-filled');
+      const button = element('button', label, (link?.connect ? 'button' : 'button button-filled')+' studio-open');
       button.addEventListener('click', async () => {
         if (inThisTab((query) => window.matchMedia(query).matches)) {
           button.disabled = true; button.textContent = 'Opening…'; $('#problem').hidden = true;
@@ -413,6 +440,7 @@ function renderHome() {
   const assistant = shared.assistant?.agent === 'codex' ? 'Codex' : 'Claude Code';
   const workspace = shared.team?.repository ? `Repository: ${shared.team.repository}` : `Local Git: ${shared.local?.root || '~/Studios'}`;
   $('#summary-text').textContent = `${assistant}${shared.models?.mode === 'by_task' ? ' · Models by task' : ''}${shared.assistant?.model ? ` (${shared.assistant.model})` : ''}. ${workspace}.`;
+  if(!refreshPaths)return;
   const fields = $('#path-fields'); fields.replaceChildren();
   for (const studio of snapshot.studios) {
     const field = element('div', '', 'field full');
@@ -553,3 +581,11 @@ $('#refresh-models').addEventListener('click', () => loadModels(true));
   }
   catch (error) { $('#loading').hidden = true; inform(error.message, true); }
 })();
+
+// Local inventory only: never launches studios, reads credentials or starts providers.
+if(!standalone){
+  setInterval(refreshHomeStatus,5000);
+  window.addEventListener('focus',refreshHomeStatus);
+  window.addEventListener('pageshow',refreshHomeStatus);
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)void refreshHomeStatus();});
+}

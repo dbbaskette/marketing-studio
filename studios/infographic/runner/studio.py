@@ -91,8 +91,9 @@ def parser():
         for field in fields.get(name, ()):
             operation.add_argument('--' + field, required=True, type=int if field == 'revision' else str)
         if name == 'google-deliver':
-            for key in ('export-id', 'request-id', 'account'): operation.add_argument('--' + key, required=True)
-            operation.add_argument('--folder', default='')
+            for key in ('export-id', 'request-id'): operation.add_argument('--' + key, required=True)
+            operation.add_argument('--account')
+            operation.add_argument('--folder')
             operation.add_argument('--reconcile', action='store_true')
         if name == 'layout': operation.add_argument('--arrangement', choices=('stack', 'columns'), default='stack')
         if name == 'suggest': operation.add_argument('--automatic', action='store_true')

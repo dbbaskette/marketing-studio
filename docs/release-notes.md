@@ -49,3 +49,14 @@ frontend build or document/image SDK. PDF extraction and Google access use expli
 installed optional tools. Real Google conversion fidelity, both live image-provider
 routes and owner illustration sign-off remain separate from offline success. See
 [first-release readiness](infographic-first-release-readiness.md) before publishing.
+
+
+### Google intake and home readiness corrections
+
+Infographic Studio Google intake now accepts Docs and Slides links using the existing
+default Google sign-in, without a repeated account form. Captured Slides text includes
+tables and speaker notes; unread visual material is shown as a coverage gap. Delivery
+uses Marketing Studio’s shared output default. The home screen separates **Ready to
+open** from **Running**, refreshes status while visible and on return, preserves unsaved
+settings, and clears stale green indicators when the server cannot be reached. Local
+readiness never claims provider sign-in or successful generation.

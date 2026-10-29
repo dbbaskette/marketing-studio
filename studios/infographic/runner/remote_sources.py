@@ -3,14 +3,14 @@
 from __future__ import annotations
 import re
 from urllib.parse import urlsplit
-from studio_core.google_api import Client, DOC_MIME, GoogleError
+from studio_core.google_api import Client, DOC_MIME, SLIDES_MIME, GoogleError
 from studio_core import public_fetch
 from . import documents, intake
 from .contracts import Invalid, canonical, digest
 from .validation import require
 
 
-def doc_id(value):
+def google_reference(value):
     require(
         isinstance(value, str) and len(value) < 2000, "Give a Google document link."
     )
@@ -19,17 +19,113 @@ def doc_id(value):
     except ValueError:
         raise Invalid("Give a canonical Google document link.") from None
     match = re.fullmatch(
-        r"/document/(?:u/[0-9]+/)?d/([A-Za-z0-9_-]{1,200})(?:/(?:edit|preview|view))?/?",
+        r"/(document|presentation)/(?:u/[0-9]+/)?d/([A-Za-z0-9_-]{1,200})(?:/(?:edit|preview|view|present))?/?",
         parts.path,
     )
     require(
         parts.scheme == "https"
         and parts.netloc == "docs.google.com"
         and match is not None,
-        "Use https://docs.google.com/document/d/ID/edit for a Google document.",
+        "Paste a Google Docs or Google Slides link copied from its Share menu.",
     )
     # Google share links may carry ordinary tab/share parameters; they never choose the API destination.
-    return match.group(1)
+    return match.group(1), match.group(2)
+
+
+def doc_id(value):
+    kind, ident = google_reference(value)
+    require(kind == "document", "Use a Google Docs link for a document.")
+    return ident
+
+
+def extract_presentation(presentation, selected=None):
+    slides = presentation.get("slides", [])
+    require(
+        isinstance(slides, list) and 0 < len(slides) <= 200,
+        "Choose a presentation with 1–200 readable slides.",
+    )
+    require(
+        selected is None
+        or isinstance(selected, list)
+        and selected
+        and len(set(selected)) == len(selected)
+        and all(isinstance(i, str) for i in selected),
+        "Choose distinct slide identities or include all slides.",
+    )
+    if selected is not None:
+        require(
+            set(selected) <= {s.get("objectId") for s in slides},
+            "A selected slide is unavailable. Read a fresh preview.",
+        )
+    chunks, locations, warnings, snapshot = [], [], set(), []
+    cursor = 0
+
+    def elements(items, label, depth=0):
+        nonlocal cursor
+        require(depth < 20, "Slide groups are nested too deeply.")
+        for item in items:
+            if "elementGroup" in item:
+                elements(item["elementGroup"].get("children", []), label, depth + 1)
+            values = []
+            if "shape" in item:
+                values.append(item["shape"].get("text", {}))
+            if "table" in item:
+                for row in item["table"].get("tableRows", []):
+                    for cell in row.get("tableCells", []):
+                        values.append(cell.get("text", {}))
+            for value in values:
+                text = "".join(
+                    e.get("textRun", {}).get("content", "")
+                    for e in value.get("textElements", [])
+                ).strip()
+                if text:
+                    text += "\n"
+                    locations.append(
+                        {
+                            "label": label + " / " + str(item.get("objectId", "text")),
+                            "start": cursor,
+                            "end": cursor + len(text),
+                        }
+                    )
+                    chunks.append(text)
+                    cursor += len(text)
+            if any(k in item for k in ("image", "sheetsChart", "video", "wordArt")):
+                warnings.add(
+                    "Images, charts, video and WordArt are not interpreted. Supply their meaningful text or data separately."
+                )
+
+    for number, slide in enumerate(slides, 1):
+        if selected is not None and slide.get("objectId") not in selected:
+            continue
+        start = cursor
+        elements(slide.get("pageElements", []), "Slide " + str(number))
+        notes = slide.get("slideProperties", {}).get("notesPage", {})
+        speaker = notes.get("notesProperties", {}).get("speakerNotesObjectId")
+        if speaker:
+            elements(
+                [
+                    e
+                    for e in notes.get("pageElements", [])
+                    if e.get("objectId") == speaker
+                ],
+                "Slide " + str(number) + " speaker notes",
+            )
+        # Preserve selected text/locations, without signed image/content URLs or unselected slides.
+        snapshot.append(
+            {
+                "id": slide.get("objectId"),
+                "number": number,
+                "text": "".join(chunks)[start:cursor],
+            }
+        )
+    text = "".join(chunks)
+    return {
+        "text": text,
+        "extractor": "google-slides-text-v1",
+        "locations": locations,
+        "warnings": sorted(warnings),
+        "readable": bool(text.strip()),
+    }, snapshot
 
 
 def extract_document(document, selected_tabs=None):
@@ -138,24 +234,27 @@ def extract_document(document, selected_tabs=None):
     }, snapshot
 
 
-def google(url, *, account, tabs=None, client=None):
-    ident = doc_id(url)
+def google(url, *, account=None, tabs=None, client=None):
+    kind, ident = google_reference(url)
+    is_doc = kind == "document"
     try:
         client = client or Client(account)
         before = client.file(ident)
         require(
             before.get("id") == ident
-            and before.get("mimeType") == DOC_MIME
+            and before.get("mimeType") == (DOC_MIME if is_doc else SLIDES_MIME)
             and not before.get("trashed")
             and before.get("capabilities", {}).get("canDownload") is True,
             "This account cannot capture this Google document. Check read/download permissions or upload an allowed text copy.",
         )
-        document = client.document(ident)
+        document = client.document(ident) if is_doc else client.presentation(ident)
         require(
-            document.get("documentId") == ident,
+            document.get("documentId" if is_doc else "presentationId") == ident,
             "Google returned a different document identity.",
         )
-        extracted, snapshot = extract_document(document, tabs)
+        extracted, snapshot = (extract_document if is_doc else extract_presentation)(
+            document, tabs
+        )
         after = client.file(ident)
         require(
             before.get("version")
@@ -174,7 +273,7 @@ def google(url, *, account, tabs=None, client=None):
             "The Google document changed while being read. Preview a fresh revision; existing local work is kept.",
         )
         saved = {
-            "document_id": ident,
+            "document_id" if is_doc else "presentation_id": ident,
             "version": before["version"],
             "modified": before["modifiedTime"],
             "revision": document.get("revisionId"),
@@ -182,14 +281,14 @@ def google(url, *, account, tabs=None, client=None):
         }
         return intake.prepare(
             canonical(saved),
-            kind="google-doc",
+            kind="google-doc" if is_doc else "google-slides",
             name=str(before.get("name") or "Google document")[:200]
             .replace("/", "-")
             .replace("\\", "-"),
             extracted=extracted,
             provenance={
-                "url": "https://docs.google.com/document/d/" + ident + "/edit",
-                "document_id": ident,
+                "url": "https://docs.google.com/" + kind + "/d/" + ident + "/edit",
+                "document_id" if is_doc else "presentation_id": ident,
                 "version": before["version"],
                 "modified": before["modifiedTime"],
                 "tabs": [t["id"] for t in snapshot],

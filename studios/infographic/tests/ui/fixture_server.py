@@ -50,19 +50,23 @@ def main():
                           MARKETING_STUDIO_DATA=str(root / 'marketing-data'),
                           STUDIOS_CONFIG=str(root / 'settings.json'), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
         (root / 'settings.json').write_text(json.dumps({'schema': 1, 'assistant': {'agent': 'codex', 'model': None},
-            'person': {'name': 'Synthetic Author'}, 'local': {'root': str(root / 'work')}}))
+            'output':'google' if args.remote else 'pptx', 'person': {'name': 'Synthetic Author'}, 'local': {'root': str(root / 'work')}}))
         store = Store.setup()
         settings.save({'renderer': str(args.renderer)}, expected=settings.snapshot()['native_revision'])
         if args.remote:
             from runner import remote_sources,google_delivery
-            from studio_core.google_api import DOC_MIME
+            from studio_core.google_api import DOC_MIME,SLIDES_MIME
             class Google:
                 def __init__(self,account):
-                    assert account=='editor@example.invalid'
+                    assert account in (None,'editor@example.invalid')
+                    self.account='editor@example.invalid'
+                def selected_account(self):return self.account
                 def file(self,ident):
-                    return {'id':ident,'mimeType':DOC_MIME,'name':'Synthetic Google source','version':'7','modifiedTime':'2026-10-28T00:00:00Z','capabilities':{'canDownload':True}}
+                    return {'id':ident,'mimeType':SLIDES_MIME if ident=='synthetic_slides' else DOC_MIME,'name':'Synthetic Google slides' if ident=='synthetic_slides' else 'Synthetic Google source','version':'7','modifiedTime':'2026-10-28T00:00:00Z','capabilities':{'canDownload':True}}
                 def document(self,ident):
                     return {'documentId':ident,'tabs':[{'tabProperties':{'tabId':'main','title':'Main'},'documentTab':{'body':{'content':[{'paragraph':{'elements':[{'textRun':{'content':'One instance restarts while the others serve.'}}]}}]}}}]}
+                def presentation(self,ident):
+                    return {'presentationId':ident,'slides':[{'objectId':'slide_a','pageElements':[{'objectId':'body','shape':{'text':{'textElements':[{'textRun':{'content':'One instance restarts while the others serve.'}}]}}}]}]}
                 def create_document(self,payload,**values):
                     assert payload.startswith(b'PK')
                     return {'id':'synthetic_delivered','mimeType':DOC_MIME,'appProperties':{'infographic_request':values['request_key'],'infographic_payload':values['payload_hash']}}

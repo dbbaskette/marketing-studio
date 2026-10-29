@@ -132,7 +132,7 @@ async function newSheet() {
     });
     add(form,upload.wrap,make('p','quiet',draft.upload?'Selected: '+draft.upload.name:'Files are read locally. No OCR, linked-resource fetch or assistant work starts during this preview.'));
     form.append(button('Import selected studio material',()=>handoffSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
-    form.append(button('Add a Google Doc or public page',()=>remoteSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
+    form.append(button('Add a Google Doc, Slides or public page',()=>remoteSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
     if(draft.upload)form.append(button('Remove selected CSV',()=>{draft.upload=null;draft.csv=null;draft.selection=null;newSheet();}));
     for (const material of draft.materials) {
       const preview = material.preview;
@@ -285,7 +285,7 @@ async function showSettings() {
     };
     const imageDefaults = [];
     if (preferences.image_provider === 'gemini') imageDefaults.push(model.wrap);
-    imageDefaults.push(teamEmail.wrap,googleAccount.wrap,googleFolder.wrap,make('p','quiet','Uses the selected existing gcloud sign-in only when you explicitly read or deliver a Google Doc. No login or account access starts here.'),detail('Advanced renderer setting', renderer.wrap),
+    imageDefaults.push(teamEmail.wrap,detail('Advanced Google account override',make('p','quiet','Leave empty to use the same existing Google sign-in as Blog Studio.'),googleAccount.wrap,googleFolder.wrap),make('p','quiet','Uses the selected existing gcloud sign-in only when you explicitly read or deliver a Google Doc. No login or account access starts here.'),detail('Advanced renderer setting', renderer.wrap),
       make('p', 'quiet', 'Defaults apply to new work. Your existing workspace and saved brand stay in place.'),
       button('Save defaults', async () => {
         try {
@@ -349,7 +349,7 @@ function sourceSheet() {
       if(!preview.readable)problem.textContent='No readable text was found. Supply an accessible Word or text version.';
     }catch(failure){preview=null;problem.textContent=failure.message;}finally{go.disabled=false;}
   });
-  sheet('Update supplied information',make('p','','Import keeps a new source revision and clears dependent story/page approval. Earlier work remains in history.'),replacement.wrap,value.wrap,upload.wrap,button('Use a Google Doc or public page',()=>remoteSheet(result=>{preview=result;acknowledged=false;sourceImportSheet(result,replacement.input.value);})),shown,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
+  sheet('Update supplied information',make('p','','Import keeps a new source revision and clears dependent story/page approval. Earlier work remains in history.'),replacement.wrap,value.wrap,upload.wrap,button('Use a Google Doc, Slides or public page',()=>remoteSheet(result=>{preview=result;acknowledged=false;sourceImportSheet(result,replacement.input.value);})),shown,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
 }
 async function sourceTextSheet(source,start=0){
   try{
@@ -370,35 +370,36 @@ function briefSheet(){const p=held.project,fields={};for(const[key,label,value]o
 
 function googleLink(url,label){const link=make('a','button',label);link.href=url;link.target='_blank';link.rel='noopener noreferrer';return link;}
 async function remoteSheet(done){
-  try{preferences=await request('/api/preferences');}catch(f){error(f.message);return;}
-  const kind=field('Source type','google-doc','select');for(const[value,label]of[['google-doc','Google Doc'],['url','Public HTTPS page']]){const option=make('option','',label);option.value=value;kind.input.append(option);}kind.input.value='google-doc';
-  const url=field('Document or page link'),account=field('Google account email',preferences.native.google_account||''),tabs=field('Google tab IDs, comma separated (optional; otherwise all tabs)');
+  const url=field('Document or page link'),tabs=field('Tab or slide IDs, comma separated (optional; otherwise all)');
+  url.input.type='url';url.input.placeholder='Paste a Google Docs, Google Slides or public HTTPS link';
   const problem=make('p','problem');problem.setAttribute('role','alert');
-  kind.input.addEventListener('change',()=>{account.wrap.hidden=tabs.wrap.hidden=kind.input.value!=='google-doc';});
   const go=button('Read and preview',async()=>{go.disabled=true;problem.textContent='';try{
-    const sent={kind:kind.input.value,url:url.input.value};if(sent.kind==='google-doc'){sent.account=account.input.value;if(tabs.input.value.trim())sent.tabs=tabs.input.value.split(',').map(t=>t.trim());}
+    const value=url.input.value.trim();let parsed;try{parsed=new URL(value);}catch(f){throw Error('Paste the full https link copied from Share or the address bar.');}
+    const sent={kind:parsed.hostname==='docs.google.com'?'google-doc':'url',url:value};
+    if(sent.kind==='google-doc'&&tabs.input.value.trim())sent.tabs=tabs.input.value.split(',').map(t=>t.trim());
     const preview=await request('/api/remote-preview',sent);done(preview);
   }catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
-  sheet('Add remote information',make('p','','Read only this selected document or page. Review the captured text and extraction gaps before import. Linked images and other pages are not fetched.'),kind.wrap,url.wrap,account.wrap,detail('Select Google tabs',tabs.wrap),problem,add(make('div','bar'),go,button('Cancel',()=>{closeSheet();if(!held)newSheet();})));
+  sheet('Add a document or page',make('p','','Paste a Google Docs, Google Slides or public page link. Uses your existing Google sign-in, just like Blog Studio. Review captured text before importing.'),url.wrap,detail('Choose specific tabs or slides',tabs.wrap),problem,add(make('div','bar'),go,button('Cancel',()=>{closeSheet();if(!held)newSheet();})));
 }
+
 function sourceImportSheet(preview,replaceId){
   let acknowledged=false;const problem=make('p','problem'),ack=make('input');ack.type='checkbox';ack.addEventListener('change',()=>{acknowledged=ack.checked;});
   sheet('Review captured information',make('p','',preview.name+' · '+preview.characters+' readable characters'),make('pre','ig-csv-preview',preview.excerpt),list(preview.warnings),preview.warnings.length?add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only readable text.')):make('p','quiet','Captured text is stored locally; import does not read the remote document again.'),problem,add(make('div','bar'),button('Import this capture',()=>{if(!preview.readable||(preview.warnings.length&&!acknowledged)){problem.textContent='Review readable coverage and acknowledge gaps before import.';return;}action('source-import',{capture_id:preview.id,acknowledge_warnings:acknowledged,...(replaceId?{replace_id:replaceId}:{})});},true),button('Cancel',closeSheet)));
 }
 async function deliverySheet(delivery){
   try{preferences=await request('/api/preferences');}catch(f){error(f.message);return;}
-  const format=field('Output','both','select');for(const[value,label]of[['both','Google Doc and PDF'],['google','Google Doc'],['pdf','PDF']]){const option=make('option','',label);option.value=value;format.input.append(option);}format.input.value='both';
-  const account=field('Google account email',preferences.native.google_account||''),folder=field('Destination folder ID (optional)',preferences.native.google_folder||'');
+  const format=field('Output',preferences.delivery_default||'pdf','select');for(const[value,label]of[['both','Google Doc and PDF'],['google','Google Doc'],['pdf','PDF']]){const option=make('option','',label);option.value=value;format.input.append(option);}format.input.value=preferences.delivery_default||'pdf';
+  const folder=field('Destination folder ID (optional)',preferences.google?.folder||'');
   const problem=make('p','problem'),savedRequest=requestId();
-  format.input.addEventListener('change',()=>{account.wrap.hidden=folder.wrap.hidden=format.input.value==='pdf';});
+  format.input.addEventListener('change',()=>{folder.wrap.hidden=format.input.value==='pdf';});
   const go=button('Deliver approved page',async()=>{go.disabled=true;problem.textContent='';try{
     if(format.input.value!=='google')await download(delivery,'pdf');
     if(format.input.value==='pdf'){closeSheet();return;}
-    const result=await action('google-deliver',{export_id:delivery.id,request_id:savedRequest,account:account.input.value,folder:folder.input.value});
+    const result=await action('google-deliver',{export_id:delivery.id,request_id:savedRequest,folder:folder.input.value});
     if(result?.url)sheet('Google Doc delivered',googleLink(result.url,'Open Google Doc'),button('Done',closeSheet));
     else if(result)error(result.message||'Keep the PDF and reconcile the saved Google request. Nothing is automatically resent.');
   }catch(f){problem.textContent=f.message;}finally{go.disabled=false;}},true);
-  sheet('Deliver this approved revision',make('p','','PDF preserves the exact approved one-page render. A new Google Doc contains that page as an image, plus editable text and source notes. Your original document is kept. Google conversion layout requires visual review in Docs.'),format.wrap,account.wrap,folder.wrap,problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
+  sheet('Deliver this approved revision',make('p','','PDF preserves the exact approved one-page render. A new Google Doc contains that page as an image, plus editable text and source notes. Your original document is kept. Google conversion layout requires visual review in Docs.'),make('p','quiet','Starts with your shared Marketing Studio delivery choice and existing Google sign-in.'),format.wrap,detail('Choose a destination folder',folder.wrap),problem,add(make('div','bar'),go,button('Cancel',closeSheet)));
 }
 
 async function handoffSheet(done){

@@ -42,7 +42,7 @@ export PATH="$work/tools/bin:$PATH"
 # Real helper contract checks use source only, never an installed skill or provider.
 export STUDIO_TEST_RESEARCH_RUNTIME="$work/research-runtime"
 "$python" scripts/ci/research-runtime.py "$STUDIO_TEST_RESEARCH_RUNTIME" > "$results_dir/research-runtime.log" 2>&1
-if [[ "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic-followups || "${1:-full}" == infographic || "${1:-full}" == infographic-finish || "${1:-full}" == infographic-after-root || "${1:-full}" == infographic-acceptance ]]; then
+if [[ "${1:-full}" == infographic-google-finish || "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic-followups || "${1:-full}" == infographic || "${1:-full}" == infographic-finish || "${1:-full}" == infographic-after-root || "${1:-full}" == infographic-acceptance ]]; then
   # These are explicit CI preparation steps in the disposable clone, not tests
   # downloading software or touching a signed-in machine.
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/graphics" --cache "$work/graphics-cache")"
@@ -61,13 +61,22 @@ if [[ "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic
       node studios/infographic/tests/ui/intake.cjs
       INFOGRAPHIC_STUDIO_TEST_REMOTE=1 node studios/infographic/tests/ui/journey.cjs
     } 2>&1 | tee "$results_dir/final-bridge-delivery-tests.log"
-  elif [[ "${1:-full}" == infographic-followups ]]; then
+  elif [[ "${1:-full}" == infographic-followups || "${1:-full}" == infographic-google-finish ]]; then
     # New core modules are additive; unchanged studio suites retain their earlier evidence.
     {
-      "$python" -m unittest discover -s tests -v
+      if [[ "${1:-full}" == infographic-google-finish ]]; then
+        # The broad root run completed; correct the two retired running-light
+        # expectations and the upstream product-name comment, then reuse other cases.
+        PYTHONPATH=tests "$python" -m unittest test_layout_pass test_shared_runner test_home -v
+        (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_sync -v)
+      else
+        "$python" -m unittest discover -s tests -v
+      fi
       "$python" -m unittest discover -s studios/infographic/tests -v
       bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
     } 2>&1 | tee "$results_dir/tests.log"
+    node studios/infographic/tests/ui/home-readiness.cjs 2>&1 | tee "$results_dir/home-readiness-browser.log"
+    INFOGRAPHIC_STUDIO_TEST_REMOTE=1 INFOGRAPHIC_STUDIO_TEST_SLIDES=1 node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-slides-browser.log"
     node studios/infographic/tests/ui/intake.cjs 2>&1 | tee "$results_dir/infographic-intake-browser.log"
     INFOGRAPHIC_STUDIO_TEST_REMOTE=1 node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-google-browser.log"
   elif [[ "${1:-full}" == infographic-acceptance ]]; then
@@ -105,7 +114,7 @@ if [[ "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic
   node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-browser.log"
   node studios/infographic/tests/ui/suite-return.cjs 2>&1 | tee "$results_dir/suite-return-browser.log"
   pattern='infographic-first-release-*-macos-arm64.zip'
-  if [[ "${1:-full}" == infographic-followups || "${1:-full}" == infographic-followups-final ]]; then pattern='infographic-followups-*-macos-arm64.zip'; fi
+  if [[ "${1:-full}" == infographic-followups || "${1:-full}" == infographic-followups-final || "${1:-full}" == infographic-google-finish ]]; then pattern='infographic-followups-*-macos-arm64.zip'; fi
   bundle="$(find dist -maxdepth 1 -name "$pattern" -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
   "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"
