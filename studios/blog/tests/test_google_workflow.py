@@ -363,7 +363,9 @@ class GoogleWorkflowTests(unittest.TestCase):
         directory, record = studio.item(self.root, 'sources', source['id'])
         self.assertEqual((directory / 'content.md').read_text(), body)
         self.assertEqual(record['google_document']['tab_ids'], ['t.0'])
-        self.assertEqual(record['origin'], 'https://docs.google.com/document/d/fixture-doc/edit')
+        self.assertEqual(
+            record['origin'], 'https://docs.google.com/document/d/fixture-doc/edit?tab=t.0'
+        )
 
     def test_secret_fields_bad_urls_and_forged_content_fail_before_save(self):
         for changes in (

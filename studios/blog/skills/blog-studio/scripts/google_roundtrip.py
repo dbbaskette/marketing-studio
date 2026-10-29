@@ -50,6 +50,47 @@ def tabs(document):
     return result
 
 
+def select_tabs(document, selected):
+    """Keep exact native tab bodies, excluding children and unrelated document text.
+
+    Global review threads are intentionally omitted: their scope may be unknown.
+    Inline markers in the selected tab still describe its pending suggestions.
+    """
+    if (
+        not isinstance(selected, list)
+        or not selected
+        or any(not isinstance(t, str) for t in selected)
+        or len(set(selected)) != len(selected)
+    ):
+        raise GoogleError('Choose explicit unique Google tab IDs.')
+    listed = tabs(document)
+    identities = [tab.get('tabProperties', {}).get('tabId') for tab in listed]
+    if any(identities.count(ident) != 1 for ident in selected):
+        raise GoogleError(
+            'The selected Google tab is missing or ambiguous. Copy its current tab link again.'
+        )
+    result = {
+        key: copy.deepcopy(document[key])
+        for key in (
+            'documentId',
+            'revisionId',
+            'title',
+            'suggestionsViewMode',
+            'documentStyle',
+            'namedStyles',
+        )
+        if key in document
+    }
+    result['tabs'] = [
+        copy.deepcopy({key: value for key, value in tab.items() if key != 'childTabs'})
+        for tab in listed
+        if tab['tabProperties']['tabId'] in selected
+    ]
+    for tab in result['tabs']:
+        tab.get('documentTab', {}).pop('commentAnchors', None)
+    return result
+
+
 def suggestions(value):
     if isinstance(value, dict):
         return any(
@@ -240,7 +281,7 @@ def redacted(document):
 
 
 def capture(client, file_id, tab_id, output, include_review=False):
-    """Capture a whole single-tab Doc at one revision.
+    """Capture a single-tab Doc, or one explicit tab without whole-document exports.
 
     Accepted text comes from Google's suggestions-excluded view, so a teammate's
     pending suggestion never blocks a capture and is never accepted or rejected.
@@ -254,8 +295,16 @@ def capture(client, file_id, tab_id, output, include_review=False):
         raise GoogleError('Choose a new snapshot directory.')
     before = client.metadata(file_id)
     inline, accepted = read_views(client, file_id)
-    pending = accepted is not inline
     selected = tabs(inline)
+    scoped = len(selected) > 1
+    if scoped:
+        if tab_id is None:
+            raise GoogleError(
+                'This Doc has multiple tabs. Open the tab you want in Google Docs and paste its tab-specific address.'
+            )
+        inline, accepted = select_tabs(inline, [tab_id]), select_tabs(accepted, [tab_id])
+        selected = tabs(inline)
+    pending = suggestions(inline)
     only = selected[0]['tabProperties']['tabId'] if len(selected) == 1 else None
     if only is None or tab_id not in (None, only):
         raise GoogleError(
@@ -263,14 +312,22 @@ def capture(client, file_id, tab_id, output, include_review=False):
             'so other tabs are not copied.'
         )
     native, review_state, threads = inline, None, None
-    if pending or include_review:
+    if scoped and (pending or include_review):
+        review_state = {
+            'pending': len(suggestion_ids(inline)),
+            'accepted': 0,
+            'rejected': 0,
+            'unresolved_comments': 0,
+        }
+        threads = 'markers'
+    elif pending or include_review:
         review, review_state, threads = review_counts(client, file_id, inline)
         native = review or inline
     try:
         markdown = accepted_markdown(accepted)
         projection = PROJECTION
     except GoogleError:
-        if pending:
+        if pending or scoped:
             # Google's export would show the pending suggestions: Blog Studio reads the Doc
             # as it is without them itself, images and all.
             from google_suggestions import image_data, images_in, image_order
@@ -279,7 +336,11 @@ def capture(client, file_id, tab_id, output, include_review=False):
             # without suggestions, has the same image data; Google's image host otherwise.
             images = image_data(client, accepted)
             try:
-                exported = images_in(client.export(file_id, 'md').decode('utf-8', 'replace'))
+                exported = (
+                    []
+                    if scoped
+                    else images_in(client.export(file_id, 'md').decode('utf-8', 'replace'))
+                )
             except (GoogleError, AttributeError):
                 exported = []
             if exported and len(exported) == len(image_order(accepted)) and all(exported):
@@ -294,7 +355,7 @@ def capture(client, file_id, tab_id, output, include_review=False):
 
         text = markdown.decode('utf-8', 'replace') if isinstance(markdown, bytes) else markdown
         markdown = fit_images(text)[0].encode()
-    word = client.export(file_id, 'docx')
+    word = None if scoped else client.export(file_id, 'docx')
     after_doc = inline_read(client, file_id)
     after = client.metadata(file_id)
     if (
@@ -307,9 +368,10 @@ def capture(client, file_id, tab_id, output, include_review=False):
         )
     files = {
         'document.md': markdown,
-        'document.docx': word,
         'native.json': encoded(redacted(native)),
     }
+    if word is not None:
+        files['document.docx'] = word
     if pending:
         files['accepted.json'] = encoded(redacted(accepted))
     stamp = datetime.now(timezone.utc).isoformat()
@@ -327,7 +389,7 @@ def capture(client, file_id, tab_id, output, include_review=False):
     if review_state is not None:
         shared['review_state'] = review_state
     meta = {
-        'schema': 3,
+        'schema': 4 if scoped else 3,
         **shared,
         'drive_version': before['version'],
         'structure': structure(accepted),
@@ -338,7 +400,10 @@ def capture(client, file_id, tab_id, output, include_review=False):
     observation = {
         'schema': 1,
         **shared,
-        'url': 'https://docs.google.com/document/d/' + file_id + '/edit',
+        'url': 'https://docs.google.com/document/d/'
+        + file_id
+        + '/edit'
+        + ('?tab=' + only if scoped else ''),
         'suggestions': 'excluded' if pending else 'none',
         'structure_verified': False,
     }
@@ -353,6 +418,11 @@ def capture(client, file_id, tab_id, output, include_review=False):
         'review_threads': threads,
         'structure': meta['structure'],
     }
+    if scoped:
+        summary['selected_tab'] = {
+            'id': only,
+            'title': selected[0]['tabProperties'].get('title') or only,
+        }
     step = (
         'Check this summary against what you expect of the Doc and read only the Markdown passages you need. '
         'Then set structure_verified in the observation when a start or handoff confirmation requires it, and '
@@ -700,7 +770,7 @@ def build_parser():
     commands = parser.add_subparsers(dest='action', required=True)
     p = commands.add_parser('capture')
     p.add_argument('--file-id', required=True)
-    p.add_argument('--tab-id', help='Optional; a single-tab Doc needs no tab ID.')
+    p.add_argument('--tab-id', help='Select exactly one tab; required for a multi-tab Doc.')
     p.add_argument(
         '--output',
         type=Path,
