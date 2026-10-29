@@ -24,7 +24,10 @@ def preview(root, data):
     snapshot = folder / 'snapshot'
     try:
         summary = roundtrip.capture(
-            drive.Client(account), current['google']['document_id'], None, snapshot
+            drive.Client(account),
+            current['google']['document_id'],
+            _tab(root, current['id']),
+            snapshot,
         )
         observation, body = workflow.observed(
             SimpleNamespace(snapshot=str(snapshot), observation=None, file=None)
@@ -100,7 +103,10 @@ def accept(root, data):
     fresh = folder / ('check-' + uuid.uuid4().hex)
     try:
         roundtrip.capture(
-            drive.Client(saved['account']), current['google']['document_id'], None, fresh
+            drive.Client(saved['account']),
+            current['google']['document_id'],
+            _tab(root, current['id']),
+            fresh,
         )
         observation, body = workflow.observed(
             SimpleNamespace(snapshot=str(fresh), observation=None, file=None)
@@ -148,6 +154,14 @@ def accept(root, data):
         return saved['result']
     finally:
         drive.discard(root, fresh)
+
+
+def _tab(root, ident):
+    _, record = studio.item(root, 'articles', ident)
+    ids = record['google']['baselines']['draft']['document']['tab_ids']
+    if len(ids) != 1:
+        raise ValueError('Choose one linked Google tab before comparing this manuscript.')
+    return ids[0]
 
 
 def remote_guard(observation):

@@ -22,6 +22,8 @@ Generated from `studio.py`; use `--help` on a listed command for required inputs
 | `studio.py desk handoff` | `--article`, `--input` |
 | `studio.py desk scope` | `--article`, `--input` |
 | `studio.py desk outline-save` | `--article`, `--input` |
+| `studio.py desk migration-preview` | `--article` |
+| `studio.py desk migrate` | `--article`, `--expected` |
 | `studio.py saved-work` | `--folder` |
 | `studio.py init` | — |
 | `studio.py list` | — |

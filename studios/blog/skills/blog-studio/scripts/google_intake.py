@@ -27,7 +27,7 @@ def document_id(value):
     return drive.identifier(match[1])
 
 
-def linked(root, file_id):
+def linked(root, file_id, tab_id=None):
     matches = []
     for path in sorted(studio.inside(root, 'articles').iterdir()):
         if not path.is_dir() or path.name.startswith('.'):
@@ -36,6 +36,9 @@ def linked(root, file_id):
         baselines = mapping(mapping(record.get('google')).get('baselines'))
         if any(
             mapping(mapping(base).get('document')).get('document_id') == file_id
+            and (
+                tab_id is None or mapping(mapping(base).get('document')).get('tab_ids') == [tab_id]
+            )
             for base in baselines.values()
         ):
             matches.append(record)
@@ -47,7 +50,10 @@ def linked(root, file_id):
             'status': 'already-linked',
             'id': record['id'],
             'title': record['title'],
-            'linked_document': 'https://docs.google.com/document/d/' + file_id + '/edit',
+            'linked_document': 'https://docs.google.com/document/d/'
+            + file_id
+            + '/edit'
+            + ('?tab=' + tab_id if tab_id else ''),
         }
     return None
 
@@ -56,8 +62,14 @@ def tab_of(value):
     """The tab a Google Doc link names (`?tab=t.…`), or None for the Doc as a whole."""
     if not isinstance(value, str):
         return None
-    found = (parse_qs(urlsplit(value.strip()).query).get('tab') or [''])[0]
-    return found if re.fullmatch(r'[A-Za-z0-9_.-]{1,200}', found) else None
+    choices = parse_qs(urlsplit(value.strip()).query, keep_blank_values=True).get('tab')
+    if choices is None:
+        return None
+    if len(choices) != 1 or not re.fullmatch(r'[A-Za-z0-9_.-]{1,200}', choices[0]):
+        raise ValueError(
+            'The tab address is invalid or ambiguous. Open the tab and copy its current address again.'
+        )
+    return choices[0]
 
 
 def tab_text(tab):
@@ -174,7 +186,8 @@ def preview(root, data):
     if set(data) != {'url'}:
         raise ValueError('Provide only the Google Doc link to preview.')
     file_id = document_id(data['url'])
-    existing = linked(root, file_id)
+    wanted = tab_of(data['url'])
+    existing = linked(root, file_id, wanted)
     if existing:
         return existing
     token = uuid.uuid4().hex
@@ -182,7 +195,7 @@ def preview(root, data):
     folder.mkdir(mode=0o700)
     snapshot = folder / 'snapshot'
     try:
-        result = roundtrip.capture(drive.Client(drive.account_for(root)), file_id, None, snapshot)
+        result = roundtrip.capture(drive.Client(drive.account_for(root)), file_id, wanted, snapshot)
         body = (snapshot / 'document.md').read_text()
         content = text_only(body)
         if not content.strip() or len(content) > 200_000:
@@ -193,7 +206,7 @@ def preview(root, data):
             'status': 'preview',
             'preview': token,
             'title': title,
-            'linked_document': 'https://docs.google.com/document/d/' + file_id + '/edit',
+            'linked_document': studio.read_json(snapshot / 'observation.json')['url'],
             'summary': result['summary'],
             'expected': fingerprint(snapshot),
         }
@@ -221,7 +234,7 @@ def start(root, data):
         raise ValueError('This preview changed. Preview the Google Doc again before importing.')
     if saved.get('result'):
         return saved['result']
-    existing = linked(root, document_id(saved['linked_document']))
+    existing = linked(root, document_id(saved['linked_document']), tab_of(saved['linked_document']))
     if existing:
         drive.discard(root, folder / 'snapshot')
         saved['result'] = existing
