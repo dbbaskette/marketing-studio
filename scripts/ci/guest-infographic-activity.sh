@@ -4,4 +4,4 @@ set -euo pipefail
 program="$(mktemp "${TMPDIR:-/tmp}/infographic-activity-guest.XXXXXX")"
 trap 'rm -f "$program"' EXIT
 cp "$(dirname "$0")/guest-test.sh" "$program"
-bash "$program" infographic-activity
+bash "$program" "${1:-infographic-activity}"

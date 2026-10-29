@@ -60,7 +60,7 @@ if(location.hash)history.replaceState(null,'',location.pathname);
 const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
 const draft = {materials: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
-const error = message => { $('notice').textContent = message; $('notice').hidden = !message; for(const node of document.querySelectorAll('[data-work-error]'))node.textContent=message; };
+const error = message => { $('notice').textContent = message; $('notice').hidden = !message; for(const node of document.querySelectorAll('[data-work-error]')){node.textContent=$('sheet').open?message:'';node.hidden=!message||!$('sheet').open;} };
 const toast = message => { const p = make('p', 'toast', message); $('toasts').replaceChildren(p); };
 function button(label, action, primary=false) { const node = make('button', 'button' + (primary ? ' button-filled' : ''), label); node.type = 'button'; node.addEventListener('click', action); return node; }
 function card(title, ...parts) { return add(make('section', 'card stack'), make('h2', 'card-title', title), ...parts); }
@@ -69,7 +69,7 @@ let fieldNumber = 0;
 function field(label, value='', kind='input') { const wrap = make('label', 'field'); const input = make(kind, 'input'); input.value = value; const caption=make('span','field-label',label);caption.id='field-caption-'+(++fieldNumber);input.id='field-'+fieldNumber;wrap.htmlFor=input.id;input.setAttribute('aria-labelledby',caption.id);add(wrap, caption, input); return {wrap, input}; }
 function lines(value) { return value.split('\n').map(v => v.trim()).filter(Boolean); }
 function list(items) { return add(make('ul'), ...items.map(item => make('li', '', item))); }
-function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');const problem=make('p','problem');problem.dataset.workError='';problem.setAttribute('role','alert');$('sheet-body').firstChild.append(status,problem,...nodes); if (!$('sheet').open) $('sheet').showModal(); paintWork(); }
+function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');const problem=make('p','problem');problem.dataset.workError='';problem.hidden=true;problem.setAttribute('role','alert');$('sheet-body').firstChild.append(status,problem,...nodes); if (!$('sheet').open) $('sheet').showModal(); paintWork(); }
 function closeSheet() { $('sheet').close(); paintWork(); }
 let work = null, workTimer = null;
 const workLabels = {'suggest':'Finding the story','build':'Building the page','art-direct':'Writing the art direction','image-start':'Generating artwork','inspect-images':'Inspecting the page','revise-story':'Revising the story','revise-art':'Revising the artwork','repair':'Repairing the page','preview':'Rendering the preview','export':'Preparing your files','google-deliver':'Delivering the Google Doc'};
