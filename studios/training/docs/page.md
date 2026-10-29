@@ -7,7 +7,7 @@ Training Studio has a page that runs in your browser, on your own computer. It s
 The same page is served two ways.
 
 - **From a conversation**, with `training desk`, as below. It does not start or run a training: your assistant does that, in the conversation. Settings holds notifications and where each training is decided.
-- **From the runner**, with `studio serve`, which "Open Training Studio" starts. There the page starts and runs trainings too: "New training", each run and its stops, your documents, the copies, the deck and working as a team, as [the runner](runner.md) describes. Settings holds more there: **Shared settings**, **Where new work stops**, **Workspace**, **Preview files in your Google Drive** when there are any, **Notifications**, **When this page is closed**, **Updates**, **Brand skill** and **Where each training is decided**.
+- **From the runner**, with `studio serve`, which "Open Training Studio" starts. There the page starts and runs trainings too: "New training", each run and its stops, your documents, the copies, the deck and working as a team, as [the runner](runner.md) describes. Settings holds more there: **Shared settings**, **Workspace**, **Preview files in your Google Drive** when there are any, **Notifications**, **When this page is closed**, **Updates**, **Brand skill** and **Where each training is decided**.
 
 The rest of this page is about the page served from a conversation.
 

@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from studio_core import model_profiles, research_sites, review_policy, runtime
+from studio_core import model_profiles, research_sites, runtime
 
 WorkspaceError = ValueError
 
@@ -111,8 +111,6 @@ def check(changes, current):
     root = (merged.get('local') or {}).get('root')
     if root and not Path(root).expanduser().is_absolute():
         raise WorkspaceError('Choose an absolute work folder, or one beginning with ~/.')
-    if 'review' in merged:
-        review_policy.check(merged['review'])
     model_profiles.check(merged)
     return merged
 

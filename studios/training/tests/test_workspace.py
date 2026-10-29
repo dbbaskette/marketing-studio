@@ -122,7 +122,7 @@ class RecordTests(PlainCase):
     def test_commands_refuse_a_directory_without_a_training(self):
         empty = self.root / 'elsewhere'
         empty.mkdir()
-        with self.assertRaisesRegex(WorkspaceError, 'Run init first'):
+        with self.assertRaisesRegex(WorkspaceError, 'No training'):
             workspace.save(empty, 'intake')
         self.assertEqual(list(empty.iterdir()), [])
 

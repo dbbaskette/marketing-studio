@@ -8,7 +8,7 @@ from unittest import mock
 from test_home import IsolatedHome
 from marketing_studio import shared, state
 from marketing_studio.page import Home
-from studio_core import workspace_setup, onboarding, preferences
+from studio_core import workspace_setup, onboarding, preferences, review_policy
 
 
 class SharedSetupTests(IsolatedHome):
@@ -129,6 +129,22 @@ class SharedSetupTests(IsolatedHome):
                              seen={'review': {'level': 'balanced'}})
         preferences.save(shared, {'output': 'google'}, seen=preferences.visible(shared.read()[0]))
         self.assertEqual(shared.read()[0]['review'], {'level': 'step_by_step'})
+
+    def test_invalid_retired_review_does_not_block_unrelated_save(self):
+        for review in ({'level': 'unknown'}, {'level': None}, {'level': []}, None, ['malformed']):
+            with self.subTest(review=review):
+                shared.path().write_text(json.dumps({'review': review, 'person': {'name': 'Before'}}))
+                original_review = json.dumps(review)
+                seen = preferences.visible(shared.read()[0])
+                self.assertEqual(review_policy.effective(shared.read()[0]), 'step_by_step')
+                preferences.save(shared, {'person': {'name': 'After'}}, seen)
+                self.assertIn('\"review\": ' + original_review, shared.path().read_text())
+                saved = shared.read()[0]
+                self.assertEqual(saved['review'], review)
+                self.assertEqual(saved['person']['name'], 'After')
+                with self.assertRaises(ValueError):
+                    preferences.save(shared, {'person': {'name': 'Conflict'}}, seen)
+                self.assertEqual(shared.read()[0]['review'], review)
 
     def test_same_leaf_conflicts_and_unrelated_content_survives(self):
         shared.path().write_text('{"unknown": {"keep": [1, 2]}, "render": {"previews": "local"}}')
