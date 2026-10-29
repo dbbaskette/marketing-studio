@@ -227,3 +227,5 @@ The programs that track your files, and the runner behind the page, have automat
 ## Licence
 
 [MIT](LICENSE).
+
+Saved older work and its retained paths are described in [saved work compatibility](../../docs/saved-work-compatibility.md).

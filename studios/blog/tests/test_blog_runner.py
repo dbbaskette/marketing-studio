@@ -1357,26 +1357,13 @@ class SharedPatternTests(RunnerCase):
         self.assertEqual(review_policy.level(run), 'step_by_step', 'never more autonomy')
         self.assertEqual(studios_config.path().read_text(), '{')
 
-    def test_review_level_route_saves_and_refuses(self):
+    def test_review_level_route_is_removed_without_writing(self):
         import studios_config
-        from studio_core import review_policy
-
         studios_config.update({'review': {'level': 'balanced'}})
-        shown = management.dispatch(
-            self.root, 'review-level', {'level': 'automatic', 'seen': 'balanced'}
-        )
-        self.assertEqual(shown['review_level'], 'automatic')
-        self.assertEqual(studios_config.read()[0]['review'], {'level': 'automatic'})
-        with self.assertRaises(ValueError) as caught:
-            management.dispatch(
-                self.root, 'review-level', {'level': 'balanced', 'seen': 'balanced'}
-            )
-        self.assertEqual(str(caught.exception), review_policy.STALE)
-        with self.assertRaisesRegex(
-            ValueError, 'Choose Balanced, Automatic draft, or Step by step'
-        ):
-            management.dispatch(self.root, 'review-level', {'level': 'fast', 'seen': 'automatic'})
-        self.assertEqual(studios_config.read()[0]['review'], {'level': 'automatic'})
+        before = studios_config.read()[0]
+        with self.assertRaises(ValueError):
+            management.dispatch(self.root, 'review-level', {'level': 'automatic', 'seen': 'balanced'})
+        self.assertEqual(studios_config.read()[0], before)
 
     def test_the_worker_records_when_it_started_and_the_page_reads_it(self):
         found = self.create(page=True, stop='draft')

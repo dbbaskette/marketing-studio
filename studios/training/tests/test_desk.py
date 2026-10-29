@@ -668,10 +668,9 @@ class ListRuleTests(PageCase):
         listed = self.get('trainings')['trainings']
         self.assertEqual((listed[0]['activity_at'], listed[0]['touched_at']),
                          ('2990-01-02T00:05:00Z', '2990-01-01T00:00:00Z'))
-        # A record that cannot be read leaves the touch as the last activity.
+        # An unreadable record is reported instead of guessed as healthy.
         (self.root / '.training-studio' / 'run.json').write_text('{not json')
-        self.assertEqual(self.get('trainings')['trainings'][0]['activity_at'],
-                         '2990-01-01T00:00:00Z')
+        self.assertIn('error', self.get('trainings')['trainings'][0])
 
 
 class WriteRuleTests(PageCase):
@@ -3087,27 +3086,11 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         for gone in ('review_level', 'review_seen', 'review_default'):
             self.assertNotIn(gone, sent[0])
 
-    def test_settings_saves_where_new_work_stops_at_once(self):
-        from studio_core import review_policy
-        balanced = {**SET_UP, 'review_level': 'balanced'}
-        result = self.run_page(self.answers(balanced, **{
-            'POST /api/review-level': [ok({**SET_UP, 'review_level': 'automatic'}),
-                                       {'status': 409, 'body': {'error': review_policy.STALE}}]}), [
-            {'click': 'Settings'}, {'snapshot': 'settings'},
-            {'click': 'Automatic draft'}, {'snapshot': 'saved'},
-            {'click': 'Step by step'}, {'snapshot': 'refused'}])
-        shots = result['snapshots']
-        self.assertIn('Where new work stops', shots['settings']['text'])
-        # Training Studio's own trainings start on the desk: the level is not chosen at a start.
-        self.assertIn('Training Studio starts each training on its desk, where nothing stops: '
-                      'you mark each material ready.', shots['settings']['text'])
-        self.assertNotIn('A start form can choose', shots['settings']['text'])
-        self.assertIn('Balanced', shots['settings']['pressed'])
-        sent = [body for address, body in self.posts(result) if address == '/api/review-level']
-        self.assertEqual(sent, [{'level': 'automatic', 'seen': 'balanced'},
-                                {'level': 'step_by_step', 'seen': 'automatic'}])
-        self.assertIn('Automatic draft', shots['saved']['pressed'])
-        self.assertIn(review_policy.STALE, shots['refused']['text'])
+    def test_settings_has_no_review_preference_control(self):
+        result = self.run_page(self.answers({**SET_UP, 'review_level': 'balanced'}), [
+            {'click': 'Settings'}, {'snapshot': 'settings'}])
+        self.assertNotIn('Where new work stops', result['snapshots']['settings']['text'])
+        self.assertFalse(any(address == '/api/review-level' for address, _ in self.posts(result)))
 
     def test_a_refused_start_reads_the_setup_again_and_keeps_every_answer(self):
         setup = {**SET_UP, 'review_level': 'step_by_step'}
@@ -4990,7 +4973,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         # Where a training is decided is offered only for one that no run drives.
         settings = shots['settings']
         # Where new work stops, then where each training is decided.
-        self.assertEqual(settings['pressed'], ['Step by step', 'In the conversation'])
+        self.assertEqual(settings['pressed'], ['In the conversation'])
         self.assertIn('By Hand', settings['text'].split('Where each training is decided')[1])
         self.assertNotIn('Held', settings['text'].split('Where each training is decided')[1])
         self.assertEqual(self.asked(result, 'run'), [])

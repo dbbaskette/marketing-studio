@@ -83,26 +83,16 @@ class ReviewLevelsTests(DeckCase):
             self.decide(root, waiting)
         return self.view(root)
 
-    def test_a_documents_only_balanced_training_promises_one_stop_fewer(self):
-        from runner import engine as engines
-        contract = {'schema': 2, 'version': '1.0.0', 'digest': 'abc'}
-        with mock.patch.object(review_policy, 'capture',
-                               return_value={'schema': 1, 'level': 'balanced'}), \
-                mock.patch.object(engines.research_contract, 'snapshot',
-                                  return_value=contract):
-            made = self.engine.start(pipeline.check_form({
-                **FORM, 'deck_target': 'pptx', 'brand': CHOSEN,
-                'research_from': {'documents': True, 'sites': [], 'web': False}}))
-        self.assertEqual(made['gates'], 3, 'the direction, the deck, the materials: the plan '
-                         'is written from the form')
-        self.assertTrue(pipeline.planned_from_form(self.engine._load(Path(made['path']))))
+    def test_saved_documents_only_balanced_training_keeps_its_plan(self):
+        from studio_core import research_contract
+        root = self.saved_start(deck_target='pptx', brand=CHOSEN, review_level='balanced',
+                                source_scope='supplied-only',
+                                saved_contract=research_contract.snapshot(self.research),
+                                research_from={'documents': True, 'sites': [], 'web': False})
+        self.assertTrue(pipeline.planned_from_form(self.engine._load(root)))
 
     def test_balanced_reads_the_research_plan_before_anything_is_researched(self):
-        with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            made = self.engine.start(pipeline.check_form({**FORM, 'deck_target': 'pptx',
-                                                          'brand': CHOSEN}))
-        root = Path(made['path'])
-        self.assertEqual(made['gates'], 4, 'the plan, the direction, the deck, the materials')
+        root = self.saved_start(deck_target='pptx', brand=CHOSEN, review_level='balanced')
         shown = self.view(root)
         self.assertEqual((shown['state'], shown['review']), ('waiting', None))
         self.assertEqual(workspace.status(root)['gate'], 'research-plan')

@@ -2280,8 +2280,6 @@ function drawSettings(fresh) {
     ['shared-settings', [Boolean(view.runner)], () => view.runner ? add(card('Shared settings'),
       make('p', '', 'Your assistant, work folder, brand and delivery choices apply across all studios.'),
       capsule('Change shared settings', 'quiet', () => { location.href = settingsAddress(); }, 'shared-settings')) : null],
-    ['review-level', [Boolean(view.runner), view.setup && view.setup.review_level,
-      view.reviewRefused], whereNewWorkStopsCard],
     ['workspace', around(), workspaceCard],
     ['decided', [decided, view.unmoved], decidedCard],
     ['brand-source', [view.setup && view.setup.brand && [view.setup.brand.repository,
@@ -4887,30 +4885,7 @@ function copiesOption(draft) {
       'Optional. Original files are kept locally. Google copies require Google access.'));
 }
 
-// Settings: where new work stops in every studio, saved at once. A refusal, such as a level
-// another studio changed since this page read it, is said in the card.
-function whereNewWorkStopsCard() {
-  if (!view.runner) return null;
-  const problem = alertLine('review-level-problem');
-  if (view.reviewRefused) say(problem, view.reviewRefused);
-  const level = (view.setup && view.setup.review_level) || 'step_by_step';
-  return add(card('Where new work stops'),
-    make('p', '', 'Where new work stops for you, in every studio. Training Studio starts '
-      + 'each training on its desk, where nothing stops: you mark each material ready.'),
-    choice('Review level', REVIEW_LEVELS.map(([, label]) => label),
-      Math.max(0, REVIEW_LEVELS.findIndex(([id]) => id === level)), async (index) => {
-        const chosen = REVIEW_LEVELS[index][0];
-        try {
-          view.setup = await send('review-level', { level: chosen, seen: level });
-          view.reviewRefused = '';
-          toast('New work in every studio now starts at ' + REVIEW_WORDS[chosen] + '.');
-        } catch (failure) {
-          view.reviewRefused = failure.message;
-        }
-        draw(false);
-      }, 'review-level'),
-    problem);
-}
+
 
 // The new-training sheet: the desk's start, in drafts.js's three numbered steps, then Start
 // and Cancel together. Every new training is started on the desk.

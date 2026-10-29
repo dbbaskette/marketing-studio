@@ -23,28 +23,6 @@ PLACE = 2000    # characters in an address or a path
 BRANCH = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$')   # a branch a file may name
 
 
-def review_choice(sent) -> tuple:
-    """The level Settings' Where new work stops sent, and the one the page read."""
-    if not isinstance(sent, dict) or set(sent) != {'level', 'seen'}:
-        raise WorkspaceError('Send the level and the level the page read.')
-    try:
-        review_policy.check({'level': sent['level']})
-    except ValueError as error:
-        raise WorkspaceError(str(error)) from None
-    return sent['level'], sent['seen']
-
-
-def save_review_level(engine, level: str, seen) -> dict:
-    """Make `level` the one new work starts at in every studio, under the studios config's
-    lock. Refused, with nothing written, when another studio changed the level the page
-    read, or the file cannot be read. The set-up described."""
-    try:
-        review_policy.change(studios_config.update, level, seen)
-    except ValueError as error:
-        raise WorkspaceError(str(error)) from None
-    return describe(engine)
-
-
 def save_brand(engine, sent: dict) -> dict:
     """Keep the brand skill's repository, and the release to install from it, once this
     person's own git access can read it and the release is one it has. An empty address
@@ -259,7 +237,7 @@ def seen(sent: dict) -> dict | None:
     return found
 
 
-NAMES = ('WHEN', 'SHARE', 'PLACE', 'BRANCH', 'review_choice', 'save_review_level', 'save_brand',
+NAMES = ('WHEN', 'SHARE', 'PLACE', 'BRANCH', 'save_brand',
          '_same', 'moved', 'notice_path', 'notice', 'notice_read', '_words', '_text', 'place',
          'whole', 'names', '_check', '_identity', '_unwritable', '_first_branch', '_local',
          'check', 'read', 'seen')

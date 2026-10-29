@@ -570,14 +570,8 @@ class FakeTests(StudioCase):
                 return json.loads(response.read())
 
         self.assertTrue(ask('/api/setup')['configured'])
-        made = ask('/api/decks', {'form': FORM})
-        deadline = time.monotonic() + 60
-        while time.monotonic() < deadline:
-            run = ask('/api/run?path=' + urllib.parse.quote(made['path']))
-            if run['state'] == 'waiting':
-                break
-            time.sleep(0.1)
-        self.assertEqual((run['state'], run['gate']['name']), ('waiting', 'gate:outline'))
+        made = ask('/api/decks', {'form': {**FORM, 'flow': 'desk'}})
+        self.assertEqual(made['id'], 'rolling-restarts')
         self.assertNotIn(str(Path.home()), made['path'])
         process.send_signal(signal.SIGTERM)
         rest, errors = process.communicate(timeout=30)

@@ -202,7 +202,7 @@ class DeleteTests(Deleting, StudioCase):
         deleting = threading.Thread(target=deletes)
         deleting.start()
         started = time.monotonic()
-        root = Path(self.engine.start(pipeline.check_form(FORM))['path'])
+        root = self.saved_start()
         deleting.join(20)
         self.assertLess(time.monotonic() - started, 20)
         self.assertEqual(still_running(written(pids)), [], 'nothing it started is left')

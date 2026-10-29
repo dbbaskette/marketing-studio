@@ -24,19 +24,20 @@ class ReviewPolicyTests(IsolatedHome):
                     'studio_core.studios_config.read', return_value=({'review': invalid}, None)):
                 self.assertEqual(review.capture(), {'schema': 1, 'level': 'step_by_step'})
 
-    def test_save_roundtrip_preserves_other_values_and_rejects_conflicts(self):
+    def test_retired_review_writes_refuse_and_omission_preserves(self):
         shared.update({'private': {'keep': 7}, 'review': {'level': 'balanced'}})
-        before = preferences.visible(shared.read()[0])
-        preferences.save(shared, {'review': {'level': 'automatic'}}, before)
+        seen = preferences.visible(shared.read()[0])
+        before = shared.path().read_bytes()
+        for value in ({'level': 'automatic'}, None, {}):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                preferences.save(shared, {'review': value}, seen)
+            self.assertEqual(shared.path().read_bytes(), before)
+        shared.update({'review': {'level': 'step_by_step'}})
+        preferences.save(shared, {'person': {'name': 'Ana'}}, seen)
+        self.assertEqual(shared.read()[0]['review'], {'level': 'step_by_step'})
         self.assertEqual(shared.read()[0]['private'], {'keep': 7})
         with self.assertRaisesRegex(ValueError, 'Another studio'):
-            preferences.save(shared, {'review': {'level': 'step_by_step'}}, before)
-        saved = review.capture()
-        shared.update({'review': {'level': 'step_by_step'}})
-        self.assertEqual(saved['level'], 'automatic')
-        for value in (None, {}, {'level': 'all'}, {'level': 'automatic', 'publish': True}):
-            with self.subTest(value=value), self.assertRaises(ValueError):
-                preferences.check({'review': value}, {})
+            preferences.save(shared, {'person': {'name': 'Bea'}}, seen)
 
     def test_gate_contract_and_receipt(self):
         for mode, stops in [('balanced', {'gate:outline', 'gate:build'}),
@@ -82,40 +83,8 @@ class ReviewPolicyTests(IsolatedHome):
         # A file that cannot be read never gives more autonomy than Step by step.
         self.assertEqual(review.effective({}, 'Unreadable'), 'step_by_step')
 
-    def test_change_writes_the_level_under_the_lock_and_keeps_other_values(self):
-        shared.path().write_text('{"schema": 1, "share": "asked"}')
-        review.change(shared.update, 'automatic', 'balanced')
-        values = shared.read()[0]
-        self.assertEqual(values['share'], 'asked')
-        self.assertEqual(values['review'], {'level': 'automatic'})
-
-    def test_change_refuses_a_level_another_studio_changed(self):
-        shared.path().write_text('{"schema": 1, "review": {"level": "step_by_step"}}')
-        before = shared.path().read_bytes()
-        with self.assertRaises(ValueError) as caught:
-            review.change(shared.update, 'automatic', 'balanced')
-        self.assertEqual(str(caught.exception), review.STALE)
-        self.assertEqual(review.STALE, 'Another studio changed where new work stops. '
-                                       'Reload the page and try again.')
-        self.assertEqual(shared.path().read_bytes(), before)
-        with self.assertRaisesRegex(ValueError, 'Choose Balanced'):
-            review.change(shared.update, 'fast', 'step_by_step')
-
-    def test_change_takes_a_level_the_file_already_holds(self):
-        # A start that wrote the level and then failed is tried again from the same form:
-        # the file holds what it asks for, so there is nothing stale to refuse.
-        shared.path().write_text('{"schema": 1, "review": {"level": "automatic"}}')
-        before = shared.path().read_bytes()
-        review.change(shared.update, 'automatic', 'balanced')
-        self.assertEqual(shared.path().read_bytes(), before)
-
-    def test_change_refuses_an_unreadable_file(self):
-        from marketing_studio.errors import WorkspaceError
-        shared.path().write_text('{')
-        with self.assertRaises(WorkspaceError) as caught:
-            review.change(shared.update, 'automatic', 'balanced')
-        self.assertTrue(str(caught.exception).endswith(shared.REFUSED), str(caught.exception))
-        self.assertEqual(shared.path().read_text(), '{')
+    def test_retired_writer_is_not_exported(self):
+        self.assertFalse(hasattr(review, 'change'))
 
     def test_balanced_redesign_stops_at_its_look(self):
         run = {'review_policy': {'schema': 1, 'level': 'balanced'}}

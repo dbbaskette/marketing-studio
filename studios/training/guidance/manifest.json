@@ -1,5 +1,5 @@
 {
   "schema": 1,
   "content_root": "studios/training/skills/training-studio",
-  "minimum_runtime": "4.7.0"
+  "minimum_runtime": "4.7.1"
 }

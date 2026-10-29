@@ -57,7 +57,7 @@ class DeskGateTests(DeskCase):
     def test_a_desk_deck_keeps_no_review_level(self):
         import studios_config
         before = studios_config.read() if hasattr(studios_config, 'read') else None
-        root = self.start_desk(look='default', review_level='automatic', review_default=True)
+        root = self.start_desk(look='default')
         record = self.record(root)
         self.assertNotIn('review_policy', record)
         self.assertEqual(record['schema'], 1)

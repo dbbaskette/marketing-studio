@@ -613,24 +613,9 @@ def check_form(sent: dict, brands=None, *, conversation=False) -> dict:
     form['agent'] = None if sent.get('agent') is None else settings.check_agent(sent['agent'])
     form['model'] = settings.check_model(sent.get('model'))
     form['effort'] = settings.check_effort(sent.get('effort'), form['agent'], form['model'])
-    # `review_level` is the level this training is to run under; `review_seen` is the
-    # shared level the form showed as its default, so a form that is behind is refused.
-    for name in ('review_level', 'review_seen'):
-        if name in sent:
-            if sent[name] not in review_policy.LEVELS:
-                raise WorkspaceError('Choose a supported review preference before starting.')
-            form[name] = sent[name]
-    # `review_default` makes `review_level` the level new work starts at in every studio,
-    # written when the training starts.
-    if sent.get('review_default', False) not in (True, False):
-        raise WorkspaceError('Say whether to use this level for new work with true or false.')
-    if sent.get('review_default'):
-        if 'review_level' not in sent:
-            raise WorkspaceError('Choose where this training stops before using it for new '
-                                 'work.')
-        form['review_default'] = True
-    # `flow: 'desk'` starts the training on the desk, with no review level. Left out, it
-    # starts as every training did before the desk.
+    if {'review_level', 'review_seen', 'review_default'} & sent.keys():
+        raise WorkspaceError('New desk work does not accept review preferences. Remove those fields.')
+    # New runner starts require desk flow. Saved fixtures and readers retain omitted flow.
     if sent.get('flow') is not None:
         if sent['flow'] not in workspace.FLOWS:
             raise WorkspaceError(workspace.NO_FLOW)

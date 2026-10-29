@@ -120,8 +120,10 @@ def export(root, state):
     for source in facts['sources']:
         for key, snapshot in (('file', 'snapshot'), ('original_file', 'original_snapshot')):
             if source.get(key):
-                name = source[key]
-                write(root / 'research', name, inside(root, name).read_bytes())
+                # Published captures are shared bundle evidence, distinct from the
+                # deliberately local-only working sources/ tree.
+                name = 'captures/' + source['id'] + '-' + key
+                write(root / 'research', name, inside(root, source[key]).read_bytes())
                 source[snapshot] = 'research/' + name
                 names.append(name)
     def prose(sections):

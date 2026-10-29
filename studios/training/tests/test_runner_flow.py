@@ -52,40 +52,21 @@ class FlowCase(StudioCase):
 
 
 class ToTheEndTests(FlowCase):
-    def test_a_changed_shared_default_keeps_the_forms_per_training_choice(self):
-        # Both the current form and an older page choose only this training's level.
-        for number, sent in enumerate((
-                {'review_seen': 'step_by_step', 'review_level': 'step_by_step'},
-                {'review_level': 'step_by_step'})):
-            form = pipeline.check_form({**FORM, 'title': f'Independent choice {number}',
-                                        **sent})
-            with self.subTest(sent=sent), mock.patch(
-                    'studio_core.review_policy.capture',
-                    return_value={'schema': 1, 'level': 'automatic'}):
-                root = Path(self.engine.start(form)['path'])
-                self.assertEqual(self.engine._load(root)['review_policy']['level'],
-                                 'step_by_step')
-                self.assertEqual(self.view(root)['ahead']['next_gate'], 'gate:research-plan')
-
-    def test_a_training_can_choose_its_own_review_level(self):
-        # The shared level is Balanced; this training asks for Automatic draft, and runs
-        # under it: no stop for the research plan, no direction review.
-        form = pipeline.check_form({**FORM, 'review_seen': 'balanced',
-                                    'review_level': 'automatic'})
+    def test_saved_per_training_policy_survives_a_changed_shared_default(self):
         with mock.patch('studio_core.review_policy.capture',
-                        return_value={'schema': 1, 'level': 'balanced'}):
-            made = self.engine.start(form)
-        root = Path(made['path'])
-        self.assertEqual(made['gates'], 1)
+                        return_value={'schema': 1, 'level': 'automatic'}):
+            root = self.saved_start(review_level='step_by_step')
+        self.assertEqual(self.engine._load(root)['review_policy']['level'], 'step_by_step')
+        self.assertEqual(self.view(root)['ahead']['next_gate'], 'gate:research-plan')
+
+    def test_saved_automatic_policy_is_retained(self):
+        root = self.saved_start(review_level='automatic')
         record = self.engine._load(root)
         self.assertEqual(record['review_policy'], {'schema': 1, 'level': 'automatic'})
         self.assertEqual(workspace.load(root)['review_policy'], record['review_policy'])
         shown = self.view(root)
         self.assertIsNone(shown['problem'], shown)
         self.assertEqual((shown['review_level'], shown['review']['phase']), ('automatic', 'final'))
-        for value in ('all', 7):
-            with self.assertRaisesRegex(WorkspaceError, 'supported review preference'):
-                pipeline.check_form({**FORM, 'review_level': value})
 
     def test_selected_materials_finish_without_unrequested_workers_or_gates(self):
         for materials, gates, writers in (
@@ -150,13 +131,10 @@ class ToTheEndTests(FlowCase):
         self.engine.wake(root)
         self.assertEqual(len(self.workers.jobs), jobs, 'a finished run starts nothing')
 
-    def test_it_says_at_least_how_often_it_will_ask(self):
+    def test_saved_step_by_step_runs_keep_their_stops(self):
         for levels, expect in (([], 5), (['101'], 5), (['101', '301'], 8)):
-            form = pipeline.check_form({**FORM, 'levels': levels,
-                                        'title': f'Restarts {len(levels)}'})
-            made = self.engine.start(form)
-            self.assertEqual(made['gates'], expect)
-            self.assertGreaterEqual(len(self.to_end(Path(made['path']))), expect)
+            root = self.saved_start(levels=levels, title=f'Restarts {len(levels)}')
+            self.assertGreaterEqual(len(self.to_end(root)), expect)
 
     def test_with_levels_everything_after_the_blueprints_is_done_one_level_at_a_time(self):
         root = self.saved_start(levels=['201', '101'])

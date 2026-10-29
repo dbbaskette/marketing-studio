@@ -42,16 +42,12 @@ def branch(value):
 
 
 def check(changes, current):
-    if not isinstance(changes, dict) or set(changes) - {*FIELDS, 'output', 'share', 'models', 'review', 'research'}:
+    if not isinstance(changes, dict) or set(changes) - {*FIELDS, 'output', 'share', 'models', 'research'}:
         raise WorkspaceError('Choose only the shared settings shown on this page.')
     if any(key in current and not isinstance(current[key], dict) for key in (*FIELDS, 'research')):
         raise WorkspaceError('A shared settings section is not an object. Restore a valid settings file.')
     merged = dict(current)
     for group, value in changes.items():
-        if group == 'review':
-            review_policy.check(value)
-            merged[group] = value
-            continue
         if group == 'research':
             merged[group] = {**(current.get(group) or {}), **research_sites.check_shared(value)}
             continue
@@ -150,7 +146,6 @@ def visible(values):
                for group, names in FIELDS.items()},
             **{name: values.get(name) for name in ('output', 'share')},
             'models': model_profiles.visible(values),
-            'review': values.get('review', {'level': None}),
             'research': {'sites': list((values.get('research') or {}).get('sites') or [])}}
 
 
@@ -164,22 +159,13 @@ def save(config, changes, seen):
 
     def guard(current):
         check(changes, current)
-        if 'review' in changes:
-            # The level a form read: a form that read no level showed Balanced.
-            before = seen.get('review')
-            before = review_policy.effective(
-                {} if not isinstance(before, dict) or before.get('level') is None
-                else {'review': before})
-            held = review_policy.effective(current)
-            if held != before and held != changes['review']['level']:
-                raise ValueError(review_policy.STALE)
         if 'research' in changes and 'sites' in changes['research']:
             held = (current.get('research') or {}).get('sites') or []
             before = (seen.get('research') or {}).get('sites') or []
             if held != before and held != changes['research']['sites']:
                 raise ValueError(research_sites.STALE)
         for path, wanted in model_profiles.leaves(
-                {key: value for key, value in changes.items() if key not in ('review', 'research')}):
+                {key: value for key, value in changes.items() if key != 'research'}):
             held, before = model_profiles.get(current, path), model_profiles.get(seen, path)
             if held != before and held != wanted:
                 raise ValueError('Another studio changed this setting. Reload the page and try again.')

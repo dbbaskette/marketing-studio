@@ -228,7 +228,7 @@ WRITES = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
           '/api/brand', '/api/brand/install', '/api/shared', '/api/note', '/api/look',
-          '/api/review-level', '/api/research-site', f'{DRAFTS}/open', f'{DRAFTS}/migrate',
+          '/api/research-site', f'{DRAFTS}/open', f'{DRAFTS}/migrate',
           f'{DRAFTS}/slide-note', f'{DRAFTS}/slide-words', f'{DRAFTS}/slide-speaker-notes', f'{DRAFTS}/slide-words-decide',
           f'{DRAFTS}/finding', f'{DRAFTS}/slide-restore', f'{DRAFTS}/look-samples',
           f'{DRAFTS}/look', f'{DRAFTS}/draw-here', f'{DRAFTS}/deck-note', f'{DRAFTS}/deck-stop',
@@ -712,10 +712,6 @@ class RunnerPage(desk.Page):
                 desk.text(sent, 'dismiss'))})
         if path == '/api/brand':
             return desk.as_json(HTTPStatus.OK, shaped(setup.save_brand, self.engine, sent))
-        if path == '/api/review-level':
-            level, seen = shaped(setup.review_choice, sent)
-            return desk.as_json(HTTPStatus.OK, setup.save_review_level(self.engine, level,
-                                                                       seen))
         if path == '/api/research-site':
             # A site added on the start form for one training only: checked here, the one
             # check every studio uses, and saved nowhere. The shared list is changed in

@@ -1649,11 +1649,11 @@ class FlowTests(DeckCase):
     def test_it_says_at_least_how_often_it_will_ask(self):
         form = pipeline.check_form({**self.form(), 'levels': ['101', '201']},
                                    self.engine.brands())
-        self.assertEqual(self.engine.start(form)['gates'], 14)
+        self.assertEqual(pipeline.gates(form, True), 14)
         self.slides = None
         self.engine.deck_needs(fresh=True)
         form = pipeline.check_form({**self.form(), 'title': 'Health checks'}, None)
-        self.assertEqual(self.engine.start(form)['gates'], 5)
+        self.assertEqual(pipeline.gates(form, False), 5)
 
     def form(self) -> dict:
         from runner_support import FORM
@@ -3875,7 +3875,7 @@ class PageTests(PageCase):
 
     def test_the_brand_is_a_choice_among_those_the_brand_skill_has(self):
         from runner_support import FORM
-        wanted = {**FORM, 'deck_target': 'pptx'}
+        wanted = {**FORM, 'flow': 'desk', 'deck_target': 'pptx'}
         for brand, why in ((None, 'Choose a brand for the deck, or choose no deck.'),
                            ('Example Co', 'Give the brand as its name and its variant'),
                            ({'brand': 'example-co'}, 'The brand is one of: example-co (light'),
@@ -3884,10 +3884,10 @@ class PageTests(PageCase):
             self.assertIn(why, self.post('trainings', {**wanted, 'brand': brand}, 400)['error'])
         made = self.post('trainings', {**wanted, 'brand': {'brand': 'example-co',
                                                            'variant': 'dark'}})
-        self.assertEqual(made['gates'], 8)
+        self.assertEqual(made['gates'], 0)
         self.assertEqual(workspace.load(Path(made['path']))['settings']['brand'],
                          'example-co/dark')
-        self.assertEqual(self.post('trainings', {**FORM, 'title': 'No deck'})['gates'], 5)
+        self.assertEqual(self.post('trainings', {**FORM, 'flow': 'desk', 'title': 'No deck'})['gates'], 0)
         self.brand.brands = lambda: [{'brand': 'plain-co', 'name': 'Plain Co', 'variants': []}]
         self.engine.deck_needs(fresh=True)
         made = self.post('trainings', {**wanted, 'title': 'One look', 'brand': {

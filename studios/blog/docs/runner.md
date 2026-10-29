@@ -474,7 +474,7 @@ and an existing blog keeps the revision it was started with.
 
 ## Blogs started step by step
 
-Blogs started before the writing desk, and guided blogs run in chat, keep their
+Saved blogs started before the writing desk can keep their
 step-by-step path: research (when chosen), outline, draft, review and a handoff, each made
 by your assistant and brought back for a decision where the blog's review level says. A
 finished one offers **Open on the desk** on its Done card, which Home's **Finished
@@ -498,8 +498,7 @@ still apply.
 | A review | Which findings need changes? |
 | The handoff | Are the title, excerpt and links ready to hand over? |
 
-A run keeps the review level it started with; **Settings → Where new work stops** sets the
-level for runs started from now on, in every studio, saved at once. One
+A saved run keeps the review level it started with. One
 line under a run's stages says how many steps are left, where it next stops and what
 its jobs have cost so far. **Ask for changes** says what is drawn again and what those
 steps took the last time they ran. The default, **Balanced**, stops for you
@@ -592,16 +591,11 @@ tools. Only the runner saves their returned documents.
 
 ## In a conversation
 
-Say **“Use Blog Studio. Make a guided blog about [topic], with approvals.”**
-Your assistant asks for the brief, selected sources and voice, then makes each
-stage and waits for your decision. Short requests such as “proofread this” keep
-their existing focused workflow.
-
-You can start in either place. **Run this from here** moves a conversation run
-to the page. **Continue in the conversation** stops its browser worker and gives
-you a request to paste into your assistant. The same files and decisions stay in use.
-For a saved blog with no run, its details' **Open writing run** brings its draft to the
-desk start.
+Ask for a focused outline, research, passage or check on the writing desk. The assistant
+starts a conversation without starting a worker, reads the checked context and saves only
+the requested scope. Broader work requires your explicit request. Hand work to the page
+or back to the conversation deliberately; only you approve. Saved guided runs can still
+continue through their existing controls.
 
 ## Shared studios repository
 
