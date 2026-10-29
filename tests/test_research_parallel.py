@@ -84,6 +84,7 @@ class ParallelWorkflowTests(unittest.TestCase):
         self.task = {k: v for k, v in dossier('unused').items() if k in rc.TASK_FIELDS}
         self.task['planning_questions'] = [{'id': 'question-' + str(i), 'question': 'Synthetic question ' + str(i)} for i in range(4)]
         self.calls, self.states, self.workers = [], [], []
+        self.previous = []
         self.active = self.most = 0
         self.lock = threading.Lock()
         self.barrier = None
@@ -100,6 +101,8 @@ class ParallelWorkflowTests(unittest.TestCase):
             self.calls.append((phase, stream))
             self.workers.append(payload['worker'])
         if phase == 'investigate':
+            if payload['previous_evidence']['facts']:
+                self.previous.append(payload['previous_evidence'])
             with self.lock:
                 self.active += 1
                 self.most = max(self.most, self.active)
@@ -170,6 +173,9 @@ class ParallelWorkflowTests(unittest.TestCase):
         self.run_workflow()
         self.assertCountEqual([s for p, s in self.calls if p == 'investigate'], ['area1', 'area2', 'area3', 'area1'])
         self.assertEqual(sum(p == 'review' for p, _ in self.calls), 2)
+        self.assertEqual(len(self.previous), 1)
+        self.assertTrue(all(f['id'].startswith('f-area1-') for f in self.previous[0]['facts']))
+        self.assertTrue(self.previous[0]['sources'])
 
     def test_prose_objection_keeps_all_evidence(self):
         self.refuse_prose = True

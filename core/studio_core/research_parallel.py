@@ -19,7 +19,7 @@ PROTOCOL = {'schema': 1, 'mode': 'parallel', 'workers': 3}
 EVIDENCE = ('Investigate only your assigned questions, using the full purpose and scope. '
             'Return schema 2 JSON with sources, facts, and gaps (an array of short strings). '
             'Do not write a report, findings or finished training material. Preserve '
-            'qualifications, counterevidence and unavailable evidence. Set every fact author to this worker ID. ' + rc.CAPTURED + ' ' + rc.SOURCE_IDS)
+            'qualifications, counterevidence and unavailable evidence. Previous evidence is correction context: re-read sources and set every fact author to this worker ID. ' + rc.CAPTURED + ' ' + rc.SOURCE_IDS)
 COMPOSE = ('Write connected research findings, report sections and an authored brief from '
            'the immutable evidence provided. Return schema 2 JSON with findings, sections, '
            'brief and optional comparisons only. Do not return or change sources or facts; '
@@ -290,7 +290,13 @@ class Workflow:
                 require()
                 report(stream=area['id'], status='working')
                 worker = 'investigator-' + secrets.token_hex(12)
+                previous_facts = [f for f in (dossier or {}).get('facts', [])
+                                  if f['id'].startswith('f-' + area['id'] + '-')]
+                previous_ids = {c['source'] for f in previous_facts for c in f['citations']}
+                previous_evidence = {'facts': previous_facts, 'sources': [
+                    s for s in (dossier or {}).get('sources', []) if s['id'] in previous_ids]}
                 payload = {'task': task, 'worker': worker, 'questions': area['questions'],
+                           'previous_evidence': previous_evidence,
                            'return': EVIDENCE, 'previous_review': review,
                            '_execution': {'phase': 'investigate', 'round': number, 'stream': area['id'],
                                           'workers': len(pending), 'mode': 'evidence'}}
