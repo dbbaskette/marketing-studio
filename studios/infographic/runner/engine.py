@@ -8,8 +8,9 @@ import os
 from pathlib import Path
 import secrets
 
-from . import brand, checks, evidence, exports, history, image_brief, scene, sources, stories, visual_review
+from . import brand, checks, evidence, exports, history, image_brief, planning_responses, scene, sources, stories, visual_review
 from .contracts import Invalid, basis, canonical, digest
+from .assistant_failure import AssistantFailure
 from .validation import REQUIRED_CHECKS, require, text
 from .workspace import _read, file_lock
 
@@ -28,6 +29,7 @@ class Engine:
         from .image_jobs import Jobs
         from .google_delivery import listing
         return {'project': project, 'history': history.entries(self.store, ident),
+                'planning_response': planning_responses.status(self.store, project),
                 'source_findings': evidence.findings(project['facts']),
                 'recovery': Jobs(self.store, self.adapters).recovery(ident),
                 'image_history': Jobs(self.store, self.adapters).history(ident),
@@ -64,37 +66,51 @@ class Engine:
                               and review_checked and sources_intact})
         return sorted(found, key=lambda item: (item['revision'], not item['draft']), reverse=True)
 
-    def propose(self, ident, *, expected_revision, automatic=False):
+    def propose(self, ident, *, expected_revision, automatic=False, fresh=False):
         with file_lock(self.store._project(ident) / 'jobs/author.lock'):
-            return self._propose(ident, expected_revision=expected_revision, automatic=automatic)
+            return self._propose(ident, expected_revision=expected_revision, automatic=automatic, fresh=fresh)
 
-    def _propose(self, ident, *, expected_revision, automatic=False):
+    def _propose(self, ident, *, expected_revision, automatic=False, fresh=False):
         """The page may request a confined author; a conversation supplies its own data."""
         project = self.store.read(ident)
         self.store.expect(project, expected_revision)
         require(bool(project['sources']), 'Add supplied information before asking for story suggestions.')
-        require(self.assistant is not None, 'No planning assistant is configured. Use the conversation commands to author facts and stories.')
-        captured = [{'id': source['id'], 'text': sources.read(self.store, project, source)}
-                    for source in project['sources']]
-        require(sum(len(item['text']) for item in captured) <= 120_000,
-                'The selected material exceeds one planning job. Select a smaller explicit source scope.')
-        self.progress('Reading sources and finding the story')
-        answer = self.assistant.propose(project['brief'], captured)
+        require(type(fresh) is bool, 'A fresh planning request must be an explicit choice.')
+        answer = planning_responses.load(self.store, project)
+        if answer is None or fresh:
+            require(self.assistant is not None, 'No planning assistant is configured. Use the conversation commands to author facts and stories.')
+            captured = [{'id': source['id'], 'text': sources.read(self.store, project, source)}
+                        for source in project['sources']]
+            require(sum(len(item['text']) for item in captured) <= 120_000,
+                    'The selected material exceeds one planning job. Select a smaller explicit source scope.')
+            self.progress('Reading sources and finding the story')
+            answer = self.assistant.propose(project['brief'], captured)
+            require(isinstance(answer, dict) and set(answer) == {'facts', 'stories'},
+                    'The assistant did not return a facts-and-stories proposal. Existing work is kept.')
+            planning_responses.save(self.store, project, answer)
+        else:
+            self.progress('Checking the saved planning response')
         self.progress('Checking the proposed facts and story')
         require(isinstance(answer, dict) and set(answer) == {'facts', 'stories'},
                 'The assistant did not return a facts-and-stories proposal. Existing work is kept.')
         with self.store.locked():
             current = self.store.read(ident)
             self.store.expect(current, expected_revision)
-            facts = evidence.verify(self.store, current, evidence.locate(self.store, current, answer['facts']))
-            candidate = deepcopy(current)
-            candidate['facts'] = facts
-            proposals = stories.usable_proposals(candidate, answer['stories'])
-            changes = {'facts': facts, 'stories': proposals}
-            if automatic:
-                require(not proposals[0].get('omissions'), 'The recommended story omits required content. Choose a direction explicitly.')
-                changes['selected_story'] = proposals[0]['id']
-            return self.store.change_locked(current, changes)
+            try:
+                facts = evidence.validated_proposal(self.store, current, answer)
+                candidate = deepcopy(current)
+                candidate['facts'] = facts
+                proposals = stories.usable_proposals(candidate, answer['stories'])
+                changes = {'facts': facts, 'stories': proposals}
+                if automatic:
+                    require(not proposals[0].get('omissions'), 'The recommended story omits required content. Choose a direction explicitly.')
+                    changes['selected_story'] = proposals[0]['id']
+            except Invalid as failure:
+                planning_responses.rejected(self.store, ident, failure)
+                raise AssistantFailure('proposal-review') from failure
+            result = self.store.change_locked(current, changes)
+            planning_responses.accepted(self.store, ident)
+            return result
 
     def prepare_art(self, ident, *, expected_revision):
         with file_lock(self.store._project(ident) / 'jobs/author.lock'):
@@ -124,7 +140,7 @@ class Engine:
         require(self.renderer is not None or self.executable and Path(self.executable).is_file()
                 and os.access(self.executable, os.X_OK), 'Configure the installed renderer before starting a page build.')
         if project['scene'] is None:
-            project = scene.adopt(self.store, ident, expected_revision=project['revision'])
+            project = scene.adopt_best(self.store, ident, expected_revision=project['revision'])
         # Establish actual font/layout capability before spending image-provider usage.
         self.preview(ident, expected_revision=project['revision'])
         if project['scene'].get('art_regions') and not any(e['kind'] == 'artwork' for e in project['scene']['elements']):

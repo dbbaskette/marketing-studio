@@ -96,7 +96,9 @@ def parser():
             operation.add_argument('--folder')
             operation.add_argument('--reconcile', action='store_true')
         if name == 'layout': operation.add_argument('--arrangement', choices=('stack', 'columns'), default='stack')
-        if name == 'suggest': operation.add_argument('--automatic', action='store_true')
+        if name == 'suggest':
+            operation.add_argument('--automatic', action='store_true')
+            operation.add_argument('--fresh', action='store_true', help='Explicitly request a new assistant response instead of checking a saved one.')
         if name == 'export': operation.add_argument('--draft', action='store_true')
         if name == 'restore': operation.add_argument('--sha256')
         if name == 'revise-story': operation.add_argument('--block-id')

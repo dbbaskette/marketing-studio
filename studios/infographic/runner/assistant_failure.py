@@ -4,6 +4,7 @@ import json
 from .contracts import Invalid
 
 MESSAGES = {
+    'proposal-review': 'The saved planning response needs a source or story correction. Your captured material and earlier work are kept. You can recheck the saved response locally or explicitly ask for a new plan.',
     'timeout': 'The assistant reached the five-minute limit and has stopped. Your saved sources and earlier work are kept. You can try this step again or narrow the source material. A retry starts a new assistant request.',
     'cancelled': 'The assistant request was stopped. Your saved sources and earlier work are kept. Nothing was retried automatically.',
     'sign-in': 'The selected assistant needs you to sign in on this computer. Your saved work is kept. Sign in before trying again.',

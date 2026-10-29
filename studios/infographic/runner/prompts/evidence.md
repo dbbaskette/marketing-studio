@@ -6,6 +6,11 @@ and evidence entries containing source_id and a short, exact, uniquely located
 verbatim quote. Do not calculate character offsets: omit start/end; the application
 locates each unique quotation deterministically. Lengthen an ambiguous quotation
 until it is unique. Do not repeat entire paragraphs when a sentence is sufficient.
+The statement may paraphrase an idea. For a qualitative fact, value must copy an
+exact substring of one evidence quote; do not repeat the paraphrase there. For
+example quote="A queue buffers messages.", statement="Queues decouple senders",
+value="buffers messages". Numeric values must be JSON numbers, without unit text
+or formatting; keep the source's exact display spelling in its evidence quote.
 Preserve numeric period, denominator, conditions and uncertainty
 as separate strings; unknown context stays empty and must be surfaced to the user.
 Derived values need calculation {operator, operands}; never round away mismatches.

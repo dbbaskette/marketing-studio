@@ -77,10 +77,25 @@ are located by the application, rather than asking the assistant to count charac
 offsets. Codex planning uses the CLI's [JSON output schema](https://learn.chatgpt.com/docs/developer-commands#codex-exec);
 native evidence, calculation and story validation still decide what can be saved.
 The shared model and reasoning settings are preserved.
+Generated paraphrases stay in the assertion field; their literal value is taken
+from uniquely located captured evidence. Whitespace and quotation typography can
+be matched while retaining the original source offsets. Exact numeric strings
+become numeric values only when backed by their source or a checked calculation;
+source display precision and measurement context remain visible.
+Planning responses are retained privately against their source and brief revision.
+If validation needs attention, **Check saved proposal** rechecks that response
+locally, without another assistant request. **Review source material** opens the
+captured text; **Ask for a new plan** explicitly starts a fresh request. Changing
+the source or brief invalidates the saved response. Raw planning records are never
+included in a team sharing inventory.
 Descriptive comparisons and component explanations do not need measurements or a
 numeric scale. Generated plans keep fully checked useful alternatives when another
 option is unsupported, without repeating the assistant request. Explicit numeric
 charts still require actual, comparable source measurements.
+Process step numbering is structural; additional numeric claims still require
+evidence. All-zero measurements retain zero labels and zero-length marks. A page
+build tries the supported arrangements before asking you to prioritize content;
+it does not drop text or reduce the readable type floors.
 Actual-page inspection uses the selected assistant's multimodal path, or you can
 record your own review after viewing the current PNG at intended size. CLI help
 and capability discovery are not proof of account access or successful generation.
