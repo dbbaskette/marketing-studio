@@ -163,7 +163,16 @@ function reviewCapturedSources(){
 }
 async function home() {
   if (busy) return; resetPicture(); held = null; error(''); heading('Infographics', button('New infographic', () => newSheet(), true),button('Team library',teamSheet));
-  try { const data = await request('/api/projects'); const cards = data.projects.map(p => card(p.title || 'Unreadable infographic', make('p', 'quiet', p.problem || 'Revision ' + p.revision), button('Open ' + (p.title || p.id), () => openProject(p.id)))); $('main').replaceChildren(make('p','lede','Turn supplied information into one clear page.'), ...cards); if (!cards.length) $('main').append(card('Make your first infographic', make('p','','Add notes, choose what matters, and review the page before exporting.'))); } catch (failure) { error(failure.message); }
+  try {
+    const data = await request('/api/projects');
+    const cards = data.projects.map(p => {
+      const node=card(p.title || 'Unreadable infographic', make('p', 'quiet', p.problem || 'Revision ' + p.revision), button('Open ' + (p.title || p.id), () => openProject(p.id)));
+      node.classList.add('ig-project-card'); return node;
+    });
+    const intro=add(make('div','intro'),make('h2','large-title','Your infographics'),make('p','lede','Turn supplied information into one clear page.'));
+    $('main').replaceChildren(intro, add(make('div','ig-project-list'),...cards));
+    if (!cards.length) $('main').append(card('Make your first infographic', make('p','','Add notes, choose what matters, and review the page before exporting.')));
+  } catch (failure) { error(failure.message); }
 }
 async function bytes(file) { if (file.size > 16_000_000) throw Error('Choose a source no larger than 16 MB.'); return new Uint8Array(await file.arrayBuffer()); }
 function encoded(raw) { let binary=''; for (const v of raw) binary += String.fromCharCode(v); return btoa(binary); }
@@ -291,13 +300,20 @@ function renderProject() {
   if(held.recovery.length) parts.push(card('Image work needs attention',...held.recovery.map(r=>add(make('div','stack'),make('p','',r.state+': '+r.message),button('Cancel uncertain request',()=>action('image-cancel',{request_id:r.attempt_id}))))));
   if(!p.stories.length)parts.push(savedPlan?card('Planning response saved',make('p','','Check the saved response locally, without using assistant allowance. Asking for a new plan starts a new assistant request.'),held.planning_response.detail?detail('What needs attention',make('p','',held.planning_response.detail)):null,button('Check saved proposal',()=>action('suggest')),button('Review source material',reviewCapturedSources),button('Ask for a new plan',()=>action('suggest',{fresh:true}))):card('Find a useful story',make('p','','Your supplied information is saved. The assistant proposes source-backed explanations; generation is a later explicit action.'),button('Find the story',()=>action('suggest')),detail('Author in your conversation',make('p','','Use native action JSON to save located facts and story proposals directly. A browser and nested planning assistant are not required.'))));
   if(held.planning_response?.problem)parts.push(card('Saved planning response needs attention',make('p','problem',held.planning_response.problem)));
-  if(p.stories.length){const choices=card('Choose the story',add(make('div','ig-story-grid'),...p.stories.map(s=>card(s.headline,storyThumbnail(s),make('p','',s.takeaway),make('p','quiet',s.rationale),list(s.blocks.map(b=>b.title+': '+b.text)),...(s.qualifications.length?[list(s.qualifications)]:[]),s.omissions.length?make('p','problem','Required omissions: '+s.omissions.join(', ')):null,button('Ask for a revision',()=>reviseStorySheet(s)),button(s.id===p.selected_story?'Selected':'Use this story',()=>action('select',{story_id:s.id}))))));choices.id='story-choice';parts.push(p.scene?detail('Story: '+selected.headline,choices):choices);}
+  if(p.stories.length){
+    const stories=p.stories.map(s=>card(s.headline,storyThumbnail(s),make('p','',s.takeaway),make('p','quiet',s.rationale),list(s.blocks.map(b=>b.title+': '+b.text)),...(s.qualifications.length?[list(s.qualifications)]:[]),s.omissions.length?make('p','problem','Required omissions: '+s.omissions.join(', ')):null,add(make('div','bar'),button('Ask for a revision',()=>reviseStorySheet(s)),button(s.id===p.selected_story?'Selected':'Use this story',()=>action('select',{story_id:s.id}),true))));
+    const choices=add(make('section','stack'),make('h2','card-title','Choose the story'),add(make('div','ig-story-grid'),...stories));
+    choices.id='story-choice';parts.push(p.scene?detail('Story: '+selected.headline,choices):choices);
+  }
   if(selected && !p.scene)parts.push(card('Make the page',make('p','',p.brand?'Using pinned '+p.brand.identity.name+'.':'Compose with your configured brand. Brand settings are pinned when you choose this action.'),button('Build page',compose)));
   const delivery=held.deliveries.find(d=>d.current) || held.deliveries[0];
   if(delivery) {
     const img=make('img','ig-preview');img.alt='Rendered '+(delivery.draft?'draft':'approved')+' infographic, revision '+delivery.revision;
     const scroll=add(make('div','ig-preview-scroll'),img);
-    const tools=add(make('div','ig-page-tools'),button('Fit page',()=>img.classList.remove('ig-preview-actual')),button('Actual pixels',()=>img.classList.add('ig-preview-actual')));
+    const fit=button('Fit page',()=>zoom(false)),actual=button('Actual pixels',()=>zoom(true));
+    function zoom(original){img.classList.toggle('ig-preview-actual',original);fit.setAttribute('aria-pressed',String(!original));actual.setAttribute('aria-pressed',String(original));}
+    zoom(false);
+    const tools=add(make('div','ig-page-tools'),fit,actual);
     for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+format.toUpperCase()+(delivery.draft?' draft':''),async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
     if(delivery.approved_current)tools.append(button('Deliver Google Doc or PDF',()=>deliverySheet(delivery)),button('Share selected files with team',()=>shareSheet(delivery)));
     parts.push(card(!delivery.current?'Earlier page — create a new preview':delivery.draft?'Draft page':delivery.approved_current?'Approved delivery':'Earlier approval — review the current revision',make('p','quiet','Saved revision '+delivery.revision+'. Earlier deliveries stay available through history; edits require a new review.'),scroll,tools));

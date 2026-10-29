@@ -274,3 +274,26 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
+
+/* Pilot launcher: four peers in a balanced collection, with one action per object. */
+body[data-pilot="liquid"] .studio-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.25rem; }
+body[data-pilot="liquid"] .studio-card { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-rows: auto auto auto 1fr auto; gap: .65rem 1rem; align-items: start; min-height: 19rem; }
+body[data-pilot="liquid"] .studio-card > * + * { margin-top: 0; }
+body[data-pilot="liquid"] .studio-card > .studio-symbol { grid-column: 1; grid-row: 1; width: 3.2rem; height: 3.2rem; }
+body[data-pilot="liquid"] .studio-name { grid-column: 2 / -1; grid-row: 1; padding: 0; align-self: center; font-size: 1.3rem; }
+body[data-pilot="liquid"] .studio-says { grid-column: 1 / -1; grid-row: 2; max-width: 44ch; margin-top: .3rem; line-height: 1.55; }
+body[data-pilot="liquid"] .studio-readiness { grid-column: 1 / 3; grid-row: 3; padding: .2rem 0 0; }
+body[data-pilot="liquid"] .studio-running { grid-column: 3; grid-row: 3; padding-top: .2rem; text-align: right; }
+body[data-pilot="liquid"] .studio-link { grid-column: 1 / -1; grid-row: 4; padding: 0; gap: 0; }
+body[data-pilot="liquid"] .studio-card > .studio-open { grid-column: 2 / -1; grid-row: 5; width: auto; justify-self: end; margin: .35rem 0 0; text-align: center; }
+body[data-pilot="liquid"] .studio-card > .studio-connect { grid-column: 1; grid-row: 5; margin: .35rem 0 0; }
+@media (max-width: 64rem) {
+  body[data-pilot="liquid"] .studio-list { grid-template-columns: 1fr; }
+  body[data-pilot="liquid"] .studio-card { min-height: 0; }
+}
+@media (max-width: 40rem) {
+  body[data-pilot="liquid"] .studio-card { gap: .65rem .8rem; }
+  body[data-pilot="liquid"] .studio-card > .studio-symbol { width: 2.8rem; height: 2.8rem; }
+  body[data-pilot="liquid"] .studio-card > .studio-open { grid-column: 1 / -1; width: 100%; justify-self: stretch; }
+  body[data-pilot="liquid"] .studio-card > .studio-connect { grid-column: 1 / -1; grid-row: auto; width: 100%; }
+}

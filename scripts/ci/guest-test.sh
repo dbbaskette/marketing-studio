@@ -73,6 +73,9 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
       fi
     } 2>&1 | tee "$results_dir/activity-tests.log"
     node studios/infographic/tests/ui/activity.cjs 2>&1 | tee "$results_dir/activity-browser.log"
+    if [[ -n "${MARKETING_STUDIO_TEST_LIQUID_PILOT:-}" ]]; then
+      node studios/infographic/tests/ui/liquid-pilot.cjs 2>&1 | tee "$results_dir/liquid-pilot-browser.log"
+    fi
     if [[ -n "${INFOGRAPHIC_STUDIO_TEST_CONTRACTS:-}" ]]; then
       node studios/infographic/tests/ui/workflow-matrix.cjs 2>&1 | tee "$results_dir/workflow-contracts-browser.log"
     fi
