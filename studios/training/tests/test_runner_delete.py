@@ -15,12 +15,12 @@ from unittest import mock
 from urllib.parse import urlencode
 
 import helpers  # noqa: F401
-from runner_support import (FORM, LEAVES, StudioCase, TeamCase, still_running, written)
+from runner_support import (LEAVES, StudioCase, TeamCase, still_running, written)
 
 import desk
 import home
 import workspace
-from runner import agents, companion, engine as engines, gitstate, page, pipeline, settings
+from runner import agents, companion, engine as engines, gitstate, page, settings
 from runner import team
 from workspace import WorkspaceError
 

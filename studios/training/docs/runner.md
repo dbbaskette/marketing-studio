@@ -215,7 +215,7 @@ On a computer that cannot make a deck, everything else is made and the run says 
 
 **What is left in Google Drive.** When previews are made through Drive, each deck leaves one preview presentation there. The runner never deletes anything in your Drive. Settings lists each one with its address, so that you can. A deck you asked for as Google Slides is one more file in your Drive, and its address is kept in the training.
 
-**A scenario of your own.** A scenario file written in a conversation training's folder is used as it is and never rewritten; a training the runner starts has no way to give one. It comes to you at its gate with what the format check found. Ask for changes there and your own wording is laid out under the headings; nothing is invented.
+**A scenario of your own.** A scenario file in an older saved conversation training's folder is used as it is and never rewritten; a training the runner starts has no way to give one. It comes to you at its gate with what the format check found. Ask for changes there and your own wording is laid out under the headings; nothing is invented.
 
 **Copies.** A Google Doc is made with the Google access this computer already has, and a Word file with `pandoc` when it is installed. A copy that cannot be made never stops the run: the run shows which, and why, and offers to try again.
 
@@ -266,7 +266,7 @@ A training's run shows every step, how long each took and what it cost, and what
 - **What stays:** its published revisions, which stay in the workspace's history and are no longer listed; and anything in your Google Drive, which the runner never deletes. The confirmation lists those files with their addresses, so that you can.
 - **It cannot be undone from the page.** Every commit stays, so someone who knows git can bring it back from the history.
 
-A training you started in a conversation is never deleted by the runner, and is not offered.
+An older conversation training outside the workspace is never deleted by the runner, and is not offered.
 
 A training that has spent what it may stops and asks before it spends more, and so does one with too little left to start a step: no job is started with less than $0.50 to spend, or a quarter of a limit under $2.00. A step stopped mid-way because it spent what was left is not counted as a failed try: the training stops in the same way, and the step starts again when you carry on. **Carry on** lets it spend as much again; raising the limit in Settings, under Limits, is the other way on, and the stop says both. Claude Code says what each step cost. Codex reports tokens and not dollars, so the money limit cannot stop it: the page says so, and the limit on time still applies.
 
@@ -310,11 +310,13 @@ Published while your team's repository cannot be reached, a revision is kept on 
 
 This is separate from the older [team hub](team-hub.md), which is used from a conversation and is unchanged.
 
-### Bringing a training in
+### Conversation handoff and saved work
 
-A training you started in a conversation lives in a folder of its own. Open it on the page and press "Run this from here". It is copied into the workspace as a new training, named from its title. The copy's decisions are made on the page, and it carries on from wherever the training had got to, including a gate that was waiting.
+New conversation work is created in the configured workspace with `studio desk create`. The assistant reads checked context and submits work with `studio desk context` and `studio desk submit`; creation starts no worker, conversation work needs no nested assistant, and submission does not approve or mark work Ready. Only a person can approve or answer for the person. To transfer execution to the runner, explicitly request a handoff. The assistant reads the handoff context and uses `studio desk handoff`, which checks the remaining plan, pinned runtime, scope and readiness. A page visit or restart does not transfer ownership. See the [conversation instructions](../skills/training-studio/references/conversation.md) for the exact inputs.
 
-The original folder is left exactly as it was, with nothing deleted. From then on the copy is the one to work on, and the page says where both are. It is refused, with the reason, when the workspace already has a training of that name, when the training's record cannot be read, or when the folder holds something a workspace does not take.
+**Saved-work compatibility.** An older conversation training in its own folder can be opened on the page and brought in with "Run this from here". It is copied into the workspace as a new training, named from its title. The copy's decisions are made on the page, and it carries on from wherever the saved training had got to, including a waiting gate. Older saved seven-stop reviews remain on their saved path.
+
+The original folder is left exactly as it was, with nothing deleted. From then on the copy is the one to work on, and the page says where both are. It is refused, with the reason, when the workspace already has a training of that name, when the training's record cannot be read, or when the folder holds something a workspace does not take. See [saved-work compatibility](../../../docs/saved-work-compatibility.md).
 
 ## What the runner guarantees
 
@@ -333,7 +335,7 @@ The original folder is left exactly as it was, with nothing deleted. From then o
 - Editing a deck by hand and bringing the edits back is not in the runner.
 - What a deck is built from stays on the computer that built it and is not shared: the drawings, the previews and the pictures. Your team gets the deck, what it says, and what its gate showed. On another computer the deck's gate shows no pictures.
 - Reusing a teammate's scenarios or audiences in a new training is not in the runner yet. The [team hub](team-hub.md) does it from a conversation.
-- A training made in a conversation is not picked up by the runner until you bring it in, and a training the runner drives should not also be driven from a conversation while it runs.
+- Conversation-owned work stays with the assistant until an explicit handoff; a training the runner drives should not also be driven from a conversation while it runs.
 - Working as a team has been tried with two people's data on one computer against one repository. Two real computers, and a teammate installing it for the first time, have not been tried yet.
 - Claude Code's models are kept in one file, `core/studio_core/claude-code-models.json`, because Claude Code cannot list them and the runner has no key to ask Anthropic. To bring it up to date, read Anthropic's model reference and change that file alone. Set `source` and `date` to the day you read it. A version is `{"id", "label", "family", "levels"}`: `id` is the exact name the agent is given, `label` how the page names it ("Opus 5.5"), and `levels` the reasoning levels it takes, `[]` for none. A family's own name is `{"id", "family", "alias"}`, where `alias` is the version it means now; its label and levels follow from that version. Keep each family's own name first, then its versions newest first, and leave out models only some accounts can use. The runner refuses a file that is not whole, and `tests/test_runner_agents.py` says what the list should hold, so change it there too. A new release of the runner carries the change.
 - `sh ~/.local/share/training-studio/studio status` prints what is set up and where every run is, as JSON. From a copy of the repository it is `python3 runner/studio.py status`.

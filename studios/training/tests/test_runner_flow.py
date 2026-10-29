@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 import helpers  # noqa: F401
-from runner_support import (BLUEPRINT, BRIEF, DOCUMENT, FORM, QUOTE, SCENARIO, YOODLI,
+from runner_support import (BLUEPRINT, BRIEF, DOCUMENT, QUOTE, SCENARIO, YOODLI,
                             NO_BRAND_SKILL, NO_SLIDES, StudioCase, asks, left)
 
 import assess
