@@ -280,7 +280,7 @@ def redacted(document):
     return value
 
 
-def capture(client, file_id, tab_id, output, include_review=False):
+def capture(client, file_id, tab_id, output, include_review=False, manuscript=False):
     """Capture a single-tab Doc, or one explicit tab without whole-document exports.
 
     Accepted text comes from Google's suggestions-excluded view, so a teammate's
@@ -289,6 +289,7 @@ def capture(client, file_id, tab_id, output, include_review=False):
     otherwise.
     """
     from google_suggestions import accepted_markdown, review_counts
+    import google_manuscript
 
     output = Path(output)
     if output.exists():
@@ -323,11 +324,15 @@ def capture(client, file_id, tab_id, output, include_review=False):
     elif pending or include_review:
         review, review_state, threads = review_counts(client, file_id, inline)
         native = review or inline
-    try:
-        markdown = accepted_markdown(accepted)
-        projection = PROJECTION
-    except GoogleError:
-        if pending or scoped:
+    markdown = None
+    if not manuscript:
+        try:
+            markdown = accepted_markdown(accepted)
+            projection = PROJECTION
+        except GoogleError:
+            pass
+    if markdown is None:
+        if pending or scoped or manuscript:
             # Google's export would show the pending suggestions: Blog Studio reads the Doc
             # as it is without them itself, images and all.
             from google_suggestions import image_data, images_in, image_order
@@ -345,7 +350,7 @@ def capture(client, file_id, tab_id, output, include_review=False):
                 exported = []
             if exported and len(exported) == len(image_order(accepted)) and all(exported):
                 images = exported
-            markdown = accepted_markdown(accepted, images=images)
+            markdown = accepted_markdown(accepted, images=images, manuscript=manuscript)
             projection = OBJECTS_PROJECTION
         else:
             markdown = client.export(file_id, 'md')
@@ -355,6 +360,8 @@ def capture(client, file_id, tab_id, output, include_review=False):
 
         text = markdown.decode('utf-8', 'replace') if isinstance(markdown, bytes) else markdown
         markdown = fit_images(text)[0].encode()
+    if manuscript:
+        projection = google_manuscript.PROJECTION
     word = None if scoped else client.export(file_id, 'docx')
     after_doc = inline_read(client, file_id)
     after = client.metadata(file_id)
@@ -417,6 +424,7 @@ def capture(client, file_id, tab_id, output, include_review=False):
         'pending_suggestions': len(suggestion_ids(inline)),
         'review_threads': threads,
         'structure': meta['structure'],
+        **(google_manuscript.summary(accepted) if manuscript else {}),
     }
     if scoped:
         summary['selected_tab'] = {
@@ -485,6 +493,10 @@ def chip_text(kind, value):
     Google says it displays, so a new kind of chip need not stop a read."""
     if not isinstance(value, dict):
         return ''
+    if kind == 'dropdown':
+        props = value.get('dropdownProperties') or {}
+        shown = props.get('displayValue')
+        return shown if isinstance(shown, str) else ''
     if kind == 'richLink':
         props = value.get('richLinkProperties') or {}
         return str(props.get('title') or props.get('uri') or '')
@@ -769,6 +781,12 @@ def build_parser():
     )
     commands = parser.add_subparsers(dest='action', required=True)
     p = commands.add_parser('capture')
+    p.add_argument(
+        '--manuscript',
+        action='store_true',
+        help='Leave clearly labelled leading approval fields out of the editing copy. '
+        'Use the same option for later captures of this manuscript.',
+    )
     p.add_argument('--file-id', required=True)
     p.add_argument('--tab-id', help='Select exactly one tab; required for a multi-tab Doc.')
     p.add_argument(
@@ -813,7 +831,14 @@ def run(args):
     client = Client(account_for(args.root, args.account))
     if args.action == 'capture':
         output = staged_default(args, args.output, 'capture')
-        return capture(client, identifier(args.file_id), args.tab_id, output, args.include_review)
+        return capture(
+            client,
+            identifier(args.file_id),
+            args.tab_id,
+            output,
+            args.include_review,
+            args.manuscript,
+        )
     if args.action == 'plan':
         require_linked(args.root, args.file_id, args.first_handoff)
         edits = json.loads(args.edits.read_text())

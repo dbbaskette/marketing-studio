@@ -125,7 +125,12 @@ def material(root, value):
             return ''  # An empty tab is nothing to read, not a layout the reader cannot take.
         single = {key: item for key, item in accepted.items() if key != 'tabs'}
         single['tabs'] = [tab]
-        body = accepted_markdown(single)
+        try:
+            body = accepted_markdown(single)
+        except GoogleError:
+            # Chips (including dropdowns) are readable in a selected reference tab too.
+            # Keep all reference content; approval filtering belongs to manuscript intake.
+            body = accepted_markdown(single, images=[])
         return body.decode('utf-8', 'replace') if isinstance(body, bytes) else body
 
     try:
@@ -195,7 +200,9 @@ def preview(root, data):
     folder.mkdir(mode=0o700)
     snapshot = folder / 'snapshot'
     try:
-        result = roundtrip.capture(drive.Client(drive.account_for(root)), file_id, wanted, snapshot)
+        result = roundtrip.capture(
+            drive.Client(drive.account_for(root)), file_id, wanted, snapshot, manuscript=True
+        )
         body = (snapshot / 'document.md').read_text()
         content = text_only(body)
         if not content.strip() or len(content) > 200_000:

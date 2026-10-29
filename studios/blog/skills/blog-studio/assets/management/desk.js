@@ -258,7 +258,7 @@ function sDeskDraftIn(held){
     card.append(file,note);
   }else{
     card.append(sField('desk-google','Google Doc link or document ID',held,'url',{required:true,max:2000,hint:'For a Doc with multiple tabs, open the tab you want and paste its address. Only that tab is imported; the Doc is not changed.',changed:()=>{held.preview=null;}}));
-    if(held.preview){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','Google Doc preview');paper.append(window.StudioMarkdown?window.StudioMarkdown.render(held.preview.content):sNode('p','',held.preview.content));const tab=held.preview.summary.selected_tab;card.append(sNode('p','',tab?'Only the tab “'+tab.title+'” is included. Other tabs are not imported. Check the text below, then start.':'Check the text below, then start.'),paper);}
+    if(held.preview){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','Google Doc preview');paper.append(window.StudioMarkdown?window.StudioMarkdown.render(held.preview.content):sNode('p','',held.preview.content));const tab=held.preview.summary.selected_tab;card.append(sNode('p','',tab?'Only the tab “'+tab.title+'” is included. Other tabs are not imported. Check the text below, then start.':'Check the text below, then start.'));if(held.preview.summary.excluded_approval_blocks)card.append(sNode('p','quiet','Leading approval fields are left out of this editing copy. They stay in the Google Doc. Check that the blog below is complete.'));card.append(paper);}
   }
   card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Blank uses the draft’s # heading or the Doc’s name.'}));
   return [card];

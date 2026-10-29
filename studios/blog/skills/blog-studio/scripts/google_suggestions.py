@@ -337,6 +337,10 @@ def render_paragraph(paragraph, objects=None):
                 add(escape(title or uri), None)
         elif kind in ('person', 'dateElement'):
             add(escape(rt.chip_text(kind, value)), None)
+        elif kind == 'dropdown' and isinstance(
+            (value.get('dropdownProperties') or {}).get('displayValue'), str
+        ):
+            add(escape(rt.chip_text(kind, value)), None)
         elif kind == 'footnoteReference':
             add(objects.footnote(value.get('footnoteId')), None)
         elif kind in ('pageBreak', 'columnBreak', 'autoText'):
@@ -384,7 +388,7 @@ def _table(table, objects):
     return '\n'.join([rows[0], '| ' + ' | '.join(['---'] * columns) + ' |', *rows[1:]])
 
 
-def accepted_markdown(value, images=None):
+def accepted_markdown(value, images=None, manuscript=False):
     """The one Markdown projection of accepted text, used with or without pending suggestions.
 
     DOCX and native structure remain the formatting record. Without `images` this bounded
@@ -397,6 +401,10 @@ def accepted_markdown(value, images=None):
     """
     if rt.suggestions(value):
         raise GoogleError('A suggestions-excluded native preview is required.')
+    if manuscript:
+        from google_manuscript import view
+
+        value = view(value)
     selected = rt.tabs(value)
     if len(selected) != 1:
         raise GoogleError('Review snapshots require a single-tab document.')
@@ -1414,7 +1422,10 @@ def plan(client, root, article_id, kind, findings, output, mode='auto'):
             'and planning suggestions.'
         )
     tab_ids = target['tab_ids']
-    findings = [locate(inline, finding, tab_ids) for finding in findings]
+    from google_manuscript import PROJECTION as MANUSCRIPT_PROJECTION, view
+
+    finding_view = view(inline) if target.get('projection') == MANUSCRIPT_PROJECTION else inline
+    findings = [locate(finding_view, finding, tab_ids) for finding in findings]
     first = next_number(client, root, directory, target['document_id'], inline)
     result = {
         'schema': 1,

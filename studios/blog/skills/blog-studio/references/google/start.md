@@ -13,7 +13,7 @@ and does not change a blog’s editing destination. Ask only when that role is u
 2. Capture the Doc with the installed runtime:
 
    ```text
-   python3 <runtime>/google_roundtrip.py --root <workspace> capture --file-id <id>
+   python3 <runtime>/google_roundtrip.py --root <workspace> capture --file-id <id> --manuscript
    ```
 
    The capture goes to the workspace's private staging folder and the result
@@ -22,10 +22,13 @@ and does not change a blog’s editing destination. Ask only when that role is u
    the Doc you expect and read only the Markdown passages you need (see
    [formatted snapshots](roundtrip.md)); then set `structure_verified` to true
    in the capture's `observation.json`. Never mark it verified solely because
-   export passed. Capture requires a single-tab Doc; do not silently export
+   export passed. Select one tab; do not silently export
    unrelated tabs or flatten unsupported content. If faithful capture is
    unavailable, report the limitation and offer source-only intake without
    claiming a sync baseline.
+   Labelled leading approval chips stay outside the manuscript. Check `summary`;
+   keep `--manuscript` on later captures. Select multi-tab content with `--tab-id`.
+
 3. Use the observed title unless the author supplied another. Initialize the writing
    workspace if needed; then save and link in one local operation:
 

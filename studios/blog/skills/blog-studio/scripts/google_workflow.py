@@ -197,6 +197,13 @@ def same_target(left, right):
         raise ValueError(
             'Document or selected tabs changed. Start a separate handoff; do not reuse this baseline.'
         )
+    from google_manuscript import PROJECTION
+
+    if (left.get('projection') == PROJECTION) != (right.get('projection') == PROJECTION):
+        raise ValueError(
+            'The approval-field scope changed. Capture again with --manuscript for a '
+            'manuscript baseline, or without it for a full-document baseline. Nothing was replaced.'
+        )
 
 
 def local_body(directory, kind):
@@ -456,6 +463,7 @@ def formatted_snapshot(path, obs, body):
         tabs,
     )
     from google_suggestions import accepted_markdown, images_in, kept_like, summary
+    from google_manuscript import PROJECTION as MANUSCRIPT_PROJECTION
 
     directory = Path(path)
     files = {}
@@ -485,6 +493,7 @@ def formatted_snapshot(path, obs, body):
     elif len(obs.get('tab_ids', [])) != 1 or meta.get('projection') not in (
         PROJECTION,
         OBJECTS_PROJECTION,
+        MANUSCRIPT_PROJECTION,
     ):
         raise ValueError('A tab-only capture needs one explicit tab and native-rendered text.')
     identity = (
@@ -538,11 +547,15 @@ def formatted_snapshot(path, obs, body):
             raise ValueError('Native snapshot formatting fingerprint disagrees.')
         if meta['projection'] == PROJECTION and accepted_markdown(accepted) != files['document.md']:
             raise ValueError('Snapshot Markdown is not the accepted text of this native snapshot.')
-        if meta['projection'] == OBJECTS_PROJECTION:
+        if meta['projection'] in (OBJECTS_PROJECTION, MANUSCRIPT_PROJECTION):
             # Read again from the native snapshot with the image data the read kept: every word
             # must be the accepted text's; the images are what Google sent.
             body_text = files['document.md'].decode('utf-8', 'replace')
-            rendered = accepted_markdown(accepted, images=images_in(body_text)).decode()
+            rendered = accepted_markdown(
+                accepted,
+                images=images_in(body_text),
+                manuscript=meta['projection'] == MANUSCRIPT_PROJECTION,
+            ).decode()
             if kept_like(rendered, body_text).encode() != files['document.md']:
                 raise ValueError(
                     'Snapshot Markdown is not the accepted text of this native snapshot.'
