@@ -193,10 +193,10 @@ elif [[ "${1:-full}" == research-finish ]]; then
   } 2>&1 | tee "$results_dir/research-finish-tests.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == research ]]; then
-  # Root installation/settings evidence is unchanged; cover the final research
-  # contract, all affected studio suites, and the complete synthetic CLI journeys.
+  # The shared research contract reaches every research-capable studio. Cover the
+  # full root suite, all affected native suites, and synthetic CLI journeys.
   {
-    PYTHONPATH=tests "$python" -m unittest test_research_contract test_companion_versions -v
+    "$python" -m unittest discover -s tests -v
     (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio")
     (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
     (cd studios/training && bash scripts/ci/check.sh "$python")

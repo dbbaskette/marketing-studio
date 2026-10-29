@@ -18,6 +18,17 @@ Download `marketing-studio-installer.zip` for the whole suite, or one studio's i
 
 Signing in to an assistant, your organisation's brands and fonts, and optional Google setup are still your choices. Installing starts no provider job.
 
+## Unreleased: research citation handoffs
+
+Research workers are explicitly told which saved source IDs to cite. If a worker
+uses its tool's source handle while naming that same source differently in its
+dossier, the shared adapter reconciles the ID only when the capture's file,
+origin and permission identify exactly one dossier source. Claims and quotations
+are unchanged and still pass the pinned Harness Research checks and independent
+review. Missing or ambiguous references are refused inside the current job with
+the fact, citation field and available IDs, rather than a generic unknown-source
+message. Existing training state, source permissions and helper versions are kept.
+
 ## Unreleased: Infographic Studio 0.1.0
 
 Adds the fourth independent editing desk for supplied text, Markdown and selected

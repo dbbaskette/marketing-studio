@@ -180,6 +180,32 @@ class WorkflowCase(unittest.TestCase):
                 self.root, self.task, counted, readable=readable)
 
 
+class CitationHandoffTests(WorkflowCase):
+    def test_non_native_handoff_reconciles_only_an_exact_capture_handle(self):
+        def invoke(phase, guidance, payload, sources, fetch):
+            if phase == 'author':
+                value = self.authored(payload)
+                value['facts'][0]['citations'][0]['source'] = 's1'
+                captures = [dict(self.captured()[0], id='s1')]
+                return json.dumps(value), captures
+            self.assertEqual(payload['dossier']['facts'][0]['citations'][0]['source'], 'source-a')
+            return json.dumps(review(payload['review_template'])), []
+        self.run_with(invoke)
+        self.assertEqual([phase for phase, _ in self.calls], ['author', 'review'])
+        self.assertEqual(self.helper.saved[0]['facts'][0]['citations'][0]['source'], 'source-a')
+
+    def test_non_native_handoff_refuses_a_missing_source_before_save_or_review(self):
+        def invoke(phase, guidance, payload, sources, fetch):
+            value = self.authored(payload)
+            value['facts'][0]['citations'][0]['source'] = 'missing'
+            return json.dumps(value), self.captured()
+        with self.assertRaisesRegex(ValueError, 'Available source IDs'):
+            self.run_with(invoke)
+        self.assertEqual(self.helper.saved, [])
+        self.assertEqual([phase for phase, _ in self.calls], ['author'])
+        self.assertFalse((self.root / contract.CASE / self.FILE).exists())
+
+
 class OriginalClaimTests(WorkflowCase):
     """An original is claimed for a source only when the studio offered one."""
 
@@ -678,8 +704,10 @@ class AuthorGuideTests(WorkflowCase):
     def test_author_return_line_names_the_tools_captures(self):
         _, said = self.authored_once()
         self.assertIn("The studio's tools have saved every capture for you: that is the capture "
-                      '`investigate.md` asks for. Cite each source by the file path the tools '
-                      'gave it, exactly. Write no files yourself.', said)
+                      '`investigate.md` asks for. Set each sources[].file to the exact Capture file '
+                      'path the tools returned. Write no files yourself.', said)
+        self.assertIn(contract.SOURCE_IDS, said)
+        self.assertNotIn('Cite each source by the file path', said)
         self.assertNotIn('research/sources/', said)
 
 

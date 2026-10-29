@@ -779,6 +779,8 @@ class WorkerTools:
         return (f"{verb} as {entry['id']}: \"{entry['title']}\", {len(text):,} "
                 f'characters.\n\n{text[:WINDOW]}{more}'
                 + (f"\n\nCapture file: {entry['file']}. Origin: {entry['url']}."
+                   f" Dossier source ID: {entry['id']}; cite it with "
+                   f'{{"source": "{entry["id"]}", "quote": "exact source text"}}.'
                    if any(spec.get('kind') == 'research-json' for spec in self.job['artifacts'].values()) else ''))
 
     def _ask(self, url: str, addresses: list[str]) -> tuple[int, dict, bytes]:
