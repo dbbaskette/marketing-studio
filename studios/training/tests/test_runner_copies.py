@@ -707,7 +707,7 @@ class DeskCopyTests(runner_support.StudioCase):
     Drive; nothing reaches Google."""
 
     def setUp(self):
-        # The workspace is a Git repository of the test's own: git alone may run.
+        # The workspace is disposable; git alone may run as a process.
         def git_only(command, *given, **named):
             if Path(command[0]).name != 'git':
                 raise AssertionError(f'A test tried to run {command[0]}.')
@@ -717,6 +717,7 @@ class DeskCopyTests(runner_support.StudioCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         super().setUp()
+        self.in_process_synthesis()
 
     def seen(self, root: Path, name: str) -> str:
         session = workspace.load(root)
@@ -729,6 +730,9 @@ class DeskCopyTests(runner_support.StudioCase):
         root = self.start(flow='desk', levels=['101'], copies=['google'])
         self.assertEqual(self.to_end(root), [])
         self.assertIsNone(self.record(root)['problem'], self.view(root))
+        self.assertEqual(len(self.workers.of('research-result')), 2,
+                         'the scripted author and independent reviewer both ran')
+        self.assertTrue(json.loads((root / 'research/facts.json').read_text())['review']['accepted'])
         self.assertEqual(self.copies.drive.docs, {}, 'no Doc of a draft')
         self.assertEqual(self.docs(root), [])
         self.engine.mark_ready(root, 'document@101', seen=self.seen(root, 'document@101'))
@@ -752,6 +756,7 @@ class DeskCopyTests(runner_support.StudioCase):
     def test_nothing_is_sent_of_a_held_or_unwritten_material(self):
         root = self.start(flow='desk', levels=['101'], copies=['google'])
         self.assertEqual(self.to_end(root), [])
+        self.assertIsNone(self.record(root)['problem'], self.view(root))
         # The plan typed into and accepted on the desk: the guide built from it is held.
         plan = root / '101' / 'blueprint.md'
         typed = self.base / 'blueprint.md'

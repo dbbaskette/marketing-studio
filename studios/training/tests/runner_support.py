@@ -1545,6 +1545,32 @@ class StudioCase(unittest.TestCase):
         self.space = self.set_up()
         self.engine = self.make()
 
+    def in_process_synthesis(self):
+        """Run only the disposable synthesis protocol in Python, without a helper process."""
+        from unittest import mock
+        from stand_ins import synthesis
+        original_run = self.research.run
+        def fake(command, cwd=None):
+            if command[2:3] != ['synthesis']:
+                return original_run(command, cwd)
+            try:
+                result = synthesis.command([str(part) for part in command[2:]])
+                return 0, json.dumps(result), ''
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                return 1, '', str(error)
+        self.research.run = fake
+        real_run = subprocess.run
+        def preflight(command, *args, **kwargs):
+            if (len(command) >= 3 and Path(command[1]) ==
+                    self.research.runtime / 'scripts/harness-research.mjs'
+                    and command[2] == 'synthesis'):
+                code, out, err = fake(command)
+                return subprocess.CompletedProcess(command, code, out, err)
+            return real_run(command, *args, **kwargs)
+        patcher = mock.patch.object(subprocess, 'run', preflight)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def which(self, program: str) -> str | None:
         """Where a program is, on the computer a test describes: Python always, and
         LibreOffice and the programs that make pictures as the slides stand-in says."""
