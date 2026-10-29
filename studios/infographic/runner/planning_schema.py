@@ -1,4 +1,4 @@
-"""Bounded story-planning output; native evidence and story checks remain authoritative."""
+"""Bounded authoring outputs; native evidence and page checks remain authoritative."""
 
 TEXT = {'type': 'string', 'maxLength': 10000}
 CONTEXT_TEXT = {'type': 'string', 'maxLength': 1000}
@@ -34,3 +34,25 @@ PLAN = record(
             quantitative={'type': 'boolean', 'description': 'True for measured numeric charts; false for descriptive comparisons and component explanations.'},
             illustration={'type': 'boolean'}, illustration_role=TEXT), minItems=1, maxItems=5)),
         minItems=1, maxItems=3))
+
+
+def art_direction(project):
+    regions = [region['id'] for region in project['scene'].get('art_regions', [])]
+    assets = [asset['id'] for asset in project['assets']]
+    return record(style=TEXT, reading_order=TEXT, acceptance=TEXT,
+        reference_assets=array({'type': 'string', 'enum': assets} if assets else ID, maxItems=len(assets)),
+        objects=array(record(id=ID, region_id={'type': 'string', 'enum': regions},
+            count={'type': 'integer', 'minimum': 1, 'maximum': 100},
+            description=TEXT, relationships=TEXT, preserve=TEXT), minItems=1, maxItems=1000))
+
+
+def inspection(context):
+    scene = context.get('scene') if isinstance(context.get('scene'), dict) else {}
+    regions = sorted({'page', *(e['id'] for e in scene.get('elements', [])),
+                      *(r['id'] for r in scene.get('art_regions', []))})
+    region = {'type': 'string', 'enum': regions}
+    detail = {'type': 'string', 'maxLength': 2000}
+    kinds = ['counts', 'relationships', 'crop', 'resolution', 'label_clearance', 'brand', 'factual_implications']
+    return record(capability={'type': 'string', 'enum': ['inspected', 'unavailable']},
+        observations=array(record(kind={'type': 'string', 'enum': kinds}, region_id=region, text=detail), maxItems=30),
+        findings=array(record(region_id=region, blocking={'type': 'boolean'}, message=detail, correction=detail), maxItems=30))

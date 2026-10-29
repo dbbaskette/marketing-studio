@@ -11,7 +11,7 @@ import secrets
 from . import brand, checks, evidence, exports, history, image_brief, planning_responses, scene, sources, stories, visual_review
 from .contracts import Invalid, basis, canonical, digest
 from .assistant_failure import AssistantFailure
-from .validation import REQUIRED_CHECKS, require, text
+from .validation import REQUIRED_CHECKS, records, require, text
 from .workspace import _read, file_lock
 
 
@@ -121,6 +121,8 @@ class Engine:
         self.store.expect(project, expected_revision)
         require(self.assistant is not None and project['scene'] is not None,
                 'Compose the page and configure an assistant before asking for art direction.')
+        require(bool(project['scene'].get('art_regions')),
+                'This story needs no artwork; do not start decorative image generation.')
         self.progress('Writing the art direction')
         direction = self.assistant.art_direction(project)
         return self.image_direction(ident, direction, expected_revision=expected_revision)
@@ -194,6 +196,7 @@ class Engine:
             self.progress('Revising the selected story')
             revised = self.assistant.revise_story(project, story, block_id, instruction)
             require(isinstance(revised, dict) and revised.get('id') == story_id, 'The revision must retain the story identity.')
+            records(revised.get('blocks'), 'Revised story blocks')
             if block_id is not None:
                 require({k: v for k, v in revised.items() if k != 'blocks'} == {k: v for k, v in story.items() if k != 'blocks'}
                         and [b for b in revised.get('blocks', []) if b['id'] != block_id] == [b for b in story['blocks'] if b['id'] != block_id]

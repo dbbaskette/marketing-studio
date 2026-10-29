@@ -63,6 +63,13 @@ class Assistant:
     def inspect_images(self, context, images):
         self.calls.append('inspection')
         assert images[0].startswith(b'\x89PNG')
+        if self.scenario:
+            from runner.author import Author
+            def run(command, prompt, folder, timeout):
+                assert '--output-schema' in command and '--image' in command
+                event = {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': json.dumps(visual_answer())}}
+                return {'state': 'complete', 'returncode': 0, 'events': json.dumps(event)}
+            return Author({'agent': 'codex'}, run=run).inspect_images(context, images)
         return visual_answer()
 
 

@@ -77,6 +77,9 @@ are located by the application, rather than asking the assistant to count charac
 offsets. Codex planning uses the CLI's [JSON output schema](https://learn.chatgpt.com/docs/developer-commands#codex-exec);
 native evidence, calculation and story validation still decide what can be saved.
 The shared model and reasoning settings are preserved.
+Codex art direction and actual-page inspection also use bounded JSON response
+schemas with the page's owned region and asset IDs. Native content, reference,
+complete-inspection and approval checks remain authoritative.
 Generated paraphrases stay in the assertion field; their literal value is taken
 from uniquely located captured evidence. Whitespace and quotation typography can
 be matched while retaining the original source offsets. Exact numeric strings

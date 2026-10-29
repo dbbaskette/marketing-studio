@@ -20,6 +20,7 @@ verification separate from signed-in provider acceptance.
 | Failure → recovery | Valid JSON responses disappeared after validation failure; another attempt spent allowance again. | Retain private, revision-bound responses before validation. Recheck locally; make a new assistant request only through an explicit fresh action. |
 | Recovery → browser | Refresh left a failed plan in the library, and action failures could leave stale client revisions after partially saved work. | Reopen pending saved plans, expose captured-source review, and refresh saved state after action failures. |
 | Recovery → sharing | Retained responses add private material outside the approved delivery. | Keep responses under private jobs, bind them to owner/source/brief/revision, check digest and paths, and exclude them from every sharing inventory. |
+| Story → artwork → inspection | Free-form JSON at later authoring steps could repeat the same shape failures; malformed reference fields could raise type errors. | Give Codex bounded art-direction and inspection schemas with owned region/asset IDs. Validate malformed art, review and scoped-revision fields before changing the page. |
 
 ## Regression coverage
 
@@ -36,6 +37,11 @@ unreadable or tampered retained responses, links, interrupted writes, stale
 briefs, invalid fresh-request flags, malformed fact/story fields and accidental
 sharing of planning records. An injected renderer is used in native unit tests;
 it is not evidence of visual quality.
+`tests/test_authoring_contracts.py` feeds raw art-direction and inspection replies
+through the author parser and an illustrated build, then checks explicit approval.
+Its synthetic image adapter and renderer exercise the contracts without claiming
+image quality or calling a provider. Malformed references and scoped revisions
+must produce ordinary validation failures and preserve the page.
 
 `tests/ui/workflow-matrix.cjs` drives representative responses through the actual
 phone UI and pinned renderer, including Google Doc intake and Google Doc/PDF
