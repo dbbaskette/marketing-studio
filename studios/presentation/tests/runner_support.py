@@ -788,6 +788,27 @@ class Workers:
         self._ok(tools.submit_artifact('classification', json.dumps(self.classified)))
         tools.submit_review('It reads as notes, not as slides.')
 
+    def research_result(self, tools, job):
+        """Separate scripted author/reviewer invocations over confined source tools."""
+        from synthesis_fixture import captured_dossier, review
+        payload = json.loads(tools.read_input('research-task')[1])
+        if 'review_template' in payload:
+            for source in tools._index():
+                assert tools.read_source(source['id'])[0]
+                if source.get('original'):
+                    assert tools.read_source(source['id'], original=True)[0]
+            value = review(payload['review_template'])
+        else:
+            if tools.job['fetch']:
+                assert tools.save_source(URL)[0]
+            source = tools._index()[0]
+            read = tools.read_source(source['id'])
+            assert read[0], read[1]
+            text = (tools.folder / source['local']).read_text()
+            value = captured_dossier(payload['worker'], source, text)
+        accepted = tools.submit_artifact('research-result', json.dumps(value))
+        assert accepted[0], accepted[1]
+
     def research_plan(self, tools, job):
         self._ok(tools.submit_artifact('research-plan', json.dumps(self.plan)))
         tools.submit_review('Two questions.')
@@ -904,8 +925,6 @@ class StudioCase(unittest.TestCase):
                                          'GIT_CONFIG_NOSYSTEM': '1'}),
             mock.patch.object(worker_tools, 'fetch_once', self.web.opener),
             mock.patch.object(worker_tools, 'resolve', self.web.resolver),
-            # The research stand-in is the legacy queue CLI.
-            mock.patch.object(engines, 'LEGACY_RESEARCH', True),
             # The engine and a worker's tools both find the slides tool and a brand skill
             # through these two, so no test can reach a real one.
             mock.patch.object(engines.slides_tool, 'Slides', self.the_slides),
@@ -930,6 +949,7 @@ class StudioCase(unittest.TestCase):
         settings.save(replace(settings.load(), previews='local'))
         self.engines, self.gitstate, self.settings = engines, gitstate, settings
         self.research = research_stand_in.stand_in()
+        self.addCleanup(self.research._fixture.cleanup)
         self.workers = Workers()
         self.adapters = {'claude': Scripted(self.workers), 'codex': Scripted(self.workers)}
         self.space = self.set_up()
@@ -969,7 +989,48 @@ class StudioCase(unittest.TestCase):
         return engine
 
     def start(self, uploads=None, engine=None, **changes) -> Path:
-        return Path((engine or self.engine).start({**FORM, **changes}, uploads)['path'])
+        return Path((engine or self.engine).start({**FORM, 'flow': 'desk', **changes}, uploads)['path'])
+
+    def saved_start(self, uploads=None, engine=None, saved_contract=None, schema=None, **changes) -> Path:
+        """Construct a saved queue/policy record, then use real saved dispatch.
+
+        No public creation call, capability bypass or migration transform is involved.
+        """
+        import home
+        from runner import decks, settings, team
+        from studio_core import model_profiles, review_policy
+        engine = engine or self.engine
+        space = engine.space()
+        form = {**FORM, **changes, 'flow': None}
+        checked = decks.check_form(form, engine.brands())
+        chosen = settings.load()
+        agent = form.get('agent') or chosen.agent
+        model = form.get('model') if form.get('agent') else chosen.model
+        effort = settings.check_effort(form.get('effort') if form.get('agent') else chosen.effort, agent, model)
+        root = decks.create(space, checked)
+        for name, data in engine._given(form, checked, uploads or {}).items():
+            # Match the native saved upload location, without invoking start.
+            from runner.engine import INCOMING
+            target = root / INCOMING / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        record = decks.read_run(root)
+        record.update(agent=agent, model=model, level_of_effort=effort,
+            model_profiles=model_profiles.capture(agent, model, effort, settings.check_effort),
+            driver=team.claim(space), limits={'step_seconds': chosen.step_seconds, 'dollars': chosen.deck_dollars},
+            review_policy=({'schema': 1, 'level': changes['review_level']} if changes.get('review_level') else review_policy.capture()))
+        record['schema'] = 1 if review_policy.level(record) == 'step_by_step' else 2
+        if saved_contract is not None:
+            record['research_contract'] = dict(saved_contract)
+            record['schema'] = 3
+        if schema is not None:
+            record['schema'] = schema
+        decks.write_run(root, record)
+        engine._commit(root, 'set up its run' + (f", driven by {record['driver']['name']}" if record['driver'] else ''))
+        home.remember(root, checked['title'])
+        engine._claimed(root, space)
+        engine.wake(root)
+        return root
 
     def view(self, root: Path) -> dict:
         return self.engine.view(root)
@@ -984,6 +1045,20 @@ class StudioCase(unittest.TestCase):
         with mock.patch('studio_core.review_policy.capture',
                         return_value={'schema': 1, 'level': review}):
             return self.start(route='existing', level=level, title='Old deck',
+                              source={'kind': 'upload', 'name': 'old.pptx'},
+                              uploads={'old.pptx': DECK}, **changes)
+
+
+    def saved_existing_deck(self, review: str, level: str, **changes) -> Path:
+        """A saved deck started at `level` under the review level `review`, read word
+        for word by the extract worker, as test_flow_routes reads one."""
+        from unittest import mock
+
+        from test_flow_routes import DECK
+        self.workers.queued['outline'] = [read_word_for_word(self)] * 4
+        with mock.patch('studio_core.review_policy.capture',
+                        return_value={'schema': 1, 'level': review}):
+            return self.saved_start(route='existing', level=level, title='Old deck',
                               source={'kind': 'upload', 'name': 'old.pptx'},
                               uploads={'old.pptx': DECK}, **changes)
 
@@ -1072,7 +1147,7 @@ class DeskCase(StudioCase):
     def gated(self, **changes) -> Path:
         """A deck started the gated way, approved stop by stop, with the first look where
         one is asked for, until its deck waits at gate:build."""
-        root = self.start(**changes)
+        root = self.saved_start(**changes)
         for _ in range(12):
             gate = self.view(root)['gate']
             assert gate is not None, self.view(root)['sentence']
@@ -1219,8 +1294,6 @@ def fake_studio() -> Fake:
     for patch in (
             mock.patch.object(worker_tools, 'fetch_once', web.opener),
             mock.patch.object(worker_tools, 'resolve', web.resolver),
-            # The research stand-in is the legacy queue CLI, as in StudioCase.
-            mock.patch.object(engines, 'LEGACY_RESEARCH', True),
             mock.patch.object(engines.slides_tool, 'Slides', lambda *a, **k: slides),
             mock.patch.object(engines.brand_skill, 'Brand', lambda *a, **k: brand),
             mock.patch.object(engines.agents, 'shared_temporary', lambda: []),

@@ -1320,7 +1320,7 @@ class OpenOnDeskTests(DeskCase):
     def test_a_gated_balanced_deck_keeps_its_direction_review(self):
         from runner import stages
         self.review_level = 'balanced'
-        root = self.start()
+        root = self.saved_start()
         names = [step.name for step in stages.steps(self.record(root))]
         self.assertGreater(names.index('gate:outline'), names.index('look-preview'))
         self.assertEqual(self.view(root)['review_level'], 'balanced')
@@ -1366,7 +1366,7 @@ class OpenOnDeskTests(DeskCase):
     def selected(self) -> Path:
         from test_desk_words import planned
         self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-        root = self.existing_deck('automatic', 'selected',
+        root = self.saved_existing_deck('automatic', 'selected',
                                   selected='Shorten the words on slide 2')
         self.decide(root, 'gate:build')
         return root

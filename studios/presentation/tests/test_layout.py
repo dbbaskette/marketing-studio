@@ -35,7 +35,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         return shown
 
     def finished(self, title: str) -> str:
-        path = self.started(title=title)
+        path = self.saved_started(title=title)
         for _ in range(20):
             if self.run_of(path)['gate'] is None:
                 break
@@ -44,7 +44,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
 
     def every_kind(self) -> dict:
         """Decks needing you, working and finished, as the runner lists them."""
-        self.started(title='Waiting deck')
+        self.saved_started(title='Waiting deck')
         self.finished('Finished deck')
         decks = self.get('decks')
         working = {**decks['needs'][0], 'path': '/elsewhere/working', 'id': 'working',
@@ -56,7 +56,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
     # --- the toolbar ---------------------------------------------------------------
 
     def test_the_filled_action_comes_first_and_the_rest_are_quiet(self):
-        self.started(title='Waiting deck')
+        self.saved_started(title='Waiting deck')
         result = self.run_page(self.answers(), [{'snapshot': 'home'}])
         bar = result['snapshots']['home']['toolbar']
         self.assertEqual(bar[0], {'name': 'Review Waiting deck', 'filled': True, 'quiet': False})
@@ -64,7 +64,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertEqual([control for control in bar[1:] if not control['quiet']], [])
 
     def test_a_phone_wraps_the_toolbar_and_has_no_more_menu(self):
-        path = self.started(title='Paused deck')
+        path = self.saved_started(title='Paused deck')
         result = self.deck_screen(path, [{'snapshot': 'phone'}], narrow=True,
                                   **{'GET /api/run': [ok(self.paused(path))]})
         phone = result['snapshots']['phone']
@@ -96,7 +96,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertLess(home['text'].index('Good '), home['text'].index('What needs you'))
 
     def test_start_a_deck_opens_the_form_at_its_route(self):
-        self.started(title='Waiting deck')
+        self.saved_started(title='Waiting deck')
         result = self.run_page(self.answers(), [
             {'click': 'Start from a document'}, {'snapshot': 'document'}])
         shot = result['snapshots']['document']
@@ -153,7 +153,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
 
     def four(self) -> dict:
         """Four decks: one needs you, one working from a document, two finished from scratch."""
-        self.started(title='Waiting deck')
+        self.saved_started(title='Waiting deck')
         brief = self.get('decks')['needs'][0]
 
         def like(title, state, route, needs=False):
@@ -420,7 +420,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
 
     def test_bring_in_a_deck_picks_then_brings(self):
         known = [{'title': 'Old deck', 'path': '/old/a'}, {'title': 'Other deck', 'path': '/old/b'}]
-        self.started(title='Waiting deck')
+        self.saved_started(title='Waiting deck')
         answers = self.answers(**{'GET /api/known-decks': [ok({'decks': known})],
                                   'POST /api/bring': [ok({'path': '/nowhere'})], **NOT_THERE})
         result = self.run_page(answers, [
@@ -451,7 +451,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
     # --- the deck screen, kept light -----------------------------------------------
 
     def test_the_deck_opens_with_its_lede(self):
-        path = self.started(title='Rolling restarts')
+        path = self.saved_started(title='Rolling restarts')
         run = self.run_of(path)
         shot = self.deck_screen(path, [{'snapshot': 'deck'}])['snapshots']['deck']
         self.assertEqual(shot['ledes'], [run['sentence']])
@@ -459,7 +459,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertTrue(before.endswith(shot['toolbar'][-1]['name']), before[-200:])
 
     def test_undo_sits_beside_the_lede(self):
-        path = self.started(title='Paused deck')
+        path = self.saved_started(title='Paused deck')
         result = self.deck_screen(path, [{'snapshot': 'deck'}, {'click': 'Undo the last step'},
                                          {'snapshot': 'undo'}],
                                   **{'GET /api/run': [ok(self.paused(path))]})
@@ -471,7 +471,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertIn('Undo', result['snapshots']['undo']['sheet'])
 
     def test_what_needs_you_comes_before_what_is_made(self):
-        path = self.started(title='Rolling restarts')
+        path = self.saved_started(title='Rolling restarts')
         shown = self.run_of(path)
         shown['build_progress'] = {'incomplete': True, 'slides': [
             {'ref': 'r1', 'number': 1, 'revision': '3f2a1c9b0d4e5f6a', 'title': 'Cover'}]}
@@ -490,7 +490,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.brand.run.offers_looks = True
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            path = self.started(research=True)
+            path = self.saved_started(research=True)
         record = self.engine._load(Path(path))
         record['research_contract'] = {'schema': 2}
         self.engine._store(Path(path), record)
@@ -513,7 +513,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertEqual(self.posts(result), [])
 
     def test_a_phone_sends_marks_from_the_review_bar(self):
-        path = self.started(title='Rolling restarts')
+        path = self.saved_started(title='Rolling restarts')
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:outline')
         phone = self.deck_screen(path, [{'snapshot': 'deck'}], narrow=True)['snapshots']['deck']
         self.assertEqual([control for control in phone['toolbar'] if control['filled']], [])
@@ -524,7 +524,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertEqual(desk['buttons'].count('Approve'), 1)
 
     def test_a_slide_picture_can_be_cancelled(self):
-        path = self.started()
+        path = self.saved_started()
         gate = self.run_of(path)['gate']
         content = next(one for one in gate['slides'] if one.get('kind') == 'content')
         title = content['title']
@@ -584,7 +584,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertEqual(len(self.posts(result)), 1)
 
     def test_the_sheet_keeps_the_focus_when_it_opens_from_an_address(self):
-        self.started(title='Waiting deck')
+        self.saved_started(title='Waiting deck')
         result = self.run_page(self.answers(), [
             {'snapshot': 'home'}, {'back': True}, {'snapshot': 'opened'}],
             earlier=[{'screen': 'new', 'path': None}], transitions=True)
@@ -622,7 +622,7 @@ class LayoutTests(test_desk.ScriptedPage, test_runner_page.PageCase):
         self.assertEqual(result['snapshots']['options']['keyedTwice'], [])
 
     def test_a_phone_keeps_the_review_send_after_a_sheet_closes(self):
-        path = self.started(title='Rolling restarts')
+        path = self.saved_started(title='Rolling restarts')
         result = self.deck_screen(path, [
             {'click': 'Ask for changes'}, {'snapshot': 'open'}, {'key': 'Escape'},
             {'snapshot': 'closed'}], narrow=True)

@@ -376,7 +376,7 @@ class ProgressTests(DeskPageCase):
             'path': path, 'ref': 'a' * 32, 'note': 'Fewer words.', 'number': 3})])
 
     def test_a_gated_deck_keeps_its_own_screen(self):
-        path = self.started()
+        path = self.saved_started()
         result = self.open_deck(path, self.run_of(path), [{'snapshot': 'gated'}])
         shot = result['snapshots']['gated']
         self.assertIsNone(self.run_of(path)['desk'])
@@ -1316,7 +1316,7 @@ class OpenOnDeskPageTests(DeskPageCase):
     def delivered(self, **changes) -> str:
         """A deck started the gated way, approved stop by stop with the first look, and
         delivered."""
-        path = self.started(**changes)
+        path = self.saved_started(**changes)
         for _ in range(12):
             gate = self.run_of(path)['gate']
             if gate is None:

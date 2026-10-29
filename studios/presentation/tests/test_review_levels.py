@@ -10,7 +10,7 @@ class ReviewLevelsTests(StudioCase):
         from runner.steps import look, outline
         self.brand.run.offers_looks = True
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start()
+            root = self.saved_start()
         edited = json.loads((root / outline.OUTLINE).read_text())['slides']
         edited[1]['title'] = 'An edited synthetic claim'
         self.workers.outline_said = {**self.workers.outline_said, 'slides': edited}
@@ -28,7 +28,7 @@ class ReviewLevelsTests(StudioCase):
         from runner.steps import look
         self.brand.run.offers_looks = True
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start()
+            root = self.saved_start()
         self.decide(root, extra={'look': 'example-clear'})
         self.assertEqual(self.view(root)['gate']['name'], 'gate:build')
         self.assertEqual(look.chosen(root)['choice'], 'example-clear')
@@ -39,7 +39,7 @@ class ReviewLevelsTests(StudioCase):
         from runner.steps import look, outline
         self.brand.run.offers_looks = True
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start()
+            root = self.saved_start()
         edited = json.loads((root / outline.OUTLINE).read_text())['slides']
         edited[1]['title'] = 'Another edited synthetic claim'
         self.workers.outline_said = {**self.workers.outline_said, 'slides': edited}
@@ -51,7 +51,7 @@ class ReviewLevelsTests(StudioCase):
         from runner import marks
         from workspace import WorkspaceError
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(research=True)
+            root = self.saved_start(research=True)
         before = len(self.workers.jobs)
         with self.assertRaisesRegex(WorkspaceError, marks.ALL_LEFT_OUT):
             self.decide(root, extra={'direction_target': 'gate:research', 'left_out': ['instance-min', 'health-checks']}, decision='changes')
@@ -69,7 +69,7 @@ class ReviewLevelsTests(StudioCase):
     def test_the_direction_review_shows_the_research_account(self):
         from synthesis_fixture import research_stop
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(research=True)
+            root = self.saved_start(research=True)
         research_stop(root / 'research')
         record = self.engine._load(root)
         record['research_contract'] = {'schema': 2}
@@ -86,7 +86,7 @@ class ReviewLevelsTests(StudioCase):
         import json
         from runner.steps import look
         self.brand.run.offers_looks = True
-        root = self.existing_deck('balanced', 'redesign')
+        root = self.saved_existing_deck('balanced', 'redesign')
         shown = self.view(root)
         self.assertIsNone(shown['problem'], shown['sentence'])
         self.assertEqual(shown['gate']['name'], 'gate:look')
@@ -103,7 +103,7 @@ class ReviewLevelsTests(StudioCase):
 
     def test_balanced_combines_direction_then_deck_and_keeps_snapshot(self):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(research=True)
+            root = self.saved_start(research=True)
         shown = self.view(root)
         self.assertIsNone(shown['problem'])
         self.assertEqual(shown['gate']['name'], 'gate:outline')
@@ -123,7 +123,7 @@ class ReviewLevelsTests(StudioCase):
 
     def test_automatic_stops_only_at_rendered_deck_and_old_run_stays_strict(self):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'automatic'}):
-            root = self.start(research=True)
+            root = self.saved_start(research=True)
         shown = self.view(root)
         self.assertIsNone(shown['problem'])
         self.assertEqual(shown['gate']['name'], 'gate:build')
@@ -138,7 +138,7 @@ class ReviewLevelsTests(StudioCase):
     def test_combined_review_rejects_changed_material_and_can_research_again(self):
         from workspace import WorkspaceError
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(research=True)
+            root = self.saved_start(research=True)
         shown = self.view(root)['gate']
         with self.assertRaises(WorkspaceError):
             self.engine.decide(root, 'gate:outline', 'approve', expected='old-version')
@@ -151,7 +151,7 @@ class ReviewLevelsTests(StudioCase):
 
     def test_balanced_document_classification_continues_without_an_extra_stop(self):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(route='document', research=True, research_sources='both',
+            root = self.saved_start(route='document', research=True, research_sources='both',
                               source={'kind': 'paste', 'text': 'Synthetic source material'})
         shown = self.view(root)
         self.assertIsNone(shown['problem'])
@@ -161,7 +161,7 @@ class ReviewLevelsTests(StudioCase):
     def test_brand_can_change_through_the_combined_review_page(self):
         from runner import page
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': 'balanced'}):
-            root = self.start(research=True)
+            root = self.saved_start(research=True)
         shown = self.view(root)['gate']
         reply = page.RunnerPage(8765, self.engine).decide({
             'path': str(root), 'gate': 'gate:outline', 'decision': 'changes',

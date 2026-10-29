@@ -910,7 +910,7 @@ class MigrationGoogleTests(DeckCase):
         return engines.read_record(root)
 
     def test_checked_conversation_repeated_local_edits_preserve_delivered_state(self):
-        root = self.begin(deck_target='google')
+        root = self.saved_begin(deck_target='google')
         self.drawn(root)
         self.assertNotEqual(workspace.load(root)['stage'], 'done')
         (root / '.training-studio/google-baseline.json').write_text('{"revision":"synthetic-existing-google-revision"}\n')

@@ -948,7 +948,7 @@ class SelectedTests(DeskCase):
 
     def test_a_gated_selected_deck_keeps_its_plan_as_its_worker_wrote_it(self):
         self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-        root = self.existing_deck('automatic', 'selected',
+        root = self.saved_existing_deck('automatic', 'selected',
                                   selected='Shorten the words on slide 2')
         self.assertEqual(self.waiting(root), 'gate:build')
         with self.assertRaises(WorkspaceError) as caught:

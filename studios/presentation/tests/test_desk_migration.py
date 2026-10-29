@@ -64,7 +64,7 @@ class MigrationTests(runner_support.DeskCase):
         self.assertEqual(decks.read_run(root)['conversation_scope'], ['part'])
 
     def test_early_missing_and_unsupported_inputs_refuse_without_changes(self):
-        root = self.start()
+        root = self.saved_start()
         (root / 'outline.json').unlink(missing_ok=True)
         before = self.snapshot(root)
         preview = self.preview(root)
@@ -543,7 +543,7 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
     def test_selected_changes_preserves_original_copy_and_google_preview_baseline(self):
         from test_desk_words import planned
         self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-        root = self.existing_deck('automatic', 'selected', selected='Shorten slide 2')
+        root = self.saved_existing_deck('automatic', 'selected', selected='Shorten slide 2')
         baseline = root / 'work/build/drive-preview.json'
         baseline.parent.mkdir(exist_ok=True)
         baseline.write_text('{"id":"synthetic-preview","pool":"prior-receipt"}')
@@ -915,7 +915,7 @@ class ReadyTests(runner_support.DeskCase):
     def selected_migrated(self):
         from test_desk_words import planned
         self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
-        root = self.existing_deck('automatic', 'selected', selected='Shorten slide 2')
+        root = self.saved_existing_deck('automatic', 'selected', selected='Shorten slide 2')
         preview = desk_chat.migration_preview(self.engine, root)
         desk_chat.migrate(self.engine, root, preview['expected'])
         return root

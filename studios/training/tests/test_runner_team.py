@@ -86,8 +86,7 @@ class Team(TeamCase, Asking):
     def started(self, person=None, **changes) -> Path:
         person = person or self.alex
         with self.be(person):
-            form = pipeline.check_form({**FORM, **changes})
-            return Path(person.engine.start(form)['path'])
+            return self.saved_start(engine=person.engine, **changes)
 
     def seen(self, person, root: Path) -> dict:
         with self.be(person):
@@ -429,7 +428,7 @@ class NoDriverTests(StudioCase):
     """A workspace that is a folder on one computer has no drivers."""
 
     def test_nothing_changes_where_there_is_no_shared_repository(self):
-        root = self.start()
+        root = self.saved_start()
         view = self.view(root)
         self.assertEqual((view['mine'], view['driver'], view['taken']), (True, None, None))
         self.assertIsNone(self.record(root)['driver'])
@@ -559,11 +558,11 @@ class TurnTests(StudioCase):
 
         self.workers.cost = 0.25
         self.workers.then('research-plan', held)
-        first = self.start()
+        first = self.saved_start()
         self.assertTrue(entered.wait(30))
-        second = self.start(title='Health checks')
+        second = self.saved_start(title='Health checks')
         self.until(lambda: self.view(second)['queue'])
-        third = self.start(title='Blue green')
+        third = self.saved_start(title='Blue green')
         self.until(lambda: self.view(third)['queue'])
         self.assertEqual((self.view(first)['queue'], self.view(second)['queue'],
                           self.view(third)['queue']), (None, {'ahead': 0}, {'ahead': 1}))
@@ -597,7 +596,7 @@ class TurnTests(StudioCase):
 
 class StandingTests(StudioCase):
     def test_status_reads_each_run_and_its_training_once(self):
-        root = self.start()
+        root = self.saved_start()
         read_record, load, records, sessions = engines.read_record, workspace.load, [], []
 
         def record(where):
@@ -699,14 +698,14 @@ class NotifyTests(StudioCase, Asking):
         settings.save(replace(settings.load(), notify=True))
 
     def test_nothing_is_told_until_it_is_turned_on(self):
-        self.start()
+        self.saved_start()
         self.assertEqual((settings.load().notify, self.engine.tell(), self.notifier.sent),
                          (False, [], []))
 
     def test_each_thing_that_needs_a_decision_is_told_once(self):
         self.on()
         self.workers.then('blueprint', asks('Which platform version?'))
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.engine.tell(), ['Rolling restarts'])
         self.assertEqual(self.engine.tell(), [])
         self.assertEqual(self.make().tell(), [], 'nor again after the runner is started again')
@@ -721,7 +720,7 @@ class NotifyTests(StudioCase, Asking):
 
     def test_nothing_is_told_while_a_page_is_open(self):
         self.on()
-        self.start()
+        self.saved_start()
         self.engine.seen()
         self.assertEqual((self.engine.page_open(), self.engine.tell()), (True, []))
         with mock.patch.object(engines, 'PAGE_OPEN', 0):
@@ -729,7 +728,7 @@ class NotifyTests(StudioCase, Asking):
                              (False, ['Rolling restarts']))
 
     def test_what_went_wrong_in_the_background_is_said_until_it_goes_right(self):
-        self.start()
+        self.saved_start()
         tried, again, go = [], threading.Event(), threading.Event()
         self.addCleanup(go.set)
 
@@ -970,7 +969,7 @@ class PublishTests(Team):
 
 class LocalPublishTests(StudioCase):
     def test_a_workspace_on_one_computer_keeps_its_revisions_here(self):
-        root = self.start()
+        root = self.saved_start()
         self.to_end(root)
         made = self.engine.publish(root)
         self.assertEqual((made['revision'], made['ready'], made['shared']), (1, True, False))

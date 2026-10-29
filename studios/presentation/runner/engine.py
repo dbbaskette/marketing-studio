@@ -300,9 +300,6 @@ NO_BRAND = ("Your deck needs your brand from here on, and no brand skill is inst
 DRIVE_FILES = {'preview': 'Preview presentation', 'slides': 'Google Slides deck'}
 NO_SYNTHESIS = ('Research needs Harness Research 1.0 or newer on this computer, and the one '
                 'here cannot do it. Update Harness Research, then start again.')
-# True lets a new run start on the legacy question queue. Only the test suites that still
-# drive the queue through its stand-in set it; piece 7 removes it with the queue.
-LEGACY_RESEARCH = False
 
 
 # --- what a run record holds ----------------------------------------------------------------
@@ -809,7 +806,7 @@ class Engine(Jobs, Researching, DeskActions):
                 else None
         except WorkspaceError:
             contract = None
-        if checked.get('research') and contract is None and not LEGACY_RESEARCH:
+        if checked.get('research') and contract is None:
             raise WorkspaceError(NO_SYNTHESIS)
         with self.files:
             if gitstate.workspace_identity(self.workspace) != gitstate.workspace_identity(space):

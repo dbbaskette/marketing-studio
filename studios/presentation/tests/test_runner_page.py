@@ -128,10 +128,14 @@ class Asking:
         return reply
 
     def started(self, uploads=None, **changes) -> str:
-        sent = {'form': {**FORM, **changes}}
+        sent = {'form': {**FORM, 'flow': 'desk', **changes}}
         if uploads:
             sent['uploads'] = {name: encoded(data) for name, data in uploads.items()}
         return self.post('decks', sent)['path']
+
+    def saved_started(self, uploads=None, **changes) -> str:
+        """A saved fixture enters the page through its actual run reader."""
+        return str(self.saved_start(uploads=uploads, **changes))
 
     def run_of(self, path: str) -> dict:
         return self.get('run', path=path)
@@ -176,7 +180,7 @@ class RuleTests(PageCase):
 
     def setUp(self):
         super().setUp()
-        self.path = self.started()
+        self.path = self.saved_started()
         self.bodies = {target: {} for target in POSTS}
         self.bodies.update({
             '/api/setup/check': {'path': str(self.base / 'elsewhere')},
@@ -305,7 +309,7 @@ class PictureRemovalTests(PageCase):
     change (RuleTests holds /api/picture-remove to them too)."""
 
     def test_a_picture_is_taken_off_a_slide(self):
-        path = self.started()
+        path = self.saved_started()
         gate = self.run_of(path)['gate']
         self.assertEqual(gate['name'], 'gate:outline')
         content = next(one for one in gate['slides'] if one.get('kind') == 'content')
@@ -369,9 +373,10 @@ class StartTests(PageCase):
     def test_an_upload_is_sent_in_base64_and_taken_in(self):
         path = self.started(uploads={'notes.md': NOTES}, route='document',
                             source={'kind': 'upload', 'name': 'notes.md'})
-        gate = self.run_of(path)['gate']
-        self.assertEqual((gate['name'], gate['documents'][0]['name']),
-                         ('gate:classify', 'notes.md'))
+        from runner import documents
+        entry = documents.listed(Path(path))[0]
+        self.assertEqual(entry['name'], 'notes.md')
+        self.assertEqual((Path(path) / entry['file']).read_bytes(), NOTES)
         self.assertNotIn(encoded(NOTES), (Path(path) / 'run.json').read_text())
 
     def test_a_form_that_makes_no_sense_starts_nothing(self):
@@ -405,7 +410,7 @@ class StartTests(PageCase):
 
 class RunTests(PageCase):
     def test_a_deck_goes_from_its_form_to_delivered_on_the_page(self):
-        path = self.started()
+        path = self.saved_started()
         before = len(self.log())
         for gate in ('gate:outline', 'gate:look', 'gate:build'):
             self.assertEqual(self.run_of(path)['gate']['name'], gate)
@@ -427,7 +432,7 @@ class RunTests(PageCase):
         self.assertEqual(self.get('decks')['finished'][0]['id'], 'rolling-restarts')
 
     def test_a_slides_picture_is_only_what_the_engine_gives(self):
-        path = self.started()
+        path = self.saved_started()
         self.decided(path, 'gate:outline')
         status, kind, data, _ = self.raw('GET', '/api/slide?' + urlencode(
             {'path': path, 'kind': 'look', 'name': 'sample'}))
@@ -458,7 +463,7 @@ class RunTests(PageCase):
             self.assertEqual((status, reply['error']), (404, page.NO_DECK))
 
     def test_powerpoint_by_choice_can_be_sent_to_google(self):
-        path = self.started(output='pptx')
+        path = self.saved_started(output='pptx')
         for gate in ('gate:outline', 'gate:look', 'gate:build'):
             self.decided(path, gate)
         self.assertTrue(self.run_of(path)['deliver']['to_google'])
@@ -468,7 +473,7 @@ class RunTests(PageCase):
         self.assertEqual(self.engine._load(Path(path))['form']['output'], 'pptx')
 
     def test_a_deck_made_as_powerpoint_without_google_is_delivered_to_it_later(self):
-        path = self.started()
+        path = self.saved_started()
         self.slides.run.drive = False
         for gate in ('gate:outline', 'gate:look', 'gate:build'):
             self.decided(path, gate)
@@ -495,7 +500,7 @@ class RunTests(PageCase):
         self.assertIn('already', self.post('deliver', {'path': path}, 409)['error'])
 
     def test_a_second_press_while_the_deck_is_on_its_way_to_google_is_refused(self):
-        path = self.started()
+        path = self.saved_started()
         self.slides.run.drive = False
         for gate in ('gate:outline', 'gate:look', 'gate:build'):
             self.decided(path, gate)
@@ -517,16 +522,16 @@ class RunTests(PageCase):
                               if one.get('url')]), 1)
 
     def test_a_deck_not_delivered_is_not_sent_to_google(self):
-        path = self.started()
+        path = self.saved_started()
         self.assertIn('not been delivered', self.post('deliver', {'path': path}, 409)['error'])
 
     def test_a_deck_not_delivered_has_nothing_to_download(self):
-        path = self.started()
+        path = self.saved_started()
         status, reply, _ = self.answer('GET', '/api/download?' + urlencode({'path': path}))
         self.assertEqual(status, 409, reply)
 
     def test_a_shared_file_is_read_by_name_and_nothing_else(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.get('file', path=path, name='outline.md')
         self.assertEqual((shown['name'], shown['truncated']), ('outline.md', False))
         self.assertIn('Rolling restarts', shown['text'])
@@ -543,7 +548,7 @@ class RunTests(PageCase):
                       self.get('file', 403, path=path, name='look.md')['error'])
 
     def test_a_decision_that_makes_no_sense_changes_nothing(self):
-        path = self.started()
+        path = self.saved_started()
         before = self.on_disk()
         for sent, expect, said in (
                 ({'gate': 'gate:nothing', 'decision': 'approve'}, 400, 'one of the gates'),
@@ -567,7 +572,7 @@ class RunTests(PageCase):
                          page.NO_DECK)
 
     def test_changes_with_marks_need_no_note_and_changes_with_nothing_do(self):
-        path = self.started(research=True)
+        path = self.saved_started(research=True)
         self.post('decide', {'path': path, 'gate': 'gate:research-plan',
                              'decision': 'changes'}, 400)
         self.post('decide', {'path': path, 'gate': 'gate:research-plan', 'decision': 'changes',
@@ -575,7 +580,7 @@ class RunTests(PageCase):
         self.assertEqual(self.run_of(path)['gate']['round'], 2)
 
     def test_slides_named_at_the_deck_still_need_a_note(self):
-        path = self.started()
+        path = self.saved_started()
         for gate in ('gate:outline', 'gate:look'):
             self.decided(path, gate)
         said = self.post('decide', {'path': path, 'gate': 'gate:build', 'decision': 'changes',
@@ -584,7 +589,7 @@ class RunTests(PageCase):
         self.assertEqual(self.run_of(path)['gate']['name'], 'gate:build')
 
     def test_changes_are_asked_for_with_a_note_and_the_step_runs_again(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.decided(path, 'gate:outline', 'changes',
                              note='Make the objection its own section.')
         self.assertEqual((shown['gate']['name'], len(self.workers.of('outline'))),
@@ -593,7 +598,7 @@ class RunTests(PageCase):
                       self.workers.of('outline')[-1].task)
 
     def test_a_run_can_be_paused_resumed_stopped_and_undone(self):
-        path = self.started()
+        path = self.saved_started()
         self.assertIn('Only a deck that is working can be paused',
                       self.post('run', {'path': path, 'action': 'pause'}, 409)['error'])
         self.assertEqual(self.post('run', {'path': path, 'action': 'stop'})['state'], 'stopped')
@@ -608,7 +613,7 @@ class RunTests(PageCase):
 
     def test_a_workers_question_is_answered_on_the_page(self):
         self.workers.then('outline', asks('Which audience matters more?'))
-        path = self.started()
+        path = self.saved_started()
         asked = self.run_of(path)['question']
         self.assertEqual(asked['text'], 'Which audience matters more?')
         self.assertEqual(self.post('answer', {'path': path, 'id': asked['id'],
@@ -624,7 +629,7 @@ class RunTests(PageCase):
                          'That question is not waiting for an answer any more.')
 
     def test_a_note_for_the_next_step_is_sent_on_the_page(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)
         self.assertEqual(shown['note'], {'pending': None, 'used': [], 'expected': '0'})
         self.assertEqual(self.post('note', {'path': path, 'text': 'Keep it short.'}, 400)['error'],
@@ -641,7 +646,7 @@ class RunTests(PageCase):
                          'Lead with the risks.')
 
     def test_reading_never_starts_or_wakes_a_run(self):
-        path = self.started()
+        path = self.saved_started()
         jobs, log = len(self.workers.jobs), self.log()
         with mock.patch.object(self.engine, 'wake', never):
             for _ in range(3):
@@ -657,7 +662,7 @@ class RunTests(PageCase):
         self.assertTrue(self.engine.page_open())
 
     def test_the_status_screen_and_a_deletion(self):
-        path = self.started()
+        path = self.saved_started()
         status = self.get('status')
         self.assertEqual([run['id'] for run in status['runs']], ['rolling-restarts'])
         leaving = self.get('delete', path=path)
@@ -671,7 +676,7 @@ class RunTests(PageCase):
     def test_sharing_and_fetching_in_a_workspace_on_this_computer(self):
         self.assertEqual(self.post('fetch', {}), {'reached': None, 'received': 0,
                                                   'notice': None})
-        self.assertEqual(self.post('drive', {'path': self.started(), 'action': 'take'},
+        self.assertEqual(self.post('drive', {'path': self.saved_started(), 'action': 'take'},
                                    409)['error'], engines.NO_DRIVERS)
 
 
@@ -779,7 +784,7 @@ class DeskRouteTests(PageCase):
         self.assertIn('Choose a set of suggestions on this deck.', said['error'])
 
     def test_a_desk_note_on_a_gated_deck_is_400_with_its_sentence(self):
-        path = self.started()
+        path = self.saved_started()
         said = self.post('desk-note', {'path': path, 'number': 3, 'note': 'Shorter.',
                                        'expected': 'x'}, 400)
         self.assertEqual(said['error'], desk.NOT_ON_DESK)
@@ -790,7 +795,7 @@ class DeskRouteTests(PageCase):
 
 class WordlessChangeTests(PageCase):
     def test_a_target_of_another_gate_does_not_stand_in_for_a_note(self):
-        path = self.started()
+        path = self.saved_started()
         self.to_gate(Path(path), 'gate:build')
         said = self.decided(path, 'gate:build', 'changes', 400,
                             extra={'direction_target': 'gate:look', 'brand': 'example'})
@@ -815,7 +820,7 @@ class BuildFeedbackTests(PageCase):
             # The older worker then fails without a valid hand-in. It must not halt the newer direction.
             home.write_json(tools.folder / 'accepted/artifacts.json', {})
         self.workers.then('section', section)
-        path = self.started(output='pptx')
+        path = self.saved_started(output='pptx')
         for _ in range(8):
             gate = self.run_of(path).get('gate')
             if not gate or gate['name'] == 'gate:build': break
@@ -849,7 +854,7 @@ class FirstDraftTests(PageCase):
         self.assertEqual(checked['initial_review_source'], 'form')
 
     def build_draft(self):
-        path = self.started(initial_review='user-first', output='pptx')
+        path = self.saved_started(initial_review='user-first', output='pptx')
         for _ in range(8):
             gate = self.run_of(path).get('gate')
             if not gate or gate['name'] == 'gate:build':
@@ -891,7 +896,7 @@ class FirstDraftTests(PageCase):
 
 class StoryboardTests(PageCase):
     def test_preview_unsaved_outline_keeps_original_and_decisions_and_rejects_old_source(self):
-        path = self.started()
+        path = self.saved_started()
         shown = self.run_of(path)['gate']
         root = Path(path)
         before = (root / 'outline.json').read_bytes(), (root / 'run.json').read_bytes()
@@ -926,7 +931,7 @@ class StoryboardTests(PageCase):
 
 class BringTests(PageCase):
     def test_remembered_decks_list_omits_current_workspace(self):
-        path = Path(self.started())
+        path = Path(self.saved_started())
         self.assertEqual(self.get('known-decks'), {'decks': []})
         outside = self.base / 'conversation' / 'restarts'
         shutil.copytree(path, outside, ignore=shutil.ignore_patterns('work', 'sources'))
@@ -934,7 +939,7 @@ class BringTests(PageCase):
         self.assertEqual([d['path'] for d in self.get('known-decks')['decks']], [str(outside)])
 
     def test_only_a_deck_this_computer_knows_is_brought_in(self):
-        path = Path(self.started())
+        path = Path(self.saved_started())
         outside = self.base / 'outside' / 'restarts'
         shutil.copytree(path, outside, ignore=shutil.ignore_patterns('work', 'sources'))
         said = self.post('bring', {'path': str(outside)}, 403)
@@ -1015,7 +1020,7 @@ class UpkeepTests(PageCase):
             self.workers.outline(tools, job)
 
         self.workers.then('outline', looks)
-        self.started()
+        self.saved_started()
         self.assertEqual(keeper.asked, [
             ('update', False), ('upgrade', False, '99.0.0'), ('restart', False),
             ('dismiss', 'x 99.0.0'), ('update', False), ('update', True), ('restart', True)])
@@ -1071,7 +1076,7 @@ class UpkeepTests(PageCase):
             self.workers.outline(tools, job)
 
         self.workers.then('outline', looks)
-        self.started()
+        self.saved_started()
         self.assertEqual(keeper.asked, [('install_brand', False, 'v1.2.0'),
                                         ('install_brand', False, 'v1.2.0'),
                                         ('install_brand', True, 'v1.2.0')],
@@ -1122,7 +1127,7 @@ class TeamPageTests(Asking, TeamCase):
 
     def shared_deck(self) -> str:
         with self.be(self.alex):
-            path = self.started()
+            path = self.saved_started()
         self.as_blake('POST', '/api/fetch', {})
         return path
 
@@ -1160,7 +1165,7 @@ class TeamPageTests(Asking, TeamCase):
 
     def test_a_deck_is_published_and_its_revisions_listed_on_the_page(self):
         with self.be(self.alex):
-            path = self.started()
+            path = self.saved_started()
             made = self.post('publish', {'path': path})
             self.assertEqual((made['revision'], made['ready'], made['shared']), (1, False, True))
             listed = self.get('published')['published']
@@ -1170,7 +1175,7 @@ class TeamPageTests(Asking, TeamCase):
 
     def test_a_deck_is_deleted_on_the_page_and_the_deletion_shared(self):
         with self.be(self.alex):
-            path = self.started()
+            path = self.saved_started()
             gone = self.post('delete', {'path': path, 'title': 'Rolling restarts'})
         self.assertEqual((gone['deleted'], gone['shared']), (True, True))
         self.assertIn('Rolling restarts: Alex deletes this deck', self.shared()[0])
@@ -1189,7 +1194,7 @@ class TeamPageTests(Asking, TeamCase):
     def test_nothing_is_told_through_the_computer_while_a_page_is_open(self):
         with self.be(self.alex):
             settings.save(replace(settings.load(), notify=True))
-            self.started()
+            self.saved_started()
             self.get('decks')
             self.assertEqual(self.engine.tell(), [])
             with mock.patch.object(engines, 'PAGE_OPEN', 0):
@@ -1398,7 +1403,7 @@ if __name__ == '__main__':
 
 class ResearchPriceTests(PageCase):
     def test_the_research_gate_prices_a_change(self):
-        path = Path(self.started(research=True))
+        path = Path(self.saved_started(research=True))
         self.decided(str(path), 'gate:research-plan')
         record = self.engine._load(path)
         record['research_contract'] = {'schema': 2}

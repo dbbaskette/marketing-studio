@@ -92,8 +92,9 @@ class DeskStartTests(DeckCase):
 
     def test_row_140_a_desk_start_needs_synthesis(self):
         before = self.made()
-        with mock.patch.object(engines, 'LEGACY_RESEARCH', False), \
-                self.assertRaises(WorkspaceError) as caught:
+        from stand_ins.research import saved_queue
+        self.research = saved_queue()
+        with self.assertRaises(WorkspaceError) as caught:
             self.start(flow='desk')
         self.assertEqual(str(caught.exception), drafts.NEEDS_SYNTHESIS)
         # One refusal for every start: the desk's is the engine's own (row 137).
@@ -123,24 +124,21 @@ class DeskStartTests(DeckCase):
             path.write_text(json.dumps({**record, **changes}), encoding='utf-8')
             return engines.read_record(root)
 
-        # The tests' legacy queue lets a desk run read without one, as it lets it start.
-        self.assertEqual(read()['flow'], 'desk')
-        with mock.patch.object(engines, 'LEGACY_RESEARCH', False):
-            self.assertEqual(read(research_contract=CONTRACT)['schema'], 4)
-            for changes in ({}, {'research_contract': {'schema': 1}},
-                            {'research_contract': CONTRACT, 'flow': None}):
-                with self.subTest(changes=changes), \
-                        self.assertRaisesRegex(WorkspaceError, f'^{NO_CONTRACT}$'):
-                    read(**changes)
-            # A saved run opened on the desk keeps the schema it was saved with.
-            for schema, extra in ((1, {}), (2, {'review_policy': {'schema': 1,
-                                                                  'level': 'balanced'}}),
-                                  (3, {'research_contract': CONTRACT})):
-                with self.subTest(schema=schema):
-                    self.assertEqual(read(schema=schema, **extra)['flow'], 'desk')
+        self.assertEqual(read(research_contract=CONTRACT)['schema'], 4)
+        for changes in ({'research_contract': None}, {'research_contract': {'schema': 1}},
+                        {'research_contract': CONTRACT, 'flow': None}):
+            with self.subTest(changes=changes), \
+                    self.assertRaisesRegex(WorkspaceError, f'^{NO_CONTRACT}$'):
+                read(**changes)
+        # A saved run opened on the desk keeps the schema it was saved with.
+        for schema, extra in ((1, {}), (2, {'review_policy': {'schema': 1,
+                                                              'level': 'balanced'}}),
+                              (3, {'research_contract': CONTRACT})):
+            with self.subTest(schema=schema):
+                self.assertEqual(read(schema=schema, **extra)['flow'], 'desk')
 
     def test_saved_runs_keep_their_gates(self):
-        root = self.start()
+        root = self.saved_start()
         record = self.record(root)
         self.assertNotIn('flow', record)
         self.assertEqual(record['schema'], 1)
@@ -154,7 +152,7 @@ class DeskStartTests(DeckCase):
         self.assertFalse(self.record(root).get('review_events'))
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'balanced'}):
-            balanced = self.start(title='Balanced restarts')
+            balanced = self.saved_start(title='Balanced restarts')
         self.assertEqual(workspace.status(balanced)['gate'], 'research-plan')
         self.assertEqual(self.state(balanced), 'waiting')
         self.assertEqual(self.record(balanced)['schema'], 2)
@@ -163,7 +161,7 @@ class DeskStartTests(DeckCase):
         self.brand.offers_looks = True
         with mock.patch.object(review_policy, 'capture',
                                return_value={'schema': 1, 'level': 'automatic'}):
-            automatic = self.begin(title='Automatic restarts', levels=['101'])
+            automatic = self.saved_begin(title='Automatic restarts', levels=['101'])
         self.assertEqual(workspace.status(automatic)['gate'], 'deck@101', self.view(automatic))
         self.assertEqual(self.state(automatic), 'waiting')
         self.decide(automatic, 'deck@101')
@@ -393,7 +391,7 @@ class DeskHoldTests(DeckCase):
     def test_a_card_below_a_held_one_waits(self):
         root = self.start(flow='desk', levels=['101'])
         self.assertEqual(self.to_end(root), [])
-        report = root / '.harness-research' / 'research-report.md'
+        report = root / 'research/report.md'
         report.write_text(report.read_text(encoding='utf-8') + '\nOne finding more.\n',
                           encoding='utf-8')
         held = self.held(root)
@@ -464,7 +462,7 @@ class DeskHoldTests(DeckCase):
         self.assertEqual(self.record(root)['drafts']['updates'], {})
 
     def test_saved_runs_still_remake(self):
-        root = self.begin(levels=['101'])
+        root = self.saved_begin(levels=['101'])
         self.drawn(root, '101')
         self.to_end(root)
         self.assertIsNone(workspace.status(root)['gate'])
@@ -569,7 +567,7 @@ class DeskReadyTests(DeckCase):
                                 'practice scenario or keep it as it is first.$'):
             self.engine.mark_ready(root, name, seen=self.seen(root, name))
         # A card whose own input is held waits for that input.
-        report = root / '.harness-research' / 'research-report.md'
+        report = root / 'research/report.md'
         report.write_text(report.read_text(encoding='utf-8') + '\nOne finding more.\n',
                           encoding='utf-8')
         with self.assertRaisesRegex(
@@ -578,7 +576,7 @@ class DeskReadyTests(DeckCase):
         self.assertEqual(self.log(), commits)
 
     def test_mark_ready_is_the_desk_s_alone(self):
-        root = self.start(levels=['101'])
+        root = self.saved_start(levels=['101'])
         with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
             self.engine.mark_ready(root, 'intake', seen=self.seen(root, 'intake'))
         with self.assertRaisesRegex(WorkspaceError, f'^{drafts.NOT_ON_DESK}$'):
@@ -683,7 +681,7 @@ class DeskReadyTests(DeckCase):
             self.view(root)
 
     def test_saved_runs_still_write_their_index(self):
-        root = self.start(levels=['101'])
+        root = self.saved_start(levels=['101'])
         self.to_end(root)
         self.assertTrue((root / pipeline.INDEX).is_file())
         self.assertEqual(self.state(root), 'done')
@@ -1014,7 +1012,7 @@ class DeskTypingTests(DeckCase):
 class OpenSavedTrainingTests(DeckCase):
     def finished(self, mode='step_by_step'):
         with mock.patch.object(review_policy, 'capture', return_value={'schema': 1, 'level': mode}):
-            root = self.start(levels=['101'], title='Training ' + mode)
+            root = self.saved_start(levels=['101'], title='Training ' + mode)
         if mode == 'step_by_step':
             self.to_end(root)
         else:
@@ -1072,7 +1070,7 @@ class OpenSavedTrainingTests(DeckCase):
         self.assertEqual(str(caught.exception), drafts.NOT_BROUGHT_IN)
 
     def test_a_training_still_waiting_cannot_be_opened(self):
-        root = self.start(levels=['101'])
+        root = self.saved_start(levels=['101'])
         self.to_gate(root, 'document@101')
         file = root / '.training-studio/run.json'
         before = file.read_bytes()
