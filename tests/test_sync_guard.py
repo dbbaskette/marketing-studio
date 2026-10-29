@@ -296,10 +296,21 @@ class SyncGuardTests(unittest.TestCase):
         pending = item / migration.PENDING
         pending.parent.mkdir(parents=True)
         journal = {'schema': 1, 'product': 'Training Studio', 'id': item.name,
-                   'expected': token, 'after': {name: base64.b64encode(data).decode() for name, data in after.items()}}
+                   'expected': token, 'after': {name: base64.b64encode(data).decode() for name, data in after.items()},
+                   'originals': {migration.SESSION: migration.digest(raw_session), migration.RUN: migration.digest(raw_run)},
+                   'before_workspace': base64.b64encode(b'{}').decode(), 'index_before': '', 'index_prepared': '',
+                   'head_before': {**dict.fromkeys(migration.WRITES, ''), '@training-workspace/hub.json': ''}}
         pending.write_text(json.dumps(journal))
         self.assertTrue(worker_in_progress(self.repo))
         self.assertFalse(worker_in_progress(self.repo, recovering_training=pending))
+        for key in ('head_before', 'index_prepared', 'originals'):
+            old = {name: value for name, value in journal.items() if name != key}
+            pending.write_text(json.dumps(old))
+            self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
+        for head in ({}, {**journal['head_before'], migration.ORIGIN: 'unproven'},
+                     {**journal['head_before'], '@training-workspace/hub.json': 'unknown'}):
+            pending.write_text(json.dumps({**journal, 'head_before': head}))
+            self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
         for key, value in (('product', 'Presentation Studio'), ('id', 'other')):
             changed = {**journal, key: value}
             pending.write_text(json.dumps(changed))

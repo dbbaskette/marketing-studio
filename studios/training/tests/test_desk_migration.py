@@ -573,6 +573,173 @@ class MigrationTests(StudioCase):
                 with self.assertRaisesRegex(WorkspaceError, 'rolled back'):
                     desk_chat.migrate(self.engine, root, token)
 
+    def publication_state(self):
+        return (self.snapshot(self.space.root), self.git('ls-files', '--stage', '-z'), self.git('rev-parse', 'HEAD'))
+
+    def partial_publication(self, selected):
+        from runner import desk_migration
+        root = self.saved()
+        marker = self.space.root / gitstate.MARKER
+        value = json.loads(marker.read_bytes())
+        value['minimum_runtime'] = '4.6.1'
+        marker.write_text(json.dumps(value))
+        self.git('add', str(marker))
+        self.git('commit', '-m', 'Synthetic prior floor', '--only', str(marker))
+        unrelated = self.space.root / 'unrelated-staged.txt'
+        unrelated.write_text('Unrelated person work')
+        self.git('add', str(unrelated))
+        paths = [root / name for name in SIDES] + [marker]
+        token = self.preview(root)['expected']
+        captured = []
+
+        def partial(*args, **kwargs):
+            self.git('add', '--', *(str(path) for path in paths))
+            self.git('commit', '-m', 'Synthetic partial publication', '--only', str(paths[selected]))
+            captured.append(self.publication_state())
+            raise OSError('partial commit returned an error')
+
+        with mock.patch.object(gitstate, 'commit', side_effect=partial), self.assertRaises((OSError, WorkspaceError)):
+            desk_chat.migrate(self.engine, root, token)
+        self.assertEqual(self.publication_state(), captured[0])
+        with self.assertRaises(WorkspaceError):
+            desk_chat.migrate(self.engine, root, token)
+        self.assertEqual(self.publication_state(), captured[0])
+        self.assertTrue((root / desk_migration.format.PENDING).exists())
+
+    def test_partial_receipt_commit_preserves_exception_and_retry(self):
+        self.partial_publication(0)
+
+    def test_partial_session_commit_preserves_exception_and_retry(self):
+        self.partial_publication(1)
+
+    def test_partial_run_commit_preserves_exception_and_retry(self):
+        self.partial_publication(2)
+
+    def test_partial_marker_commit_preserves_exception_and_retry(self):
+        self.partial_publication(3)
+
+    def test_exception_preserves_changed_outputs_before_rollback(self):
+        import shutil
+        for selected in range(4):
+            with self.subTest(selected=selected):
+                root = self.saved('Changed output ' + str(selected))
+                token = self.preview(root)['expected']
+                paths = [root / name for name in SIDES] + [self.space.root / gitstate.MARKER]
+                captured = []
+
+                def change(*args, **kwargs):
+                    paths[selected].write_bytes(paths[selected].read_bytes() + b'\nLater person bytes\n')
+                    captured.append(self.publication_state())
+                    raise OSError('changed output before failure')
+
+                with mock.patch.object(gitstate, 'commit', side_effect=change), self.assertRaises((OSError, WorkspaceError)):
+                    desk_chat.migrate(self.engine, root, token)
+                self.assertEqual(self.publication_state(), captured[0])
+                # Discard only this disposable fixture after preservation is proven.
+                shutil.rmtree(root)
+                if selected == 3:
+                    paths[3].write_bytes(captured[0][0][gitstate.MARKER].split(b'\nLater person bytes\n')[0])
+
+    def test_exception_preserves_missing_marker_and_durable_changed_output(self):
+        import shutil
+        for committed in (False, True):
+            with self.subTest(committed=committed):
+                root = self.saved('Exception complete ' + str(committed))
+                token = self.preview(root)['expected']
+                marker = self.space.root / gitstate.MARKER
+                marker_bytes = marker.read_bytes()
+                commit, captured = gitstate.commit, []
+
+                def fail(*args, **kwargs):
+                    if committed:
+                        commit(*args, **kwargs)
+                        (root / SIDES[1]).write_bytes((root / SIDES[1]).read_bytes() + b'\nLater bytes\n')
+                    else:
+                        marker.unlink()
+                    captured.append(self.publication_state())
+                    raise OSError('publication output uncertain')
+
+                with mock.patch.object(gitstate, 'commit', side_effect=fail), self.assertRaises(WorkspaceError):
+                    desk_chat.migrate(self.engine, root, token)
+                self.assertEqual(self.publication_state(), captured[0])
+                shutil.rmtree(root)
+                marker.write_bytes(marker_bytes)
+
+    def test_local_preview_binds_scoped_head_and_retains_dirty_support(self):
+        root = self.saved()
+        marker = self.space.root / gitstate.MARKER
+        value = json.loads(marker.read_bytes())
+        value['local_person_setting'] = 'Retain this local edit'
+        marker.write_text(json.dumps(value))
+        self.git('add', str(marker))
+        token = self.preview(root)['expected']
+        unrelated = self.space.root / 'unrelated-commit.txt'
+        unrelated.write_text('Unrelated committed work')
+        self.git('add', str(unrelated))
+        self.git('commit', '-m', 'Unrelated local commit', '--only', str(unrelated))
+        self.assertEqual(self.preview(root)['expected'], token)
+        # Same worktree AND scoped index; only the scoped HEAD entry changes.
+        index = self.git('ls-files', '--stage', '-z')
+        self.git('commit', '-m', 'Explicit local marker commit', '--only', str(marker))
+        self.assertEqual(self.git('ls-files', '--stage', '-z'), index)
+        before = self.publication_state()
+        with self.assertRaises(WorkspaceError):
+            desk_chat.migrate(self.engine, root, token)
+        self.assertEqual(self.publication_state(), before)
+        self.apply(root)
+        self.assertEqual(json.loads(marker.read_bytes())['local_person_setting'], value['local_person_setting'])
+
+    def test_committed_recovery_requires_every_exact_current_output(self):
+        from runner import desk_migration
+        root = self.saved()
+        marker = self.space.root / gitstate.MARKER
+        value = json.loads(marker.read_bytes())
+        value['minimum_runtime'] = '4.6.1'
+        before_marker = json.dumps(value).encode()
+        marker.write_bytes(before_marker)
+        token = self.preview(root)['expected']
+        commit = gitstate.commit
+
+        def durable(*args, **kwargs):
+            commit(*args, **kwargs)
+            raise OSError('durable publication interrupted')
+
+        with mock.patch.object(gitstate, 'commit', side_effect=durable), self.assertRaises(OSError):
+            desk_chat.migrate(self.engine, root, token)
+        paths = [root / name for name in SIDES] + [marker]
+        for path in paths:
+            prepared = path.read_bytes()
+            for changed in (None, prepared + b'\nChanged\n') + ((before_marker,) if path == marker else ()):
+                with self.subTest(path=path.name, changed=changed is not None):
+                    if changed is None:
+                        path.unlink()
+                    else:
+                        path.write_bytes(changed)
+                    before = self.publication_state()
+                    with self.assertRaises(WorkspaceError):
+                        desk_chat.migrate(self.engine, root, token)
+                    self.assertEqual(self.publication_state(), before)
+                    path.write_bytes(prepared)
+        self.assertTrue((root / desk_migration.format.PENDING).exists())
+        desk_chat.migrate(self.engine, root, token)
+        self.assertFalse((root / desk_migration.format.PENDING).exists())
+
+    def test_older_journal_without_scoped_head_refuses_intact(self):
+        from runner import desk_migration
+        root = self.saved()
+        token = self.preview(root)['expected']
+        with mock.patch.object(gitstate, 'commit', side_effect=OSError('interrupted')), \
+                mock.patch.object(desk_migration, '_committed', side_effect=OSError('uncertain')), self.assertRaises(OSError):
+            desk_chat.migrate(self.engine, root, token)
+        pending = root / desk_migration.format.PENDING
+        journal = json.loads(pending.read_bytes())
+        journal.pop('head_before', None)
+        pending.write_text(json.dumps(journal))
+        before = self.publication_state()
+        with self.assertRaises(WorkspaceError):
+            desk_chat.migrate(self.engine, root, token)
+        self.assertEqual(self.publication_state(), before)
+
     def test_page_preview_apply_and_finished_adoption_stay_distinct(self):
         from runner import page
         root = self.saved()
@@ -930,8 +1097,10 @@ class MigrationPageTests(ScriptedPage, PageCase):
     saved = MigrationTests.saved
     snapshot = MigrationTests.snapshot
 
-    def fixture(self):
+    def fixture(self, review=False):
         self.root = self.saved()
+        if review:
+            workspace.checkpoint(self.root, stage='blueprint', gate='blueprint')
         path = str(self.root)
         before = self.get('run', path=path)
         detail = self.get('training', path=path)
@@ -978,6 +1147,21 @@ class MigrationPageTests(ScriptedPage, PageCase):
             self.assertNotIn('Note for the whole plan', result['snapshots']['desk']['text'])
             self.assertIn('Mark ready', result['snapshots']['desk']['buttons'])
             self.assertEqual(fixture['desk']['needs'], [])
+
+    def test_detail_review_remains_the_only_primary_before_migration(self):
+        fixture = self.fixture(review=True)
+        self.assertTrue(fixture['detail']['run']['can_migrate_desk'])
+        review = 'Review ' + fixture['detail']['waiting']['label']
+        for narrow in (False, True):
+            result = self.run_page(self.answers(fixture), [
+                {'snapshot': 'detail'}, {'click': 'Open on the desk'}, {'snapshot': 'preview'},
+                {'click': 'Cancel'}, {'snapshot': 'returned'}],
+                state={'screen': 'training', 'path': fixture['path']}, narrow=narrow)
+            self.assertEqual(result['snapshots']['detail']['filled'], [review])
+            self.assertIn('Open on the desk', result['snapshots']['detail']['buttons'])
+            self.assertEqual(result['snapshots']['preview']['filled'], ['Apply'])
+            self.assertEqual(result['snapshots']['returned']['filled'], [review])
+            self.assertEqual([request for request in result['requests'] if request['method'] == 'POST'], [])
 
     def test_blocker_and_changed_preview_keep_sheet_and_saved_work(self):
         fixture = self.fixture()

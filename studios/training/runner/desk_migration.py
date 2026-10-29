@@ -177,6 +177,8 @@ def _snapshot(engine, path):
     scope = [gitstate.inside(space, _path(space, root, name)) for name in (*format.WRITES, WORKSPACE)]
     guard['index'] = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *scope)
     _restore_index(space, root, (*format.WRITES, WORKSPACE), guard['index'], check=True)
+    guard['head_before'] = _scoped_head(space, root)
+    _validate_head_before(space, root, guard['head_before'])
     blockers = [SYNC_WAIT] if busy or any(local.values()) or engine._checking or root in engine.pending_commit else []
     if space.address:
         who = json.loads(identity) if identity else {}
@@ -258,11 +260,13 @@ def _restore_index(space, root, writes, before, check=False):
     paths = [gitstate.inside(space, _path(space, root, name)) for name in writes]
     if not isinstance(before, str):
         raise WorkspaceError('The saved migration index cannot be verified.')
+    seen = set()
     for entry in before.split('\0'):
         if entry:
             header, _, name = entry.partition('\t')
-            if name not in paths or not re.fullmatch(r'[0-7]{6} [a-f0-9]{40,64} 0', header):
+            if name not in paths or name in seen or not re.fullmatch(r'100(?:644|755) [a-f0-9]{40,64} 0', header):
                 raise WorkspaceError('The saved migration index has an unsupported entry.')
+            seen.add(name)
     if not check:
         gitstate.hub.git(space.repo, 'reset', '-q', 'HEAD', '--', *paths)
         if before and gitstate.hub.run(space.repo, 'update-index', '-z', '--index-info', input=before).returncode:
@@ -270,11 +274,54 @@ def _restore_index(space, root, writes, before, check=False):
 
 
 def _committed(space, root, writes):
+    entries = {}
+    for entry in _prepared_index(space, root, writes).split('\0'):
+        if entry:
+            header, _, relative = entry.partition('\t')
+            mode, digest, _ = header.split()
+            entries[relative] = f'{mode} blob {digest}\t{relative}\0'
+    return _scoped_head(space, root) == {name: entries[gitstate.inside(space, _path(space, root, name))] for name in writes}
+
+
+def _scoped_head(space, root):
+    paths = {gitstate.inside(space, _path(space, root, name)): name for name in (*format.WRITES, WORKSPACE)}
+    entries = gitstate.hub.git(space.repo, 'ls-tree', '-z', 'HEAD', '--', *paths)
+    result = dict.fromkeys(paths.values(), '')
+    for entry in entries.split('\0'):
+        if entry:
+            relative = entry.partition('\t')[2]
+            if relative not in paths or result[paths[relative]]:
+                raise WorkspaceError('The original migration publication basis cannot be verified.')
+            result[paths[relative]] = entry + '\0'
+    return result
+
+
+def _validate_head_before(space, root, basis):
+    relative = gitstate.inside(space, _path(space, root, WORKSPACE))
+    if not isinstance(basis, dict) or set(basis) != {*format.WRITES, WORKSPACE} \
+            or any(basis[name] != '' for name in format.WRITES) \
+            or not isinstance(basis[WORKSPACE], str) or (basis[WORKSPACE] and not re.fullmatch(
+                r'100(?:644|755) blob [a-f0-9]{40,64}\t' + re.escape(relative) + '\0', basis[WORKSPACE])):
+        raise WorkspaceError('The original migration publication basis cannot be verified. Keep its recovery record.')
+
+
+def _check_rollback_head(space, root, basis):
+    _validate_head_before(space, root, basis)
+    if _scoped_head(space, root) != basis:
+        raise WorkspaceError('The migration publication state cannot be verified. Keep its recovery record; nothing was rolled back.')
+
+
+def _check_outputs(space, root, writes, before_workspace, *, complete=False):
     for name, data in writes.items():
-        result = gitstate.hub.run(space.repo, 'show', f'HEAD:{gitstate.inside(space, _path(space, root, name))}')
-        if result.returncode or result.stdout.encode() != data:
-            return False
-    return True
+        path = _path(space, root, name)
+        if not path.exists() and not path.is_symlink():
+            # Only new sidecars may still be absent before publication completes.
+            if complete or name == WORKSPACE:
+                raise WorkspaceError('The interrupted desk metadata is missing. Keep its recovery record.')
+            continue
+        current = migration_records._bytes(path)
+        if current != data and not (name == WORKSPACE and current == before_workspace and not complete):
+            raise WorkspaceError('The interrupted desk metadata changed. Nothing was replaced; keep its recovery record.')
 
 
 def _prepared_index(space, root, writes):
@@ -301,11 +348,12 @@ def _check_recovery_index(space, root, writes, before, prepared):
 
 def _recover(space, root, expected):
     journal = json.loads(migration_records._bytes(root / format.PENDING, limit=8_000_000))
-    fields = {'schema', 'product', 'id', 'expected', 'originals', 'after', 'before_workspace', 'index_before', 'index_prepared'}
+    fields = {'schema', 'product', 'id', 'expected', 'originals', 'after', 'before_workspace', 'index_before', 'index_prepared', 'head_before'}
     if set(journal) != fields or type(journal['schema']) is not int or journal['schema'] != 1 or journal['product'] != 'Training Studio' or journal['id'] != root.name or journal['expected'] != expected \
             or journal['originals'] != {name: format.digest(migration_records._bytes(root / name)) for name in (format.SESSION, format.RUN)} \
             or not isinstance(journal['after'], dict) or set(journal['after']) != {*format.WRITES, WORKSPACE}:
         raise WorkspaceError('The interrupted opening cannot be verified. Keep its recovery record.')
+    _validate_head_before(space, root, journal['head_before'])
     after = {name: base64.b64decode(data, validate=True) for name, data in journal['after'].items()}
     original_marker = base64.b64decode(journal['before_workspace'], validate=True)
     for data in (original_marker, after[WORKSPACE]):
@@ -324,13 +372,12 @@ def _recover(space, root, expected):
     format.validated(json.loads(after[format.ORIGIN]), json.loads(after[format.DESK_SESSION]), json.loads(after[format.DESK_RUN]),
                      migration_records._bytes(root / format.SESSION), migration_records._bytes(root / format.RUN), root.name)
     _check_recovery_index(space, root, after, journal['index_before'], journal['index_prepared'])
-    for name, data in after.items():
-        path = _path(space, root, name)
-        if path.exists() and path.read_bytes() != data and not (name == WORKSPACE and path.read_bytes() == original_marker):
-            raise WorkspaceError('The interrupted desk metadata changed. Nothing was replaced.')
-    if _committed(space, root, after):
+    durable = _committed(space, root, after)
+    _check_outputs(space, root, after, original_marker, complete=durable)
+    if durable:
         (root / format.PENDING).unlink()
         return True
+    _check_rollback_head(space, root, journal['head_before'])
     for name in format.WRITES:
         (root / name).unlink(missing_ok=True)
     _write(space.root / gitstate.MARKER, original_marker)
@@ -393,18 +440,24 @@ def migrate(engine, path, expected):
         journal = {'schema': 1, 'product': 'Training Studio', 'id': root.name, 'expected': expected, 'originals': {name: format.digest(files[name]) for name in (format.SESSION, format.RUN)},
                    'before_workspace': guard['marker'], 'index_before': guard['index'],
                    'index_prepared': _prepared_index(space, root, writes),
+                   'head_before': guard['head_before'],
                    'after': {name: base64.b64encode(data).decode() for name, data in writes.items()}}
-        committed = False
         try:
             _write(root / format.PENDING, json.dumps(journal).encode())
             for name, data in writes.items():
                 _write(_path(space, root, name), data)
             gitstate.commit(space, session['title'] + ': open unfinished work on the desk', [_path(space, root, name) for name in writes])
-            committed = True
+            _check_recovery_index(space, root, writes, journal['index_before'], journal['index_prepared'])
+            if not _committed(space, root, writes):
+                raise WorkspaceError('The migration publication state cannot be verified. Keep its recovery record.')
+            _check_outputs(space, root, writes, marker_bytes, complete=True)
             (root / format.PENDING).unlink()
         except BaseException:
-            if not committed and not _committed(space, root, writes):
-                _check_recovery_index(space, root, writes, journal['index_before'], journal['index_prepared'])
+            _check_recovery_index(space, root, writes, journal['index_before'], journal['index_prepared'])
+            durable = _committed(space, root, writes)
+            _check_outputs(space, root, writes, marker_bytes, complete=durable)
+            if not durable:
+                _check_rollback_head(space, root, journal['head_before'])
                 for name in format.WRITES:
                     (root / name).unlink(missing_ok=True)
                 _write(space.root / gitstate.MARKER, marker_bytes)

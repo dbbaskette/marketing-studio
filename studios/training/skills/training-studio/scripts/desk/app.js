@@ -3356,7 +3356,7 @@ function paintTraining(fresh) {
   const watch = training.run || watched(known) ? capsule('Watch the run', '',
     () => show('run', { path: training.path }), 'watch') : null;
   const openDesk = training.run && (training.run.can_open_desk || training.run.can_migrate_desk)
-    ? openDeskButton(training.path, 'filled', !training.run.can_open_desk) : null;
+    ? openDeskButton(training.path, lead && !theirs ? '' : 'filled', !training.run.can_open_desk) : null;
   place({ title: training.title || 'Untitled', above, back: true, actions: [watch, lead, openDesk] },
     [add(make('div', 'intro'), state(shape, words), beads(training.stages, false),
       make('p', 'lede', saysOf(training)), whoLine(known)),

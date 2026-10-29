@@ -2,6 +2,7 @@
 import json
 import base64
 import os
+import re
 import stat
 from pathlib import Path
 
@@ -186,13 +187,28 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
 
     def training_recovery(folder, pending):
         value = small_record(pending, 8_000_000)
-        if not (isinstance(value, dict) and type(value.get('schema')) is int and value['schema'] == 1
+        workspace = '@training-workspace/hub.json'
+        fields = {'schema', 'product', 'id', 'expected', 'originals', 'after', 'before_workspace',
+                  'index_before', 'index_prepared', 'head_before'}
+        if not (isinstance(value, dict) and set(value) == fields and type(value.get('schema')) is int and value['schema'] == 1
                 and value.get('product') == 'Training Studio' and value.get('id') == folder.name
                 and isinstance(value.get('expected'), str) and value['expected'].startswith('tm1.')
                 and isinstance(value.get('after'), dict) and set(value['after']) ==
-                    {*training_migration.WRITES, '@training-workspace/hub.json'}):
+                    {*training_migration.WRITES, workspace}
+                and isinstance(value['index_before'], str) and isinstance(value['index_prepared'], str)
+                and isinstance(value['head_before'], dict) and set(value['head_before']) == {*training_migration.WRITES, workspace}
+                and all(value['head_before'][name] == '' for name in training_migration.WRITES)):
             return False
         try:
+            head = value['head_before'][workspace]
+            if not isinstance(head, str) or head and not re.fullmatch(r'100(?:644|755) blob [a-f0-9]{40,64}\t[^\0]+\0', head):
+                return False
+            if value['originals'] != {name: training_migration.digest(small_bytes(folder / name))
+                                      for name in (training_migration.SESSION, training_migration.RUN)}:
+                return False
+            before_workspace = base64.b64decode(value['before_workspace'], validate=True)
+            if len(before_workspace) > 1_000_000 or not isinstance(json.loads(before_workspace), dict):
+                return False
             after = {name: base64.b64decode(data, validate=True) for name, data in value['after'].items()}
             if any(len(data) > 1_000_000 for data in after.values()):
                 return False
