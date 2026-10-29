@@ -124,6 +124,8 @@ class SessionTests(unittest.TestCase):
         self.invoke = uncertain
         with self.assertRaisesRegex(ValueError, 'terminal confirmation'): self.run_session()
         with self.assertRaisesRegex(ValueError, 'no confirmed terminal'): self.run_session()
+        self.task['scope'] = 'A changed synthetic scope must not release unresolved capacity.'
+        with self.assertRaisesRegex(ValueError, 'no confirmed terminal'): self.run_session()
 
     def test_stop_requires_explicit_new_generation_after_terminal_confirmation(self):
         self.barrier = None

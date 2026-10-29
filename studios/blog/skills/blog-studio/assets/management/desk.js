@@ -140,7 +140,7 @@ function sDeskSettings(held){
     if(typeof StudioResearch !== 'undefined'){
       if(!held.sourceEditor)held.sourceEditor=new StudioResearch.Editor({request:sent=>api('research-sources',sent),label:'Research before writing (optional)'});
       form.append(held.sourceEditor.node);
-    }
+    }else form.append(sCard('Research before the writing',sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>again()),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'),sNode('p','quiet','Ticked as in Settings, for this blog only. It runs before the outline, with no stop for you.')));
   }
   form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(held,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
   form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));

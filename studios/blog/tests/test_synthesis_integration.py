@@ -380,3 +380,26 @@ class PlanningTaskTests(Fixture):
         self.assertEqual(
             seen[0]['planning_questions'], [{'id': 'instance-min', 'question': 'Minimum?'}]
         )
+
+
+class ParallelMeterTests(unittest.TestCase):
+    def test_investigator_usage_reaches_stage_meter_without_duplicate_main_usage(self):
+        import blog_worker
+
+        with blog_worker.metered() as total:
+            forward = blog_worker.forwarded_meter()
+
+            def child():
+                with blog_worker.metered() as observations:
+                    blog_worker.reported(tokens=12, dollars=0.25)
+                forward(observations)
+
+            thread = threading.Thread(target=child)
+            thread.start()
+            thread.join(2)
+            with blog_worker.metered() as main:
+                blog_worker.reported(tokens=None, dollars=None)
+            forward(main)
+        self.assertEqual(
+            total, [{'tokens': 12, 'dollars': 0.25}, {'tokens': None, 'dollars': None}]
+        )

@@ -159,6 +159,18 @@ def metered():
             saved.extend(jobs)  # A block inside another is metered by both.
 
 
+def forwarded_meter():
+    """Forward child-thread observations to this stage's meter, without counting nested same-thread calls twice."""
+    sink, owner, lock = getattr(_METER, 'jobs', None), threading.get_ident(), threading.Lock()
+
+    def forward(jobs):
+        if sink is not None and threading.get_ident() != owner:
+            with lock:
+                sink.extend(jobs)
+
+    return forward
+
+
 def reported(tokens=None, dollars=None):
     """Note one CLI job's reported usage in the metered block around it, if any."""
     jobs = getattr(_METER, 'jobs', None)

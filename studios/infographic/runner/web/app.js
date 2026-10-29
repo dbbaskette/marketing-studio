@@ -59,7 +59,7 @@ try {
 if(location.hash)history.replaceState(null,'',location.pathname);
 const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
-const draft = {materials: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
+const draft = {research_first:false, materials: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
 const error = message => { $('notice').textContent = message; $('notice').hidden = !message; for(const node of document.querySelectorAll('[data-work-error]')){node.textContent=$('sheet').open?message:'';node.hidden=!message||!$('sheet').open;} };
 const toast = message => { const p = make('p', 'toast', message); $('toasts').replaceChildren(p); };
 function button(label, action, primary=false) { const node = make('button', 'button' + (primary ? ' button-filled' : ''), label); node.type = 'button'; node.addEventListener('click', action); return node; }
@@ -215,6 +215,8 @@ async function newSheet() {
       } catch (failure) { problem.textContent = failure.message; }
     });
     add(form,upload.wrap,make('p','quiet',draft.upload?'Selected: '+draft.upload.name:'Files are read locally. No OCR, linked-resource fetch or assistant work starts during this preview.'));
+    const researchFirst=make('input');researchFirst.type='checkbox';researchFirst.checked=!!draft.research_first;researchFirst.addEventListener('change',()=>{draft.research_first=researchFirst.checked;});
+    form.append(add(make('label','check'),researchFirst,document.createTextNode('Research this topic first')),make('p','quiet','You can save a topic and brief without source material, then choose references and optional external search.'));
     form.append(button('Import selected studio material',()=>handoffSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
     form.append(button('Add a Google Doc, Slides or public page',()=>remoteSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
     if(draft.upload)form.append(button('Remove selected CSV',()=>{draft.upload=null;draft.csv=null;draft.selection=null;newSheet();}));
@@ -242,7 +244,7 @@ async function newSheet() {
   }
   const go=button(draft.step===2?'Save brief':'Continue',()=>{},true);go.type='submit';
   form.addEventListener('submit',async event=>{event.preventDefault();problem.textContent='';
-    if(draft.step===0 && (!draft.title.trim() || (!draft.text.trim() && !draft.upload && !draft.materials.length))) {problem.textContent='Give a title and some usable information.';return;}
+    if(draft.step===0 && (!draft.title.trim() || (!draft.research_first && !draft.text.trim() && !draft.upload && !draft.materials.length))) {problem.textContent='Give a title and some usable information.';return;}
     if(draft.materials.some(m=>!m.preview.readable || (m.preview.warnings.length&&!m.acknowledged))) {problem.textContent='Review the file previews and acknowledge readable-only coverage, or remove unreadable files.';return;}
     if(draft.step===0 && draft.materials.reduce((n,m)=>n+m.preview.characters, draft.text.length)>120000){problem.textContent='Choose smaller files or explicit excerpts within 120,000 readable characters for one story-planning job. Nothing was sent to an assistant.';return;}
     if(draft.upload?.kind==='csv' && !draft.selection) {problem.textContent='Preview and confirm the CSV selection first.';return;}
@@ -264,7 +266,8 @@ async function newSheet() {
         p=(await request('/api/action',{action:'source',id:p.id,expected_revision:p.revision,data:encoded(new TextEncoder().encode(draft.text)),kind:'text',name:'Pasted notes',...(draft.notes_source?{replace_id:draft.notes_source}:{})})).result;
         draft.created=p; draft.notes_text=draft.text; draft.notes_source=p.sources.find(source=>source.name==='Pasted notes').id;
       }
-      closeSheet();Object.assign(draft,{materials:[],imported:[],notes_text:null,notes_source:null,step:0,request_id:null,created:null,upload:null,selection:null,csv:null,title:'',text:'',direction:'suggest',audience:'',purpose:'',must:'',locked:'',exclusions:'',preset:'a4'});await openProject(p.id);toast('Brief saved. Choose Find the story when you are ready to use your assistant.');
+      const researchFirst=draft.research_first;
+      closeSheet();Object.assign(draft,{research_first:false, materials:[],imported:[],notes_text:null,notes_source:null,step:0,request_id:null,created:null,upload:null,selection:null,csv:null,title:'',text:'',direction:'suggest',audience:'',purpose:'',must:'',locked:'',exclusions:'',preset:'a4'});await openProject(p.id);if(researchFirst)await researchSheet();else toast('Brief saved. Choose Find the story when you are ready to use your assistant.');
     }catch(failure){problem.textContent=failure.message+' Your answers are still here.';}finally{go.disabled=false;}
   });
   add(form,problem,draft.created||draft.request_id?button('Open the saved draft',()=>{closeSheet();openProject(draft.created?.id||draft.request_id);}):null,add(make('div','create-foot bar'),go,draft.step?button('Back',()=>{draft.step--;closeSheet();newSheet();}):null,button('Cancel',closeSheet))); sheet('New infographic',form);
@@ -554,7 +557,8 @@ async function handoffSheet(done){
 async function researchSheet(){
   const ident=held.project.id,revision=held.project.revision;
   const problem=make('p','problem'),status=make('div','stack');
-  const editor=new StudioResearch.Editor({request:sent=>request('/api/research-sources',sent)});
+  const primary=held.project.sources.length>0;
+  const editor=new StudioResearch.Editor({request:sent=>request('/api/research-sources',sent),primarySummary:primary?'Your captured infographic material is included. Add any additional references here.':''});
   const control=async action=>{try{const result=await request('/api/research-control',{id:ident,action});if(action==='preview'){sourceImportSheet(result);return;}await poll();}catch(f){problem.textContent=f.message;}};
   async function poll(){
     if(!$('sheet').open||!$('sheet-body').contains(status))return;
@@ -563,7 +567,7 @@ async function researchSheet(){
       status.replaceChildren();
       if(state){
         const hooks={};
-        if(['working','stopping'].includes(state.state)){
+        if(['working','pausing','stopping'].includes(state.state)){
           if(state.state==='working')hooks.pause=()=>control('pause');
           if(state.state!=='stopping')hooks.stop=()=>control('stop');
         }else if(state.state==='complete')hooks.use=()=>control('preview');
@@ -571,12 +575,12 @@ async function researchSheet(){
         else if(['failed','stopped'].includes(state.state))hooks.retry=()=>control('retry');
         status.append(StudioResearch.progress({...state.progress,phase:state.state==='complete'?'complete':state.state==='working'?state.progress.phase:state.state,timing:{...state.progress.timing,elapsed_seconds:state.elapsed_seconds}},hooks));
         if(state.problem)status.append(make('p','problem',state.problem));
-        if(['working','stopping'].includes(state.state))setTimeout(poll,1500);
+        if(['working','pausing','stopping'].includes(state.state))setTimeout(poll,1500);
       }
     }catch(f){problem.textContent=f.message;}
   }
   const start=button('Start research',async()=>{
-    if(!editor.valid()){problem.textContent='Add readable sources or allow additional external search first.';return;}
+    if(!editor.valid(primary)){problem.textContent='Add readable sources or allow additional external search first.';return;}
     start.disabled=true;problem.textContent='';
     try{await request('/api/research-job',{id:ident,expected_revision:revision,research_inputs:editor.spec()});await poll();}
     catch(f){problem.textContent=f.message;}finally{start.disabled=false;}

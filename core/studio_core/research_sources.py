@@ -112,6 +112,11 @@ class Sources:
                                     original_sha256=hashlib.sha256(raw).hexdigest(), sha256=hashlib.sha256(text.encode()).hexdigest())
                 current['sources'].append(captured)
                 self.save(current)
+                if old:
+                    used = {s.get(key) for s in current['sources'] for key in ('file', 'original')}
+                    for key in ('file', 'original'):
+                        if old.get(key) and old[key] not in used:
+                            rc.inside(self.folder(ident), old[key]).unlink(missing_ok=True)
                 return self.shown(current)
         with self.lock:
             current = self.check(ident, expected)

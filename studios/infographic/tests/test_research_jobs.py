@@ -58,3 +58,16 @@ class ResearchJobsTests(Isolated):
         adopted = intake.adopt(self.store,self.p['id'],preview['id'],expected_revision=0)
         self.assertEqual(adopted['sources'][0]['kind'],'research')
         self.assertEqual(self.calls,['investigate','synthesize','review'])
+
+    def test_captured_project_material_is_included_without_reupload_or_external_search(self):
+        preview = intake.prepare(TEXT.encode(),kind='text',name='Primary synthetic material')
+        self.p = intake.adopt(self.store,self.p['id'],preview['id'],expected_revision=0)
+        draft = research_sources.Sources(self.workspace / '.research-sources').create()
+        with patch.object(research_jobs.settings,'snapshot',return_value={'assistant':{'agent':'codex'}}):
+            self.jobs.start(self.p['id'],self.p['revision'],{'id':draft['id'],'expected':draft['revision']})
+            deadline=time.monotonic()+25
+            while self.jobs.active and time.monotonic()<deadline: time.sleep(.025)
+        result=self.jobs.read(self.p['id'])
+        self.assertEqual(result['state'],'complete',result)
+        self.assertEqual(self.calls,['investigate','synthesize','review'])
+        self.assertEqual(self.store.read(self.p['id'])['revision'],self.p['revision'])

@@ -182,15 +182,24 @@ elif [[ "${1:-full}" == bundles ]]; then
   [[ -n "$bundle" ]] || { echo 'A real Apple Silicon platform bundle is required.' >&2; exit 1; }
   "$python" scripts/ci/bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/bundle-acceptance.log"
 elif [[ "${1:-full}" == shared-research-finish ]]; then
-  # Reuse the full root suite's unchanged checks from a7068cc7. Repair checks
-  # cover its CSS/static gateway findings and rerun the existing process guard.
+  # Reuse unchanged checks from the full root, Infographic Studio and Blog Studio
+  # runs. Finish their affected repairs, then the remaining complete native suites.
   {
-    PYTHONPATH=tests "$python" -m unittest test_network test_network_static test_ui_consistency test_research_page test_launcher.LauncherTests.test_force_ends_a_job_started_in_its_own_session -v
-    "$python" -m unittest discover -s studios/infographic/tests -v
-    (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio")
+    PYTHONPATH=tests "$python" -m unittest test_network_static test_ui_consistency test_research_session test_research_sources test_research_page -v
+    (cd studios/infographic && PYTHONPATH=tests "$python" -m unittest test_research_jobs test_remote_documents test_server -v)
+    (cd studios/blog && PYTHONPATH=tests "$python" -m unittest test_editorial_tools.ManagementTests.test_ui_treats_data_as_text_and_has_no_external_assets test_management_ui test_synthesis_integration test_desk_migration -v)
+    (cd studios/blog && node scripts/ci/check-management.cjs)
     (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
     (cd studios/training && bash scripts/ci/check.sh "$python")
   } 2>&1 | tee "$results_dir/shared-research-finish.log"
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/research-graphics" --cache "$work/research-graphics-cache")"
+  mkdir -p "$work/research-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/research-browser/"
+  touch "$work/research-npm-user.conf" "$work/research-npm-global.conf"
+  env HOME="$work/research-browser-home" NPM_CONFIG_USERCONFIG="$work/research-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/research-npm-global.conf" \
+    npm ci --prefix "$work/research-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/research-browser-tools.log" 2>&1
+  export NODE_PATH="$work/research-browser/node_modules" PYTHON="$python" INFOGRAPHIC_UI_RESULTS="$results_dir/research-ui"
+  node studios/infographic/tests/ui/research.cjs 2>&1 | tee "$results_dir/research-browser.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == research-citation-finish ]]; then
   # The full root, Blog Studio, Presentation Studio and remaining Training Studio

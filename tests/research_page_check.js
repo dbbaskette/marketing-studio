@@ -24,9 +24,9 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
 (async()=>{
  let revision=0,state={id:'synthetic',revision:'0',external:false,restricted:false,workers:3,focus:'',sites:['https://example.invalid/docs'],sources:[]},requests=[];
  const request=async sent=>{requests.push(sent);if(sent.action==='capture'){state.sources.push({id:String(state.sources.length+1),name:sent.name||sent.url,kind:sent.kind,origin:sent.url,status:'ready'});}if(sent.action==='configure')Object.assign(state,Object.fromEntries(Object.entries(sent).filter(([k])=>['external','restricted','workers','focus'].includes(k))));state.revision=String(++revision);return JSON.parse(JSON.stringify(state));};
- const editor=new kit.Editor({request});document.body.append(editor.node);await settle();
+ const ready=[]; const editor=new kit.Editor({request,onChange:()=>ready.push(editor.valid())});document.body.append(editor.node);await settle();
  assert.equal(requests[0].action,'create');assert.equal(editor.valid(),false);assert.equal(editor.choice().web,false);
- editor.urls='https://example.invalid/a\nhttps://example.invalid/b';await editor.links();assert.equal(editor.value.sources.length,2);assert.equal(editor.urls,'');assert.equal(editor.valid(),true);
+ editor.urls='https://example.invalid/a\nhttps://example.invalid/b';await editor.links();assert.equal(editor.value.sources.length,2);assert.equal(editor.urls,'');assert.equal(editor.valid(),true);assert.equal(ready.at(-1),true,'Parent form is notified only after capture unlocks');
  assert.equal(requests.filter(r=>r.action==='capture').length,2);
  editor.urls='http://unsafe.invalid';await editor.links();assert.match(editor.problem,/HTTPS/);assert.equal(requests.filter(r=>r.action==='capture').length,2);
  editor.problem='';editor.urls='draft link stays';editor.pasting=true;editor.text='Unsubmitted source text';editor.render();

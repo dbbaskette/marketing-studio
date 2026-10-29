@@ -135,6 +135,22 @@ def case_for(root):
     return rc.inside(base, value['basis'] + '/topic')
 
 
+def unresolved(root):
+    """Capacity remains occupied across changed inputs until host termination is confirmed."""
+    base = rc.inside(root, str(rc.CASE))
+    if not base.exists(): return False
+    for folder in base.iterdir():
+        if not folder.is_dir() or folder.is_symlink() or not re.fullmatch('[a-f0-9]{64}', folder.name):
+            continue
+        path = rc.inside(base, folder.name + '/topic/.harness-research/studio-execution.json')
+        if path.exists():
+            host = json.loads(bytes_of(path))
+            if host.get('schema') != 1 or not isinstance(host.get('attempts'), list):
+                raise ValueError('The research host record is unreadable. Preserve it before retrying.')
+            if any(not attempt.get('ended_at') for attempt in host['attempts']): return True
+    return False
+
+
 def corrections(review, registry):
     owners = {global_id: mapping['workstream'] for mapping in registry['mappings']
               for global_id in mapping['facts'].values()}
@@ -232,6 +248,8 @@ class Workflow:
             allowed=lambda: True, cancelled=lambda: False, readable=None, restart_stopped=False, **_):
         if capability(self.runtime) is None:
             raise ValueError('This workflow needs the complete Harness Research 1.1 collection runtime.')
+        if unresolved(root):
+            raise ValueError('An earlier research invocation has no confirmed terminal observation. Confirm it ended before retrying; saved evidence is kept.')
         areas = streams(task, limit)
         basis = digest([task, [[s.get('file'), s.get('origin'), s.get('permission'),
             hashlib.sha256(s['text'].encode()).hexdigest(),

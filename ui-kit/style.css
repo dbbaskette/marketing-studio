@@ -3551,6 +3551,7 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .research-link-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:.7rem}
 .research-source-list{list-style:none;margin:0;padding:0}
 .research-source-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:.75rem;padding:1rem 0;border-top:1px solid var(--hair)}
+.research-source-copy{min-width:0;overflow-wrap:anywhere}
 .research-source-copy>*+*{margin-top:.4rem}
 .research-source-copy>.quiet,.research-policy>.field-hint{overflow-wrap:anywhere;font-size:.9rem}
 .research-tabs>summary,.research-options>summary{min-height:2.75rem;cursor:pointer;padding:.6rem 0}

@@ -25,17 +25,17 @@ const StudioResearch = (() => {
     async load() {
       if (this.busy) return;
       this.busy = true; this.render();
-      try { this.value = await this.a.request(this.value ? {action: 'read', id: this.value.id} : {action: 'create'}); this.problem = ''; this.changed(); }
+      try { this.value = await this.a.request(this.value ? {action: 'read', id: this.value.id} : {action: 'create'}); this.problem = ''; }
       catch (error) { this.problem = message(error); }
-      finally { this.busy = false; this.render(); }
+      finally { this.busy = false; this.render(); this.changed(); }
     }
     changed() { if (this.a.onChange) this.a.onChange(this.value); }
     async act(action, data = {}) {
       if (this.busy || !this.value) return false;
       this.busy = true; this.problem = ''; this.reading = action === 'capture' || action === 'tabs' ? 'Reading source…' : 'Saving source choices…'; this.render();
-      try { this.value = await this.a.request({action, id: this.value.id, expected: this.value.revision, ...data}); this.changed(); return true; }
+      try { this.value = await this.a.request({action, id: this.value.id, expected: this.value.revision, ...data}); return true; }
       catch (error) { this.problem = message(error); return false; }
-      finally { this.busy = false; this.reading = ''; this.render(); }
+      finally { this.busy = false; this.reading = ''; this.render(); this.changed(); }
     }
     async links() {
       const links = this.urls.trim().split(/\s+/).filter(Boolean);
@@ -183,7 +183,7 @@ const StudioResearch = (() => {
   function progress(state, hooks = {}) {
     if (!state) return null;
     const phase = state.phase || 'investigate';
-    const titles = {investigate: 'Collecting evidence', 'investigating': 'Collecting evidence', synthesize: 'Combining findings', 'combining-findings': 'Combining findings', review: 'Independent check', 'independent-check': 'Independent check', complete: 'Research is ready', 'ready-for-review': 'Research is ready', 'needs-attention': 'Research needs attention', 'needs-revision': 'Research needs correction', 'stopping': 'Stopping research', paused: 'Research paused', stopped: 'Research stopped'};
+    const titles = {investigate: 'Collecting evidence', 'investigating': 'Collecting evidence', synthesize: 'Combining findings', 'combining-findings': 'Combining findings', review: 'Independent check', 'independent-check': 'Independent check', complete: 'Research is ready', 'ready-for-review': 'Research is ready', 'needs-attention': 'Research needs attention', 'needs-revision': 'Research needs correction', 'stopping': 'Stopping research', 'pausing': 'Finishing active research before pausing', paused: 'Research paused', stopped: 'Research stopped'};
     const box = add(make('section', 'research-progress paper'), make('h3', 'card-title', titles[phase] || 'Research'));
     const list = make('ul', 'research-source-list');
     for (const area of array(state.streams || state.workstreams)) {

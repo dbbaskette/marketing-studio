@@ -84,3 +84,16 @@ class SourceTests(unittest.TestCase):
     def test_native_primary_allows_empty_reference_draft_without_enabling_search(self):
         value=self.sources.prepared(self.value['id'],self.value['revision'],primary=True)
         self.assertEqual(value['research_from'],{'documents':True,'sites':[],'web':False})
+
+    def test_narrowing_tabs_removes_unreferenced_earlier_full_document_capture(self):
+        self.sources.google=lambda url, **options: {'name':'Synthetic reference','kind':'google-doc','origin':url,
+            'tabs':[{'id':'a','title':'One'},{'id':'b','title':'Two'}], 'selected_tabs':options.get('selected') or ['a','b'],
+            'raw': b'Selected one only' if options.get('selected') else b'Old full document body',
+            'extracted':{'text':'Selected one only' if options.get('selected') else 'Old full document body','warnings':[]}}
+        self.act('capture',kind='url',url='https://docs.google.com/document/d/synthetic/edit')
+        before=self.sources.load(self.value['id'])['sources'][0]
+        self.act('tabs',source=before['id'],selected=['a'])
+        private=self.sources.folder(self.value['id'])
+        self.assertFalse((private/before['file']).exists())
+        self.assertFalse((private/before['original']).exists())
+        self.assertNotIn('Old full',self.sources.preview(self.value['id'],before['id'])['text'])

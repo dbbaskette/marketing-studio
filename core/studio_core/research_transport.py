@@ -76,7 +76,7 @@ def native(engine, root, run, task, sources, product='training'):
     attempt = secrets.token_hex(16)
     driver = copy.deepcopy(record.get('driver'))
 
-    identity = copy.deepcopy({key: record.get(key) for key in ('form', 'brief', 'research_contract', 'research_inputs')})
+    identity = copy.deepcopy({key: record.get(key) for key in ('form', 'brief', 'research_contract', 'research_inputs', 'research_from')})
 
     def cancelled():
         with engine.files:

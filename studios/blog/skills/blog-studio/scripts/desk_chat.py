@@ -392,7 +392,7 @@ def _research(root, ident, payload, current):
         total += path.stat().st_size
         if total > 20_000_000:
             raise ValueError('Use a focused research bundle up to 20 MB.')
-    facts, _ = research_contract.read_bundle(bundle)
+    facts, manifest = research_contract.read_bundle(bundle)
     if any(not isinstance(facts.get(key), list) for key in ('findings', 'facts', 'sources')):
         raise ValueError('The reviewed research must include findings, facts and sources lists.')
     import blog_library
@@ -426,16 +426,16 @@ def _research(root, ident, payload, current):
                 or not item
                 or source.get('origin') != item['origin']
                 or not isinstance(snapshot, str)
-                or not snapshot.startswith('research/')
-                or research_contract.inside(bundle, snapshot[len('research/') :]).read_bytes()
+                or research_contract.inside(
+                    bundle, research_contract.snapshot_name(snapshot, manifest)
+                ).read_bytes()
                 != item['text'].encode()
                 or (
                     original is not None
                     and (
                         not isinstance(original, str)
-                        or not original.startswith('research/')
                         or research_contract.inside(
-                            bundle, original[len('research/') :]
+                            bundle, research_contract.snapshot_name(original, manifest)
                         ).read_bytes()
                         != item['text'].encode()
                     )

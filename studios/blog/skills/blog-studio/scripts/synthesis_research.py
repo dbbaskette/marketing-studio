@@ -139,6 +139,7 @@ def generate(
     import blog_worker
     from performance import extract
 
+    forward_usage = blog_worker.forwarded_meter()
     started = time.monotonic()
     rounds = [0]  # Author rounds so far; the shared contract allows ROUNDS of them.
 
@@ -175,16 +176,19 @@ def generate(
                 outcome = 'kept'
                 return answer
             finally:
-                tokens = [job['tokens'] for job in jobs if job['tokens'] is not None]
-                dollars = [job['dollars'] for job in jobs if job['dollars'] is not None]
+                forward_usage(jobs)
+                tokens = [job['tokens'] for job in jobs]
+                dollars = [job['dollars'] for job in jobs]
                 tell(
                     {
                         'job': {
                             'phase': phase,
                             'round': number,
                             'seconds': round(time.monotonic() - began, 1),
-                            'tokens': sum(tokens) if tokens else None,
-                            'dollars': round(sum(dollars), 4) if dollars else None,
+                            'tokens': sum(tokens) if tokens and None not in tokens else None,
+                            'dollars': round(sum(dollars), 4)
+                            if dollars and None not in dollars
+                            else None,
                             'outcome': outcome,
                         }
                     }

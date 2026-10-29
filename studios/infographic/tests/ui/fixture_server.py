@@ -94,6 +94,7 @@ class Assistant:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--renderer', required=True, type=Path)
+    parser.add_argument('--research-runtime', type=Path)
     parser.add_argument('--suite', action='store_true')
     parser.add_argument('--recover-image', action='store_true')
     parser.add_argument('--remote',action='store_true')
@@ -167,7 +168,39 @@ def main():
                     project = brand.adopt(store, sent['id'], contract(), expected_revision=sent['expected_revision'])
                     return server.shared.as_json(200, {'project': project})
                 return super().write(route, sent)
-        page = server.shared.Desk(page=lambda port: Page(port, store, engine))
+        if args.research_runtime:
+            def synthetic_research(phase, payload, guidance, **options):
+                engine.assistant.calls.append(phase)
+                if phase == 'investigate':
+                    source=payload['sources'][0]
+                    return {'schema':2, 'sources':[{'id':'source-a','title':source['title'],'publisher':'Synthetic fixture',
+                        'file':source['file'],'origin':source['origin'],'permission':source['permission'],'context':'full',
+                        'original_file':source['original_file']}],
+                        'facts':[{'id':'fact-a','statement':source['text'].strip(),'author':payload['worker'],
+                            'citations':[{'source':'source-a','quote':source['text'].strip()}]}], 'gaps':[]}
+                if phase == 'synthesize':
+                    fact=payload['evidence']['facts'][0]['id']
+                    block={'text':'Use the supplied synthetic explanation within its scope.','kind':'recommendation','refs':[fact]}
+                    return {'schema':2,'findings':[{'id':'scope','title':'Synthetic source scope',
+                        'summary':{'text':'The source explains a synthetic relationship.','kind':'summary','refs':[fact]},
+                        'support':[fact],'counter':[],'conditions':[],'implications':[],'gaps':[]}],
+                        'sections':[{'id':'report','title':'Synthetic explanation','blocks':[block]}],
+                        'brief':[{'id':'brief','title':'What to show','blocks':[block]}]}
+                import copy
+                review=copy.deepcopy(payload['review_template'])
+                for original in review['originals']: original['read_original']=True
+                for kind in ('facts','findings','prose'):
+                    for item in review[kind]: item.update(verdict='supported',note='Synthetic independent fixture check.')
+                review['assessment']={'coverage':'accurate','usefulness':'adequate','note':'Synthetic scope.'}
+                return review
+            engine.assistant.research=synthetic_research
+        def native_page(port):
+            found=Page(port,store,engine)
+            if args.research_runtime:
+                from runner.research_jobs import Jobs
+                found.research=Jobs(store,author=engine.assistant,runtime=args.research_runtime)
+            return found
+        page = server.shared.Desk(page=native_page)
         suite = None
         launcher = None
         bridge = None
