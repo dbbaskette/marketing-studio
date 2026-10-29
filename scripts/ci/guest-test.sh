@@ -118,6 +118,10 @@ if [[ "${1:-full}" == infographic-google-finish || "${1:-full}" == infographic-f
   bundle="$(find dist -maxdepth 1 -name "$pattern" -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A prepared Infographic Studio-only Apple Silicon package is required.' >&2; exit 1; }
   "$python" scripts/ci/infographic_bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/infographic-bundle.log"
+elif [[ "${1:-full}" == network ]]; then
+  # The LAN bridge is shared by all studios. Exercise the complete home/core/
+  # installer suite without starting any provider jobs or using signed-in state.
+  "$python" -m unittest discover -s tests -v 2>&1 | tee "$results_dir/network-suite.log"
 elif [[ "${1:-full}" == presentation-progress ]]; then
   (
     cd studios/presentation
