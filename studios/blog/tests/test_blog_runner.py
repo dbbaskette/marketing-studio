@@ -1359,10 +1359,13 @@ class SharedPatternTests(RunnerCase):
 
     def test_review_level_route_is_removed_without_writing(self):
         import studios_config
+
         studios_config.update({'review': {'level': 'balanced'}})
         before = studios_config.read()[0]
         with self.assertRaises(ValueError):
-            management.dispatch(self.root, 'review-level', {'level': 'automatic', 'seen': 'balanced'})
+            management.dispatch(
+                self.root, 'review-level', {'level': 'automatic', 'seen': 'balanced'}
+            )
         self.assertEqual(studios_config.read()[0], before)
 
     def test_the_worker_records_when_it_started_and_the_page_reads_it(self):

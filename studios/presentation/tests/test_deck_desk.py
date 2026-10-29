@@ -104,7 +104,7 @@ class DeskGateTests(DeskCase):
         self.assertTrue(research_contract)
 
     def test_a_gated_deck_still_stops_at_every_gate(self):
-        root = self.start()
+        root = self.saved_start()
         self.assertEqual(self.waiting(root), 'gate:outline')
         self.assertNotIn('flow', self.record(root))
 
@@ -231,7 +231,7 @@ class DeskViewTests(DeskCase):
         self.assertTrue(seen[1]['started_at'])
 
     def test_a_gated_deck_has_no_desk_view(self):
-        root = self.start()
+        root = self.saved_start()
         self.assertIsNone(self.view(root)['desk'])
 
     def test_notes_sent_while_drawing_are_not_sent_again_after_arrival(self):
@@ -1101,18 +1101,30 @@ class SourceTests(DeskCase):
         shown = self.desk_view(root)
         # The research stand-in records no rounds, so there is no time or money to say.
         self.assertEqual(shown['research_price'], (
-            'Asking for changes runs the research again: up to '
+            'Asking for changes runs the research again from its last report: up to '
             f'{research_contract.ROUNDS} rounds of writing and checking. No time or money was '
             'recorded for its last try. Then it makes again: the outline, the look samples and '
             'the deck.'))
+        facts, _ = research_contract.read_bundle(root / 'research')
         self.assertEqual([item['id'] for item in shown['research_items']],
-                         list(self.engine._questions(root)))
+                         [item['id'] for item in facts['findings']])
 
     def test_research_again_reads_the_sources_again_and_comes_back_to_the_desk(self):
+        from runner_support import URL
+        from studio_core import research_contract
         root = self.deck(research=True)
-        asked = len(self.workers.of('question'))
+        before, manifest = research_contract.read_bundle(root / 'research')
+        jobs = len(self.workers.of('research-result'))
+        fresh = 'Fresh synthetic evidence: the next batch waits for a health check.'
+        self.web.page(URL, fresh, 'text/plain')
         self.engine.desk_research_again(root, self.desk_view(root)['expected'])
-        self.assertGreater(len(self.workers.of('question')), asked)
+        after, updated = research_contract.read_bundle(root / 'research')
+        self.assertEqual(len(self.workers.of('research-result')) - jobs, 2)
+        self.assertNotEqual(updated['digest'], manifest['digest'])
+        self.assertNotEqual(after['sources'][0]['sha256'], before['sources'][0]['sha256'])
+        self.assertIn(fresh, (root / after['sources'][0]['snapshot']).read_text())
+        self.assertIn(fresh, (root / 'research/report.md').read_text())
+        self.assertEqual(after['review']['digest'], updated['digest'])
         record = self.record(root)
         self.assertTrue(record['gates']['gate:research'].get('refresh'))
         self.assertEqual(record['gates']['gate:research']['by'], 'desk')

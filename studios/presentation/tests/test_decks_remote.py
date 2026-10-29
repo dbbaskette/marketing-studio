@@ -14,7 +14,13 @@ class RemoteIdTests(WorkspaceCase):
         mine = self.join()
         self.be('alex')
         theirs = self.join()
-        decks.create(theirs, decks.check_form(FORM, BRANDS))
+        root = decks.create(theirs, decks.check_form(FORM, BRANDS))
+        # create() alone is the intermediate record before the engine assigns an agent.
+        # Model a completed, idle saved run before another person fetches it.
+        record = decks.read_run(root)
+        record['agent'] = 'claude'
+        decks.write_run(root, record)
+        gitstate.commit(theirs, 'Complete the saved run setup', [root.name])
         gitstate.sync(theirs)
         self.be('blake')
         hub.run(mine.repo, 'fetch', '--quiet')       # tracking ref ahead; nothing merged
