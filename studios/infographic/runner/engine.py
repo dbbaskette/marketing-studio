@@ -21,6 +21,7 @@ class Engine:
         self.renderer = renderer
         self.adapters = adapters or {}
         self.assistant = assistant
+        self.progress = lambda label: None
 
     def inspect(self, ident):
         project = self.store.read(ident)
@@ -77,7 +78,9 @@ class Engine:
                     for source in project['sources']]
         require(sum(len(item['text']) for item in captured) <= 120_000,
                 'The selected material exceeds one planning job. Select a smaller explicit source scope.')
+        self.progress('Reading sources and finding the story')
         answer = self.assistant.propose(project['brief'], captured)
+        self.progress('Checking the proposed facts and story')
         require(isinstance(answer, dict) and set(answer) == {'facts', 'stories'},
                 'The assistant did not return a facts-and-stories proposal. Existing work is kept.')
         with self.store.locked():
@@ -102,6 +105,7 @@ class Engine:
         self.store.expect(project, expected_revision)
         require(self.assistant is not None and project['scene'] is not None,
                 'Compose the page and configure an assistant before asking for art direction.')
+        self.progress('Writing the art direction')
         direction = self.assistant.art_direction(project)
         return self.image_direction(ident, direction, expected_revision=expected_revision)
 
@@ -140,6 +144,7 @@ class Engine:
                 jobs = Jobs(self.store, self.adapters)
                 jobs.intent(ident, expected_revision=project['revision'], brief_id=project['image_briefs'][-1]['id'],
                             provider=selected, request_id=request_id)
+                self.progress('Generating the explanatory artwork')
                 answer = jobs.execute(ident, request_id)
                 if answer['state'] != 'complete' or not answer['adopted']:
                     return answer
@@ -158,6 +163,7 @@ class Engine:
 
     def inspect_images(self, ident, *, expected_revision):
         from .visual_review import inspect
+        self.progress('Inspecting the actual page with your assistant')
         return inspect(self, ident, expected_revision=expected_revision)
 
     def revise_story(self, ident, story_id, block_id, instruction, *, expected_revision):
@@ -169,6 +175,7 @@ class Engine:
             require(story is not None, 'Choose an existing story.')
             if block_id is not None:
                 require(block_id in {b['id'] for b in story['blocks']}, 'Choose an existing named story block.')
+            self.progress('Revising the selected story')
             revised = self.assistant.revise_story(project, story, block_id, instruction)
             require(isinstance(revised, dict) and revised.get('id') == story_id, 'The revision must retain the story identity.')
             if block_id is not None:
@@ -213,6 +220,7 @@ class Engine:
         if automatic:
             consume_repair(self.store, ident, expected_revision=expected_revision, kind='image')
         require(self.assistant is not None, 'Configure the art-direction assistant before requesting an image revision.')
+        self.progress('Writing the artwork revision instructions')
         direction = self.assistant.art_direction(project)
         direction['reference_assets'] = [asset]
         project = self.image_direction(ident, direction, expected_revision=expected_revision,
@@ -220,6 +228,7 @@ class Engine:
         jobs = Jobs(self.store, self.adapters)
         jobs.intent(ident, expected_revision=project['revision'], brief_id=project['image_briefs'][-1]['id'],
                     provider=provider, request_id=request_id, operation='edit', parent=asset)
+        self.progress('Revising the artwork with your image provider')
         answer = jobs.execute(ident, request_id)
         if answer['state'] != 'complete' or not answer['adopted']:
             return answer
@@ -264,6 +273,7 @@ class Engine:
             return self.store.change_locked(project, {'scene': planned})
 
     def preview(self, ident, *, expected_revision, draft=True):
+        self.progress('Rendering and checking the page' if draft else 'Preparing the approved files')
         require(self.executable is not None or self.renderer is not None,
                 'Configure an installed pinned renderer before preview or export. Nothing is downloaded automatically.')
         kwargs = {'renderer': self.renderer} if self.renderer else {}

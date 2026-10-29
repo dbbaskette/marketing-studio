@@ -62,6 +62,13 @@ reported token/cost data is shown; unknown prices are not estimated.
 
 Assistant work starts only after an explicit action. Building an illustrated page
 can use planning and image allowances; review the disclosure before starting it.
+Long page operations show a persistent activity notice with the real current step
+and elapsed time, including inside an open dialog. Refreshing the same tab restores
+an active operation's notice. If the POST connection is lost, the page checks status
+without repeating the request. A second long operation on that infographic is
+refused while the first is active. Source previews also show immediate activity.
+These notices describe the current server session; restarting the server clears
+them. Saved projects and durable image/Google recovery records remain authoritative.
 Actual-page inspection uses the selected assistant's multimodal path, or you can
 record your own review after viewing the current PNG at intended size. CLI help
 and capability discovery are not proof of account access or successful generation.

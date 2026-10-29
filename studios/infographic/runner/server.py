@@ -2,12 +2,13 @@
 from __future__ import annotations
 
 from http import HTTPStatus
+from copy import copy
 from pathlib import Path
 
 from studio_core import server as core
 
 from .contracts import PRODUCT, Invalid
-from . import api, computer, exports, history, settings, sources
+from . import activity, api, computer, exports, history, settings, sources
 from .engine import Engine
 from .validation import require
 
@@ -20,7 +21,7 @@ shared = core.for_product(
      '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
      '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/status', '/api/projects', '/api/project', '/api/asset',
-                         '/api/desk', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task'),
+                         '/api/desk', '/api/activity', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task'),
     writes=('/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current'))
 
 
@@ -30,6 +31,7 @@ class Page(shared.Page):
         self.store = store
         self.injected = engine is not None
         self.engine = engine or Engine(store)
+        self.activity = activity.Activity()
 
     def body_limit(self, target, headers):
         return 24_000_000 if target in ('/api/action', '/api/csv-preview', '/api/csv-selection', '/api/source-preview') else super().body_limit(target, headers)
@@ -53,7 +55,16 @@ class Page(shared.Page):
             from . import research
             return shared.as_json(200,research.task(self.store.read(one('id')),one('source_mode')))
         if path == '/api/desk':
-            return shared.as_json(HTTPStatus.OK, self.engine.inspect(one('id')))
+            ident = one('id')
+            return shared.as_json(HTTPStatus.OK, {**self.engine.inspect(ident),
+                                                  'activity': self.activity.snapshot(ident)})
+        if path == '/api/activity':
+            ident = one('id')
+            project = self.store.read(ident)
+            from .image_jobs import Jobs
+            return shared.as_json(200, {'activity': self.activity.snapshot(ident),
+                                       'revision': project['revision'],
+                                       'recovery': Jobs(self.store, {}).recovery(ident)})
         if path == '/api/history':
             return shared.as_json(HTTPStatus.OK, {'history': history.entries(self.store, one('id'))})
         if path == '/api/history-before':
@@ -96,7 +107,17 @@ class Page(shared.Page):
         if path == '/api/action':
             try:
                 configured = not self.injected and isinstance(sent, dict) and sent.get('action') in ('suggest', 'art-direct', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'repair', 'revise-story')
-                return shared.as_json(HTTPStatus.OK, {'result': api.action(api.engine(self.store) if configured else self.engine, sent)})
+                verb = sent.get('action') if isinstance(sent, dict) else None
+                if isinstance(verb, str) and verb in activity.LABELS:
+                    self.store.read(sent.get('id'))
+                    with self.activity.track(sent['id'], verb) as report:
+                        found = api.engine(self.store) if configured else copy(self.engine)
+                        found.progress = report
+                        result = api.action(found, sent)
+                        self.activity.outcome(sent['id'], result)
+                else:
+                    result = api.action(self.engine, sent)
+                return shared.as_json(HTTPStatus.OK, {'result': result})
             except Invalid:
                 raise
             except Exception as failure:
