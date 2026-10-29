@@ -60,7 +60,7 @@ if(location.hash)history.replaceState(null,'',location.pathname);
 const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
 const draft = {materials: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
-const error = message => { $('notice').textContent = message; $('notice').hidden = !message; };
+const error = message => { $('notice').textContent = message; $('notice').hidden = !message; for(const node of document.querySelectorAll('[data-work-error]'))node.textContent=message; };
 const toast = message => { const p = make('p', 'toast', message); $('toasts').replaceChildren(p); };
 function button(label, action, primary=false) { const node = make('button', 'button' + (primary ? ' button-filled' : ''), label); node.type = 'button'; node.addEventListener('click', action); return node; }
 function card(title, ...parts) { return add(make('section', 'card stack'), make('h2', 'card-title', title), ...parts); }
@@ -69,22 +69,90 @@ let fieldNumber = 0;
 function field(label, value='', kind='input') { const wrap = make('label', 'field'); const input = make(kind, 'input'); input.value = value; const caption=make('span','field-label',label);caption.id='field-caption-'+(++fieldNumber);input.id='field-'+fieldNumber;wrap.htmlFor=input.id;input.setAttribute('aria-labelledby',caption.id);add(wrap, caption, input); return {wrap, input}; }
 function lines(value) { return value.split('\n').map(v => v.trim()).filter(Boolean); }
 function list(items) { return add(make('ul'), ...items.map(item => make('li', '', item))); }
-function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; $('sheet-body').firstChild.append(...nodes); if (!$('sheet').open) $('sheet').showModal(); }
-function closeSheet() { $('sheet').close(); }
+function sheet(title, ...nodes) { $('sheet-body').replaceChildren(add(make('div', 'ig-sheet stack'), make('h2', 'sheet-title', title))); $('sheet-body').firstChild.firstChild.id = 'sheet-title'; const status=make('section','callout ig-work');status.dataset.workStatus='';status.setAttribute('role','status');status.setAttribute('aria-live','polite');const problem=make('p','problem');problem.dataset.workError='';problem.setAttribute('role','alert');$('sheet-body').firstChild.append(status,problem,...nodes); if (!$('sheet').open) $('sheet').showModal(); paintWork(); }
+function closeSheet() { $('sheet').close(); paintWork(); }
+let work = null, workTimer = null;
+const workLabels = {'suggest':'Finding the story','build':'Building the page','art-direct':'Writing the art direction','image-start':'Generating artwork','inspect-images':'Inspecting the page','revise-story':'Revising the story','revise-art':'Revising the artwork','repair':'Repairing the page','preview':'Rendering the preview','export':'Preparing your files','google-deliver':'Delivering the Google Doc'};
+function paintWork() {
+  $('main').setAttribute('aria-busy',String(!!work));
+  for(const surface of document.querySelectorAll('[data-work-status]')) {
+    const inSheet=$('sheet').contains(surface),show=!!work&&(!$('sheet').open||inSheet);
+    surface.hidden=!show;if(!show)continue;
+    const signature=work.label+'|'+work.detail+'|'+(work.pending||'');
+    if(surface.dataset.message!==signature) {
+      surface.dataset.message=signature;
+      const bead=make('span','bead');bead.dataset.state=work.connected?'current':'review';bead.setAttribute('aria-hidden','true');
+      const clock=make('span','quiet ig-work-clock');clock.dataset.workClock='';clock.setAttribute('aria-hidden','true');
+      surface.replaceChildren(add(make('div','ig-work-heading'),bead,make('strong','',work.label),clock),make('p','quiet',work.detail));
+      if(work.cancel)surface.append(button('Cancel this request',work.cancel));
+    }
+    const seconds=Math.max(0,Math.floor((Date.now()-work.started)/1000));
+    surface.querySelector('[data-work-clock]').textContent=Math.floor(seconds/60)+':'+String(seconds%60).padStart(2,'0')+' elapsed';
+  }
+}
+function beginWork(label, elapsed=0) {
+  clearInterval(workTimer);
+  $('toasts').replaceChildren();
+  work={label,started:Date.now()-elapsed*1000,connected:true,detail:'This can take a few minutes. Your saved work is kept.'};
+  workTimer=setInterval(paintWork,1000);paintWork();return work;
+}
+function endWork(owner) { if(work===owner){clearInterval(workTimer);workTimer=null;work=null;paintWork();} }
+function connectionUncertain(owner) { if(work===owner){owner.connected=false;owner.label='Checking the connection';owner.detail='The connection was interrupted. Work may still be running on this computer. No request was repeated.';paintWork();} }
+function lockControls() {
+  const controls=[...document.querySelectorAll('button')].map(node=>[node,node.disabled]);controls.forEach(([node])=>node.disabled=true);
+  return ()=>controls.forEach(([node,disabled])=>node.disabled=disabled);
+}
+function progressNotice(progress,owner,id) {
+  if(work!==owner)return;
+  const current=progress.activity;
+  if(work===owner&&current?.state==='running'){owner.label=current.label;owner.started=Date.now()-current.elapsed_seconds*1000;owner.connected=true;owner.detail='Working on this computer. This can take a few minutes. Your saved work is kept.';paintWork();}
+  const pending=progress.recovery?.[0];
+  if(pending&&owner.pending!==pending.attempt_id){owner.pending=pending.attempt_id;
+    owner.cancel=async()=>{try{const latest=await request('/api/activity?id='+encodeURIComponent(id));await request('/api/action',{action:'image-cancel',id,expected_revision:latest.revision,request_id:pending.attempt_id});toast('Local adoption cancelled. Remote charges may remain unknown.');}catch(f){error(f.message);}};
+    paintWork();
+  }
+}
+async function recoverActivity(id,owner) {
+  let failures=0;
+  for(;;){
+    try{const progress=await request('/api/activity?id='+encodeURIComponent(id));failures=0;progressNotice(progress,owner,id);
+      if(progress.activity?.state!=='running')return progress.activity;
+    }catch(f){connectionUncertain(owner);if(++failures>=5)throw Error('The connection could not be restored. Work may still be running. Reopen this infographic to check before retrying.');}
+    await new Promise(resolve=>setTimeout(resolve,2000));
+  }
+}
+function recoveredNotice(result) {
+  if(result?.state==='complete')toast('Finished. Your saved work is ready to review.');
+  else if(result?.state==='outdated')toast('The earlier result was kept and did not replace newer work.');
+  else error(result?.state==='failed'?'The operation could not finish. Your saved work is kept.':result?.state==='cancelled'?'The image request was cancelled. Remote charges may remain unknown.':'The earlier outcome could not be confirmed. Check the saved work and recovery controls before retrying.');
+}
+async function resumeActivity(id,current) {
+  busy=true;const unlock=lockControls(),owner=beginWork(current.label,current.elapsed_seconds);
+  try{const result=await recoverActivity(id,owner);await openProject(id);recoveredNotice(result);
+  }catch(f){error(f.message);}finally{endWork(owner);busy=false;unlock();}
+}
 async function request(route, data) {
-  const response = await fetch(route, {method: data === undefined ? 'GET' : 'POST', headers: {'X-Infographic-Studio-Token': token, ...(data === undefined ? {} : {'Content-Type': 'application/json'})}, ...(data === undefined ? {} : {body: JSON.stringify(data)})});
-  const answer = await response.json(); if (!response.ok) throw Error(answer.error || 'This request could not be completed.'); return answer;
+  const labels={'/api/remote-preview':'Reading the linked document','/api/source-preview':'Reading the uploaded file','/api/research-preview':'Reading the selected research'};
+  const owner=!work&&data!==undefined&&labels[route]?beginWork(labels[route]):null;
+  try{const response = await fetch(route, {method: data === undefined ? 'GET' : 'POST', headers: {'X-Infographic-Studio-Token': token, ...(data === undefined ? {} : {'Content-Type': 'application/json'})}, ...(data === undefined ? {} : {body: JSON.stringify(data)})});
+    const answer = await response.json(); if (!response.ok){const failure=Error(answer.error || 'This request could not be completed.');failure.status=response.status;throw failure;}return answer;
+  }finally{if(owner)endWork(owner);}
 }
 async function action(verb, values={}, revision=null) {
   if (busy) return; busy = true; error(''); const id = held.project.id;
-  const controls = [...document.querySelectorAll('button')]; controls.forEach(b => b.disabled = true);
-  toast('Working. Your saved information and earlier previews are kept.');
-  const polling=setInterval(async()=>{try{const progress=await request('/api/desk?id='+encodeURIComponent(id));const pending=progress.recovery[0];if(pending){const message=make('p','',pending.state+': image request saved. Closing this page will not resubmit it.');const cancel=button('Cancel this request',async()=>{try{await request('/api/action',{action:'image-cancel',id,expected_revision:progress.project.revision,request_id:pending.attempt_id});toast('Local adoption cancelled. Remote charges may remain unknown.');}catch(f){error(f.message);}});$('toasts').replaceChildren(add(make('div','toast stack'),message,cancel));}}catch(f){}},1000);
+  const unlock=lockControls(),owner=beginWork(workLabels[verb]||'Saving your changes');
+  let checking=false;
+  const polling=setInterval(async()=>{if(checking)return;checking=true;try{progressNotice(await request('/api/activity?id='+encodeURIComponent(id)),owner,id);}catch(f){connectionUncertain(owner);}finally{checking=false;}},2000);
   try {
     const answer = await request('/api/action', {action:verb, id, expected_revision:revision??held.project.revision, ...values});
     closeSheet(); await openProject(id); if(answer.result?.state==='unknown')error('The image request outcome is uncertain. Do not repeat it; use the recovery controls.'); else if(answer.result?.state==='failed')error('The image provider could not finish. Your earlier work is kept.'); else if(answer.result?.state==='outdated')toast('The earlier result was kept privately and did not replace newer work.');else toast('Saved.'); return answer.result;
-  } catch (failure) { error(failure.message); }
-  finally { clearInterval(polling); busy = false; controls.forEach(b => b.disabled = false); document.querySelectorAll('#actions button').forEach(b => b.disabled = false); }
+  } catch (failure) {
+    if(workLabels[verb]&&(!failure.status||failure.status>=500)){
+      clearInterval(polling);connectionUncertain(owner);
+      try{const result=await recoverActivity(id,owner);await openProject(id);if(result)recoveredNotice(result);else error(failure.message);}catch(f){error(f.message);}
+    }else error(failure.message);
+  }
+  finally { clearInterval(polling); endWork(owner);busy = false;unlock(); }
 }
 function heading(title, ...actions) { for(const id of ['home','settings']){if((id==='settings')===title.startsWith('Settings'))$(id).setAttribute('aria-current','page');else $(id).removeAttribute('aria-current');} $('title').textContent = title; $('actions').replaceChildren(...actions); $('title').focus({preventScroll:true}); }
 function resetPicture() { if (picture) URL.revokeObjectURL(picture); picture = null; }
@@ -194,7 +262,10 @@ function csvSheet() {
   add(form,problem,add(make('div','bar'),go,button('Back to information',()=>{closeSheet();newSheet();})));closeSheet();sheet('Select CSV data',form);
 }
 async function openProject(id) {
-  try { resetPicture(); held=await request('/api/desk?id='+encodeURIComponent(id)); renderProject(); }
+  try { resetPicture(); held=await request('/api/desk?id='+encodeURIComponent(id)); renderProject();
+    try{sessionStorage.setItem('infographic-studio-project',id);}catch(f){}
+    if(!busy&&held.activity?.state==='running')void resumeActivity(id,held.activity);
+  }
   catch(failure) {error(failure.message);}
 }
 async function download(manifest,format,view=false) {
@@ -315,7 +386,13 @@ if (homeLink) {
   $('go-suite').href = suiteReturn(homeLink, launchHash, location);
   if (sameTab) $('go-suite').removeAttribute('target');
 }
-if(!token)error('Open Infographic Studio using the private link printed in your terminal.');else home();
+async function startDesk() {
+  let id='';try{id=sessionStorage.getItem('infographic-studio-project')||'';}catch(f){}
+  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id));if(progress.activity?.state==='running'){await openProject(id);return;}}catch(f){}}
+  await home();
+}
+$('sheet').addEventListener('close',paintWork);
+if(!token)error('Open Infographic Studio using the private link printed in your terminal.');else void startDesk();
 
 function reviseArtSheet(){const change=field('What should change?','','textarea'),preserve=field('What should stay the same?','Keep all other subjects, relationships, brand, empty label regions and composition.','textarea');sheet('Revise the artwork',make('p','','This sends the saved original as a reference to your selected image provider. It uses provider allowance; the earlier artwork remains in history.'),change.wrap,preserve.wrap,add(make('div','bar'),button('Create referenced revision',()=>action('revise-art',{change:change.input.value,preserve:preserve.input.value,request_id:requestId()}),true),button('Cancel',closeSheet)));}
 async function compareSheet(version){try{const result=await request('/api/action',{action:'compare',id:held.project.id,expected_revision:held.project.revision,before:version.revision,after:held.project.revision});sheet('Changes since revision '+version.revision,...Object.entries(result.result).map(([key,value])=>detail(key,make('h3','','Before'),make('pre','ig-csv-preview',JSON.stringify(value.before,null,2)),make('h3','','Current'),make('pre','ig-csv-preview',JSON.stringify(value.after,null,2)))),button('Done',closeSheet));}catch(f){error(f.message);}}

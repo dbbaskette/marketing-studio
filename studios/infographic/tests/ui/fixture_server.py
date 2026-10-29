@@ -17,9 +17,21 @@ from helpers import visual_answer
 
 
 class Assistant:
-    def __init__(self): self.calls = []
+    def __init__(self, slow=False):
+        self.calls = []
+        self.slow = slow
+        self.release = threading.Event()
+        self.fail = False
     def propose(self, brief, captured):
         self.calls.append('story')
+        if self.slow:
+            self.fail = False
+            self.release.clear()
+            if not self.release.wait(60):
+                raise RuntimeError('Synthetic assistant was not released.')
+            if self.fail:
+                from runner.contracts import Invalid
+                raise Invalid('Synthetic planning failure. Your saved work is kept.')
         source = captured[0]
         fact = {'id': 'f1', 'statement': source['text'], 'value': source['text'], 'unit': '', 'status': 'supplied',
                 'evidence': [{'source_id': source['id'], 'start': 0, 'end': len(source['text']), 'quote': source['text']}]}
@@ -41,6 +53,7 @@ def main():
     parser.add_argument('--suite', action='store_true')
     parser.add_argument('--remote',action='store_true')
     parser.add_argument('--bridge',action='store_true')
+    parser.add_argument('--slow', action='store_true')
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='infographic-browser-') as folder:
         root = Path(folder).resolve(); home = root / 'home'; home.mkdir()
@@ -71,13 +84,19 @@ def main():
                     assert payload.startswith(b'PK')
                     return {'id':'synthetic_delivered','mimeType':DOC_MIME,'appProperties':{'infographic_request':values['request_key'],'infographic_payload':values['payload_hash']}}
             remote_sources.Client=google_delivery.Client=Google
-        engine = Engine(store, executable=args.renderer, assistant=Assistant())
+        engine = Engine(store, executable=args.renderer, assistant=Assistant(slow=args.slow))
         engine.configuration = {'image_provider': 'codex'}
         class Page(server.Page):
+            reads = (*server.Page.reads, '/api/fixture-calls')
+            writes = (*server.Page.writes, '/api/fixture-release')
             def read(self, route, one):
                 if route == '/api/fixture-calls': return server.shared.as_json(200, {'calls': engine.assistant.calls})
                 return super().read(route, one)
             def write(self, route, sent):
+                if route == '/api/fixture-release':
+                    engine.assistant.fail = bool(sent.get('fail'))
+                    engine.assistant.release.set()
+                    return server.shared.as_json(200, {'released': True})
                 if route == '/api/brand-current':
                     project = brand.adopt(store, sent['id'], contract(), expected_revision=sent['expected_revision'])
                     return server.shared.as_json(200, {'project': project})
