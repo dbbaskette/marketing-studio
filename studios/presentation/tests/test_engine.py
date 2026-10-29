@@ -432,7 +432,7 @@ class HonestStopTests(StudioCase):
         before = self.engine.decks()
         with mock.patch.object(type(self.engine), '_google_ready', lambda me: False):
             with self.assertRaises(WorkspaceError) as caught:
-                self.saved_start(route='document', source={
+                self.start(route='document', source={
                     'kind': 'google', 'link': 'https://docs.google.com/document/d/abc/edit'})
         self.assertEqual(str(caught.exception), existing.NOT_READY)
         self.assertEqual(existing.NOT_READY, 'Sign in to Google first: Status → Check this '
@@ -1429,12 +1429,10 @@ class FormPlanRevisionTests(StudioCase):
         self.revise(True)
 
     def revise(self, structured):
-        from studio_core import research_contract
-        with mock.patch.object(
-                research_contract, 'snapshot', return_value={'schema': 2}):
-            root = self.saved_start(title='Supplied ' + str(structured), route='document',
-                              research=True, research_questions=['Why?'],
-                              source={'kind': 'paste', 'text': 'Synthetic source notes.'})
+        root = self.saved_start(title='Supplied ' + str(structured), route='document',
+                                research=True, research_questions=['Why?'],
+                                source={'kind': 'paste', 'text': 'Synthetic source notes.'},
+                                saved_contract={'schema': 2})
         self.decide(root, 'gate:classify')
         self.assertEqual(self.workers.of('research-plan'), [])
         original = json.loads((root / 'research/plan.json').read_text())
@@ -1916,7 +1914,7 @@ class ExistingTests(StudioCase):
         self.slides.run.drive = False
         before = self.log()
         with self.assertRaises(WorkspaceError) as caught:
-            self.saved_start(route='existing', level='polish',
+            self.start(route='existing', level='polish',
                        source={'kind': 'google', 'link': 'abc123'})
         self.assertIn('Sign in to Google', str(caught.exception))
         self.assertEqual(self.log(), before)
