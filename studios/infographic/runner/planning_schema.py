@@ -1,4 +1,5 @@
 """Bounded authoring outputs; native evidence and page checks remain authoritative."""
+from copy import deepcopy
 
 TEXT = {'type': 'string', 'maxLength': 10000}
 CONTEXT_TEXT = {'type': 'string', 'maxLength': 1000}
@@ -34,6 +35,23 @@ PLAN = record(
             quantitative={'type': 'boolean', 'description': 'True for measured numeric charts; false for descriptive comparisons and component explanations.'},
             illustration={'type': 'boolean'}, illustration_role=TEXT), minItems=1, maxItems=5)),
         minItems=1, maxItems=3))
+
+
+def planning(brief, sources):
+    shape = deepcopy(PLAN)
+    story = shape['properties']['stories']
+    if brief.get('direction') == 'direct':
+        story['maxItems'] = 1
+    requirements = [item['id'] for item in brief.get('must_show', [])]
+    references = {'type': 'string', 'enum': requirements} if requirements else deepcopy(ID)
+    for field in (story['items']['properties']['omissions'],
+                  story['items']['properties']['blocks']['items']['properties']['required_ids']):
+        field.update(items=deepcopy(references), maxItems=len(requirements))
+    story['items']['properties']['omissions']['description'] = 'Only omitted brief.must_show IDs. If there are no must-show items return []. Put optional source exclusions in qualifications.'
+    names = [source['id'] for source in sources]
+    if names:
+        shape['properties']['facts']['items']['properties']['evidence']['items']['properties']['source_id'] = {'type': 'string', 'enum': names}
+    return shape
 
 
 def art_direction(project):

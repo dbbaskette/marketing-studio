@@ -7,7 +7,7 @@ from runner.activity import Activity
 from runner.assistant_failure import AssistantFailure, MESSAGES, classify
 from runner.author import Author
 from runner.engine import Engine
-from runner.planning_schema import PLAN
+from runner.planning_schema import PLAN, planning
 from runner.workspace import Store
 
 
@@ -38,7 +38,7 @@ class PlanningTests(Isolated):
             self.assertIn('at most 12 facts', prompt)
             path = Path(command[command.index('--output-schema') + 1])
             self.assertEqual(path.parent, folder)
-            self.assertEqual(json.loads(path.read_text()), PLAN)
+            self.assertEqual(json.loads(path.read_text()), planning(project['brief'], [{'id': captured['id']}]))
             self.assertEqual(command[command.index('-m') + 1], 'synthetic-model')
             self.assertIn('model_reasoning_effort="high"', command)
             events = [None, {'type': 'item.completed', 'item': {'type': 'agent_message', 'text': 'Working.'}},
