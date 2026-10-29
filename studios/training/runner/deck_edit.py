@@ -32,7 +32,9 @@ class PreparedEdit:
         parent.mkdir(parents=True, exist_ok=True)
         self.folder = Path(tempfile.mkdtemp(prefix='edit-', dir=parent))
         self.before = self.folder / 'before'
-        self.root = self.folder / 'prepared'
+        # Native migration proofs bind the saved training id to its directory name.
+        # Nested checked edits retain that identity without changing the raw records.
+        self.root = self.folder / 'prepared' / live.name
         self.recovery = False
         self.outputs = {}
         self.published = False
@@ -98,10 +100,10 @@ class PreparedEdit:
             raise WorkspaceError('This training changed while the slide was being prepared. Try again.')
         journal = self.folder / 'PUBLISHING.txt'
         journal.write_text('Training Studio slide edit\nOriginal folder: ' + str(self.live)
-                           + '\nBefore: before/\nPrepared: prepared/\nChanged files:\n'
+                           + '\nBefore: before/\nPrepared: ' + str(self.root.relative_to(self.folder)) + '/\nChanged files:\n'
                            + '\n'.join(str(path) for path in changed)
-                           + '\nRecovery: compare each changed file with before/ and prepared/. '
-                           'Restore before/ only where the live bytes still equal prepared/; '
+                           + '\nRecovery: compare each changed file with before/ and the Prepared folder. '
+                           'Restore before/ only where the live bytes still equal the Prepared copy; '
                            'preserve any other live change for manual resolution. Files missing '
                            'from before/ were added. Once consistent, remove this journal.\n', encoding='utf-8')
         written = []

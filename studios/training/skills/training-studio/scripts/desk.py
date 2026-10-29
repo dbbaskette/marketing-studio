@@ -191,7 +191,7 @@ def activity(root: Path, touched_at: str) -> str:
     one that is missing or cannot be read adds nothing."""
     stamps = [touched_at]
     try:
-        record = json.loads((root / workspace.STATE_DIR / 'run.json').read_text(encoding='utf-8'))
+        record = workspace.read_run(root) or {}
         for entry in (record.get('steps') or {}).values():
             for attempt in entry.get('attempts') or ():
                 stamps += [attempt[key] for key in ('started_at', 'ended_at')

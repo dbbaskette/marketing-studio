@@ -1,5 +1,5 @@
 """Shared test-only contracts for both deck Studio engine locks."""
-from contextlib import contextmanager, ExitStack
+from contextlib import contextmanager, ExitStack, nullcontext
 import json
 import os
 from pathlib import Path
@@ -27,6 +27,9 @@ class EngineProcessLockCases:
             record.parent.mkdir(parents=True, exist_ok=True)
             record.write_text(json.dumps({'schema': 1, 'steps': {}, 'count': 0,
                                          'unrelated': {'original': True}}))
+            (repo / 'items/hub.json').write_text(json.dumps({
+                'schema': 1, 'tool': self.gitstate.TOOL, 'name': 'Disposable Test',
+                'folder': 'items', 'branch': 'main', 'minimum_runtime': self.gitstate.installed()}))
             (repo / 'unrelated.txt').write_text('preserve me')
             git('add', '.')
             git('commit', '--quiet', '-m', 'initial')
@@ -63,6 +66,51 @@ for _ in range(8):
             self.assertEqual(git('status', '--porcelain'), '')
             self.assertEqual((repo / 'unrelated.txt').read_text(), 'preserve me')
             self.assertTrue((repo / '.git/studios-write.lock').is_file())
+
+    def test_configured_workspace_refuses_removed_native_marker(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary).resolve()
+            folder = repo / 'items'
+            folder.mkdir()
+            marker = folder / 'hub.json'
+            marker.write_text(json.dumps({
+                'schema': 1, 'tool': self.gitstate.TOOL, 'name': 'Disposable Test',
+                'folder': 'items', 'branch': 'main', 'minimum_runtime': self.gitstate.installed()}))
+            space = self.gitstate.Workspace('Disposable Test', repo, 'items', 'main')
+            # Keep configured identity stable: current() also checks marker existence,
+            # which would otherwise hide a missing native capability binding.
+            with mock.patch.object(self.gitstate, 'current', return_value=space):
+                self.gitstate.require_workspace(space)
+                marker.unlink()
+                with self.assertRaisesRegex(self.gitstate.WorkspaceError, 'workspace changed'):
+                    self.gitstate.require_workspace(space)
+                with self.assertRaisesRegex(self.gitstate.WorkspaceError, 'workspace changed'):
+                    with self.gitstate.workspace_locked(space, nullcontext(), configured=True):
+                        self.fail('A missing native marker admitted a configured operation')
+            self.assertEqual(list(folder.iterdir()), [])
+
+    def test_default_capability_does_not_require_deck_marker_for_infographic_path(self):
+        name = '_disposable_infographic_workspace_admission'
+        module = self.gitstate.for_product(
+            name, 'Infographic Studio', TOOL='infographic-studio', FOLDER='projects',
+            ITEM='project', ITEMS='projects')
+        self.addCleanup(sys.modules.pop, name, None)
+        with tempfile.TemporaryDirectory() as temporary:
+            repo = Path(temporary).resolve()
+            (repo / 'projects').mkdir()
+            native_marker = repo / '.infographic-studio/workspace.json'
+            native_marker.parent.mkdir()
+            raw = json.dumps({'schema': 1, 'product': 'Infographic Studio',
+                              'owner': 'disposable-owner'}).encode()
+            native_marker.write_bytes(raw)
+            space = module.Workspace('Disposable Test', repo, 'projects', 'main')
+            self.assertFalse(module.REQUIRE_WORKSPACE_MARKER)
+            with mock.patch.object(module, 'current', return_value=space):
+                module.require_workspace(space)
+                with module.workspace_locked(space, nullcontext(), configured=True):
+                    pass
+            self.assertEqual(native_marker.read_bytes(), raw)
+            self.assertEqual(list((repo / 'projects').iterdir()), [])
 
     def test_inventory_never_acquires_the_write_lock(self):
         engine = self.engines.Engine(background=False)

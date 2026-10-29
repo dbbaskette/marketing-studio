@@ -18,6 +18,7 @@ import zlib
 
 import home
 import workspace
+import migration_records
 from workspace import WorkspaceError
 from runner import deck_edit, drafts, gitstate, pipeline, settings, team, worker_tools
 from studio_core import research_contract, research_sites
@@ -303,7 +304,7 @@ def _prepare(engine, root, record, target):
 @contextmanager
 def _scratch(name):
     with tempfile.TemporaryDirectory(prefix='training-conversation-') as temporary:
-        stage = Path(temporary) / name
+        stage = Path(temporary).resolve() / name
         stage.mkdir()
         try:
             yield stage
@@ -341,7 +342,7 @@ def _deck_path(name, relative):
 
 
 def _read_restore(root, name):
-    record = home.read_json(root / drafts.RECORD, {})
+    record = workspace.read_run(root) or {}
     bindings = record.get('delivered_restore', {})
     if not isinstance(bindings, dict):
         raise WorkspaceError('The original delivered state binding cannot be read.')
@@ -370,7 +371,7 @@ def _capture_restore(root, before, name):
     session = workspace.load(root)
     if session['settings']['deck_target'] != 'google':
         return
-    record = home.read_json(root / drafts.RECORD, {})
+    record = workspace.read_run(root) or {}
     bindings = record.get('delivered_restore', {})
     if not isinstance(bindings, dict):
         raise WorkspaceError('The original delivered state binding cannot be read.')
@@ -379,8 +380,8 @@ def _capture_restore(root, before, name):
         return
     if session.get('pending_local_decks', {}).get(name):
         raise WorkspaceError('This older local draft has no proven original state. Restore its saved record before editing it.')
-    old_session = json.loads(before[workspace.STATE_DIR + '/session.json'])
-    old_record = json.loads(before[drafts.RECORD])
+    old_session = migration_records.from_snapshot(before, workspace.STATE_DIR + '/session.json')
+    old_record = migration_records.from_snapshot(before, drafts.RECORD)
     prefix = workspace.prefix(workspace.split(name)[1])
     linked = before.get(prefix + 'deck-link.md')
     artifact = old_session['artifacts'].get(name)
@@ -397,7 +398,7 @@ def _capture_restore(root, before, name):
     path = _restore_path(root, name)
     workspace.write_atomic(path, (json.dumps(value, sort_keys=True) + '\n').encode())
     record.setdefault('delivered_restore', {})[name] = workspace.sha256_file(path)
-    home.write_json(root / drafts.RECORD, record)
+    workspace.write_run(root, record)
 
 
 def _return_state(root, name):
@@ -421,6 +422,9 @@ def _prepared(engine, path, target, change=False, owner=True):
         root, record = _root(engine, path, change, owner)
         scope = scope_of(record['conversation_scope']) if 'conversation_scope' in record else None
         kind, name, part = _target(root, target)
+        targets = record.get('migration_targets')
+        if targets and not record.get('migration_scope_released') and name not in ('scope', 'handoff', 'ownership') and name not in targets:
+            raise WorkspaceError('This target was not retained in the migration preview. Explicitly change desk scope first.')
         if kind and scope is not None and kind not in scope:
             raise WorkspaceError('This target exceeds the requested conversation scope.')
         before = _files(root)
@@ -437,7 +441,7 @@ def _prepared(engine, path, target, change=False, owner=True):
         # Rebase operational metadata only, preserving original sources/material bytes.
         for file in stage.rglob('*.json'):
             relative = file.relative_to(stage).as_posix()
-            if '/work/' in '/' + relative or relative == drafts.RECORD:
+            if '/work/' in '/' + relative or relative == drafts.RECORD and not (stage / migration_records.format.ORIGIN).exists() or relative == migration_records.format.DESK_RUN:
                 try:
                     value = json.loads(file.read_bytes())
                     rebased = _canonical(value, root, stage)
@@ -512,7 +516,7 @@ def _publish(engine, space, root, stage, before, owner=True):
     after = _files(stage)
     # Canonicalize metadata paths; never rewrite input or material text.
     for name, data in list(after.items()):
-        if ('/work/' in '/' + name or name == drafts.RECORD or name.startswith('@proposals/')) and name.endswith('.json'):
+        if ('/work/' in '/' + name or name == drafts.RECORD and migration_records.format.ORIGIN not in before or name == migration_records.format.DESK_RUN or name.startswith('@proposals/')) and name.endswith('.json'):
             try:
                 value = json.loads(data)
                 canonical = _canonical(value, stage, root)
@@ -527,6 +531,8 @@ def _publish(engine, space, root, stage, before, owner=True):
                               for relative, content in after.items() if not relative.startswith('@proposals/')}
             after[name] = (json.dumps(value, indent=2) + '\n').encode()
     changed = {name for name in before.keys() | after.keys() if before.get(name) != after.get(name)}
+    if migration_records.format.ORIGIN in before and any(before.get(name) != after.get(name) for name in (migration_records.format.SESSION, migration_records.format.RUN, migration_records.format.ORIGIN)):
+        raise WorkspaceError('A checked change tried to alter preserved original migration records.')
     allowed = {'.training-studio', '.harness-research', '.studio-research', 'research', 'sources',
                'work', 'deck', 'scenarios', 'yoodli', 'reviews', 'history', '@proposals'}
     material_files = {workspace.artifact(stage, workspace.load(stage), name)['file']
@@ -611,8 +617,8 @@ def _text(engine, root, record, target, payload, requirements):
 
 def _previous_decisions(before):
     """Keep genuine prior facts as history when a checked change advances the material."""
-    session = json.loads(before[f'{workspace.STATE_DIR}/session.json'])
-    record = json.loads(before[drafts.RECORD])
+    session = migration_records.from_snapshot(before, workspace.STATE_DIR + '/session.json')
+    record = migration_records.from_snapshot(before, drafts.RECORD)
     return {'materials': {name: {key: copy.deepcopy(entry[key]) for key in ('built_from', 'approved') if key in entry}
                           for name, entry in session['artifacts'].items()},
             'decks': {level: {key: copy.deepcopy(entry[key]) for key in ('approved', 'look', 'saved') if key in entry}
@@ -693,21 +699,20 @@ def return_delivered(engine, path, request):
             raise WorkspaceError(CHANGED)
         name = context['requirements']['material']
         snapshot, marker = _return_state(stage, name)
+        session = workspace.load(stage)
+        record = staged._load(stage)
         archive = stage / 'history/deck-local' / request['expected_basis']
         if archive.exists():
             raise WorkspaceError('This local draft is already retained in History. Read its current state.')
+        archived = []
         for relative, data in _files(stage, proposals=False).items():
             if _deck_path(name, relative):
                 workspace.write_atomic(archive / relative, data)
-                (stage / relative).unlink()
-        session = workspace.load(stage)
-        record = staged._load(stage)
+                archived.append(relative)
         home.write_json(archive / 'state.json', {'material': name, 'marker': marker,
             'artifact': session['artifacts'].get(name), 'desk_ready': session.get('desk_ready', {}).get(name),
             'deck': record.get('deck', {}).get(workspace.split(name)[1] or ''), 'request': request})
         workspace.write_atomic(archive / 'delivered-state.json', _restore_path(stage, name).read_bytes())
-        for relative, data in snapshot['files'].items():
-            workspace.write_atomic(stage / relative, base64.b64decode(data, validate=True))
         if snapshot['artifact'] is None:
             session['artifacts'].pop(name, None)
         else:
@@ -728,6 +733,10 @@ def return_delivered(engine, path, request):
         workspace.log(session, 'set-aside-local-deck', artifact=name, by='person-request')
         workspace.store(stage, session)
         staged._store(stage, record)
+        for relative in archived:
+            (stage / relative).unlink()
+        for relative, data in snapshot['files'].items():
+            workspace.write_atomic(stage / relative, base64.b64decode(data, validate=True))
         _restore_path(stage, name).unlink()
         _publish(engine, space, root, stage, before)
     return show(engine, root)
@@ -768,6 +777,8 @@ def _ownership(engine, path, target, expected_basis, scope, selection=None):
         elif target == 'ownership':
             record['execution'] = 'conversation'
         record['conversation_scope'] = scope
+        if target == 'scope' and record.get('migration_targets'):
+            record['migration_scope_released'] = True
         record.setdefault('conversation_ownership' if target != 'scope' else 'conversation_scope_changes', []).append({
             'operation': target, 'basis': expected_basis, 'scope': scope, 'at': home.now(), 'by': 'person-request',
             **({'selection': selection} if selection else {})})
@@ -1108,3 +1119,19 @@ def _handoff_check(engine, root, record, scope):
     ready = engine.ready(record['agent'])
     if not ready.ready:
         raise WorkspaceError(ready.problem)
+
+
+# Explicit saved-work migration stays separate from checked content publication.
+def prepare_migration(record, saved_inputs):
+    from runner.desk_migration import prepare_migration as prepare
+    return prepare(record, saved_inputs)
+
+
+def migration_preview(engine, path):
+    from runner.desk_migration import migration_preview as preview
+    return preview(engine, path)
+
+
+def migrate(engine, path, expected):
+    from runner.desk_migration import migrate as apply
+    return apply(engine, path, expected)

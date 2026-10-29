@@ -152,7 +152,7 @@ const deskKit = Drafting.kit({
   api: deskApi,
   routes: DESK_ROUTES,
   share: (id) => send('drafts/share', { path: deskItem(id).path }),
-  canEdit: (held) => deskOurs() && !held.view.readonly,
+  canEdit: (held) => deskCanChange() && !held.view.readonly,
   current: (held) => view.screen === 'run' && deskItem(held.id).path === view.path,
   page: () => main(),
   hooks: {
@@ -190,7 +190,7 @@ const deskKit = Drafting.kit({
     nameOf: (found, part) => part === 'opening' ? (found.whole ? 'Whole file' : 'Opening')
       : (list(found.sections).find((one) => one.id === part) || {}).heading || 'this section',
     single: (part) => part === 'title',
-    noted: (found) => deskOurs() && !found.readonly && !found.whole && found.kind !== 'blueprint',
+    noted: (found) => deskCanChange() && !found.readonly && !found.whole && found.kind !== 'blueprint',
   },
   words: () => ({ thing: 'material', sources: { save: 'Saved', rewrite: 'Rewritten',
     google: "Before Google's text", earlier: 'An earlier version', restore: 'Restored',
@@ -292,7 +292,7 @@ deskKit.proposal = (held, set, item, key) => {
     const card = finishingProposal(held, set, item, key);
     if (!('after' in item) && item.state === 'open' && item.present && held.finish.editing[item.id] === undefined) {
       const apply = capsule('Apply', 'quiet', () => deskKit.apply(held, set, [{ id: item.id }], apply));
-      apply.disabled = !deskOurs() || !!held.view.working || !!held.view.readonly;
+      apply.disabled = !deskCanChange() || !!held.view.working || !!held.view.readonly;
       card.append(add(make('div', 'bar'), apply));
     }
     return card;
@@ -301,9 +301,9 @@ deskKit.proposal = (held, set, item, key) => {
     make('h3', 'card-title', item.note), make('p', 'quiet', item.instruction));
   if (item.state !== 'open') return add(card, make('p', 'quiet', 'Skipped.'));
   const apply = capsule('Apply', 'quiet', () => deskKit.apply(held, set, [{ id: item.id }], apply));
-  apply.disabled = !deskOurs() || !!held.view.working || !!held.view.readonly || !item.present;
+  apply.disabled = !deskCanChange() || !!held.view.working || !!held.view.readonly || !item.present;
   const skip = capsule('Skip', 'quiet', () => deskKit.skip(held, set, [item.id], skip));
-  skip.disabled = !deskOurs();
+  skip.disabled = !deskCanChange();
   return add(card, !item.present ? make('p', 'quiet', 'This part changed since the check. Check again.') : null,
     add(make('div', 'bar'), apply, skip));
 };
@@ -741,6 +741,11 @@ function deskOurs() {
     && !(view.run && view.run.mine === false);
 }
 
+// Ownership still permits explicit Ready; page typing and jobs require runner ownership.
+function deskCanChange() {
+  return deskOurs() && deskHeld(view.path).view?.execution !== 'conversation';
+}
+
 async function drawDesk(fresh) {
   const turn = view.turn;
   const path = view.path;
@@ -885,7 +890,7 @@ function deskCard(found) {
   }
   if (actions.includes('download')) bar.append(downloadButton(found));
   const material = deskHeld(view.path).materials[found.name];
-  if (material && found.kind === 'document' && deskOurs() && !material.view.readonly) {
+  if (material && found.kind === 'document' && deskCanChange() && !material.view.readonly) {
     const menu = make('details', 'menu'); menu.dataset.key = 'whole-menu ' + found.name;
     const again = capsule('Write the whole guide again', 'quiet', () => {
       menu.open = false;
@@ -903,7 +908,7 @@ function deskCard(found) {
 }
 
 function updateChainPart(level) {
-  if (!deskOurs()) return null;
+  if (!deskCanChange()) return null;
   const updates = deskHeld(view.path).view?.sources?.updates;
   if (!updates) return null;
   const chain = updates.chain;
@@ -1113,7 +1118,7 @@ function slideSelectionBar(found) {
 
 function deckParts(found) {
   const area = make('div', 'stack desk-slide-cards');
-  const ours = deskOurs();
+  const ours = deskCanChange();
   const selection = slideSelectionBar(found);
   if (ours) area.append(selection.bar);
   if (list(found.slides).length) area.append(capsule('Outline', 'quiet', () => deckOutline(found)));
@@ -1302,7 +1307,7 @@ async function slideHistory(found, slide) {
         make('p', 'quiet', 'Struck words are in this version only; marked words were added since.'),
         deskKit.compare(slideWordsLines(version.words), slideWordsLines(slide)))));
       row.append(comparison);
-      if (deskOurs()) {
+      if (deskCanChange()) {
         const restore = capsule('Restore', 'quiet', async () => {
           const sent = { level: found.level, slide: slide.id, stamp: version.stamp, seen: found.seen };
           const result = await deskDecide('slide-restore', sent, restore);
@@ -1357,8 +1362,8 @@ function materialParts(held, found) {
   held.status = status;
   add(area, status, deskKit.selectionBar(held), held.view.readonly
     ? make('p', 'quiet', held.view.readonly) : null);
-  if (deskOurs() && !held.view.readonly) area.append(materialNote(held, found));
-  if (hasDeskRecovery(held) && deskOurs() && !held.view.readonly) {
+  if (deskCanChange() && !held.view.readonly) area.append(materialNote(held, found));
+  if (hasDeskRecovery(held) && deskCanChange() && !held.view.readonly) {
     const save = capsule('Save recovered text', 'quiet', async () => {
       held.recoveredParts = {};
       await deskKit.flush(held);
@@ -1409,7 +1414,7 @@ function materialParts(held, found) {
       checks.append(capsule('Restore', 'quiet', () => deskKit.history(held,
         job.part === 'whole' ? 'opening' : job.part)));
     }
-    if (deskOurs()) {
+    if (deskCanChange()) {
       const working = ['queued', 'working'].includes(job.status);
       if (working || ['stopped', 'failed'].includes(job.status) || (job.applied === false && !job.proposed)) {
         const route = working ? 'stop' : 'retry';
@@ -1434,7 +1439,7 @@ function materialPart(held, part) {
   node.deskInput.dataset.key = held.id + ':' + part + ':text';
   const note = node.querySelector('.desk-note-text');
   if (note) note.dataset.key = held.id + ':' + part + ':note';
-  node.deskInput.readOnly = !deskOurs() || !!held.view.readonly;
+  node.deskInput.readOnly = !deskCanChange() || !!held.view.readonly;
   return node;
 }
 
@@ -1672,7 +1677,7 @@ function sourcesPart(found) {
     add(node, make('p', 'quiet', (mark === 'new' ? 'New: ' : 'Changed: ')
       + (finding ? finding.title : id)));
   }
-  if (deskOurs()) add(node, capsule('Add a source', 'quiet', addSource));
+  if (deskCanChange()) add(node, capsule('Add a source', 'quiet', addSource));
   add(node, updateChainPart());
   const plan = list(sources.plan).map((item) => (item && item.question) || String(item || ''))
     .filter(Boolean);
@@ -1710,6 +1715,7 @@ function paintDesk(fresh) {
   const found = held.view;
   if (!run || !found) return;
   const ours = deskOurs();
+  const conversation = found.execution === 'conversation';
   const lead = deskLead(run, held, ours);
   const tabs = deskTabs(found, held);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
@@ -1722,14 +1728,14 @@ function paintDesk(fresh) {
   const level = held.level;
   const shown = list(found.cards).filter((one) => (one.level || '') === level);
   const actions = [];
-  if (ours) {
+  if (ours && !conversation) {
     const mark = capsule(named.length ? 'Mark this level ready' : 'Mark every material ready',
       lead === 'ready' ? 'filled' : '', () => markLevel(level, shown, mark), 'desk-level-ready');
     actions.push(mark);
   }
   actions.push(capsule('Download', '', openSheet('desk-download', 'desk-download-all'),
     'desk-download-all'));
-  if (ours) {
+  if (ours && !conversation) {
     actions.push(capsule('Google Doc', '', openSheet('desk-copies', 'desk-copies'),
       'desk-copies'));
     actions.push(capsule('Finishing', '', openFinishing, 'desk-finishing'));
@@ -1744,12 +1750,14 @@ function paintDesk(fresh) {
     : add(make('div', 'desk-layout'), column, finishing ? finishing.panel : narrow() ? null : sourcesPart(found));
   place({ title: found.title || 'Untitled', back: true,
     above: named.length ? [make('span', '', levelsText(named))] : [], actions }, [
-    pageHead(DESK_WORDS.lede),
+    pageHead(conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
     notice,
+    conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
+    found.saved_status ? add(card('Saved runner history'), make('p', '', 'The earlier runner was ' + found.saved_status.halt + '. That status remains in the original saved records; no work was resumed.')) : null,
     !ours && run.mine === false ? theirsPart(run, !view.sheet && !run.driver) : null,
     ours && run.notice ? noticePart(run) : null,
     ours ? needsPart(found, held, run) : null,
-    progressPart(found, held, lead),
+    conversation ? null : progressPart(found, held, lead),
     run.question && ours ? questionPart(run, found.title) : null,
     run.problem ? problemPart(run, lead === 'problem') : null,
     adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,

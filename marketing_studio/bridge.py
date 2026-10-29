@@ -29,12 +29,12 @@ from pathlib import Path
 _CORE = Path(__file__).resolve().parents[1] / 'core'
 if str(_CORE) not in sys.path:
     sys.path.insert(0, str(_CORE))
-from studio_core.runtime import ensure_python
+from studio_core.runtime import ensure_python  # noqa: E402 — private core path first
 
 ensure_python(Path(__file__).resolve().parents[1])
 
-from studio_core import workspace_setup
-from studio_core.workspace_setup import configure
+from studio_core import workspace_setup  # noqa: E402
+from studio_core.workspace_setup import configure  # noqa: E402
 
 NAMES = {'blog': 'Blog Studio', 'training': 'Training Studio', 'presentation': 'Presentation Studio'}
 NOUNS = {'blog': 'blogs', 'training': 'trainings', 'presentation': 'decks'}
@@ -374,12 +374,34 @@ def runner_carry(identifier):
     return lambda space: {NOUNS[identifier]: len(runner_items(space.root, identifier))}
 
 
+def runner_records(identifier, top):
+    """Use only the selected native runtime's validated effective record boundary."""
+    if identifier == 'presentation':
+        from runner import decks as records
+        traces = ('desk/migration.json', 'desk/migration-origin.json',
+                  'work/desk/migration-transaction.json')
+        capable = callable(getattr(getattr(records, 'migration', None), 'validated', None))
+    else:
+        import workspace as records
+        traces = ('.training-studio/desk/migration-origin.json', '.training-studio/desk/session.json',
+                  '.training-studio/desk/run.json', 'work/desk/migration-transaction.json')
+        try:
+            import migration_records
+            capable = callable(getattr(migration_records, 'pair', None))
+        except ImportError:
+            capable = False
+    if not all(callable(getattr(records, name, None)) for name in ('read_run', 'write_run')) \
+            or (not capable and any((top / name).exists() or (top / name).is_symlink() for name in traces)):
+        raise ValueError(f'This {NAMES[identifier]} runtime cannot safely carry these saved records. '
+                         'Keep the original workspace and explicitly update the Studio before connecting again.')
+    return records
+
+
 def carry_runner(identifier, source, new):
     """Copy the trainings or decks of one workspace folder into another, each as its
     bring-in takes it: a copy, taken by this computer, committed. Or leave nothing."""
     from runner import gitstate, team
-    import home
-    marker = runner_marker(identifier)
+    from workspace import WorkspaceError
     carried, left, created = [], [], []
     try:
         for top in runner_items(source, identifier) if source else ():
@@ -391,15 +413,23 @@ def carry_runner(identifier, source, new):
             if why:
                 left.append({'id': ident, 'why': why})
                 continue
+            try:
+                records = runner_records(identifier, top)
+                record = records.read_run(top)
+                if not isinstance(record, dict):
+                    raise ValueError('Its run record cannot be read.')
+            except (OSError, ValueError, KeyError, TypeError, WorkspaceError) as failure:
+                left.append({'id': ident, 'why': str(failure)})
+                continue
             team.copy_in(top, destination)
             created.append(destination)
-            record = home.read_json(destination / marker, None)
+            record = records.read_run(destination)
             if not isinstance(record, dict):
-                left.append({'id': ident, 'why': 'Its run record cannot be read.'})
-                shutil.rmtree(destination, ignore_errors=True)
-                created.remove(destination)
-                continue
-            home.write_json(destination / marker, {**record, 'driver': team.claim(new)})
+                raise ValueError('The copied run record cannot be read.')
+            claimed = {**record, 'driver': team.claim(new)}
+            records.write_run(destination, claimed)
+            if records.read_run(destination) != claimed:
+                raise ValueError('The copied execution owner cannot be verified.')
             carried.append(ident)
         if carried:
             gitstate.commit(new, f'Bring {NOUNS[identifier]} in from {source}', carried)

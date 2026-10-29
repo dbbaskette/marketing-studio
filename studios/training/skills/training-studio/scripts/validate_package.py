@@ -43,6 +43,7 @@ REQUIRED = (
     'references/profiles/yoodli.md',
     'scripts/training.py',
     'scripts/write_guard.py',
+    'scripts/migration_records.py',
     'scripts/assess.py',
     'scripts/workspace.py',
     'scripts/checks.py',

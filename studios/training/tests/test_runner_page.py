@@ -49,7 +49,7 @@ POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/a
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/review-level', '/api/research-site')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
-RUN_KEYS = ['agent', 'ahead', 'can_open_desk', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
+RUN_KEYS = ['agent', 'ahead', 'can_migrate_desk', 'can_open_desk', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'flow', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
             'question', 'queue', 'redesign', 'research_from', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
             'workers']
@@ -1818,7 +1818,8 @@ class ListTests(PageCase):
         path, chat = self.started(), self.chat()
         listed = self.listed()
         self.assertEqual(listed['Rolling restarts']['run'], {
-            'state': 'waiting', 'sentence': 'The research plan is waiting for your review.'})
+            'state': 'waiting', 'sentence': 'The research plan is waiting for your review.',
+            'can_migrate_desk': True})
         self.assertIsNone(listed['Started in a chat']['run'])
         self.assertEqual(self.get('training', path=path)['run'],
                          listed['Rolling restarts']['run'])
@@ -1876,7 +1877,7 @@ class ListTests(PageCase):
         found = self.get('trainings')
         item = found['trainings'][0]
         self.assertEqual((found['needs'], item['state'], item['run'], item['sentence']), (
-            0, 'in-progress', {'state': 'stopped', 'sentence': STOPPED}, STOPPED))
+            0, 'in-progress', {'state': 'stopped', 'sentence': STOPPED, 'can_migrate_desk': True}, STOPPED))
 
     def test_reading_never_starts_or_wakes_a_run(self):
         self.workers.then('research-plan', fails(), fails(), fails(), asks('Which platform?'))
