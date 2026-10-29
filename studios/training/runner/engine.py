@@ -205,9 +205,11 @@ from __future__ import annotations
 
 import contextvars
 import json
+import os
 import re
 import secrets
 import shutil
+import subprocess
 import tempfile
 import threading
 import time
@@ -1220,16 +1222,27 @@ class Engine(Reviewing):
             record = migration_records.from_snapshot(files, migration.RUN, root.name)
             if migration.ORIGIN in files:
                 origin = json.loads(files[migration.ORIGIN])
-                for name in (*migration.WRITES, *origin['required']):
+                def shared_input(name):
                     relative = gitstate.inside(space, root / name)
-                    mode = hub.run(space.repo, 'ls-tree', '--format=%(objectmode)', at or gitstate.tracking(space), '--', relative)
+                    revision = at or gitstate.tracking(space)
+                    mode = hub.run(space.repo, 'ls-tree', '--format=%(objectmode)', revision, '--', relative)
                     if mode.returncode or mode.stdout.strip() not in ('100644', '100755'):
                         raise ValueError('Missing or linked shared migration input')
-                    if name in origin['required']:
-                        data = gitstate.theirs(space, root / name, at)
-                        migration.shared_material(name, data.encode() if data is not None else None)
+                    size = hub.run(space.repo, 'cat-file', '-s', f'{revision}:{relative}')
+                    if size.returncode or not size.stdout.strip().isdigit() or int(size.stdout) > migration.input_limit(name):
+                        raise ValueError('Shared migration input exceeds its native bound')
+                    env = {key: value for key, value in os.environ.items() if key not in hub.INHERITED}
+                    env.update(GIT_TERMINAL_PROMPT='0', GIT_CEILING_DIRECTORIES=str(space.repo.parent))
+                    data = subprocess.run(['git', 'cat-file', 'blob', f'{revision}:{relative}'], cwd=space.repo,
+                        env=env, stdin=subprocess.DEVNULL, capture_output=True, timeout=hub.TIMEOUT)
+                    if data.returncode:
+                        raise ValueError('Shared migration input cannot be read')
+                    return data.stdout
+                for name in migration.WRITES:
+                    shared_input(name)
+                migration.shared_inputs(origin, shared_input, migration_records.from_snapshot(files, migration.SESSION, root.name))
             return record
-        except (ValueError, KeyError, TypeError) as error:
+        except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as error:
             raise WorkspaceError('The shared Training Studio migration cannot be read. Keep its saved records.') from error
 
     def _learn(self, space: gitstate.Workspace, at: str | None = None) -> None:
@@ -1246,8 +1259,13 @@ class Engine(Reviewing):
                 from studio_core import training_migration as migration
                 import migration_records
                 pair = migration_records.pair(root)
-                paths = (RECORD, *migration.WRITES, *(pair[0]['required'] if pair else ()))
-                if not record or not any(gitstate.inside(space, root / name) in arrived for name in paths):
+                inputs = set(pair[0]['required']) if pair else set()
+                if pair:
+                    inputs.update(migration.declared_inputs(pair[1], [name for name in pair[0]['targets'] if name in pair[1]['artifacts']])[0])
+                paths = (RECORD, *migration.WRITES, *inputs)
+                research_changed = bool(pair and 'research/output.json' in inputs and any(
+                    name.startswith(gitstate.inside(space, root / 'research') + '/') for name in arrived))
+                if not record or not research_changed and not any(gitstate.inside(space, root / name) in arrived for name in paths):
                     continue
             except (WorkspaceError, ValueError):
                 continue

@@ -243,10 +243,13 @@ class SyncGuardTests(unittest.TestCase):
             file.write_bytes(data)
         plan = b'# Plan\n## M1 - Basics\n### O1 - Explain\n'
         (item / 'blueprint.md').write_bytes(plan)
+        session['artifacts']['blueprint'] = {'file': 'blueprint.md', 'sha256': migration.digest(plan), 'built_from': {}}
+        raw_session = json.dumps(session).encode()
+        (item / migration.SESSION).write_bytes(raw_session)
         token = 'tm1.' + 'A' * 43
-        origin = migration.receipt(raw_session, raw_run, item.name, token, [migration.SESSION, migration.RUN, 'blueprint.md'])
+        origin = migration.receipt(raw_session, raw_run, item.name, token, [migration.SESSION, migration.RUN, 'blueprint.md'], ['blueprint'])
         session.update(flow='desk')
-        run.update(flow='desk', execution='conversation', conversation_scope=['part'], migration_targets=['deck'], unfinished_migration=True)
+        run.update(flow='desk', execution='conversation', conversation_scope=['part'], migration_targets=['blueprint'], unfinished_migration=True)
         after = {migration.ORIGIN: json.dumps(origin).encode(),
                  migration.DESK_SESSION: json.dumps({'origin': origin, 'record': session}).encode(),
                  migration.DESK_RUN: json.dumps({'origin': origin, 'record': run}).encode(),
@@ -278,3 +281,63 @@ class SyncGuardTests(unittest.TestCase):
         other.parent.mkdir(parents=True)
         other.write_text('drawing')
         self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
+
+    def test_training_unknown_update_chain_is_never_idle(self):
+        path = self.repo / 'training/.training-studio/run.json'
+        path.parent.mkdir(parents=True)
+        for chain in ({'status': 'unknown'}, {'id': 'a' * 24, 'level': None},
+                      {'id': 'a' * 24, 'level': None, 'status': 'done', 'blocked': 'blueprint'}):
+            path.write_text(json.dumps({'schema': 1, 'steps': {}, 'drafts': {'update_chain': chain}}))
+            with self.assertRaises(ValueError):
+                worker_in_progress(self.repo)
+        for status in ('done', 'stopped', 'working'):
+            path.write_text(json.dumps({'schema': 1, 'steps': {}, 'drafts': {'update_chain': {
+                'id': 'a' * 24, 'level': None, 'status': status, 'blocked': []}}}))
+            self.assertEqual(worker_in_progress(self.repo), status == 'working')
+
+    def test_training_declared_shared_inputs_and_effective_chain_are_validated(self):
+        from studio_core import training_migration as migration
+        item = self.repo / 'training'
+        session = {'schema': 1, 'id': item.name, 'title': 'Synthetic Training Studio',
+            'levels': [], 'sizing': {}, 'stage': 'blueprint', 'settings': {
+                'deck_target': None, 'brand': None, 'brief_kind': 'product', 'stages': []},
+            'unavailable': {}, 'pins': {}, 'artifacts': {
+                'blueprint': {'file': 'blueprint.md', 'sha256': 'a' * 64, 'built_from': {'research': 'b' * 64}},
+                'research': {'file': '.harness-research/research-report.md', 'sha256': 'c' * 64, 'built_from': {}}},
+            'exports': {}, 'decisions': [], 'events': []}
+        run = {'schema': 1, 'agent': 'test', 'steps': {}, 'limits': {}, 'answers': {}, 'copies': {}, 'deck': {}}
+        files = {migration.SESSION: json.dumps(session).encode(), migration.RUN: json.dumps(run).encode(),
+            'blueprint.md': b'# Plan\n## M1 - Basics\n### O1 - Explain\n',
+            '.harness-research/research.json': json.dumps({'schema': 1, 'owner': 'harness-research', 'items': [], 'results': {}}).encode(),
+            '.harness-research/research-report.md': b'# Research\n', 'research-report.md': b'# Approved research\n'}
+        origin = migration.receipt(files[migration.SESSION], files[migration.RUN], item.name, 'tm1.' + 'A' * 43,
+                                   [migration.SESSION, migration.RUN, 'blueprint.md'], ['blueprint'], sources=True)
+        session = {**session, 'flow': 'desk'}
+        run.update(flow='desk', execution='conversation', conversation_scope=['part'], migration_targets=['blueprint'], unfinished_migration=True)
+        files.update({migration.ORIGIN: json.dumps(origin).encode(), migration.DESK_SESSION: json.dumps({'origin': origin, 'record': session}).encode(),
+                      migration.DESK_RUN: json.dumps({'origin': origin, 'record': run}).encode()})
+        for name, data in files.items():
+            path = item / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        self.assertFalse(worker_in_progress(self.repo), 'Explicitly private source files need not exist in a peer clone.')
+        for name in ('.harness-research/research.json', 'research-report.md'):
+            path = item / name
+            original = path.read_bytes()
+            for data in (None, b'{}' if name.endswith('.json') else b''):
+                if data is None:
+                    path.unlink()
+                else:
+                    path.write_bytes(data)
+                with self.assertRaises(ValueError):
+                    worker_in_progress(self.repo)
+                path.write_bytes(original)
+        for chain in ({'status': 'unknown'}, {'id': 'a' * 24, 'level': None, 'status': 'working'},
+                      {'id': 'a' * 24, 'level': None, 'status': 'stopped'}):
+            changed = {**run, 'drafts': {'update_chain': chain}}
+            (item / migration.DESK_RUN).write_text(json.dumps({'origin': origin, 'record': changed}))
+            if chain['status'] == 'unknown':
+                with self.assertRaises(ValueError):
+                    worker_in_progress(self.repo)
+            else:
+                self.assertEqual(worker_in_progress(self.repo), chain['status'] == 'working')

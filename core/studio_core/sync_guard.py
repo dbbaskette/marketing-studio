@@ -235,6 +235,13 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
 
     def training_busy(folder):
         pending = folder / training_migration.PENDING
+        record = small_record(folder / training_migration.RUN)
+        if isinstance(record, dict):
+            drafts = record.get('drafts', {})
+            if not isinstance(drafts, dict) or not training_migration.update_chain_supported(drafts.get('update_chain', {})):
+                unknown(ValueError('Unknown Training Studio update chain'))
+            if drafts.get('update_chain', {}).get('status') == 'working':
+                return True
         if pending == recovering_presentation and present(folder / 'run.json'):
             value = small_record(pending)
             if isinstance(value, dict) and set(value) == {'schema', 'expected', 'original', 'after', 'before_workspace', 'index_before'} and str(value.get('expected', '')).startswith('pm1.'):
@@ -247,13 +254,14 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
         if any(present(folder / name) for name in training_migration.WRITES):
             try:
                 origin = small_record(folder / training_migration.ORIGIN)
-                training_migration.validated(origin,
+                session, record = training_migration.validated(origin,
                     small_record(folder / training_migration.DESK_SESSION),
                     small_record(folder / training_migration.DESK_RUN),
                     small_bytes(folder / training_migration.SESSION),
                     small_bytes(folder / training_migration.RUN), folder.name)
-                for name in origin['required']:
-                    training_migration.shared_material(name, small_bytes(folder / name))
+                training_migration.shared_inputs(origin, lambda name: small_bytes(folder / name, training_migration.input_limit(name)), session)
+                if record.get('drafts', {}).get('update_chain', {}).get('status') == 'working':
+                    return True
             except (ValueError, TypeError, KeyError, OSError) as error:
                 unknown(error)
         return False

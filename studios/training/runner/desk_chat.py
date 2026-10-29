@@ -699,21 +699,20 @@ def return_delivered(engine, path, request):
             raise WorkspaceError(CHANGED)
         name = context['requirements']['material']
         snapshot, marker = _return_state(stage, name)
+        session = workspace.load(stage)
+        record = staged._load(stage)
         archive = stage / 'history/deck-local' / request['expected_basis']
         if archive.exists():
             raise WorkspaceError('This local draft is already retained in History. Read its current state.')
+        archived = []
         for relative, data in _files(stage, proposals=False).items():
             if _deck_path(name, relative):
                 workspace.write_atomic(archive / relative, data)
-                (stage / relative).unlink()
-        session = workspace.load(stage)
-        record = staged._load(stage)
+                archived.append(relative)
         home.write_json(archive / 'state.json', {'material': name, 'marker': marker,
             'artifact': session['artifacts'].get(name), 'desk_ready': session.get('desk_ready', {}).get(name),
             'deck': record.get('deck', {}).get(workspace.split(name)[1] or ''), 'request': request})
         workspace.write_atomic(archive / 'delivered-state.json', _restore_path(stage, name).read_bytes())
-        for relative, data in snapshot['files'].items():
-            workspace.write_atomic(stage / relative, base64.b64decode(data, validate=True))
         if snapshot['artifact'] is None:
             session['artifacts'].pop(name, None)
         else:
@@ -734,6 +733,10 @@ def return_delivered(engine, path, request):
         workspace.log(session, 'set-aside-local-deck', artifact=name, by='person-request')
         workspace.store(stage, session)
         staged._store(stage, record)
+        for relative in archived:
+            (stage / relative).unlink()
+        for relative, data in snapshot['files'].items():
+            workspace.write_atomic(stage / relative, base64.b64decode(data, validate=True))
         _restore_path(stage, name).unlink()
         _publish(engine, space, root, stage, before)
     return show(engine, root)

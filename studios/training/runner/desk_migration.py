@@ -34,22 +34,7 @@ def _json(files, name):
 
 def _material_files(session):
     """Finite native names, without invoking readers or discovering arbitrary paths."""
-    result = {'intake': 'intake.md', 'research-plan': '.training-studio/research-plan.json',
-              'research': '.harness-research/research-report.md'}
-    for level in session['levels'] or [None]:
-        prefix = workspace.prefix(level)
-        for kind, file in (('blueprint', 'blueprint.md'), ('document', 'document.md'),
-                           ('brief', session['settings']['brief_kind'] + '-brief.md'),
-                           ('deck', 'deck-link.md' if session['settings']['deck_target'] == 'google' else 'deck.pptx')):
-            result[workspace.qualify(kind, level)] = prefix + file
-    for name in session['artifacts']:
-        base, level = workspace.split(name)
-        if base.startswith(('scenario:', 'yoodli:')):
-            entry = session['artifacts'][name]
-            if not format.relative(entry['file']):
-                raise ValueError('The saved practice material path is unsupported.')
-            result[name] = entry['file']
-    return result
+    return format.material_files(session)
 
 
 def materials(session, record, files):
@@ -128,7 +113,12 @@ def materials(session, record, files):
                 raise ValueError('A required original source or readable source copy is missing.')
             if item.get('sha256') and format.digest(files[original]) != item['sha256']:
                 raise ValueError('A required original source changed.')
-    return list(dict.fromkeys(retained)), list(dict.fromkeys(required))
+    required.extend(format.declared_inputs(session, retained)[0])
+    origin = {'required': sorted(set(required))}
+    format.shared_inputs(origin, lambda name: files.get(name))
+    if documents.INDEX in files:
+        format.local_sources(lambda name: files.get(name))
+    return list(dict.fromkeys(retained)), sorted(set(required))
 
 
 def prepare_migration(record, saved_inputs):
@@ -181,6 +171,9 @@ def _snapshot(engine, path):
              'identity': identity.hex() if identity else None, 'workers': local,
              'busy': bool(busy), 'checking': engine._checking,
              'marker': base64.b64encode(marker_bytes).decode()}
+    if any('profile' in entry['built_from'] for entry in session['artifacts'].values()):
+        profile, profile_bytes = migration_records._profile(root)
+        guard['profile'] = [str(profile), format.digest(profile_bytes)]
     scope = [gitstate.inside(space, _path(space, root, name)) for name in (*format.WRITES, WORKSPACE)]
     guard['index'] = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *scope)
     _restore_index(space, root, (*format.WRITES, WORKSPACE), guard['index'], check=True)
@@ -214,17 +207,9 @@ def _shared_basis(space, root, session, record, files):
     if not space.address:
         return None, []
     prepared = prepare_migration(record, files)
-    names = _material_files(session)
     shared = set(prepared['required'])
-    for target in prepared['targets']:
-        if names.get(target) in files:
-            shared.add(names[target])
-        for dependency in (session['artifacts'].get(target) or {}).get('built_from', {}):
-            if names.get(dependency) in files:
-                shared.add(names[dependency])
-            if dependency == 'research':
-                shared.update(name for name in ('research-report.md', '.harness-research/research.json',
-                    '.harness-research/research-report.md', 'research/facts.json', 'research/output.json') if name in files)
+    if not prepared['blockers']:
+        shared.update(format.shared_inputs({'required': prepared['required']}, lambda name: files.get(name)))
     basis, blockers = {}, []
     for name in sorted({*shared, WORKSPACE}):
         relative = gitstate.inside(space, _path(space, root, name))
@@ -292,9 +277,31 @@ def _committed(space, root, writes):
     return True
 
 
+def _prepared_index(space, root, writes):
+    entries = []
+    for name, data in writes.items():
+        relative = gitstate.inside(space, _path(space, root, name))
+        result = gitstate.hub.run(space.repo, 'hash-object', '--stdin', input=data.decode())
+        if result.returncode or not re.fullmatch(r'[a-f0-9]{40,64}', result.stdout.strip()):
+            raise WorkspaceError('The prepared migration index cannot be verified.')
+        entries.append((relative, f'100644 {result.stdout.strip()} 0\t{relative}\0'))
+    return ''.join(entry for _, entry in sorted(entries))
+
+
+def _check_recovery_index(space, root, writes, before, prepared):
+    _restore_index(space, root, writes, before, check=True)
+    _restore_index(space, root, writes, prepared, check=True)
+    if prepared != _prepared_index(space, root, writes):
+        raise WorkspaceError('The prepared migration index changed. Keep its recovery record.')
+    paths = [gitstate.inside(space, _path(space, root, name)) for name in writes]
+    current = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *paths)
+    if current not in (before, prepared):
+        raise WorkspaceError('The migration staging index changed. Nothing was replaced; keep its recovery record.')
+
+
 def _recover(space, root, expected):
     journal = json.loads(migration_records._bytes(root / format.PENDING, limit=8_000_000))
-    fields = {'schema', 'product', 'id', 'expected', 'originals', 'after', 'before_workspace', 'index_before'}
+    fields = {'schema', 'product', 'id', 'expected', 'originals', 'after', 'before_workspace', 'index_before', 'index_prepared'}
     if set(journal) != fields or type(journal['schema']) is not int or journal['schema'] != 1 or journal['product'] != 'Training Studio' or journal['id'] != root.name or journal['expected'] != expected \
             or journal['originals'] != {name: format.digest(migration_records._bytes(root / name)) for name in (format.SESSION, format.RUN)} \
             or not isinstance(journal['after'], dict) or set(journal['after']) != {*format.WRITES, WORKSPACE}:
@@ -316,7 +323,7 @@ def _recover(space, root, expected):
         raise WorkspaceError('The interrupted workspace requirement changed unrelated settings.')
     format.validated(json.loads(after[format.ORIGIN]), json.loads(after[format.DESK_SESSION]), json.loads(after[format.DESK_RUN]),
                      migration_records._bytes(root / format.SESSION), migration_records._bytes(root / format.RUN), root.name)
-    _restore_index(space, root, after, journal['index_before'], check=True)
+    _check_recovery_index(space, root, after, journal['index_before'], journal['index_prepared'])
     for name, data in after.items():
         path = _path(space, root, name)
         if path.exists() and path.read_bytes() != data and not (name == WORKSPACE and path.read_bytes() == original_marker):
@@ -367,7 +374,8 @@ def migrate(engine, path, expected):
         if effective.get('halt'):
             effective['migration_saved_status'] = {'halt': effective['halt'], 'halt_after': effective.get('halt_after')}
             effective['halt'] = None
-        origin = format.receipt(files[format.SESSION], files[format.RUN], session['id'], expected, prepared['required'])
+        origin = format.receipt(files[format.SESSION], files[format.RUN], session['id'], expected, prepared['required'], prepared['targets'],
+                                sources='sources/supplied/index.json' in files)
         a, b = {'origin': origin, 'record': session}, {'origin': origin, 'record': effective}
         format.validated(origin, a, b, files[format.SESSION], files[format.RUN], root.name)
         marker_bytes = base64.b64decode(guard['marker'])
@@ -384,6 +392,7 @@ def migrate(engine, path, expected):
             raise WorkspaceError('The prepared desk records exceed the bounded saved format size.')
         journal = {'schema': 1, 'product': 'Training Studio', 'id': root.name, 'expected': expected, 'originals': {name: format.digest(files[name]) for name in (format.SESSION, format.RUN)},
                    'before_workspace': guard['marker'], 'index_before': guard['index'],
+                   'index_prepared': _prepared_index(space, root, writes),
                    'after': {name: base64.b64encode(data).decode() for name, data in writes.items()}}
         committed = False
         try:
@@ -395,6 +404,7 @@ def migrate(engine, path, expected):
             (root / format.PENDING).unlink()
         except BaseException:
             if not committed and not _committed(space, root, writes):
+                _check_recovery_index(space, root, writes, journal['index_before'], journal['index_prepared'])
                 for name in format.WRITES:
                     (root / name).unlink(missing_ok=True)
                 _write(space.root / gitstate.MARKER, marker_bytes)

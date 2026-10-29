@@ -20,6 +20,23 @@ SIDES = ('.training-studio/desk/migration-origin.json', '.training-studio/desk/s
 
 
 class MigrationTests(StudioCase):
+    def synthesis(self, root, capture_name='sources/capture.bin'):
+        import hashlib
+        from synthesis_fixture import published_bundle
+        _, manifest = published_bundle(root / 'research', sources=[{'snapshot': 'research/' + capture_name}])
+        capture = root / 'research' / capture_name
+        capture.parent.mkdir()
+        capture.write_bytes(b'Binary captured evidence\x80\xff')
+        manifest['artifacts'].append({'file': capture_name, 'sha256': hashlib.sha256(capture.read_bytes()).hexdigest()})
+        (root / 'research/output.json').write_text(json.dumps(manifest))
+        session = workspace.load(root)
+        session['research_contract'] = {'schema': 2, 'version': '1.0.0', 'digest': 'synthetic'}
+        workspace.store(root, session)
+        record = self.record(root)
+        record.update(schema=3, research_contract=dict(session['research_contract']))
+        self.engine._store(root, record)
+        return capture
+
     def saved(self, title='Saved migration', halt=None):
         root = self.space.training(workspace.slugify(title))
         root.mkdir()
@@ -232,6 +249,157 @@ class MigrationTests(StudioCase):
         with self.assertRaises(ValueError):
             worker_in_progress(self.space.repo)
 
+    def test_declared_research_and_retained_material_remain_required(self):
+        from studio_core.sync_guard import worker_in_progress
+        root = self.saved()
+        from runner_support import DOCUMENT
+        (root / 'document.md').write_text(DOCUMENT)
+        workspace.save(root, 'document', built=True)
+        self.apply(root)
+        snapshots = {name: (root / name).read_bytes() for name in SIDES}
+        origin = json.loads(snapshots[SIDES[0]])
+        origin['required'].remove('.harness-research/research.json')
+        (root / SIDES[0]).write_text(json.dumps(origin))
+        for name in SIDES[1:]:
+            value = json.loads(snapshots[name])
+            value['origin'] = origin
+            (root / name).write_text(json.dumps(value))
+        with self.assertRaises(WorkspaceError):
+            workspace.load(root)
+        with self.assertRaises(ValueError):
+            worker_in_progress(self.space.repo)
+        for name, data in snapshots.items():
+            (root / name).write_bytes(data)
+        for name in ('.harness-research/research.json', '.training-studio/research-plan.json',
+                     'research-report.md', 'intake.md', 'document.md'):
+            file = root / name
+            original = file.read_bytes()
+            for changed in (None, b'{}' if file.suffix == '.json' else b''):
+                if changed is None:
+                    file.unlink()
+                else:
+                    file.write_bytes(changed)
+                with self.assertRaises(WorkspaceError, msg=name):
+                    workspace.load(root)
+                with self.assertRaises(ValueError, msg=name):
+                    worker_in_progress(self.space.repo)
+                file.write_bytes(original)
+        self.assertEqual(workspace.load(root)['flow'], 'desk')
+        self.assertFalse(worker_in_progress(self.space.repo))
+
+    def test_unknown_update_chain_refuses_original_and_effective_state(self):
+        from studio_core.sync_guard import worker_in_progress
+        for chain in ({'status': 'unknown'}, {'id': 'a' * 24, 'level': None},
+                      {'id': 'a' * 24, 'level': None, 'status': 'done', 'blocked': 'blueprint'}):
+            root = self.saved('Unknown chain ' + str(len(self.engine.trainings())))
+            original = (root / RUN).read_bytes()
+            record = self.record(root)
+            record['drafts'] = {'update_chain': chain}
+            (root / RUN).write_text(json.dumps(record))
+            before = self.snapshot(root)
+            self.assertTrue(self.preview(root)['blockers'])
+            self.assertEqual(self.snapshot(root), before)
+            with self.assertRaises(WorkspaceError):
+                engines.read_record(root)
+            with self.assertRaises(ValueError):
+                worker_in_progress(self.space.repo)
+            (root / RUN).write_bytes(original)
+        root = self.saved('Effective chain')
+        self.apply(root)
+        file = root / SIDES[2]
+        original = file.read_bytes()
+        value = json.loads(original)
+        value['record']['drafts'] = {'update_chain': {'status': 'unknown'}}
+        file.write_text(json.dumps(value))
+        with self.assertRaises(WorkspaceError):
+            engines.read_record(root)
+        with self.assertRaises(ValueError):
+            worker_in_progress(self.space.repo)
+
+    def test_native_inactive_update_chains_preserved_and_working_is_busy(self):
+        from studio_core.sync_guard import worker_in_progress
+        for status in ('done', 'stopped'):
+            root = self.saved('Native chain ' + status)
+            record = self.record(root)
+            chain = {'id': 'a' * 24, 'level': None, 'status': status, 'blocked': ['blueprint']}
+            record['drafts'] = {'update_chain': chain}
+            (root / RUN).write_text(json.dumps(record))
+            self.assertFalse(worker_in_progress(self.space.repo))
+            self.apply(root)
+            self.assertEqual(engines.read_record(root)['drafts']['update_chain'], chain)
+        root = self.saved('Native chain active')
+        record = self.record(root)
+        record['drafts'] = {'update_chain': {'id': 'b' * 24, 'level': None, 'status': 'working'}}
+        (root / RUN).write_text(json.dumps(record))
+        self.assertTrue(self.preview(root)['blockers'])
+        self.assertTrue(worker_in_progress(self.space.repo))
+
+    def test_native_private_sources_and_profile_are_local_prerequisites(self):
+        from studio_core.sync_guard import worker_in_progress
+        from runner_support import BRIEF, SCENARIO, YOODLI
+        from runner import documents
+        root = self.saved()
+        source = documents.add(root, 'supplied.txt', b'Synthetic private source.\n')
+        (root / 'product-brief.md').write_text(BRIEF)
+        workspace.save(root, 'brief', built=True)
+        (root / 'scenario.md').write_text(SCENARIO)
+        workspace.save(root, 'scenario:main', built=True)
+        (root / 'yoodli').mkdir()
+        (root / 'yoodli/main.md').write_text(YOODLI)
+        workspace.save(root, 'yoodli:main', built=True)
+        profile = self.base / 'private-profile.json'
+        original_profile = workspace.profile_for(root).read_bytes()
+        profile.write_bytes(original_profile)
+        with mock.patch.object(workspace, 'profile_for', return_value=profile):
+            token = self.preview(root)['expected']
+            value = json.loads(original_profile)
+            value['scope_note'] = 'Local profile changed after preview'
+            profile.write_text(json.dumps(value))
+            before = self.snapshot(root)
+            with self.assertRaises(WorkspaceError):
+                desk_chat.migrate(self.engine, root, token)
+            self.assertEqual(self.snapshot(root), before)
+            profile.write_text(json.dumps({'schema': 1, 'profile': 'yoodli', 'types': [], 'limits': {}}))
+            self.assertTrue(self.preview(root)['blockers'])
+        profile.write_bytes(original_profile)
+        self.apply(root)
+        origin = json.loads((root / SIDES[0]).read_bytes())
+        self.assertTrue(origin['local']['sources'])
+        self.assertTrue(origin['local']['profile'])
+        self.assertNotIn(source['original'], origin['required'])
+        for name in (source['original'], source['file'], documents.INDEX):
+            original = (root / name).read_bytes()
+            (root / name).unlink()
+            with self.assertRaises(WorkspaceError):
+                workspace.load(root)
+            # A peer does not receive private sources or this computer's installed profile.
+            self.assertFalse(worker_in_progress(self.space.repo))
+            (root / name).write_bytes(original)
+        with mock.patch.object(workspace, 'profile_for', return_value=self.base / 'missing-profile.json'):
+            with self.assertRaises(WorkspaceError):
+                workspace.load(root)
+            self.assertFalse(worker_in_progress(self.space.repo))
+        profile.write_text(json.dumps({'schema': 1, 'profile': 'yoodli', 'types': [], 'limits': {}}))
+        with mock.patch.object(workspace, 'profile_for', return_value=profile):
+            with self.assertRaises(WorkspaceError):
+                workspace.load(root)
+        self.assertEqual(workspace.load(root)['flow'], 'desk')
+
+    def test_native_synthesis_bundle_is_checked_after_migration(self):
+        from studio_core.sync_guard import worker_in_progress
+        root = self.saved()
+        capture = self.synthesis(root)
+        self.apply(root)
+        for file in (root / 'research/evidence.md', capture):
+            original = file.read_bytes()
+            file.write_bytes(original + b'Unreviewed change')
+            with self.assertRaises(WorkspaceError):
+                workspace.load(root)
+            with self.assertRaises(ValueError):
+                worker_in_progress(self.space.repo)
+            file.write_bytes(original)
+        self.assertEqual(workspace.load(root)['flow'], 'desk')
+
     def test_pending_journal_blocks_helper_recovery_and_replay(self):
         from studio_core.sync_guard import worker_in_progress
         import write_guard
@@ -367,6 +535,42 @@ class MigrationTests(StudioCase):
         self.assertEqual(engines.read_record(root)['execution'], 'conversation')
         self.assertFalse((root / 'work/desk/migration-transaction.json').exists())
 
+    def test_recovery_preserves_unexpected_staging_before_any_mutation(self):
+        from runner import desk_migration
+        for committed in (False, True):
+            root = self.saved('Recovery index ' + str(committed))
+            token = self.preview(root)['expected']
+            commit = gitstate.commit
+            def interrupt(*args, **kwargs):
+                if committed:
+                    commit(*args, **kwargs)
+                raise OSError('interrupted commit inspection')
+            inspection = mock.patch.object(desk_migration, '_committed', side_effect=OSError('inspection uncertain')) if not committed else mock.patch.object(desk_migration, '_committed', wraps=desk_migration._committed)
+            with mock.patch.object(gitstate, 'commit', side_effect=interrupt), inspection, self.assertRaises(OSError):
+                desk_chat.migrate(self.engine, root, token)
+            file = root / SIDES[1]
+            prepared = file.read_bytes()
+            value = json.loads(prepared)
+            value['record']['title'] = 'Different staged person work'
+            file.write_text(json.dumps(value))
+            self.git('add', str(file))
+            file.write_bytes(prepared)
+            before, index = self.snapshot(root), self.git('ls-files', '--stage', '-z')
+            marker = (self.space.root / gitstate.MARKER).read_bytes()
+            head = self.git('rev-parse', 'HEAD')
+            with self.assertRaisesRegex(WorkspaceError, 'index|staging'):
+                desk_chat.migrate(self.engine, root, token)
+            self.assertEqual(self.snapshot(root), before)
+            self.assertEqual(self.git('ls-files', '--stage', '-z'), index)
+            self.assertEqual((self.space.root / gitstate.MARKER).read_bytes(), marker)
+            self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+            self.git('add', '--', *(str(root / name) for name in SIDES), str(self.space.root / gitstate.MARKER))
+            if committed:
+                desk_chat.migrate(self.engine, root, token)
+            else:
+                with self.assertRaisesRegex(WorkspaceError, 'rolled back'):
+                    desk_chat.migrate(self.engine, root, token)
+
     def test_page_preview_apply_and_finished_adoption_stay_distinct(self):
         from runner import page
         root = self.saved()
@@ -451,6 +655,10 @@ desk_chat.migrate(engine.Engine(background=False),Path(sys.argv[1]),sys.argv[2])
         original_session, original_run = (root / SESSION).read_bytes(), (root / RUN).read_bytes()
         self.apply(root)
         self.assertEqual((root / 'deck/delivered-state.json').read_bytes(), restore)
+        (root / 'deck/delivered-state.json').write_bytes(restore + b' ')
+        with self.assertRaises(WorkspaceError):
+            workspace.load(root)
+        (root / 'deck/delivered-state.json').write_bytes(restore)
         self.assertEqual(engines.read_record(root)['delivered_restore']['deck'], __import__('hashlib').sha256(restore).hexdigest())
         context = desk_chat.context(self.engine, root, 'ready/deck')
         canonical = self.snapshot(root)
@@ -471,6 +679,7 @@ desk_chat.migrate(engine.Engine(background=False),Path(sys.argv[1]),sys.argv[2])
 
 
 class MigrationTeamTests(TeamCase):
+    synthesis = MigrationTests.synthesis
     saved = MigrationTests.saved
     snapshot = MigrationTests.snapshot
     preview = MigrationTests.preview
@@ -557,6 +766,28 @@ class MigrationTeamTests(TeamCase):
             self.git('push', '--quiet', 'origin', 'HEAD:main', repo=self.blake.space.repo)
         before = self.snapshot(root)
         head = self.git('rev-parse', 'HEAD')
+        result = self.engine.fetch()
+        self.assertFalse(result['reached'])
+        self.assertIn('migration cannot be read', result['notice'])
+        self.assertEqual(self.snapshot(root), before)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+
+    def test_shared_native_bundle_binary_capture_is_checked_before_replay(self):
+        root = self.saved()
+        capture = self.synthesis(root, 'evidence/capture.bin')
+        gitstate.commit(self.space, 'keep saved reviewed native bundle', [root])
+        self.apply(root)
+        self.engine.share()
+        self.as_(self.blake, self.blake.engine.fetch)
+        theirs = self.theirs(self.blake, root)
+        shared = self.as_(self.blake, self.blake.engine._remote_record, self.blake.space, theirs)
+        self.assertEqual(shared['schema'], 3)
+        remote_capture = theirs / capture.relative_to(root)
+        remote_capture.write_bytes(b'Unreviewed binary capture\x80\xff')
+        with self.be(self.blake):
+            gitstate.commit(self.blake.space, 'synthetic unreviewed capture only', [remote_capture])
+            self.git('push', '--quiet', 'origin', 'HEAD:main', repo=self.blake.space.repo)
+        before, head = self.snapshot(root), self.git('rev-parse', 'HEAD')
         result = self.engine.fetch()
         self.assertFalse(result['reached'])
         self.assertIn('migration cannot be read', result['notice'])

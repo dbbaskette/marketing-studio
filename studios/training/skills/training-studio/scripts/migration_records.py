@@ -1,4 +1,5 @@
 """Training Studio's fixed effective session/run boundary; originals stay immutable."""
+import base64
 import json
 import stat
 from pathlib import Path
@@ -28,9 +29,58 @@ def pair(root):
     origin = json.loads(_bytes(root / format.ORIGIN))
     session, run = (json.loads(_bytes(root / name)) for name in (format.DESK_SESSION, format.DESK_RUN))
     values = format.validated(origin, session, run, _bytes(root / format.SESSION), _bytes(root / format.RUN), root.name)
-    for name in origin['required']:
-        format.shared_material(name, _bytes(root / name))
+    format.shared_inputs(origin, lambda name: _bytes(root / name, format.input_limit(name)), values[0])
+    local_inputs(root, origin, *values)
     return origin, *values
+
+
+def _profile(root):
+    import workspace
+    path = workspace.profile_for(root)
+    data = _bytes(path)
+    profile = json.loads(data)
+    lists = ('types', 'persona_required_types', 'persona_fields', 'goal_types')
+    limits = ('context_chars', 'personas_max', 'goal_explanation_chars', 'goal_achieved_chars', 'goal_missed_chars')
+    if not isinstance(profile, dict) or type(profile.get('schema')) is not int or profile['schema'] != 1 \
+            or profile.get('profile') != 'yoodli' or not isinstance(profile.get('limits'), dict) \
+            or any(not isinstance(profile.get(key), list) or not profile[key] or any(not isinstance(item, str) or not item for item in profile[key]) for key in lists) \
+            or not isinstance(profile.get('mode_types'), dict) or any(not isinstance(key, str) or not isinstance(value, str) for key, value in profile['mode_types'].items()):
+        raise ValueError('The local pinned Yoodli profile cannot be verified.')
+    for key in limits:
+        value = profile['limits'].get(key)
+        if not isinstance(value, dict) or type(value.get('value')) is not int or value['value'] <= 0 or 'verified' not in value:
+            raise ValueError('The local pinned Yoodli limits cannot be verified.')
+    return path, data
+
+
+def local_inputs(root, origin, session, run):
+    import workspace
+    if origin['local']['sources'] or run.get('documents'):
+        format.local_sources(lambda name: _bytes(root / name, 8_000_000))
+    if origin['local']['profile'] or any('profile' in item['built_from'] for item in session['artifacts'].values()):
+        _profile(root)
+    # These filenames are transient native state, not permanent shared requirements:
+    # lossless return-delivered archives the local draft and removes its pending marker.
+    for name in session.get('pending_local_decks', {}):
+        marker = workspace.pending_local_deck(root, session, name)
+        prefix = workspace.prefix(workspace.split(name)[1])
+        data = _bytes(root / (prefix + 'deck/delivered-state.json'), 64_000_000)
+        binding = run.get('delivered_restore', {}).get(name)
+        value = json.loads(data)
+        fields = {'schema', 'material', 'inputs', 'artifact', 'desk_ready', 'deck', 'delivered_sha256', 'files'}
+        if marker.get('schema') != 2 or binding != marker['restore_sha256'] or format.digest(data) != binding \
+                or not isinstance(value, dict) or set(value) != fields or type(value.get('schema')) is not int or value['schema'] != 1 \
+                or value.get('material') != name or not isinstance(value.get('files'), dict) or not isinstance(value.get('inputs'), dict) \
+                or any(value[key] is not None and not isinstance(value[key], dict) for key in ('artifact', 'deck')):
+            raise ValueError('The local Google draft delivered-state proof cannot be verified.')
+        total = 0
+        for relative, content in value['files'].items():
+            if not format.relative(relative) or not relative.startswith((prefix + 'deck/', prefix + 'work/deck/')) \
+                    or relative == prefix + 'deck/delivered-state.json' or not isinstance(content, str):
+                raise ValueError('The local delivered-state proof has unsupported paths.')
+            total += len(base64.b64decode(content, validate=True))
+            if total > 64_000_000:
+                raise ValueError('The local delivered-state proof is too large.')
 
 
 def record_bytes(root, name):
@@ -43,7 +93,12 @@ def record_bytes(root, name):
 
 def record(root, name):
     data = record_bytes(root, name)
-    return json.loads(data) if data is not None else None
+    value = json.loads(data) if data is not None else None
+    if name == format.RUN and isinstance(value, dict):
+        drafts = value.get('drafts', {})
+        if not isinstance(drafts, dict) or not format.update_chain_supported(drafts.get('update_chain', {})):
+            raise ValueError('The Training Studio update chain cannot be verified.')
+    return value
 
 
 def write(root, name, value, atomic):
