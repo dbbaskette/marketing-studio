@@ -538,7 +538,7 @@ class RunnerPage(server.Page):
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, f'"{name}" did not arrive whole. '
                                      'Choose the file again.')
         brands = self.engine.brands() if self.engine.workspace is not None else None
-        if brands is not None:   # what makes no sense is said as such; the rest is the engine's
+        if brands is not None and not sent.get('research_inputs'):   # source-backed forms are checked with their trusted references by the engine
             shaped(decks.check_form, form, brands)
         return self.engine.start(form, uploads, research_inputs=sent.get('research_inputs'))
 

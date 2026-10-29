@@ -48,7 +48,7 @@ DESK_POSTS = ('/api/desk-note', '/api/desk-deck-note', '/api/desk-stop', '/api/d
               '/api/desk-restore', '/api/desk-research-again', '/api/desk-leave-out',
               '/api/desk-finish', '/api/desk-apply', '/api/desk-skip', '/api/desk-source',
               '/api/desk-open', '/api/desk-migrate', '/api/desk-ready')
-POSTS = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
+POSTS = ('/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
          '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
          '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
          '/api/versions', '/api/computer', '/api/brand', '/api/brand/install',
@@ -1409,3 +1409,20 @@ class ResearchPriceTests(PageCase):
         self.assertTrue(shown['research_price']['words'].endswith('Then it makes again: the outline.'))
         record['steps']['look-preview'] = {'done': True}
         self.assertTrue(self.engine._show_research(path, record)['research_price']['words'].endswith('Then it makes again: the outline and the look samples.'))
+
+
+@unittest.skipUnless(os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME'), 'Use the pinned disposable helper.')
+class SharedResearchPageTests(PageCase):
+    def test_shared_selected_sources_reach_the_real_start_endpoint_and_retry_is_idempotent(self):
+        from runner import research
+        self.research=research.Research(Path(os.environ['STUDIO_TEST_RESEARCH_RUNTIME']))
+        source=self.post('research-sources',{'action':'create'})
+        source=self.post('research-sources',{'action':'capture','id':source['id'],'expected':source['revision'],
+            'kind':'text','text':'Synthetic reference for a new presentation.'})
+        sent={'form':{**FORM,'flow':'desk','research':True,'research_from':{'documents':True,'sites':[],'web':False}},
+              'uploads':{},'research_inputs':{'id':source['id'],'expected':source['revision']}}
+        with mock.patch.object(self.engine,'wake'):
+            first=self.post('decks',sent)
+            second=self.post('decks',sent)
+        self.assertEqual(first,second)
+        self.assertEqual(self.engine._load(Path(first['path']))['form']['research_from'],{'documents':True,'sites':[],'web':False})

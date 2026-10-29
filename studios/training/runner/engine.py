@@ -1356,8 +1356,21 @@ class Engine(Reviewing):
 
     # --- starting and picking up ---------------------------------------------------------
 
-    def start(self, form: dict, *, execution='runner', scope=None, uploads=None, research_inputs=None) -> dict:
+    def start(self, form: dict, *, execution='runner', scope=None, uploads=None, research_inputs=None, _source_start=None) -> dict:
         """Make a training from the form's answers and start its run."""
+        if research_inputs and execution == 'runner' and _source_start is None:
+            try:
+                with research_sources.Start(self.space().root, research_inputs,
+                        {'product':'Training Studio','form':form}) as start:
+                    previous = start.previous()
+                    if previous:
+                        self._load(Path(previous['path']))
+                        self.wake(Path(previous['path']))
+                        return previous
+                    return self.start(form, execution=execution, scope=scope, uploads=uploads,
+                                      research_inputs=research_inputs, _source_start=start)
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from error
         if not isinstance(form, dict):
             raise WorkspaceError('Start new work on the desk with a form.')
         if {'review_level', 'review_seen', 'review_default'} & form.keys():
@@ -1440,6 +1453,8 @@ class Engine(Reviewing):
                 gitstate.discard(space, root)
                 raise
             self._claimed(root, space)
+        if _source_start is not None:
+            _source_start.keep({'path': str(root), 'id': root.name, 'gates': 0})
         self.wake(root)
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \

@@ -33,6 +33,7 @@ class ResearchJobsTests(Isolated):
                     value['sources'][0]['original_file'] = source['original_file']
                     return {k:v for k,v in value.items() if k in ('schema','sources','facts')}
                 if phase == 'synthesize':
+                    parent.assertNotIn('Synthesis and independent review are pending.', str(payload.get('gaps')))
                     value = dossier(payload['worker'])
                     fact = payload['evidence']['facts'][0]['id']
                     value['sections'][0]['blocks'][0]['refs'] = [fact]

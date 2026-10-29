@@ -326,3 +326,50 @@ def sources(root, saved=None):
 def prepare_start(workspace, reference, *, primary=False):
     require(isinstance(reference, dict) and set(reference) == {'id', 'expected'}, 'Choose this source draft and its current revision.')
     return Sources(Path(workspace) / '.research-sources').prepared(reference['id'], reference['expected'], primary=primary)
+
+
+class Start:
+    """One source-backed form submission, including reply loss, creates one local item.
+
+    A separate draft-scoped lock spans native creation. The receipt is recorded
+    before the native engine dispatches jobs. Source edits keep their own lock.
+    """
+    def __init__(self, workspace, reference, details):
+        self.workspace = Path(workspace).resolve()
+        self.sources = Sources(self.workspace / '.research-sources')
+        require(isinstance(reference, dict) and set(reference) == {'id', 'expected'},
+                'Choose this source draft and its current revision.')
+        self.reference = dict(reference)
+        self.folder = self.sources.folder(reference['id'])
+        self.key = digest([reference['expected'], details])
+        self.file = 'starts/' + self.key + '.json'
+        self.lock = ProcessRLock(lambda: self.folder / 'starts.lock', refusal=ValueError)
+
+    def __enter__(self):
+        require(self.lock.acquire(), 'Another start from these sources is still being recorded. Wait, then retry the same form.')
+        try:
+            with self.sources.lock:
+                self.sources.check(self.reference['id'], self.reference['expected'])
+            return self
+        except BaseException:
+            self.lock.release()
+            raise
+
+    def __exit__(self, *args):
+        self.lock.release()
+
+    def previous(self):
+        path = rc.inside(self.folder, self.file)
+        if not path.exists(): return None
+        value = json.loads(path.read_text())
+        require(value.get('schema') == 1 and value.get('request') == self.key,
+                'This source-backed start receipt is unreadable; preserve it before retrying.')
+        result = value['result']
+        target = Path(result['path'])
+        require(target.is_absolute() and target.is_relative_to(self.workspace), 'The saved start belongs to another workspace.')
+        target = rc.inside(self.workspace, str(target.relative_to(self.workspace)))
+        require(target.is_dir(), 'This request already started an item that is no longer here. Open its workspace or start with a new source draft.')
+        return result
+
+    def keep(self, result):
+        rc.write(self.folder, self.file, json.dumps({'schema':1,'request':self.key,'result':result}))

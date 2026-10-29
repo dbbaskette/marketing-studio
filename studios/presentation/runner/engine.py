@@ -119,6 +119,7 @@ from studio_core import deck_flow, research_session, research_sources, research_
 
 import contextvars
 import json
+import hashlib
 import sys
 import os
 import re
@@ -770,9 +771,23 @@ class Engine(Jobs, Researching, DeskActions):
     # --- starting and picking up -------------------------------------------------------------
 
     def start(self, form: dict, uploads: dict | None = None, *,
-              execution: str = 'runner', scope=None, research_inputs=None) -> dict:
+              execution: str = 'runner', scope=None, research_inputs=None, _source_start=None) -> dict:
         """Make a deck from the form as the page sent it, and start its run. `uploads` maps
         an uploaded file's name to its bytes. Returns {'path', 'id'}."""
+        if research_inputs and execution == 'runner' and _source_start is None:
+            try:
+                upload_hashes = {name: hashlib.sha256(raw).hexdigest() for name, raw in (uploads or {}).items()}
+                with research_sources.Start(self.space().root, research_inputs,
+                        {'product':'Presentation Studio','form':form,'uploads':upload_hashes}) as start:
+                    previous = start.previous()
+                    if previous:
+                        self._load(Path(previous['path']))
+                        self.wake(Path(previous['path']))
+                        return previous
+                    return self.start(form, uploads, execution=execution, scope=scope,
+                                      research_inputs=research_inputs, _source_start=start)
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from error
         if not isinstance(form, dict):
             raise WorkspaceError('Start new work on the desk with a form.')
         if {'review_level', 'review_seen', 'review_default'} & form.keys():
@@ -851,8 +866,10 @@ class Engine(Jobs, Researching, DeskActions):
                 raise
             self._claimed(root, space)
             home.remember(root, checked['title'])
+        result = {'path': str(root), 'id': root.name}
+        if _source_start is not None: _source_start.keep(result)
         self.wake(root)
-        return {'path': str(root), 'id': root.name}
+        return result
 
     @staticmethod
     def _given(form: dict, checked: dict, uploads: dict) -> dict:

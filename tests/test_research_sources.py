@@ -97,3 +97,29 @@ class SourceTests(unittest.TestCase):
         self.assertFalse((private/before['file']).exists())
         self.assertFalse((private/before['original']).exists())
         self.assertNotIn('Old full',self.sources.preview(self.value['id'],before['id'])['text'])
+
+    def test_same_start_has_one_creation_across_independent_callers(self):
+        import threading
+        from studio_core.research_sources import Start
+        workspace=self.root/'workspace';workspace.mkdir()
+        source=Sources(workspace/'.research-sources')
+        value=source.create();reference={'id':value['id'],'expected':value['revision']}
+        created=[];results=[];failures=[];barrier=threading.Barrier(3)
+        def caller():
+            try:
+                barrier.wait(3)
+                with Start(workspace,reference,{'product':'Synthetic Studio','title':'Synthetic'}) as start:
+                    result=start.previous()
+                    if result is None:
+                        target=workspace/'items'/'synthetic';target.mkdir(parents=True)
+                        created.append(target)
+                        result={'id':'synthetic','path':str(target)};start.keep(result)
+                    results.append(result)
+            except BaseException as error: failures.append(error)
+        threads=[threading.Thread(target=caller) for _ in range(3)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join(5)
+        self.assertFalse(failures,failures)
+        self.assertEqual(len(created),1)
+        self.assertEqual(len(results),3)
+        self.assertTrue(all(result==results[0] for result in results))

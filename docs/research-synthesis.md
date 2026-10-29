@@ -92,7 +92,7 @@ citation checks; it does not manufacture a legacy question record. Its tradition
 passes the authored brief and evidence relationships into outline authoring.
 Blog Studio supplies the same brief and typed evidence to later writing jobs.
 
-New synthesis-driven browser runs use run schema 3, so older studio runtimes
+Earlier synthesis-driven browser runs use run schema 3, so older studio runtimes
 refuse them rather than resuming through a legacy research adapter. A missing
 research contract is rejected. Existing manual and queued research continues
 through its old adapter. A run records the Harness Research version and digest it
@@ -216,3 +216,10 @@ qualifications; research for another task is checked again. Explicit reviewed-ca
 handoffs support both legacy `research/` outputs and new topic-root outputs without
 rewriting their reviewed bytes. Google/provider live acceptance is separate from
 the synthetic suite and is not implied by its results.
+
+New collection runs explicitly version their execution: Training Studio schema 5,
+Presentation Studio schema 4, Blog Studio's saved runner schema 4 / desk-start
+schema 2, and Infographic Studio's private research request schema 1. None of
+these changes a saved serial run on resume. Source-backed Training Studio and
+Presentation Studio starts save a private receipt before dispatch, so retrying
+the same form after a lost reply reopens the existing item.

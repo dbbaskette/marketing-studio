@@ -103,7 +103,7 @@ class LinkTests(unittest.TestCase):
         shell = read('index.html')
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', shell)),
                          ['#main', 'app.js', 'deck-desk.js', 'deck-panels.css', 'deck-panels.js',
-                          'deck.css', 'drafting.js', 'lists.js', 'markdown.js', 'style.css'])
+                          'deck.css', 'drafting.js', 'lists.js', 'markdown.js', 'research.js', 'style.css'])
         # The list kit is the shared core's, loaded after the deck panels and before app.js.
         # The desk kit comes before app.js, and the deck desk after it, which hands it its parts.
         scripts = re.findall(r'<script src="([^"]+)"', shell)

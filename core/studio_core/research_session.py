@@ -23,6 +23,7 @@ from studio_core import research_contract as rc, research_timing
 
 PROTOCOL = 'harness-collection-v1'
 RECORD_SCHEMA = 5  # Training Studio's new execution record; other adapters version their own.
+PENDING = 'Synthesis and independent review are pending.'
 EVIDENCE = ('Investigate only your assigned questions within the supplied task and source policy. '
             'Return schema 2 JSON containing only sources, facts and gaps (an array of strings). '
             'Preserve counterevidence and limitations. Set every fact author to this worker ID. '
@@ -87,7 +88,7 @@ def preparation(value, spec):
         return {**{k: v for k, v in value.items() if k != 'gaps'}, **spec['task'], 'findings': [],
                 'sections': [{'id': 'collection', 'title': 'Evidence collection', 'blocks': [
                     {'text': g, 'kind': 'gap', 'refs': []} for g in gaps] or [
-                    {'text': 'Synthesis and independent review are pending.', 'kind': 'gap', 'refs': []}]}]}
+                    {'text': PENDING, 'kind': 'gap', 'refs': []}]}]}
     if spec.get('research_mode') == 'compose':
         if set(value) - {'schema', 'findings', 'sections', 'brief', 'comparisons'}:
             raise ValueError('Return findings, sections, brief and optional comparisons only. Evidence is kept unchanged.')
@@ -401,7 +402,8 @@ class Workflow:
                                     'outcome': 'captured', 'capture_file': source['file'], 'accessed_at': now()})
                             self.command(case, 'collection', 'capture', {**terminal, 'source': source})
                     gaps = value.get('gaps') or [b['text'] for s in value.get('sections', [])
-                        for b in s.get('blocks', []) if b.get('kind') == 'gap']
+                        for b in s.get('blocks', []) if b.get('kind') == 'gap'
+                        and not (s.get('id') == 'collection' and b.get('text') == PENDING)]
                     packet = {'schema': 1, 'request_digest': registered['request_digest'],
                         'generation': registered['generation'], **terminal, 'sources': value['sources'],
                         'facts': value['facts'], 'limitations': [], 'gaps': gaps}

@@ -94,3 +94,19 @@ class ParallelNativeTests(StudioCase):
         from workspace import WorkspaceError
         with self.assertRaisesRegex(WorkspaceError, 'parallel research protocol'):
             engines.read_record(root)
+
+    def test_source_backed_retry_reopens_the_same_training_without_a_second_creation(self):
+        from unittest.mock import patch
+        from runner_support import FORM
+        from runner import pipeline
+        from studio_core import research_sources
+        source=research_sources.Sources(self.engine.space().root / '.research-sources')
+        draft=source.create()
+        draft=source.mutate(draft['id'],draft['revision'],'capture',kind='text',text=TEXT)
+        form=pipeline.check_form({**FORM,'flow':'desk'})
+        reference={'id':draft['id'],'expected':draft['revision']}
+        with patch.object(self.engine,'wake'):
+            first=self.engine.start(form,research_inputs=reference)
+            second=self.engine.start(form,research_inputs=reference)
+        self.assertEqual(first,second)
+        self.assertEqual(self.engine._load(Path(first['path']))['research_from'],{'documents':True,'sites':[],'web':False})

@@ -73,3 +73,19 @@ class ParallelNativeTests(StudioCase):
         self.assertTrue(all(a.get('research_attempt') for name, entry in record['steps'].items()
                             if contract.job_round(name) for a in entry['tries']))
 
+
+    def test_source_backed_retry_reopens_the_same_deck_without_a_second_creation(self):
+        from unittest.mock import patch
+        from runner_support import FORM
+        from studio_core import research_sources
+        source=research_sources.Sources(self.engine.space().root / '.research-sources')
+        draft=source.create()
+        draft=source.mutate(draft['id'],draft['revision'],'capture',kind='text',text=TEXT)
+        form={**FORM,'flow':'desk','research':True}
+        reference={'id':draft['id'],'expected':draft['revision']}
+        with patch.object(self.engine,'wake'):
+            first=self.engine.start(form,research_inputs=reference)
+            second=self.engine.start(form,research_inputs=reference)
+        self.assertEqual(first,second)
+        root=Path(first['path'])
+        self.assertEqual(self.engine._load(root)['form']['research_from'],{'documents':True,'sites':[],'web':False})
