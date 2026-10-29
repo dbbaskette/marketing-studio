@@ -71,6 +71,9 @@ if [[ "${1:-full}" == infographic-planning || "${1:-full}" == infographic-activi
     } 2>&1 | tee "$results_dir/activity-tests.log"
     node studios/infographic/tests/ui/activity.cjs 2>&1 | tee "$results_dir/activity-browser.log"
     INFOGRAPHIC_STUDIO_TEST_REMOTE=1 node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-google-browser.log"
+    if [[ -n "${INFOGRAPHIC_STUDIO_TEST_VISUAL:-}" ]]; then
+      INFOGRAPHIC_STUDIO_TEST_VISUAL=parts INFOGRAPHIC_STUDIO_TEST_REMOTE=1 node studios/infographic/tests/ui/journey.cjs 2>&1 | tee "$results_dir/infographic-components-browser.log"
+    fi
   elif [[ "${1:-full}" == infographic-followups-final ]]; then
     {
       PYTHONPATH=tests "$python" -m unittest test_infographic_network -v

@@ -7,7 +7,7 @@ const assert = require('node:assert/strict');
 (async()=>{
   const renderer=process.env.INFOGRAPHIC_STUDIO_TEST_RENDERER;
   if(!renderer)throw Error('Supply an explicitly installed renderer. No download is performed by this test.');
-  const child=spawn(process.env.PYTHON||'python3',[path.join(__dirname,'fixture_server.py'),'--renderer',renderer,...(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE?['--remote','--bridge']:[])],{stdio:['ignore','pipe','pipe']});
+  const child=spawn(process.env.PYTHON||'python3',[path.join(__dirname,'fixture_server.py'),'--renderer',renderer,...(process.env.INFOGRAPHIC_STUDIO_TEST_REMOTE?['--remote','--bridge']:[]),...(process.env.INFOGRAPHIC_STUDIO_TEST_VISUAL?['--visual',process.env.INFOGRAPHIC_STUDIO_TEST_VISUAL]:[])],{stdio:['ignore','pipe','pipe']});
   let browser, page, errors=[];
   try{
     const url=await new Promise((resolve,reject)=>{let buf='';const timer=setTimeout(()=>reject(Error('Fixture startup timed out')),15000);child.stdout.on('data',b=>{buf+=b;const line=buf.split('\n')[0];if(line.startsWith('http://')&&buf.includes('\n')){clearTimeout(timer);resolve(line);}});child.on('exit',code=>{clearTimeout(timer);reject(Error('Fixture exited '+code));});});
@@ -42,6 +42,11 @@ const assert = require('node:assert/strict');
     await page.getByRole('dialog').getByRole('button',{name:'Build page',exact:true}).click();
     await page.locator('.ig-preview').waitFor();
     await page.waitForFunction(()=>{const i=document.querySelector('.ig-preview');return i&&i.complete&&i.naturalWidth===1080;});
+    if(process.env.INFOGRAPHIC_STUDIO_TEST_VISUAL){
+      const current=await page.evaluate(()=>request('/api/desk?id='+held.project.id));
+      assert.equal(current.project.stories[0].blocks[0].kind,process.env.INFOGRAPHIC_STUDIO_TEST_VISUAL);
+      assert(!current.project.scene.elements.some(e=>e.kind==='chart'),'Descriptive source material must never become scaled chart data');
+    }
     await page.getByText('Edit words directly',{exact:true}).click();
     await page.getByLabel('b1_heading',{exact:true}).fill('One at a time');
     await page.getByRole('button',{name:'Save b1_heading',exact:true}).click();

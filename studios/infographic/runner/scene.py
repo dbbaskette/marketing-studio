@@ -79,8 +79,8 @@ def plan(project: dict, *, arrangement='stack') -> dict:
                         body * 1.2, fact_ids=block['fact_ids'], role='heading', block_id=block['id']) + body * .35
         cursor += words(block['id'] + '_text', block['text'], x, cursor, block_width, body,
                         fact_ids=block['fact_ids'], block_id=block['id']) + body * .5
-        if block['kind'] in ('comparison', 'numbers', 'parts'):
-            used = [facts[key] for key in block['fact_ids']]
+        used = [facts[key] for key in block['fact_ids']]
+        if evidence.quantitative(block, used):
             evidence.comparable(used)
             context = '; '.join(used[0][key] for key in evidence.CONTEXT)
             cursor += words(block['id'] + '_context', context, x, cursor, block_width, body,

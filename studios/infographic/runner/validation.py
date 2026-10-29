@@ -303,6 +303,8 @@ def validate_project(project: dict) -> dict:
         blocks = records(story.get('blocks'), 'Story blocks')
         for block in blocks.values():
             require(block.get('kind') in KINDS, 'Choose a supported visual relationship.')
+            if 'quantitative' in block:
+                require(type(block['quantitative']) is bool, 'A quantitative visual choice must be an explicit boolean.')
             references(block.get('fact_ids'), facts, 'Story facts')
             references(block.get('required_ids'), requirements, 'Required story ideas')
         references(story.get('omissions', []), requirements, 'Recorded omissions')
