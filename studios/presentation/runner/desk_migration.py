@@ -20,10 +20,17 @@ WORKSPACE = '@presentation-workspace/hub.json'
 CONSEQUENCES = ('Open existing slide parts for editing in conversation. Incomplete work stays '
                 'incomplete. Nothing is approved, drawn or delivered. Broader work requires an '
                 'explicit desk scope change.')
-CONSEQUENCES += (' This workspace will require Presentation Studio 4.8.0 or newer. Close older '
+CONSEQUENCES += (' This workspace will require Presentation Studio 4.8.1 or newer. Close older '
                  'running instances before applying; already configured older runners may ignore '
                  'that requirement. Nothing is installed or updated.')
+CONSEQUENCES += (' Shared work requires every retained shared file in this deck and the workspace '
+                 'record to match its committed version and staging index. Record intended changes '
+                 'through the existing saved flow or commit them with Git, then preview again. '
+                 'Private ignored inputs stay local. Local-only migration is not a complete Git backup.')
 CHANGED = 'The deck or its saved inputs changed. Preview Open on the desk again.'
+SHARED = ('Retained shared files in this deck and the existing workspace record must first match '
+          'their committed versions and staging index. Record intended changes through the existing '
+          'saved flow or commit them with Git, then preview again. Migration does not commit those edits.')
 
 
 def _json(files, name, required=False):
@@ -149,6 +156,10 @@ def _snapshot(engine, path):
     guard['index'] = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *scope)
     _restore_index(space, root, (format.ORIGIN, format.RECORD, WORKSPACE), guard['index'], check=True)
     blockers = []
+    for name in (format.ORIGIN, format.RECORD):
+        relative = gitstate.inside(space, root / name)
+        if gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', relative) or _head_entry(space, relative):
+            blockers.append('Saved desk metadata already exists in Git. Restore its paired records before continuing.')
     if busy or any(local.values()) or pending or engine._checking:
         blockers.append(SYNC_WAIT)
     if space.address:
@@ -158,7 +169,74 @@ def _snapshot(engine, path):
                 or re.fullmatch(r'[0-9a-f]{16}', str(who.get('id'))) is None \
                 or who.get('id') != driver.get('computer'):
             blockers.append('This computer does not own this deck. Use its saved team controls first.')
+    guard['shared'], dirty = _shared_basis(space, root, files)
+    blockers.extend(dirty)
     return space, root, record, files, guard, blockers
+
+
+def _object_format(space):
+    algorithm = gitstate.hub.git(space.repo, 'rev-parse', '--show-object-format')
+    if algorithm not in ('sha1', 'sha256'):
+        raise WorkspaceError('The workspace Git object format cannot be verified.')
+    return algorithm
+
+
+def _blob(space, data, algorithm=None):
+    algorithm = algorithm or _object_format(space)
+    return hashlib.new(algorithm, b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+
+
+def _head_entry(space, relative):
+    return gitstate.hub.git(space.repo, 'ls-tree', '-z', 'HEAD', '--', relative)
+
+
+def _shared_basis(space, root, files, *, marker=True):
+    """Bounded retained deck files, with tracking taking precedence over ignoring."""
+    if not space.address:
+        return None, []
+    prefix = gitstate.inside(space, root) + '/'
+    heads = gitstate.hub.git(space.repo, 'ls-tree', '-r', '-z', 'HEAD', '--', prefix)
+    staged = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', prefix)
+    head_entries = {entry.partition('\t')[2][len(prefix):]: entry + '\0'
+                    for entry in heads.split('\0') if entry}
+    index_entries = {}
+    for entry in staged.split('\0'):
+        if entry:
+            index_entries.setdefault(entry.partition('\t')[2][len(prefix):], []).append(entry + '\0')
+    tracked = head_entries.keys() | index_entries.keys()
+    names = set(files) | tracked
+    names.difference_update((format.ORIGIN, format.RECORD, format.PENDING))
+    if WORKSPACE in names:
+        raise WorkspaceError('A retained deck file uses a reserved migration name.')
+    untracked = sorted(names - tracked)
+    ignored_names = set()
+    if untracked:
+        ignored = gitstate.hub.run(space.repo, 'check-ignore', '-z', '--stdin',
+            input=''.join(prefix + name + '\0' for name in untracked))
+        if ignored.returncode not in (0, 1):
+            raise WorkspaceError('The retained shared input classification cannot be verified.')
+        ignored_names = {name[len(prefix):] for name in ignored.stdout.split('\0') if name}
+    algorithm = _object_format(space)
+    basis, blockers = {}, []
+    for name in sorted(names | ({WORKSPACE} if marker else set())):
+        path = _path(space, root, name)
+        relative = gitstate.inside(space, path)
+        if name in ignored_names:
+            continue
+        head = _head_entry(space, relative) if name == WORKSPACE else head_entries.get(name, '')
+        index = (gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', relative)
+                 if name == WORKSPACE else ''.join(index_entries.get(name, ())))
+        basis[name] = {'head': head, 'index': index}
+        match = re.fullmatch(r'(100644|100755) blob ([a-f0-9]{40,64})\t' + re.escape(relative) + '\0', head)
+        data = path.read_bytes() if name == WORKSPACE else files.get(name)
+        if not match or data is None:
+            blockers.append(SHARED)
+            continue
+        mode, digest = match.groups()
+        ordinary_mode = '100755' if path.stat().st_mode & 0o111 else '100644'
+        if index != f'{mode} {digest} 0\t{relative}\0' or ordinary_mode != mode or _blob(space, data, algorithm) != digest:
+            blockers.append(SHARED)
+    return basis, list(dict.fromkeys(blockers))
 
 
 def _token(files, guard):
@@ -186,15 +264,79 @@ def _write(path, data):
 
 def _committed(space, root, writes):
     for name, data in writes.items():
-        result = gitstate.hub.run(space.repo, 'show', f'HEAD:{gitstate.inside(space, _path(space, root, name))}')
-        if result.returncode or result.stdout.encode() != data:
+        relative = gitstate.inside(space, _path(space, root, name))
+        if _head_entry(space, relative) != f'100644 blob {_blob(space, data)}\t{relative}\0':
             return False
     return True
 
 
+def _prepared_index(space, root, writes):
+    entries = [f'100644 {_blob(space, data)} 0\t{gitstate.inside(space, _path(space, root, name))}\0'
+               for name, data in writes.items()]
+    return ''.join(sorted(entries, key=lambda entry: entry.partition('\t')[2]))
+
+
+def _check_recovery_index(space, root, writes, before, prepared):
+    _restore_index(space, root, writes, before, check=True)
+    _restore_index(space, root, writes, prepared, check=True)
+    if prepared != _prepared_index(space, root, writes):
+        raise WorkspaceError('The prepared migration index changed. Keep its recovery record.')
+    paths = [gitstate.inside(space, _path(space, root, name)) for name in writes]
+    current = gitstate.hub.git(space.repo, 'ls-files', '--stage', '-z', '--', *paths)
+    if current not in (before, prepared):
+        raise WorkspaceError('The migration staging index changed. Nothing was replaced; keep its recovery record.')
+
+
+def _check_shared_recovery(space, root, files, shared, after, before_workspace):
+    current, blockers = _shared_basis(space, root, files, marker=False)
+    if shared is None and current is None:
+        return
+    if not isinstance(shared, dict) or not isinstance(current, dict) or WORKSPACE not in shared \
+            or blockers or current != {name: value for name, value in shared.items() if name != WORKSPACE}:
+        raise WorkspaceError('The shared retained evidence changed. Keep the migration recovery record and restore its committed inputs.')
+    relative = gitstate.inside(space, _path(space, root, WORKSPACE))
+    prior = shared[WORKSPACE]
+    match = re.fullmatch(r'(100644|100755) blob ' + _blob(space, before_workspace) + '\t' + re.escape(relative) + '\0', prior['head'])
+    if not match or prior['index'] != f'{match[1]} {_blob(space, before_workspace)} 0\t{relative}\0':
+        raise WorkspaceError('The original shared workspace record cannot be verified. Keep its recovery record.')
+    prepared = f'100644 blob {_blob(space, after[WORKSPACE])}\t{relative}\0'
+    if _head_entry(space, relative) not in (prior['head'], prepared):
+        raise WorkspaceError('The shared workspace record changed. Keep its migration recovery record.')
+
+
+def _check_workspace_change(space, before, after, *, legacy=False):
+    old, new = json.loads(before), json.loads(after)
+    if not isinstance(old, dict) or type(old.get('schema')) is not int or old['schema'] != 1 \
+            or old.get('tool') != 'presentation-studio' or old.get('folder') != space.folder \
+            or old.get('branch') != space.branch or not isinstance(old.get('name'), str):
+        raise WorkspaceError('The interrupted workspace requirement cannot be verified.')
+    needed = (4, 8, 0) if legacy else (4, 8, 1)
+    wanted = dict(old)
+    if sync_guidance.as_tuple(old['minimum_runtime']) < needed:
+        wanted['minimum_runtime'] = '.'.join(map(str, needed))
+    if new != wanted:
+        raise WorkspaceError('The interrupted workspace requirement changed unrelated settings.')
+
+
+def _check_outputs(space, root, writes, before_workspace, *, complete=False):
+    for name, data in writes.items():
+        path = _path(space, root, name)
+        if path.is_symlink() or path.parent.is_symlink():
+            raise WorkspaceError('The interrupted desk record changed. Keep its recovery record.')
+        if not path.exists():
+            if complete:
+                raise WorkspaceError('The committed desk record changed. Keep its recovery record.')
+            continue
+        if path.read_bytes() != data and not (name == WORKSPACE and path.read_bytes() == before_workspace and not complete):
+            raise WorkspaceError('The interrupted desk record changed. Nothing was replaced.')
+
+
 def _recover(space, root, expected):
+    if (root / format.PENDING).stat().st_size > 8_000_000:
+        raise WorkspaceError('The migration recovery record is too large. Keep its saved files.')
     journal = json.loads((root / format.PENDING).read_bytes())
-    if set(journal) != {'schema', 'expected', 'original', 'after', 'before_workspace', 'index_before'} or journal['schema'] != 1 \
+    fields = {'schema', 'expected', 'original', 'after', 'before_workspace', 'index_before'}
+    if set(journal) not in (fields, fields | {'shared', 'index_prepared'}) or type(journal['schema']) is not int or journal['schema'] != 1 \
             or journal['expected'] != expected \
             or hashlib.sha256((root / 'run.json').read_bytes()).hexdigest() != journal['original']:
         raise WorkspaceError('The interrupted opening cannot be verified. Keep the saved files and inspect its recovery record.')
@@ -202,14 +344,16 @@ def _recover(space, root, expected):
         raise WorkspaceError('The interrupted opening has unsupported writes.')
     after = {name: base64.b64decode(data, validate=True) for name, data in journal['after'].items()}
     before_workspace = base64.b64decode(journal['before_workspace'], validate=True)
-    _restore_index(space, root, after, journal['index_before'], check=True)
+    _check_workspace_change(space, before_workspace, after[WORKSPACE], legacy=set(journal) == fields)
+    _check_recovery_index(space, root, after, journal['index_before'],
+                          journal.get('index_prepared', _prepared_index(space, root, after)))
     format.validated(json.loads(after[format.RECORD]), (root / 'run.json').read_bytes(), root.name,
                      json.loads(after[format.ORIGIN]))
-    for name, data in after.items():
-        path = _path(space, root, name)
-        if path.exists() and path.read_bytes() != data and not (name == WORKSPACE and path.read_bytes() == before_workspace):
-            raise WorkspaceError('The interrupted desk record changed. Nothing was replaced.')
-    if _committed(space, root, after):
+    durable = _committed(space, root, after)
+    _check_outputs(space, root, after, before_workspace, complete=durable)
+    from runner.desk_chat import _files
+    _check_shared_recovery(space, root, _files(root), journal.get('shared'), after, before_workspace)
+    if durable:
         (root / format.PENDING).unlink()
         return True
     for name in after:
@@ -229,11 +373,13 @@ def _restore_index(space, root, writes, before, check=False):
     paths = [gitstate.inside(space, _path(space, root, name)) for name in writes]
     if not isinstance(before, str):
         raise WorkspaceError('The saved migration index cannot be verified.')
+    seen = set()
     for entry in before.split('\0'):
         if entry:
             header, _, name = entry.partition('\t')
-            if name not in paths or not re.fullmatch(r'[0-7]{6} [a-f0-9]{40,64} 0', header):
+            if name not in paths or name in seen or not re.fullmatch(r'100(?:644|755) [a-f0-9]{40,64} 0', header):
                 raise WorkspaceError('The saved migration index has an unsupported entry.')
+            seen.add(name)
     if check:
         return
     gitstate.hub.git(space.repo, 'reset', '-q', 'HEAD', '--', *paths)
@@ -295,28 +441,41 @@ def migrate(engine, path, expected):
         writes = {format.ORIGIN: (json.dumps(origin, indent=2) + '\n').encode(), format.RECORD: after}
         before_workspace = base64.b64decode(guard['workspace_marker'])
         workspace_record = json.loads(before_workspace)
-        if sync_guidance.as_tuple(workspace_record['minimum_runtime']) < (4, 8, 0):
-            workspace_record['minimum_runtime'] = '4.8.0'
+        if sync_guidance.as_tuple(workspace_record['minimum_runtime']) < (4, 8, 1):
+            workspace_record['minimum_runtime'] = '4.8.1'
             writes[WORKSPACE] = (json.dumps(workspace_record, indent=2, ensure_ascii=False) + '\n').encode()
         else:
             writes[WORKSPACE] = before_workspace
         journal = {'schema': 1, 'expected': expected, 'original': value['original'],
                    'before_workspace': base64.b64encode(before_workspace).decode(),
                    'index_before': guard['index'],
+                   'index_prepared': _prepared_index(space, root, writes), 'shared': guard['shared'],
                    'after': {name: base64.b64encode(data).decode() for name, data in writes.items()}}
+        journal_bytes = json.dumps(journal).encode()
+        if len(journal_bytes) > 8_000_000 or len(after) > 2_000_000:
+            raise WorkspaceError('The prepared desk records exceed the bounded saved format size.')
         committed = False
         try:
-            _write(root / format.PENDING, json.dumps(journal).encode())
+            _write(root / format.PENDING, journal_bytes)
             for name, data in writes.items():
                 _write(_path(space, root, name), data)
+            from runner.desk_chat import _files
+            _check_shared_recovery(space, root, _files(root), guard['shared'], writes, before_workspace)
+            _check_recovery_index(space, root, writes, guard['index'], journal['index_prepared'])
             gitstate.commit(space, f'{record["title"]}: open unfinished work on the desk',
                             [_path(space, root, name) for name in writes])
             committed = True
+            _check_recovery_index(space, root, writes, guard['index'], journal['index_prepared'])
             (root / format.PENDING).unlink()
         except BaseException:
             # A commit wrapper may publish successfully and then fail. Leave the
             # journal for explicit retry rather than undoing committed ownership.
-            if not committed and not _committed(space, root, writes):
+            _check_recovery_index(space, root, writes, guard['index'], journal['index_prepared'])
+            durable = committed or _committed(space, root, writes)
+            _check_outputs(space, root, writes, before_workspace, complete=durable)
+            from runner.desk_chat import _files
+            _check_shared_recovery(space, root, _files(root), guard['shared'], writes, before_workspace)
+            if not durable:
                 for name in writes:
                     if name != WORKSPACE:
                         (root / name).unlink(missing_ok=True)

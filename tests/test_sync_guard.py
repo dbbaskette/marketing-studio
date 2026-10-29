@@ -90,6 +90,31 @@ class SyncGuardTests(unittest.TestCase):
             marker.unlink()
             self.assertFalse(worker_in_progress(self.repo))
 
+    def test_presentation_recovery_shape_exempts_only_its_exact_pending_target(self):
+        item = self.presentation_item()
+        pending = item / 'work/desk/migration-transaction.json'
+        pending.parent.mkdir(parents=True)
+        journal = {'schema': 1, 'expected': 'pm1.' + 'A' * 43, 'original': 'synthetic',
+            'after': {}, 'before_workspace': '', 'index_before': '', 'index_prepared': '', 'shared': {}}
+        pending.write_text(json.dumps(journal))
+        self.assertTrue(worker_in_progress(self.repo))
+        self.assertFalse(worker_in_progress(self.repo, recovering_presentation=pending))
+        self.assertTrue(worker_in_progress(self.repo, recovering_training=pending))
+        for changed in ({**journal, 'unknown': True}, {**journal, 'expected': 'tm1.' + 'A' * 43}):
+            pending.write_text(json.dumps(changed))
+            self.assertTrue(worker_in_progress(self.repo, recovering_presentation=pending))
+        pending.write_text(json.dumps(journal))
+        other = self.repo / 'other/work/step.lock'
+        other.parent.mkdir(parents=True)
+        other.write_text('drawing')
+        self.assertTrue(worker_in_progress(self.repo, recovering_presentation=pending))
+        other.unlink()
+        unknown = self.repo / 'other/.blog-runs/unknown.json'
+        unknown.parent.mkdir()
+        unknown.write_text('{unreadable')
+        with self.assertRaises(ValueError):
+            worker_in_progress(self.repo, recovering_presentation=pending)
+
     def test_blog_run_and_tool_statuses_are_checked(self):
         for shape in ('.blog-runs/one.json', '.blog-runs/tools/abc.json'):
             record = self.repo / 'blogs' / shape

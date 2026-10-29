@@ -195,12 +195,9 @@ class MigrationTests(runner_support.DeskCase):
         studio.desk_command(args, make=lambda: self.engine, out=io.StringIO())
 
     def test_stopped_and_failed_runner_status_is_history_not_active_execution(self):
-        root = self.gated()
-        original = self.snapshot(root)
         for state in ('stopped', 'failed'):
-            for name in ('desk/migration.json', 'desk/migration-origin.json'):
-                (root / name).unlink(missing_ok=True)
-            record = json.loads(original['run.json'])
+            root = self.gated(title='Saved runner ' + state)
+            record = self.record(root)
             record['halted'] = {'state': state, 'step': 'build-render', 'why': 'Saved synthetic failure'}
             decks.write_run(root, record)
             raw = (root / 'run.json').read_bytes()
@@ -305,6 +302,141 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         self.assertEqual(original, (root / 'run.json').read_bytes())
         self.assertFalse((root / 'work/desk/migration-transaction.json').exists())
 
+    def test_recovery_never_discards_new_output_staging(self):
+        for boundary in ('prepared', 'committed'):
+            for change in ('staged', 'unmerged'):
+                with self.subTest(boundary=boundary, change=change):
+                    root = self.gated(title=f'Index {boundary} {change}')
+                    token = self.preview(root)['expected']
+                    code = '''import os, sys
+from pathlib import Path
+from runner import engine, desk_chat, desk_migration, gitstate
+e=engine.Engine(background=False)
+if sys.argv[3] == 'prepared':
+ original=desk_migration._write
+ def die(path,data):
+  original(path,data)
+  if Path(path).name == 'migration.json': os._exit(71)
+ desk_migration._write=die
+else:
+ original=gitstate.commit
+ def die(*args,**kwargs):
+  original(*args,**kwargs)
+  os._exit(71)
+ gitstate.commit=die
+desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
+'''
+                    process = subprocess.run([sys.executable, '-c', code, str(root), token, boundary],
+                        cwd=Path(__file__).resolve().parents[1], env={**os.environ, 'PYTHONPATH': '.:tests'},
+                        capture_output=True, text=True, timeout=20)
+                    self.assertEqual(process.returncode, 71, process.stderr)
+                    from runner import gitstate
+                    output = root / 'desk/migration.json'
+                    data = output.read_bytes()
+                    output.write_bytes(data + b' ')
+                    self.git('add', str(output))
+                    output.write_bytes(data)
+                    if change == 'unmerged':
+                        relative = gitstate.inside(self.space, output)
+                        digest = self.git('rev-parse', f':{relative}')
+                        result = gitstate.hub.run(self.space.repo, 'update-index', '--index-info',
+                            input=f'0 {"0" * 40}\t{relative}\n100644 {digest} 1\t{relative}\n')
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    before = self.snapshot(root), self.git('ls-files', '--stage', '-z'), self.git('rev-parse', 'HEAD')
+                    with self.assertRaisesRegex(WorkspaceError, 'index|staging'):
+                        desk_chat.migrate(self.engine, root, token)
+                    self.assertEqual((self.snapshot(root), self.git('ls-files', '--stage', '-z'), self.git('rev-parse', 'HEAD')), before)
+                    # Leave the deliberately unknown candidate alone; clean only its
+                    # disposable index so another independent candidate can be seeded.
+                    self.git('reset', '--mixed', 'HEAD')
+                    (root / 'work/desk/migration-transaction.json').unlink()
+
+    def test_exception_rollback_preserves_unexpected_staged_output(self):
+        from runner import gitstate
+        root = self.gated()
+        token = self.preview(root)['expected']
+        kept = {}
+        def fail(*args, **kwargs):
+            output = root / 'desk/migration.json'
+            data = output.read_bytes()
+            output.write_bytes(data + b' ')
+            self.git('add', str(output))
+            output.write_bytes(data)
+            kept['index'] = self.git('ls-files', '--stage', '-z')
+            raise OSError('synthetic changed staging')
+        with mock.patch.object(gitstate, 'commit', side_effect=fail):
+            with self.assertRaisesRegex(WorkspaceError, 'index|staging'):
+                desk_chat.migrate(self.engine, root, token)
+        self.assertEqual(self.git('ls-files', '--stage', '-z'), kept['index'])
+        self.assertTrue((root / 'work/desk/migration-transaction.json').exists())
+
+    def test_exception_rollback_keeps_changed_unstaged_outputs(self):
+        from runner import gitstate
+        root = self.gated()
+        token = self.preview(root)['expected']
+        kept = {}
+        def fail(*args, **kwargs):
+            output = root / 'desk/migration.json'
+            output.write_bytes(output.read_bytes() + b' ')
+            kept.update(self.snapshot(root))
+            raise OSError('synthetic changed output')
+        with mock.patch.object(gitstate, 'commit', side_effect=fail):
+            with self.assertRaisesRegex(WorkspaceError, 'record changed'):
+                desk_chat.migrate(self.engine, root, token)
+        self.assertEqual(self.snapshot(root), kept)
+
+    def test_legacy_local_journal_keeps_existing_readable_pair_and_recovers_exactly(self):
+        import base64
+        from runner import desk_migration, gitstate
+        root = self.gated()
+        marker = self.space.root / gitstate.MARKER
+        value = json.loads(marker.read_bytes())
+        value['minimum_runtime'] = '4.7.1'
+        marker.write_text(json.dumps(value))
+        token = self.preview(root)['expected']
+        with mock.patch.object(gitstate, 'commit', side_effect=OSError('synthetic interruption')), \
+                mock.patch.object(desk_migration, '_committed', return_value=True):
+            with self.assertRaisesRegex(OSError, 'interruption'):
+                desk_chat.migrate(self.engine, root, token)
+        pending = root / 'work/desk/migration-transaction.json'
+        journal = json.loads(pending.read_bytes())
+        journal.pop('shared')
+        journal.pop('index_prepared')
+        value['minimum_runtime'] = '4.8.0'
+        data = json.dumps(value).encode()
+        marker.write_bytes(data)
+        journal['after'][desk_migration.WORKSPACE] = base64.b64encode(data).decode()
+        pending.write_text(json.dumps(journal))
+        # Existing 4.8.0 metadata uses the unchanged effective pair format.
+        kept = pending.read_bytes()
+        pending.unlink()
+        self.assertEqual(decks.read_run(root)['execution'], 'conversation')
+        pending.write_bytes(kept)
+        with self.assertRaisesRegex(WorkspaceError, 'rolled back'):
+            desk_chat.migrate(self.engine, root, token)
+        self.assertEqual(json.loads(marker.read_bytes())['minimum_runtime'], '4.7.1')
+        self.assertFalse(pending.exists())
+
+    def test_exact_prepared_index_rolls_back_without_touching_unrelated_staging(self):
+        from runner import gitstate
+        root = self.gated()
+        unrelated = self.space.repo / 'unrelated.txt'
+        unrelated.write_text('Staged independently')
+        self.git('add', str(unrelated))
+        before = self.git('ls-files', '--stage', '-z')
+        original = (root / 'run.json').read_bytes()
+        token = self.preview(root)['expected']
+        def fail(space, message, paths):
+            self.git('add', '--', *map(str, paths))
+            raise OSError('synthetic after staging')
+        with mock.patch.object(gitstate, 'commit', side_effect=fail):
+            with self.assertRaisesRegex(OSError, 'after staging'):
+                desk_chat.migrate(self.engine, root, token)
+        self.assertEqual(self.git('ls-files', '--stage', '-z'), before)
+        self.assertEqual((root / 'run.json').read_bytes(), original)
+        self.assertFalse((root / 'desk/migration.json').exists())
+        self.assertFalse((root / 'work/desk/migration-transaction.json').exists())
+
     def test_selected_changes_preserves_original_copy_and_google_preview_baseline(self):
         from test_desk_words import planned
         self.workers.then('patch', planned(2, '3', [(1, 'in minutes.')]))
@@ -352,14 +484,14 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
         self.git('add', str(marker))
         before, index = marker.read_bytes(), self.git('ls-files', '--stage', '--', str(marker))
         preview = self.preview(root)
-        self.assertIn('4.8.0', preview['consequences'])
+        self.assertIn('4.8.1', preview['consequences'])
         with mock.patch.object(gitstate, 'commit', side_effect=OSError('synthetic commit failure')):
             with self.assertRaisesRegex(OSError, 'synthetic'):
                 desk_chat.migrate(self.engine, root, preview['expected'])
         self.assertEqual(marker.read_bytes(), before)
         self.assertEqual(self.git('ls-files', '--stage', '--', str(marker)), index)
         self.migrate(root)
-        self.assertEqual(json.loads(marker.read_bytes())['minimum_runtime'], '4.8.0')
+        self.assertEqual(json.loads(marker.read_bytes())['minimum_runtime'], '4.8.1')
         self.assertEqual(json.loads(marker.read_bytes())['unrelated'], values['unrelated'])
 
     def test_higher_workspace_floor_is_not_lowered_and_configured_writers_check_it(self):
@@ -406,6 +538,198 @@ desk_chat.migrate(e,Path(sys.argv[1]),sys.argv[2])
 
 
 class MigrationTeamTests(runner_support.DeskCase, runner_support.TeamCase):
+    def evidence(self, root):
+        marker = self.space.root / 'hub.json'
+        return (MigrationTests.snapshot(self, root), self.git('rev-parse', 'HEAD'),
+                self.git('ls-files', '--stage', '-z'), marker.read_bytes() if marker.exists() else None,
+                {p.relative_to(root).as_posix(): p.stat().st_mode & 0o777 for p in root.rglob('*') if p.is_file()},
+                marker.stat().st_mode & 0o777 if marker.exists() else None)
+
+    def test_shared_retained_evidence_must_match_head_and_index(self):
+        from runner import gitstate
+        root = self.gated()
+        binary = root / 'research/capture.bin'
+        binary.parent.mkdir(exist_ok=True)
+        binary.write_bytes(b'Captured evidence\x80\xff')
+        self.git('add', str(binary))
+        self.git('commit', '-qm', 'synthetic retained binary')
+        baseline = self.git('rev-parse', 'HEAD')
+        restored = self.evidence(root)
+        for name in ('run.json', 'outline.json', '@marker', 'research/capture.bin'):
+            for change in ('dirty', 'staged', 'untracked', 'deleted', 'mode', 'index-mode', 'conflicted'):
+                with self.subTest(name=name, change=change):
+                    path = self.space.root / gitstate.MARKER if name == '@marker' else root / name
+                    data = path.read_bytes()
+                    if change in ('dirty', 'staged'):
+                        path.write_bytes(data + b' ')
+                        if change == 'staged':
+                            self.git('add', str(path))
+                            path.write_bytes(data)  # diff HEAD alone would miss this
+                    elif change == 'untracked':
+                        self.git('rm', '--cached', str(path))
+                        self.git('commit', '-qm', 'synthetic untracked retained input')
+                    elif change == 'deleted':
+                        path.unlink()
+                    elif change == 'mode':
+                        path.chmod(path.stat().st_mode | 0o111)
+                    elif change == 'index-mode':
+                        relative = gitstate.inside(self.space, path)
+                        digest = self.git('rev-parse', f'HEAD:{relative}')
+                        self.git('update-index', '--cacheinfo', f'120000,{digest},{relative}')
+                    else:
+                        relative = gitstate.inside(self.space, path)
+                        digest = self.git('rev-parse', f'HEAD:{relative}')
+                        result = gitstate.hub.run(self.space.repo, 'update-index', '--index-info',
+                            input=f'0 {"0" * 40}\t{relative}\n100644 {digest} 1\t{relative}\n')
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                    try:
+                        before = self.evidence(root)
+                        preview = desk_chat.migration_preview(self.engine, root)
+                        self.assertTrue(preview['blockers'])
+                        with self.assertRaises(WorkspaceError):
+                            desk_chat.migrate(self.engine, root, preview['expected'])
+                        self.assertEqual(self.evidence(root), before)
+                    finally:
+                        self.git('reset', '--hard', baseline)
+                        # Git records executable mode, not the private read/write
+                        # permissions used by native atomic JSON writes.
+                        for relative, mode in restored[4].items():
+                            (root / relative).chmod(mode)
+                        (self.space.root / gitstate.MARKER).chmod(restored[5])
+                        self.assertEqual(self.evidence(root), restored, 'synthetic baseline must be exact before the next subcase')
+
+    def test_shared_private_ignored_and_unrelated_staging_survive_peer_readable_migration(self):
+        root = self.gated()
+        binary = root / 'research/capture.bin'
+        binary.parent.mkdir(exist_ok=True)
+        binary.write_bytes(b'Committed evidence\x80\xff')
+        self.git('add', str(binary))
+        self.git('commit', '-qm', 'synthetic committed binary')
+        private = root / 'sources/private.bin'
+        private.parent.mkdir(exist_ok=True)
+        private.write_bytes(b'Private drawing\x80\xff')
+        unrelated = self.space.root / 'unrelated.txt'
+        unrelated.write_text('Unrelated staged work')
+        self.git('add', str(unrelated))
+        staged = self.git('ls-files', '--stage', '--', str(unrelated))
+        original = (root / 'run.json').read_bytes()
+        preview = desk_chat.migration_preview(self.engine, root)
+        self.assertEqual(preview['blockers'], [])
+        # An unrelated commit does not invalidate the relevant retained-entry basis.
+        other = self.space.repo / 'other-product.txt'
+        other.write_text('Other product commit')
+        self.git('add', str(other))
+        self.git('commit', '--only', '-qm', 'synthetic unrelated commit', '--', str(other))
+        desk_chat.migrate(self.engine, root, preview['expected'])
+        self.assertEqual(self.git('ls-files', '--stage', '--', str(unrelated)), staged)
+        self.assertEqual(private.read_bytes(), b'Private drawing\x80\xff')
+        self.engine.share()
+        with self.be(self.blake):
+            self.blake.engine.fetch()
+            peer = self.theirs(self.blake, root)
+            self.assertEqual(decks.read_run(peer)['execution'], 'conversation')
+            self.assertEqual((peer / 'run.json').read_bytes(), original)
+            self.assertEqual((peer / 'research/capture.bin').read_bytes(), binary.read_bytes())
+            self.assertFalse((peer / 'sources/private.bin').exists())
+
+    def test_shared_tracked_ignored_input_and_changed_preview_index_refuse(self):
+        root = self.gated()
+        private = root / 'sources/tracked.bin'
+        private.parent.mkdir(exist_ok=True)
+        private.write_bytes(b'Originally shared\x80\xff')
+        self.git('add', '-f', str(private))
+        self.git('commit', '-qm', 'synthetic tracked ignored input')
+        token = desk_chat.migration_preview(self.engine, root)['expected']
+        for change in ('index', 'content', 'committed'):
+            with self.subTest(change=change):
+                before_bytes = private.read_bytes()
+                private.write_bytes(before_bytes + b' changed')
+                if change != 'content':
+                    self.git('add', '-f', str(private))
+                if change == 'index':
+                    private.write_bytes(before_bytes)
+                if change == 'committed':
+                    self.git('commit', '-qm', 'synthetic changed retained basis')
+                before = self.evidence(root)
+                with self.assertRaises(WorkspaceError):
+                    desk_chat.migrate(self.engine, root, token)
+                self.assertEqual(self.evidence(root), before)
+                self.git('reset', '--hard', 'HEAD')
+
+    def test_shared_recovery_binds_retained_evidence_and_requires_legacy_proof(self):
+        from runner import desk_migration, gitstate
+        for change in ('dirty', 'staged', 'committed', 'marker', 'legacy'):
+            with self.subTest(change=change):
+                root = self.gated(title='Recovery evidence ' + change)
+                token = desk_chat.migration_preview(self.engine, root)['expected']
+                with mock.patch.object(gitstate, 'commit', side_effect=OSError('synthetic interruption')), \
+                        mock.patch.object(desk_migration, '_committed', return_value=True):
+                    with self.assertRaisesRegex(OSError, 'interruption'):
+                        desk_chat.migrate(self.engine, root, token)
+                pending = root / 'work/desk/migration-transaction.json'
+                if change == 'legacy':
+                    value = json.loads(pending.read_bytes())
+                    value.pop('shared')
+                    value.pop('index_prepared')
+                    pending.write_text(json.dumps(value))
+                else:
+                    path = self.space.root / gitstate.MARKER if change == 'marker' else root / 'outline.json'
+                    data = path.read_bytes()
+                    path.write_bytes(data + b' ')
+                    if change != 'dirty':
+                        self.git('add', str(path))
+                    if change == 'staged':
+                        path.write_bytes(data)
+                    if change in ('committed', 'marker'):
+                        self.git('commit', '--only', '-qm', 'synthetic changed recovery evidence', '--', str(path))
+                before = self.evidence(root)
+                try:
+                    with self.assertRaisesRegex(WorkspaceError, 'shared|index|workspace'):
+                        desk_chat.migrate(self.engine, root, token)
+                    self.assertEqual(self.evidence(root), before)
+                    self.assertTrue(pending.exists())
+                finally:
+                    self.git('reset', '--hard', 'HEAD')
+                    pending.unlink(missing_ok=True)
+
+    def test_shared_recovery_settles_committed_outputs_and_rolls_back_prepared_outputs(self):
+        from runner import desk_migration, gitstate
+        for committed in (False, True):
+            with self.subTest(committed=committed):
+                root = self.gated(title='Settle ' + str(committed))
+                marker = self.space.root / gitstate.MARKER
+                value = json.loads(marker.read_bytes())
+                value.update(minimum_runtime='4.8.0', person_setting='keep')
+                marker.write_text(json.dumps(value))
+                self.git('add', str(marker))
+                self.git('commit', '--allow-empty', '-qm', 'synthetic prior workspace floor')
+                before_marker = marker.read_bytes()
+                token = desk_chat.migration_preview(self.engine, root)['expected']
+                commit = gitstate.commit
+                def fail(*args, **kwargs):
+                    if committed:
+                        commit(*args, **kwargs)
+                    raise OSError('synthetic interruption')
+                with mock.patch.object(gitstate, 'commit', side_effect=fail), \
+                        mock.patch.object(desk_migration, '_committed', return_value=True):
+                    with self.assertRaisesRegex(OSError, 'interruption'):
+                        desk_chat.migrate(self.engine, root, token)
+                unrelated = self.space.repo / 'unrelated-recovery.txt'
+                unrelated.write_text('Keep my staging')
+                self.git('add', str(unrelated))
+                index = self.git('ls-files', '--stage', '--', str(unrelated))
+                if committed:
+                    self.assertEqual(desk_chat.migrate(self.engine, root, token)['execution'], 'conversation')
+                    self.assertEqual(json.loads(marker.read_bytes())['minimum_runtime'], '4.8.1')
+                else:
+                    with self.assertRaisesRegex(WorkspaceError, 'rolled back'):
+                        desk_chat.migrate(self.engine, root, token)
+                    self.assertEqual(marker.read_bytes(), before_marker)
+                self.assertEqual(self.git('ls-files', '--stage', '--', str(unrelated)), index)
+                self.assertFalse((root / 'work/desk/migration-transaction.json').exists())
+                self.git('reset', '--', str(unrelated))
+                unrelated.unlink()
+
     def test_deleted_and_claimed_attribution_uses_effective_remote_driver(self):
         from runner import gitstate
         root = self.gated()

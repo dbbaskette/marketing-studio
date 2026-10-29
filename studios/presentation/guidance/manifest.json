@@ -1,5 +1,5 @@
 {
   "schema": 1,
   "content_root": "studios/presentation/skills/presentation-studio",
-  "minimum_runtime": "4.8.0"
+  "minimum_runtime": "4.8.1"
 }

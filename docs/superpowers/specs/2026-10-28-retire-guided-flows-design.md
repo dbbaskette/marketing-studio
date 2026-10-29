@@ -171,7 +171,7 @@ refusal, never a second copy.
 
 Presentation Studio preserves the original `run.json` byte-for-byte. Its fixed shared
 writes are `desk/migration.json`, immutable `desk/migration-origin.json` and the existing
-Presentation Studio workspace `hub.json` minimum runtime, raised to at least 4.8.0 without
+Presentation Studio workspace `hub.json` minimum runtime, raised to at least 4.8.1 without
 lowering a higher value or changing unrelated settings. A local
 `work/desk/migration-transaction.json` protects partial publication and explicit recovery.
 Effective readers, writes, team ownership and replay validate the paired records against
@@ -179,6 +179,30 @@ the original; missing/unknown metadata fails closed. Shared replay requires orig
 outline/inventory metadata, while private sources/drawings are verified locally before
 migration or Ready, since they are intentionally not shared. If every migration trace is
 externally deleted, immutable old records alone cannot establish that migration occurred.
+
+For a shared Presentation Studio workspace, the original and every retained shared file
+inside the candidate deck, plus the workspace record, must match their ordinary committed
+HEAD entries, staging index and working bytes. Tracked files remain shared even beneath
+ignored directories; untracked ignored sources and drawings remain private local inputs.
+Missing, dirty, staged, conflicted or deleted shared evidence refuses without changing it.
+Record intended changes through existing saved-flow operations that commit them, or commit
+the intended files with Git, then preview again. Migration never adds those originals to
+its three-path commit. Preview and locked apply bind the relevant entries; unrelated
+repository commits and staging do not invalidate that evidence. Explicit recovery checks
+the retained committed basis and exact prior/prepared output index before rollback or
+settlement; unexpected staging keeps the journal and all bytes intact. Local-only dirty
+saved work stays supported and is not a self-contained historical Git snapshot.
+
+Marketing Studio Connect uses each deck product's validated effective reader and writer
+before copying and before committing a carried folder. Only the destination's effective
+owner changes: Presentation Studio's original run and Training Studio's original session
+and run, immutable receipts, decisions, pins, History and Google baselines remain intact.
+The whole-folder carry commit includes originals and effective metadata. Partial, pending
+or unknown migration records refuse before copying; an installed runtime without the
+required native capability refuses explicitly. A damaged copy is removed before commit.
+This is the existing Connect path, not a universal import guarantee. Existing migration
+records from Presentation Studio 4.8.0 remain readable; new guarded migrations require
+4.8.1. Older instances must be closed and any needed update is explicit.
 
 Presentation Studio eligibility is a supported schema 1–3 with usable outline, or Selected
 changes with verified inventory/original deck and required dependencies. Early, unsupported

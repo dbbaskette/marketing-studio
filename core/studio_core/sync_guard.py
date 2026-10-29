@@ -243,8 +243,9 @@ def worker_in_progress(repo: Path, refusal=ValueError, *, recovering_presentatio
             if drafts.get('update_chain', {}).get('status') == 'working':
                 return True
         if pending == recovering_presentation and present(folder / 'run.json'):
-            value = small_record(pending)
-            if isinstance(value, dict) and set(value) == {'schema', 'expected', 'original', 'after', 'before_workspace', 'index_before'} and str(value.get('expected', '')).startswith('pm1.'):
+            value = small_record(pending, 8_000_000)
+            fields = {'schema', 'expected', 'original', 'after', 'before_workspace', 'index_before'}
+            if isinstance(value, dict) and set(value) in (fields, fields | {'shared', 'index_prepared'}) and str(value.get('expected', '')).startswith('pm1.'):
                 return False  # its exact product format is validated under the caller lock
             return True
         if present(pending) and pending != recovering_training:

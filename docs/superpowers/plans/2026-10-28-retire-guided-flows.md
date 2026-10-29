@@ -289,7 +289,7 @@ and run writes; assign conversation execution before registering migrated work.
 Task 5 Presentation Studio clarification: retain immutable original run bytes and use the
 fixed effective `desk/migration.json` + immutable `desk/migration-origin.json` pair, local
 `work/desk/migration-transaction.json`, and the existing Presentation Studio workspace
-`hub.json` floor (at least 4.8.0; preserve higher floors/unrelated values). Preview explains
+`hub.json` floor (at least 4.8.1 for new migration; preserve higher floors/unrelated values). Preview explains
 existing-part scope and closing older runtimes; current guards cannot retroactively change
 older configured code. Eligibility and retained early/marker-bearing compatibility follow
 the design. Explicit `desk ready` and main **Mark ready** use actual checked-material,
@@ -297,6 +297,39 @@ drawing/dependency/freshness/blocker/person-response guards without jobs, delive
 fabricated upstream approvals. Shared metadata and private local inputs have distinct
 verification requirements. Missing paired records fail closed; total external deletion of
 all migration evidence cannot be detected from an unchanged old run alone.
+
+### Task 5d: Preserve shared committed evidence and Connect ownership
+
+This bounded increment completes Task 5's shared preservation and ownership boundary
+alongside Training Studio migration. It does not expand migration eligibility or retire
+additional saved formats. Blog Studio's whole-article/local migration semantics remain
+unchanged.
+
+- Require Presentation Studio shared retained candidate-deck files and workspace marker
+  to match HEAD, ordinary index entries and working bytes. Include tracked ignored files
+  and tracked deletions; keep untracked ignored private inputs local. Refuse with the
+  existing saved-flow/Git commit correction path instead of committing original edits.
+- Bind relevant shared entries in preview, locked apply and explicit recovery without
+  invalidating unrelated commits. Preserve unrelated staging. Recovery and exception
+  rollback check the current output index against exact prior/prepared entries before
+  changing files or removing the journal; uncertain state refuses intact.
+- Marketing Studio Connect validates each product's source and copied effective records,
+  changes only the copied effective owner and commits originals plus paired metadata.
+  Preserve immutable original/session/receipt bytes, History, approvals, pins and Google
+  baselines. Unknown, partial, pending or unsupported-runtime records refuse before copy;
+  invalid destinations are cleaned up before commit. No automatic migration or update.
+- Cover disposable bare-remote/two-clone replay, local-dirty migrated Connect for both
+  deck products, staged-then-reverted inputs, tracked ignored/private ignored inputs,
+  relevant preview changes, output-index recovery refusal and unrelated staging.
+- Ship Presentation Studio 4.8.1 with its skill/manifest and new migration floor;
+  previous 4.8.0 effective metadata remains readable. Marketing Studio 4.5.1 carries
+  the Connect correction. Training Studio remains 4.7.0. Close older running instances
+  and explicitly update an installed runtime when needed. Local-only dirty migration
+  remains usable but is not a complete historical Git backup.
+
+Use focused migration/Connect checks, native package validators and affected frozen
+regressions for this increment. The combined frozen suite and retirement review remain
+Tasks 6–7; completing this increment does not claim those gates passed.
 
 ### Task 6: Retire eligible entry points and document compatibility
 
