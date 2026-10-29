@@ -17,11 +17,12 @@ from helpers import visual_answer
 
 
 class Assistant:
-    def __init__(self, slow=False):
+    def __init__(self, slow=False, visual='concept'):
         self.calls = []
         self.slow = slow
         self.release = threading.Event()
         self.fail = False
+        self.visual = visual
     def propose(self, brief, captured):
         self.calls.append('story')
         if self.slow:
@@ -40,7 +41,7 @@ class Assistant:
                 'evidence': [{'source_id': source['id'], 'start': 0, 'end': len(source['text']), 'quote': source['text']}]}
         story = {'id': 's1', 'headline': 'Keep serving', 'takeaway': 'Restart one instance at a time.',
                  'rationale': 'Explain the supplied relationship without inventing a metric.', 'qualifications': [], 'omissions': [],
-                 'blocks': [{'id': 'b1', 'kind': 'concept', 'title': 'Rolling restart',
+                 'blocks': [{'id': 'b1', 'kind': self.visual, 'title': 'Rolling restart',
                              'text': 'Other instances continue serving requests.', 'fact_ids': ['f1'], 'required_ids': [],
                              'illustration': False, 'illustration_role': ''}]}
         return {'facts': [fact], 'stories': [story]}
@@ -57,6 +58,7 @@ def main():
     parser.add_argument('--remote',action='store_true')
     parser.add_argument('--bridge',action='store_true')
     parser.add_argument('--slow', action='store_true')
+    parser.add_argument('--visual', choices=('concept', 'comparison', 'parts'), default='concept')
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='infographic-browser-') as folder:
         root = Path(folder).resolve(); home = root / 'home'; home.mkdir()
@@ -87,7 +89,7 @@ def main():
                     assert payload.startswith(b'PK')
                     return {'id':'synthetic_delivered','mimeType':DOC_MIME,'appProperties':{'infographic_request':values['request_key'],'infographic_payload':values['payload_hash']}}
             remote_sources.Client=google_delivery.Client=Google
-        engine = Engine(store, executable=args.renderer, assistant=Assistant(slow=args.slow))
+        engine = Engine(store, executable=args.renderer, assistant=Assistant(slow=args.slow, visual=args.visual))
         engine.configuration = {'image_provider': 'codex'}
         class Page(server.Page):
             reads = (*server.Page.reads, '/api/fixture-calls')

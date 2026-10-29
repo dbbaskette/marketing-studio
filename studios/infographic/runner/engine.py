@@ -89,7 +89,7 @@ class Engine:
             facts = evidence.verify(self.store, current, evidence.locate(self.store, current, answer['facts']))
             candidate = deepcopy(current)
             candidate['facts'] = facts
-            proposals = stories.verify(candidate, answer['stories'])
+            proposals = stories.usable_proposals(candidate, answer['stories'])
             changes = {'facts': facts, 'stories': proposals}
             if automatic:
                 require(not proposals[0].get('omissions'), 'The recommended story omits required content. Choose a direction explicitly.')

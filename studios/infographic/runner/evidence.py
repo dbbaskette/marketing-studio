@@ -112,8 +112,26 @@ def findings(facts: list[dict]) -> list[dict]:
     return result
 
 
+def quantitative(block: dict, facts: list[dict]) -> bool:
+    """Descriptions can be compared or decomposed without a numeric scale.
+
+    Legacy numeric comparisons still request charts. Mixed data needs an explicit
+    qualitative choice; it must never silently pass the quantitative checks.
+    """
+    if 'quantitative' in block:
+        require(type(block['quantitative']) is bool, 'Say explicitly whether this visual uses a numeric scale.')
+    if block['kind'] not in ('comparison', 'numbers', 'parts'):
+        return False
+    require(bool(facts), 'A visual needs supplied facts.')
+    if block['kind'] == 'numbers':
+        require(block.get('quantitative', True), 'Number callouts need numeric source measurements; use a conceptual explanation for descriptions.')
+        return True
+    return block.get('quantitative', not all(text(f.get('value')) for f in facts))
+
+
 def comparable(facts: list[dict]):
-    require(bool(facts) and all(number(f.get('value')) for f in facts), 'A quantitative visual needs numeric source values.')
+    require(bool(facts) and all(number(f.get('value')) for f in facts),
+            'A quantitative visual needs numeric source values. Use a qualitative comparison or conceptual explanation for descriptions.')
     require(all(f.get('unit', '').strip().casefold() not in UNKNOWN for f in facts), 'Clarify numeric units before comparison.')
     require(len({f['unit'] for f in facts}) == 1, 'Do not compare different units.')
     for key in CONTEXT:

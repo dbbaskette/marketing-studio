@@ -34,8 +34,9 @@ def verify(project: dict, proposals: list[dict]) -> list[dict]:
                     'Say whether artwork helps and describe its explanatory role.')
             if block['illustration']:
                 require(bool(block['illustration_role'].strip()), 'Describe what the illustration should explain.')
-            if block['kind'] in ('comparison', 'numbers', 'parts'):
-                evidence.comparable([facts[key] for key in block['fact_ids']])
+            used = [facts[key] for key in block['fact_ids']]
+            if evidence.quantitative(block, used):
+                evidence.comparable(used)
             if block['kind'] == 'timeline':
                 require(all(text(facts[key].get('period')) for key in block['fact_ids']),
                         'A timeline needs supplied dates or periods, not invented chronology.')
@@ -60,6 +61,27 @@ def verify(project: dict, proposals: list[dict]) -> list[dict]:
                      attempts=[], checks=[], approval=None)
     validate_project(candidate)
     return deepcopy(proposals)
+
+
+def usable_proposals(project: dict, proposals: list[dict]) -> list[dict]:
+    """Keep useful generated alternatives when another fails native validation.
+
+    Manual authoring remains strict. Every accepted proposal passes the complete
+    checks, including requirements and uniqueness, without another assistant call.
+    """
+    records(proposals, 'Stories')
+    require(1 <= len(proposals) <= (1 if project['brief']['direction'] == 'direct' else 3),
+            'Directed work needs one faithful story; other modes offer one to three useful alternatives.')
+    accepted, problems = [], []
+    for proposal in proposals:
+        try:
+            verified = verify(project, accepted + [proposal])
+        except Invalid as failure:
+            problems.append(str(failure))
+        else:
+            accepted = verified
+    require(bool(accepted), problems[0] if problems else 'No usable story was proposed.')
+    return accepted
 
 
 def adopt(store, ident: str, proposals: list[dict], *, expected_revision: int) -> dict:

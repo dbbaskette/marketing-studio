@@ -6,7 +6,13 @@ ideas. Record omissions explicitly and ask for prioritization when content canno
 fit. Use one takeaway, one to five primary blocks and at most 250 visible words.
 Each proposal has id, headline, takeaway, rationale, qualifications, omissions and
 blocks. Each block has id, kind (comparison/process/timeline/numbers/parts/concept),
-title, text, fact_ids, required_ids, illustration (boolean), illustration_role.
+title, text, fact_ids, required_ids, quantitative (boolean), illustration (boolean),
+illustration_role. Set quantitative=false for comparisons of ideas, capabilities,
+descriptions or components; these do not require numeric measurements. Use parts
+with quantitative=false to explain components rather than proportions. Use
+quantitative=true for scaled charts, measured part-to-whole visuals and number
+callouts. The numbers kind always requires actual numeric source values. Do not
+invent numbers or turn descriptive values into chart data to satisfy a layout.
 Describe the explanatory subject and relationships of an illustration when useful;
 never add decorative artwork merely to fill a quota. Numeric comparisons require
 compatible supplied units/periods/denominators/conditions; do not invent metrics,
