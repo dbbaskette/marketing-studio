@@ -15,6 +15,11 @@ def tint(ink, canvas, fraction=0.07):
     )
 
 
+def element_id(value):
+    """Model IDs are bounded individually; composed IDs must stay bounded too."""
+    return value if len(value) <= 64 else "v_" + digest(value)[:24]
+
+
 def plan(project, *, body_size=None):
     require(
         project["brand"] is not None,
@@ -83,6 +88,7 @@ def plan(project, *, body_size=None):
         weight=400,
         min_lines=1,
     ):
+        ident = element_id(ident)
         lines = wrapped(value, w, font_size)
         h = max(min_lines, len(lines)) * font_size * 1.4
         elements.append(
@@ -106,6 +112,7 @@ def plan(project, *, body_size=None):
         return h
 
     def shape(ident, x, y, w, h, *, color=surface, glyph=None, refs=(), block=None):
+        ident = element_id(ident)
         node = {
             "id": ident,
             "kind": "shape",
@@ -130,6 +137,7 @@ def plan(project, *, body_size=None):
         block=None,
         meaning="Grouped components; no measured flow.",
     ):
+        ident = element_id(ident)
         # Include arrowheads in their measurable reservation, including reverse/diagonal links.
         pad = body * 0.4
         x, y = max(0, min(start[0], end[0]) - pad), max(0, min(start[1], end[1]) - pad)
@@ -403,7 +411,7 @@ def plan(project, *, body_size=None):
                         break
             elements.append(
                 {
-                    "id": bid + "_chart",
+                    "id": element_id(bid + "_chart"),
                     "kind": "chart",
                     "bounds": [x + pad, cursor, inside, chart_height],
                     "values": values,
@@ -421,7 +429,7 @@ def plan(project, *, body_size=None):
                     "value_scale": value_scale,
                 }
             )
-            reading.append(bid + "_chart")
+            reading.append(element_id(bid + "_chart"))
             cursor += chart_height + gap * 0.5
             cursor += words(
                 bid + "_context",
@@ -611,7 +619,7 @@ def plan(project, *, body_size=None):
             )
             regions.append(
                 {
-                    "id": bid + "_art",
+                    "id": element_id(bid + "_art"),
                     "block_id": bid,
                     "bounds": [x + pad, cursor, inside, ah],
                     "role": block["illustration_role"],
@@ -619,7 +627,7 @@ def plan(project, *, body_size=None):
                     "asset_id": None,
                 }
             )
-            reading.append(bid + "_art")
+            reading.append(element_id(bid + "_art"))
         require(
             cursor <= top + bh - pad + 0.01,
             "The diagram needs shorter labels or fewer visual items.",

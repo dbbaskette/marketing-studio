@@ -106,6 +106,27 @@ class VisualPageTests(Isolated):
         super().setUp()
         self.store = Store.setup(self.workspace, data=self.data)
 
+    def test_valid_long_model_ids_produce_stable_bounded_scene_ids(self):
+        p = project(self.store)
+        block = p["stories"][0]["blocks"][0]
+        block["id"] = "block_" + "b" * 58
+        renamed = {
+            n["id"]: "node_" + "n" * 58 + str(i)
+            for i, n in enumerate(block["visual"]["nodes"])
+        }
+        for node in block["visual"]["nodes"]:
+            node["id"] = renamed[node["id"]]
+        for edge in block["visual"]["links"]:
+            edge["from"], edge["to"] = renamed[edge["from"]], renamed[edge["to"]]
+        p["stories"] = stories.verify(p, p["stories"])
+        first = scene.plan(p, arrangement="infographic")
+        second = scene.plan(p, arrangement="infographic")
+        ids = [e["id"] for e in first["elements"]]
+        self.assertTrue(all(len(key) <= 64 for key in ids))
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual(ids, [e["id"] for e in second["elements"]])
+        self.assertTrue(set(first["reading_order"]) <= set(ids))
+
     def test_qualitative_forms_have_real_graphics_and_editable_evidence_linked_labels(
         self,
     ):
