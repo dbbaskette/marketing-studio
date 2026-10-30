@@ -30,4 +30,18 @@ in disposable Tart storage. Reuse passing UI/material-generation evidence for th
 unchanged application paths. No live provider request, personal research retry,
 installation, or running-service change is part of verification.
 
-Status: implementation in progress.
+Status: implemented and verified. The preflight uses one total 120-second limit
+and private, randomly named helper inputs. It sends the same prepared gap strings
+as production collection and fails closed when the collection checker cannot run.
+No unknown fact or citation field is silently removed.
+
+The disposable macOS 27 run passed all shared checks (748 tests, one optional
+PDF-reader skip), plus 21 Training Studio, 17 Presentation Studio, eight Blog
+Studio and five Infographic Studio research/synthesis checks. Both deck studios'
+package validators passed. The exact fact.kind regression used the real locked
+helper and corrected the packet in the same investigator invocation; the normal
+production collection and independent review then completed. JSON-only transport
+correction, nested source/fact/citation fields, gap limits, selected originals,
+source dates, quotes, permissions and checker failure paths were also covered.
+The owned VM was removed. Earlier UI/material-generation evidence remains valid;
+no personal workspace, live provider request or running service was changed.
