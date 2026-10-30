@@ -299,9 +299,11 @@ stay in Google.
 
 ### What a send to the Google Doc makes
 
-**Send accepted changes to Google Doc** (Review mode) and **Send to Google Doc**
-(Finishing) send every desk change. The plan says "N suggestions and M comments go to the
-Google Doc", lists each one, and sends nothing until you confirm.
+**Review Google changes** (Review mode) checks and previews every desk change;
+it does not send anything. **Send N changes** is the single delivery decision.
+In Finishing, **Check what would be sent** similarly previews changes before
+**Send to Google Doc**. The preview says "N suggestions and M comments go to the
+Google Doc" and lists each one.
 
 - **Wording** becomes suggestions the Doc's owner accepts or rejects: one for each separate
   change in a paragraph, with changes a few words apart kept together, so only the changed

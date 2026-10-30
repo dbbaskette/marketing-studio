@@ -1058,8 +1058,8 @@ function sReviewGoogle(held){
     out.push(sNode('p','',sDeskGoogleSaid(g.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,sButton('Cancel',()=>{g.plan=null;sReviewHeadShow(held);})));
     return out;
   }
-  const plan=sButton('Send accepted changes to Google Doc',async button=>{await busy(button,'Checking…',async()=>{try{await sReviewFlush(held);g.plan=await api('desk-google-plan',{id:held.id,mode:'auto'});g.problem='';}catch(error){g.plan=null;g.problem=error.message;}sReviewHeadShow(held);});},'filled');plan.disabled=!sDeskCan(held);
-  out.push(sNode('p','quiet','Sends every difference from the Google Doc as it was read: the fixes you accepted and any edits you made. Rejected fixes are never sent.'),sAdd(sNode('div','bar'),plan));
+  const plan=sButton('Review Google changes',async button=>{await busy(button,'Checking…',async()=>{try{await sReviewFlush(held);g.plan=await api('desk-google-plan',{id:held.id,mode:'auto'});g.problem='';}catch(error){g.plan=null;g.problem=error.message;}sReviewHeadShow(held);});},'filled');plan.disabled=!sDeskCan(held);
+  out.push(sNode('p','quiet','Review the fixes you accepted and any edits you made before sending them to Google. Nothing is sent during this check; the next screen shows what will be sent and has the Send button. Rejected fixes are never sent.'),sAdd(sNode('div','bar'),plan));
   return out;
 }
 function sReviewLede(state){
