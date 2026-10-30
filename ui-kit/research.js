@@ -186,27 +186,65 @@ const StudioResearch = (() => {
     if (!state) return null;
     const phase = state.phase || 'investigate';
     const titles = {investigate: 'Collecting evidence', 'investigating': 'Collecting evidence', synthesize: 'Combining findings', 'combining-findings': 'Combining findings', review: 'Independent check', 'independent-check': 'Independent check', complete: 'Research is ready', 'ready-for-review': 'Research is ready', 'needs-attention': 'Research needs attention', 'needs-revision': 'Research needs correction', 'stopping': 'Stopping research', 'pausing': 'Finishing active research before pausing', paused: 'Research paused', stopped: 'Research stopped'};
-    const box = add(make('section', 'research-progress paper'), make('h3', 'card-title', titles[phase] || 'Research'));
-    const list = make('ul', 'research-source-list');
-    for (const area of array(state.streams || state.workstreams)) {
-      const label = array(area.questions).join(' · ') || area.title || area.id;
-      const words = {kept: 'Evidence kept', accepted: 'Evidence kept', waiting: 'Waiting', pending: 'Waiting', running: 'Working', working: 'Working', failed: 'Needs retry', refused: 'Needs retry', cancelled: 'Stopped', 'termination-unconfirmed': 'Waiting for termination confirmation'};
-      list.append(add(make('li', 'research-area'), make('span', '', label), make('span', 'quiet', words[area.status] || area.status)));
+    const box = make('section', 'research-progress paper'); box.setAttribute('aria-label', 'Research progress');
+    const header = add(make('div', 'research-progress-header'), make('h3', 'card-title', titles[phase] || 'Research'));
+    const actions = hooks.controls || make('div', 'bar');
+    for (const [key, label] of [['pause', 'Pause research'], ['resume', 'Resume research'], ['stop', 'Stop research'], ['retry', 'Retry affected area'], ['report', 'Open report'], ['brief', 'Open brief'], ['use', 'Use research']]) if (hooks[key]) actions.append(button(label, hooks[key], 'research-' + key));
+    if (actions.childNodes.length) header.append(actions);
+    box.append(header);
+    const stage = {investigate:0, investigating:0, synthesize:1, 'combining-findings':1, review:2, 'independent-check':2, complete:3, 'ready-for-review':3}[phase];
+    const steps = make('ol', 'research-stages'); steps.setAttribute('aria-label', 'Research stages');
+    for (const [index, label] of ['Gather evidence', 'Combine findings', 'Check sources'].entries()) {
+      const item = make('li', '', label);
+      item.dataset.state = stage > index ? 'done' : stage === index ? 'current' : 'waiting';
+      if (stage === index) item.setAttribute('aria-current', 'step');
+      item.setAttribute('aria-label', label + ': ' + (stage > index ? 'complete' : stage === index ? 'in progress' : 'not completed'));
+      steps.append(item);
     }
-    add(box, list);
+    box.append(steps);
+    const areas = array(state.streams || state.workstreams);
+    const kept = areas.filter(a => ['kept', 'accepted'].includes(a.status)).length;
+    const working = areas.filter(a => ['running', 'working'].includes(a.status)).length;
+    const failed = areas.filter(a => ['failed', 'refused'].includes(a.status)).length;
+    const note = stage === 0 ? 'Each investigation checks a different part of your source material.' : stage === 1 ? 'Bringing the collected evidence into one report and reference brief.' : stage === 2 ? 'Checking the report against the captured sources before using it.' : stage === 3 ? 'The research passed its independent check.' : 'Checked evidence is kept. Use the available controls to continue.';
+    box.append(make('p', 'quiet research-progress-note', note));
+    if (areas.length) {
+      const status = make('p', 'research-progress-summary', kept + ' of ' + areas.length + ' areas collected' + (working ? ' · ' + working + ' working' : '') + (failed ? ' · ' + failed + ' need retry' : ''));
+      status.setAttribute('role', 'status'); box.append(status);
+      if (stage === 0) {
+        const meter = make('progress', 'research-evidence-meter'); meter.max = areas.length; meter.value = kept;
+        meter.setAttribute('aria-label', 'Research areas with collected evidence'); box.append(meter);
+      }
+      const list = make('ul', 'research-areas');
+      const words = {kept: 'Evidence kept', accepted: 'Evidence kept', waiting: 'Waiting', pending: 'Waiting', running: 'Working', working: 'Working', failed: 'Needs retry', refused: 'Needs retry', cancelled: 'Stopped', 'termination-unconfirmed': 'Waiting for termination confirmation'};
+      for (const [index, area] of areas.entries()) {
+        const questions = array(area.questions).map(q => typeof q === 'string' ? q : q.question || q.text || q.id).filter(Boolean);
+        const item = make('li', 'research-area');
+        item.dataset.state = ['kept','accepted'].includes(area.status) ? 'done' : ['failed','refused','termination-unconfirmed'].includes(area.status) ? 'review' : ['running','working'].includes(area.status) ? 'current' : 'none';
+        const mark = make('span', 'bead'); mark.dataset.state = item.dataset.state; mark.setAttribute('aria-hidden', 'true');
+        add(item, add(make('p', 'state research-area-state'), mark, make('span', '', words[area.status] || 'Status unavailable')),
+          make('p', 'research-area-question', area.title || questions[0] || 'Preparing this investigation'));
+        if (questions.length) {
+          const detail = make('details', 'research-area-details'); detail.dataset.key = 'research-area-' + (area.id || index);
+          const toggle = make('summary', '', questions.length === 1 ? 'View question' : 'View ' + questions.length + ' questions'); toggle.dataset.key = detail.dataset.key + '-toggle';
+          const full = make('ul', 'research-questions'); for (const question of questions) full.append(make('li', '', question));
+          item.append(add(detail, toggle, full));
+        }
+        list.append(item);
+      }
+      box.append(list);
+    }
     const timing = hooks.timing || state.timing;
     if (timing) {
-      const minutes = value => Math.round(value / 60) + ' minutes';
+      const duration = value => { const seconds = Math.max(0, Math.round(value)); if (seconds < 60) return seconds + (seconds === 1 ? ' second' : ' seconds'); const minutes = Math.round(seconds / 60); return minutes + (minutes === 1 ? ' minute' : ' minutes'); };
       const elapsed = timing.elapsed_seconds, active = timing.active_wall_seconds ?? timing.active_seconds;
-      add(box, make('p', 'quiet', [elapsed != null ? minutes(elapsed) + ' elapsed' : '', active != null ? minutes(active) + ' actively working' : 'Active time awaiting terminal confirmation'].filter(Boolean).join(' · ')));
-      const details = add(make('details', 'research-options'), make('summary', '', 'Research details'));
-      if (timing.assistant_seconds != null) details.append(make('p', 'quiet', minutes(timing.assistant_seconds) + ' total assistant time'));
+      add(box, make('p', 'quiet research-timing', [elapsed != null ? duration(elapsed) + ' elapsed' : '', active != null ? duration(active) + ' actively working' : 'Active time awaiting terminal confirmation'].filter(Boolean).join(' · ')));
+      const details = make('details', 'research-options'); details.dataset.key = 'research-timing';
+      const toggle = make('summary', '', 'Timing details'); toggle.dataset.key = 'research-timing-toggle'; details.append(toggle);
+      if (timing.assistant_seconds != null) details.append(make('p', 'quiet', duration(timing.assistant_seconds) + ' total assistant time'));
       details.append(make('p', 'field-hint', 'Elapsed includes waiting; assistant time adds overlapping jobs. Dollar cost is shown only when reported.'));
       box.append(details);
     }
-    const actions = make('div', 'bar');
-    for (const [key, label] of [['pause', 'Pause research'], ['resume', 'Resume research'], ['stop', 'Stop research'], ['retry', 'Retry affected area'], ['report', 'Open report'], ['brief', 'Open brief'], ['use', 'Use research']]) if (hooks[key]) actions.append(button(label, hooks[key], 'research-' + key));
-    if (actions.childNodes.length) box.append(actions);
     return box;
   }
   return {Editor, progress, summary};

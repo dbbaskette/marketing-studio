@@ -206,7 +206,7 @@ elif [[ "${1:-full}" == yoodli-pdf ]]; then
   if command -v pdftotext >/dev/null; then export STUDIO_TEST_REAL_PDF=1; fi
   node studios/training/tests/ui/yoodli_pdf.cjs 2>&1 | tee "$results_dir/source-picker-browser.log"
   bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
-elif [[ "${1:-full}" == training-plan ]]; then
+elif [[ "${1:-full}" == training-plan || "${1:-full}" == training-sources-progress ]]; then
   # Exercise the real page/engine before the complete native suite, so a browser
   # regression does not waste a full-suite run. All authors and settings are fixtures.
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/training-graphics" --cache "$work/training-graphics-cache")"
@@ -216,9 +216,18 @@ elif [[ "${1:-full}" == training-plan ]]; then
   env HOME="$work/training-browser-home" NPM_CONFIG_USERCONFIG="$work/training-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/training-npm-global.conf" \
     npm ci --prefix "$work/training-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/training-browser-tools.log" 2>&1
   export NODE_PATH="$work/training-browser/node_modules" PYTHON="$python" TRAINING_PLAN_UI_RESULTS="$results_dir/training-plan-ui"
+  if [[ "${1:-full}" == training-sources-progress ]]; then
+    export TRAINING_PROGRESS_RESULTS="$results_dir/training-progress-ui"
+    node studios/training/tests/ui/sources_progress.cjs 2>&1 | tee "$results_dir/training-sources-browser.log"
+    node studios/infographic/tests/ui/research.cjs 2>&1 | tee "$results_dir/shared-research-browser.log"
+  fi
   node studios/training/tests/ui/training_plan.cjs 2>&1 | tee "$results_dir/training-plan-browser.log"
   {
-    PYTHONPATH=tests "$python" -m unittest test_ui_consistency test_network_static test_suite.CoreTests -v
+    if [[ "${1:-full}" == training-sources-progress ]]; then
+      "$python" -m unittest discover -s tests -v
+    else
+      PYTHONPATH=tests "$python" -m unittest test_ui_consistency test_network_static test_suite.CoreTests -v
+    fi
     (cd studios/training && bash scripts/ci/check.sh "$python")
   } 2>&1 | tee "$results_dir/training-plan-tests.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"

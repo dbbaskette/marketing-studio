@@ -41,5 +41,18 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  assert.ok(!requests.some(r=>['start','generate','publish','google-write'].includes(r.action)));
  state.sources[0].status='needs-attention';editor.value=state;assert.equal(editor.valid(),false);state.sources[0].status='excluded';assert.equal(editor.valid(),true);
  const progress=kit.progress({phase:'review',streams:[{id:'area1',questions:['Synthetic area'],status:'kept'}]}, {stop:()=>{}});assert.ok(all(progress).some(n=>n.textContent==='Independent check'));assert.ok(all(progress).some(n=>n.dataset.key==='research-stop'));
+ for(const [phase,current] of [['investigate',0],['synthesize',1],['review',2],['complete',-1],['paused',-1],['stopped',-1],['needs-attention',-1]]){
+  const controls=new Node('div');controls.append(new Node('button'));
+  const box=kit.progress({phase,streams:[{id:'kept',questions:['First question','Second question'],status:'kept'},{id:'busy',questions:['Another question'],status:'working'},{id:'failed',questions:['Retry question'],status:'failed'}]}, {controls,timing:{elapsed_seconds:60,active_seconds:1,assistant_seconds:null}});
+  const nodes=all(box),stages=nodes.find(n=>n.className==='research-stages');
+  assert.equal(stages.children.findIndex(n=>n['aria-current']==='step'),current);
+  assert.ok(nodes.some(n=>n.textContent==='1 minute elapsed · 1 second actively working'));
+  assert.ok(nodes.some(n=>n.textContent==='Evidence kept'));assert.ok(nodes.some(n=>n.textContent==='Needs retry'));
+  assert.ok(nodes.some(n=>n.dataset.key==='research-area-kept-toggle'));
+  assert.ok(nodes.some(n=>n.textContent==='Second question'),'Full questions remain available');
+  assert.ok(nodes.includes(controls),'Native controls belong to the same progress surface');
+  const meter=nodes.find(n=>n.tagName==='progress');
+  assert.equal(Boolean(meter),phase==='investigate');if(meter){assert.equal(meter.value,1);assert.equal(meter.max,3);}
+ }
  console.log('PASS shared source editor: explicit scope, mixed links, validation, draft/focus preservation, progress, no provider actions');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -323,6 +323,24 @@ def sources(root, saved=None):
     return plan, offered
 
 
+def document_entries(root, saved):
+    """Readable, confirmed captures for native intake/readiness, without copying them.
+
+    Only a recorded input reference grants selection. Recheck its manifest and bytes;
+    unavailable private captures must not silently become a web-only request.
+    """
+    if not saved:
+        return []
+    try:
+        _, offered = sources(root, saved)
+        return [{'name': source['title'], 'bytes': source['original_path'].stat().st_size,
+                 'readable': True, 'problem': None, 'research_input': True}
+                for source in offered]
+    except (OSError, ValueError) as error:
+        return [{'name': 'Previously selected sources', 'readable': False,
+                 'problem': str(error), 'research_input_missing': True}]
+
+
 def prepare_start(workspace, reference, *, primary=False):
     require(isinstance(reference, dict) and set(reference) == {'id', 'expected'}, 'Choose this source draft and its current revision.')
     return Sources(Path(workspace) / '.research-sources').prepared(reference['id'], reference['expected'], primary=primary)

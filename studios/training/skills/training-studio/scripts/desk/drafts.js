@@ -1576,6 +1576,8 @@ function progressPart(found, held, lead) {
     }
   }
   if (!progress.running && !controls.childNodes.length) return null;
+  if (run.research_progress && run.research_progress.phase !== 'complete'
+      && typeof StudioResearch !== 'undefined') return researchActivity(run, controls);
   // The line is blank while something on the desk needs the person.
   const line = progress.line ? make('p', '', progress.line) : null;
   if (line) line.setAttribute('role', 'status');
@@ -1790,7 +1792,8 @@ function paintDesk(fresh) {
   const lead = deskLead(run, held, ours);
   const tabs = deskTabs(found, held);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
-    run.mine, run.driver, run.taken, run.notice, run.outline, run.training_plan, run.training_plan_pending, held.level, held.sources, held.said,
+    run.mine, run.driver, run.taken, run.notice, run.outline, run.training_plan, run.training_plan_pending,
+    run.research_progress, run.timing, held.level, held.sources, held.said,
     held.unsent && list(held.unsent.files).map((file) => file.name), held.unsent
       && held.unsent.why, lead, narrow()]);
   if (!fresh && drawn === held.drawn) return;

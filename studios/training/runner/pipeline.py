@@ -966,10 +966,14 @@ def _done(step: Step, seen: _Seen) -> bool:
 def _supplied(root: Path, given: dict | None, supplied, needed: bool) -> bool:
     """True when the person has said their documents are all added, and they are on this
     computer if research still has to read them. Documents are never shared, so a training
-    opened on another computer has none until they are added, and said to be all, there."""
+    opened on another computer has none until they are added, and said to be all, there.
+    Verified captures confirmed on Start satisfy the same intake boundary."""
     if not given:
         return True
-    here = (root / ADDED).is_file() and any(entry.get('readable') for entry in supplied)
+    if needed and any(entry.get('research_input_missing') for entry in supplied):
+        return False
+    confirmed = (root / ADDED).is_file() or any(entry.get('research_input') for entry in supplied)
+    here = confirmed and any(entry.get('readable') for entry in supplied)
     return bool(given.get('done')) and (not given.get('count') or here or not needed)
 
 
