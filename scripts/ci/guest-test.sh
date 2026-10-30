@@ -181,6 +181,19 @@ elif [[ "${1:-full}" == bundles ]]; then
   bundle="$(find dist -maxdepth 1 -name 'marketing-studio-*-macos-arm64.zip' -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A real Apple Silicon platform bundle is required.' >&2; exit 1; }
   "$python" scripts/ci/bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/bundle-acceptance.log"
+elif [[ "${1:-full}" == slide-text-final ]]; then
+  # All relevant full suites ran; retain passing classes and verify the last
+  # saved-run response compatibility repair before browser/CLI acceptance.
+  (cd studios/training && PYTHONPATH=tests "$python" -m unittest test_runner_deck.PageTests test_runner_deck.ReviewToolTests test_slide_text_workflow -v && "$python" skills/training-studio/scripts/validate_package.py) 2>&1 | tee "$results_dir/slide-text-final.log"
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/slide-graphics" --cache "$work/slide-graphics-cache")"
+  mkdir -p "$work/slide-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/slide-browser/"
+  touch "$work/slide-npm-user.conf" "$work/slide-npm-global.conf"
+  env HOME="$work/slide-browser-home" NPM_CONFIG_USERCONFIG="$work/slide-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/slide-npm-global.conf" \
+    npm ci --prefix "$work/slide-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/slide-browser-tools.log" 2>&1
+  export NODE_PATH="$work/slide-browser/node_modules" SLIDE_TEXT_UI_RESULTS="$results_dir/slide-text-ui"
+  node tests/slide_text_browser.cjs 2>&1 | tee "$results_dir/slide-text-browser.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == slide-text-finish ]]; then
   {
     (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_runner_page.RuleTests test_desk_page.ProgressTests test_deck_desk.DeskViewTests test_slide_text_workflow -v && "$python" skills/presentation-studio/scripts/validate_package.py)

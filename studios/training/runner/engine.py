@@ -6833,7 +6833,8 @@ class Engine(Reviewing):
         level = self._level(drawing) if drawing else None
         outline = pipeline.outline_view(root, found, level) if drawing else None
         if outline is not None:
-            outline['content_first'] = deck_content.enabled(record)
+            if deck_content.enabled(record):
+                outline['content_first'] = True
             outline['redo'] = self._redo_view(root, record, found, 'outline:' + (level or ''))
         workers = self._workers(run)
         timing_attempts = attempts(record)
