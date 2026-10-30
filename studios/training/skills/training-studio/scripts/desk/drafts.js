@@ -1581,7 +1581,14 @@ function progressPart(found, held, lead) {
   // The line is blank while something on the desk needs the person.
   const line = progress.line ? make('p', '', progress.line) : null;
   if (line) line.setAttribute('role', 'status');
-  return add(make('div'), callout('', line, controls.childNodes.length ? controls : null, progress.doing ? make('p', 'row-says', progress.doing) : null,
+  const building = progress.running ? make('h3', 'card-title', progress.doing || 'Preparing your training') : null;
+  const materials = list(found.cards).filter(one => one.state !== 'left-out');
+  const available = materials.filter(one => one.seen).length;
+  const status = progress.running ? make('p', 'quiet', run.training_plan_pending
+    ? 'Next: review the topics and teaching plan before the materials are built.'
+    : materials.length ? available + ' of ' + materials.length + ' drafts available. New drafts appear below as they finish.'
+      : 'Preparing the first material. It will appear here when it is ready.') : null;
+  return add(make('div'), callout('', building, line, status, controls.childNodes.length ? controls : null,
     run.timing ? (!run.research_progress || run.research_progress.phase === 'complete' ? measuredTime(run) : null) : progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
       : null), researchActivity(run));
 }

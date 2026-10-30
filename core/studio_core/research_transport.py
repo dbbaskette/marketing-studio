@@ -78,12 +78,15 @@ def native(engine, root, run, task, sources, product='training'):
 
     identity = copy.deepcopy({key: record.get(key) for key in ('form', 'brief', 'research_contract', 'research_inputs', 'research_from')})
 
+    def owns(current):
+        return current.get('driver') == driver \
+            and all(current.get(key) == value for key, value in identity.items()) \
+            and current.get('execution') != 'conversation'
+
     def cancelled():
         with engine.files:
             current = engine._load(root)
-            return run.stop.is_set() or run.gone or current.get('driver') != driver \
-                or any(current.get(key) != value for key, value in identity.items()) \
-                or current.get('execution') == 'conversation'
+            return run.stop.is_set() or run.gone or not owns(current)
     folders, lock = [], threading.RLock()
 
     def remaining():
@@ -95,8 +98,12 @@ def native(engine, root, run, task, sources, product='training'):
     def progress(value):
         with engine.files:
             current = engine._load(root)
-            if cancelled():
+            if run.gone or not owns(current):
                 return
+            # A stop request must not discard the eventual terminal observation.
+            # Changed inputs/drivers still reject callbacks from the earlier run.
+            if run.stop.is_set():
+                value = {**value, 'phase': 'stopped' if (value.get('agents') or {}).get('count') == 0 else 'stopping'}
             current['research_execution']['progress'] = value
             engine._store(root, current)
 

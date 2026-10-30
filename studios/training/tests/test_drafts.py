@@ -325,7 +325,7 @@ class DeskHoldTests(DeckCase):
             found = drafts.view(self.engine, root)
         self.assertEqual(found['needs'], ['the level 101 slide deck'])
         self.assertTrue(found['progress']['running'])
-        self.assertIsInstance(found['progress']['minutes'], int)
+        self.assertIsNone(found['progress']['minutes'])
         self.assertEqual(found['progress']['line'], '')
 
     def test_row_145_update_remakes_only_what_was_held(self):

@@ -70,6 +70,47 @@ are never registered as evidence. Supplied-only runs never search or fetch.
 Presentation Studio and Training Studio retain their existing confined source
 capture tools, including selected original document pins.
 
+## Live research progress
+
+All four studios use `StudioResearch.progress` from the shared UI kit. Its compact
+robot counter counts invocations observed by the host, including investigation,
+synthesis and independent review. Harness Research owns collection evidence and
+workstream identity; the host observes invocation starts and terminal outcomes.
+Configured worker capacity and completed packets are not live agent counts. The
+counter expands with native keyboard-accessible details to show each active role.
+It introduces no library or provider request.
+
+The heading names the current stage and its position out of three. Each stage
+has a visible complete, working-now or still-to-do label; the active stage has
+an accent fill as well as `aria-current`. The activity sentence says what is
+happening, followed by what remains. Collected evidence collapses during synthesis
+and review, so completed source cards do not imply the whole research is done.
+
+The progress callback adds `agents: {count, unconfirmed, active}`. Active entries
+carry an ID, phase, optional workstream and observed status. Start/end callbacks
+publish new snapshots without waiting for an entire research area to finish.
+An unconfirmed termination makes `count` null; legacy snapshots without this field
+show an unavailable count. Neither case claims zero workers. Host execution
+records stay in the existing private, ignored case directory.
+
+| Transition | Screen behavior | Regression coverage |
+| --- | --- | --- |
+| Investigation starts/ends | Live robot count follows observed invocations; current stage has accent fill and `aria-current` | `SessionTests.test_live_agents_follow_actual_invocations_in_every_phase`, shared component and browser checks |
+| Evidence collected → synthesis → independent review | Kept evidence remains visible; each active writer/reviewer counts as one | Shared session tests and Training Studio browser journey |
+| Review requests evidence corrections | Next correction round identifies affected areas and exposes reviewer reasons; unaffected packets remain kept | `SessionTests.test_fact_correction_recollects_only_affected_area` and browser correction state |
+| Review requests prose corrections only | Recombine and recheck; never show a new investigation | `SessionTests.test_prose_correction_does_not_recollect_evidence` |
+| Terminal observation unavailable | Show an unknown count and confirmation wording; keep capacity occupied | `SessionTests.test_unconfirmed_terminal_invocation_blocks_generation_restart` |
+| Stop requested → termination confirmed | Retain the final activity callback for the same run; show stopping until the count reaches zero, without adopting incomplete research | `ParallelNativeTests.test_stop_keeps_terminal_agent_observation_without_accepting_research` |
+| Research completes | Count is zero; Training Studio hands off to its next view, Infographic Studio offers the checked research | Session tests and both browser journeys |
+| Training Studio starts building materials | Current work is the heading; next plan approval or available draft count replaces a moving ETA | Training Studio desk/page tests and building-status browser state |
+
+Correction rounds retain the existing three-round bound, independent review and
+source policy. A “Why another round?” disclosure shows the saved review reasons
+as text. Live work and saved evidence are not restarted by this UI update.
+Training Studio's live progress keeps the compatibility `minutes` field null;
+it does not recalculate historical completion estimates while polling. Explicit
+operation cost estimates and clearly labeled elapsed time retain their existing behavior.
+
 ## Saved files and compatibility
 
 The helper's resumable case lives in `.studio-research/`. The consumer handoff is

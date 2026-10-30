@@ -187,27 +187,66 @@ const StudioResearch = (() => {
     const phase = state.phase || 'investigate';
     const titles = {investigate: 'Collecting evidence', 'investigating': 'Collecting evidence', synthesize: 'Combining findings', 'combining-findings': 'Combining findings', review: 'Independent check', 'independent-check': 'Independent check', complete: 'Research is ready', 'ready-for-review': 'Research is ready', 'needs-attention': 'Research needs attention', 'needs-revision': 'Research needs correction', 'stopping': 'Stopping research', 'pausing': 'Finishing active research before pausing', paused: 'Research paused', stopped: 'Research stopped'};
     const box = make('section', 'research-progress paper'); box.setAttribute('aria-label', 'Research progress');
-    const header = add(make('div', 'research-progress-header'), make('h3', 'card-title', titles[phase] || 'Research'));
+    const stage = {investigate:0, investigating:0, synthesize:1, 'combining-findings':1, review:2, 'independent-check':2, complete:3, 'ready-for-review':3}[phase];
+    const heading = add(make('div', 'research-progress-heading'),
+      make('p', 'quiet research-stage-label', stage < 3 ? 'Research · Stage ' + (stage + 1) + ' of 3' : stage === 3 ? 'Research complete' : 'Research progress'),
+      make('h3', 'card-title', titles[phase] || 'Research'));
+    const header = add(make('div', 'research-progress-header'), heading);
+    const agents = state.agents;
+    const count = Number.isInteger(agents?.count) && agents.count >= 0 ? agents.count : null;
+    const team = make('details', 'research-agents'); team.dataset.key = 'research-agents';
+    const toggle = make('summary', 'research-agent-counter'); toggle.dataset.key = 'research-agents-toggle';
+    const faces = make('span', 'research-agent-faces'); faces.setAttribute('aria-hidden', 'true');
+    for (let i = 0; i < Math.max(1, Math.min(count || 0, 3)); i++) {
+      const robot = make('span', 'research-agent-robot');
+      robot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M2 12v4m20-4v4M9 13v2m6-2v2"/></svg>';
+      faces.append(robot);
+    }
+    const agentNote = count === null ? (agents?.unconfirmed ? 'Awaiting confirmation' : 'Count unavailable') : count === 0 ? (['complete','ready-for-review'].includes(phase) ? 'All agents finished' : ['paused','stopped'].includes(phase) ? 'Progress saved' : 'Preparing next step') : ['review','independent-check'].includes(phase) ? 'Independent review' : ['synthesize','combining-findings'].includes(phase) ? 'Combining findings' : 'Investigating sources';
+    add(toggle, faces, make('span', 'research-agent-count', count === null ? '—' : String(count)),
+      add(make('span', 'research-agent-caption'), make('span', '', 'Agents assisting'), make('small', 'quiet', agentNote)));
+    toggle.setAttribute('aria-label', 'Agents assisting: ' + (count === null ? agentNote : count + '. ' + agentNote) + '. Show roles');
+    team.append(toggle);
+    const roles = make('ul', 'research-agent-roles');
+    const roleNames = {investigate:'Investigator', synthesize:'Synthesis', review:'Independent reviewer'};
+    for (const agent of array(agents?.active)) roles.append(make('li', '', (roleNames[agent.phase] || 'Research agent') + (agent.stream ? ' · ' + agent.stream : '') + (agent.status === 'termination-unconfirmed' ? ' · termination unconfirmed' : '')));
+    if (!roles.childNodes.length) roles.append(make('li', '', count === null ? 'Live agent activity is not available for this saved run.' : 'No agents are currently working.'));
+    team.append(roles); header.append(team);
     const actions = hooks.controls || make('div', 'bar');
     for (const [key, label] of [['pause', 'Pause research'], ['resume', 'Resume research'], ['stop', 'Stop research'], ['retry', 'Retry affected area'], ['report', 'Open report'], ['brief', 'Open brief'], ['use', 'Use research']]) if (hooks[key]) actions.append(button(label, hooks[key], 'research-' + key));
     if (actions.childNodes.length) header.append(actions);
     box.append(header);
-    const stage = {investigate:0, investigating:0, synthesize:1, 'combining-findings':1, review:2, 'independent-check':2, complete:3, 'ready-for-review':3}[phase];
     const steps = make('ol', 'research-stages'); steps.setAttribute('aria-label', 'Research stages');
     for (const [index, label] of ['Gather evidence', 'Combine findings', 'Check sources'].entries()) {
-      const item = make('li', '', label);
+      const item = add(make('li'), make('span', 'research-stage-name', label),
+        make('small', 'research-stage-state', stage > index ? 'Complete' : stage === index ? 'Working now' : 'Still to do'));
       item.dataset.state = stage > index ? 'done' : stage === index ? 'current' : 'waiting';
       if (stage === index) item.setAttribute('aria-current', 'step');
       item.setAttribute('aria-label', label + ': ' + (stage > index ? 'complete' : stage === index ? 'in progress' : 'not completed'));
       steps.append(item);
     }
     box.append(steps);
+    if (state.correction && !['complete','ready-for-review'].includes(phase)) {
+      const correction = make('section', 'research-correction');
+      const round = Number.isInteger(state.round) ? state.round : 1;
+      add(correction, make('p', 'research-correction-title', 'Correction round ' + round + (state.round_limit ? ' of ' + state.round_limit : '')),
+        make('p', '', array(state.correction.areas).length ? 'The independent check requested changes in ' + state.correction.areas.length + ' research areas. Other collected evidence is kept.' : 'The independent check requested changes to the report. Collected evidence is kept; sources are not being researched again.'));
+      const notes = array(state.correction.notes);
+      if (notes.length) {
+        const why = make('details', 'research-correction-details'); why.dataset.key = 'research-correction';
+        const whyToggle = make('summary', '', 'Why another round?'); whyToggle.dataset.key = 'research-correction-toggle';
+        const list = make('ul'); for (const note of notes) list.append(make('li', '', note));
+        add(why, whyToggle, list); correction.append(why);
+      }
+      box.append(correction);
+    }
     const areas = array(state.streams || state.workstreams);
     const kept = areas.filter(a => ['kept', 'accepted'].includes(a.status)).length;
     const working = areas.filter(a => ['running', 'working'].includes(a.status)).length;
     const failed = areas.filter(a => ['failed', 'refused'].includes(a.status)).length;
-    const note = stage === 0 ? 'Each investigation checks a different part of your source material.' : stage === 1 ? 'Bringing the collected evidence into one report and reference brief.' : stage === 2 ? 'Checking the report against the captured sources before using it.' : stage === 3 ? 'The research passed its independent check.' : 'Checked evidence is kept. Use the available controls to continue.';
-    box.append(make('p', 'quiet research-progress-note', note));
+    const activity = stage === 0 ? (count > 0 ? count + (count === 1 ? ' investigator is' : ' investigators are') + ' reading sources and checking the research questions.' : 'Preparing the remaining investigations. Collected evidence is kept.') : stage === 1 ? 'Evidence collection is complete. The synthesis agent is turning it into one report and reference brief.' : stage === 2 ? 'The independent reviewer is checking the report and brief against the captured sources. Research is not finished until this check passes.' : stage === 3 ? 'The report and reference brief have passed the independent source check.' : phase === 'needs-revision' ? 'The independent check requested corrections. Collected evidence is kept while the affected work is revised.' : 'Collected evidence is kept. Continue when you are ready.';
+    const next = stage === 0 ? 'Still to do: combine the findings, then run an independent source check.' : stage === 1 ? 'Still to do: independently check the finished report and brief.' : stage === 2 ? 'Next: hand the checked research back to the studio. Any required corrections will be explained here.' : stage === 3 ? 'The studio can now use the checked research.' : 'Next: resume the remaining work from the saved evidence.';
+    box.append(add(make('div', 'research-current-activity'), make('p', 'research-progress-note', activity), make('p', 'quiet research-next', next)));
     if (areas.length) {
       const status = make('p', 'research-progress-summary', kept + ' of ' + areas.length + ' areas collected' + (working ? ' · ' + working + ' working' : '') + (failed ? ' · ' + failed + ' need retry' : ''));
       status.setAttribute('role', 'status'); box.append(status);
@@ -232,7 +271,11 @@ const StudioResearch = (() => {
         }
         list.append(item);
       }
-      box.append(list);
+      if (stage === 1 || stage === 2) {
+        const collected = make('details', 'research-collected'); collected.dataset.key = 'research-collected';
+        const toggle = make('summary', '', 'View collected evidence'); toggle.dataset.key = 'research-collected-toggle';
+        add(collected, toggle, list); box.append(collected);
+      } else box.append(list);
     }
     const timing = hooks.timing || state.timing;
     if (timing) {

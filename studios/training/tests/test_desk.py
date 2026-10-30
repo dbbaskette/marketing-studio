@@ -6895,8 +6895,7 @@ DESK_KINDS = (('blueprint', 'blueprint'), ('document', 'learner guide'), ('brief
               ('deck', 'slide deck'), ('scenario:main', 'practice scenario'))
 DESK_LEDE = ('Each level’s materials, built from the shared research. Edit any part. '
              'Nothing is ready until you mark it.')
-NOTHING_NEEDED = ('Nothing needed from you. Each material opens here as it is ready, in '
-                  'about {n} minutes.')
+NOTHING_NEEDED = 'Nothing needed from you. Each material opens here as it is ready.'
 A_DRAFT = 'A draft. Nothing is ready until you mark it.'
 DESK_START_STEPS = ['1. Goal and audience', '2. Materials and levels', '3. Sources and settings']
 
@@ -7528,7 +7527,9 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Researching', shot['text'])
         self.assertEqual(shot['pressed'], ['101'])
         self.assertIn('201', shot['buttons'])
-        self.assertEqual(shot['parts'][:5], ['Plan', 'Guide', 'Brief', 'Deck', 'Practice'])
+        self.assertEqual(shot['parts'][:6], ['Researching', 'Plan', 'Guide', 'Brief', 'Deck', 'Practice'])
+        self.assertIn('10 of 10 drafts available.', shot['text'])
+        self.assertNotIn('in about 12 minutes', shot['text'])
         self.assertIn('Sources', shot['parts'])
         self.assertEqual(shot['filled'], ['Mark this level ready'])
         self.assertEqual([control['name'] for control in shot['toolbar']],
@@ -8061,7 +8062,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             {'snapshot': 'cards'}, {'click': 'Sources'}, {'snapshot': 'sources'}], narrow=True)
         cards, sources = result['snapshots']['cards'], result['snapshots']['sources']
         self.assertIn('Sources', cards['buttons'])
-        self.assertEqual(cards['parts'][:5], ['Plan', 'Guide', 'Brief', 'Deck', 'Practice'])
+        self.assertEqual(cards['parts'][:6], ['Researching', 'Plan', 'Guide', 'Brief', 'Deck', 'Practice'])
         self.assertNotIn('Sources', cards['parts'])
         self.assertEqual(sources['pressed'], ['Sources'])
         self.assertIn('Sources', sources['parts'])

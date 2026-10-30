@@ -77,6 +77,20 @@ class SessionTests(unittest.TestCase):
         self.run_session()
         self.assertFalse(self.calls, 'A completed exact request resumes without another provider job')
 
+    def test_live_agents_follow_actual_invocations_in_every_phase(self):
+        original = self.invoke
+        def observed(phase, guidance, payload, offered, fetch):
+            active = self.states[-1]['agents']['active']
+            self.assertIn(payload['worker'], [a['id'] for a in active])
+            if phase != 'investigate':
+                self.assertEqual(self.states[-1]['agents']['count'], 1)
+                self.assertEqual(active[0]['phase'], phase)
+            return original(phase, guidance, payload, offered, fetch)
+        self.invoke = observed
+        self.run_session()
+        self.assertEqual(max(s['agents']['count'] for s in self.states), 3)
+        self.assertEqual(self.states[-1]['agents'], {'count': 0, 'unconfirmed': 0, 'active': []})
+
     def test_failed_area_keeps_successful_helper_packets_for_retry(self):
         self.fail_area = True
         with self.assertRaisesRegex(ValueError, 'Synthetic area failure'): self.run_session()
@@ -96,12 +110,21 @@ class SessionTests(unittest.TestCase):
         self.run_session()
         self.assertEqual(sum(p == 'investigate' for p, _ in self.calls), 3)
         self.assertEqual(sum(p == 'review' for p, _ in self.calls), 2)
+        next_round = [s for s in self.states if s['round'] == 2]
+        self.assertNotIn('investigate', [s['phase'] for s in next_round])
+        self.assertTrue(all(s['status'] == 'kept' for s in next_round[0]['streams']))
+        self.assertEqual(next_round[0]['correction']['areas'], [])
 
     def test_fact_correction_recollects_only_affected_area(self):
         self.refuse_fact = True; self.barrier = None
         self.run_session()
         self.assertEqual(sum(p == 'investigate' for p, _ in self.calls), 4)
         self.assertEqual(sum(p == 'review' for p, _ in self.calls), 2)
+        next_round = [s for s in self.states if s['round'] == 2 and s['phase'] == 'investigate']
+        self.assertEqual(len(next_round[0]['correction']['areas']), 1)
+        self.assertIn('Synthetic located fact correction', next_round[0]['correction']['notes'])
+        self.assertEqual(sum(a['status'] == 'kept' for a in next_round[0]['streams']), 2)
+        self.assertEqual(next_round[0]['round_limit'], rc.ROUNDS)
 
     def test_changed_original_stops_late_adoption_and_keeps_evidence(self):
         self.task['source_mode'] = 'selected'
@@ -123,6 +146,8 @@ class SessionTests(unittest.TestCase):
         def uncertain(*args): raise Unconfirmed('Synthetic transport lost terminal confirmation')
         self.invoke = uncertain
         with self.assertRaisesRegex(ValueError, 'terminal confirmation'): self.run_session()
+        self.assertIsNone(self.states[-1]['agents']['count'])
+        self.assertGreater(self.states[-1]['agents']['unconfirmed'], 0)
         with self.assertRaisesRegex(ValueError, 'no confirmed terminal'): self.run_session()
         self.task['scope'] = 'A changed synthetic scope must not release unresolved capacity.'
         with self.assertRaisesRegex(ValueError, 'no confirmed terminal'): self.run_session()
