@@ -27,6 +27,11 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
     await brief.click();assert.equal(await yoodli.getAttribute('aria-pressed'),'false');
     await page.getByText('Yoodli scenarios turned off because Reference brief was removed.',{exact:true}).waitFor();
     await yoodli.click();
+    await yoodli.click();
+    await page.getByText('Reference brief and Practice scenarios remain selected.',{exact:true}).waitFor();
+    await practice.click();
+    assert.equal(await page.getByText('Reference brief and Practice scenarios remain selected.',{exact:true}).count(),0);
+    await yoodli.click();
     if(fallback){
      const file=page.getByLabel('Add documents',{exact:true});
      assert.ok((await file.getAttribute('accept')).split(',').includes('.pdf'));

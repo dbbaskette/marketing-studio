@@ -51,4 +51,26 @@ evidence while checking every studio's PDF intake. Check README links and actual
 CLI options. One implementer owns verification. Push a PR and merge after checks;
 no application restart or software installation on the user's computer is implied.
 
-Status: implementation in progress.
+## Completion record
+
+Implemented. Yoodli selects and visibly retains its dependencies, explains removal
+beside the control, and clears obsolete notices when selections change. Training
+Studio's fallback picker includes PDF; shared and native source pickers include
+the PDF MIME type. The README and linked installation/testing guidance describe
+the current four-studio workbench and optional PDF reader accurately.
+
+Full disposable macOS verification passes: shared/home 738 tests, Blog Studio
+1,640, Presentation Studio 2,071, Training Studio 3,008 and Infographic Studio 185,
+with package/lint checks. Two real-PDF-reader checks are skipped on that clean
+environment; actual generated-PDF upload/extraction/preview passes locally through
+all four native source routes with the existing reader. Missing-reader capture
+preserves peers and explicitly requires attention. No reader is installed by a
+test and no provider fallback is attempted.
+
+The real Training Studio phone/desktop browser verifies Yoodli dependencies,
+removal, PDF capture and the fallback picker. Final notice-clearing refinement
+passes all 108 affected screen tests and the updated real browser walkthrough.
+README links and CLI names are checked. All four independent/shared setup and
+authenticated launch journeys pass, followed by 41-step Blog Studio Hub and
+39-command shared-studio CLI journeys. Test processes and the disposable VM are
+cleaned up. No user workspace or running application is changed by verification.

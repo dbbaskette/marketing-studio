@@ -3024,11 +3024,13 @@ class RunnerScreenTests(ScriptedPage, PageCase):
     def test_turning_yoodli_off_keeps_its_visible_materials(self):
         result = self.run_page(self.answers(), [
             {'click': 'New training'}, {'click': 'Make scenarios for Yoodli'},
-            {'click': 'Make scenarios for Yoodli'}, {'snapshot': 'off'}])
+            {'click': 'Make scenarios for Yoodli'}, {'snapshot': 'off'},
+            {'click': 'Practice scenarios'}, {'snapshot': 'removed'}])
         selected = result['snapshots']['off']['chosen']
         self.assertNotIn('Make scenarios for Yoodli', selected)
         self.assertIn('Reference brief', selected)
         self.assertIn('Practice scenarios', selected)
+        self.assertNotIn('remain selected', result['snapshots']['removed']['text'])
 
     def test_yoodli_includes_its_materials_and_explains_removing_a_dependency(self):
         result = self.run_page(self.answers(), [

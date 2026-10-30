@@ -4838,6 +4838,7 @@ function materialChoices(draft) {
         draft.yoodli = false;
         syncMaterialChoices(draft);
         if (wasOn) yoodliNotice(draft, 'Yoodli scenarios turned off because ' + label + ' was removed.');
+        else yoodliNotice(draft, '');
       }
       say(byId('new-problem'), '');
       retell();
