@@ -207,13 +207,11 @@ elif [[ "${1:-full}" == yoodli-pdf ]]; then
   node studios/training/tests/ui/yoodli_pdf.cjs 2>&1 | tee "$results_dir/source-picker-browser.log"
   bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == training-sources-finish ]]; then
-  # The three real browser journeys and shared suite already ran. Recheck the
-  # affected source-submission cases, then finish the unrun native suites.
+  # Retain the passing shared/browser, Infographic Studio, Blog Studio and
+  # Presentation Studio cases. Recheck the corrected fixture, then finish native
+  # Training Studio and the remaining package/setup/launch acceptance.
   {
-    PYTHONPATH=tests "$python" -m unittest test_research_contract test_research_capture_check test_research_session test_research_page test_ui_consistency -v
-    "$python" -m unittest discover -s studios/infographic/tests -v
-    (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio")
-    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_runner_worker_tools.ResearchCitationTests -v && "$python" skills/presentation-studio/scripts/validate_package.py)
     (cd studios/training && bash scripts/ci/check.sh "$python")
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
   } 2>&1 | tee "$results_dir/remaining-tests.log"
