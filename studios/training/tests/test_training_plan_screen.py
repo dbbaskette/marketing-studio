@@ -37,6 +37,7 @@ class TopicsScreenTests(h.ScriptedPage, h.PageCase):
         self.assertIn('Build the training', shot['buttons'])
         self.assertNotIn('Mark this level ready', shot['buttons'])
         self.assertNotIn('Finishing', shot['buttons'])
+        self.assertNotIn('Stop training', shot['buttons'])
         self.assertEqual([route for route, body in self.posts(result)], ['/api/training-plan'])
         self.assertEqual(self.posts(result)[0][1]['expected'], 'plan-v1')
         self.assertEqual(self.posts(result)[0][1]['decision'], 'approve')

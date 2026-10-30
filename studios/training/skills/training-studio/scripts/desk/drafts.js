@@ -1823,14 +1823,14 @@ function paintDesk(fresh) {
     : add(make('div', 'desk-layout'), column, finishing ? finishing.panel : narrow() ? null : sourcesPart(found));
   place({ title: found.title || 'Untitled', back: true,
     above: named.length ? [make('span', '', levelsText(named))] : [], actions }, [
-    pageHead(preparingPlan ? 'I’ll prepare the topics and teaching plan for you to check, then build the training.' : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
+    waitingPlan ? null : pageHead(preparingPlan ? 'I’ll prepare the topics and teaching plan for you to check, then build the training.' : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
     notice,
     conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
     found.saved_status ? add(card('Saved runner history'), make('p', '', 'The earlier runner was ' + found.saved_status.halt + '. That status remains in the original saved records; no work was resumed.')) : null,
     !ours && run.mine === false ? theirsPart(run, !view.sheet && !run.driver) : null,
     ours && run.notice ? noticePart(run) : null,
     ours ? needsPart(found, held, run) : null,
-    conversation ? null : progressPart(found, held, lead),
+    conversation || waitingPlan ? null : progressPart(found, held, lead),
     waitingPlan ? trainingPlanReview(run.training_plan, held) : null,
     ours && run.outline?.content_first && run.outline.waiting ? slideTextReview(run.outline, held) : null,
     run.question && ours ? questionPart(run, found.title) : null,
