@@ -84,7 +84,7 @@ def headings(card):
 class StaticLayoutTests(unittest.TestCase):
     def test_each_view_has_one_lede(self):
         html = page()
-        for view, lede in (('home', 'Open a studio to start or continue your work.'),
+        for view, lede in (('home', 'Start with an idea, a draft or a source document.'),
                            ('settings', 'New work in every studio starts with these choices.'),
                            ('computer', 'Check the tools your studios need on this computer.')):
             with self.subTest(view=view):
@@ -209,10 +209,9 @@ class PageLayoutTests(unittest.TestCase):
     def test_a_card_that_needs_connect_fills_connect(self):
         cards = {card['studio']: card for card in self.page([{'home': self.SHOWN}, {'snapshot': 'home'}])['home']['cards']}
         self.assertEqual(cards['blog']['filled'], ['Connect'])
-        self.assertEqual(cards['blog']['plain'], ['Open Blog Studio'])
-        order = cards['blog']['order']
-        self.assertLess(order.index('button studio-connect button-filled'), order.index('button studio-open'))
-        self.assertEqual(cards['presentation']['filled'], ['Return to Presentation Studio'])
+        self.assertEqual(cards['blog']['plain'], ['Open'])
+        self.assertEqual(cards['blog']['actions'], ['Connect', 'Open'])
+        self.assertEqual(cards['presentation']['filled'], ['Return'])
         self.assertEqual(cards['presentation']['plain'], [])
 
     def test_the_studio_status_is_a_state_with_a_bead(self):

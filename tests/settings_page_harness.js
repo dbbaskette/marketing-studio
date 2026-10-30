@@ -131,14 +131,17 @@ for (const step of steps) {
       change,
       asked: asked.length,
       cards: find('#studio-list').children.map(card => {
-        const buttons = card.children.filter(part => part.tagName === 'BUTTON' || part.tagName === 'A');
+        const descendants = node => (node.children || []).flatMap(child => [child, ...descendants(child)]);
+        const parts = descendants(card);
+        const buttons = parts.filter(part => part.tagName === 'BUTTON' || part.tagName === 'A');
         const state = card.children.find(part => part.className === 'state');
         return { studio: card.dataset.studio,
           filled: buttons.filter(part => /\bbutton-filled\b/.test(part.className)).map(part => part.textContent),
           plain: buttons.filter(part => !/\bbutton-filled\b/.test(part.className)).map(part => part.textContent),
+          actions: buttons.map(part => part.textContent),
           order: card.children.map(part => part.className),
           status: state ? [state.children[0].dataset.state, state.children[1].textContent] : null,
-          running: card.children.find(part => /\bstudio-running\b/.test(part.className || ''))?.textContent || '' };
+          running: parts.find(part => /\bstudio-running\b/.test(part.className || ''))?.textContent || '' };
       }),
       ...(step.ids ? { hidden: Object.fromEntries(step.ids.map(id => [id, find('#' + id).hidden])),
         words: Object.fromEntries(step.ids.map(id => [id, find('#' + id).textContent])) } : {}),

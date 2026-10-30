@@ -44,10 +44,10 @@ const assert = require('node:assert/strict');
     assert.equal(await home.locator('body').getAttribute('data-pilot'),'liquid');
     const cards=await home.locator('.studio-card').evaluateAll(nodes=>nodes.map(n=>{const r=n.getBoundingClientRect();return {x:r.x,y:r.y};}));
     assert.equal(cards.length,4); assert.equal(cards[0].y,cards[1].y); assert.equal(cards[2].y,cards[3].y); assert(cards[2].y>cards[0].y);
-    assert.equal(await home.locator('.studio-repository').count(),3);
-    await home.locator('.studio-repository').first().getByText('Repository details',{exact:true}).click();
+    assert.equal(await home.locator('.studio-repository').count(),4);
+    await home.locator('.studio-repository').first().getByText('Details',{exact:true}).click();
     assert(await home.locator('.studio-repository').first().evaluate(n=>n.open));
-    await home.locator('.studio-repository').first().getByText('Repository details',{exact:true}).click();
+    await home.locator('.studio-repository').first().getByText('Details',{exact:true}).click();
     async function capture(page,name){await page.evaluate(()=>scrollTo(0,0));if(output)await page.screenshot({path:path.join(output,name+'.png'),fullPage:false});}
     async function fit(page){assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Page overflow');}
     await capture(home,'marketing-desktop-light');

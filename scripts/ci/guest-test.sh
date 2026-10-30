@@ -181,6 +181,20 @@ elif [[ "${1:-full}" == bundles ]]; then
   bundle="$(find dist -maxdepth 1 -name 'marketing-studio-*-macos-arm64.zip' -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A real Apple Silicon platform bundle is required.' >&2; exit 1; }
   "$python" scripts/ci/bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/bundle-acceptance.log"
+elif [[ "${1:-full}" == marketing-home ]]; then
+  # Shared launcher changes need the complete shared suite and real browser
+  # states, without repeating unchanged native content pipelines.
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/home-graphics" --cache "$work/home-graphics-cache")"
+  mkdir -p "$work/home-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/home-browser/"
+  touch "$work/home-npm-user.conf" "$work/home-npm-global.conf"
+  env HOME="$work/home-browser-home" NPM_CONFIG_USERCONFIG="$work/home-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/home-npm-global.conf" \
+    npm ci --prefix "$work/home-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/home-browser-tools.log" 2>&1
+  export NODE_PATH="$work/home-browser/node_modules" PYTHON="$python" HOME_LAUNCHPAD_RESULTS="$results_dir/home-ui"
+  node tests/home_launchpad.cjs 2>&1 | tee "$results_dir/home-browser.log"
+  node studios/infographic/tests/ui/home-readiness.cjs 2>&1 | tee "$results_dir/home-readiness-browser.log"
+  "$python" -m unittest discover -s tests -v 2>&1 | tee "$results_dir/home-tests.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/home-acceptance.log"
 elif [[ "${1:-full}" == yoodli-pdf ]]; then
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/source-picker-graphics" --cache "$work/source-picker-cache")"
   mkdir -p "$work/source-picker-browser"
