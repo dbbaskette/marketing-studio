@@ -93,7 +93,7 @@ function sDeskResearchDefault(value){const ticks=OLD_RESEARCH[value]||(value&&ty
 function sDeskHeld(){
   if(studio.deskStart)return studio.deskStart;
   const defaults=studio.options?.settings?.defaults||{},preset=studio.deskPreset||{};studio.deskPreset=null;
-  return studio.deskStart={step:0,kind:'',style:'',researchOn:false,have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:null,humanizeOn:false,humanizeLevel:'light',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
+  return studio.deskStart={step:0,kind:'',style:'',researchOn:false,have:'topic',title:'',audience:'',point:'',angles:[],angle:null,angleOp:null,anglesBusy:false,anglesProblem:'',outline:'',outlineFrom:'paste',outlineFile:null,outlineWay:'outline',source:'paste',article:null,manuscript:'',url:'',file:null,preview:null,first_pass:null,humanizeOn:false,humanizeLevel:'light',voiceOn:false,voiceGuide:'',files:[],role:'material',keep:false,from:{on:true,documents:true,sites:false,web:false,picked:[...sSharedSites()],added:[]},...sDeskResearchDefault(defaults.research),length:'style',tone:defaults.tone||'',operation:operationId(),upload:operationId(),...preset};
 }
 // Home's tasks, New blog, the library's "Write a blog from these", an interview's outline and
 // a saved blog's details all start here.
@@ -167,7 +167,7 @@ function sDeskPolish(held){
   const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]));
   // Check spelling and grammar may also suggest more human-sounding wording, at a strength,
   // mixed in with the fixes. Ticking it shows the strength in place, so focus stays put.
-  if(held.first_pass==='copyedit'){const strength=sChoice('Strength',DESK_LEVELS,held,'humanizeLevel');strength.hidden=!held.humanizeOn;first.append(sCheck('desk-humanize','Also suggest more human-sounding wording',held,'humanizeOn',REVIEW_HUMAN_SAYS,on=>{strength.hidden=!on;}),strength);}
+  if(held.first_pass==='copyedit'){const strength=sChoice('Strength',DESK_LEVELS,held,'humanizeLevel');strength.hidden=!held.humanizeOn;first.append(sCheck('desk-humanize','Also suggest more human-sounding wording',held,'humanizeOn',REVIEW_HUMAN_SAYS,on=>{strength.hidden=!on;}),strength,sPolishVoiceChoice(held,'polish'));}
   if(held.first_pass==='reshape'){const kinds=(studio.options?.styles||[]).filter(kind=>kind.status!=='retired');first.append(sField('desk-kind','Kind of post',held,'kind',{options:[['','Choose a kind of post'],...kinds.map(kind=>[kind.id,kind.name])],changed:()=>again()}),sNode('p','quiet field-hint',kinds.length?'Its usual shape and length.':'No kinds of post yet. Set them up from Home, under Kinds of post.'));}
   const fold=(label,open,remember,...content)=>{const box=sAdd(sNode('details','card desk-fold'),sAdd(sNode('summary',''),sNode('span','card-title',label)),...content);box.open=open;box.addEventListener('toggle',()=>remember(box.open));return box;};
   const tone=fold('Tone (optional)',!!held.toneOpen,open=>{held.toneOpen=open;},sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational. It guides any rewriting.'}));
@@ -186,6 +186,7 @@ function sDeskPolish(held){
   sPage(sNode('p','lede','Bring your draft and choose what happens first. No kind of post needed.'),form);
 }
 function sDeskHaveProblem(held){
+  if(held.have==='draft'&&held.first_pass==='copyedit'&&held.voiceOn&&!held.voiceGuide)return 'Choose a voice guide, or turn Use a voice guide off.';
   if(held.have!=='draft'&&!held.sourceEditor&&held.searchSites&&!sChosenSites(held.from).length)return sResearchWord('no_sites')||'Choose at least one of your sites, or untick Search my sites.';
   if(held.have==='topic'&&!(held.title.trim()&&held.point.trim()))return 'Add a working title and the point to make, or pick an angle.';
   if(held.have==='outline'){
@@ -275,22 +276,22 @@ async function sDeskReadGoogle(held,{start=false}={}){
     // The Doc is already a blog here: open it on the desk, or bring it there.
     let made=null,created=false;try{made=await api('desk?id='+encodeURIComponent(found.id));}catch(_){made=null;}
     // A Doc an older step-by-step run links stays with that run: the start offers it.
-    if(!made){created=true;try{made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,...sDeskHumanize(held),sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}catch(error){if(!/step-by-step run/.test(error.message))throw error;if(turn!==studio.turn)return;held.problem=error.message;held.linkedRun=found.id;return sDeskStart();}}
-    if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};return sRoute('desk',made.id,created&&held.first_pass==='copyedit'?'review':null);
+    if(!made){created=true;try{made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,...sDeskPolishOptions(held),sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}catch(error){if(!/step-by-step run/.test(error.message))throw error;if(turn!==studio.turn)return;held.problem=error.message;held.linkedRun=found.id;return sDeskStart();}}
+    if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};if(!created&&held.first_pass==='copyedit'&&held.voiceOn)studio.desk.review={pendingVoice:{guide:held.voiceGuide,name:(held.polishVoices?.find(guide=>guide.id===held.voiceGuide)||{}).name||'Selected voice',humanize:held.humanizeOn?held.humanizeLevel:null}};return sRoute('desk',made.id,held.first_pass==='copyedit'&&(created||held.voiceOn)?'review':null);
   }
   held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;
   if(start){const made=await sDeskGo(held);if(made&&studio.screen==='desk'&&studio.id===made.id){const summary=held.preview.summary,notes=[];if(summary.selected_tab)notes.push('Opened only the tab “'+summary.selected_tab.title+'”.');if(summary.excluded_approval_blocks)notes.push('Leading approval fields stay in the original Google Doc.');if(notes.length)sToast(notes.join(' '));}return made;}
   sDeskStart();
 }
 // Check spelling and grammar's strength of human-sounding suggestions, or null for none.
-function sDeskHumanize(held){return held.first_pass==='copyedit'?{humanize:held.humanizeOn?held.humanizeLevel:null}:{};}
+function sDeskPolishOptions(held){return held.first_pass==='copyedit'?{humanize:held.humanizeOn?held.humanizeLevel:null,...(held.voiceOn?{voice_guide:held.voiceGuide}:{})}:{};}
 async function sDeskGo(held){
   const turn=studio.turn;
   // A draft takes a kind of post only to be reshaped to it (sDeskPolish keeps held.style so).
   const common={operation:held.operation,style:held.have==='draft'?held.style:held.kind||'',tone:held.tone,sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),...(held.title.trim()?{title:held.title.trim()}:{})};
   let made;
   if(held.have==='draft'){
-    const settings={...common,first_pass:held.first_pass,...sDeskHumanize(held)};
+    const settings={...common,first_pass:held.first_pass,...sDeskPolishOptions(held)};
     if(held.source==='saved')made=await api('desk-create',{...settings,article:held.article});
     else if(held.source==='upload')made=await api('desk-create',{...settings,source:held.uploaded.id});
     else if(held.source==='paste')made=await api('desk-create',{...settings,manuscript:held.manuscript});
@@ -740,6 +741,25 @@ function sDeskReturnFocus(held){const saved=held.returnFocus,input=saved&&held.c
 // Copy edit is reviewed in the text itself: it opens Review mode, where the check starts.
 async function sDeskCopyEdit(held){await sDeskFlush(held);await sDeskOutlineFlush(held);held.finish=null;held.mode='review';sDeskRender(held);sDeskWatch(held);}
 function sDeskFinishTool(held,tool){return DESK_KIT.finishTool(held,tool);}
+// One optional saved guide in both Polish intake and a first review. Loading only this
+// region preserves the draft and keyboard focus while the catalog arrives.
+function sPolishVoiceChoice(held,prefix){
+  const options=sNode('div','stack'),message=sNode('p','quiet');options.hidden=!held.voiceOn;
+  let loading=false;
+  const show=async()=>{
+    if(loading)return;loading=true;options.replaceChildren(sNode('p','quiet','Reading saved voice guides…'));
+    try{
+      const found=await api('voice-guides'),guides=found.guides.filter(guide=>guide.status!=='retired');held.polishVoices=guides;
+      if(!guides.some(guide=>guide.id===held.voiceGuide))held.voiceGuide='';
+      const summary=sNode('p','quiet',(guides.find(guide=>guide.id===held.voiceGuide)||{}).says||'');
+      options.replaceChildren(sField(prefix+'-voice-guide','Voice guide',held,'voiceGuide',{options:[['','Choose a saved voice guide'],...guides.map(guide=>[guide.id,guide.name])],changed:id=>{summary.textContent=(guides.find(guide=>guide.id===id)||{}).says||'';}}),summary);
+      if(!guides.length)options.append(sNode('p','quiet','No active voice guides yet. Create one on Voice guides, then return to this draft.'));
+    }catch(error){message.textContent=error.message;message.setAttribute('role','alert');options.replaceChildren(message,sButton('Try loading voice guides again',show));}
+    finally{loading=false;}
+  };
+  const tick=sCheck(prefix+'-voice','Use a voice guide',held,'voiceOn','Suggest wording in a saved voice while keeping facts, quotations and structure. Every change is yours to accept or reject.',on=>{options.hidden=!on;if(on)show();});
+  if(held.voiceOn)show();return sAdd(sNode('div','polish-voice-choice'),tick,options);
+}
 // The voice guides Apply a voice can use, read when the tool opens.
 async function sDeskGuides(held){
   const f=held.finish;try{const found=await api('voice-guides');if(held.finish!==f)return;f.guides=found.guides.filter(guide=>guide.status!=='retired');f.guidesProblem='';}catch(error){if(held.finish!==f)return;f.guides=f.guides||[];f.guidesProblem=error.message;}
@@ -1037,6 +1057,8 @@ function sDeskReview(held){
 // Reject all, or, once nothing is left, where the draft goes next.
 function sReviewHead(held,state){
   const head=sNode('div','review-head'),editable=sDeskCan(held)&&sReviewFree(held),noun=state.human?['suggestion','suggestions']:['fix','fixes'];
+  const voice=held.view.review?.voice_guide;if(voice)head.append(sNode('p','quiet','Voice guide: '+voice.name+' · revision '+voice.revision+'. Wording changes are suggestions; nothing is applied automatically.'));
+  if(held.review?.pendingVoice){const selected=held.review.pendingVoice;head.append(sCard('Use your selected voice',sNode('p','quiet',selected.name+'. This Doc was already on the desk. Start a new check to use the voice you selected; the existing review is kept until then.'),sButton('Polish with the selected voice',button=>sReviewCheck(held,button,selected.humanize,selected.guide),'filled')));}
   if(state.working){
     const line=sNode('p','desk-working-note',sReviewDoing(state));line.setAttribute('role','status');
     const stop=sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{try{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:state.working.id});sDeskRefresh(held,before);}catch(error){notice(error.message,true);}});});stop.disabled=!sDeskCan(held);sReviewMark(stop,'stop');
@@ -1066,11 +1088,11 @@ function sReviewHead(held,state){
 // Before the first check: Check spelling and grammar, and whether to suggest more
 // human-sounding wording too, at a strength. The choice is kept for Check again.
 function sReviewStart(held){
-  const r=held.review,pinned=held.view.review?.humanize||null,ask=r.ask||(r.ask={on:!!pinned,level:pinned||'light'});
+  const r=held.review,pinned=held.view.review?.humanize||null,ask=r.ask||(r.ask={on:!!pinned,level:pinned||'light',voiceOn:!!held.view.review?.voice_guide,voiceGuide:held.view.review?.voice_guide?.id||''});
   const strength=sReviewMarks(sChoice('Strength',DESK_LEVELS,ask,'level'),'strength:');strength.hidden=!ask.on;
-  const go=sButton('Check spelling and grammar',button=>sReviewCheck(held,button,ask.on?ask.level:null),'filled');go.disabled=!sDeskCan(held);sReviewMark(go,'check');
+  const go=sButton('Check spelling and grammar',button=>{if(ask.voiceOn&&!ask.voiceGuide)return notice('Choose a voice guide, or turn Use a voice guide off.',true);return sReviewCheck(held,button,ask.on?ask.level:null,ask.voiceOn?ask.voiceGuide:null);},'filled');go.disabled=!sDeskCan(held);sReviewMark(go,'check');
   const tick=sCheck('review-humanize','Also suggest more human-sounding wording',ask,'on',REVIEW_HUMAN_SAYS,on=>{strength.hidden=!on;});sReviewMark(sReviewFindTag(tick,'input'),'review-humanize');
-  return sCard('Check spelling and grammar',sNode('p','','Each fix is marked in your text for you to accept or reject.'),tick,strength,sAdd(sNode('div','bar'),go));
+  return sCard('Check spelling and grammar',sNode('p','','Each fix is marked in your text for you to accept or reject.'),tick,strength,sPolishVoiceChoice(ask,'review'),sAdd(sNode('div','bar'),go));
 }
 // A segmented choice's buttons, each marked to keep focus by its words.
 function sReviewMarks(box,prefix){for(const button of sReviewAll(box,'button'))sReviewMark(button,prefix+button.textContent);return box;}
@@ -1296,12 +1318,12 @@ async function sReviewSave(held){
 function sReviewSaid(held,editing,words){editing.said=words;if(editing.note)editing.note.textContent=words;if(held.status&&!held.stale)held.status.textContent=words;}
 async function sReviewClose(held){const editing=held.review?.editing;if(!editing)return;await sReviewSave(held);if(held.review.editing!==editing||editing.dirty)return;held.review.editing=null;if(held.status&&!held.stale&&editing.said)held.status.textContent=/^Saved/.test(editing.said)?'Saved.':editing.said;if(sDeskCurrent(held)&&held.mode==='review')sDeskReviewRefresh(held,held.view);}
 async function sReviewFlush(held){if(held.review?.editing)await sReviewClose(held);}
-async function sReviewCheck(held,button,humanize){
+async function sReviewCheck(held,button,humanize,voiceGuide){
   await busy(button,'Starting…',async()=>{try{
     await sReviewFlush(held);await sDeskFlush(held);if(held.stale)return;
     // Check again sends no strength: the server reuses the one pinned for this blog.
-    const before=held.view;held.view=await api('desk-review',{id:held.id,seen:held.view.revision,...(humanize===undefined?{}:{humanize})});
-    if(held.review){held.review.google=null;held.review.picks={};held.review.ask=null;}
+    const before=held.view;held.view=await api('desk-review',{id:held.id,seen:held.view.revision,...(humanize===undefined?{}:{humanize}),...(voiceGuide===undefined?{}:{voice_guide:voiceGuide})});
+    if(held.review){held.review.google=null;held.review.picks={};held.review.ask=null;held.review.pendingVoice=null;}
     sDeskRefresh(held,before);sDeskWatch(held);
   }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
 }

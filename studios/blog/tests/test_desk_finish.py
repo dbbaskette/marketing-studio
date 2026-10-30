@@ -3705,3 +3705,80 @@ class GEOQueueTests(ToolCase):
         self.assertTrue(tool_jobs.read(self.root, job['id'])['settled_at'])
         self.assertTrue(self.draft()['sections'][0]['text'].startswith('We leverage'))
         self.assertEqual(self.shown('geo')['items'][0]['state'], 'open')
+
+
+class PolishVoiceTests(ToolCase):
+    def setUp(self):
+        super().setUp()
+        import article_tools
+
+        self.guide = article_tools.save_profile(
+            self.root,
+            {
+                'name': 'Plain',
+                'guide': 'Plain words. Short sentences.',
+                'status': 'confirmed',
+                'confirmed': True,
+            },
+        )['profile']
+
+    def check(self, **extra):
+        shown = self.act('review', seen=self.seen, **extra)
+        return tool_jobs.read(self.root, shown['working']['id'])
+
+    def test_voice_polish_proposes_located_wording_without_changing_the_draft(self):
+        before = self.draft()
+        job = self.check(voice_guide=self.guide)
+        self.assertEqual(job['kind'], 'finish-copyedit')
+        self.assertEqual(
+            job['payload']['voice_guide'],
+            {'name': 'Plain', 'text': 'Plain words. Short sentences.'},
+        )
+        self.assertIn(desk_finish.POLISH_VOICE, job['guidance'])
+        self.assertIn('kind wording', job['guidance'])
+        self.ready(
+            job,
+            {
+                'suggestions': [
+                    {
+                        'part': self.first,
+                        'before': 'We leverage a robust parser.',
+                        'after': 'We use a sturdy parser.',
+                        'why': 'Plain voice wording.',
+                        'kind': 'wording',
+                    }
+                ]
+            },
+        )
+        self.assertEqual(self.draft(), before)
+        self.assertEqual(self.shown('copyedit')['items'][0]['kind'], 'wording')
+        pinned = desk_jobs.view(self.root, self.ident)['review']['voice_guide']
+        self.assertEqual(pinned['id'], self.guide)
+        self.assertEqual(pinned['name'], 'Plain')
+        again = self.check()
+        self.assertEqual(again['payload']['voice_guide'], job['payload']['voice_guide'])
+
+    def test_humanize_uses_the_same_captured_voice_even_if_the_catalog_changes(self):
+        from unittest import mock
+
+        job = self.check(voice_guide=self.guide, humanize='light')
+        with mock.patch.object(desk_finish, '_guide', side_effect=ValueError('Catalog changed')):
+            self.ready(job, {'suggestions': []})
+        second = desk_jobs.jobs(self.root, self.ident)[-1]
+        self.assertEqual(second['kind'], 'finish-humanize')
+        self.assertEqual(second['payload']['voice_guide'], job['payload']['voice_guide'])
+        self.assertEqual(
+            second['metadata']['desk']['guide_revision'], job['metadata']['desk']['guide_revision']
+        )
+        self.assertIn(desk_finish.POLISH_VOICE, second['guidance'])
+        self.ready(second, {'suggestions': []})
+        off = self.check(voice_guide=None, humanize=None)
+        self.assertNotIn('voice_guide', off['payload'])
+        self.assertNotIn('voice_guide', desk_jobs.view(self.root, self.ident)['review'])
+
+    def test_invalid_guide_keeps_existing_review_and_queues_no_job(self):
+        before = desk_jobs.review_record(self.root, self.ident)
+        with self.assertRaisesRegex(ValueError, 'voice guide'):
+            self.check(voice_guide='missing')
+        self.assertEqual(desk_jobs.review_record(self.root, self.ident), before)
+        self.assertEqual(desk_jobs.jobs(self.root, self.ident), [])
