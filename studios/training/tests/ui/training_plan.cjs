@@ -15,7 +15,8 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
     page.on('pageerror',e=>{errors.push(e.message);console.error('Page error at '+width+': '+e.message);});
     await page.addInitScript(({root})=>history.replaceState({screen:'run',path:root},''),{root:fixture.path});
     await page.goto(fixture.url);
-    await page.getByRole('heading',{name:'Here’s what this training will cover',exact:true}).waitFor({timeout:30000});
+    try{await page.getByRole('heading',{name:'Here’s what this training will cover',exact:true}).waitFor({timeout:30000});}
+    catch(error){console.error('Initial page at '+width+': '+await page.locator('body').innerText());console.error('Fixture run: '+await page.evaluate(root=>ask('run',{path:root}).then(run=>JSON.stringify({state:run.state,problem:run.problem,plan:Boolean(run.training_plan)})),fixture.path));throw error;}
     assert.equal(await page.getByRole('button',{name:'Finishing',exact:true}).count(),0);
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Phone view must not overflow');
     const before=await page.evaluate(root=>ask('run',{path:root}),fixture.path);

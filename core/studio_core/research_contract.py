@@ -779,7 +779,8 @@ def check_json(text, spec):
             value, metadata_problems = source_metadata(value, spec.get('runtime'))
             kept = json.dumps(value)
             problems += metadata_problems
-            problems += uncaptured(value['sources'], spec.get('captures', []))
+            if not problems:
+                problems += uncaptured(value['sources'], spec.get('captures', []))
             if not problems:
                 value, problems, matched = citation_sources(value, spec.get('captures', []))
                 kept = json.dumps(value)
@@ -792,7 +793,8 @@ def check_json(text, spec):
                 warnings.append('Standardized source date metadata as source_date; dates and evidence are unchanged.')
             value = normalized
             problems += metadata_problems
-            problems += uncaptured(value['sources'], spec['captures'])
+            if not problems:
+                problems += uncaptured(value['sources'], spec['captures'])
             if not problems:
                 value, problems, matched = citation_sources(value, spec['captures'])
                 if matched:

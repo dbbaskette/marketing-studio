@@ -51,6 +51,12 @@ class SourceMetadataTests(unittest.TestCase):
         self.assertIn('resubmit within this job', ' '.join(problems))
         self.assertEqual(checked, value)
 
+    def test_malformed_source_returns_submission_feedback_instead_of_crashing(self):
+        value = {'schema': 2, 'sources': ['Not a source object'], 'facts': []}
+        problems, _, _, _ = contract.check_json(json.dumps(value), {
+            'runtime': self.runtime, 'research_mode': 'evidence', 'task': {}, 'captures': []})
+        self.assertIn('Return each source as an object.', problems)
+
 
 class HelperAnswerTests(unittest.TestCase):
     """Harness Research 1.0.1 exits 1 for a needs-revision review and stale evidence."""
