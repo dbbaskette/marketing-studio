@@ -254,8 +254,9 @@ def start(root, data):
     if fingerprint(snapshot) != saved['expected']:
         raise ValueError('This capture changed. Preview the Google Doc again before importing.')
     observation = studio.read_json(snapshot / 'observation.json')
-    # The page has shown the manuscript and structure summary. This explicit
-    # confirmation satisfies the same inspection requirement as the chat route.
+    # The page's explicit import/start action authorizes adopting this inspected,
+    # fingerprinted native capture. The selected-tab reader has already rejected
+    # unsupported manuscript structures; the full formatted baseline is retained.
     observation['structure_verified'] = True
     studio.write_json(snapshot / 'observation.json', observation)
     args = studio.parser().parse_args(

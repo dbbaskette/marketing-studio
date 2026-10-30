@@ -150,6 +150,7 @@ async function check(){
   await deskGoogleDoc();
   await deskStartReopensALinkedDoc();
   await deskStartShowsTheSelectedGoogleTab();
+  await deskGoogleStartIsOneActionAndRetrySafe();
   await deskStartReadsAGoogleDocAgainAfterAFailure();
   await deskReviewDocSuggestions();
   await oldIntakeAddressesOpenTheDeskStart();
@@ -4541,22 +4542,26 @@ async function deskStartReopensALinkedDoc(){
 async function deskStartShowsTheSelectedGoogleTab(){
   const url='https://docs.google.com/document/d/fixture-doc?tab=t.focus';
   const preview={status:'preview',preview:'d'.repeat(32),expected:'v1',title:'Synthetic Doc',linked_document:url,content:'Only the selected blog.',summary:{excluded_approval_blocks:2,structure:{paragraphs:1},selected_tab:{id:'t.focus',title:'Blog draft'}}};
-  const t=deskStartFixture(asked=>asked==='/api/google-preview'?preview:null);
+  const made=deskView({opening:preview.content,google:{url},google_suggestions:true});
+  const t=deskStartFixture(asked=>asked==='/api/google-preview'?preview:asked==='/api/google-start'?{id:'desk-blog'}:asked==='/api/desk-create'||asked.startsWith('/api/desk?')?made:null);
   await t.f.run("sDeskBegin({have:'draft',source:'google'})");
   t.type('desk-google',url);
   await t.submit();
   assert.equal(t.requests.find(r=>r.url==='/api/google-preview').data.url,url);
-  assert.ok(t.nodes().some(n=>n.textContent==='Only the tab “Blog draft” is included. Other tabs are not imported. Check the text below, then start.'));
-  assert.ok(t.nodes().some(n=>n.textContent==='Leading approval fields are left out of this editing copy. They stay in the Google Doc. Check that the blog below is complete.'));
+  assert.equal(t.f.run('studio.screen'),'desk','one press both imports and starts the selected pass');
+  assert.equal(t.requests.filter(r=>r.url==='/api/google-start').length,1);
+  assert.equal(t.requests.filter(r=>r.url==='/api/desk-create').length,1);
+  assert.equal(t.requests.find(r=>r.url==='/api/desk-create').data.first_pass,'copyedit');
+  assert.ok(descendants(t.f.get('toasts')).some(n=>n.textContent==='Opened only the tab “Blog draft”. Leading approval fields stay in the original Google Doc.'));
   assert.equal(t.nodes().some(n=>n.textContent==='This view could not be read'),false);
 }
-// A Google Doc read that fails says why, and Read Google Doc reads again: a second failure
-// is said afresh, and a read that then works shows the Doc.
+// Failed reads keep the link and can be retried; success imports and starts at once.
 async function deskStartReadsAGoogleDocAgainAfterAFailure(){
   const url='https://docs.google.com/document/d/fixture-doc/edit';
   const preview={status:'preview',preview:'c'.repeat(32),expected:'v1',title:'Synthetic Doc',linked_document:url,content:'Original text.',summary:{structure:{paragraphs:1}}};
   const answers=[{__http:400,error:'The Doc holds a drawing this reader cannot take.'},{__http:400,error:'The Doc holds a drawing this reader cannot take.'},preview];
-  const t=deskStartFixture(asked=>asked==='/api/google-preview'?answers.shift():null);
+  const made=deskView({opening:preview.content});
+  const t=deskStartFixture(asked=>asked==='/api/google-preview'?answers.shift():asked==='/api/google-start'?{id:'desk-blog'}:asked==='/api/desk-create'||asked.startsWith('/api/desk?')?made:null);
   await t.f.run("sDeskBegin({have:'draft',source:'google'})");
   t.type('desk-google',url);
   const problem=()=>t.nodes().find(n=>n.className==='problem'&&n.textContent)?.textContent||'';
@@ -4565,14 +4570,54 @@ async function deskStartReadsAGoogleDocAgainAfterAFailure(){
   const reads=()=>t.requests.filter(r=>r.url==='/api/google-preview').length;
   assert.equal(reads(),1);
   await t.submit();
-  assert.equal(reads(),2,'Read Google Doc reads again');
+  assert.equal(reads(),2,'Read and polish reads again after a failed capture');
   assert.ok(problem().startsWith('Read again, and still: The Doc holds a drawing'),'a second failure is said as a new answer');
-  const button=t.nodes().find(n=>n.tagName==='button'&&n.textContent==='Read Google Doc');
+  const button=t.nodes().find(n=>n.tagName==='button'&&n.textContent==='Read and polish');
   assert.ok(button&&!button.disabled,'the button is ready again');
   await t.submit();
   assert.equal(reads(),3);
   assert.equal(problem(),'','a read that works clears the problem');
-  assert.ok(t.nodes().some(n=>n.textContent==='Original text.'),'the Doc is shown');
+  assert.equal(t.f.run('studio.screen'),'desk');
+  assert.equal(t.requests.filter(r=>r.url==='/api/desk-create').length,1);
+}
+async function deskGoogleStartIsOneActionAndRetrySafe(){
+  const url='https://docs.google.com/document/d/fixture-doc?tab=t.focus';
+  const preview={status:'preview',preview:'e'.repeat(32),expected:'v1',title:'Synthetic Doc',linked_document:url,content:'A synthetic draft.',summary:{structure:{paragraphs:1}}};
+  const waiting=deferred();let failCreate=true;
+  const made=deskView();
+  const t=deskStartFixture((asked)=>{
+    if(asked==='/api/google-preview')return waiting.promise;
+    if(asked==='/api/google-start')return {id:'desk-blog'};
+    if(asked==='/api/desk-create'){if(failCreate){failCreate=false;return {__http:400,error:'Synthetic interrupted start'};}return made;}
+    if(asked.startsWith('/api/desk?'))return made;
+    return null;
+  });
+  await t.f.run("sDeskBegin({have:'draft',source:'google'})");t.type('desk-google',url);
+  const first=t.submit();await t.submit();
+  assert.equal(t.requests.filter(r=>r.url==='/api/google-preview').length,1,'rapid submits share one capture');
+  assert.equal(t.byId('desk-google').disabled,true,'source and options are frozen while starting');
+  waiting.resolve(preview);await first;
+  assert.equal(t.f.run('studio.screen'),'desk-start');
+  const operation=t.requests.find(r=>r.url==='/api/desk-create').data.operation;
+  await t.submit();
+  assert.equal(t.requests.filter(r=>r.url==='/api/google-preview').length,1,'retry reuses the captured tab');
+  assert.equal(t.f.run('studio.screen'),'desk');
+  assert.ok(t.requests.filter(r=>r.url==='/api/desk-create').every(r=>r.data.operation===operation),'retry keeps the same idempotency key');
+  assert.ok(t.requests.filter(r=>r.url==='/api/google-start').every(r=>r.data.preview===preview.preview),'local import replays the same capture receipt');
+  for(const [first,choice,label] of [['copyedit','Check spelling and grammar','Read and polish'],['feedback','Just give feedback','Read and review'],['reshape','Reshape to fit a kind of post','Read and reshape'],['leave','Leave it as it is','Open Google Doc']]){
+    const flow=deskStartFixture(asked=>asked==='/api/google-preview'?preview:asked==='/api/google-start'?{id:'desk-blog'}:asked==='/api/desk-create'||asked.startsWith('/api/desk?')?made:null);
+    await flow.f.run("sDeskBegin({have:'draft',source:'google'})");
+    await flow.click(choice);if(first==='reshape')flow.type('desk-kind','how-to');
+    if(first==='copyedit'){const humanize=flow.byId('desk-humanize');humanize.checked=true;humanize.listeners.change();await flow.click('Strong');}
+    flow.type('desk-google',url);
+    assert.ok(flow.nodes().some(n=>n.tagName==='button'&&n.textContent===label),'the primary action names the chosen pass');
+    await flow.submit();
+    const created=flow.requests.find(r=>r.url==='/api/desk-create').data;
+    assert.equal(created.first_pass,first);if(first==='copyedit')assert.equal(created.humanize,'strong');
+    assert.equal(flow.requests.filter(r=>r.url==='/api/google-start').length,1);
+    assert.equal(flow.requests.filter(r=>r.url==='/api/desk-create').length,1);
+    assert.equal(flow.f.run('studio.screen'),'desk');
+  }
 }
 // The old Polish, paste and Google Doc intake addresses open the polishing start.
 async function oldIntakeAddressesOpenTheDeskStart(){

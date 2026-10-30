@@ -286,12 +286,16 @@ you apply is shared with a team.
 
 ## Start from a Google Doc
 
-In **New blog**, choose **A draft**, then **Google Doc**. Paste the link or ID and choose
-**Read Google Doc**. The page uses the workspace's remembered Google account, or the active
+In **New blog**, choose **A draft**, then **Google Doc**. Paste the link or ID, choose
+what should happen first, and choose **Read and polish** (or **Read and review**,
+**Read and reshape**, or **Open Google Doc**, for the other choices).
+This single action captures the selected tab locally and starts the chosen pass;
+there is no second Start confirmation. The page uses the workspace's remembered Google account, or the active
 Google Cloud CLI account. Google Cloud CLI must already be installed and signed in with
 Drive access; see [Google setup](google-docs.md#local-codex-and-claude-gcloud-setup).
-Reading saves a private copy on this computer; it does not change the Doc, share it or
-start an assistant. Check the text shown, then **Start**. The Doc stays linked, and
+The capture and original baseline are kept locally. Your chosen check may use your
+configured assistant; **Leave it as it is** opens the draft without a processing pass.
+The original Google Doc stays unchanged. The Doc stays linked, and
 **Finishing → Before publishing → Send to Google Doc** later sends your changes back as
 suggestions. A Doc that is already a blog here opens that blog instead of a second one.
 Images are left out of the text; inspect them in the original Doc. Pending suggestions
