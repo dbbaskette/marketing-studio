@@ -1,6 +1,30 @@
 # Bounded parallel research
 
-Status: proposed; implementation awaits one combined design/plan approval.
+## Ownership revision — 2026-10-29
+
+The research method, native harness guidance, evidence packet/registry contract,
+validation, deterministic assembly and checkpoint semantics are proposed to move
+to **Harness Research**. The replacement specification and plan are in the
+`harness-research-skill` repository at
+`docs/superpowers/specs/2026-10-29-parallel-research.md` and
+`docs/superpowers/plans/2026-10-29-parallel-research.md`.
+
+Marketing Studio retains the consumer integration: configured worker execution,
+shared budget reservations, process cancellation, execution-protocol compatibility,
+progress/timing UI and initial Training Studio enablement. Do not independently
+implement packet merging or source validation here. The Harness Research proposal
+includes a separate studio integration milestone.
+
+This dated note records the ownership proposal as it stood on 2026-10-29. The
+original studio-first proposal below is retained for context; its shared-core
+ownership of research packet semantics is superseded by the Harness Research
+proposal. Current consumer-integration status and execution details are recorded
+in the Marketing Studio implementation plan. This documentation update does not
+migrate or restart active runs or applications.
+
+---
+
+Status: historical studio-first proposal. See the [consumer-integration plan](../plans/2026-10-29-parallel-research.md) for current implementation status.
 
 ## Outcome
 
