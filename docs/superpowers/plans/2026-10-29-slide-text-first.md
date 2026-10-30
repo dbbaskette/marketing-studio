@@ -54,3 +54,19 @@ Google writes or automatic repair of an active saved training during verificatio
 No speed claim is made before measurement: this removes design/render work from
 the text phase, but source length and the configured assistant still affect time.
 Publication and active installation/restart remain separate actions.
+
+## Completion
+
+Implemented the shared content-first checkpoint, common review component and
+current/legacy critic wire adapter. Both native journeys cover text changes,
+exact-version approval and no early design/render. Current Training Studio critic
+packets after partial redraws receive a whole-render inspection; legacy packets
+retain their original scoped-review contract.
+
+Complete affected suites were exercised in disposable macOS guests, with affected
+checks rerun after correcting the reported response/progress compatibility issues.
+The shared kit DOM suite, phone/desktop browser controls, package validation and
+native setup/launch/CLI/Hub journeys pass. A direct check against current Harness
+Slides reproduces the original refusal with the old payload and accepts the shared
+adapter payload. Synthetic fixtures only; no live provider quality or duration
+claim. Saved runs were not reset or retried during verification.
