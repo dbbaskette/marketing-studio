@@ -10365,8 +10365,8 @@ class TrainingNamesTests(unittest.TestCase):
             with self.subTest(old=old):
                 self.assertNotIn(old, page + runner)
         for new in ('Approving finishes this training.',
-                    'Choose this to see how each slide is drawn, and approve the design in '
-                    'one decision.', 'Use the brand’s default look',
+                    'Optional. Review how each slide will be drawn before the deck is built.',
+                    'Use the brand’s default look',
                     'a fixed estimate per slide, not this computer', 'Reference brief',
                     'Yoodli scenarios', 'Not ready to use yet', 'Leave the deck out',
                     'stops where its review level says, for your decision.',

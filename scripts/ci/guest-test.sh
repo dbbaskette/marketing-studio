@@ -207,12 +207,10 @@ elif [[ "${1:-full}" == yoodli-pdf ]]; then
   node studios/training/tests/ui/yoodli_pdf.cjs 2>&1 | tee "$results_dir/source-picker-browser.log"
   bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == training-sources-finish ]]; then
-  # Retain the passing shared/browser, Infographic Studio, Blog Studio and
-  # Presentation Studio cases. Recheck the corrected fixture, then finish native
-  # Training Studio and the remaining package/setup/launch acceptance.
+  # Every suite has run. Retain passing application evidence; recheck the retired
+  # wording assertion and finish Training Studio package/setup/launch acceptance.
   {
-    (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_runner_worker_tools.ResearchCitationTests -v && "$python" skills/presentation-studio/scripts/validate_package.py)
-    (cd studios/training && bash scripts/ci/check.sh "$python")
+    (cd studios/training && PYTHONPATH=tests "$python" -m unittest test_desk.TrainingNamesTests -v && "$python" skills/training-studio/scripts/validate_package.py)
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
   } 2>&1 | tee "$results_dir/remaining-tests.log"
 elif [[ "${1:-full}" == training-plan || "${1:-full}" == training-sources-progress ]]; then
