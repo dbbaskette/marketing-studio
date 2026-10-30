@@ -772,33 +772,33 @@ def check_json(text, spec):
         value = json.loads(text)
         if not isinstance(value, dict) or value.get('schema') != 2:
             problems.append('Return a schema-2 JSON object.')
+        elif isinstance(value.get('sources'), list) and any(not isinstance(source, dict) for source in value['sources']):
+            problems.append('Return each source as an object.')
         elif spec.get('research_mode'):
             from studio_core.research_session import preparation
 
             value = preparation(value, spec)
-            value, metadata_problems = source_metadata(value, spec.get('runtime'))
             kept = json.dumps(value)
-            problems += metadata_problems
-            if not problems:
-                problems += uncaptured(value['sources'], spec.get('captures', []))
+            problems += uncaptured(value['sources'], spec.get('captures', []))
             if not problems:
                 value, problems, matched = citation_sources(value, spec.get('captures', []))
+            if not problems:
+                value, problems = source_metadata(value, spec.get('runtime'))
                 kept = json.dumps(value)
             if not problems and spec.get('runtime'):
                 problems += refused(value, spec)
         elif 'captures' in spec and isinstance(value.get('sources'), list):
-            normalized, metadata_problems = source_metadata(value, spec.get('runtime'))
-            if normalized != value:
-                kept = json.dumps(normalized)
-                warnings.append('Standardized source date metadata as source_date; dates and evidence are unchanged.')
-            value = normalized
-            problems += metadata_problems
-            if not problems:
-                problems += uncaptured(value['sources'], spec['captures'])
+            problems += uncaptured(value['sources'], spec['captures'])
             if not problems:
                 value, problems, matched = citation_sources(value, spec['captures'])
                 if matched:
                     kept = json.dumps(value)
+            if not problems:
+                normalized, problems = source_metadata(value, spec.get('runtime'))
+                if normalized != value:
+                    kept = json.dumps(normalized)
+                    warnings.append('Standardized source date metadata as source_date; dates and evidence are unchanged.')
+                value = normalized
             if not problems and spec.get('runtime'):
                 problems += refused(value, spec)
             if not problems and matched:

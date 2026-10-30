@@ -206,6 +206,17 @@ elif [[ "${1:-full}" == yoodli-pdf ]]; then
   if command -v pdftotext >/dev/null; then export STUDIO_TEST_REAL_PDF=1; fi
   node studios/training/tests/ui/yoodli_pdf.cjs 2>&1 | tee "$results_dir/source-picker-browser.log"
   bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == training-sources-finish ]]; then
+  # The three real browser journeys and shared suite already ran. Recheck the
+  # affected source-submission cases, then finish the unrun native suites.
+  {
+    PYTHONPATH=tests "$python" -m unittest test_research_contract test_research_capture_check test_research_session test_research_page test_ui_consistency -v
+    "$python" -m unittest discover -s studios/infographic/tests -v
+    (cd studios/blog && BLOG_STUDIO_REQUIRE_LINT=1 BLOG_STUDIO_TEST_JOBS=4 bash scripts/ci/check.sh "$python" "$results_dir/blog-studio")
+    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks"
+  } 2>&1 | tee "$results_dir/remaining-tests.log"
 elif [[ "${1:-full}" == training-plan || "${1:-full}" == training-sources-progress ]]; then
   # Exercise the real page/engine before the complete native suite, so a browser
   # regression does not waste a full-suite run. All authors and settings are fixtures.

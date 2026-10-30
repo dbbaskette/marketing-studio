@@ -189,6 +189,10 @@ class HelperCheckTests(unittest.TestCase):
         runtime = self.base / 'runtime'
         (runtime / 'scripts').mkdir(parents=True, exist_ok=True)
         (runtime / 'scripts' / 'harness-research.mjs').write_text(STUB)
+        (runtime / 'references').mkdir(exist_ok=True)
+        (runtime / 'references/synthesis.schema.json').write_text(json.dumps({'$defs': {'source': {'properties': {
+            key: {} for key in ('id', 'origin', 'title', 'publisher', 'file', 'permission', 'context',
+                               'context_note', 'source_date', 'accessed_at', 'version', 'original_file')}}}}))
         return runtime
 
     def test_what_the_helper_refuses_is_said_in_the_job(self):
