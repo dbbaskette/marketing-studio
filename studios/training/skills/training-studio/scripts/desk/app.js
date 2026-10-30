@@ -4738,15 +4738,22 @@ function times(number) {
   return number === 1 ? 'once' : number === 2 ? 'twice' : number + ' times';
 }
 
-function chips(label, options, chosen, flip, key, hint) {
-  const row = make('div', 'chips');
-  row.setAttribute('role', 'group');
-  row.setAttribute('aria-label', label);
+function trainingTick(label, on, flip, key) {
+  const node = window.StudioLists.tick({id: 'new-' + key.replaceAll(' ', '-'), label, on, flip});
+  node.querySelector('input').dataset.key = key;
+  return node;
+}
+
+function checkChoices(label, options, chosen, flip, key, hint) {
+  const row = add(make('fieldset', 'research-choices'), make('legend', 'field-label', label));
   for (const [value, text] of options) {
-    row.append(chip(text, chosen(value), (on) => flip(value, on), key + ' ' + value));
+    const option = trainingTick(text, chosen(value), (on) => flip(value, on), key + ' ' + value);
+    if (hint) option.querySelector('input').setAttribute('aria-describedby', key + '-help');
+    row.append(option);
   }
-  return add(make('div', 'field'), make('p', 'field-label', label), row,
-    hint ? make('p', 'quiet field-hint', hint) : null);
+  const help = hint ? make('p', 'quiet field-hint', hint) : null;
+  if (help) help.id = key + '-help';
+  return add(make('div', 'field'), row, help);
 }
 
 function topicStep(draft) {
@@ -4816,20 +4823,18 @@ function yoodliNotice(draft, text) {
 }
 
 function syncMaterialChoices(draft) {
-  for (const control of byId('sheet').querySelectorAll('.chip')) {
-    if (control.dataset.key.startsWith('material ')) {
-      control.setAttribute('aria-pressed', String(draft.materials.includes(control.dataset.key.slice(9))));
+  for (const control of byId('sheet').querySelectorAll('input')) {
+    const key = control.dataset.key || '';
+    if (key.startsWith('material ')) {
+      control.checked = draft.materials.includes(key.slice(9));
     }
-    if (control.dataset.key === 'practice yoodli') control.setAttribute('aria-pressed', String(draft.yoodli));
+    if (key === 'practice yoodli') control.checked = draft.yoodli;
   }
 }
 
 function materialChoices(draft) {
-  const node = make('div', 'chips material-choices');
-  node.setAttribute('role', 'group');
-  node.setAttribute('aria-label', 'Materials to make');
-  for (const [id, label] of MATERIALS) {
-    node.append(chip(label, draft.materials.includes(id), (selected) => {
+  return checkChoices('Materials to make', MATERIALS, (id) => draft.materials.includes(id),
+    (id, selected) => {
       draft.materials = MATERIALS.map(([key]) => key)
         .filter((key) => key === id ? selected : draft.materials.includes(key));
       // Removing an included material is an explicit choice to stop preparing Yoodli.
@@ -4837,14 +4842,12 @@ function materialChoices(draft) {
         const wasOn = draft.yoodli;
         draft.yoodli = false;
         syncMaterialChoices(draft);
-        if (wasOn) yoodliNotice(draft, 'Yoodli scenarios turned off because ' + label + ' was removed.');
+        if (wasOn) yoodliNotice(draft, 'Yoodli scenarios turned off because ' + MATERIALS.find(([key]) => key === id)[1] + ' was removed.');
         else yoodliNotice(draft, '');
       }
       say(byId('new-problem'), '');
       retell();
-    }, 'material ' + id));
-  }
-  return node;
+    }, 'material');
 }
 
 // The desk start's second step: what is made, at which levels. The deck's brand and the
@@ -4866,11 +4869,9 @@ function shapeStep(draft) {
   // A deck is approved on what it says and on its look, as the brand's checkpoints are. Its
   // slides' designs are walked through one at a time only when asked for here.
   const walk = add(make('div', 'field'),
-    chip('Walk through each slide’s design before it is built', draft.walkthrough,
+    trainingTick('Walk through each slide’s design before it is built', draft.walkthrough,
       (on) => { draft.walkthrough = on; }, 'walkthrough'),
-    make('p', 'quiet field-hint', 'Usually the deck is approved on its outline and on its '
-      + 'look. Choose this to see how each slide is drawn, and approve the design in one '
-      + 'decision.'));
+    make('p', 'quiet field-hint', 'Optional. Review how each slide will be drawn before the deck is built.'));
   walk.hidden = used.hidden;
   const deck = choice('The slide deck', DECKS.map((kind) => kind[1]), draft.deck, (index) => {
     draft.deck = index;
@@ -4887,12 +4888,12 @@ function shapeStep(draft) {
   yoodliNote.hidden = !draft.yoodliNote;
   return [
     make('p', 'quiet', 'Choose only what you need. Research and a blueprint connect every selected material.'),
-    chips('Levels', LEVELS.map((level) => [level, level]),
+    checkChoices('Levels', LEVELS.map((level) => [level, level]),
       (level) => draft.levels.includes(level), toggle('levels'), 'level',
       '101 introduces the subject; 201 applies it; 301 handles trade-offs; 401 explores advanced cases. '
         + 'Each selected level gets its own materials, and its own cost. Choose none for one training without levels.'),
     materialChoices(draft),
-    chips('Practice', [['yoodli', 'Make scenarios for Yoodli']], () => draft.yoodli,
+    checkChoices('Practice', [['yoodli', 'Make scenarios for Yoodli']], () => draft.yoodli,
       (value, on) => {
         if (on) {
           draft.materials = MATERIALS.map(([id]) => id)
@@ -4904,9 +4905,7 @@ function shapeStep(draft) {
           : 'Reference brief and Practice scenarios remain selected.');
         say(byId('new-problem'), '');
         retell();
-      }, 'practice', 'Prepares Yoodli scenarios to copy into Yoodli and a reference brief to '
-        + 'upload. Includes Reference brief and Practice scenarios. Nothing is posted to '
-        + 'Yoodli.'),
+      }, 'practice', 'Prepares scenarios and a reference brief for you to copy or upload to Yoodli.'),
     yoodliNote,
     deck,
     able ? null : make('p', 'quiet', 'A deck needs a brand skill. You can make the other '
@@ -4928,7 +4927,7 @@ function brandOption(draft) {
 // The copies kept of each guide and brief, under the start's settings.
 function copiesOption(draft) {
   return trainingOptions('Copies of the guide and brief', 'training-copies',
-    chips('Keep a copy of each selected guide and brief', COPIES,
+    checkChoices('Keep a copy of each selected guide and brief', COPIES,
       (kind) => draft.copies.includes(kind), (value, on) => {
         draft.copies = draft.copies.filter((other) => other !== value);
         if (on) draft.copies.push(value);

@@ -602,6 +602,9 @@ function snapshot() {
     locked: boxes().filter(([, held]) => held.readOnly).map(([label]) => label),
     invalid: boxes().filter(([, held]) => held.getAttribute('aria-invalid') === 'true')
       .map(([label]) => label),
+    trainingChecked: document.body.querySelectorAll('input').filter(visible)
+      .filter(node => node.type === 'checkbox' && node.checked
+        && /^(level |material |practice |copy |walkthrough$)/.test(node.dataset.key || '')).map(name),
     chosen: document.body.querySelectorAll('.chip').filter(visible)
       .filter((node) => node.getAttribute('aria-pressed') === 'true').map(name),
     working: document.body.querySelectorAll('.working').filter(visible).length,

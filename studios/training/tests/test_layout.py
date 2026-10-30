@@ -387,12 +387,12 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         result = self.run_page(self.begun(), [
             {'click': 'New training'}, *self.FILLED,
             {'click': 'Technical upskilling'},
-            {'click': 'Learner guide'}, {'click': 'Reference brief'},
-            {'click': 'Practice scenarios'}, {'click': '301'},
+            {'tick': 'Learner guide'}, {'tick': 'Reference brief'},
+            {'tick': 'Practice scenarios'}, {'tick': '301'},
             {'click': 'About the reference brief'}, {'click': 'A comparison'},
             {'click': 'Google Slides'}, {'click': 'Deck brand'},
             {'fill': 'The brand’s variant', 'value': 'dark'},
-            {'click': 'Copies of the guide and brief'}, {'click': 'Google Docs'},
+            {'click': 'Copies of the guide and brief'}, {'tick': 'Google Docs'},
             {'fill': 'How long it should take', 'value': '30 minutes'},
             {'snapshot': 'filled'},
             {'click': 'Start'}])
@@ -426,13 +426,13 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
     def test_cancel_keeps_the_draft_for_the_session(self):
         result = self.run_page(self.begun(), [
             {'click': 'New training'}, {'fill': 'A short title', 'value': 'Rolling restarts'},
-            {'click': 'Learner guide'}, {'click': 'Cancel'}, {'snapshot': 'closed'},
+            {'tick': 'Learner guide'}, {'click': 'Cancel'}, {'snapshot': 'closed'},
             {'click': 'New training'}, {'snapshot': 'again'}])
         shots = result['snapshots']
         self.assertEqual(shots['closed']['sheet'], '')
         self.assertEqual(shots['closed']['heading'], 'Home')
         self.assertEqual(shots['again']['fields']['A short title'], 'Rolling restarts')
-        self.assertIn('Learner guide', shots['again']['chosen'])
+        self.assertIn('Learner guide', shots['again']['trainingChecked'])
         self.assertEqual(self.posts(result), [])
 
     def test_new_training_opens_over_the_screen_it_was_asked_from(self):
@@ -449,11 +449,11 @@ class LayoutTests(test_desk.ScriptedPage, test_desk.PageCase):
         answers = self.begun()
         answers['GET /api/setup'] = [ok(shared)]
         result = self.run_page(answers, [
-            {'click': 'New training'}, *self.FILLED, {'click': 'Learner guide'},
+            {'click': 'New training'}, *self.FILLED, {'tick': 'Learner guide'},
             {'snapshot': 'research'}, {'tick': 'Your sites (2)'}, {'snapshot': 'sites'},
             {'tick': 'The public web'}, {'click': 'Start'}])
         research = result['snapshots']['research']
-        self.assertEqual(research['ticked'], ['The public web'])
+        self.assertEqual(test_desk.research_ticks(research), ['The public web'])
         self.assertIn('Your sites (2)', research['buttons'])
         self.assertIn('Research from', research['sheet'])
         sites = result['snapshots']['sites']

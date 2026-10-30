@@ -37,6 +37,11 @@ PAGE = helpers.SCRIPTS / 'desk'
 PAGE_FILES = ('index.html', 'app.js', 'markdown.js', 'style.css', 'drafting.js', 'drafts.js')
 HARNESS = Path(__file__).resolve().parent / 'page_harness.js'
 NODE = shutil.which('node')
+
+
+def research_ticks(shot):
+    return [label for label in shot['ticked'] if label not in shot['trainingChecked']]
+
 # Everything comes from the desk itself. A picture may also be one the page holds in memory
 # (blob:), which is how a slide fetched with the key in its header is shown.
 SECURITY_HEADERS = {'Content-Security-Policy': "default-src 'self'; img-src 'self' blob:",
@@ -2856,7 +2861,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'A short title', 'value': 'Restart practice'},
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
-            {'click': 'No deck'}, {'click': 'Learner guide'},
+            {'click': 'No deck'}, {'tick': 'Learner guide'},
             {'attach': 'Add documents', 'files': [{'name': 'runbook.md', 'text': '# Runbook'}]},
             {'tick': 'The public web'},
             {'snapshot': 'ready'},
@@ -2882,11 +2887,11 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'snapshot': 'shape'}])
         shape = result['snapshots']['shape']
         for material in ('Learner guide', 'Reference brief', 'Practice scenarios'):
-            self.assertNotIn(material, shape['chosen'])
+            self.assertNotIn(material, shape['trainingChecked'])
         self.assertEqual(shape['pressed'], ['Field enablement', 'No deck'],
                          'no deck until a brand is set')
-        self.assertIn('201', shape['buttons'], 'the levels are chips in the open')
-        self.assertIn('101', shape['chosen'])
+        self.assertIn('201', shape['text'], 'the levels are chips in the open')
+        self.assertIn('101', shape['trainingChecked'])
 
     def test_a_shared_brand_keeps_the_deck_on_by_default(self):
         setup = {**SET_UP, 'shared': {'brand': {'brand': 'example-co', 'variant': 'dark'},
@@ -3012,7 +3017,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'A short title', 'value': 'Restart practice'},
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
-            {'click': 'No deck'}, {'click': 'Make scenarios for Yoodli'},
+            {'click': 'No deck'}, {'tick': 'Make scenarios for Yoodli'},
             {'attach': 'Add documents', 'files': [{'name': 'reference.pdf', 'text': '%PDF-synthetic'}]},
             {'snapshot': 'ready'}, {'click': 'Start'}])
         posted = self.posts(result)
@@ -3023,10 +3028,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
 
     def test_turning_yoodli_off_keeps_its_visible_materials(self):
         result = self.run_page(self.answers(), [
-            {'click': 'New training'}, {'click': 'Make scenarios for Yoodli'},
-            {'click': 'Make scenarios for Yoodli'}, {'snapshot': 'off'},
-            {'click': 'Practice scenarios'}, {'snapshot': 'removed'}])
-        selected = result['snapshots']['off']['chosen']
+            {'click': 'New training'}, {'tick': 'Make scenarios for Yoodli'},
+            {'tick': 'Make scenarios for Yoodli'}, {'snapshot': 'off'},
+            {'tick': 'Practice scenarios'}, {'snapshot': 'removed'}])
+        selected = result['snapshots']['off']['trainingChecked']
         self.assertNotIn('Make scenarios for Yoodli', selected)
         self.assertIn('Reference brief', selected)
         self.assertIn('Practice scenarios', selected)
@@ -3039,16 +3044,16 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
             {'click': 'No deck'}, {'click': 'Start'}, {'snapshot': 'empty'},
-            {'click': 'Reference brief'}, {'click': 'Make scenarios for Yoodli'},
-            {'snapshot': 'dependency'}, {'click': 'Practice scenarios'}, {'snapshot': 'removed'},
-            {'click': 'Learner guide'}, {'snapshot': 'ready'}])
+            {'tick': 'Reference brief'}, {'tick': 'Make scenarios for Yoodli'},
+            {'snapshot': 'dependency'}, {'tick': 'Practice scenarios'}, {'snapshot': 'removed'},
+            {'tick': 'Learner guide'}, {'snapshot': 'ready'}])
         shots = result['snapshots']
         self.assertIn('Included Reference brief and Practice scenarios for Yoodli.', shots['dependency']['text'])
         self.assertIn('Choose at least one material', shots['empty']['sheet'])
-        self.assertEqual(shots['empty']['focus'], 'Learner guide')
+        self.assertEqual(shots['empty']['focus'], 'new-material-document')
         for label in ('Make scenarios for Yoodli', 'Reference brief', 'Practice scenarios'):
-            self.assertIn(label, shots['dependency']['chosen'])
-        self.assertNotIn('Make scenarios for Yoodli', shots['removed']['chosen'])
+            self.assertIn(label, shots['dependency']['trainingChecked'])
+        self.assertNotIn('Make scenarios for Yoodli', shots['removed']['trainingChecked'])
         self.assertIn('Yoodli scenarios turned off because Practice scenarios was removed.', shots['removed']['text'])
         self.assertIn('Learner guide', shots['ready']['text'])
         self.assertEqual(self.posts(result), [])
@@ -3061,8 +3066,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     {'fill': 'A short title', 'value': 'Restart practice'},
                     {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
                     {'fill': 'Who is it for?', 'value': 'New operators'},
-                    {'click': 'PowerPoint'}, {'click': 'Learner guide'},
-                    {'click': 'Reference brief'},
+                    {'click': 'PowerPoint'}, {'tick': 'Learner guide'},
+                    {'tick': 'Reference brief'},
                     {'snapshot': 'ready'}])
                 ready = result['snapshots']['ready']
                 for gone in ('it stops for', 'Where this training stops', 'Review level',
@@ -3082,7 +3087,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     {'fill': 'A short title', 'value': 'Restart practice'},
                     {'fill': 'What should it teach?', 'value': 'Choose a safe restart.'},
                     {'fill': 'Who is it for?', 'value': 'New operators'},
-                    {'click': 'Learner guide'}, {'fill': 'What should the research answer? (optional)',
+                    {'tick': 'Learner guide'}, {'fill': 'What should the research answer? (optional)',
                      'value': '\n'.join(lines)}, {'snapshot': 'typed'},
                     {'click': 'Start'}, {'snapshot': 'refused'}])
                 shots = result['snapshots']
@@ -3100,8 +3105,8 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'A short title', 'value': 'Restart practice'},
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
-            {'click': '201'}, {'click': 'Learner guide'},
-            {'click': 'Reference brief'}, {'click': 'PowerPoint'},
+            {'tick': '201'}, {'tick': 'Learner guide'},
+            {'tick': 'Reference brief'}, {'click': 'PowerPoint'},
             {'click': 'Start'}])
         sent = [body for _, body in self.posts(result)]
         self.assertEqual(len(sent), 1)
@@ -3126,7 +3131,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'A short title', 'value': 'Restart practice'},
             {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
             {'fill': 'Who is it for?', 'value': 'New operators'},
-            {'click': 'No deck'}, {'click': 'Learner guide'},
+            {'click': 'No deck'}, {'tick': 'Learner guide'},
             {'click': 'Start'}, {'snapshot': 'refreshed'},
             {'click': 'Start'}, {'snapshot': 'kept'}])
         self.assertIn('Your answers are still here', result['snapshots']['refreshed']['text'])
@@ -4120,15 +4125,13 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
             {'snapshot': 'two'},
-            {'click': 'Walk through each slide’s design before it is built'},
+            {'tick': 'Walk through each slide’s design before it is built'},
             {'click': 'Start'}])
         two = result['snapshots']['two']
         label = 'Walk through each slide’s design before it is built'
         self.assertIn(label, two['text'])
-        self.assertNotIn(label, two['chosen'], 'off unless asked')
-        self.assertIn('Usually the deck is approved on its outline and on its look. Choose '
-                      'this to see how each slide is drawn, and approve the design in one '
-                      'decision.', two['text'])
+        self.assertNotIn(label, two['trainingChecked'], 'off unless asked')
+        self.assertIn('Optional. Review how each slide will be drawn before the deck is built.', two['text'])
         started = [body for address, body in self.posts(result) if address == '/api/trainings']
         self.assertIs(started[0]['walkthrough'], True)
 
@@ -4167,7 +4170,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertEqual(two['pressed'], ['Field enablement', 'Google Slides',
                                           'Presented in a session'])
         self.assertEqual((two['fields']['The deck’s brand'], two['fields']['The brand’s variant'],
-                          two['chosen']), ('example-co', 'dark', ['101']))
+                          two['trainingChecked']), ('example-co', 'dark', ['101']))
         # A brand the brand skill here does not have is not offered: its first one is.
         shared = {'brand': {'brand': 'acme', 'variant': 'dark'}, 'output': 'pptx'}
         answers = self.answers({**SET_UP, 'shared': shared, 'shared_problem': None})
@@ -4364,7 +4367,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'A short title', 'value': 'Rolling restarts'},
             {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
-            {'click': 'Learner guide'}, {'click': 'Assistant and limits'}, {'snapshot': 'missed'},
+            {'tick': 'Learner guide'}, {'click': 'Assistant and limits'}, {'snapshot': 'missed'},
             {'click': 'Look again'}, {'snapshot': 'listed'},
             {'fill': level, 'value': 'medium'},
             {'click': 'Start'},
@@ -4409,10 +4412,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
             {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
             {'click': 'Technical upskilling'},
-            {'click': 'Learner guide'}, {'click': 'Reference brief'}, {'click': 'Practice scenarios'},
-            {'click': '301'}, {'click': 'About the reference brief'}, {'click': 'A comparison'}, {'click': 'Google Slides'}, {'click': 'Deck brand'},
+            {'tick': 'Learner guide'}, {'tick': 'Reference brief'}, {'tick': 'Practice scenarios'},
+            {'tick': '301'}, {'click': 'About the reference brief'}, {'click': 'A comparison'}, {'click': 'Google Slides'}, {'click': 'Deck brand'},
             {'fill': 'The brand’s variant', 'value': 'dark'},
-            {'click': 'Copies of the guide and brief'}, {'click': 'Google Docs'},
+            {'click': 'Copies of the guide and brief'}, {'tick': 'Google Docs'},
             {'fill': 'How long it should take', 'value': '30 minutes'},
             {'click': 'Assistant and limits'}, {'snapshot': 'three'},
             {'click': 'Start'}, {'snapshot': 'run'},
@@ -4452,10 +4455,10 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         for pressed in ('Technical upskilling', 'Google Slides', 'Presented in a session',
                         'A comparison', 'Claude Code'):
             self.assertIn(pressed, three['pressed'])
-        self.assertEqual(three['chosen'], ['101', '301', 'Learner guide', 'Reference brief',
+        self.assertEqual(three['trainingChecked'], ['101', '301', 'Learner guide', 'Reference brief',
                                            'Practice scenarios', 'Google Docs'])
         # With no sites shared, research looks at the public web, as it always has.
-        self.assertEqual(three['ticked'], ['The public web'])
+        self.assertEqual(research_ticks(three), ['The public web'])
         self.assertIn('Your sites (0)', three['buttons'])
         self.assertLessEqual({'How long it should take (optional)': '30 minutes',
                               'The deck’s brand': 'example-co',
@@ -5110,15 +5113,15 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                 {'fill': 'A short title', 'value': 'Rolling restarts'},
                 {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
                 {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
-                {'click': 'Learner guide'}, *shape]
+                {'tick': 'Learner guide'}, *shape]
 
     def test_each_sources_choice_says_what_it_means_and_is_what_is_sent(self):
         self.started()
         going = 'Researching.'
         web_says = ('The public web: it searches for pages anyone can read, and keeps every '
                     'page it quotes with the training.')
-        shaped = [{'click': 'Reference brief'}, {'click': 'Practice scenarios'}, {'click': '101'},
-                  {'click': 'Make scenarios for Yoodli'}]
+        shaped = [{'tick': 'Reference brief'}, {'tick': 'Practice scenarios'}, {'tick': '101'},
+                  {'tick': 'Make scenarios for Yoodli'}]
         runbook = [{'attach': 'Add documents',
                     'files': [{'name': 'runbook.md', 'text': '# Runbook'}]}]
         for chose, chosen, shape in (
@@ -5140,7 +5143,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                     *self.to_the_last_step(*shape), *chose, {'snapshot': 'three'},
                     {'click': 'Start'}, {'snapshot': 'run'}])
                 three, landed = result['snapshots']['three'], result['snapshots']['run']
-                self.assertEqual(three['ticked'], ['The public web'] if chosen['web'] else [])
+                self.assertEqual(research_ticks(three), ['The public web'] if chosen['web'] else [])
                 # The choice that is on says what it means, and the line says them together.
                 self.assertEqual(web_says in three['text'], chosen['web'])
                 self.assertIn('Research ' + research_sites.summary(chosen) + '.', three['text'])
@@ -5194,11 +5197,11 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'snapshot': 'ready'}, {'click': 'Start'}])
         shots = result['snapshots']
         # Your sites stay off until they are ticked: research looks at the public web.
-        self.assertEqual(shots['default']['ticked'], ['The public web'])
+        self.assertEqual(research_ticks(shots['default']), ['The public web'])
         self.assertIn('Research from the public web.', shots['default']['text'])
         self.assertNotIn('blogs.vmware.com/tanzu', shots['default']['buttons'])
         # Ticked, every shared site is on; with the public web too, it only fills gaps.
-        self.assertEqual(shots['shared']['ticked'], ['Your sites (2)', 'The public web',
+        self.assertEqual(research_ticks(shots['shared']), ['Your sites (2)', 'The public web',
                                                      'blogs.vmware.com/tanzu', 'docs.example.com'])
         self.assertIn('Research from 2 of your sites (blogs.vmware.com/tanzu, '
                       'docs.example.com) and the public web.', shots['shared']['text'])
@@ -5218,7 +5221,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                          [{'site': 'ftp://files.example.com'},
                           {'site': 'Learn.Example.com/guides/'}])
         added = shots['added']
-        self.assertEqual(added['ticked'], ['Your sites (3)', 'blogs.vmware.com/tanzu',
+        self.assertEqual(research_ticks(added), ['Your sites (3)', 'blogs.vmware.com/tanzu',
                                            'docs.example.com', 'learn.example.com/guides'])
         self.assertEqual(added['fields']['Add a site for this training'], '')
         # Sites on with none of them ticked, and then nothing on at all, do not start.
@@ -7379,7 +7382,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
                 {'fill': 'A short title', 'value': 'Rolling restarts'},
                 {'fill': 'What should it teach?', 'value': 'How a rolling restart works.'},
                 {'fill': 'Who is it for?', 'value': 'Platform engineers new to it.'},
-                {'click': 'Learner guide'}, *more]
+                {'tick': 'Learner guide'}, *more]
 
     def start_answers(self, *documents: dict) -> dict:
         self.started('--levels', '101,201')

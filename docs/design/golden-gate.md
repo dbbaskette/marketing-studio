@@ -76,7 +76,8 @@ shared setup, Blog Studio, Presentation Studio and Training Studio:
 | Actions | `.button`, `.button-filled`, `.button-quiet`, `.button-danger`, `.button-round` |
 | Fields | `.field`, `.field-label`, `.input`, `.field-hint`, `label.field`, `.input-typed` |
 | Exclusive choices | `.segmented` with buttons or radio `label.seg-option` |
-| Independent choices | `.chips`, `.chip` |
+| Independent form choices | Native checkbox in `label.check`; use fieldset/legend for a group. A focus ring never substitutes for checked state. |
+| Compact marks outside forms | `.chips`, `.chip`, when an explicit pressed state and label explain the mark; use an action button for work that runs immediately. |
 | Object choices | `.pick-cards`, `.pick-card`, `.pick-title`, `.pick-says` |
 | Steps | `.workflow-steps`, `.workflow-step` |
 | Surfaces | `.card`, `.paper`, `.table`, `.callout` |
