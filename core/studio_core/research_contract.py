@@ -14,6 +14,7 @@ import secrets
 import shutil
 import subprocess
 import tempfile
+import time
 
 IDS_FOR_QUESTIONS = ('Planning questions have IDs. A finding that answers one has an ID '
                      "that begins with that question's ID and two hyphens, such as "
@@ -889,6 +890,55 @@ def uncaptured(sources, captures):
     return problems
 
 
+def collection_preflight(case, dossier, spec):
+    """Ask the pinned collection validator, not a second host-owned shape checker.
+
+    Scratch registrations describe this local preflight only. They never become
+    production invocation observations or accepted evidence checkpoints.
+    """
+    from studio_core.research_session import evidence_gaps
+
+    worker, stream = spec['worker'], 'submission'
+    script = Path(spec['runtime']) / 'scripts/harness-research.mjs'
+    deadline = time.monotonic() + 120
+
+    def command(action, value):
+        file = '.harness-research/host-inputs/' + secrets.token_hex(12) + '.json'
+        write(case, file, json.dumps(value))
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise subprocess.TimeoutExpired('collection preflight', 120)
+        done = subprocess.run([spec.get('node') or 'node', str(script), 'collection', action,
+                               '--project', str(case), '--file', file], capture_output=True,
+                              text=True, timeout=remaining, stdin=subprocess.DEVNULL)
+        if done.returncode:
+            raise ValueError((done.stderr.strip().splitlines() or ['Collection validation failed.'])[-1])
+        return json.loads(done.stdout)
+
+    supplied = []
+    for source in dossier['sources']:
+        if source['permission'] == 'selected':
+            file = source.get('original_file') or source['file']
+            supplied.append({'origin': source['origin'], 'file': file,
+                             'sha256': hashlib.sha256(inside(case, file).read_bytes()).hexdigest()})
+    command('init', {'schema': 1, **{k: dossier[k] for k in TASK_FIELDS},
+                    'workstreams': [{'id': stream, 'questions': ['Validate this submitted evidence.']}],
+                    'supplied_sources': supplied, 'max_investigators': 1,
+                    'execution_mode': 'sequential'})
+    registered = command('register', {'workstream': stream, 'investigator': worker,
+                                     'invocation': 'local-preflight-' + secrets.token_hex(12)})
+    identity = {'workstream': stream, 'investigator': worker,
+                'attempt': registered['registration']['number']}
+    for source in dossier['sources']:
+        command('capture', {**identity, 'source': source})
+    command('finish', {**identity, 'outcome': 'completed',
+                       'note': 'Local submission preflight completed; not a production invocation observation.'})
+    command('accept', {'schema': 1, 'request_digest': registered['request_digest'],
+                      'generation': registered['generation'], **identity,
+                      'sources': dossier['sources'], 'facts': dossier['facts'],
+                      'limitations': [], 'gaps': evidence_gaps(dossier)})
+
+
 def refused(value, spec):
     """What the pinned helper says of a dossier, saved in a disposable case with this job's own
     captures and the task's own fields, as the parent will save it after the job. The author
@@ -919,6 +969,19 @@ def refused(value, spec):
                 source['original_file'] = entry['original']
             else:
                 source.pop('original_file', None)
+        if spec.get('research_mode') == 'evidence':
+            try:
+                collection_preflight(case, dossier, spec)
+            except (OSError, subprocess.TimeoutExpired):
+                return ['The pinned Harness Research collection check could not finish. '
+                        'This submission was not accepted; do not treat report validation as collection approval.']
+            except (ValueError, KeyError) as error:
+                return [f'Harness Research refused this evidence packet: {error} '
+                        'Correct and resubmit within this job. Facts contain only id, statement, author '
+                        'and citations; citations contain source, quote and optional locator. '
+                        'Do not remove a kind label to turn an inference into a fact; retain unsupported '
+                        'or inferred material as a gap for synthesis. Captured evidence is unchanged.']
+            return []
         write(case, 'dossier.json', json.dumps(dossier))
         try:
             done = subprocess.run(
