@@ -35,4 +35,11 @@ shared/home suite once, package/UI checks and existing readiness coverage. Reuse
 unchanged studio pipeline evidence. No personal app switch/restart or publishing
 is implied by the visual request.
 
-Status: implementation and verification in progress.
+Status: implemented and verified. The complete shared suite passed (738 tests,
+one optional PDF-reader skip), plus native setup/authenticated-launch acceptance
+for every studio, the 41-step Team Hub journey and 39 CLI command checks. The
+protected home passed browser checks at 320–1920px, in light/dark appearances,
+with keyboard disclosures, reduced effects and connection/install states.
+Readiness polling preserved unsaved settings and installation links. Verification
+used disposable fixtures in a macOS 27 Tart clone, which was removed afterward.
+No provider jobs or personal runtime changes were made.
