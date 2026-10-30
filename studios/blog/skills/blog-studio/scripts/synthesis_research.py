@@ -5,7 +5,14 @@ import json
 from pathlib import Path
 import tempfile
 import time
-from studio_core import model_profiles, research_contract, research_sites, research_view
+from studio_core import (
+    model_profiles,
+    research_contract,
+    research_sites,
+    research_view,
+    research_session,
+    research_text,
+)
 
 
 def offered(source):
@@ -112,7 +119,18 @@ def refusal_groups(refusal, case):
     return grouped(case)
 
 
-def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
+def generate(
+    directory,
+    run,
+    payload,
+    worker,
+    *,
+    seconds,
+    stop,
+    progress=None,
+    selected_sources=(),
+    owned=lambda: True,
+):
     """Research the blog in `directory` and publish its reviewed bundle there. `progress`,
     when given, hears {'round', 'phase'} as each job starts (round 0 is public source
     discovery, before the first author) and {'job': ...} as each ends, with its seconds and
@@ -121,6 +139,7 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
     import blog_worker
     from performance import extract
 
+    forward_usage = blog_worker.forwarded_meter()
     started = time.monotonic()
     rounds = [0]  # Author rounds so far; the shared contract allows ROUNDS of them.
 
@@ -129,7 +148,7 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             progress(event)
 
     def call(phase, data, guidance, web=False):
-        if stop.is_set():
+        if stop.is_set() or not owned():
             raise ValueError('Research stopped. Saved work is kept.')
         remaining = seconds - (time.monotonic() - started)
         if remaining <= 0:
@@ -140,7 +159,8 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             'research-' + phase,
             purpose='review' if phase == 'review' else 'research',
         )
-        tell({'round': rounds[0], 'phase': phase})
+        number = (data.get('_execution') or {}).get('round', rounds[0])
+        tell({'round': number, 'phase': phase})
         began, outcome = time.monotonic(), 'failed'
         with blog_worker.metered() as jobs:
             try:
@@ -156,16 +176,19 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
                 outcome = 'kept'
                 return answer
             finally:
-                tokens = [job['tokens'] for job in jobs if job['tokens'] is not None]
-                dollars = [job['dollars'] for job in jobs if job['dollars'] is not None]
+                forward_usage(jobs)
+                tokens = [job['tokens'] for job in jobs]
+                dollars = [job['dollars'] for job in jobs]
                 tell(
                     {
                         'job': {
                             'phase': phase,
-                            'round': rounds[0],
+                            'round': number,
                             'seconds': round(time.monotonic() - began, 1),
-                            'tokens': sum(tokens) if tokens else None,
-                            'dollars': round(sum(dollars), 4) if dollars else None,
+                            'tokens': sum(tokens) if tokens and None not in tokens else None,
+                            'dollars': round(sum(dollars), 4)
+                            if dollars and None not in dollars
+                            else None,
                             'outcome': outcome,
                         }
                     }
@@ -200,6 +223,7 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
                     source['name'],
                     True,
                 )
+        sources.extend(selected_sources if chosen['documents'] else ())
         # Your documents count only when there are some to read.
         chosen = research_sites.effective(chosen, bool(sources))
         allowed = research_sites.fetches(chosen)
@@ -228,13 +252,27 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             # Pages from your sites are public captures: documents and sites are mixed.
             'source_mode': research_sites.source_mode(chosen) if allowed else 'selected',
         }
+        if payload.get('research_focus'):
+            task['scope'] += '\nResearch focus: ' + payload['research_focus']
         from blog_runner import planning_questions
 
         task['planning_questions'] = planning_questions(
             payload['documents'].get('research-plan') or ''
         )
         gaps = []
-        if allowed:
+        cached = None
+        discovery_file = None
+        if research_session.enabled(run) and allowed:
+            key = research_session.digest(
+                [task, [[s['file'], s['origin'], s['text']] for s in sources]]
+            )
+            discovery_file = directory / research_contract.CASE / ('discovery-' + key + '.json')
+            if discovery_file.exists():
+                cached = json.loads(discovery_file.read_text())
+                gaps.extend(cached['gaps'])
+                for item in cached['sources']:
+                    capture(item['file'], item['origin'], item['text'], item['title'], False)
+        if allowed and cached is None:
             searching = research_sites.guidance(chosen)
             discovery = call(
                 'discovery',
@@ -284,6 +322,22 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
                     gaps.append({'url': url, 'reason': str(error)})
             if chosen['sites']:
                 tell({'outside': {'count': kept_out, 'sites': list(chosen['sites'])}})
+
+        if discovery_file is not None and cached is None:
+            research_contract.write(
+                discovery_file.parent,
+                discovery_file.name,
+                json.dumps(
+                    {
+                        'sources': [
+                            {k: s[k] for k in ('file', 'origin', 'text', 'title')}
+                            for s in sources
+                            if not s.get('offered', True)
+                        ],
+                        'gaps': gaps,
+                    }
+                ),
+            )
 
         def validate_author(value, data):
             # Validate with the actual pinned helper, in a disposable case. Never
@@ -372,7 +426,25 @@ def generate(directory, run, payload, worker, *, seconds, stop, progress=None):
             raise ValueError(
                 'Restore the saved Harness Research version before continuing this blog.'
             )
-        research_contract.Workflow(runtime).run(directory, task, invoke, sources)
+        if research_session.enabled(run):
+            if research_session.capability(runtime) != run['research_execution']['capability']:
+                raise ValueError(
+                    'Restore the saved Harness Research collection capability before continuing.'
+                )
+            transport = research_text.Transport(
+                runtime, lambda phase, data, guide: call(phase, data, guide)
+            )
+            research_session.Workflow(runtime).run(
+                directory,
+                task,
+                transport,
+                sources,
+                limit=run['research_execution']['workers'],
+                progress=tell,
+                cancelled=stop.is_set,
+            )
+        else:
+            research_contract.Workflow(runtime).run(directory, task, invoke, sources)
         research_contract.publish(directory / research_contract.CASE, directory / 'research')
         account = research_view.account(directory / 'research')
         check = account['check'] if account else {'said': research_view.UNCHECKED, 'note': ''}

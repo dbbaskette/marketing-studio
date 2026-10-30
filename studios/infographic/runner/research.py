@@ -59,7 +59,7 @@ def _unpack(raw, destination):
 
 
 def _verify(root, *, runtime=None, verifier=None):
-    facts, manifest = contract.read_bundle(root / "research")
+    facts, manifest = contract.read_bundle(contract.output_root(root))
     state = json.loads(_read(root, ".harness-research/synthesis.json", 2_000_000))
     require(
         state.get("owner") == contract.OWNER
@@ -99,8 +99,10 @@ def prepare(case, *, expected_task, runtime=None, verifier=None):
         "Choose the owned research case without linked folders.",
     )
     # Read only the declared helper state, manifest and exact selected captures; no directory upload.
-    manifest = json.loads(_read(root, "research/output.json", 2_000_000))
-    facts = json.loads(_read(root, "research/facts.json", 2_000_000))
+    output = contract.output_root(root)
+    prefix = '' if output == root else 'research/'
+    manifest = json.loads(_read(root, prefix + 'output.json', 2_000_000))
+    facts = json.loads(_read(root, prefix + 'facts.json', 2_000_000))
     entries = manifest.get("artifacts")
     require(
         isinstance(entries, list) and len(entries) <= 1000,
@@ -110,29 +112,15 @@ def prepare(case, *, expected_task, runtime=None, verifier=None):
     for source in facts.get("sources", []):
         for key in ("snapshot", "original_snapshot"):
             if source.get(key):
-                require(
-                    source[key].startswith("research/"),
-                    "Research captures must belong to the declared bundle.",
-                )
-                allowed.add(source[key].removeprefix("research/"))
+                allowed.add(contract.snapshot_name(source[key], manifest))
     require(
         {e.get("file") for e in entries} == allowed,
         "The research bundle contains unrelated or missing files.",
     )
     helper = contract.capability(Path(runtime) if runtime else contract.find_runtime())
     require(helper is not None, "Use an installed schema-2 Harness Research helper.")
-    names = {".harness-research/synthesis.json", "research/output.json"}
-    names.update("research/" + e["file"] for e in manifest["artifacts"])
-    for source in facts.get("sources", []):
-        names.update(source[k] for k in ("file", "original_file") if source.get(k))
-    require(len(names) <= 1000, "This research handoff has too many files.")
-    files = {}
-    total = 0
-    for name in sorted(names):
-        raw = _read(root, name, TOTAL)
-        total += len(raw)
-        require(total <= TOTAL, "Choose a research handoff within 16 MB.")
-        files[name] = raw
+    _, files = contract.case_files(root)
+    require(sum(len(raw) for raw in files.values()) <= TOTAL, "Choose a research handoff within 16 MB.")
     with tempfile.TemporaryDirectory(prefix="infographic-research-") as temporary:
         copied = Path(temporary)
         for name, raw in files.items():
@@ -148,7 +136,7 @@ def prepare(case, *, expected_task, runtime=None, verifier=None):
             archive.writestr(name, raw)
     # Brief first, then all qualified evidence, gaps and counterfacts. No automatic factual endorsement.
     text = "\n\n".join(
-        files["research/" + n].decode("utf-8")
+        files[prefix + n].decode("utf-8")
         for n in ("brief.md", "evidence.md", "report.md")
     )
     extracted = {
@@ -181,7 +169,7 @@ def validate_capture(raw, provenance):
     with tempfile.TemporaryDirectory(prefix="infographic-research-read-") as temporary:
         root = Path(temporary)
         _unpack(raw, root)
-        facts, manifest = contract.read_bundle(root / "research")
+        facts, manifest = contract.read_bundle(contract.output_root(root))
         require(
             manifest["digest"] == provenance.get("research_digest")
             and digest(facts["review"]) == provenance.get("review_digest")

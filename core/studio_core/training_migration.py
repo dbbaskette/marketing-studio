@@ -285,8 +285,9 @@ def shared_inputs(origin, read, session=None):
         for source in facts.get('sources', []):
             for key in ('snapshot', 'original_snapshot'):
                 name = source.get(key)
-                if name and (not isinstance(name, str) or not name.startswith('research/') or name[9:] not in names):
-                    raise ValueError('The bundle is missing a pinned source capture.')
+                if name:
+                    from studio_core.research_contract import snapshot_name
+                    snapshot_name(name, manifest)
     return set(cached)
 
 

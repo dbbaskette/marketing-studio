@@ -131,7 +131,7 @@ def research_from(form: dict, scope: str | None = None,
     return found
 
 
-def _research_from(sent: dict, route: str) -> dict:
+def _research_from(sent: dict, route: str, *, references=False) -> dict:
     """The form's research_from, checked: sites canonical, the list pinned as sent. A form
     sent the old way, with research_sources or nothing, is taken in the new shape."""
     from studio_core import research_sites
@@ -144,7 +144,7 @@ def _research_from(sent: dict, route: str) -> dict:
         given = research_sites.legacy(old) if old else (
             {'documents': True} if route == 'document' else {'web': True})
     try:
-        return research_sites.choice(given, documents_given=route == 'document')
+        return research_sites.choice(given, documents_given=route == 'document' or references)
     except ValueError as error:
         raise WorkspaceError(str(error)) from None
 
@@ -163,7 +163,7 @@ def research_questions(sent) -> list[str]:
     return lines
 
 
-def check_form(sent: dict, brands: list | None) -> dict:
+def check_form(sent: dict, brands: list | None, *, references=False) -> dict:
     """The form, checked and trimmed. Raises WorkspaceError with one sentence otherwise.
     `brands` are those the brand skill lists, or None with no brand skill: a deck can then
     still be started, with its brand left to the brand step, or named as a short word the
@@ -222,7 +222,7 @@ def check_form(sent: dict, brands: list | None) -> dict:
         # Where research may look: your documents, your sites and/or the public web. The
         # sites are the deck's own list, kept as sent: a later change to the shared list
         # never changes a deck that has started.
-        checked['research_from'] = _research_from(sent, route)
+        checked['research_from'] = _research_from(sent, route, references=references)
     checked['research_questions'] = research_questions(sent)
     # Only the form's own choice shows the first draft before its review: nothing in the
     # goal's words flips it.

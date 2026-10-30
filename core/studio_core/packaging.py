@@ -18,7 +18,7 @@ def shared_link(path):
             return True
         if path.name == 'studio_core' and target == parent / 'core/studio_core':
             return True
-        if path.name in ('style.css', 'markdown.js', 'drafting.js') and target == parent / 'ui-kit' / path.name:
+        if path.name in ('style.css', 'markdown.js', 'drafting.js', 'research.js') and target == parent / 'ui-kit' / path.name:
             return True
     return False
 

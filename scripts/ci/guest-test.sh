@@ -181,6 +181,80 @@ elif [[ "${1:-full}" == bundles ]]; then
   bundle="$(find dist -maxdepth 1 -name 'marketing-studio-*-macos-arm64.zip' -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A real Apple Silicon platform bundle is required.' >&2; exit 1; }
   "$python" scripts/ci/bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/bundle-acceptance.log"
+elif [[ "${1:-full}" == training-plan ]]; then
+  # Exercise the real page/engine before the complete native suite, so a browser
+  # regression does not waste a full-suite run. All authors and settings are fixtures.
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/training-graphics" --cache "$work/training-graphics-cache")"
+  mkdir -p "$work/training-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/training-browser/"
+  touch "$work/training-npm-user.conf" "$work/training-npm-global.conf"
+  env HOME="$work/training-browser-home" NPM_CONFIG_USERCONFIG="$work/training-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/training-npm-global.conf" \
+    npm ci --prefix "$work/training-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/training-browser-tools.log" 2>&1
+  export NODE_PATH="$work/training-browser/node_modules" PYTHON="$python" TRAINING_PLAN_UI_RESULTS="$results_dir/training-plan-ui"
+  node studios/training/tests/ui/training_plan.cjs 2>&1 | tee "$results_dir/training-plan-browser.log"
+  {
+    PYTHONPATH=tests "$python" -m unittest test_ui_consistency test_network_static test_suite.CoreTests -v
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+  } 2>&1 | tee "$results_dir/training-plan-tests.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == slide-text-final ]]; then
+  # All relevant full suites ran; retain passing classes and verify the last
+  # saved-run response compatibility repair before browser/CLI acceptance.
+  (cd studios/training && PYTHONPATH=tests "$python" -m unittest test_runner_deck.PageTests test_runner_deck.ReviewToolTests test_slide_text_workflow -v && "$python" skills/training-studio/scripts/validate_package.py) 2>&1 | tee "$results_dir/slide-text-final.log"
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/slide-graphics" --cache "$work/slide-graphics-cache")"
+  mkdir -p "$work/slide-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/slide-browser/"
+  touch "$work/slide-npm-user.conf" "$work/slide-npm-global.conf"
+  env HOME="$work/slide-browser-home" NPM_CONFIG_USERCONFIG="$work/slide-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/slide-npm-global.conf" \
+    npm ci --prefix "$work/slide-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/slide-browser-tools.log" 2>&1
+  export NODE_PATH="$work/slide-browser/node_modules" SLIDE_TEXT_UI_RESULTS="$results_dir/slide-text-ui"
+  node tests/slide_text_browser.cjs 2>&1 | tee "$results_dir/slide-text-browser.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == slide-text-finish ]]; then
+  {
+    (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_runner_page.RuleTests test_desk_page.ProgressTests test_deck_desk.DeskViewTests test_slide_text_workflow -v && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+  } 2>&1 | tee "$results_dir/slide-text-finish.log"
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/slide-graphics" --cache "$work/slide-graphics-cache")"
+  mkdir -p "$work/slide-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/slide-browser/"
+  touch "$work/slide-npm-user.conf" "$work/slide-npm-global.conf"
+  env HOME="$work/slide-browser-home" NPM_CONFIG_USERCONFIG="$work/slide-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/slide-npm-global.conf" \
+    npm ci --prefix "$work/slide-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/slide-browser-tools.log" 2>&1
+  export NODE_PATH="$work/slide-browser/node_modules" SLIDE_TEXT_UI_RESULTS="$results_dir/slide-text-ui"
+  node tests/slide_text_browser.cjs 2>&1 | tee "$results_dir/slide-text-browser.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == slide-text-first ]]; then
+  {
+    "$python" -m unittest discover -s tests -v
+    (cd studios/blog && node scripts/ci/check-management.cjs)
+    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+  } 2>&1 | tee "$results_dir/slide-text-first.log"
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/slide-graphics" --cache "$work/slide-graphics-cache")"
+  mkdir -p "$work/slide-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/slide-browser/"
+  touch "$work/slide-npm-user.conf" "$work/slide-npm-global.conf"
+  env HOME="$work/slide-browser-home" NPM_CONFIG_USERCONFIG="$work/slide-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/slide-npm-global.conf" \
+    npm ci --prefix "$work/slide-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/slide-browser-tools.log" 2>&1
+  export NODE_PATH="$work/slide-browser/node_modules" SLIDE_TEXT_UI_RESULTS="$results_dir/slide-text-ui"
+  node tests/slide_text_browser.cjs 2>&1 | tee "$results_dir/slide-text-browser.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == shared-research-finish ]]; then
+  # All five complete suites have run. Recheck the repaired Training Studio
+  # expectations, then finish the real synthetic browser and CLI acceptance gates.
+  {
+    (cd studios/training && PYTHONPATH=tests "$python" -m unittest test_runner_page.RuleTests test_runner_page.LaterTests test_desk.RunnerScreenTests.test_a_run_is_watched_from_working_to_a_gate_to_a_failure_to_done -v && "$python" skills/training-studio/scripts/validate_package.py)
+  } 2>&1 | tee "$results_dir/shared-research-finish.log"
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/research-graphics" --cache "$work/research-graphics-cache")"
+  mkdir -p "$work/research-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/research-browser/"
+  touch "$work/research-npm-user.conf" "$work/research-npm-global.conf"
+  env HOME="$work/research-browser-home" NPM_CONFIG_USERCONFIG="$work/research-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/research-npm-global.conf" \
+    npm ci --prefix "$work/research-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/research-browser-tools.log" 2>&1
+  export NODE_PATH="$work/research-browser/node_modules" PYTHON="$python" INFOGRAPHIC_UI_RESULTS="$results_dir/research-ui"
+  node studios/infographic/tests/ui/research.cjs 2>&1 | tee "$results_dir/research-browser.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == research-citation-finish ]]; then
   # The full root, Blog Studio, Presentation Studio and remaining Training Studio
   # classes passed. Finish the CLI class after isolating its HOME snapshot, then

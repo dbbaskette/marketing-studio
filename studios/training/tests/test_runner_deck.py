@@ -1084,6 +1084,19 @@ class ReviewToolTests(ToolCase):
         self.assertEqual([(finding['number'], finding['about']) for finding in kept['findings']],
                          [(2, 'drawing'), (4, 'content')])
 
+    def test_current_critic_gets_an_answer_for_each_question_on_each_inspected_slide(self):
+        tools = self.looked()
+        preview = self.base / 'whole' / 'preview'
+        (preview / 'critic.json').write_text(json.dumps({'schema': 2}))
+        self.ok(tools.submit_assessment([MAJOR]))
+        sent = json.loads((preview / 'critique.json').read_text())
+        self.assertEqual([s['id'] for s in sent['slides']], [s['id'] for s in tools.job['review']['slides']])
+        for slide in sent['slides']:
+            self.assertEqual(len(slide['answers']), len(deck.round_questions(tools.job['review'])))
+            for index, answer in enumerate(slide['answers'], 1):
+                self.assertEqual(answer, not (slide['id'] == MAJOR['slide'] and index == MAJOR['question']))
+            self.assertGreaterEqual(len(slide['note']), 12)
+
     def test_what_the_tool_refuses_in_an_assessment_goes_back_to_the_reviewer(self):
         tools = self.looked()
         self.slides.refuse['critique'] = ['Question 3 was answered twice for one slide.']

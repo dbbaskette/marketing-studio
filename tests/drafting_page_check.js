@@ -137,6 +137,21 @@ function studio(answers = {}) {
 }
 
 const groups = {
+  async slideContent() {
+    const decisions = [], notes = [];
+    const panel = Drafting.slideContent({slides: [{title: '<unsafe>', points: [{label: 'Claim', text: 'A short supported claim.'}], notes: 'Presenter explanation.'}],
+      onNote: text => notes.push(text), onDecision: async (...args) => { decisions.push(args); }});
+    assert.ok(panel.textContent.includes('<unsafe>'));
+    assert.equal(all(panel).filter(n => n.tagName === 'img' || n.tagName === 'iframe').length, 0);
+    const buttons = all(panel).filter(n => n.tagName === 'button');
+    assert.equal(buttons[1].textContent, 'Approve text & design deck');
+    await buttons[0].fire('click'); assert.equal(decisions.length, 0);
+    const input = all(panel).find(n => n.tagName === 'textarea');
+    input.value = 'Shorten slide one.'; await input.fire('input'); await buttons[0].fire('click');
+    same(decisions[0], ['changes', 'Shorten slide one.']);
+    await buttons[1].fire('click'); same(decisions[1], ['approve', null]);
+    assert.equal(notes[0], input.value);
+  },
   async diff() {
     same(Drafting.diffWords('one two three', 'one 2 three').map(p => p.op), ['same', 'removed', 'added', 'same']);
     assert.equal(Drafting.diffWords('a '.repeat(5000), 'b'), null);

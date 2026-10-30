@@ -1,6 +1,6 @@
 ## This blueprint is for level {level}
 
-The training has levels. A level is a depth tier of the same subject, and each assumes the one before.
+The training has levels. Use the table as a starting point. The person’s explicit task, audience, depth and requested teaching approach govern the content; do not reduce an applied introductory lesson to terminology alone. Each level assumes the prerequisites stated in its plan.
 
 | Level | Depth | In field enablement |
 | --- | --- | --- |

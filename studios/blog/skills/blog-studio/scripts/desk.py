@@ -47,6 +47,7 @@ CREATE = frozenset(
         'outline',
         'outline_source',
         'research_from',
+        'research_inputs',
     }
 )
 # What the person brings: a draft (edit), a topic (author), an outline written from or an
@@ -447,8 +448,13 @@ def _start(root, data, way, title, tone, length, style, author, brand):
     """A new desk blog whose draft is written for the person: from a topic and its point,
     from their outline, or from an outline shaped with them first. The draft record holds
     what is known so far; desk/start.json the steps that write the rest, with no stops."""
-    from studio_core import research_contract
+    from studio_core import research_contract, research_sources, research_session
 
+    selected = (
+        research_sources.prepare_start(root, data['research_inputs'])
+        if data.get('research_inputs')
+        else None
+    )
     point, audience = data.get('point') or '', data.get('audience') or ''
     if not isinstance(point, str) or len(point) > 2000:
         raise ValueError('Say the point to make in up to 2,000 characters.')
@@ -495,7 +501,11 @@ def _start(root, data, way, title, tone, length, style, author, brand):
     if brand:
         record['brand'] = brand
     _attach(root, data, record)
-    found = _research_choice(root, data.get('research_from'), record)
+    found = (
+        selected['research_from']
+        if selected
+        else _research_choice(root, data.get('research_from'), record)
+    )
     record['research_policy'] = 'web-allowed' if found else 'supplied-only'
     record['research_from'] = found
     if style:
@@ -540,6 +550,17 @@ def _start(root, data, way, title, tone, length, style, author, brand):
     }
     directory = studio.inside(root, 'articles', ident)
     directory.mkdir()
+    if found:
+        runtime = research_contract.runtime_for(start['contract'])
+        execution = (
+            research_session.execution(runtime, selected['workers'] if selected else 3)
+            if runtime
+            else None
+        )
+        if execution:
+            start.update(schema=2, research_execution=execution)
+        if selected:
+            start['research_inputs'] = research_sources.install(selected, directory)
     studio.write_json(studio.inside(directory, DESK, 'draft.json'), draft)
     studio.write_json(studio.inside(directory, DESK, START), start)
     studio.persist(directory, 'articles', record)
@@ -557,7 +578,17 @@ def read_start(root, ident):
     target = _start_path(root, ident)
     if not target.is_file() or target.is_symlink():
         return None
-    return studio.read_json(target)
+    value = studio.read_json(target)
+    if value.get('schema') not in (1, 2):
+        raise ValueError(
+            'This blog start uses a newer workflow. Update Blog Studio before continuing.'
+        )
+    if value.get('schema') == 2:
+        from studio_core import research_session
+
+        if not research_session.protocol(value):
+            raise ValueError('This blog research execution record is not supported.')
+    return value
 
 
 def write_start(root, ident, start):

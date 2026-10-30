@@ -136,7 +136,12 @@ function sDeskSettings(held){
   const again=()=>sDeskStartAgain(held);
   const go=sNode('button','button button-filled','Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
   form.append(sFilesCard(held,problem,again,locked=>{go.disabled=locked||!access.actions.edit;}));
-  if(sDeskWriting(held))form.append(sCard('Research before the writing',sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>again()),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'),sNode('p','quiet','Ticked as in Settings, for this blog only. It runs before the outline, with no stop for you.')));
+  if(sDeskWriting(held)){
+    if(typeof StudioResearch !== 'undefined'){
+      if(!held.sourceEditor)held.sourceEditor=new StudioResearch.Editor({request:sent=>api('research-sources',sent),label:'Research before writing (optional)'});
+      form.append(held.sourceEditor.node);
+    }else form.append(sCard('Research before the writing',sCheck('desk-sites','Search my sites',held,'searchSites',null,()=>again()),held.searchSites?sSitePicker(held.from,'desk-research',()=>{}):null,sCheck('desk-web','Search the web too',held,'searchWeb'),sNode('p','quiet','Ticked as in Settings, for this blog only. It runs before the outline, with no stop for you.')));
+  }
   form.append(sCard(sDeskWriting(held)?'Length and tone':'Tone',sDeskWriting(held)?sLengthSelect(held,'desk-length'):null,sField('desk-tone','Tone',held,'tone',{max:2000,hint:'Such as clear and conversational.'})));
   form.append(sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go)));
   form.addEventListener('submit',async event=>{
@@ -298,7 +303,10 @@ async function sDeskGo(held){
       made=await api('desk-create',{...settings,title:undefined,article:started.id});
     }
   }else{
-    const research=held.searchSites||held.searchWeb?{research_from:{sites:held.searchSites?sChosenSites(held.from):[],web:!!held.searchWeb}}:{};
+    const sourceChoice=held.sourceEditor?.choice();
+    const wantsResearch=sourceChoice&&(sourceChoice.documents||sourceChoice.web||sourceChoice.sites.length);
+    if((wantsResearch||held.sourceEditor?.value?.sources?.length)&&!held.sourceEditor.valid())throw new Error('Finish reading, remove or exclude unreadable sources before starting.');
+    const research=wantsResearch?{research_inputs:held.sourceEditor.spec()}:held.searchSites||held.searchWeb?{research_from:{sites:held.searchSites?sChosenSites(held.from):[],web:!!held.searchWeb}}:{};
     const writing={...common,way:held.have==='topic'?'topic':held.outlineWay,length:held.length||'style',...research,...(held.have==='topic'&&held.angleOp?{angles:held.angleOp}:{})};
     if(held.have==='topic')made=await api('desk-create',{...writing,point:held.point.trim(),...(held.audience.trim()?{audience:held.audience.trim()}:{})});
     else if(held.outlineFrom==='paste')made=await api('desk-create',{...writing,outline:held.outline});
@@ -359,7 +367,7 @@ function sDeskProgress(held){
   const view=held.view,start=view.start,p=DESK_KIT.progress(held,start.open==='outline'?'The outline':'The draft');
   // Driven on another computer, or by nobody: the start says so, and offers to take it.
   sFrame(view.title,[sDeskTeam(view),p.stop],sDeskDriverWords(view)||p.above,()=>sRoute('blogs'));
-  sPage(p.lede,sDeskElsewhere(view),p.stopped,p.card);
+  sPage(p.lede,sDeskElsewhere(view),p.stopped,...(start.research_progress&&typeof StudioResearch!=='undefined'?[StudioResearch.progress(start.research_progress)]:[]),p.card);
   if(!start.problem)sDeskFollowStart(held);
 }
 // A stopped start: the ways on a run has. More time for a step out of time, no research for

@@ -19,10 +19,11 @@ shared = core.for_product(
      '/style.css': ('style.css', 'text/css; charset=utf-8'),
      '/infographic.css': ('infographic.css', 'text/css; charset=utf-8'),
      '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
-     '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8')},
+     '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8'),
+     '/research.js': ('research.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/status', '/api/projects', '/api/project', '/api/asset',
-                         '/api/desk', '/api/activity', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task'),
-    writes=('/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current'))
+                         '/api/desk', '/api/activity', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status'),
+    writes=('/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current'))
 
 
 class Page(shared.Page):
@@ -32,9 +33,14 @@ class Page(shared.Page):
         self.injected = engine is not None
         self.engine = engine or Engine(store)
         self.activity = activity.Activity()
+        from .research_jobs import Jobs
+        self.research = Jobs(store) if store is not None else None
 
     def body_limit(self, target, headers):
-        return 24_000_000 if target in ('/api/action', '/api/csv-preview', '/api/csv-selection', '/api/source-preview') else super().body_limit(target, headers)
+        if target == '/api/research-sources':
+            try: self.check_token(headers)
+            except shared.Refusal: return super().body_limit(target, headers)
+        return 24_000_000 if target in ('/api/action', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/research-sources') else super().body_limit(target, headers)
 
     def check_token(self, headers):
         if len(headers.get_all('X-Infographic-Studio-Token') or []) != 1:
@@ -51,6 +57,8 @@ class Page(shared.Page):
         if path == '/api/team':
             from . import team
             return shared.as_json(200,{**team.status(),'workspace_owner':self.store.owner})
+        if path == '/api/research-status':
+            return shared.as_json(200, self.research.read(one('id')))
         if path == '/api/research-task':
             from . import research
             return shared.as_json(200,research.task(self.store.read(one('id')),one('source_mode')))
@@ -104,6 +112,27 @@ class Page(shared.Page):
     def write(self, path, sent):
         if path not in ('/api/preferences', '/api/csv-preview', '/api/csv-selection'):
             require(self.store is not None, 'Finish shared setup before creating infographic work.')
+        if path == '/api/research-job':
+            require(isinstance(sent, dict) and set(sent) == {'id', 'expected_revision', 'research_inputs'}, 'Start one optional research request with the current source revision.')
+            try:
+                result = self.research.start(sent['id'], sent['expected_revision'], sent['research_inputs'])
+            except (ValueError, OSError) as error:
+                raise Invalid(str(error)) from None
+            return shared.as_json(200, result)
+        if path == '/api/research-control':
+            require(isinstance(sent, dict) and set(sent) == {'id', 'action'}, 'Choose one research control.')
+            try:
+                result = self.research.control(sent['id'], sent['action'])
+            except (ValueError, OSError) as error:
+                raise Invalid(str(error)) from None
+            return shared.as_json(200, result)
+        if path == '/api/research-sources':
+            from studio_core.research_sources import Sources
+            try:
+                return shared.as_json(200, Sources(self.store.root / '.research-sources',
+                    account=lambda: settings.snapshot()['google']['account']).dispatch(sent))
+            except ValueError as error:
+                raise Invalid(str(error)) from None
         if path == '/api/action':
             try:
                 configured = not self.injected and isinstance(sent, dict) and sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'art-direct', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'repair', 'revise-story')
@@ -195,8 +224,12 @@ def desk(store, port=0, engine=None, *, standalone=False):
         def set_store(self, current):
             self.page.store = current
             self.page.engine = Engine(current)
+            from .research_jobs import Jobs
+            self.page.research = Jobs(current)
 
         def stop(self):
+            if self.page.research is not None:
+                self.page.research.stop()
             from .images.codex import stop_owned
             from .workspace import data_root
             from .image_jobs import Jobs

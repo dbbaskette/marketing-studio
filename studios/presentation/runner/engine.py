@@ -115,10 +115,12 @@ What a caller needs to know
 """
 from __future__ import annotations
 
-from studio_core import deck_flow, research_contract, research_sites, research_view, review_policy, stops
+from studio_core import deck_content
+from studio_core import deck_flow, research_session, research_sources, research_contract, research_sites, research_view, review_policy, stops
 
 import contextvars
 import json
+import hashlib
 import sys
 import os
 import re
@@ -330,7 +332,7 @@ class Engine(Jobs, Researching, DeskActions):
     """Drives every deck in this computer's workspace."""
 
     def __init__(self, adapters=None, research=None, slides=None, brand=None, drive=None,
-                 background: bool = True, at_once: int = AT_ONCE, notifier=None):
+                 background: bool = True, at_once: int = AT_ONCE, notifier=None, parallel_research=True, content_first=True):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.research = research or research_cli.Research
@@ -338,6 +340,8 @@ class Engine(Jobs, Researching, DeskActions):
         self.brand = brand or brand_skill.Brand
         self.google = drive
         self.background, self.at_once = background, at_once
+        self.parallel_research = parallel_research
+        self.content_first = content_first
         self.upkeep = None    # what `studio serve` keeps of the skills here
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._lock = threading.RLock()
@@ -447,13 +451,15 @@ class Engine(Jobs, Researching, DeskActions):
         except (OSError, ValueError):
             raise WorkspaceError(f'The run record in {Path(root).name} cannot be read, so the '
                                  'runner will not drive this deck.') from None
-        if not isinstance(record, dict) or record.get('schema') not in (decks.SCHEMA, 2, 3) \
+        if not isinstance(record, dict) or record.get('schema') not in (decks.SCHEMA, 2, 3, 4) \
                 or not isinstance(record.get('steps'), dict):
             raise WorkspaceError(f'The run record in {Path(root).name} cannot be read, so the '
                                  'runner will not drive this deck.')
         if record.get('schema') == 2 and not record.get('review_policy'):
             raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
-        if record.get('schema') == 3 and (record.get('research_contract') or {}).get('schema') != 2:
+        if record.get('schema') == 4 and not research_session.protocol(record):
+            raise WorkspaceError('Restore the saved research collection protocol before continuing.')
+        if record.get('schema') in (3, 4) and (record.get('research_contract') or {}).get('schema') != 2:
             raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
         for key, value in (('gates', {}), ('answers', {}), ('said', {}), ('question', None),
                            ('halted', None), ('cleared', 0.0), ('research', None),
@@ -767,9 +773,23 @@ class Engine(Jobs, Researching, DeskActions):
     # --- starting and picking up -------------------------------------------------------------
 
     def start(self, form: dict, uploads: dict | None = None, *,
-              execution: str = 'runner', scope=None) -> dict:
+              execution: str = 'runner', scope=None, research_inputs=None, _source_start=None) -> dict:
         """Make a deck from the form as the page sent it, and start its run. `uploads` maps
         an uploaded file's name to its bytes. Returns {'path', 'id'}."""
+        if research_inputs and execution == 'runner' and _source_start is None:
+            try:
+                upload_hashes = {name: hashlib.sha256(raw).hexdigest() for name, raw in (uploads or {}).items()}
+                with research_sources.Start(self.space().root, research_inputs,
+                        {'product':'Presentation Studio','form':form,'uploads':upload_hashes}) as start:
+                    previous = start.previous()
+                    if previous:
+                        self._load(Path(previous['path']))
+                        self.wake(Path(previous['path']))
+                        return previous
+                    return self.start(form, uploads, execution=execution, scope=scope,
+                                      research_inputs=research_inputs, _source_start=start)
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from error
         if not isinstance(form, dict):
             raise WorkspaceError('Start new work on the desk with a form.')
         if {'review_level', 'review_seen', 'review_default'} & form.keys():
@@ -782,8 +802,11 @@ class Engine(Jobs, Researching, DeskActions):
         if execution != 'runner':
             raise WorkspaceError('Choose runner or conversation execution.')
         space, chosen = self.space(), settings.load()
+        selected_sources = research_sources.prepare_start(space.root, research_inputs, primary=form.get('route') == 'document') if research_inputs and form.get('research') and form.get('route') != 'existing' else None
+        if selected_sources:
+            form = {**form, 'research_from': selected_sources['research_from']}
         gitstate.identity(space.repo)
-        checked = decks.check_form(form, self.brands())
+        checked = decks.check_form(form, self.brands(), references=bool(selected_sources and selected_sources['sources']))
         given = self._given(form, checked, uploads or {})
         named = isinstance(form, dict) and form.get('agent') not in (None, '')
         agent = settings.check_agent(form['agent']) if named else chosen.agent
@@ -826,12 +849,19 @@ class Engine(Jobs, Researching, DeskActions):
                               model_profiles=profiles, driver=team.claim(space),
                               limits={'step_seconds': chosen.step_seconds,
                                       'dollars': chosen.deck_dollars})
+                if self.content_first and decks.on_desk(record):
+                    record['deck_content'] = deck_content.PROTOCOL
                 if contract:
+                    if selected_sources:
+                        record['research_inputs'] = research_sources.install(selected_sources, root)
                     record['research_contract'] = contract
                 if review_policy.level(record) != 'step_by_step':
                     record['schema'] = 2
                 if contract:
                     record['schema'] = 3
+                    parallel = research_session.execution(self.research().runtime) if self.parallel_research else None
+                    if parallel:
+                        record.update(schema=4, research_execution={**parallel, **({'workers': selected_sources['workers']} if selected_sources else {})})
                 self._store(root, record)
                 self._commit(root, 'set up its run' + (
                     f", driven by {record['driver']['name']}" if record['driver'] else ''))
@@ -840,8 +870,10 @@ class Engine(Jobs, Researching, DeskActions):
                 raise
             self._claimed(root, space)
             home.remember(root, checked['title'])
+        result = {'path': str(root), 'id': root.name}
+        if _source_start is not None: _source_start.keep(result)
         self.wake(root)
-        return {'path': str(root), 'id': root.name}
+        return result
 
     @staticmethod
     def _given(form: dict, checked: dict, uploads: dict) -> dict:
@@ -2037,7 +2069,8 @@ class Engine(Jobs, Researching, DeskActions):
         if root is None:
             raise WorkspaceError('There is no deck there.')
         saved = self._load(root)
-        desk.refuse_on_desk(saved)   # a desk deck's stops are met on the desk
+        if not deck_content.checkpoint(saved, gate):
+            desk.refuse_on_desk(saved)   # other desk decisions stay on their own routes
         if decision == 'approve' and saved.get('research_contract') and (saved.get('steps', {}).get('research-report') or {}).get('done'):
             from studio_core.research_contract import read_bundle
             try:
@@ -2098,6 +2131,8 @@ class Engine(Jobs, Researching, DeskActions):
         """A decision at a gate, applied and stored. Call it holding `files`. Returns what
         the commit says, and what else it lists."""
         it = WORDS[gate]
+        if deck_content.checkpoint(record, gate) and expected != self._direction_signature(root, record):
+            raise WorkspaceError('The slide text changed. Read the latest text before deciding.')
         combined = gate == 'gate:outline' and stages.level(record) == 'balanced'
         if combined and (not expected or expected != self._direction_signature(root, record)):
             raise WorkspaceError('The direction changed. Read the latest review before deciding.')
@@ -3147,7 +3182,8 @@ class Engine(Jobs, Researching, DeskActions):
 
     def _show_outline(self, root: Path, record: dict) -> dict:
         found = home.read_json(root / outlines.OUTLINE, None)
-        return {'text': text_of(root / outlines.OUTLINE_MD) or '',
+        return {'content_first': deck_content.enabled(record),
+                'text': text_of(root / outlines.OUTLINE_MD) or '',
                 'expected': self._direction_signature(root, record),
                 'slides': build.slides_of(found) if isinstance(found, dict) else [],
                 # The slides a person came back from the deck to change the words of, each
@@ -3339,6 +3375,7 @@ class Engine(Jobs, Researching, DeskActions):
             'review_level': stages.level(record),
             'workers': self._workers(run),
             'build_progress': progress,
+            'research_progress': (record.get('research_execution') or {}).get('progress'),
             'build_sections': self._sections_kept(root),
             'note': self._note_view(record),
             'question': ({'id': asked['id'], 'text': asked['text'], 'from': asked['from']}

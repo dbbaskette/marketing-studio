@@ -27,7 +27,7 @@ class GatewayStaticTests(unittest.TestCase):
                 self.assertEqual(sorted(loaded - network.STATIC), [])
 
     def test_training_studio_s_desk_scripts_pass_the_gateway(self):
-        for name in ('/drafting.js', '/drafts.js'):
+        for name in ('/drafting.js', '/drafts.js', '/research.js'):
             self.assertIn(name, network.STATIC)
 
 

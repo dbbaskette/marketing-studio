@@ -3026,6 +3026,7 @@ function looksOf(draft) {
 
 // The choice as the runner takes it: research_from.
 function researchFromOf(draft) {
+  if (draft.sourceEditor) return draft.sourceEditor.choice(draft.route === 'document');
   const looks = looksOf(draft);
   return { documents: draft.route === 'document' && looks.documents,
     sites: looks.sitesOn ? looks.sites.filter((one) => one.on).map((one) => one.url) : [],
@@ -3051,6 +3052,7 @@ function researchSummary(from) {
 
 // Why the choice cannot be used, or nothing when it can.
 function researchProblem(draft) {
+  if (draft.sourceEditor) return draft.sourceEditor.valid(draft.route === 'document') ? '' : 'Add readable sources or allow additional external search before starting.';
   const looks = looksOf(draft);
   const from = researchFromOf(draft);
   if (looks.sitesOn && !from.sites.length) return RESEARCH_NO_SITES;
@@ -3089,6 +3091,14 @@ async function addSite(draft) {
 // Research from: ☑ your documents ☑ your sites (3) ☐ the public web. With your sites on,
 // a tick for each site and a box to add one for this deck.
 function researchFromField(draft) {
+  if (typeof StudioResearch !== 'undefined') {
+    if (!draft.sourceEditor) draft.sourceEditor = new StudioResearch.Editor({
+      request: sent => send('research-sources', sent),
+      primarySummary: draft.route === 'document' ? 'Your source document is included with these references.' : '',
+      onChange: () => { if (draft.retell) draft.retell(); }
+    });
+    return draft.sourceEditor.node;
+  }
   const looks = looksOf(draft);
   const flip = (key) => (on) => {
     looks[key] = on;
@@ -3249,7 +3259,7 @@ async function startDeck(pressed, how) {
   say(problem, '');
   let started;
   try {
-    started = await send('decks', { form, uploads });
+    started = await send('decks', { form, uploads, ...(draft.sourceEditor ? {research_inputs: draft.sourceEditor.spec()} : {}) });
   } catch (failure) {
     draft.starting = false;
     pressed.disabled = false;
@@ -5915,6 +5925,7 @@ function paintDeck(fresh) {
     gate ? ['gate', [gate, read, narrow() ? lead : '', Boolean(view.sheet)],
       () => gatePanel(run)] : null,
     noting(run) ? ['note', [run.note, run.state, read], () => notePart(run)] : null,
+    run.research_progress && typeof StudioResearch !== 'undefined' ? ['research-progress', run.research_progress, () => StudioResearch.progress(run.research_progress)] : null,
     run.build_progress ? ['build-progress', run.build_progress,
       () => buildProgressCard(run.build_progress)] : null,
     list(run.workers).length ? ['workers', run.workers, () => workersCard(run)] : null,

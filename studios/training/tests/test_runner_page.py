@@ -44,14 +44,14 @@ LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None
           {'name': 'gpt-6-luna', 'label': 'GPT-6-Luna (gpt-6-luna)', 'family': None,
            'about': None, 'default_level': None, 'levels': ['low', 'medium', 'high']}]
 GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
-POSTS = ('/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+POSTS = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/research-site')
 BOTH =('/api/setup', '/api/run', '/api/trainings')
 RUN_KEYS = ['agent', 'ahead', 'can_migrate_desk', 'can_open_desk', 'clash', 'controls', 'copies', 'decided', 'deck', 'deck_left', 'documents', 'driver', 'effort',
             'finished', 'flow', 'kept', 'last_shared', 'look', 'mine', 'model', 'model_mode', 'note', 'notice', 'outline', 'problem',
-            'question', 'queue', 'redesign', 'research_from', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken',
+            'question', 'queue', 'redesign', 'research_from', 'research_progress', 'review', 'review_level', 'sentence', 'spent', 'state', 'steps', 'taken', 'timing',
             'workers']
 STEP_KEYS = ['attempts', 'dollars', 'error', 'id', 'kind', 'label', 'seconds', 'status']
 DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
@@ -210,7 +210,7 @@ class RuleTests(PageCase):
     def setUp(self):
         super().setUp()
         self.path = self.saved_started()
-        self.bodies = {'/api/setup/check': {'path': str(self.base / 'elsewhere')},
+        self.bodies = {'/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
                        '/api/setup': {'limits': {'parallel': 4}},
                        '/api/trainings': {**FORM, 'title': 'Health checks'},
                        '/api/run': {'path': self.path, 'action': 'stop'},
@@ -2065,12 +2065,13 @@ class LaterTests(PageCase):
         self.assertEqual(self.page.body_limit('/api/documents', headers), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/documents?x=1', headers), 12_000_000)
         self.assertEqual(self.page.body_limit('/api/asset', headers), 12_000_000)
+        self.assertEqual(self.page.body_limit('/api/research-sources', headers), 12_000_000)
         for token in (False, 'not-the-key'):
-            for target in ('/api/documents', '/api/asset'):
+            for target in ('/api/documents', '/api/asset', '/api/research-sources'):
                 self.assertEqual(self.page.body_limit(target, self.headers(token=token)),
                                  desk.BODY_LIMIT, 'a stranger is never read at length')
         for target in (*desk.WRITES, *(path for path in POSTS
-                                       if path not in ('/api/documents', '/api/asset')),
+                                       if path not in ('/api/documents', '/api/asset', '/api/research-sources')),
                        '/api/documents/more', '/api/nothing', '/', '//[', ''):
             self.assertEqual(self.page.body_limit(target, headers), 64_000, target)
         self.assertEqual(desk.Page(self.PORT).body_limit('/api/documents', headers), 64_000,

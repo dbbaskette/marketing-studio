@@ -190,12 +190,13 @@ What a caller needs to know
 - `bring` copies a training's folder into the workspace under the name its title gives,
   moves its decisions to the page, gives it a run record that takes it, and commits. The
   folder it came from is only read. The run then carries on from what the files say.
-- A form with `flow: 'desk'` starts the training on the desk: a run of schema 4 with
-  `flow: 'desk'` in the run and the session, and no review level. None is saved with it and
-  the shared one is never written from its form, so its start promises no stops. The engine
-  carries a desk run past every gate, deck outline and look (`_desk_gate`), each with a desk
-  receipt in `review_events`, and never groups it for review. That is not the person's
-  approval of a material, which they give on the desk. A problem still stops it.
+- A form with `flow: 'desk'` starts the training on the desk with no review level and
+  never changes the shared review setting. New schema-6 runs prepare all levels' topics,
+  wait for one person decision, then build the selected materials. Schemas 4 and 5 keep
+  their original gates, including a slide-text decision when their saved protocol asks
+  for one. Other desk gates, deck outlines and looks carry desk receipts in
+  `review_events` (`_desk_gate`). Those receipts are not the person's approval of a
+  material, which they give on the desk. A problem still stops it.
 - On the desk, what a change reaches is held, not remade (`drafts.held`). `update` asks for
   a held material to be made again, through its own steps, and carries on; `keep` keeps it
   as it is (`workspace.keep_as_is`, by the page). Each commits; an update closes in the
@@ -223,7 +224,9 @@ import runner  # noqa: F401  puts the core on the import path
 import computer
 import checks
 import home
-from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_view, research_sites, step_times, stops
+from studio_core import deck_content
+from runner import training_plan
+from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
 import hub
 import workspace
 from workspace import WorkspaceError
@@ -425,17 +428,23 @@ def read_record(root: Path) -> dict | None:
     record = workspace.read_run(root)
     if record is None:
         return None
-    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA) \
+    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA, training_plan.RECORD_SCHEMA) \
             or not isinstance(record.get('steps'), dict):
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
                              'will not drive this training.')
     if record.get('schema') == 2 and not record.get('review_policy'):
         raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
+    if record.get('schema') == training_plan.RECORD_SCHEMA and not (training_plan.enabled(record) and drafts.on_desk(record)):
+        raise WorkspaceError('This training is missing its saved topics-review workflow.')
     contracted = (record.get('research_contract') or {}).get('schema') == 2
     # Runner desk records require a contract; focused conversations may be contract-free.
     if record.get('schema') == drafts.SCHEMA:
         contracted = drafts.on_desk(record) and (contracted or drafts.in_conversation(record))
-    if record.get('schema') in (3, drafts.SCHEMA) and not contracted:
+    if (record.get('schema') == research_parallel.RECORD_SCHEMA or
+            record.get('schema') == training_plan.RECORD_SCHEMA and 'research_execution' in record) \
+            and not research_parallel.protocol(record):
+        raise WorkspaceError('This run is missing its saved parallel research protocol. Restore its run record.')
+    if record.get('schema') in (3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA, training_plan.RECORD_SCHEMA) and not contracted:
         raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
 
@@ -619,7 +628,7 @@ class Engine(Reviewing):
 
     def __init__(self, adapters=None, research=None, background: bool = True,
                  at_once: int = AT_ONCE, documents=None, copies=None, index=None,
-                 slides=None, brand=None, notifier=None):
+                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.upkeep = None    # what `studio serve` keeps of the skills here; see `upkeep`
@@ -641,6 +650,9 @@ class Engine(Reviewing):
         self.copies = copies or copies_made
         self.index = index or index_written
         self.background, self.at_once = background, at_once
+        self.parallel_research = parallel_research
+        self.content_first = content_first
+        self.plan_first = plan_first
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._preparing_decks: dict[Path, deck_edit.PreparedEdit] = {}
         # What was typed on each desk and not committed yet, by the training's folder:
@@ -1017,11 +1029,12 @@ class Engine(Reviewing):
             return
         found = self._survey(root, record)
         step = found.next
-        # A desk run continues every gate, outline and look on the desk: none is a stop.
-        automatic = step.kind in ('wait', 'outline', 'look') and (
-            drafts.on_desk(record) or review_policy.automatic(
+        # Desk receipts continue legacy stops; new slide text always waits for the person.
+        automatic = (step.kind in ('wait', 'outline', 'look')
+            and not deck_content.checkpoint(record, step.step.id)
+            and (drafts.on_desk(record) or review_policy.automatic(
                 record, 'training', step.step.id,
-                holding=pipeline.holding(root, found, step.step)))
+                holding=pipeline.holding(root, found, step.step))))
         if (record.get('question') or record.get('problem') or (not automatic and step.kind in
                 ('wait', 'outline', 'look', 'review', 'stuck', 'documents', 'done'))):
             record['last_decision_stop'] = home.now()
@@ -1353,8 +1366,21 @@ class Engine(Reviewing):
 
     # --- starting and picking up ---------------------------------------------------------
 
-    def start(self, form: dict, *, execution='runner', scope=None, uploads=None) -> dict:
+    def start(self, form: dict, *, execution='runner', scope=None, uploads=None, research_inputs=None, _source_start=None) -> dict:
         """Make a training from the form's answers and start its run."""
+        if research_inputs and execution == 'runner' and _source_start is None:
+            try:
+                with research_sources.Start(self.space().root, research_inputs,
+                        {'product':'Training Studio','form':form}) as start:
+                    previous = start.previous()
+                    if previous:
+                        self._load(Path(previous['path']))
+                        self.wake(Path(previous['path']))
+                        return previous
+                    return self.start(form, execution=execution, scope=scope, uploads=uploads,
+                                      research_inputs=research_inputs, _source_start=start)
+            except ValueError as error:
+                raise WorkspaceError(str(error)) from error
         if not isinstance(form, dict):
             raise WorkspaceError('Start new work on the desk with a form.')
         if {'review_level', 'review_seen', 'review_default'} & form.keys():
@@ -1389,6 +1415,10 @@ class Engine(Reviewing):
         # A training on the desk has no review level: none is saved with it, and the shared
         # one is never written from its form.
         desk = drafts.on_desk(form)
+        selected_sources = research_sources.prepare_start(space.root, research_inputs) if research_inputs else None
+        if selected_sources:
+            form = {**form, 'research_from': selected_sources['research_from'],
+                    'source_scope': pipeline.scope_of(selected_sources['research_from'])}
         with self.files:
             if gitstate.workspace_identity(self.workspace) != gitstate.workspace_identity(space):
                 raise WorkspaceError('The workspace changed while this start was being checked. '
@@ -1406,9 +1436,22 @@ class Engine(Reviewing):
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
+                if desk and self.content_first and not self.plan_first and not form.get('walkthrough'):
+                    record['deck_content'] = deck_content.PROTOCOL
                 if desk:
                     record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
                         'jobs': [], 'updates': {}, 'findings_before': None})
+                parallel = research_parallel.execution(self.research().runtime) if contract and self.parallel_research else None
+                if parallel:
+                    record.update(schema=research_parallel.RECORD_SCHEMA, research_execution=parallel)
+                if desk and self.plan_first:
+                    record.update(schema=training_plan.RECORD_SCHEMA, training_plan={'schema': 1, 'revision': 0})
+                if selected_sources:
+                    record['research_inputs'] = research_sources.install(selected_sources, root)
+                    if parallel:
+                        record['research_execution']['workers'] = selected_sources['workers']
+                    if record.get('documents') is not None:
+                        record['documents'].update(done=home.now(), count=len(selected_sources['sources']))
                 session = workspace.load(root)
                 if contract:
                     session['research_contract'] = contract
@@ -1424,6 +1467,8 @@ class Engine(Reviewing):
                 gitstate.discard(space, root)
                 raise
             self._claimed(root, space)
+        if _source_start is not None:
+            _source_start.keep({'path': str(root), 'id': root.name, 'gates': 1 if training_plan.enabled(record) else 0})
         self.wake(root)
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
@@ -1436,7 +1481,7 @@ class Engine(Reviewing):
         decks = max(1, len(form['levels'])) if drawn else 0
         balanced = 2 if pipeline.planned_from_form(record) else 3
         return {'path': str(root), 'id': root.name, 'gates': (
-            0 if desk else pipeline.gates(form, drawn) if chosen == 'step_by_step'
+            (1 if training_plan.enabled(record) else 0) if desk else pipeline.gates(form, drawn) if chosen == 'step_by_step'
             else (balanced if chosen == 'balanced' else 1) + decks)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
@@ -1664,16 +1709,18 @@ class Engine(Reviewing):
                     continue
                 found = self._survey(root, record)
                 step = found.next
-                # A desk run never stops for review: each stop is continued on the desk.
+                # Continue desk stops except the explicit new slide-text decision.
                 if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
                                                                'look') \
-                        and drafts.on_desk(record):
+                        and drafts.on_desk(record) \
+                        and not deck_content.checkpoint(record, step.step.id):
                     with self.files:
                         self._edits_first(root)
                     self._desk_gate(root, found)
                     continue
                 if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
                                                                'look') \
+                        and not deck_content.checkpoint(record, step.step.id) \
                         and review_policy.automatic(record, 'training', step.step.id,
                                                     holding=pipeline.holding(root, found,
                                                                              step.step)):
@@ -3205,6 +3252,9 @@ class Engine(Reviewing):
         with self.files:
             rounds = list(pipeline.read_built(root, level).get('rounds') or ())
             scoped = rounds[-1].get('review_slides')
+            inspected = {slide['id'] for slide in (assessed.get('inspection') or {}).get('slides', [])}
+            if inspected == {slide['id'] for slide in rounds[-1]['slides']}:
+                scoped = None  # A full current-render inspection supersedes earlier findings.
             earlier = (rounds[-2].get('review') or {}) if scoped and len(rounds) > 1 else {}
             if rounds[-1].get('judged') and scoped and not earlier.get('judgements'):
                 scoped, earlier = None, {}
@@ -3447,7 +3497,8 @@ class Engine(Reviewing):
                 raise WorkspaceError('What that deck says is not waiting for a decision.')
             kept, says = self._decided(record, level), pipeline.subject(step.step)
             asked = kept['waiting'].get('design')
-            if (seen is not None and seen != kept['waiting']['sha256']) or (
+            if ((seen is not None or deck_content.enabled(record))
+                    and seen != kept['waiting']['sha256']) or (
                     asked and design is not None and design != asked['revision']):
                 raise WorkspaceError(CHANGED.format(it=workspace.sentence(says)))
             if asked:
@@ -3762,7 +3813,7 @@ class Engine(Reviewing):
         return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(
             text='\n\n'.join(quoted(text) for text in carried)))
 
-    def _job(self, root: Path, run: _Run, step: pipeline.Step, work: pipeline.Work):
+    def _job(self, root: Path, run: _Run, step: pipeline.Step, work: pipeline.Work, *, limits=None):
         """Run one worker on one job. Returns how the agent ended, what the worker tools
         accepted from it, when it started and the job's folder. A note the person left for
         the next step goes with it, once."""
@@ -3781,8 +3832,10 @@ class Engine(Reviewing):
         # A deck's worker is given the slides tool and the brand skill this engine uses.
         worker_tools.prepare(folder, **{**work.prepared, 'runtimes': dict(
             self._look()['runtimes']) if step.stage == 'deck' else {}})
-        limits = agents.Limits(record['limits']['step_seconds'],
-                               max(0.01, self._left(record)))
+        ceiling = agents.Limits(record['limits']['step_seconds'],
+                                max(0.01, self._left(record)))
+        limits = ceiling if limits is None else agents.Limits(
+            min(limits.seconds, ceiling.seconds), min(limits.dollars, ceiling.dollars))
         job = agents.Job(work.guidance, work.task, folder, work.profile,
                          tuple(worker_tools.command(folder)), limits, record.get('model'),
                          record.get('effort'))
@@ -4082,7 +4135,9 @@ class Engine(Reviewing):
                 action=stops.agent_action(outcome))
         if outcome.reason == 'timeout':
             return self._out_of_time(root, 'research', 'The research', record, 1)
-        self._problem(root, 'research', 'failed', str(refusal), KEPT)
+        kept = ('Completed, checked research areas are kept privately for retry. Only missing or refused areas run again.'
+                if research_parallel.protocol(record) else KEPT)
+        self._problem(root, 'research', 'failed', str(refusal), kept)
 
     def _check_unfinished(self, root: Path, refusal: WorkspaceError) -> None:
         """The independent check could not read an original it must attest to, and that is
@@ -4162,7 +4217,8 @@ class Engine(Reviewing):
                         'worked examples and limits. Research supplies evidence; the teaching '
                         'plan and materials are authored afterward.'),
                     'scope': about,
-                    'planning_questions': found.research.questions,
+                    'planning_questions': (home.read_json(root / pipeline.PLAN, {}).get('items') or []
+                                           if research_parallel.protocol(record) else found.research.questions),
                     'requested_changes': step.request,
                     # Asked for at the research stop: the sources read again.
                     'refresh': (step.request or {}).get('refresh') is True,
@@ -4170,7 +4226,10 @@ class Engine(Reviewing):
                     # 'mixed', sites alone 'public', documents alone 'selected'.
                     'source_mode': research_sites.source_mode(looks)}
             try:
-                research_contract.native(self, root, run, task, offered, 'training')
+                if research_parallel.enabled(record, task):
+                    research_parallel_native.native(self, root, run, task, offered)
+                else:
+                    research_contract.native(self, root, run, task, offered, 'training')
             except WorkspaceError as refusal:
                 if getattr(refusal, 'outcome', None) is not None:
                     return self._research_job_failed(root, refusal)
@@ -4257,7 +4316,7 @@ class Engine(Reviewing):
                 tool = self.research()
                 # Verify with the helper version that did the research, while it is retained.
                 tool = research_contract.matching(tool, record['research_contract']) or tool
-                verified = tool._json('synthesis', 'verify', '--project', str(root / research_contract.CASE))
+                verified = tool._json('synthesis', 'verify', '--project', str(research_parallel.case_for(root)))
                 if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
                     raise WorkspaceError('Research needs independent review before authoring can continue.')
                 facts, manifest = research_contract.publish(root / research_contract.CASE, root / 'research')
@@ -5971,6 +6030,8 @@ class Engine(Reviewing):
         """The person's documents as research is given them: every readable one but those
         added after the research, which are read only once the research is updated."""
         plan, offered = self.documents.sources(root)
+        extra, inputs = research_sources.sources(root, record.get('research_inputs'))
+        plan, offered = [*plan, *extra], [*offered, *inputs]
         later = {entry.get('name') for entry in (record.get('documents') or {}).get('later')
                  or () if isinstance(entry, dict)}
         if not later:
@@ -6352,8 +6413,8 @@ class Engine(Reviewing):
     def _drafted(root: Path | None) -> bool:
         """Whether research done as one report and an independent check has a saved draft
         that Try again carries on from."""
-        return bool(root) and (Path(root) / research_contract.CASE / '.harness-research'
-                               / 'synthesis.json').is_file()
+        return bool(root) and (research_contract.working_case(Path(root) / research_contract.CASE)
+                               / '.harness-research/synthesis.json').is_file()
 
     def research_price(self, path):
         root = self.driven(path)
@@ -6376,13 +6437,17 @@ class Engine(Reviewing):
         tried = research_contract.last_rounds({name: entry.get('attempts', [])
                                                for name, entry in record['steps'].items()})
         return {'research': {**(tried or {'rounds': 0, 'jobs': 0, 'seconds': 0, 'dollars': None}),
-                             'most': research_contract.ROUNDS, 'drafted': self._drafted(root)}}
+                             'most': research_contract.ROUNDS, 'drafted': self._drafted(root),
+                             **({'parallel': True} if research_parallel.protocol(record) else {})}}
 
     def _synthesis_doing(self, record: dict, run: _Run | None) -> str:
         """Where research done as one authored report and one independent check stands:
         which of the two jobs is in hand, and its round of the three. Between jobs, the
         next one is worked out from the last job kept since this research began: the
         hand-over of the plan, or the last change the person asked for."""
+        progress = (record.get('research_execution') or {}).get('progress')
+        if progress:
+            return research_parallel_native.describe(progress)
         with self._lock:
             live = [name for name in (run.workers if run else ())
                     if research_contract.job_round(name)]
@@ -6777,7 +6842,19 @@ class Engine(Reviewing):
         level = self._level(drawing) if drawing else None
         outline = pipeline.outline_view(root, found, level) if drawing else None
         if outline is not None:
+            if deck_content.enabled(record):
+                outline['content_first'] = True
             outline['redo'] = self._redo_view(root, record, found, 'outline:' + (level or ''))
+        workers = self._workers(run)
+        timing_attempts = attempts(record)
+        # Completed runs stop the clock; waiting and stopped runs retain elapsed time.
+        timing_now = None
+        if state == 'done' and not workers:
+            stamps = [research_timing.stamp(a.get('ended_at')) for a in timing_attempts]
+            if any(s is not None for s in stamps):
+                from datetime import datetime, timezone
+                timing_now = datetime.fromtimestamp(max(s for s in stamps if s is not None), timezone.utc)
+        timing = research_timing.account(record.get('started_at'), timing_attempts, workers, now=timing_now)
         return {
             'state': state, 'sentence': sentence, 'agent': record['agent'],
             'decided': (record.get('last_decision') if state == 'working' and not asked
@@ -6797,7 +6874,9 @@ class Engine(Reviewing):
             'review_level': None if drafts.on_desk(record) else review_policy.level(record),
             'review': self._review_view(root, record, found),
             'steps': self._steps(record, found, state, root),
-            'workers': self._workers(run),
+            'workers': workers,
+            'research_progress': (record.get('research_execution') or {}).get('progress'),
+            'timing': timing,
             'spent': {'dollars': dollars, 'tokens': tokens, 'stops_at': stops_at},
             'ahead': self._still_to_come(record, found),
             'note': self._note_view(record),
@@ -6814,6 +6893,9 @@ class Engine(Reviewing):
             'research_from': self._research_view(record),
             'copies': self._copies(found, (record.get('copies') or {}).get('remote')),
             'outline': outline,
+            **({'training_plan': training_plan.view(root, found, record),
+                'training_plan_pending': (record['training_plan'].get('approved') or {}).get('signature')
+                    != training_plan.signature(root, found.session, record)} if training_plan.enabled(record) else {}),
             'look': pipeline.look_view(root, found, level) if drawing else None,
             'deck': (pipeline.deck_view(root, found, level, self._live(run, drawing),
                                         self._given_up(record, drawing))

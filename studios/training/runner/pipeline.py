@@ -856,7 +856,7 @@ def research(root: Path, session: dict, run: dict | None, request: dict | None) 
         handover = (run or {}).get('research') or {}
         handed = handover.get('plan') == workspace.sha256_file(root / PLAN)
         try:
-            facts, manifest = research_contract.read_bundle(root / research_contract.CASE / 'research')
+            facts, manifest = research_contract.read_bundle(research_contract.output_root(root / research_contract.CASE))
             current = handed and handover.get('reviewed') and handover.get('reviewed_request') == (request or {}).get('at')
         except (OSError, ValueError):
             manifest, current = {}, False
@@ -1302,6 +1302,9 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     if review_policy.level(run) != 'step_by_step' and not drafts.on_desk(run):
         from runner import reviews
         listed, done = reviews.group(root, session, run, listed, done)
+    from runner import training_plan
+    if drafts.on_desk(run):
+        listed, done = training_plan.group(root, session, run, listed, done)
     first = next((step for step in listed if step.id not in done), None)
     return Survey(session, state, listed, done,
                   _next(first, session, state, asked, found, decks,
@@ -2214,6 +2217,12 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
     earlier = (mine.rounds[-2].get('review') or {}).get('findings') \
         if len(mine.rounds) > 1 else None
     scope = last.get('review_slides')
+    packet = home.read_json(work / last['preview'] / 'critic.json', {})
+    if not last.get('judged') and packet.get('schema') == 2:
+        # The current critic verifies the whole render. Old rounds do not retain
+        # reusable per-slide inspections, so inspect the full inventory rather
+        # than inventing passing answers for peers outside a repair's scope.
+        scope = None
     if last.get('judged') and len(mine.rounds) > 1 and not (
             (mine.rounds[-2].get('review') or {}).get('judgements')):
         scope = None  # Older reviews did not keep their per-criterion answers.

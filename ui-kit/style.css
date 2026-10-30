@@ -3544,3 +3544,28 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
   body[data-pilot="liquid"] { --glass: var(--solid); --material-light: transparent; --material-tint: transparent; --paper-line: var(--quiet); --glass-line: var(--quiet); --pilot-selection: var(--paper); --pilot-control: var(--paper); --pilot-shadow: none; }
   body[data-pilot="liquid"] .glass { backdrop-filter: none; -webkit-backdrop-filter: none; }
 }
+
+/* Shared research source/progress component (research.js). */
+.research-sources,.research-captured,.research-progress{padding:1.2rem;background:var(--paper)}
+.research-sources>*+*,.research-captured>*+*,.research-progress>*+*{margin-top:1rem}
+.research-link-entry{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:.7rem}
+.research-source-list{list-style:none;margin:0;padding:0}
+.research-source-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:.75rem;padding:1rem 0;border-top:1px solid var(--hair)}
+.research-source-copy{min-width:0;overflow-wrap:anywhere}
+.research-source-copy>*+*{margin-top:.4rem}
+.research-source-copy>.quiet,.research-policy>.field-hint{overflow-wrap:anywhere;font-size:.9rem}
+.research-tabs>summary,.research-options>summary{min-height:2.75rem;cursor:pointer;padding:.6rem 0}
+.research-tabs[open]>*+*,.research-options[open]>*+*{margin-top:.7rem}
+.research-policy>*+*{margin-top:.65rem}
+.research-options{border-top:1px solid var(--hair)}
+.research-area{display:flex;justify-content:space-between;gap:1rem;padding:.7rem 0;border-top:1px solid var(--hair)}
+.research-preview-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}
+.research-source-editor .check{min-height:2.75rem;align-items:center}
+@media (max-width:40rem){.research-link-entry{grid-template-columns:1fr}.research-area{flex-direction:column;gap:.25rem}.research-sources,.research-captured,.research-progress{padding:1rem}}
+
+/* Shared opaque slide-text checkpoint; no previews are requested here. */
+.slide-text-review { padding: var(--space-5, 24px); min-width: 0; }
+.slide-text-list { padding-left: 1.5rem; }
+.slide-text-item { padding: 1rem 0; border-bottom: 1px solid var(--line, #d5d9df); overflow-wrap: anywhere; }
+.slide-text-review .input { width: 100%; max-width: 100%; box-sizing: border-box; }
+.slide-text-review .bar { flex-wrap: wrap; }

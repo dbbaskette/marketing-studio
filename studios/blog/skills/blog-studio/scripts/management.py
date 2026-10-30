@@ -35,6 +35,7 @@ STATIC = {
     '/app.js': ('app.js', 'text/javascript; charset=utf-8'),
     '/runner.js': ('runner.js', 'text/javascript; charset=utf-8'),
     '/drafting.js': ('drafting.js', 'text/javascript; charset=utf-8'),
+    '/research.js': ('research.js', 'text/javascript; charset=utf-8'),
     '/desk.js': ('desk.js', 'text/javascript; charset=utf-8'),
     '/markdown.js': ('markdown.js', 'text/javascript; charset=utf-8'),
     '/blog.css': ('blog.css', 'text/css; charset=utf-8'),
@@ -2190,6 +2191,13 @@ def keep_published(root, directory, record):
 
 
 def dispatch(root, route, data):
+    if route == 'research-sources':
+        from studio_core.research_sources import Sources
+        import google_drive
+
+        return Sources(
+            studio.inside(root, '.research-sources'), account=lambda: google_drive.account_for(root)
+        ).dispatch(data)
     from team_workspace import space, before, saved, status, refresh, action, join
     from team_workspace import keep_desk_leftovers
 

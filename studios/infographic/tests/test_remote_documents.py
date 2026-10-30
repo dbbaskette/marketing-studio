@@ -22,15 +22,15 @@ def document():
 
 
 class RemoteSourcesTests(Isolated):
-    def test_google_capture_all_tabs_and_exact_preview_import_no_refetch(self):
+    def test_google_tab_link_and_exact_preview_import_no_refetch(self):
         client=mock.Mock();client.file.return_value=metadata();client.document.return_value=document()
         preview=remote_sources.google('https://docs.google.com/document/d/synthetic_doc/edit?tab=a',account='editor@example.invalid',client=client)
-        self.assertEqual(preview['characters'],len('First tab.\nTable count 12.\nSecond tab.\n'))
-        self.assertEqual(len(preview['locations']),3)
+        self.assertEqual(preview['characters'],len('First tab.\nTable count 12.\n'))
+        self.assertEqual(len(preview['locations']),2)
         store=Store.setup(self.workspace);p=store.create('Synthetic imported Doc')
         p=intake.adopt(store,p['id'],preview['id'],expected_revision=0)
         self.assertEqual(p['sources'][0]['provenance']['version'],'3')
-        self.assertIn('Second tab.',sources.read(store,p,p['sources'][0]))
+        self.assertNotIn('Second tab.',sources.read(store,p,p['sources'][0]))
         self.assertEqual(client.file.call_count,2);client.document.assert_called_once()
 
     def test_selected_tab_omits_other_private_tab_from_snapshot(self):

@@ -423,7 +423,7 @@ class Jobs:
         return replace(work, task=work.task + '\n\n' + FROM_AUTHOR.format(
             text='\n\n'.join(quoted(text) for text in carried)))
 
-    def _job(self, root: Path, run: Run, name: str, doing: str, work, deck: bool = True):
+    def _job(self, root: Path, run: Run, name: str, doing: str, work, deck: bool = True, *, limits=None):
         """Run one worker on one job. Returns how the agent ended, what the worker tools
         accepted from it, when it started and the job's folder. A note the person left for
         the next step goes with it, once."""
@@ -437,12 +437,13 @@ class Jobs:
         runtimes = {key: value for key, value in self._look()['runtimes'].items() if value} \
             if deck else {}
         worker_tools.prepare(folder, **{**work.prepared, 'runtimes': runtimes})
+        requested = limits
         limits = record.get('limits') or {}
+        ceiling = agents.Limits(int(limits.get('step_seconds') or settings.load().step_seconds), max(0.01, self._left(record)))
+        bounded = ceiling if requested is None else agents.Limits(min(ceiling.seconds, requested.seconds), min(ceiling.dollars, requested.dollars))
         job = agents.Job(work.guidance, work.task, folder, work.profile,
                          tuple(worker_tools.command(folder)),
-                         agents.Limits(int(limits.get('step_seconds')
-                                           or settings.load().step_seconds),
-                                       max(0.01, self._left(record))),
+                         bounded,
                          record.get('model'), record.get('level_of_effort'))
         lines, started_at, clock = deque(maxlen=LINES), home.now(), time.monotonic()
         with self._lock:

@@ -608,3 +608,18 @@ Steps 3 to 5 need the user and their accounts. Do not simulate them.
 | 9.1 Progressive disclosure | A4 compact output, A8, A9, Increment 3 step 3, Increment 4 step 4 |
 | 10 Failure handling | A4, A7, A8 |
 | 11 Testing and acceptance | A7, Increments 1 to 4 |
+
+### Shared research execution extension (2026-10-29)
+
+Marketing Studio owns the common source intake, UI and collection controller;
+Training Studio owns its training context and post-research authoring. See the
+suite shared-research specification and state matrix.
+
+| Transition | Expected state | Tests |
+| --- | --- | --- |
+| Start with a complete 1.1 helper | Versioned collection execution; bounded investigators, synthesis, independent review | `test_parallel_research.ParallelNativeTests.test_default_new_run_is_versioned_parallel_and_publishes_reviewed_bundle` |
+| Resume a saved serial run | Retained helper and original serial protocol | `test_parallel_research.ParallelNativeTests.test_saved_serial_run_does_not_acquire_parallel_protocol` |
+| Unknown collection protocol | Refuse resume before provider dispatch | `test_parallel_research.ParallelNativeTests.test_missing_or_unknown_parallel_protocol_refuses_resume` |
+| Source selection/revision changes | Capture remains private; stale start refused | Suite `test_research_sources.SourceTests` |
+| Peer fails / fact or prose needs correction | Keep accepted peers; recollect only located factual areas; prose reuses evidence | Suite `test_research_session.SessionTests` |
+| Process terminal observation missing | Preserve packets and block blind retries | Suite `test_research_session.SessionTests.test_unconfirmed_terminal_invocation_blocks_generation_restart` |

@@ -542,7 +542,10 @@ function documentsPart(draft, changed = retell) {
 
 // Where research looks, in one line, said again whenever a document or a choice changes.
 function researchLine(draft, line) {
-  draft.research.documents = list(draft.files).length > 0;
+  if (draft.sourceEditor) {
+    const chosen = draft.sourceEditor.choice();
+    draft.research = {documents: chosen.documents, sites: Boolean(chosen.sites.length), web: chosen.web, picked: chosen.sites, added: []};
+  } else draft.research.documents = list(draft.files).length > 0;
   line.textContent = researchProblem(draft)
     || 'Research ' + researchSummary(researchChoice(draft)) + '.';
 }
@@ -556,7 +559,12 @@ function sourcesStep(draft, brand, looks) {
   };
   told();
   researchLine(draft, looks);
-  return [documentsPart(draft), researchFields(draft, retell, ['documents']), looks,
+  if (!draft.sourceEditor && typeof StudioResearch !== 'undefined') {
+    draft.sourceEditor = new StudioResearch.Editor({request: sent => send('research-sources', sent),
+      onChange: () => { if (draft.retell) draft.retell(); }});
+  }
+  return [draft.sourceEditor ? draft.sourceEditor.node : documentsPart(draft),
+    ...(draft.sourceEditor ? [] : [researchFields(draft, retell, ['documents'])]), looks,
     questionsField(draft), brand, copiesOption(draft),
     trainingOptions('Assistant and limits', 'training-assistant',
       ...agentFields(draft, 'new', 'For this training', told), drafted,
@@ -565,8 +573,8 @@ function sourcesStep(draft, brand, looks) {
 }
 
 // The new-training sheet: three numbered steps in the order they are filled in, then Start
-// and Cancel together. Enter in a box starts it, as the filled button does, after every
-// step is checked. There is no review level: nothing stops for the person.
+// and Cancel together. The runner prepares one topics review before building the
+// selected materials. Saved runs keep their original review behavior.
 function deskStart() {
   const draft = view.draft;
   const problem = alertLine('new-problem');
@@ -609,7 +617,8 @@ function deskBody(draft) {
     levels: LEVELS.filter((level) => draft.levels.includes(level)),
     brief_kind: draft.brief ? 'competitive' : 'product',
     time_limit: draft.time.trim() || null,
-    research_from: researchChoice(draft),
+    research_from: draft.sourceEditor ? draft.sourceEditor.choice() : researchChoice(draft),
+    ...(draft.sourceEditor ? {research_inputs: draft.sourceEditor.spec()} : {}),
     research_questions: (draft.researchQuestions || '').split('\n'),
     deck_target: deck,
     brand: deck ? { brand: draft.brand, variant: draft.variant || null } : null,
@@ -1570,9 +1579,9 @@ function progressPart(found, held, lead) {
   // The line is blank while something on the desk needs the person.
   const line = progress.line ? make('p', '', progress.line) : null;
   if (line) line.setAttribute('role', 'status');
-  return callout('', line, controls.childNodes.length ? controls : null, progress.doing ? make('p', 'row-says', progress.doing) : null,
-    progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
-      : null);
+  return add(make('div'), callout('', line, controls.childNodes.length ? controls : null, progress.doing ? make('p', 'row-says', progress.doing) : null,
+    run.timing ? (!run.research_progress || run.research_progress.phase === 'complete' ? measuredTime(run) : null) : progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
+      : null), researchActivity(run));
 }
 
 function unsentPart(held, lead) {
@@ -1702,7 +1711,69 @@ function deskLead(run, held, ours) {
   if (run.question) return 'answer';
   if (run.problem && run.problem.action) return 'problem';
   if (adding(run)) return 'documents';
+  if (run.training_plan && run.state === 'waiting') return 'training-plan';
+  if (run.outline?.content_first && run.outline.waiting) return 'slide-text';
   return 'ready';
+}
+
+function slideTextReview(outline, held) {
+  const path = view.path, turn = view.turn;
+  return Drafting.slideContent({slides: outline.slides,
+    label: 'Review slide text' + (outline.level ? ' · Level ' + outline.level : ''),
+    note: held.slideTextNote || '', onNote: note => { held.slideTextNote = note; },
+    onDecision: async (decision, note) => {
+      const result = await send('outline', {path, level: outline.level || null,
+        decision: decision === 'changes' ? 'revise' : 'approve', note, seen: outline.sha256});
+      if (view.turn !== turn) return;
+      held.slideTextNote = ''; view.run = result; await drawDesk(true);
+    }});
+}
+
+function trainingPlanReview(plan, held) {
+  const path = view.path, turn = view.turn;
+  const box = add(make('section', 'paper slide-text-review'),
+    make('h2', 'doc-title', 'Here’s what this training will cover'),
+    make('p', 'quiet', 'Check the topics, depth and order. Ask for changes, or let me build the selected materials from this plan.'));
+  for (const level of list(plan.levels)) {
+    if (level.level) box.append(make('h3', 'sheet-part', 'Level ' + level.level));
+    if (list(level.objectives).length) box.append(bullets(level.objectives, 'outline-points'));
+    const modules = make('ol', 'slide-text-list');
+    for (const module of list(level.modules)) {
+      const row = add(make('li', 'slide-text-item'), make('h3', 'row-title', module.title),
+        make('p', 'quiet', module.minutes + ' minutes'), bullets(module.items, 'outline-points'));
+      const practice = make('details', 'outline-notes');
+      add(practice, make('summary', '', 'Examples and exercises'),
+        module.example ? make('p', '', module.example) : null,
+        ...list(module.practice).map(text => make('p', '', text)));
+      row.append(practice); modules.append(row);
+    }
+    box.append(modules);
+    if (level.gaps && level.gaps.trim()) box.append(add(make('details'),
+      make('summary', '', 'Source gaps and exclusions'), make('p', 'desk-plain', level.gaps)));
+  }
+  const label = make('label', 'field');
+  const input = make('textarea', 'input'); input.rows = 3; input.value = held.planNote || '';
+  input.id = 'training-plan-note'; input.maxLength = 4000; label.htmlFor = input.id;
+  input.dataset.key = 'training-plan-note';
+  input.addEventListener('input', () => { held.planNote = input.value; });
+  add(label, make('span', 'field-label', 'Anything to change?'), input);
+  const problem = make('p', 'problem'); problem.setAttribute('role', 'alert');
+  const change = capsule('Ask for changes', '', () => decide('changes'), 'training-plan-changes');
+  const build = capsule('Build the training', 'filled', () => decide('approve'), 'training-plan-build');
+  async function decide(decision) {
+    if (view.busy) return;
+    if (decision === 'changes' && !input.value.trim()) { problem.textContent = 'Say which topics, depth or examples should change.'; input.focus(); return; }
+    view.busy = true; build.disabled = change.disabled = true; problem.textContent = '';
+    try {
+      const run = await send('training-plan', {path, expected: plan.expected, decision,
+        note: decision === 'changes' ? input.value.trim() : null});
+      if (view.turn !== turn) return;
+      held.planNote = ''; view.run = run;
+    } catch (error) { problem.textContent = error.message; }
+    finally { view.busy = false; build.disabled = change.disabled = false; }
+    if (view.turn === turn && !problem.textContent) await drawDesk(true);
+  }
+  return add(box, label, problem, add(make('div', 'bar'), change, build));
 }
 
 function paintDesk(fresh) {
@@ -1719,7 +1790,7 @@ function paintDesk(fresh) {
   const lead = deskLead(run, held, ours);
   const tabs = deskTabs(found, held);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
-    run.mine, run.driver, run.taken, run.notice, held.level, held.sources, held.said,
+    run.mine, run.driver, run.taken, run.notice, run.outline, run.training_plan, run.training_plan_pending, held.level, held.sources, held.said,
     held.unsent && list(held.unsent.files).map((file) => file.name), held.unsent
       && held.unsent.why, lead, narrow()]);
   if (!fresh && drawn === held.drawn) return;
@@ -1727,15 +1798,17 @@ function paintDesk(fresh) {
   const named = list(found.levels).filter(Boolean);
   const level = held.level;
   const shown = list(found.cards).filter((one) => (one.level || '') === level);
+  const waitingPlan = ours && run.training_plan && run.state === 'waiting';
+  const preparingPlan = ours && run.training_plan_pending && !list(found.cards).some(one => one.kind !== 'blueprint' && one.seen);
   const actions = [];
-  if (ours && !conversation) {
+  if (ours && !conversation && lead !== 'slide-text' && !preparingPlan && !waitingPlan) {
     const mark = capsule(named.length ? 'Mark this level ready' : 'Mark every material ready',
       lead === 'ready' ? 'filled' : '', () => markLevel(level, shown, mark), 'desk-level-ready');
     actions.push(mark);
   }
-  actions.push(capsule('Download', '', openSheet('desk-download', 'desk-download-all'),
+  if (!preparingPlan && !waitingPlan) actions.push(capsule('Download', '', openSheet('desk-download', 'desk-download-all'),
     'desk-download-all'));
-  if (ours && !conversation) {
+  if (ours && !conversation && !preparingPlan && !waitingPlan) {
     actions.push(capsule('Google Doc', '', openSheet('desk-copies', 'desk-copies'),
       'desk-copies'));
     actions.push(capsule('Finishing', '', openFinishing, 'desk-finishing'));
@@ -1750,19 +1823,21 @@ function paintDesk(fresh) {
     : add(make('div', 'desk-layout'), column, finishing ? finishing.panel : narrow() ? null : sourcesPart(found));
   place({ title: found.title || 'Untitled', back: true,
     above: named.length ? [make('span', '', levelsText(named))] : [], actions }, [
-    pageHead(conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
+    waitingPlan ? null : pageHead(preparingPlan ? 'I’ll prepare the topics and teaching plan for you to check, then build the training.' : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
     notice,
     conversation ? add(card('Editing in conversation'), make('p', '', 'No work is scheduled. Checked edits to the listed existing material parts and explicit broader scope changes happen in conversation; Mark ready is your decision.')) : null,
     found.saved_status ? add(card('Saved runner history'), make('p', '', 'The earlier runner was ' + found.saved_status.halt + '. That status remains in the original saved records; no work was resumed.')) : null,
     !ours && run.mine === false ? theirsPart(run, !view.sheet && !run.driver) : null,
     ours && run.notice ? noticePart(run) : null,
     ours ? needsPart(found, held, run) : null,
-    conversation ? null : progressPart(found, held, lead),
+    conversation || waitingPlan ? null : progressPart(found, held, lead),
+    waitingPlan ? trainingPlanReview(run.training_plan, held) : null,
+    ours && run.outline?.content_first && run.outline.waiting ? slideTextReview(run.outline, held) : null,
     run.question && ours ? questionPart(run, found.title) : null,
     run.problem ? problemPart(run, lead === 'problem') : null,
     adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,
-    tabs,
-    layout,
+    preparingPlan || waitingPlan ? null : tabs,
+    preparingPlan || waitingPlan ? null : layout,
   ], fresh);
   if (editing?.key && focusKey(editing.key) && typeof editing.start === 'number') {
     document.activeElement.selectionStart = editing.start;

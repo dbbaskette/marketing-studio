@@ -107,6 +107,9 @@ def passes(run: dict, gate: str, root=None) -> bool:
     """Whether a desk deck continues past `gate` with the desk's receipt: every stop before
     the look, and the look itself when the start chose the brand's default, or when the
     brand offers no looks to pick from (`root` is the deck, to say)."""
+    from studio_core import deck_content
+    if deck_content.checkpoint(run, gate):
+        return False
     if gate in PASSED:
         return True
     if gate == 'gate:look' and root is not None:

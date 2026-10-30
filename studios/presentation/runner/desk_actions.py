@@ -26,7 +26,7 @@ import home
 from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, decks, desk, documents, gitstate, marks, stages
-from studio_core import research_view
+from studio_core import deck_content, research_view
 from studio_core.drafting import prompts
 from runner.jobs import gate_state, sha256_of
 from runner.steps import build, finishing, intake, words
@@ -173,6 +173,9 @@ class DeskActions:
             record, state, section)['says'])
         return {**shown, **ready_status(root, record), 'migrated': bool(record.get('unfinished_migration')),
                 'saved_status': record.get('migration_saved_status'),
+                'content_pending': deck_content.enabled(record)
+                    and 'gate:outline' in {step.name for step in stages.steps(record)}
+                    and gate_state(record, 'gate:outline') != 'approved',
                 'arrived': desk.arrived(record), 'seen': desk.revision(record),
                 'progress': None if desk.arrived(record) else {
                     'minutes_left': desk.estimate(record), 'started_at': record.get('created')},

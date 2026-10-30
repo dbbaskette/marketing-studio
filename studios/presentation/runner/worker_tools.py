@@ -126,6 +126,7 @@ import home  # noqa: E402
 from workspace import WorkspaceError  # noqa: E402
 
 from runner.steps import build  # noqa: E402
+from studio_core import slide_assessment
 from studio_core import research_sites  # noqa: E402
 
 from studio_core import modules  # noqa: E402
@@ -906,24 +907,8 @@ class WorkerTools:
     def _record(self, review: dict, kept: list, named: list, recorded: Path) -> list[str]:
         """Record an assessment with the slides tool, against the render it is of. Returns
         what the tool refused in it."""
-        coverage = []
-        for slide in review['slides']:
-            reused = (review.get('reused') or {}).get(slide['id'])
-            note = ('Reused verified native inspection from deck ' + reused['from_deck'] + '; checked current whole-deck consistency. ' if reused else 'Inspected native pixels and all review questions. ') + f"Slide {slide['number']}: {slide['title']}"
-            coverage.append({'id': slide['id'], 'number': slide['number'],
-                'answers': [not any(f['slide'] == slide['id'] and f['question'] == n for f in kept) for n in range(1, len(review_questions(review)) + 1)],
-                'note': note, 'image_sha256': hashlib.sha256(picture(slide['image'])).hexdigest(),
-                **({'reused_from': reused['from_deck']} if reused else {})})
-        assessment = {'slides': [{key: value[key] for key in ('id', 'answers', 'note')} for value in coverage], 'deckSha256': review['deck'], 'reviewer': 'independent',
-                      'weakest': named, 'findings': [
-                          {key: finding[key] for key in ('slide', 'question', 'severity',
-                                                         'note', 'fix')
-                           if finding[key] is not None} for finding in kept]}
-        packet = home.read_json(Path(review['preview']) / 'critic.json', {})
-        if packet.get('schema') == 1:
-            # Older runtimes accept only negative findings. Keep complete local coverage,
-            # while preserving their original wire contract; render reuse stays disabled.
-            assessment.pop('slides')
+        coverage = slide_assessment.coverage(review, kept, review_questions(review), picture)
+        assessment = slide_assessment.payload(review, kept, named, coverage)
         path = _draft(self.folder / 'drafts', 'assessment',
                       json.dumps(assessment, indent=2, ensure_ascii=False) + '\n')
         try:

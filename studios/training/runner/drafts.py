@@ -1,8 +1,10 @@
 """The training desk in the runner: what tells a desk run from a saved one, and the sentences
 both sides of that line refuse with.
 
-A training started on the desk is a run of schema 4 with `flow: 'desk'` and no review level:
-the engine carries it past every gate with a desk receipt, and the person marks each
+A training started on the desk has `flow: 'desk'` and no review level. New schema-6
+runs wait for one topics review before building the selected materials. Schemas 4
+and 5 keep their saved workflow, including explicit slide text approval where
+requested. The engine carries other gates with desk receipts. The person marks each
 material ready on the desk. A run without `flow` keeps the gates, review screens and
 remaking it began with.
 
@@ -861,6 +863,7 @@ def view(engine, root) -> dict:
                 card['state'] in ('ready', 'left-out') for card in cards):
             needed += [desk.plainly_on_desk(reason) for reason in report['blocking']]
     running = state == 'working'
+    parallel = (record.get('research_execution') or {}).get('progress')
     minutes = max(1, start_minutes(root, record, found)) if running else None
     doing = ''
     if running:
@@ -878,7 +881,7 @@ def view(engine, root) -> dict:
                      # Said only while nothing on the desk needs the person.
                      'line': NOTHING_NEEDED.format(
                          n=minutes, minutes='minute' if minutes == 1 else 'minutes')
-                     if running and not needed else ''},
+                     if running and not needed and not (parallel and parallel.get('phase') != 'complete') else ''},
         'needs': needed, 'cards': cards,
         'sources': {'account': research_view.account(root / 'research', questions),
                     'updates': update_view(root, record),

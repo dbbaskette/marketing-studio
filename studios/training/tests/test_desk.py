@@ -1517,7 +1517,7 @@ class PageFileTests(unittest.TestCase):
         # The deck panels are the shared core's, served beside the page from its own origin.
         self.assertEqual(sorted(re.findall(r'(?:src|href)="([^"]*)"', page)),
                          ['#main', 'app.js', 'deck-panels.css', 'deck-panels.js',
-                          'drafting.js', 'drafts.js', 'lists.js', 'markdown.js', 'style.css'])
+                          'drafting.js', 'drafts.js', 'lists.js', 'markdown.js', 'research.js', 'style.css'])
         # The list kit is the shared core's, loaded after the deck panels and before app.js.
         scripts = re.findall(r'<script src="([^"]+)"', page)
         self.assertLess(scripts.index('deck-panels.js'), scripts.index('lists.js'))
@@ -1573,7 +1573,7 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(page, r'\son[a-z]+\s*=')
         self.assertNotRegex(page, r'<svg\b')
         self.assertEqual(re.findall(r'<script\b[^>]*>(.*?)</script>', page, re.DOTALL),
-                         ['', '', '', '', '', ''])
+                         ['', '', '', '', '', '', ''])
 
     def test_the_scripts_never_treat_a_value_as_markup(self):
         for name in ('app.js', 'markdown.js', 'drafts.js', 'drafting.js'):
@@ -4624,7 +4624,7 @@ class RunnerScreenTests(ScriptedPage, PageCase):
                       # What trying again does, and roughly what it costs, before it is pressed.
                       'Try again researches the questions still unanswered and keeps the '
                       'answered ones. The tries so far took 13 minutes and $1.28.',
-                      'Failed', '3 tries · 13 minutes · $1.28',
+                      'Failed', '3 tries · 13 minutes assistant time · $1.28',
                       'The agent could not be reached.'):
             self.assertIn(shown, down['text'])
         self.assertEqual(down['filled'], ['Try the research again'])
@@ -6930,6 +6930,26 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
     def open_desk(self, answers: dict, steps: list, **plan) -> dict:
         return self.run_page(answers, steps, state={'screen': 'run', 'path': str(self.root)},
                              **plan)
+
+    def test_parallel_research_phone_progress_distinguishes_elapsed_and_assistant_time(self):
+        progress = {'phase': 'investigate', 'streams': [
+            {'id': 'area1', 'questions': ['Capacity and constraints'], 'status': 'kept'},
+            {'id': 'area2', 'questions': ['Operational examples'], 'status': 'working'},
+            {'id': 'area3', 'questions': ['Counterevidence'], 'status': 'waiting'}]}
+        timing = {'elapsed_seconds': 3600, 'active_seconds': 600, 'assistant_seconds': 1500, 'incomplete': False}
+        run = a_desk_run()
+        run['body'].update(research_progress=progress, timing=timing)
+        answers = self.on_desk(a_desk(), run)
+        result = self.open_desk(answers, [{'snapshot': 'working'},
+            {'click': 'Stop training'}, {'snapshot': 'stop'}], narrow=True)
+        shown = result['snapshots']['working']
+        for text in ('Investigating', 'Capacity and constraints', 'Evidence kept',
+                     'Operational examples', 'Working', 'Counterevidence', 'Waiting',
+                     '1 hour 0 minutes elapsed', '10 minutes actively working',
+                     '25 minutes total assistant time'):
+            self.assertIn(text, shown['text'])
+        self.assertIn('Stop', result['snapshots']['stop']['text'])
+        self.assertFalse(self.posts(result), 'Opening Stop asks without starting another job')
 
     def test_finishing_toolbar_opens_tools_and_applies_a_note_without_a_job(self):
         desk, card_view = self.editable()

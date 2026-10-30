@@ -184,7 +184,7 @@ SOURCE_LIMIT = 12_000_000     # bytes: a document of up to 8 MB, in base64, with
 # What a desk change takes as it is sent, not as text.
 RAW = ('slides', 'field', 'ids', 'again')
 WHOLE = ('seen', 'start', 'end', 'index')   # whole numbers, from zero
-WRITES = ('/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
+WRITES = ('/api/research-sources', '/api/setup/check', '/api/setup', '/api/decks', '/api/run', '/api/decide',
           '/api/answer', '/api/share', '/api/fetch', '/api/drive', '/api/publish',
           '/api/delete', '/api/bring', '/api/companions', '/api/upgrade', '/api/restart',
           '/api/versions', '/api/brand', '/api/brand/install', '/api/shared',
@@ -387,17 +387,23 @@ class RunnerPage(server.Page):
         the key. Anyone else's request there is held to the usual limit, so it is refused
         unread."""
         address = target.partition('?')[0]
-        if address in (DECKS, PICTURE, SOURCE):
+        if address in (DECKS, PICTURE, SOURCE, '/api/research-sources'):
             try:
                 self.check_token(headers)
             except server.Refusal:
                 return super().body_limit(target, headers)
-            return {DECKS: DECKS_LIMIT, PICTURE: PICTURE_LIMIT, SOURCE: SOURCE_LIMIT}[address]
+            return {DECKS: DECKS_LIMIT, PICTURE: PICTURE_LIMIT, SOURCE: SOURCE_LIMIT, '/api/research-sources': 12_000_000}[address]
         return super().body_limit(target, headers)
 
     # --- changes -------------------------------------------------------------------------
 
     def write(self, path: str, sent: dict):
+        if path == '/api/research-sources':
+            from studio_core.research_sources import Sources
+            try:
+                return server.as_json(HTTPStatus.OK, Sources(self.engine.space().root / '.research-sources').dispatch(sent))
+            except ValueError as error:
+                raise server.Refusal(HTTPStatus.BAD_REQUEST, str(error)) from None
         self.engine.seen()
         if path in ('/api/desk-migrate', '/api/desk-ready'):
             from runner import desk_chat
@@ -532,9 +538,9 @@ class RunnerPage(server.Page):
                 raise server.Refusal(HTTPStatus.BAD_REQUEST, f'"{name}" did not arrive whole. '
                                      'Choose the file again.')
         brands = self.engine.brands() if self.engine.workspace is not None else None
-        if brands is not None:   # what makes no sense is said as such; the rest is the engine's
+        if brands is not None and not sent.get('research_inputs'):   # source-backed forms are checked with their trusted references by the engine
             shaped(decks.check_form, form, brands)
-        return self.engine.start(form, uploads)
+        return self.engine.start(form, uploads, research_inputs=sent.get('research_inputs'))
 
     def picture_given(self, sent: dict) -> dict:
         """A picture the person gives one slide at the outline stop: {"path", "slide",

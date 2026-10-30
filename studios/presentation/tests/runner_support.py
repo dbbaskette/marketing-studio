@@ -983,7 +983,7 @@ class StudioCase(unittest.TestCase):
 
     def make(self, **options):
         options = {'adapters': self.adapters, 'research': lambda: self.research,
-                   'background': self.BACKGROUND, **options}
+                   'background': self.BACKGROUND, 'parallel_research': False, 'content_first': False, **options}
         engine = self.engines.Engine(**options)
         self.addCleanup(engine.close)
         return engine

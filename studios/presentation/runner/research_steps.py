@@ -42,7 +42,7 @@ from workspace import WorkspaceError, write_atomic
 
 from runner import briefs, decks, documents, marks, stages, worker_tools
 from runner import research as research_cli
-from studio_core import research_contract, research_sites, research_view, stops
+from studio_core import research_sources, research_session, research_transport, research_contract, research_sites, research_view, stops
 from runner.jobs import KEPT, Halted, Run, given_up, last_error, sha256_of, text_of, tries
 from runner.steps import Work
 
@@ -67,7 +67,7 @@ class Researching:
             tool = self.research()
             # Verify with the helper version that did the research, while it is retained.
             tool = research_contract.matching(tool, self._load(root)['research_contract']) or tool
-            verified = tool._json('synthesis', 'verify', '--project', str(root / research_contract.CASE))
+            verified = tool._json('synthesis', 'verify', '--project', str(research_session.case_for(root)))
             if verified.get('status') != 'complete' or verified.get('artifact_integrity') == 'failed':
                 raise WorkspaceError('Research needs independent review before authoring can continue.')
             with self.files:
@@ -163,7 +163,7 @@ class Researching:
         """Each question of the approved plan, with its verdict or 'pending'."""
         if self._load(root).get('research_contract'):
             try:
-                facts, _ = research_contract.read_bundle(root / research_contract.CASE / 'research')
+                facts, _ = research_contract.read_bundle(research_contract.output_root(root / research_contract.CASE))
                 return {f['id']: 'supported' for f in facts['findings']}
             except (OSError, ValueError):
                 return {'synthesis': 'pending'}
@@ -292,7 +292,10 @@ class Researching:
                     # mixed, sites alone public.
                     'source_mode': research_sites.source_mode(looks)}
             try:
-                research_contract.native(self, root, run, task, offered, 'presentation')
+                if research_session.protocol(record):
+                    research_transport.native(self, root, run, task, offered, 'presentation')
+                else:
+                    research_contract.native(self, root, run, task, offered, 'presentation')
             except WorkspaceError as refusal:
                 outcome = getattr(refusal, 'outcome', None)
                 if outcome is not None:
@@ -499,14 +502,20 @@ class Researching:
         plan's scope said (decks.research_from)."""
         form = record.get('form') or {}
         plan = home.read_json(root / PLAN, None)
-        given = form.get('route') == 'document' or bool(documents.listed(root))
+        given = form.get('route') == 'document' or bool(documents.listed(root)) or bool(research_sources.sources(root)[0])
         return decks.research_from(form, plan.get('scope') if isinstance(plan, dict) else None,
                                    given) or {'documents': True, 'sites': [], 'web': False}
 
     @staticmethod
+    def _source_plan(root):
+        return [*documents.sources(root)[0], *research_sources.sources(root)[0]]
+
+    @staticmethod
     def _offered(root: Path, looks: dict) -> list:
         """The person's documents, offered to research only when it may use them."""
-        return documents.sources(root)[1] if looks['documents'] and documents.listed(root) else []
+        if not looks['documents']:
+            return []
+        return [*documents.sources(root)[1], *research_sources.sources(root)[1]]
 
     @staticmethod
     def _web_words(looks: dict) -> str:
@@ -560,7 +569,7 @@ class Researching:
                    error: str | None) -> Work:
         name = 'research-plan'
         looks = self._research_from(root, record)
-        listed = documents.sources(root)[0] if looks['documents'] and documents.listed(root) else []
+        listed = self._source_plan(root) if looks['documents'] else []
         web = self._web_words(looks)
         allowed = (f'{web}, and these documents the person supplied. Ask what the '
                    'documents can answer as well as what the web can:\n'
@@ -687,11 +696,10 @@ class Researching:
                 ident = marks.new_id(text, [item['id'] for item in items])
                 items.append(dict(id=ident, question=text,
                                   public_query=text if fetches else None, claim=None))
-            listed = documents.sources(root)[0] if looks['documents'] and documents.listed(root) \
-                else []
+            listed = self._source_plan(root) if looks['documents'] else []
             plan = dict(topic=record.get('title') or form.get('title'), purpose='planning',
                         scope=research_sites.plan_scope(looks) if fetches else 'supplied-only',
-                        sources=listed if fetches else documents.sources(root)[0], items=items)
+                        sources=listed, items=items)
             checked = worker_tools.check_research_plan(plan, most=worker_tools.PLAN_MOST)
             if checked['problems']:
                 raise WorkspaceError(checked['problems'][0])

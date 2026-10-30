@@ -1,6 +1,6 @@
 # Marketing Studio architecture
 
-One repository contains Marketing Studio and three independently runnable studios.
+One repository contains Marketing Studio and four independently runnable studios.
 Each studio retains its native commands, pipeline, tests, skill entry, installer,
 and data locations. The suite can install any selection; it also distributes a
 self-contained installer archive for each studio.
@@ -13,8 +13,9 @@ self-contained installer archive for each studio.
 | `studios/blog/` | Blog Studio pipeline and native interfaces |
 | `studios/presentation/` | Presentation Studio pipeline and native interfaces |
 | `studios/training/` | Training Studio pipeline and native interfaces |
-| `core/studio_core/` | Shared settings storage, page-server protections, companion installation, packaging, and the desk parts (`drafting/`, `text_checks.py`, `step_times.py`) |
-| `ui-kit/` | Common stylesheet (with the desk's styles), safe Markdown renderer, and the desk's page kit (`drafting.js`) |
+| `studios/infographic/` | Infographic Studio pipeline and native interfaces |
+| `core/studio_core/` | Shared settings storage, page-server protections, companion installation, packaging, the desk parts, and shared research source intake, execution, recovery and transports |
+| `ui-kit/` | Common stylesheet (with the desk's styles), safe Markdown renderer, and the desk's page kit (`drafting.js`) and research component (`research.js`) |
 | `pins/companions.json` | Canonical companion revisions and integrity hashes |
 | `installer/` | Suite/subset install orchestration and restoration |
 
@@ -207,3 +208,20 @@ handoffs snapshot only the chosen visible material. Optional team sharing uses a
 owned clone, exact inventory/claim/head/destination guards and non-forced Git pushes. Local
 workspace ownership and approval never transfer through an import. Prompts and image jobs do
 not enter shared inventories; private source/art bytes require explicit selection.
+
+## Shared research ownership
+
+Marketing Studio owns `studio_core.research_sources`, `google_reference`,
+`source_documents`, `research_session`, `research_transport` and `research_text`.
+The first three capture selected references; the controller coordinates bounded
+invocations through the pinned Harness Research collection protocol. Harness
+Research owns packets, registries, assembly and review validation. Python does
+not implement another evidence merger.
+
+`ui-kit/research.js` owns the source picker, scope, Google tab selection, hidden
+worker options and progress rendering. Studios provide authenticated endpoint
+adapters and their final authoring actions. Packaging writes the same shared files
+into each independently runnable product. Marketing Studio need not be running.
+Private source drafts/checkpoints stay in the user's workspace, outside automatic
+Git sharing. Existing serial records retain their original execution protocol and
+saved companion capability.

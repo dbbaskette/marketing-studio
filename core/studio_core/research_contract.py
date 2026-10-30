@@ -215,6 +215,40 @@ def find_runtime():
     raise ValueError('Install the shared Harness Research 1.0 or newer before starting synthesis research.')
 
 
+def working_case(case):
+    """Resolve only the host-owned, confined current topic pointer."""
+    case = Path(case)
+    pointer = case / 'current.json'
+    if pointer.exists():
+        if pointer.is_symlink():
+            raise ValueError('Research location cannot be a link.')
+        value = json.loads(pointer.read_text())
+        if not re.fullmatch('[a-f0-9]{64}', str(value.get('basis', ''))):
+            raise ValueError('The saved research location is invalid.')
+        return inside(case, value['basis'] + '/topic')
+    return case
+
+
+def output_root(case):
+    case = working_case(case)
+    marker = case / '.harness-research/asset.json'
+    if marker.is_file():
+        if marker.is_symlink() or json.loads(marker.read_text()).get('owner') != 'harness-research-asset':
+            raise ValueError('Unrecognized research topic asset.')
+        return case
+    return case / 'research'
+
+
+def snapshot_name(name, manifest):
+    """Return a manifest-relative capture path for either supported output layout."""
+    names = {e['file'] for e in manifest['artifacts']}
+    if name.startswith('research/') and name[len('research/'):] in names:
+        return name[len('research/'):]
+    if name.startswith('sources/revisions/') and name in names:
+        return name
+    raise ValueError('The bundle is missing a pinned source capture.')
+
+
 def read_bundle(root, complete=True):
     """Read-only consumer boundary: identity, every hash, review and exact digest."""
     root = Path(root)
@@ -246,14 +280,13 @@ def read_bundle(root, complete=True):
         for key in ('snapshot', 'original_snapshot'):
             if source.get(key):
                 name = source[key]
-                if not name.startswith('research/') or name[len('research/'):] not in names:
-                    raise ValueError('The bundle is missing a pinned source capture.')
+                snapshot_name(name, manifest)
     return facts, manifest
 
 
 def publish(case, destination):
     """Copy the helper's whole bundle, preserving relative evidence links."""
-    output = Path(case) / 'research'
+    output = output_root(case)
     facts, manifest = read_bundle(output)
     if any((Path(destination) / name).exists() for name in ARTIFACTS):
         if not (Path(destination) / 'output.json').is_file():
@@ -266,42 +299,70 @@ def publish(case, destination):
     return facts, manifest
 
 
+def case_files(source):
+    """Declared portable helper files for both output layouts, never an arbitrary directory."""
+    source = working_case(source)
+    output = output_root(source)
+    prefix = '' if output == source else 'research/'
+    facts, manifest = read_bundle(output)
+    state = json.loads(inside(source, '.harness-research/synthesis.json').read_text())
+    if state.get('owner') != OWNER or state.get('digest') != manifest['digest']:
+        raise ValueError('Research state and bundle describe different revisions.')
+    names = {'.harness-research/synthesis.json', prefix + 'output.json'}
+    names.update(prefix + entry['file'] for entry in manifest['artifacts'])
+    for capture in facts['sources']:
+        for key, digest_key in (('file', 'sha256'), ('original_file', 'original_sha256')):
+            if capture.get(key):
+                try:
+                    content = inside(source, capture[key]).read_bytes()
+                except OSError as error:
+                    raise ValueError('A working research source is missing. Restore it before handoff.') from error
+                if hashlib.sha256(content).hexdigest() != capture[digest_key]:
+                    raise ValueError('A working research source changed. Review it again before handoff.')
+                names.add(capture[key])
+    if not prefix:
+        names.update({'.harness-research/asset.json', 'topic.json', 'sources.json', 'asset-manifest.json'})
+        asset = json.loads(inside(source, '.harness-research/asset.json').read_text())
+        if asset.get('owner') != 'harness-research-asset':
+            raise ValueError('This research topic has no owned asset marker.')
+        names.update(item['file'] for item in asset['intake']['files'] if item.get('file'))
+        names.update(entry[key] for entry in asset['inventory'] for key in ('original_file', 'capture_file') if entry.get(key))
+    collection = source / '.harness-research/collection.json'
+    if collection.exists():
+        names.add('.harness-research/collection.json')
+        value = json.loads(inside(source, '.harness-research/collection.json').read_text())
+        if value.get('owner') != 'harness-research-collection':
+            raise ValueError('This research has no owned collection marker.')
+        if value.get('registry'): names.add(value['registry']['file'])
+        for stream in value['workstreams']:
+            for attempt in stream['attempts']:
+                if attempt.get('packet'): names.add(attempt['packet']['file'])
+                for receipt in attempt.get('receipts', []):
+                    names.update(receipt[key] for key in ('snapshot', 'original_snapshot') if receipt.get(key))
+                    names.update(receipt['source'][key] for key in ('file', 'original_file') if receipt['source'].get(key))
+    if len(names) > 1000:
+        raise ValueError('This research handoff has too many declared files.')
+    files = {name: inside(source, name).read_bytes() for name in sorted(names)}
+    return source, files
+
+
 def adopt_case(source, root):
-    """Explicit handoff of the helper's owned state and captures, never arbitrary files."""
+    """Explicit handoff of declared reviewed state and captures, preserving private history."""
     if any((Path(root) / '.harness-research' / name).exists()
            for name in ('research.json', 'research-run.json')):
         raise ValueError('Existing legacy research keeps its original workflow. Use a fresh project.')
-    if Path(source).is_symlink():
-        raise ValueError('Research paths cannot traverse links.')
-    source = Path(source).resolve()
-    facts, manifest = read_bundle(source / 'research')
-    state_path = inside(source, '.harness-research/synthesis.json')
-    state = json.loads(state_path.read_text())
-    if state.get('owner') != OWNER or state.get('digest') != manifest['digest']:
-        raise ValueError('Research state and bundle describe different revisions.')
-    destination = inside(root, str(CASE))
-    if source == destination:
-        for capture in facts['sources']:
-            for key, digest_key in (('file', 'sha256'), ('original_file', 'original_sha256')):
-                if capture.get(key) and hashlib.sha256(inside(source, capture[key]).read_bytes()).hexdigest() != capture[digest_key]:
-                    raise ValueError('A working research source changed. Review it again before handoff.')
-    if source != destination:
-        previous = inside(destination, '.harness-research/synthesis.json')
-        if previous.is_file() and previous.read_bytes() != state_path.read_bytes():
-            old = json.loads(previous.read_text())
-            write(destination, '.harness-research/synthesis-history/import-' +
-                  hashlib.sha256(previous.read_bytes()).hexdigest() + '.json', json.dumps(old))
-        for capture in facts['sources']:
-            for key, digest_key in (('file', 'sha256'), ('original_file', 'original_sha256')):
-                if capture.get(key):
-                    content = inside(source, capture[key]).read_bytes()
-                    if hashlib.sha256(content).hexdigest() != capture[digest_key]:
-                        raise ValueError('A working research source changed. Review it again before handoff.')
-                    write(destination, capture[key], content)
-        publish(source, destination / 'research')
-        write(destination, '.harness-research/synthesis.json', state_path.read_bytes())
-    publish(destination, Path(root) / 'research')
-    return facts, manifest
+    source, files = case_files(source)
+    base = inside(root, str(CASE))
+    if (source / '.harness-research/asset.json').exists():
+        basis = hashlib.sha256(files['output.json']).hexdigest()
+        destination = inside(base, basis + '/topic')
+        write(base, '.gitignore', '*\n')
+        for name, raw in files.items(): write(destination, name, raw)
+        write(base, 'current.json', json.dumps({'schema': 1, 'basis': basis}))
+    else:
+        destination = base
+        for name, raw in files.items(): write(destination, name, raw)
+    return publish(destination, Path(root) / 'research')
 
 
 def copy_case(source, destination):
@@ -671,6 +732,17 @@ def check_json(text, spec):
         value = json.loads(text)
         if not isinstance(value, dict) or value.get('schema') != 2:
             problems.append('Return a schema-2 JSON object.')
+        elif spec.get('research_mode'):
+            from studio_core.research_session import preparation
+
+            value = preparation(value, spec)
+            kept = json.dumps(value)
+            problems += uncaptured(value['sources'], spec.get('captures', []))
+            if not problems:
+                value, problems, matched = citation_sources(value, spec.get('captures', []))
+                kept = json.dumps(value)
+            if not problems and spec.get('runtime'):
+                problems += refused(value, spec)
         elif 'captures' in spec and isinstance(value.get('sources'), list):
             problems += uncaptured(value['sources'], spec['captures'])
             if not problems:
@@ -682,8 +754,10 @@ def check_json(text, spec):
             if not problems and matched:
                 warnings.append(f'Matched {matched} citation source handle(s) to the same '
                                 'captured source in the dossier. Claims and quotations are unchanged.')
-    except (TypeError, ValueError):
+    except (TypeError, json.JSONDecodeError):
         problems.append('Return valid JSON, without Markdown fences.')
+    except ValueError as error:
+        problems.append(str(error))
     return problems, [{'check': 'research.json', 'status': 'failed' if problems else 'passed',
                        'problems': problems}], warnings, kept
 
@@ -771,8 +845,14 @@ def refused(value, spec):
     can still correct it then; afterwards a refusal would end the whole research step."""
     dossier = {**copy.deepcopy(value), **(spec.get('task') or {})}
     worker = spec.get('worker')
-    if any(not isinstance(fact, dict) or fact.get('author') != worker
-           for fact in dossier.get('facts') or []):
+    if spec.get('research_mode') == 'compose':
+        from studio_core.research_session import check_frozen
+
+        frozen = check_frozen(dossier, spec)
+        if frozen is None or frozen:
+            return frozen or ['Synthesis needs the registered investigator evidence.']
+    elif any(not isinstance(fact, dict) or fact.get('author') != worker
+             for fact in dossier.get('facts') or []):
         return [f'Set every fact author to {worker}.']
     folder = Path(spec['folder'])
     saved = {entry['file']: entry for entry in spec['captures'] if entry.get('file')}
@@ -819,6 +899,9 @@ def job_round(name):
     before rounds were named has round None."""
     if name in LEGACY_JOBS:
         return name.partition('-')[2], None
+    parallel = re.fullmatch(r'research:(investigate|synthesize)-(\d+)(?:-area[123])?', str(name))
+    if parallel:
+        return parallel[1], int(parallel[2])
     head, _, rest = str(name).partition(':')
     phase, _, number = rest.rpartition('-')
     if head == 'research' and phase in ('author', 'review') and number.isdigit():
@@ -845,6 +928,11 @@ def last_rounds(attempts_by_name):
              if job_round(name) for attempt in attempts]
     if not tried:
         return None
+    groups = [attempt for _, attempt in tried if attempt.get('research_attempt')]
+    if groups:
+        last = max(groups, key=lambda a: a.get('started_at') or '')['research_attempt']
+        tried = [(found, attempt) for found, attempt in tried
+                 if attempt.get('research_attempt') == last]
     starts = [attempt.get('started_at') or '' for (phase, number), attempt in tried
               if phase == 'author' and number == 1]
     since = max(starts) if starts else ''
