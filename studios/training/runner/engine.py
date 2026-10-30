@@ -190,12 +190,13 @@ What a caller needs to know
 - `bring` copies a training's folder into the workspace under the name its title gives,
   moves its decisions to the page, gives it a run record that takes it, and commits. The
   folder it came from is only read. The run then carries on from what the files say.
-- A form with `flow: 'desk'` starts the training on the desk: a run of schema 4 (serial) or 5 (parallel) with
-  `flow: 'desk'` in the run and the session, and no review level. None is saved with it and
-  the shared one is never written from its form, so its start promises no stops. The engine
-  carries a desk run past every gate, deck outline and look (`_desk_gate`), each with a desk
-  receipt in `review_events`, and never groups it for review. That is not the person's
-  approval of a material, which they give on the desk. A problem still stops it.
+- A form with `flow: 'desk'` starts the training on the desk with no review level and
+  never changes the shared review setting. New schema-6 runs prepare all levels' topics,
+  wait for one person decision, then build the selected materials. Schemas 4 and 5 keep
+  their original gates, including a slide-text decision when their saved protocol asks
+  for one. Other desk gates, deck outlines and looks carry desk receipts in
+  `review_events` (`_desk_gate`). Those receipts are not the person's approval of a
+  material, which they give on the desk. A problem still stops it.
 - On the desk, what a change reaches is held, not remade (`drafts.held`). `update` asks for
   a held material to be made again, through its own steps, and carries on; `keep` keeps it
   as it is (`workspace.keep_as_is`, by the page). Each commits; an update closes in the

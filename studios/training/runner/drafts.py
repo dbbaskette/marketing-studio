@@ -1,9 +1,10 @@
 """The training desk in the runner: what tells a desk run from a saved one, and the sentences
 both sides of that line refuse with.
 
-A training started on the desk is a run of schema 4 or 5 with `flow: 'desk'` and no review level:
-the engine carries legacy gates with desk receipts. New slide-text-first runs wait
-for explicit slide text approval before design. The person marks each
+A training started on the desk has `flow: 'desk'` and no review level. New schema-6
+runs wait for one topics review before building the selected materials. Schemas 4
+and 5 keep their saved workflow, including explicit slide text approval where
+requested. The engine carries other gates with desk receipts. The person marks each
 material ready on the desk. A run without `flow` keeps the gates, review screens and
 remaking it began with.
 

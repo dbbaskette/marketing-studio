@@ -85,6 +85,22 @@ class ParallelNativeTests(StudioCase):
         self.assertNotIn('research_execution', self.engine._load(root))
         self.assertEqual(len(self.workers.of('research-result')), 2)
 
+    def test_parallel_research_prepares_one_topics_review_before_materials(self):
+        from runner import training_plan
+        self.engine.plan_first = True
+        self.assertIs(inspect.signature(engines.Engine).parameters['plan_first'].default, True)
+        root = self.start(flow='desk')
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown['problem'])
+        record = self.engine._load(root)
+        self.assertEqual(record['schema'], training_plan.RECORD_SCHEMA)
+        self.assertTrue(parallel.protocol(record))
+        self.assertEqual(shown['research_progress']['phase'], 'complete')
+        self.assertEqual(shown['state'], 'waiting')
+        self.assertTrue(shown['training_plan']['levels'][0]['modules'])
+        self.assertFalse(self.workers.of('document'))
+        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize', 'review'])
+
     def test_missing_or_unknown_parallel_protocol_refuses_resume(self):
         self.barrier = None
         root = self.start()

@@ -20,6 +20,7 @@ def main():
             catalog = mock.patch('studio_core.model_catalog.Catalog.get', return_value={'agent':'codex','models':[],'problem':None})
             catalog.start(); case.addCleanup(catalog.stop)
             from studio_core import preferences, studios_config
+            studios_config.update({'local': {'root': str(case.space.root)}})
             preferences.finish(studios_config, lambda _: None)
             case.engine.plan_first = True
             root = case.begin(flow='desk', deck_target=None, brand=None)
