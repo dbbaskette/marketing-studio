@@ -26,10 +26,14 @@ long questions, dark mode and reduced effects remain usable across refreshes.
 | Paused/stopped/failure/complete | Clear status; retain evidence and real available controls | Shared component and browser |
 | Polling a question disclosure | Keep its open state and focus | Real page/browser |
 | Only research phase/timing changes | Redraw the progress view without waiting for another training state change | Real page/browser |
+| Source metadata uses date | Preserve a nonconflicting date as the pinned source_date field before helper collection | Pinned native helper |
+| Unknown fields or conflicting source dates | Return corrective feedback inside the current worker job; never silently discard metadata | Native submission/unit cases |
+| Phone keyboard reaches timing disclosure | Keep focus above fixed navigation | Real browser |
 
 Verification uses synthetic sources, settings and workers only. Run affected
-engine/component checks after the full slice, then the complete Training Studio
-and shared suites once through the existing Tart runner. Reuse unchanged studio
-pipeline evidence; do not restart or modify the person's active training.
+engine/component checks after the full slice, then the complete suite through the
+existing Tart runner. The source-metadata correction affects the shared research
+boundary, so include all four native studios. Do not restart or modify the
+person's active training.
 
 Status: implementation in progress.

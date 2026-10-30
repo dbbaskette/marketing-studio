@@ -53,6 +53,12 @@ class ParallelNativeTests(StudioCase):
             self.phases.append('review')
             for source in tools._index(): self.assertTrue(tools.read_source(source['id'])[0])
             value = review(payload['review_template'])
+        if getattr(self, 'source_metadata_alias', False) and 'questions' in payload:
+            value['sources'][0].update(date='2026-10-01', unsupported_note='Synthetic unknown field')
+            refused = tools.submit_artifact('research-result', json.dumps(value))
+            self.assertFalse(refused[0], 'Unknown source fields must be refused inside the same job')
+            self.assertIn('unsupported_note', refused[1])
+            value['sources'][0].pop('unsupported_note')
         accepted = tools.submit_artifact('research-result', json.dumps(value))
         self.assertTrue(accepted[0], accepted)
 
@@ -84,6 +90,17 @@ class ParallelNativeTests(StudioCase):
         self.to_gate(root, 'research')
         self.assertNotIn('research_execution', self.engine._load(root))
         self.assertEqual(len(self.workers.of('research-result')), 2)
+
+    def test_source_metadata_is_checked_before_the_helper_registry_without_recollecting(self):
+        self.source_metadata_alias = True
+        root = self.start()
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown['problem'])
+        facts, _ = contract.read_bundle(root / 'research')
+        self.assertTrue(facts['sources'])
+        self.assertTrue(all(source.get('source_date') == '2026-10-01' for source in facts['sources']))
+        self.assertTrue(all('date' not in source and 'unsupported_note' not in source for source in facts['sources']))
+        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize', 'review'])
 
     def test_parallel_research_prepares_one_topics_review_before_materials(self):
         from runner import training_plan

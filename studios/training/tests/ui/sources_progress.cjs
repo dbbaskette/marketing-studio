@@ -54,7 +54,7 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
    await page.setViewportSize({width,height:950});await page.emulateMedia({colorScheme:theme,reducedMotion:'reduce'});await fit();
    assert.equal(await panel.locator('.research-area').count(),3);
    assert.deepEqual(await panel.locator('summary,button').evaluateAll(nodes=>nodes.filter(n=>n.getBoundingClientRect().height<43.5).map(n=>n.textContent)),[]);
-   if(width<400){await panel.getByText('Timing details',{exact:true}).scrollIntoViewIfNeeded();const timing=await panel.getByText('Timing details',{exact:true}).boundingBox(),navigation=await page.locator('#sidebar').boundingBox();assert.ok(timing.y+timing.height<=navigation.y,'Timing controls must scroll above phone navigation');}
+   if(width<400){await panel.locator('.research-area-details').last().locator('summary').focus();await page.keyboard.press('Tab');assert.equal(await page.evaluate(()=>document.activeElement.textContent),'Timing details');const timing=await panel.getByText('Timing details',{exact:true}).boundingBox(),navigation=await page.locator('#sidebar').boundingBox();assert.ok(timing.y+timing.height<=navigation.y,'Keyboard focus must scroll timing controls above phone navigation');}
    if(width>320)await capture(`training-research-${width}-${theme}`);
   }
   await page.setViewportSize({width:1280,height:950});phase='synthesize';await refresh();

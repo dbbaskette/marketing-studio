@@ -222,15 +222,15 @@ elif [[ "${1:-full}" == training-plan || "${1:-full}" == training-sources-progre
     node studios/infographic/tests/ui/research.cjs 2>&1 | tee "$results_dir/shared-research-browser.log"
   fi
   node studios/training/tests/ui/training_plan.cjs 2>&1 | tee "$results_dir/training-plan-browser.log"
-  {
-    if [[ "${1:-full}" == training-sources-progress ]]; then
-      "$python" -m unittest discover -s tests -v
-    else
+  if [[ "${1:-full}" == training-sources-progress ]]; then
+    bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+  else
+    {
       PYTHONPATH=tests "$python" -m unittest test_ui_consistency test_network_static test_suite.CoreTests -v
-    fi
-    (cd studios/training && bash scripts/ci/check.sh "$python")
-  } 2>&1 | tee "$results_dir/training-plan-tests.log"
-  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+      (cd studios/training && bash scripts/ci/check.sh "$python")
+    } 2>&1 | tee "$results_dir/training-plan-tests.log"
+    bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+  fi
 elif [[ "${1:-full}" == slide-text-final ]]; then
   # All relevant full suites ran; retain passing classes and verify the last
   # saved-run response compatibility repair before browser/CLI acceptance.

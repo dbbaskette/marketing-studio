@@ -3560,6 +3560,7 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .research-options{border-top:1px solid var(--hair)}
 .research-progress-header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.75rem 1rem}
 .research-progress-header .bar{margin:0}
+.research-progress :is(summary,.button){scroll-margin-top:5rem;scroll-margin-bottom:calc(var(--tab-bar-room,0px) + 1rem)}
 .research-stages{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:.75rem;list-style:none;margin:0;padding:0}
 .research-stages>li{padding:.6rem 0;border-bottom:2px solid var(--hair);color:var(--quiet);font-size:.9rem}
 .research-stages>li[data-state="current"]{border-color:var(--accent);color:var(--ink);font-weight:650}
