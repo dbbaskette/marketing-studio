@@ -223,6 +223,7 @@ import runner  # noqa: F401  puts the core on the import path
 import computer
 import checks
 import home
+from studio_core import deck_content
 from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
 import hub
 import workspace
@@ -621,7 +622,7 @@ class Engine(Reviewing):
 
     def __init__(self, adapters=None, research=None, background: bool = True,
                  at_once: int = AT_ONCE, documents=None, copies=None, index=None,
-                 slides=None, brand=None, notifier=None, parallel_research=True):
+                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.upkeep = None    # what `studio serve` keeps of the skills here; see `upkeep`
@@ -644,6 +645,7 @@ class Engine(Reviewing):
         self.index = index or index_written
         self.background, self.at_once = background, at_once
         self.parallel_research = parallel_research
+        self.content_first = content_first
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._preparing_decks: dict[Path, deck_edit.PreparedEdit] = {}
         # What was typed on each desk and not committed yet, by the training's folder:
@@ -1020,11 +1022,12 @@ class Engine(Reviewing):
             return
         found = self._survey(root, record)
         step = found.next
-        # A desk run continues every gate, outline and look on the desk: none is a stop.
-        automatic = step.kind in ('wait', 'outline', 'look') and (
-            drafts.on_desk(record) or review_policy.automatic(
+        # Desk receipts continue legacy stops; new slide text always waits for the person.
+        automatic = (step.kind in ('wait', 'outline', 'look')
+            and not deck_content.checkpoint(record, step.step.id)
+            and (drafts.on_desk(record) or review_policy.automatic(
                 record, 'training', step.step.id,
-                holding=pipeline.holding(root, found, step.step)))
+                holding=pipeline.holding(root, found, step.step))))
         if (record.get('question') or record.get('problem') or (not automatic and step.kind in
                 ('wait', 'outline', 'look', 'review', 'stuck', 'documents', 'done'))):
             record['last_decision_stop'] = home.now()
@@ -1426,6 +1429,8 @@ class Engine(Reviewing):
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
+                if desk and self.content_first and not form.get('walkthrough'):
+                    record['deck_content'] = deck_content.PROTOCOL
                 if desk:
                     record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
                         'jobs': [], 'updates': {}, 'findings_before': None})
@@ -1695,16 +1700,18 @@ class Engine(Reviewing):
                     continue
                 found = self._survey(root, record)
                 step = found.next
-                # A desk run never stops for review: each stop is continued on the desk.
+                # Continue desk stops except the explicit new slide-text decision.
                 if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
                                                                'look') \
-                        and drafts.on_desk(record):
+                        and drafts.on_desk(record) \
+                        and not deck_content.checkpoint(record, step.step.id):
                     with self.files:
                         self._edits_first(root)
                     self._desk_gate(root, found)
                     continue
                 if not self._resting(record) and step.kind in ('gate', 'wait', 'outline',
                                                                'look') \
+                        and not deck_content.checkpoint(record, step.step.id) \
                         and review_policy.automatic(record, 'training', step.step.id,
                                                     holding=pipeline.holding(root, found,
                                                                              step.step)):
@@ -3478,7 +3485,8 @@ class Engine(Reviewing):
                 raise WorkspaceError('What that deck says is not waiting for a decision.')
             kept, says = self._decided(record, level), pipeline.subject(step.step)
             asked = kept['waiting'].get('design')
-            if (seen is not None and seen != kept['waiting']['sha256']) or (
+            if ((seen is not None or deck_content.enabled(record))
+                    and seen != kept['waiting']['sha256']) or (
                     asked and design is not None and design != asked['revision']):
                 raise WorkspaceError(CHANGED.format(it=workspace.sentence(says)))
             if asked:
@@ -6822,6 +6830,7 @@ class Engine(Reviewing):
         level = self._level(drawing) if drawing else None
         outline = pipeline.outline_view(root, found, level) if drawing else None
         if outline is not None:
+            outline['content_first'] = deck_content.enabled(record)
             outline['redo'] = self._redo_view(root, record, found, 'outline:' + (level or ''))
         workers = self._workers(run)
         timing_attempts = attempts(record)

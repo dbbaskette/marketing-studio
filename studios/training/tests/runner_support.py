@@ -1617,7 +1617,7 @@ class StudioCase(unittest.TestCase):
                    'documents': self.documents, 'copies': self.copies, 'index': self.index,
                    # Historic fixtures exercise the saved serial protocol. New protocol
                    # integration tests explicitly use the production default.
-                   'background': self.BACKGROUND, 'parallel_research': False, **options}
+                   'background': self.BACKGROUND, 'parallel_research': False, 'content_first': False, **options}
         engine = self.engines.Engine(**options)
         self.addCleanup(engine.close)
         return engine

@@ -1,5 +1,6 @@
 # Write what a slide deck says, from a brief
 
+First finish the slide titles, visible copy, order and speaker notes. Unless your task explicitly asks for a design walkthrough, do not plan layouts, search for icons or generate assets. The person reviews the slide text before design and rendering.
 You are writing the outline of a slide deck: what each slide says. The slides are drawn later by someone else, from what the person approves. The deck is presented and may also be sent round, so every slide must make sense to someone reading it alone. You work alone, and you have only the tools named in this guidance.
 
 ## What you are given

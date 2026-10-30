@@ -29,7 +29,7 @@
     'new-minutes', 'new-title', 'new-file', 'new-text', 'new-link'];
   // The levels of an existing deck whose looks are drawn, for the person to pick from.
   const LOOKED_LEVELS = ['redesign', 'rework'];
-  const NOTHING_NEEDED = 'Nothing needed from you. The deck opens here when it is ready.';
+  const NOTHING_NEEDED = 'Drafting the slide text. You will approve it before design starts.';
   const NO_RECORD = 'This computer has no record yet of how long that takes.';
   const LOOK_PAUSE = 'One thing needs you: pick the look. The deck is drawn in it.';
   const DESK_LEDE = 'A card for each slide. A note on a slide redraws only its section; '
@@ -438,8 +438,9 @@
     const previews = run.build_progress && h.list(run.build_progress.slides).length;
     h.placeParts({ title, above: above(run), back: true, actions: progressActions(run, lead),
       mark: ['progress', title, run.state, lead, read, run.driver, Boolean(run.question),
-        run.problem] }, [
+        run.problem, gate] }, [
       ...interruptions(run, lead, title),
+      gate?.content_first && gate.name === 'gate:outline' ? ['slide-text', [gate, read], () => slideTextReview(run, read)] : null,
       pause ? ['look-pause', [gate, lead], () => lookPause(run, lead === 'look')]
         : ['progress', [run.state, run.sentence, desk.progress, Boolean(run.question),
           run.problem], () => progressPart(run)],
@@ -447,6 +448,19 @@
         () => previewsCard(run)] : null,
     ], fresh);
     h.tidyPictures();
+  }
+
+  function slideTextReview(run, read) {
+    const gate = run.gate, path = h.view.path;
+    if (read) return h.make('p', 'quiet', 'Slide text is waiting for approval on its owner’s computer.');
+    return Drafting.slideContent({slides: gate.slides,
+      note: held.deck[path]?.slideTextNote || '',
+      onNote: note => { (held.deck[path] ||= {}).slideTextNote = note; },
+      onDecision: async (decision, note) => {
+        const found = await h.send('decide', {path, gate: 'gate:outline', decision, note, expected: gate.expected});
+        if (h.view.path !== path) return;
+        (held.deck[path] ||= {}).slideTextNote = ''; h.view.run = found; h.refresh();
+      }});
   }
 
   // Pause and Stop while it works, Resume once it is paused or stopped, then More.

@@ -148,6 +148,7 @@ import runner  # noqa: F401,E402  puts the core on the import path
 import checks  # noqa: E402
 import home  # noqa: E402
 from workspace import BRIEF_KINDS, WorkspaceError  # noqa: E402
+from studio_core import slide_assessment
 from studio_core import research_sites  # noqa: E402
 from studio_core.research_contract import check_json as check_research_json  # noqa: E402
 
@@ -1296,18 +1297,16 @@ class WorkerTools:
     def _record(self, review: dict, kept: list, named: list, recorded: Path) -> list[str]:
         """Record an assessment with the slides tool, against the render it is of. Returns
         what the tool refused in it."""
-        assessment = {'deckSha256': review['deck'], 'reviewer': 'independent',
-                      'weakest': named, 'findings': [
-                          {key: finding[key] for key in ('slide', 'question', 'severity',
-                                                         'note', 'fix')
-                           if finding[key] is not None} for finding in kept]}
+        coverage = slide_assessment.coverage(review, kept, deck.round_questions(review), picture)
+        assessment = slide_assessment.payload(review, kept, named, coverage)
         path = _draft(self.folder / 'drafts', 'assessment',
                       json.dumps(assessment, indent=2, ensure_ascii=False) + '\n')
         try:
             self.slides().critique(Path(review['preview']), path)
         except WorkspaceError as refusal:
             return [self._plainly(line) for line in said_no(refusal)]
-        home.write_json(recorded, {'findings': kept, 'weakest': named})
+        home.write_json(recorded, {'findings': kept, 'weakest': named,
+            'coverage': {'questions': list(deck.round_questions(review)), 'slides': coverage}})
         return []
 
     @tool

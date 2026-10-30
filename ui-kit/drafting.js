@@ -20,6 +20,47 @@ const Drafting = (() => {
   function make(tag, cls, text) { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (cls) node.className = cls; return node; }
   function add(parent, ...children) { parent.append(...children.filter(child => child !== null && child !== undefined)); return parent; }
 
+  // Shared content-only approval. Rendering and design belong to the adapter after
+  // the exact version shown here has been accepted by the person.
+  function slideContent({slides, label, note = '', onNote = () => {}, onDecision}) {
+    const box = add(make('section', 'paper slide-text-review'),
+      make('h2', 'doc-title', label || 'Review slide text'),
+      make('p', 'quiet', 'Check the message, slide order, copy and speaker notes. Design and rendering start only after you approve this text.'));
+    const items = make('ol', 'slide-text-list');
+    for (const slide of slides || []) {
+      const row = add(make('li', 'slide-text-item'), make('h3', 'row-title', slide.title || 'Untitled slide'));
+      for (const key of ['subtitle', 'detail', 'focal', 'caveat', 'source']) {
+        if (typeof slide[key] === 'string' && slide[key].trim()) row.append(make('p', 'desk-plain', slide[key]));
+      }
+      const points = make('ul', 'outline-points');
+      for (const point of slide.points || []) {
+        const text = typeof point === 'string' ? point : [point.label, point.text].filter(Boolean).join(': ');
+        points.append(make('li', '', text));
+      }
+      if (points.children.length) row.append(points);
+      if (slide.notes) row.append(add(make('details', 'outline-notes'), make('summary', '', 'Speaker notes'), make('p', 'desk-plain', slide.notes)));
+      items.append(row);
+    }
+    const field = make('label', 'field');
+    const text = make('textarea', 'input'); text.value = note; text.rows = 3;
+    text.addEventListener('input', () => onNote(text.value));
+    add(field, make('span', 'field-label', 'Changes to slide text'), text);
+    const problem = make('p', 'problem'); problem.setAttribute('role', 'alert');
+    const actions = make('div', 'bar');
+    const ask = make('button', 'button', 'Ask for changes');
+    const approve = make('button', 'button button-filled', 'Approve text & design deck');
+    async function decide(kind) {
+      if (kind === 'changes' && !text.value.trim()) { problem.textContent = 'Say what should change in the slide text.'; text.focus(); return; }
+      ask.disabled = approve.disabled = text.disabled = true; problem.textContent = '';
+      try { await onDecision(kind, kind === 'changes' ? text.value.trim() : null); }
+      catch (error) { problem.textContent = error.message; }
+      finally { ask.disabled = approve.disabled = text.disabled = false; }
+    }
+    ask.addEventListener('click', () => decide('changes'));
+    approve.addEventListener('click', () => decide('approve'));
+    return add(box, items, field, problem, add(actions, ask, approve));
+  }
+
   // Words compared by a longest common subsequence, after the words both texts start and end
   // with are set aside; a comparison over about four million word pairs is shown side by side.
   function words(text) { return String(text || '').split(/\s+/).filter(Boolean); }
@@ -570,6 +611,6 @@ const Drafting = (() => {
     return k;
   }
 
-  return { DIFF_LIMIT, SAVE_WAIT, POLL, SELECTION, make, add, words, diffWords, age, kit };
+  return { DIFF_LIMIT, SAVE_WAIT, POLL, SELECTION, make, add, words, diffWords, age, kit, slideContent };
 })();
 if (typeof module === 'object' && module.exports) module.exports = Drafting;

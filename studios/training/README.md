@@ -2,6 +2,11 @@
 
 Training Studio turns a topic into training material. You give it a subject, it researches it, and it builds the material with you one stage at a time. New trainings open on [the desk](docs/the-desk.md), where you can read and change materials as they are made.
 
+New slide decks start with a text review: titles, slide copy, order and speaker notes.
+Ask for changes, or choose **Approve text & design deck**. Look samples, design,
+rendering and visual checks wait until that approval, just as in Presentation Studio.
+Saved runs keep the workflow they started with.
+
 The writing is done by an AI assistant you already have, Claude Code or Codex. Training Studio guides it, checks what it makes, and keeps track of what you have approved.
 
 ## What you get

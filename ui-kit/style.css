@@ -3562,3 +3562,10 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .research-preview-text{white-space:pre-wrap;overflow-wrap:anywhere;font:inherit}
 .research-source-editor .check{min-height:2.75rem;align-items:center}
 @media (max-width:40rem){.research-link-entry{grid-template-columns:1fr}.research-area{flex-direction:column;gap:.25rem}.research-sources,.research-captured,.research-progress{padding:1rem}}
+
+/* Shared opaque slide-text checkpoint; no previews are requested here. */
+.slide-text-review { padding: var(--space-5, 24px); min-width: 0; }
+.slide-text-list { padding-left: 1.5rem; }
+.slide-text-item { padding: 1rem 0; border-bottom: 1px solid var(--line, #d5d9df); overflow-wrap: anywhere; }
+.slide-text-review .input { width: 100%; max-width: 100%; box-sizing: border-box; }
+.slide-text-review .bar { flex-wrap: wrap; }

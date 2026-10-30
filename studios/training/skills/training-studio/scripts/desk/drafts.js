@@ -1711,7 +1711,21 @@ function deskLead(run, held, ours) {
   if (run.question) return 'answer';
   if (run.problem && run.problem.action) return 'problem';
   if (adding(run)) return 'documents';
+  if (run.outline?.content_first && run.outline.waiting) return 'slide-text';
   return 'ready';
+}
+
+function slideTextReview(outline, held) {
+  const path = view.path, turn = view.turn;
+  return Drafting.slideContent({slides: outline.slides,
+    label: 'Review slide text' + (outline.level ? ' · Level ' + outline.level : ''),
+    note: held.slideTextNote || '', onNote: note => { held.slideTextNote = note; },
+    onDecision: async (decision, note) => {
+      const result = await send('outline', {path, level: outline.level || null,
+        decision: decision === 'changes' ? 'revise' : 'approve', note, seen: outline.sha256});
+      if (view.turn !== turn) return;
+      held.slideTextNote = ''; view.run = result; await drawDesk(true);
+    }});
 }
 
 function paintDesk(fresh) {
@@ -1728,7 +1742,7 @@ function paintDesk(fresh) {
   const lead = deskLead(run, held, ours);
   const tabs = deskTabs(found, held);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
-    run.mine, run.driver, run.taken, run.notice, held.level, held.sources, held.said,
+    run.mine, run.driver, run.taken, run.notice, run.outline, held.level, held.sources, held.said,
     held.unsent && list(held.unsent.files).map((file) => file.name), held.unsent
       && held.unsent.why, lead, narrow()]);
   if (!fresh && drawn === held.drawn) return;
@@ -1737,7 +1751,7 @@ function paintDesk(fresh) {
   const level = held.level;
   const shown = list(found.cards).filter((one) => (one.level || '') === level);
   const actions = [];
-  if (ours && !conversation) {
+  if (ours && !conversation && lead !== 'slide-text') {
     const mark = capsule(named.length ? 'Mark this level ready' : 'Mark every material ready',
       lead === 'ready' ? 'filled' : '', () => markLevel(level, shown, mark), 'desk-level-ready');
     actions.push(mark);
@@ -1767,6 +1781,7 @@ function paintDesk(fresh) {
     ours && run.notice ? noticePart(run) : null,
     ours ? needsPart(found, held, run) : null,
     conversation ? null : progressPart(found, held, lead),
+    ours && run.outline?.content_first && run.outline.waiting ? slideTextReview(run.outline, held) : null,
     run.question && ours ? questionPart(run, found.title) : null,
     run.problem ? problemPart(run, lead === 'problem') : null,
     adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,

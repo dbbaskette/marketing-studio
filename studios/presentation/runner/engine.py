@@ -115,6 +115,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
+from studio_core import deck_content
 from studio_core import deck_flow, research_session, research_sources, research_contract, research_sites, research_view, review_policy, stops
 
 import contextvars
@@ -331,7 +332,7 @@ class Engine(Jobs, Researching, DeskActions):
     """Drives every deck in this computer's workspace."""
 
     def __init__(self, adapters=None, research=None, slides=None, brand=None, drive=None,
-                 background: bool = True, at_once: int = AT_ONCE, notifier=None, parallel_research=True):
+                 background: bool = True, at_once: int = AT_ONCE, notifier=None, parallel_research=True, content_first=True):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.research = research or research_cli.Research
@@ -340,6 +341,7 @@ class Engine(Jobs, Researching, DeskActions):
         self.google = drive
         self.background, self.at_once = background, at_once
         self.parallel_research = parallel_research
+        self.content_first = content_first
         self.upkeep = None    # what `studio serve` keeps of the skills here
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._lock = threading.RLock()
@@ -847,6 +849,8 @@ class Engine(Jobs, Researching, DeskActions):
                               model_profiles=profiles, driver=team.claim(space),
                               limits={'step_seconds': chosen.step_seconds,
                                       'dollars': chosen.deck_dollars})
+                if self.content_first and decks.on_desk(record):
+                    record['deck_content'] = deck_content.PROTOCOL
                 if contract:
                     if selected_sources:
                         record['research_inputs'] = research_sources.install(selected_sources, root)
@@ -2065,7 +2069,8 @@ class Engine(Jobs, Researching, DeskActions):
         if root is None:
             raise WorkspaceError('There is no deck there.')
         saved = self._load(root)
-        desk.refuse_on_desk(saved)   # a desk deck's stops are met on the desk
+        if not deck_content.checkpoint(saved, gate):
+            desk.refuse_on_desk(saved)   # other desk decisions stay on their own routes
         if decision == 'approve' and saved.get('research_contract') and (saved.get('steps', {}).get('research-report') or {}).get('done'):
             from studio_core.research_contract import read_bundle
             try:
@@ -2126,6 +2131,8 @@ class Engine(Jobs, Researching, DeskActions):
         """A decision at a gate, applied and stored. Call it holding `files`. Returns what
         the commit says, and what else it lists."""
         it = WORDS[gate]
+        if deck_content.checkpoint(record, gate) and expected != self._direction_signature(root, record):
+            raise WorkspaceError('The slide text changed. Read the latest text before deciding.')
         combined = gate == 'gate:outline' and stages.level(record) == 'balanced'
         if combined and (not expected or expected != self._direction_signature(root, record)):
             raise WorkspaceError('The direction changed. Read the latest review before deciding.')
@@ -3175,7 +3182,8 @@ class Engine(Jobs, Researching, DeskActions):
 
     def _show_outline(self, root: Path, record: dict) -> dict:
         found = home.read_json(root / outlines.OUTLINE, None)
-        return {'text': text_of(root / outlines.OUTLINE_MD) or '',
+        return {'content_first': deck_content.enabled(record),
+                'text': text_of(root / outlines.OUTLINE_MD) or '',
                 'expected': self._direction_signature(root, record),
                 'slides': build.slides_of(found) if isinstance(found, dict) else [],
                 # The slides a person came back from the deck to change the words of, each

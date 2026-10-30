@@ -998,7 +998,8 @@ class RunnerPage(desk.Page):
     def outline(self, sent: dict) -> dict:
         """Record what the person decided about what a deck says: approve it, or say
         what should change. It is theirs alone to decide, and decided here."""
-        self.not_on_desk(desk.text(sent, 'path'))
+        if not (self.run(desk.text(sent, 'path')).get('outline') or {}).get('content_first'):
+            self.not_on_desk(desk.text(sent, 'path'))
         path, decision = desk.text(sent, 'path'), desk.text(sent, 'decision')
         level, note = desk.text(sent, 'level', False), desk.text(sent, 'note', False)
         if decision not in engines.DECIDING:

@@ -7059,7 +7059,7 @@ function paintOutline(fresh) {
     count(slides.length, 'slide', 'slides') + ', in order'), items);
   doc.setAttribute('aria-label', label);
   // Where it is decided here, the draft is shown as the slides tool draws it.
-  if (outline.waiting && run.mine !== false) doc.prepend(draftPanel(outline.level));
+  if (outline.waiting && !outline.content_first && run.mine !== false) doc.prepend(draftPanel(outline.level));
   const aside = add(make('aside', 'aside'), outlineChecked(outline), outlineWorth(outline));
   aside.setAttribute('aria-label', 'The review');
   // What someone else runs is read here, and decided where it runs.
