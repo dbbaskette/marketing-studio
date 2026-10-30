@@ -1,8 +1,7 @@
 # Verification
 
-Infographic Studio's foundations have their own disposable native suite, also
-included in the root check. They do not yet add a fourth installed studio to the
-suite's setup/launch/distribution matrix. From the repository root:
+Infographic Studio has its own disposable native suite, also included in the root
+check and the four-studio setup/launch/distribution matrix. From the repository root:
 
 ```sh
 python3 -m unittest discover -s studios/infographic/tests -v
@@ -40,13 +39,13 @@ stops and deletes its own clone. Do not stop another project's VM for a slot.
 
 `python3 scripts/ci/native_acceptance.py` verifies the bundled studio checkouts.
 It isolates HOME, Git configuration, shared settings, and native data folders.
-It prepares all three workspaces and checks that later defaults cannot move
+It prepares all four workspaces and checks that later defaults cannot move
 existing work. `native_launch_acceptance.py` runs real native HTTP servers with
 test-only replacements disabling background provider and update actions. It
 checks page serving, process reuse, and shutdown of owned processes.
 `shared_setup_acceptance.py` starts with each independent studio in turn, finishes
 the common setup over HTTP, verifies the native home and settings, then opens all
-three independently without Marketing Studio. Root regression tests exercise
+four independently without Marketing Studio. Root regression tests exercise
 preview conflicts, shared completion, late workspace adoption, and the browser
 transition from setup at the native root to its home page.
 

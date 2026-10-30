@@ -189,7 +189,7 @@ async function newSheet() {
     const title = field('Working title',draft.title), text = field('Notes or text',draft.text,'textarea'); text.input.classList.add('ig-source-input'); title.input.required=true;
     retain(title.input,'title'); retain(text.input,'text'); add(form,title.wrap,text.wrap);
     const upload = field('Upload files — text, Markdown, CSV, PDF, Word or HTML');
-    upload.input.type = 'file'; upload.input.accept = '.txt,.md,.csv,.pdf,.docx,.html,.htm'; upload.input.multiple = true;
+    upload.input.type = 'file'; upload.input.accept = '.txt,.md,.csv,.pdf,application/pdf,.docx,.html,.htm'; upload.input.multiple = true;
     upload.input.addEventListener('change', async () => {
       problem.textContent = '';
       try {
@@ -440,7 +440,7 @@ function sourceSheet() {
   const replacement=field('Source to replace (leave empty to add another)','','select');
   const empty=make('option','','Add as another source'); empty.value=''; replacement.input.append(empty);
   for(const source of held.project.sources){const option=make('option','',source.name);option.value=source.id;replacement.input.append(option);}
-  const upload=field('Or upload a source file'); upload.input.type='file'; upload.input.accept='.txt,.md,.pdf,.docx,.html,.htm';
+  const upload=field('Or upload a source file'); upload.input.type='file'; upload.input.accept='.txt,.md,.pdf,application/pdf,.docx,.html,.htm';
   const shown=make('div','stack'),problem=make('p','problem'); problem.setAttribute('role','alert');
   let preview=null,acknowledged=false;
   const go=button('Save supplied information',async()=>{

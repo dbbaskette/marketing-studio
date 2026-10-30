@@ -23,7 +23,7 @@ def main():
             studios_config.update({'local': {'root': str(case.space.root)}})
             preferences.finish(studios_config, lambda _: None)
             case.engine.plan_first = True
-            root = case.begin(flow='desk', deck_target=None, brand=None)
+            root = case.space.root if '--new' in sys.argv else case.begin(flow='desk', deck_target=None, brand=None)
         server = desk.Desk(page=lambda port: page.RunnerPage(port, case.engine))
         server.start()
         print(json.dumps({'url': server.url, 'path': str(root)}), flush=True)

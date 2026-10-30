@@ -63,7 +63,7 @@
   };
 
   // Sources, research and Finishing.
-  const SOURCE_TYPES = '.txt,.md,.html,.htm,.docx,.pdf';
+  const SOURCE_TYPES = '.txt,.md,.html,.htm,.docx,.pdf,application/pdf';
   const SOURCES_SAY = 'The words jobs and the speaker notes read your sources, and so does the '
     + 'outline when it is written again. Adding one runs no research: Research again does, '
     + 'when you ask.';

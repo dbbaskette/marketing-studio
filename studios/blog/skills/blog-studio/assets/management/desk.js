@@ -242,7 +242,7 @@ function sDeskAnglesShown(held,shown){
 function sDeskOutlineIn(held){
   const card=sCard('Your outline or notes',sChoice('Where is it?',[['paste','Paste'],['file','Upload a file']],held,'outlineFrom',()=>sDeskStart()));
   if(held.outlineFrom==='paste')card.append(sField('desk-outline','Paste your outline or notes',held,'outline',{long:true,max:200000,required:true,hint:'Headings or a list make the sections.'}));
-  else{const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload an outline');const note=sNode('p','quiet field-hint',held.outlineFile?'Selected: '+held.outlineFile.name:'Text, Markdown, Word or PDF.');file.addEventListener('change',()=>{held.outlineFile=file.files?.[0]||null;note.textContent=held.outlineFile?'Selected: '+held.outlineFile.name:'Choose an outline.';});card.append(file,note);}
+  else{const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,application/pdf,.html,.htm';file.setAttribute('aria-label','Upload an outline');const note=sNode('p','quiet field-hint',held.outlineFile?'Selected: '+held.outlineFile.name:'Text, Markdown, Word or PDF.');file.addEventListener('change',()=>{held.outlineFile=file.files?.[0]||null;note.textContent=held.outlineFile?'Selected: '+held.outlineFile.name:'Choose an outline.';});card.append(file,note);}
   card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Blank uses the outline’s # heading.'}),sChoice('Then',DESK_OUTLINE_WAYS,held,'outlineWay',()=>sDeskStart()),sNode('p','quiet field-hint',held.outlineWay==='shape'?'The outline opens on the desk for you to shape first.':'The draft is written from your outline.'));
   return card;
 }
@@ -257,7 +257,7 @@ function sDeskDraftIn(held){
   else if(held.source==='upload'){if(held.uploaded.text){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','The uploaded file’s text');paper.append(window.StudioMarkdown?window.StudioMarkdown.render(held.uploaded.text):sNode('p','',held.uploaded.text));card.append(sNode('p','quiet',held.uploaded.truncated?'Its text as it was read, the first part shown:':'Its text as it was read:'),paper);}}
   else if(held.source==='paste')card.append(sField('desk-manuscript','Paste your draft',held,'manuscript',{long:true,max:1000000,required:true,hint:'Up to 200,000 characters of text; images in it are not counted. Its headings start the sections, at whatever level it uses.'}));
   else if(held.source==='file'){
-    const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,.html,.htm';file.setAttribute('aria-label','Upload a draft');
+    const file=sNode('input','input');file.type='file';file.accept='.txt,.md,.docx,.pdf,application/pdf,.html,.htm';file.setAttribute('aria-label','Upload a draft');
     const note=sNode('p','quiet field-hint',held.file?'Selected: '+held.file.name:'Text, Markdown, Word or PDF.');
     file.addEventListener('change',()=>{held.file=file.files?.[0]||null;note.textContent=held.file?'Selected: '+held.file.name:'Choose a draft.';});
     card.append(file,note);
