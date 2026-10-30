@@ -4857,6 +4857,24 @@ async function blogReadingAndUnifiedSources(){
   await t.f.run('DESK_KIT.finishClose(studio.desk)');
   assert.equal(t.f.run('studio.desk.activePart'),'aaaaaaaa');
   assert.equal(t.nodes().find(n=>n.attributes['aria-label']==='Text of First part').focused,true,'closing tools returns to the edited section');
+  // A failed save cannot navigate away or replace the failure with a Saved message.
+  t.f.run("const saveApi=api;api=async(route,data)=>{if(route==='desk-save')throw new Error('Synthetic save unavailable');return saveApi(route,data)}");
+  const unsaved=t.nodes().find(n=>n.attributes['aria-label']==='Text of First part');unsaved.value='Unsaved words stay here.';unsaved.listeners.input();
+  await t.f.run("sDeskChoose(studio.desk,'read')");
+  assert.equal(t.f.run('studio.desk.reading'),'edit');
+  assert.equal(t.nodes().find(n=>n.attributes['aria-label']==='Text of First part').value,'Unsaved words stay here.');
+  assert.ok(t.nodes().some(n=>n.textContent.includes('Synthetic save unavailable')));
+  t.f.run('api=saveApi');
+  await t.f.run("sDeskChoose(studio.desk,'read')");
+  await t.f.run("sDeskToNote(studio.desk,{id:'whole-feedback',part:'title',comment:'Clarify the title.',quote:''})");
+  assert.equal(t.f.run('studio.desk.reading'),'full','whole-draft feedback opens its note instead of targeting an absent reading control');
+  assert.ok(t.nodes().some(n=>n.tagName==='textarea'&&n.value==='Clarify the title.'));
+  await t.f.run("sDeskChoose(studio.desk,'read')");
+  await t.f.run("sDeskToNote(studio.desk,{id:'section-feedback',part:'aaaaaaaa',comment:'Give this section an example.',quote:''})");
+  assert.equal(t.f.run('studio.desk.reading'),'edit');
+  assert.equal(t.f.run('studio.desk.activePart'),'aaaaaaaa');
+  assert.equal(t.nodes().filter(n=>n.dataset.part).length,1);
+  assert.ok(t.nodes().some(n=>n.tagName==='textarea'&&n.value==='Give this section an example.'));
   await t.f.run("sDeskBegin({files:[{id:'ref1',filename:'Reference tab',state:'ready',role:'material'}]})");
   assert.equal(t.nodes().filter(n=>n.type==='file'&&n.id==='files-input').length,1);
   await t.nodes().find(n=>n.attributes['aria-label']==='Preview Reference tab').listeners.click();

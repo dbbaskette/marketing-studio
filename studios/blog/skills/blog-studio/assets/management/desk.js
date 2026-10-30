@@ -433,7 +433,9 @@ function sDeskToolbar(held){
 function sDeskParts(held){const parts=['title','opening',...held.view.sections.map(section=>section.id)];if(!parts.includes(held.activePart))held.activePart='opening';return held.reading==='edit'?[held.activePart]:parts;}
 function sDeskViewUrl(held){if(studio.screen!=='desk')return;const query=new URLSearchParams(location.search);query.set('screen','desk');query.set('id',held.id);query.set('view',held.reading||'read');query.set('part',held.activePart||'opening');history.replaceState(null,'',location.pathname+'?'+query);}
 async function sDeskChoose(held,reading,part=held.activePart){
-  await sDeskFlush(held);await sDeskOutlineFlush(held);if(held.stale)return;
+  const previousReading=held.shownReading||held.reading,previousPart=held.shownPart||held.activePart;
+  await sDeskFlush(held);await sDeskOutlineFlush(held);
+  if(held.stale||Object.keys(held.pending||{}).length){held.reading=previousReading;held.activePart=previousPart;if(!held.stale)held.saved=held.status?.textContent||'Your text has not saved yet. Try again before changing views.';sDeskRender(held);held.cards?.[previousPart]?.deskInput?.focus();return;}
   held.selection=null;held.reading=reading;held.activePart=part||'opening';sDeskViewUrl(held);sDeskRender(held);
   const selected=held.cards?.[held.activePart];if(reading==='read')selected?.scrollIntoView?.({block:'start',behavior:'instant'});
   else selected?.deskInput?.focus();
@@ -462,7 +464,7 @@ function sDeskReadPart(held,part){
 }
 function sDeskRender(held){
   if(held.mode==='review')return sDeskReview(held);
-  const view=held.view;held.reading=held.reading||'read';sDeskParts(held);sDeskToolbar(held);held.layout=sDeskLayout();
+  const view=held.view;held.reading=held.reading||'read';sDeskParts(held);held.shownReading=held.reading;held.shownPart=held.activePart;sDeskToolbar(held);held.layout=sDeskLayout();
   const status=sNode('p','quiet desk-save-state');status.setAttribute('role','status');status.setAttribute('aria-live','polite');held.status=status;
   if(held.stale)sDeskStale(held);else status.textContent=held.saved||'Changes save as you type.';
   const column=sNode('div','desk-column'+(held.tab!=='outline'&&held.reading==='read'?' paper desk-reading-document':''));held.tab=held.tab||'draft';held.shownTab=held.tab;
@@ -732,7 +734,7 @@ const DESK_LEVELS=[['light','Light'],['medium','Medium'],['strong','Strong']];
 // [run, doing] for each tool that runs a job, as the tools say them.
 const DESK_RUN=Object.fromEntries(DESK_TOOLS.filter(tool=>tool.run).map(tool=>[tool.key,[tool.run,tool.doing]]));
 const DESK_FORMATS=[['linkedin','LinkedIn feed copy'],['newsletter','Newsletter introduction'],['email','Announcement email'],['summary','Short summary'],['thread','Short thread']];
-function sDeskFinishOpen(held,tool=null){const input=held.cards?.[held.activePart]?.deskInput;held.returnFocus=input?{part:held.activePart,start:input.selectionStart,end:input.selectionEnd}:null;held.returnScroll=typeof window.scrollY==='number'?window.scrollY:0;const open=()=>held.stale?undefined:DESK_KIT.finishOpen(held,tool);if(Object.keys(held.pending||{}).length||held.outlineTimer||held.review?.editing?.dirty)return sDeskFlush(held).then(()=>sDeskOutlineFlush(held)).then(open);return open();}
+function sDeskFinishOpen(held,tool=null){const input=held.cards?.[held.activePart]?.deskInput;held.returnFocus=input?{part:held.activePart,start:input.selectionStart,end:input.selectionEnd}:null;held.returnScroll=typeof window.scrollY==='number'?window.scrollY:0;const open=()=>held.stale?undefined:DESK_KIT.finishOpen(held,tool);if(Object.keys(held.pending||{}).length||held.outlineTimer||held.review?.editing?.dirty)return sDeskFlush(held).then(()=>sDeskOutlineFlush(held)).then(()=>Object.keys(held.pending||{}).length?undefined:open());return open();}
 function sDeskFinishClose(held){return DESK_KIT.finishClose(held);}
 function sDeskReturnFocus(held){const saved=held.returnFocus,input=saved&&held.cards?.[saved.part]?.deskInput;if(input){input.focus();input.setSelectionRange?.(saved.start,saved.end);}if(typeof window.scrollTo==='function')window.scrollTo(0,held.returnScroll||0);}
 // Copy edit is reviewed in the text itself: it opens Review mode, where the check starts.
@@ -1428,6 +1430,7 @@ const DESK_KIT=Drafting.kit({
     // Review mode's paragraph editor saves before the parts typing left waiting.
     beforeFlush:held=>held.review?.editing?.dirty?sReviewSave(held):undefined,
     finishClosed:held=>sDeskReturnFocus(held),
+    noteTarget:(held,item)=>{if(held.reading==='full')return false;const section=held.view.sections.find(row=>row.id===item.part);held.reading=section?'edit':'full';if(section)held.activePart=section.id;sDeskViewUrl(held);return true;},
     saved:(held,part,text)=>sDeskSaved(held,part,text),
     versionNote:version=>deskVersionNote(version),
     // Under a part's text: its image thumbnails; and a card drawn again once focus leaves it.

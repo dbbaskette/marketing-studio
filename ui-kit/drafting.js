@@ -570,7 +570,8 @@ const Drafting = (() => {
       if (section) { held.notes = held.notes || {}; held.notes[item.part] = join(held.notes[item.part] || '').slice(0, 4000); } else held.wholeNote = join(held.wholeNote || '').slice(0, 4000);
       if (held.finish) held.finish.noted[item.id] = true;
       if (held.finish && a.ui.narrow()) held.finish = null;  // On a phone the sheet steps aside for the note.
-      if (held.tab !== 'draft' || !held.cards || (section && !held.cards[item.part]) || a.ui.narrow()) { held.tab = 'draft'; a.hooks.render(held); }
+      const prepared = hook('noteTarget', held, item);
+      if (prepared || held.tab !== 'draft' || !held.cards || (section && !held.cards[item.part]) || a.ui.narrow()) { held.tab = 'draft'; a.hooks.render(held); }
       else {
         if (section) { const card = k.part(held, item.part); held.cards[item.part].replaceWith(card); held.cards[item.part] = card; }
         else { const whole = k.whole(held); held.wholeCard.replaceWith(whole); held.wholeCard = whole; }
