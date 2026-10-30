@@ -7,24 +7,27 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
  const pdf=execFileSync(python,['-c',"import sys;sys.path.insert(0,'tests');from pdf_fixture import source_pdf;sys.stdout.buffer.write(source_pdf())"]);
  const browser=await chromium.launch({headless:true,executablePath:process.env.INFOGRAPHIC_STUDIO_TEST_RENDERER});
  try{
-  for(const [width,fallback] of [[390,false],[1280,false],[390,true]]){
+  for(const [width,fallback,theme='light'] of [[390,false],[1280,false],[390,true],[390,false,'dark']]){
    const child=spawn(python,[path.join(__dirname,'training_plan_fixture.py'),'--new'],{stdio:['ignore','pipe','pipe']});
    let diagnostics='';child.stderr.on('data',raw=>diagnostics+=raw);
    let page;
    try{
     const fixture=await new Promise((resolve,reject)=>{let raw='';const timer=setTimeout(()=>reject(Error('Fixture timed out '+diagnostics)),30000);child.stdout.on('data',value=>{raw+=value;if(raw.includes('\n')){clearTimeout(timer);try{resolve(JSON.parse(raw.split('\n')[0]));}catch(e){reject(e);}}});child.once('exit',code=>{clearTimeout(timer);reject(Error('Fixture exited '+code+' '+diagnostics));});});
-    page=await browser.newPage({viewport:{width,height:950}});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    page=await browser.newPage({viewport:{width,height:950},colorScheme:theme,reducedMotion:'reduce'});const errors=[];page.on('pageerror',e=>errors.push(e.message));
     if(fallback)await page.route('**/research.js',route=>route.fulfill({contentType:'text/javascript',body:'/* legacy source-picker compatibility */'}));
     await page.goto(fixture.url);await page.getByRole('button',{name:'New training',exact:true}).click();
-    const yoodli=page.getByRole('button',{name:'Make scenarios for Yoodli',exact:true});
-    const brief=page.getByRole('button',{name:'Reference brief',exact:true});
-    const practice=page.getByRole('button',{name:'Practice scenarios',exact:true});
-    await yoodli.click();
-    assert.equal(await yoodli.getAttribute('aria-pressed'),'true');
-    assert.equal(await brief.getAttribute('aria-pressed'),'true');
-    assert.equal(await practice.getAttribute('aria-pressed'),'true');
+    const yoodli=page.getByRole('checkbox',{name:'Make scenarios for Yoodli',exact:true});
+    const brief=page.getByRole('checkbox',{name:'Reference brief',exact:true});
+    const practice=page.getByRole('checkbox',{name:'Practice scenarios',exact:true});
+    await yoodli.focus();assert.equal(await yoodli.isChecked(),false);
+    await yoodli.press('Space');
+    assert.equal(await yoodli.isChecked(),true);
+    assert.equal(await brief.isChecked(),true);
+    assert.equal(await practice.isChecked(),true);
+    assert.equal(await page.getByRole('button',{name:'Make scenarios for Yoodli',exact:true}).count(),0);
+    if(width===390)assert.ok((await yoodli.locator('..').boundingBox()).height>=44,'Checkbox label must remain a phone-sized target');
     await page.getByRole('status').filter({hasText:'Included Reference brief and Practice scenarios for Yoodli.'}).waitFor();
-    await brief.click();assert.equal(await yoodli.getAttribute('aria-pressed'),'false');
+    await brief.click();assert.equal(await yoodli.isChecked(),false);
     await page.getByText('Yoodli scenarios turned off because Reference brief was removed.',{exact:true}).waitFor();
     await yoodli.click();
     await yoodli.click();
@@ -46,11 +49,13 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
      if(process.env.STUDIO_TEST_REAL_PDF){await preview.click();await page.getByText('Synthetic PDF source for all studios.',{exact:true}).waitFor();}
      else{await page.getByText(/PDF reading needs an explicitly installed pdftotext reader/).waitFor();}
     }
-    assert.equal(await yoodli.getAttribute('aria-pressed'),'true');
-    assert.equal(await brief.getAttribute('aria-pressed'),'true');
-    assert.equal(await practice.getAttribute('aria-pressed'),'true');
+    assert.equal(await yoodli.isChecked(),true);
+    assert.equal(await brief.isChecked(),true);
+    assert.equal(await practice.isChecked(),true);
     assert.deepEqual(errors,[]);
-    if(process.env.TRAINING_PLAN_UI_RESULTS){fs.mkdirSync(process.env.TRAINING_PLAN_UI_RESULTS,{recursive:true});await yoodli.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(process.env.TRAINING_PLAN_UI_RESULTS,`yoodli-pdf-${width}-${fallback?'fallback':'shared'}.png`)});}
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Form must not overflow');
+    if(process.env.TRAINING_PLAN_UI_RESULTS){fs.mkdirSync(process.env.TRAINING_PLAN_UI_RESULTS,{recursive:true});await yoodli.scrollIntoViewIfNeeded();await page.screenshot({path:path.join(process.env.TRAINING_PLAN_UI_RESULTS,`yoodli-pdf-${width}-${fallback?'fallback':'shared'}-${theme}.png`)});
+     if(width===1280){const a=await page.getByRole('group',{name:'Materials to make',exact:true}).boundingBox(),b=await page.getByText('The slide deck',{exact:true}).boundingBox();await page.screenshot({path:path.join(process.env.TRAINING_PLAN_UI_RESULTS,'checkbox-preview.png'),clip:{x:a.x-4,y:a.y-8,width:a.width+8,height:b.y-a.y+8}});}}
    }catch(e){if(page)console.error('Form: '+await page.locator('body').innerText());throw e;}
    finally{if(page)await page.close();child.kill('SIGTERM');await new Promise(resolve=>{if(child.exitCode!==null)resolve();else{child.once('exit',resolve);setTimeout(()=>{child.kill('SIGKILL');resolve();},10000).unref();}});}
   }
