@@ -6,7 +6,7 @@ Training Studio researches and prepares a short **Here’s what this training wi
 review. Check the topics, depth and examples, then choose **Ask for changes** or
 **Build the training**. Build creates the selected guides, slides and practice
 materials automatically. There is no sample lesson to approve. Older saved runs
-keep their original workflow; Presentation Studio retains its own slide-text review.
+keep their original workflow. For a new deck, review and approve its slide text before design begins.
 
 The writing is done by an AI assistant you already have, Claude Code or Codex. Training Studio guides it, checks what it makes, and keeps track of what you have approved.
 
@@ -89,7 +89,7 @@ A terminal window opens and the page opens in your browser. Leave the window ope
 
 **3. Press "New training".** Describe what learners should be able to do and what they know already. Choose the materials: a guide, reference brief, deck, practice, or a combination. Set the learner's time and choose where the research looks: your documents, your sites (a list of web addresses you keep in Shared settings) and/or the public web. The final summary shows your choices before you start. Depth, extra copies and assistant settings are optional details.
 
-**4. Check the topics, then build.** Review what will be taught across the selected levels. Ask for changes in plain language, or choose **Build the training**. There is no separate sample lesson or default second slide-text approval. Materials then appear on the desk as they are made. Read them, make changes, and mark each one ready when you are satisfied. The desk shows work that needs your attention. You can close the page while it works and come back later. See [the desk](docs/the-desk.md).
+**4. Check the topics, then build.** Review what will be taught across the selected levels. Ask for changes in plain language, or choose **Build the training**. There is no separate sample lesson. If you selected a deck, review its slide text before design begins. Materials then appear on the desk as they are made. Read them, make changes, and mark each one ready when you are satisfied. The desk shows work that needs your attention. You can close the page while it works and come back later. See [the desk](docs/the-desk.md).
 
 See [the runner](docs/runner.md) for every step, the slide deck, working as a team, and what it guarantees.
 

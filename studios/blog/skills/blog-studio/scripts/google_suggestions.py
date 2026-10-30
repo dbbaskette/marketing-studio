@@ -21,7 +21,7 @@ from google_drive import (
     staging_path,
     write_new,
 )
-from hub_store import HubError, contained, locked, write_json
+from hub_store import VERSION, HubError, contained, locked, write_json
 
 BUILD_KEYS = (
     'requests',
@@ -830,7 +830,42 @@ def _previous_alike(document_value, tab_id, start, paragraph):
     )
 
 
-def validate(document_value, findings, selected_tabs):
+def review_reason(finding):
+    """Author-facing rationale, without internal tracking or generic desk placeholders."""
+    reason = re.sub(r'\[Blog Studio [A-Za-z0-9_-]+\]', '', finding['reason']).strip()
+    if reason in (
+        'Wording changed on the writing desk.',
+        'A paragraph added or split on the writing desk.',
+        'A paragraph removed on the writing desk.',
+    ):
+        return ''
+    return reason
+
+
+def review_note(finding, version=VERSION):
+    """Lead with the actual change; keep recovery references subordinate to the explanation."""
+    marker = '[Blog Studio ' + finding['id'] + ']'
+    if version is None:  # An already saved plan must reproduce its original requests exactly.
+        return marker + ' ' + finding['reason']
+    reason = review_reason(finding)
+    if finding['kind'] == 'edit':
+        body = (
+            'Current: '
+            + finding['before']
+            + '\nProposed: '
+            + str(finding.get('after') or '(delete this text)')
+        )
+        if reason:
+            body += '\nWhy: ' + reason
+    else:
+        body = reason
+    references = list(
+        dict.fromkeys([marker, *re.findall(r'\[Blog Studio [A-Za-z0-9_-]+\]', finding['reason'])])
+    )
+    return body + '\n\nReference: ' + ' '.join(references) + '\nblog-studio v' + version
+
+
+def validate(document_value, findings, selected_tabs, comment_version=VERSION):
     """Check scope, exact quotes, overlaps and style boundaries. Returns one resolved item per finding."""
     if not isinstance(findings, list) or not 1 <= len(findings) <= 100:
         raise GoogleError('Select 1–100 proofreading findings.')
@@ -881,7 +916,7 @@ def validate(document_value, findings, selected_tabs):
             raise GoogleError('Anchor findings to nonempty text within a body paragraph.')
         if not isinstance(f['reason'], str) or not f['reason'].strip():
             raise GoogleError('Each finding needs a reason.')
-        note = marker + ' ' + f['reason']
+        note = review_note(f, comment_version)
         if f['kind'] == 'edit':
             after = f.get('after')
             # A line break in the replacement starts a new paragraph, as a suggestion too.
@@ -1089,7 +1124,7 @@ def _body(document_value, tab_id):
     return []
 
 
-def build(document_value, findings, selected_tabs, accepted=None):
+def build(document_value, findings, selected_tabs, accepted=None, comment_version=VERSION):
     """Suggest-mode requests plus the states that verification expects afterwards.
 
     document_value is the inline view, whose indexes are the document's real ones.
@@ -1106,7 +1141,7 @@ def build(document_value, findings, selected_tabs, accepted=None):
             'inspect pending items.'
         )
     accepted = document_value if accepted is None else accepted
-    items = validate(document_value, findings, selected_tabs)
+    items = validate(document_value, findings, selected_tabs, comment_version)
     expected = content(copy.deepcopy(document_value))
     paragraphs = rt.paragraphs(expected)
     requests = []
@@ -1439,8 +1474,9 @@ def plan(client, root, article_id, kind, findings, output, mode='auto'):
         'findings': findings,
         'mode': mode,
         'number_start': first,
-        'comment_plan': comment_build(inline, findings, tab_ids, first),
-        **build(inline, findings, tab_ids, accepted),
+        'comment_version': VERSION,
+        'comment_plan': comment_build(inline, findings, tab_ids, first, comment_version=VERSION),
+        **build(inline, findings, tab_ids, accepted, comment_version=VERSION),
     }
     if local != studio.artifact_fingerprint(directory, draft):
         raise GoogleError('Local writing changed during planning.')
@@ -1525,7 +1561,13 @@ def apply_native(client, root, saved):
                 'Use verify; do not resubmit.'
             )
         inline, accepted, _ = read_for_review(client, saved['document_id'], 'native')
-        rebuilt = build(inline, saved['findings'], saved['tab_ids'], accepted)
+        rebuilt = build(
+            inline,
+            saved['findings'],
+            saved['tab_ids'],
+            accepted,
+            comment_version=saved.get('comment_version'),
+        )
         if inline['revisionId'] != saved['revision_id'] or rebuilt != {
             k: saved.get(k) for k in BUILD_KEYS
         }:

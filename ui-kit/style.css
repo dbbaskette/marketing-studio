@@ -3176,6 +3176,22 @@ body[data-product="Training Studio"] .card > .training-options {
   gap: 1.1rem;
   min-width: 0;
 }
+.desk-workspace-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.desk-workspace-tabs [role="tab"] {
+  max-width: 100%;
+  white-space: normal;
+  text-align: left;
+}
+.desk-workspace-tabs [aria-selected="true"] {
+  background: var(--studio-wash);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+  font-weight: 600;
+}
 .desk-aside {
   display: grid;
   gap: 1.1rem;
@@ -3237,6 +3253,9 @@ input.desk-text {
 }
 .desk-save-state {
   min-height: 1.4rem;
+}
+.desk-material > .desk-save-state:empty {
+  display: none;
 }
 .desk-selection {
   position: fixed;

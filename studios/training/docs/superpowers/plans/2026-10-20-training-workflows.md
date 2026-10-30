@@ -77,6 +77,11 @@ production detail. Reading a document or expanding details approves nothing.
 | Interrupted parallel research | Revalidate private packets by input generation and byte hashes; retry only missing/refused areas | partial failure, pause, cancel and changed-capture regressions |
 | Phone progress during parallel research | Show area status and collection/synthesis/review; distinguish elapsed, active and summed assistant time | parallel research phone journey |
 
+| New plan-first training with a deck | Topics approved | Wait for the exact slide-text version before look samples, drawing or rendering; each level waits separately | `PlanTests.test_topics_review_does_not_approve_slide_text_or_start_design`, two-level regression |
+| Saved plan-first training without a text checkpoint | Restart or topics approval | Keep its saved workflow; no silent new checkpoint | `PlanTests.test_saved_plan_first_run_without_text_marker_keeps_its_workflow` |
+| Material, section, slide or Sources navigation | Reading a draft | Show one pane; retain edits and selections; no work or approvals | `training_workspace.cjs` phone/desktop journey |
+| Deck review issues | Deck draft with blocking findings | Plain summary, details collapsed, affected slide and scoped repair control; Ready still refused | `ReadyTests.test_row_148_a_level_is_marked_ready_in_order`, workspace journey |
+
 ## Yoodli extraction decision
 
 Recommend a separate optional `harness-yoodli` skill, delivered in a later release.

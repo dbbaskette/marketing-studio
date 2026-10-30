@@ -23,7 +23,12 @@ def main():
             studios_config.update({'local': {'root': str(case.space.root)}})
             preferences.finish(studios_config, lambda _: None)
             case.engine.plan_first = True
-            root = case.space.root if '--new' in sys.argv else case.begin(flow='desk', deck_target=None, brand=None,
+            workspace_mode = '--workspace' in sys.argv
+            case.engine.content_first = workspace_mode
+            if workspace_mode:
+                from test_runner_deck import MAJOR
+                case.workers.found = [[MAJOR]]
+            root = case.space.root if '--new' in sys.argv else case.begin(flow='desk', **({} if workspace_mode else {'deck_target': None, 'brand': None}),
                 **({'levels':['101','201']} if '--two-levels' in sys.argv else {}))
         server = desk.Desk(page=lambda port: page.RunnerPage(port, case.engine))
         server.start()

@@ -1,6 +1,6 @@
 // The training desk: a new training's start in three numbered steps, and one desk per
 // training started there. The desk shows the start's progress band, what needs the person,
-// the level tabs, a card for each material of the level in order, the Sources beside them,
+// the level and material tabs, one section or slide at a time, Research & sources,
 // and Mark this level ready. It reads GET /api/drafts (runner/drafts.py `view`) and sends
 // the person's decisions to /api/drafts/*, each answered with the desk again.
 //
@@ -49,7 +49,7 @@ const DESK = { held: {}, kitSheet: [] };
 
 function deskHeld(path) {
   if (!DESK.held[path]) {
-    DESK.held[path] = { view: null, level: null, sources: false, said: '', unsent: null,
+    DESK.held[path] = { view: null, level: null, sources: false, material: {}, said: '', unsent: null,
       drawn: '', materials: {}, recovery: readDeskRecovery(path) };
   }
   return DESK.held[path];
@@ -234,7 +234,7 @@ function pendingDeckWords(material) {
 function finishingMaterial() {
   const held = deskHeld(view.path);
   return Object.values(held.materials).find((material) => material.finish
-    && (material.view.level || '') === held.level);
+    && (material.view.level || '') === held.level && material.view.name === held.material[held.level]);
 }
 
 function finishingTools() {
@@ -267,6 +267,7 @@ function openFinishing() {
   const open = (material) => {
     for (const other of Object.values(held.materials)) other.finish = null;
     held.sources = false;
+    held.material[held.level] = material.view.name;
     closeSheet(); deskKit.finishOpen(material);
   };
   if (choices.length === 1) { open(choices[0]); return; }
@@ -822,17 +823,44 @@ async function shareDesk(path) {
 function deskTabs(found, held) {
   const named = list(found.levels).filter(Boolean);
   if (!named.includes(held.level)) held.level = named[0] || '';
-  const phone = narrow();
-  if (!phone) held.sources = false;
-  const options = phone ? [...(named.length ? named : ['Materials']), 'Sources'] : named;
-  const at = held.sources ? options.length - 1 : Math.max(0, named.indexOf(held.level));
-  if (options.length < 2) return null;
-  return segmented(named.length ? 'Level' : 'Show', options, at, (index) => {
-    held.sources = phone && index === options.length - 1;
-    if (!held.sources && named.length) held.level = named[index];
+  if (named.length < 2) return null;
+  return segmented('Level', named, Math.max(0, named.indexOf(held.level)), (index) => {
+    held.sources = false;
+    held.level = named[index];
     paintDesk(false);
     focusKey('desk-level ' + index);
   }, 'desk-level');
+}
+
+// One material at a time. Reading navigation never approves or starts work.
+function workspaceTabs(label, options, selected, choose, key) {
+  const bar = make('div', 'desk-workspace-tabs');
+  bar.setAttribute('role', 'tablist'); bar.setAttribute('aria-label', label);
+  options.forEach((option, index) => {
+    const go = capsule(option.label, 'quiet', () => {
+      choose(option.id); byId(key + '-' + index)?.focus();
+    }, key + ' ' + index);
+    go.setAttribute('role', 'tab'); go.id = key + '-' + index;
+    go.setAttribute('aria-selected', String(option.id === selected));
+    go.tabIndex = option.id === selected ? 0 : -1;
+    go.setAttribute('aria-controls', key + '-panel');
+    go.addEventListener('keydown', event => {
+      const step = {ArrowRight: 1, ArrowLeft: -1}[event.key];
+      if (!step && !['Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1
+        : (index + step + options.length) % options.length;
+      choose(options[next].id); byId(key + '-' + next)?.focus();
+    });
+    bar.append(go);
+  });
+  return bar;
+}
+
+function workspacePanel(key, index, node) {
+  const panel = make('section', 'stack'); panel.id = key + '-panel';
+  panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', key + '-' + index);
+  return add(panel, node);
 }
 
 function cardTitle(found) {
@@ -848,6 +876,11 @@ function headingId(name) {
 function levelCanBeReviewed(cards) {
   const selected = list(cards).filter(one => one.state !== 'left-out');
   return selected.length > 0 && selected.every(one => one.seen && ['draft', 'ready'].includes(one.state));
+}
+
+function levelMaterialsAvailable(cards) {
+  const selected = list(cards).filter(one => one.state !== 'left-out');
+  return selected.length > 0 && selected.every(one => one.seen && one.state !== 'writing');
 }
 
 // What was checked for you, from the checks that take milliseconds.
@@ -884,7 +917,8 @@ function deskCard(found) {
   };
   const bar = make('div', 'bar');
   const levelCards = list(deskHeld(view.path).view?.cards).filter(one => (one.level || '') === (found.level || ''));
-  if (actions.includes('ready') && levelCanBeReviewed(levelCards)) {
+  if (actions.includes('ready') && (deskHeld(view.path).view?.execution === 'conversation'
+    || levelMaterialsAvailable(levelCards))) {
     bar.append(press('Mark ready', 'ready', { name: found.name, seen: found.seen },
       'desk-ready ' + found.name));
   }
@@ -918,6 +952,8 @@ function deskCard(found) {
   const editing = found.kind === 'deck' ? deckParts(found) : material ? materialParts(material, found) : null;
   add(node, state(DESK_WORDS.beads[found.state] || 'none', found.says),
     checkedPart(found.checks), bar.childNodes.length ? bar : null);
+  if (list(found.needs).length) add(node, add(make('details', 'card-part'),
+    make('summary', '', 'Detailed review notes'), bullets(found.needs, 'reasons')));
   if (found.kind === 'blueprint') add(node, updateChainPart(found.level));
   return editing ? add(make('div', 'desk-material-group stack'), node, editing) : node;
 }
@@ -1075,7 +1111,7 @@ function deckOutline(found) {
     }));
   }
   paint();
-  DESK.kitSheet = [sheetTitle('Outline'), make('p', '', 'Each slide’s words, in order. Saving redraws only changed sections.'),
+  DESK.kitSheet = [sheetTitle('Slide text'), make('p', '', 'Each slide’s words, in order. Saving redraws only changed sections.'),
     rows, adding, said, error, add(make('div', 'bar'), editable ? save : null,
       editable ? capsule('Put it back as it was', 'quiet', () => { edit.work = JSON.parse(JSON.stringify(original));
         edit.priced = ''; said.textContent = ''; error.textContent = ''; paint(); }) : null,
@@ -1136,8 +1172,9 @@ function deckParts(found) {
   const ours = deskCanChange();
   const selection = slideSelectionBar(found);
   if (ours) area.append(selection.bar);
-  if (list(found.slides).length) area.append(capsule('Outline', 'quiet', () => deckOutline(found)));
-  if (ours && found.local && list(found.slides).length) area.append(wholeDeckNote(found));
+  if (list(found.slides).length) area.append(capsule('Review slide text', 'quiet', () => deckOutline(found)));
+  if (ours && found.local && list(found.slides).length) area.append(add(make('details', 'card-part'),
+    make('summary', '', 'Change the whole deck'), wholeDeckNote(found)));
   if (found.selection) {
     const job = found.selection, result = job.result;
     const status = make('p', 'quiet', job.error || (['queued', 'working'].includes(job.status)
@@ -1158,7 +1195,25 @@ function deckParts(found) {
     });
     add(area, add(make('div', 'bar'), again), make('p', 'quiet', found.look_price));
   }
-  for (const slide of list(found.slides)) {
+  const slides = list(found.slides), heldDeck = deskHeld(view.path);
+  heldDeck.slide ||= {};
+  const issues = list(found.proposals?.review?.items).filter(item => item.state === 'open' && item.present !== false);
+  if (!slides.some(slide => slide.id === heldDeck.slide[found.name])) {
+    heldDeck.slide[found.name] = slides.find(slide => issues.some(item => item.part === slide.id))?.id || slides[0]?.id;
+  }
+  if (slides.length) {
+    const label = make('label', 'field'), select = make('select', 'input');
+    select.setAttribute('aria-label', 'Slide to review');
+    for (const slide of slides) {
+      const option = make('option', '', slide.number + '. ' + slide.title
+        + (issues.some(item => item.part === slide.id) ? ' · Review suggestion' : ''));
+      option.value = slide.id; select.append(option);
+    }
+    select.value = heldDeck.slide[found.name];
+    select.addEventListener('change', () => { heldDeck.slide[found.name] = select.value; paintDesk(true); });
+    area.append(add(label, make('span', 'field-label', 'Slide to review'), select));
+  }
+  for (const slide of slides.filter(slide => slide.id === heldDeck.slide[found.name])) {
     const node = card(slide.number + '. ' + slide.title, 'desk-slide-card');
     if (slide.picture) node.append(slidePicture(found, slide.number));
     else node.append(make('p', 'quiet', 'Words only. The drawing is kept on the computer that made it.'));
@@ -1166,6 +1221,7 @@ function deckParts(found) {
       'quiet', () => slideHistory(found, slide));
     history.disabled = !slide.history;
     node.append(history);
+    const words = add(make('details', 'card-part'), make('summary', '', 'Edit slide text and speaker notes'));
     const fields = [['title', 'Title'], ['subtitle', 'Subtitle']];
     list(slide.points).forEach((point, i) => fields.push(
       ['points[' + i + '].label', 'Point ' + (i + 1) + ' label'],
@@ -1175,7 +1231,7 @@ function deckParts(found) {
       const match = /^points\[(\d+)\]\.(label|text)$/.exec(field);
       const text = slideWordsText(match ? slide.points[Number(match[1])][match[2]] : slide[field]);
       if (!ours || !found.local) {
-        if (field !== 'title' && text) add(node, make('p', 'sheet-part', label), make('p', 'desk-plain', text));
+        if (field !== 'title' && text) add(words, make('p', 'sheet-part', label), make('p', 'desk-plain', text));
         continue;
       }
       const box = make('textarea', 'input');
@@ -1195,18 +1251,19 @@ function deckParts(found) {
         const answer = await deskDecide(field === 'notes' ? 'slide-speaker-notes' : 'slide-words', sent, go);
         if (answer) slideWordResult(found, slide, sent, answer, () => { delete saved.slideText[box.dataset.key]; });
       });
-      add(node, add(make('label', 'field'), make('span', 'field-label', label), box), go);
+      add(words, add(make('label', 'field'), make('span', 'field-label', label), box), go);
     }
+    node.append(words);
     const proposals = found.proposals?.review;
-    for (const proposal of list(proposals?.items).filter((item) => item.part === slide.id && item.state === 'waiting')) {
+    for (const proposal of list(proposals?.items).filter((item) => item.part === slide.id && item.state === 'open' && item.present !== false)) {
       const row = add(make('section', 'card-part'), make('p', 'sheet-part', 'Review suggestion'),
         make('p', '', proposal.reason || proposal.says), make('p', '', proposal.after),
         make('p', 'quiet', proposal.price));
       if (ours) {
         const decide = (action) => deskDecide('finding', { level: found.level, seen: found.seen,
           job: proposals.job, ids: [proposal.id], action });
-        row.append(add(make('div', 'bar'), capsule('Apply', 'quiet', () => decide('apply')),
-          capsule('Skip', 'quiet', () => decide('skip'))));
+        row.append(add(make('div', 'bar'), capsule('Apply fix to this slide', 'quiet', () => decide('apply')),
+          capsule('Dismiss suggestion', 'quiet', () => decide('skip'))));
       }
       node.append(row);
     }
@@ -1377,7 +1434,8 @@ function materialParts(held, found) {
   held.status = status;
   add(area, status, deskKit.selectionBar(held), held.view.readonly
     ? make('p', 'quiet', held.view.readonly) : null);
-  if (deskCanChange() && !held.view.readonly) area.append(materialNote(held, found));
+  if (deskCanChange() && !held.view.readonly) area.append(add(make('details', 'card-part'),
+    make('summary', '', 'Change the whole ' + cardTitle(found).toLowerCase()), materialNote(held, found)));
   if (hasDeskRecovery(held) && deskCanChange() && !held.view.readonly) {
     const save = capsule('Save recovered text', 'quiet', async () => {
       held.recoveredParts = {};
@@ -1397,12 +1455,20 @@ function materialParts(held, found) {
       make('p', 'desk-plain', edit.text), copyButton('Copy', 'Copied.', edit.text)));
     area.append(copies);
   }
-  if (held.view.opening || held.view.whole) area.append(materialPart(held, 'opening'));
-  for (const section of list(held.view.sections)) {
+  const sections = [...(held.view.opening || held.view.whole ? [{id: 'opening', heading: held.view.whole ? 'Whole file' : 'Opening'}] : []),
+    ...list(held.view.sections)];
+  if (!sections.some(section => section.id === held.section)) held.section = sections[0]?.id;
+  const sectionKey = headingId(found.name) + '-sections';
+  if (sections.length > 1) area.append(workspaceTabs('Section of ' + cardTitle(found),
+    sections.map(section => ({id: section.id, label: section.heading})), held.section,
+    id => { held.section = id; paintDesk(true); }, sectionKey));
+  for (const section of sections.filter(section => section.id === held.section)) {
+    let part;
     if (section.locked) {
-      area.append(add(make('section', 'card desk-part'), make('h2', 'card-title', section.heading),
-        make('p', 'quiet', 'Kept from the findings cited.'), make('p', 'desk-plain', section.text)));
-    } else area.append(materialPart(held, section.id));
+      part = add(make('section', 'card desk-part'), make('h2', 'card-title', section.heading),
+        make('p', 'quiet', 'Kept from the findings cited.'), make('p', 'desk-plain', section.text));
+    } else part = materialPart(held, section.id);
+    area.append(sections.length > 1 ? workspacePanel(sectionKey, sections.indexOf(section), part) : part);
   }
   if (found.kind === 'yoodli') {
     for (const field of list(held.view.fields)) {
@@ -1555,6 +1621,7 @@ function needsPart(found, held, run) {
       line.append(capsule(capital(one.label), 'quiet', () => {
         held.level = one.level;
         held.sources = false;
+        held.material[held.level || ''] = one.name;
         paintDesk(false);
         const heading = byId(headingId(one.name));
         if (heading) heading.focus();
@@ -1824,7 +1891,7 @@ function paintDesk(fresh) {
   const tabs = deskTabs(found, held);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
     run.mine, run.driver, run.taken, run.notice, run.outline, run.training_plan, run.training_plan_pending,
-    run.research_progress, run.timing, held.level, held.sources, held.said,
+    run.research_progress, run.timing, held.level, held.sources, held.material, held.said,
     held.unsent && list(held.unsent.files).map((file) => file.name), held.unsent
       && held.unsent.why, lead, narrow()]);
   if (!fresh && drawn === held.drawn) return;
@@ -1849,12 +1916,26 @@ function paintDesk(fresh) {
   }
   const notice = held.said ? make('p', 'notice', held.said) : null;
   if (notice) notice.setAttribute('role', 'alert');
-  const column = add(make('div', 'desk-column'), ...shown.map(deskCard));
+  const available = shown.filter(one => one.state !== 'left-out');
+  if (!available.some(one => one.name === held.material[level])) {
+    held.material[level] = (available.find(one => one.seen && ['needs', 'held'].includes(one.state))
+      || available.find(one => one.seen) || available[0])?.name;
+  }
+  const selected = held.sources ? 'sources' : held.material[level];
+  const options = [...available.map(one => ({id: one.name, label: cardTitle(one) + ' · '
+    + ({writing: 'Writing', needs: 'Needs attention', held: 'Needs updating', ready: 'Ready', draft: 'Draft'}[one.state] || 'Draft')})),
+    {id: 'sources', label: 'Research & sources'}];
+  const materials = workspaceTabs('Training material', options, selected, id => {
+    held.sources = id === 'sources';
+    if (!held.sources) held.material[level] = id;
+    paintDesk(true);
+  }, 'desk-material');
+  const column = add(make('div', 'desk-column'), ...shown.filter(one => one.name === selected).map(deskCard));
   if (!shown.length) column.append(make('p', 'quiet', 'Nothing is made at this level.'));
   const finishing = finishingMaterial();
   if (finishing) { finishing.panel = deskKit.panel(finishing); finishing.panelKey = deskKit.panelKey(finishing); }
-  const layout = held.sources ? add(make('div', 'desk-layout'), sourcesPart(found))
-    : add(make('div', 'desk-layout'), column, finishing ? finishing.panel : narrow() ? null : sourcesPart(found));
+  const layout = workspacePanel('desk-material', options.findIndex(one => one.id === selected),
+    held.sources ? sourcesPart(found) : add(make('div', 'stack'), column, finishing ? finishing.panel : null));
   place({ title: found.title || 'Untitled', back: true,
     above: named.length ? [make('span', '', levelsText(named))] : [], actions }, [
     waitingPlan ? null : pageHead(preparingPlan ? 'I’ll prepare the topics and teaching plan for you to check, then build the training.' : conversation ? 'Read the retained materials. Make checked edits in conversation; only you mark a material ready.' : DESK_WORDS.lede),
@@ -1871,6 +1952,7 @@ function paintDesk(fresh) {
     run.problem ? problemPart(run, lead === 'problem') : null,
     adding(run) && ours && !held.unsent ? documentsCard(run, lead === 'documents') : null,
     preparingPlan || waitingPlan ? null : tabs,
+    preparingPlan || waitingPlan ? null : materials,
     preparingPlan || waitingPlan ? null : layout,
   ], fresh);
   if (editing?.key && focusKey(editing.key) && typeof editing.start === 'number') {

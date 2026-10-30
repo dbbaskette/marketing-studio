@@ -2,9 +2,9 @@
 both sides of that line refuse with.
 
 A training started on the desk has `flow: 'desk'` and no review level. New schema-6
-runs wait for one topics review before building the selected materials. Schemas 4
-and 5 keep their saved workflow, including explicit slide text approval where
-requested. The engine carries other gates with desk receipts. The person marks each
+runs wait for a topics review before building the selected materials. New content-first
+runs also wait for slide text approval before design. Saved runs keep their recorded
+workflow. The engine carries other gates with desk receipts. The person marks each
 material ready on the desk. A run without `flow` keeps the gates, review screens and
 remaking it began with.
 
@@ -825,7 +825,8 @@ def view(engine, root) -> dict:
                                       and not busy_now else []),
                                     *(['keep'] if waiting is None else []), 'download']
                 elif needs:
-                    shown, says = 'needs', ' '.join([NEEDS, *needs])
+                    shown, says = 'needs', ('This deck has unresolved review issues. '
+                                           'Review the affected slides below before marking it ready.')
                 elif person.get(name) == 'approved':
                     shown, says = 'ready', READY
                 else:

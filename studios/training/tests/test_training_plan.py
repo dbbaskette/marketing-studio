@@ -1,4 +1,4 @@
-"""One checked topics review, then automatic generation; synthetic authors only."""
+"""Topics review and explicit slide text approval; synthetic authors only."""
 from test_runner_deck import DeckCase, PageCase
 from runner import training_plan
 from workspace import WorkspaceError
@@ -10,7 +10,7 @@ class PlanTests(DeckCase):
         self.engine.content_first = True
         return self.begin(flow='desk', **changes)
 
-    def test_topics_review_precedes_every_material_and_one_approval_builds_the_deck(self):
+    def test_topics_review_does_not_approve_slide_text_or_start_design(self):
         root = self.start_plan()
         view = self.view(root)
         self.assertEqual(view['state'], 'waiting')
@@ -27,8 +27,20 @@ class PlanTests(DeckCase):
         result = training_plan.decide(self.engine, root, plan['expected'], 'approve')
         self.assertIsNone(result['training_plan'])
         self.assertFalse(result['problem'])
-        self.assertEqual(result['state'], 'done')
+        self.assertEqual(result['state'], 'waiting')
         self.assertTrue(self.workers.of('document'))
+        self.assertTrue(result['outline']['content_first'])
+        self.assertTrue(result['outline']['waiting'])
+        self.assertFalse(self.workers.of('section'))
+        self.assertFalse(any(call[0] in ('preview', 'render') for call in self.slides.calls))
+        with self.assertRaises(WorkspaceError):
+            self.engine.outline(root, None, 'approve', seen='old-version')
+        self.engine.wake(root)
+        self.assertEqual(self.view(root)['outline']['sha256'], result['outline']['sha256'])
+        self.assertFalse(self.workers.of('section'))
+        self.engine.outline(root, None, 'approve', seen=result['outline']['sha256'])
+        result = self.view(root)
+        self.assertEqual(result['state'], 'done')
         self.assertTrue(self.workers.of('section'))
         self.assertFalse((result.get('outline') or {}).get('waiting'))
         with self.assertRaises(WorkspaceError):
@@ -58,7 +70,24 @@ class PlanTests(DeckCase):
         result = training_plan.decide(self.engine, root, plan['expected'], 'approve')
         self.assertFalse(result['problem'])
         self.assertFalse(result['training_plan_pending'])
+        self.assertEqual(result['state'], 'waiting')
+        self.assertEqual(result['outline']['level'], '101')
+        self.engine.outline(root, '101', 'approve', seen=result['outline']['sha256'])
+        result = self.view(root)
+        self.assertEqual(result['state'], 'waiting')
+        self.assertEqual(result['outline']['level'], '201')
+        self.engine.outline(root, '201', 'approve', seen=result['outline']['sha256'])
+        self.assertEqual(self.view(root)['state'], 'done')
+
+    def test_saved_plan_first_run_without_text_marker_keeps_its_workflow(self):
+        root = self.start_plan()
+        record = self.engine._load(root)
+        record.pop('deck_content')
+        self.engine._store(root, record)
+        plan = self.view(root)['training_plan']
+        result = training_plan.decide(self.engine, root, plan['expected'], 'approve')
         self.assertEqual(result['state'], 'done')
+        self.assertNotIn('deck_content', self.engine._load(root))
 
     def test_a_named_101_change_keeps_201_bytes_and_does_not_repeat_research(self):
         root = self.start_plan(levels=['101', '201'])

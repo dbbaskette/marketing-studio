@@ -1441,7 +1441,7 @@ class Engine(Reviewing):
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
-                if desk and self.content_first and not self.plan_first and not form.get('walkthrough'):
+                if desk and self.content_first and not form.get('walkthrough'):
                     record['deck_content'] = deck_content.PROTOCOL
                 if desk:
                     record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
