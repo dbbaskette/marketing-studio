@@ -837,7 +837,9 @@ function workspaceTabs(label, options, selected, choose, key) {
   const bar = make('div', 'desk-workspace-tabs');
   bar.setAttribute('role', 'tablist'); bar.setAttribute('aria-label', label);
   options.forEach((option, index) => {
-    const go = capsule(option.label, 'quiet', () => choose(option.id), key + ' ' + index);
+    const go = capsule(option.label, 'quiet', () => {
+      choose(option.id); byId(key + '-' + index)?.focus();
+    }, key + ' ' + index);
     go.setAttribute('role', 'tab'); go.id = key + '-' + index;
     go.setAttribute('aria-selected', String(option.id === selected));
     go.tabIndex = option.id === selected ? 0 : -1;
@@ -876,6 +878,11 @@ function levelCanBeReviewed(cards) {
   return selected.length > 0 && selected.every(one => one.seen && ['draft', 'ready'].includes(one.state));
 }
 
+function levelMaterialsAvailable(cards) {
+  const selected = list(cards).filter(one => one.state !== 'left-out');
+  return selected.length > 0 && selected.every(one => one.seen && one.state !== 'writing');
+}
+
 // What was checked for you, from the checks that take milliseconds.
 function checkedPart(checks) {
   const passed = Number(checks && checks.passed) || 0;
@@ -911,7 +918,7 @@ function deskCard(found) {
   const bar = make('div', 'bar');
   const levelCards = list(deskHeld(view.path).view?.cards).filter(one => (one.level || '') === (found.level || ''));
   if (actions.includes('ready') && (deskHeld(view.path).view?.execution === 'conversation'
-    || levelCanBeReviewed(levelCards))) {
+    || levelMaterialsAvailable(levelCards))) {
     bar.append(press('Mark ready', 'ready', { name: found.name, seen: found.seen },
       'desk-ready ' + found.name));
   }

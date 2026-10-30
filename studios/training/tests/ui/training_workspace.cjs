@@ -41,6 +41,8 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
     const original=await frame.inputValue();
     await frame.fill(original+'\nSynthetic local edit retained across navigation.');
     await page.getByRole('tab',{name:/^Guide · Draft$/}).click();
+    assert.equal(await page.getByRole('button',{name:'Mark ready',exact:true}).count(),1,'A deck issue does not prevent reviewing a complete guide');
+    assert.equal(await page.getByRole('tab',{name:/^Guide · Draft$/}).evaluate(node=>node===document.activeElement),true,'Tab selection keeps keyboard focus');
     await page.getByRole('tab',{name:'Research & sources',exact:true}).click();
     await page.getByRole('tab',{name:/^Plan · Draft$/}).click();
     assert((await page.getByRole('textbox',{name:'Frame',exact:true}).inputValue()).includes('Synthetic local edit retained across navigation.'));
