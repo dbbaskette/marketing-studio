@@ -317,6 +317,47 @@ function studioSymbol(id) {
   const line = document.createElementNS(space, 'path'); line.setAttribute('d', drawings[id] || '');
   drawing.append(line); tile.append(drawing); return tile;
 }
+
+const studioPurposes = {
+  blog: 'Draft a new blog or polish someone else’s writing.',
+  presentation: 'Turn ideas and reference material into a branded deck.',
+  training: 'Create a lesson, learner guide, slides and practice.',
+  infographic: 'Explain an idea with diagrams, charts and concise labels.'
+};
+// Small output-format illustrations, never generated work or project previews.
+function studioPreview(id) {
+  const node = element('div', '', 'studio-preview'); node.setAttribute('aria-hidden', 'true');
+  const space = 'http://www.w3.org/2000/svg', svg = document.createElementNS(space, 'svg');
+  for (const [key, value] of Object.entries({viewBox:'0 0 160 108',fill:'none',stroke:'currentColor',
+    'stroke-width':'1.8','stroke-linecap':'round','stroke-linejoin':'round'})) svg.setAttribute(key,value);
+  const shapes = {
+    blog: [['path',{d:'M48 9h63l17 17v72H48z',fill:'var(--card)'}],['path',{d:'M111 9v18h17'}],
+      ['path',{d:'M62 39h44', 'stroke-width':'4'}],['path',{d:'M62 51h50M62 60h42M62 69h50M62 78h31',opacity:'.5'}],
+      ['rect',{x:'22',y:'46',width:'38',height:'23',rx:'5',fill:'var(--studio-wash)'}],['path',{d:'m32 58 5 5 10-11'}]],
+    presentation: [['rect',{x:'17',y:'19',width:'127',height:'77',rx:'6',fill:'var(--card)'}],
+      ['path',{d:'M31 34h45', 'stroke-width':'4'}],['path',{d:'M31 45h69',opacity:'.4'}],
+      ['rect',{x:'32',y:'66',width:'17',height:'16',rx:'2',fill:'var(--studio-wash)'}],
+      ['rect',{x:'58',y:'56',width:'17',height:'26',rx:'2',fill:'var(--studio-wash)'}],
+      ['rect',{x:'84',y:'49',width:'17',height:'33',rx:'2',fill:'var(--studio-wash)'}],['path',{d:'m109 71 10-10 10 5'}]],
+    training: [['path',{d:'M29 48h31V25h35v23h27',opacity:'.5'}],
+      ['rect',{x:'12',y:'37',width:'32',height:'25',rx:'5',fill:'var(--studio-wash)'}],
+      ['rect',{x:'63',y:'13',width:'32',height:'25',rx:'5',fill:'var(--studio-wash)'}],
+      ['rect',{x:'114',y:'37',width:'32',height:'25',rx:'5',fill:'var(--studio-wash)'}],
+      ['path',{d:'m23 49 4 4 8-9m47-20h-8m-42 31h-8'}],
+      ['path',{d:'M48 78c10-5 21-5 31 0 10-5 21-5 31 0v20c-10-5-21-5-31 0-10-5-21-5-31 0z',fill:'var(--card)'}],['path',{d:'M79 78v20'}]],
+    infographic: [['rect',{x:'44',y:'8',width:'74',height:'93',rx:'5',fill:'var(--card)'}],
+      ['path',{d:'M58 23h38','stroke-width':'4'}],['path',{d:'M58 32h46',opacity:'.4'}],
+      ['circle',{cx:'63',cy:'51',r:'9',fill:'var(--studio-wash)'}],['circle',{cx:'99',cy:'51',r:'9',fill:'var(--studio-wash)'}],
+      ['path',{d:'M72 51h18m-12-4 5 4-5 4'}],['rect',{x:'57',y:'75',width:'11',height:'12',rx:'2',fill:'var(--studio-wash)'}],
+      ['rect',{x:'75',y:'68',width:'11',height:'19',rx:'2',fill:'var(--studio-wash)'}],['rect',{x:'93',y:'72',width:'11',height:'15',rx:'2',fill:'var(--studio-wash)'}]]
+  };
+  for (const [tag, attrs] of shapes[id] || []) {
+    const shape = document.createElementNS(space,tag);
+    for (const [key,value] of Object.entries(attrs)) shape.setAttribute(key,value);
+    svg.append(shape);
+  }
+  node.append(svg); return node;
+}
 // What a Connect action did, in one message that stays on the page.
 function connectedWords(done) {
   const to = done.to?.repository ? `${done.to.repository} (${done.to.branch})` : `local Git at ${done.to?.root}`;
@@ -360,7 +401,7 @@ async function refreshHomeStatus(){
       const ready=studioReadiness(studio),line=card.querySelector('.studio-readiness');
       if(line){line.querySelector('.bead').dataset.state=ready.state;line.lastElementChild.textContent=ready.label;line.title=ready.detail;}
       const running=card.querySelector('.studio-running');if(running)running.textContent=`${studio.running?'Running · ':''}${studio.version||''}`;
-      const button=card.querySelector('.studio-open');if(button&&!button.disabled)button.textContent=studio.running?`Return to ${studio.name}`:`Open ${studio.name}`;
+      const button=card.querySelector('.studio-open');if(studio.installed&&button&&!button.disabled){button.textContent=studio.running?'Return':'Open';button.setAttribute('aria-label',studio.running?`Return to ${studio.name}`:`Open ${studio.name}`);}
     }
   }catch(failure){
     // Retain the last readable state while reconnecting, but never show stale green lights.
@@ -372,23 +413,30 @@ function renderHome(refreshPaths = true) {
   for (const studio of snapshot.studios) {
     const card = element('article', '', 'card studio-card');
     card.dataset.studio = studio.id;
-    card.append(studioSymbol(studio.id), element('h3', studio.name, 'studio-name'), element('p', studio.description, 'studio-says'));
+    card.append(studioSymbol(studio.id), element('h3', studio.name, 'studio-name'),
+      element('p', studioPurposes[studio.id] || studio.description, 'studio-says'), studioPreview(studio.id));
     const readiness=studioReadiness(studio);
     const readyLine=stateLine(readiness.state,readiness.label);readyLine.classList.add('studio-readiness');readyLine.title=readiness.detail;
-    card.append(readyLine,element('p',`${studio.running?'Running · ':''}${studio.version||''}`,'quiet studio-running'));
+    card.append(readyLine);
+    const footer = element('div','','studio-footer'), actions = element('div','','studio-actions');
+    const details = element('details','','studio-repository');
+    const summary = element('summary','Details'); summary.setAttribute('aria-label',`Details for ${studio.name}`);
+    details.append(summary,element('p',`${studio.running?'Running · ':''}${studio.version||'Version not reported'}`,'quiet studio-running'));
     const link = studio.workspace;
     if (link) {
       // Where its work lives, read from the studio's own records.
       const line = element('div', '', 'studio-link');
       const connected=link.state === 'connected' && product === 'Marketing Studio';
       line.append(stateLine(link.state === 'connected' ? 'done' : link.state === 'disconnected' ? 'review' : 'none', connected ? 'Shared repository connected' : link.summary));
-      if (connected) {
-        const details=element('details','','studio-repository');
-        details.append(element('summary','Repository details'),element('p',[link.summary,link.detail].filter(Boolean).join('\n'),'studio-link-detail quiet'));
-        line.append(details);
-      } else if (link.detail) line.append(element('span', link.detail, 'studio-link-detail quiet'));
-      card.append(line);
+      if (connected) line.append(element('p',[link.summary,link.detail].filter(Boolean).join('\n'),'studio-link-detail quiet'));
+      else if (link.detail) line.append(element('span', link.detail, 'studio-link-detail quiet'));
+      details.append(line);
+      if (link.state === 'disconnected') {
+        const warning=stateLine('review',link.summary);warning.classList.add('studio-warning');card.append(warning);
+      }
     }
+    if (link || studio.version) footer.append(details);
+    footer.append(actions); card.append(footer);
     if (studio.installed && link?.connect) {
       const connect = element('button', 'Connect', 'button studio-connect button-filled'); connect.type = 'button';
       connect.setAttribute('aria-label', `Connect ${studio.name} to the shared storage`);
@@ -401,16 +449,18 @@ function renderHome(refreshPaths = true) {
           $(`#studio-list [data-studio="${studio.id}"] .button`)?.focus();
         } catch (error) { inform(error.message, true); connect.disabled = false; connect.textContent = 'Connect'; }
       });
-      card.append(connect);
+      actions.append(connect);
     }
     if (studio.installed) {
       const label = studio.running ? `Return to ${studio.name}` : `Open ${studio.name}`;
-      const button = element('button', label, (link?.connect ? 'button' : 'button button-filled')+' studio-open');
+      const words = studio.running ? 'Return' : 'Open';
+      const button = element('button', words, (link?.connect ? 'button' : 'button button-filled')+' studio-open');
+      button.setAttribute('aria-label',label);
       button.addEventListener('click', async () => {
         if (inThisTab((query) => window.matchMedia(query).matches)) {
           button.disabled = true; button.textContent = 'Opening…'; $('#problem').hidden = true;
           try { location.href = withHome((await api('open', {studio: studio.id})).link, true); }
-          catch (error) { inform(error.message, true); button.disabled = false; button.textContent = label; }
+          catch (error) { inform(error.message, true); button.disabled = false; button.textContent = words; }
           return;
         }
         let blocked = false;
@@ -429,10 +479,10 @@ function renderHome(refreshPaths = true) {
           // The card was rebuilt, so put focus back on its button, unless the link above has it.
           if (!blocked) $(`#studio-list [data-studio="${studio.id}"] .button`)?.focus();
         } catch (error) { if (tab && tab.location.href === 'about:blank') tab.close(); inform(error.message, true); }
-        finally { button.disabled = false; button.textContent = label; }
-      }); card.append(button);
+        finally { button.disabled = false; button.textContent = words; }
+      }); actions.append(button);
     } else {
-      const link = element('a', `Install ${studio.name}`, 'button studio-open'); link.href = studio.repository; link.target = '_blank'; link.rel = 'noreferrer'; card.append(link);
+      const link = element('a', 'Install', 'button studio-open'); link.setAttribute('aria-label',`Install ${studio.name}`);link.href = studio.repository; link.target = '_blank'; link.rel = 'noreferrer'; actions.append(link);
     }
     list.append(card);
   }
