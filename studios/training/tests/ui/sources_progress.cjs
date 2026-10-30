@@ -27,14 +27,14 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   assert.equal(writes.filter(r=>r.url==='/api/research-sources'&&r.body.action==='capture').length,1);
   const sourceRun=await page.evaluate(()=>({path:view.path,run:view.run}));
   assert.equal(sourceRun.run.documents.waiting,false);assert.equal(sourceRun.run.documents.added[0].name,'reference.txt');
-  let phase='investigate',elapsed=60,agentCount=2,correction=null,round=1;
+  let phase='investigate',elapsed=60,agentCount=2,correction=null,round=1,building=false;
   const streams=[
    {id:'area1',status:'working',questions:['How does a rolling restart keep serving requests during an upgrade?','Which readiness checks control the next batch?','When should a failed batch pause the rollout?']},
    {id:'area2',status:'kept',questions:['Which capacity constraints must learners check before a restart?','What assumptions limit the availability claim?']},
    {id:'area3',status:'working',questions:['What worked example helps learners choose a safe rollout strategy?','How can learners diagnose an unhealthy replacement?']}
   ];
-  await page.route('**/api/run?*',async route=>{const response=await route.fetch(),body=await response.json();const active=agentCount===null?[{phase,status:'termination-unconfirmed'}]:Array.from({length:agentCount},(_,i)=>({id:'synthetic-'+i,phase,stream:phase==='investigate'?'area'+(i+1):null,status:'working'}));Object.assign(body,{state:'working',training_plan:null,training_plan_pending:true,research_progress:{phase,streams,round,round_limit:3,correction,agents:{count:agentCount,active,unconfirmed:agentCount===null?1:0}},timing:{elapsed_seconds:elapsed,active_seconds:60,assistant_seconds:140}});await route.fulfill({response,json:body});});
-  await page.route('**/api/drafts?*',async route=>{const response=await route.fetch(),body=await response.json();body.progress={running:true,line:'Nothing needed from you. Each material opens here as it is ready.',doing:'Drafting the level 201 blueprint.',minutes:null};await route.fulfill({response,json:body});});
+  await page.route('**/api/run?*',async route=>{const response=await route.fetch(),body=await response.json();const active=agentCount===null?[{phase,status:'termination-unconfirmed'}]:Array.from({length:agentCount},(_,i)=>({id:'synthetic-'+i,phase,stream:phase==='investigate'?'area'+(i+1):null,status:'working'}));Object.assign(body,{state:'working',training_plan:null,training_plan_pending:!building,research_progress:{phase,streams,round,round_limit:3,correction,agents:{count:agentCount,active,unconfirmed:agentCount===null?1:0}},timing:{elapsed_seconds:elapsed,active_seconds:60,assistant_seconds:140}});await route.fulfill({response,json:body});});
+  await page.route('**/api/drafts?*',async route=>{const response=await route.fetch(),body=await response.json();body.progress={running:true,line:'Nothing needed from you. Each material opens here as it is ready.',doing:building?'Writing the level 101 learner guide.':'Drafting the level 201 blueprint.',minutes:null};if(building)body.cards=body.cards.map(card=>card.kind==='blueprint'?card:{...card,state:'writing',seen:null,actions:[]});await route.fulfill({response,json:body});});
   async function refresh(){await page.evaluate(async()=>{await refresh();});await page.getByRole('region',{name:'Research progress',exact:true}).waitFor();}
   async function fit(){assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Progress must not overflow');}
   async function capture(name){if(process.env.TRAINING_PROGRESS_RESULTS){fs.mkdirSync(process.env.TRAINING_PROGRESS_RESULTS,{recursive:true});await page.evaluate(()=>{document.activeElement?.blur();scrollTo(0,0);});await page.screenshot({path:path.join(process.env.TRAINING_PROGRESS_RESULTS,name+'.png'),fullPage:true});}}
@@ -89,6 +89,10 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   await page.getByText('Next: review the topics and teaching plan before the materials are built.',{exact:true}).waitFor();
   assert.equal(await page.getByText(/in about \d+ minutes/).count(),0);
   await capture('training-building-status');
+  building=true;await page.evaluate(async()=>{await refresh();});
+  await page.getByRole('heading',{name:'Writing the level 101 learner guide.',exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Mark this level ready',exact:true}).count(),0);
+  assert.equal(await page.getByRole('button',{name:'Mark ready',exact:true}).count(),0);
   assert.deepEqual(errors,[]);
   console.log('PASS actual source upload → Start → topics review without second intake; one progress panel, expandable questions/focus retained on refresh, phases, timing, 320–1280px light/dark, no provider jobs.');
  }catch(error){console.error(diagnostics);throw error;}

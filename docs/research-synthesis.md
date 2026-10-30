@@ -111,6 +111,18 @@ Training Studio's live progress keeps the compatibility `minutes` field null;
 it does not recalculate historical completion estimates while polling. Explicit
 operation cost estimates and clearly labeled elapsed time retain their existing behavior.
 
+Training Studio topic changes are scoped to the selected levels. Automatic scope
+uses explicitly named levels in the request; an unqualified request or “all/both
+levels” retains the existing whole-plan behavior. The review provides an explicit
+level selector for broader or narrower changes. Unselected blueprints keep their
+bytes and checks, and research is retained. Invalid or stale scope changes nothing.
+`PlanTests.test_a_named_101_change_keeps_201_bytes_and_does_not_repeat_research`
+covers one revision job with the level 201 file unchanged.
+Readiness controls are offered only once every selected material in that level
+has an available, reviewable draft. Writing, missing or held materials keep both
+the level-wide and individual readiness controls out of the building view.
+Other levels may continue building independently.
+
 ## Saved files and compatibility
 
 The helper's resumable case lives in `.studio-research/`. The consumer handoff is

@@ -60,6 +60,43 @@ class PlanTests(DeckCase):
         self.assertFalse(result['training_plan_pending'])
         self.assertEqual(result['state'], 'done')
 
+    def test_a_named_101_change_keeps_201_bytes_and_does_not_repeat_research(self):
+        root = self.start_plan(levels=['101', '201'])
+        plan = self.view(root)['training_plan']
+        session = workspace.load(root)
+        other = root / workspace.artifact(root, session, 'blueprint@201')['file']
+        before = other.read_bytes()
+        jobs = len(self.workers.of('blueprint'))
+        research = list(self.workers.of('question'))
+        result = training_plan.decide(self.engine, root, plan['expected'], 'changes', 'Change one key point in level 101 only.')
+        self.assertTrue(result['training_plan'])
+        self.assertEqual(len(self.workers.of('blueprint')), jobs + 1)
+        self.assertEqual(other.read_bytes(), before)
+        self.assertEqual(research, self.workers.of('question'))
+        self.assertFalse(self.workers.of('document'))
+
+    def test_explicit_scope_overrides_note_and_invalid_scope_changes_nothing(self):
+        root = self.start_plan(levels=['101', '201'])
+        plan = self.view(root)['training_plan']
+        jobs = len(self.workers.of('blueprint'))
+        with self.assertRaises(WorkspaceError):
+            training_plan.decide(self.engine, root, plan['expected'], 'changes', 'Change a sentence.', ['301'])
+        self.assertEqual(self.view(root)['training_plan']['expected'], plan['expected'])
+        result = training_plan.decide(self.engine, root, plan['expected'], 'changes', 'Match the wording of level 201.', ['101'])
+        self.assertTrue(result['training_plan'])
+        self.assertEqual(len(self.workers.of('blueprint')), jobs + 1)
+
+    def test_automatic_and_explicit_scope_rules(self):
+        session = {'levels':['101','201']}
+        for note, selected, expected in [('Change level 101.',None,['101']), ('Fix 101 and 201.',None,['101','201']),
+            ('Use the 101 example in both levels.',None,['101','201']), ('Improve the introduction.',None,['101','201']),
+            ('Change level 101.',['201'],['201'])]:
+            with self.subTest(note=note, selected=selected):
+                self.assertEqual(training_plan.revision_levels(session,note,selected),expected)
+        for selected in [[],['301'],'101',{'101':True}]:
+            with self.subTest(selected=selected), self.assertRaises(WorkspaceError):
+                training_plan.revision_levels(session,'Change one line.',selected)
+
     def test_active_work_and_paused_state_cannot_be_approved(self):
         root = self.start_plan()
         expected = self.view(root)['training_plan']['expected']

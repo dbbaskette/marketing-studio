@@ -31,6 +31,17 @@ def names(session):
     return [workspace.qualify('blueprint', level) for level in session['levels'] or [None]]
 
 
+def revision_levels(session, note, selected=None):
+    """Use explicit scope or named training levels; never broaden an invalid scope."""
+    available = session['levels'] or [None]
+    if selected is None:
+        mentioned = list(dict.fromkeys(re.findall(r'\b(?:level\s+)?(101|201|301|401)\b', note, re.I)))
+        selected = available if re.search(r'\b(?:all|both|every)\s+levels\b|\bwhole\s+training\b', note, re.I) else mentioned or available
+    if not isinstance(selected, list) or not selected or any(level not in available for level in selected):
+        raise WorkspaceError('Choose levels included in this training before requesting changes.')
+    return [level for level in available if level in selected]
+
+
 def file(root, relative):
     path = workspace.managed(root, relative)
     if path.is_symlink() or root.resolve() not in path.resolve().parents:
@@ -93,7 +104,7 @@ def view(root, found, record):
     return {'expected': signature(root, found.session, record), 'levels': levels}
 
 
-def decide(engine, path, expected, decision, note=None):
+def decide(engine, path, expected, decision, note=None, levels=None):
     import home
     root = engine._held(path)
     if decision not in ('approve', 'changes'):
@@ -116,7 +127,9 @@ def decide(engine, path, expected, decision, note=None):
             record['training_plan']['approved'] = {'signature': expected, 'by': 'page', 'at': home.now()}
             said = 'approve the training topics and build the selected materials'
         else:
-            for name in names(found.session):
+            selected = revision_levels(found.session, note, levels)
+            for level in selected:
+                name = workspace.qualify('blueprint', level)
                 workspace.decide(root, name, 'revise', note, by='page')
                 engine._fresh(record, name)
             record['training_plan'].pop('approved', None)

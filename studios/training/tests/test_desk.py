@@ -7544,6 +7544,15 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         # Each card is marked ready on its own, with the version shown on it.
         self.assertGreaterEqual(shot['buttons'].count('Mark ready'), 5)
 
+    def test_readiness_is_not_offered_while_a_level_material_is_being_written(self):
+        plan = a_card('blueprint@101')
+        guide = a_card('document@101', state='writing', says='Being written.', seen=None, actions=[])
+        result = self.open_desk(self.on_desk(a_desk(plan, guide, levels=('101',))), [{'snapshot':'building'}])
+        shot = result['snapshots']['building']
+        self.assertNotIn('Mark this level ready', shot['buttons'])
+        self.assertNotIn('Mark ready', shot['buttons'])
+        self.assertIn('Being written.', shot['text'])
+
     def editable(self, name='document@101', **extra):
         material = a_card(name.replace('yoodli:', 'scenario:'))
         if name.startswith('yoodli:'):
