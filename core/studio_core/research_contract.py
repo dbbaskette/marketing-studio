@@ -51,7 +51,8 @@ SOURCE_IDS = ('Use the saved tool IDs, such as s1, as sources[].id and repeat th
               'IDs in facts[].citations[].source. A citation is {source, quote}: source '
               'names an entry in sources, not a file path or URL; quote is copied exactly '
               'from that source. Sections and brief refer to fact or finding IDs instead. '
-              'Never invent a missing source.')
+              'Never invent a missing source. Source publication dates use source_date; '
+              'read timestamps use accessed_at. Do not add a generic date field or invent dates.')
 
 
 def compares(goal) -> bool:
@@ -456,6 +457,9 @@ class Workflow:
                     dossier[key] = task[key]
                 if any(f.get('author') != worker for f in dossier.get('facts', [])):
                     raise ValueError('Research facts must identify their actual author invocation.')
+                dossier, problems = source_metadata(dossier, self.runtime)
+                if problems:
+                    raise ValueError(' '.join(problems))
                 dossier, problems, _ = citation_sources(dossier, captures)
                 if problems:
                     raise ValueError(' '.join(problems))
@@ -723,6 +727,42 @@ def took(seconds, dollars):
     return ' and '.join(said)
 
 
+def source_metadata(value, runtime):
+    """Match source metadata to the pinned helper before the collection boundary.
+
+    The dossier saver permits extra metadata that the collection registry refuses.
+    Preserve the common date spelling without guessing missing dates or resolving
+    conflicts. Other unknown fields get feedback while the author can still correct
+    its submission; evidence, permissions, captures and citations stay unchanged.
+    """
+    if not runtime:
+        return value, []
+    schema = Path(runtime) / 'references/synthesis.schema.json'
+    try:
+        allowed = set(json.loads(schema.read_text())['$defs']['source']['properties'])
+    except (OSError, ValueError, KeyError, TypeError):
+        return value, ['The pinned Harness Research source metadata contract could not be read.']
+    result, problems = copy.deepcopy(value), []
+    for source in result.get('sources') or []:
+        if not isinstance(source, dict):
+            problems.append('Return each source as an object.')
+            continue
+        name = source.get('id') or 'unnamed'
+        if 'date' in source and 'source_date' in allowed:
+            date = source['date']
+            if isinstance(date, str) and date.strip() and ('source_date' not in source or source['source_date'] == date):
+                source['source_date'] = source.pop('date')
+            else:
+                problems.append(f'Source {name}: date is empty, invalid or conflicts with source_date. '
+                                'Use one supported source_date, or omit it when unknown; do not guess.')
+        unknown = set(source) - allowed
+        if unknown:
+            problems.append(f'Source {name}: unknown source field(s): {", ".join(sorted(unknown))}. '
+                            f'Use only the pinned fields: {", ".join(sorted(allowed))}. '
+                            'Correct and resubmit within this job; keep captured evidence unchanged.')
+    return result, problems
+
+
 def check_json(text, spec):
     problems = []
     warnings = []
@@ -732,6 +772,8 @@ def check_json(text, spec):
         value = json.loads(text)
         if not isinstance(value, dict) or value.get('schema') != 2:
             problems.append('Return a schema-2 JSON object.')
+        elif isinstance(value.get('sources'), list) and any(not isinstance(source, dict) for source in value['sources']):
+            problems.append('Return each source as an object.')
         elif spec.get('research_mode'):
             from studio_core.research_session import preparation
 
@@ -740,6 +782,8 @@ def check_json(text, spec):
             problems += uncaptured(value['sources'], spec.get('captures', []))
             if not problems:
                 value, problems, matched = citation_sources(value, spec.get('captures', []))
+            if not problems:
+                value, problems = source_metadata(value, spec.get('runtime'))
                 kept = json.dumps(value)
             if not problems and spec.get('runtime'):
                 problems += refused(value, spec)
@@ -749,6 +793,12 @@ def check_json(text, spec):
                 value, problems, matched = citation_sources(value, spec['captures'])
                 if matched:
                     kept = json.dumps(value)
+            if not problems:
+                normalized, problems = source_metadata(value, spec.get('runtime'))
+                if normalized != value:
+                    kept = json.dumps(normalized)
+                    warnings.append('Standardized source date metadata as source_date; dates and evidence are unchanged.')
+                value = normalized
             if not problems and spec.get('runtime'):
                 problems += refused(value, spec)
             if not problems and matched:

@@ -14,6 +14,50 @@ from synthesis_fixture import TEXT, dossier, review
 RUNTIME = os.environ.get('STUDIO_TEST_RESEARCH_RUNTIME')
 
 
+class SourceMetadataTests(unittest.TestCase):
+    def setUp(self):
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        self.runtime = Path(folder.name)
+        schema = self.runtime / 'references/synthesis.schema.json'
+        schema.parent.mkdir()
+        schema.write_text(json.dumps({'$defs': {'source': {'properties': {
+            key: {} for key in ('id', 'file', 'origin', 'source_date', 'accessed_at', 'context_note')}}}}))
+
+    def test_date_alias_preserves_value_citations_and_input_without_changing_permissions(self):
+        value = {'sources': [{'id': 's1', 'file': 'source.txt', 'origin': 'Supplied notes',
+                             'date': '2026-10-01', 'accessed_at': '2026-10-30'}],
+                 'facts': [{'text': 'Synthetic claim', 'citations': [{'source': 's1', 'quote': 'Exact text'}]}]}
+        before = copy.deepcopy(value)
+        checked, problems = contract.source_metadata(value, self.runtime)
+        self.assertFalse(problems)
+        self.assertEqual(checked['sources'][0]['source_date'], '2026-10-01')
+        self.assertNotIn('date', checked['sources'][0])
+        self.assertEqual(checked['facts'], value['facts'])
+        self.assertEqual(value, before)
+
+    def test_conflicting_empty_or_nontext_dates_require_author_correction(self):
+        for date, canonical in [('2026-10-01', '2026-09-01'), ('', None), (123, None)]:
+            value = {'sources': [{'id': 's1', 'date': date,
+                                 **({'source_date': canonical} if canonical else {})}]}
+            checked, problems = contract.source_metadata(value, self.runtime)
+            self.assertTrue(problems)
+            self.assertEqual(checked, value)
+
+    def test_unknown_metadata_is_refused_without_silently_discarding_it(self):
+        value = {'sources': [{'id': 's1', 'invented': 'Keep for author correction'}]}
+        checked, problems = contract.source_metadata(value, self.runtime)
+        self.assertIn('invented', ' '.join(problems))
+        self.assertIn('resubmit within this job', ' '.join(problems))
+        self.assertEqual(checked, value)
+
+    def test_malformed_source_returns_submission_feedback_instead_of_crashing(self):
+        value = {'schema': 2, 'sources': ['Not a source object'], 'facts': []}
+        problems, _, _, _ = contract.check_json(json.dumps(value), {
+            'runtime': self.runtime, 'research_mode': 'evidence', 'task': {}, 'captures': []})
+        self.assertIn('Return each source as an object.', problems)
+
+
 class HelperAnswerTests(unittest.TestCase):
     """Harness Research 1.0.1 exits 1 for a needs-revision review and stale evidence."""
 
@@ -137,6 +181,9 @@ def helper_runtime(folder):
     (folder / 'references').mkdir(parents=True)
     for name in ('investigate.md', 'synthesize.md', 'studio-handoff.md', 'review-synthesis.md'):
         (folder / 'references' / name).write_text('Synthetic guidance: ' + name)
+    (folder / 'references/synthesis.schema.json').write_text(json.dumps({'$defs': {'source': {'properties': {
+        key: {} for key in ('id', 'origin', 'title', 'publisher', 'file', 'permission', 'context',
+                           'context_note', 'source_date', 'accessed_at', 'version', 'original_file')}}}}))
     return folder
 
 

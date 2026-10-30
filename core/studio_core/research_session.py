@@ -382,6 +382,8 @@ class Workflow:
                     value = json.loads(text)
                     if not isinstance(value.get('sources'), list) or not isinstance(value.get('facts'), list):
                         raise ValueError('Return captured sources and facts as arrays.')
+                    value, problems = rc.source_metadata(value, self.runtime)
+                    if problems: raise ValueError(' '.join(problems))
                     value, problems, _ = rc.citation_sources(value, captures)
                     problems += rc.uncaptured(value['sources'], captures)
                     if problems: raise ValueError(' '.join(problems))

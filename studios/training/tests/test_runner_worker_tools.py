@@ -1223,6 +1223,10 @@ class ResearchCitationTests(JobCase):
     def test_what_the_helper_refuses_is_said_before_the_job_ends(self):
         runtime = self.job.parent / 'runtime'
         (runtime / 'scripts').mkdir(parents=True)
+        (runtime / 'references').mkdir()
+        (runtime / 'references/synthesis.schema.json').write_text(json.dumps({'$defs': {'source': {'properties': {
+            key: {} for key in ('id', 'origin', 'title', 'publisher', 'file', 'permission', 'context',
+                               'context_note', 'source_date', 'accessed_at', 'version', 'original_file')}}}}))
         (runtime / 'scripts' / 'harness-research.mjs').write_text(
             "import fs from 'node:fs';\nimport path from 'node:path';\n"
             "const a = process.argv.slice(2), get = n => a[a.indexOf(n) + 1];\n"

@@ -871,7 +871,7 @@ def view(engine, root) -> dict:
                  if found.next.kind == 'gate' else sentence)
     plan = desk.document(root, session, 'research-plan')
     questions = plan.get('questions') or []
-    listed = engine.documents.listed(root) if record.get('documents') else ()
+    listed = engine._document_entries(root, record) if record.get('documents') else ()
     jobs = (record.get('drafts') or {}).get('jobs') or ()
     return {
         **({'execution': record.get('execution'), 'saved_status': record.get('migration_saved_status')} if record.get('unfinished_migration') else {}),

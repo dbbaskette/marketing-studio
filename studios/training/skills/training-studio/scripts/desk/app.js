@@ -804,10 +804,10 @@ function measuredTime(run) {
   return make('p', 'quiet measured-time', parts.join(' · '));
 }
 
-function researchActivity(run) {
-  if (run.research_progress && typeof StudioResearch !== 'undefined') return StudioResearch.progress(run.research_progress, {timing: run.timing});
+function researchActivity(run, controls = null) {
   const research = run.research_progress;
   if (!research || research.phase === 'complete') return null;
+  if (typeof StudioResearch !== 'undefined') return StudioResearch.progress(research, {timing: run.timing, controls});
   const names = { investigate: 'Investigating', synthesize: 'Combining findings', review: 'Independent check' };
   const node = add(card(names[research.phase] || 'Research'),
     make('p', 'quiet', 'Completed research areas are kept for retry.'));

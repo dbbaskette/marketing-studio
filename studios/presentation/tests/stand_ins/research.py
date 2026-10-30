@@ -50,6 +50,9 @@ def stand_in(runtime=None) -> tool.Research:
     (runtime / 'scripts/lib/synthesis-cli.mjs').write_text('// Synthetic synthesis capability\n')
     for name in ('investigate.md', 'synthesize.md', 'studio-handoff.md', 'review-synthesis.md'):
         (runtime / 'references' / name).write_text('Synthetic guidance: ' + name)
+    (runtime / 'references/synthesis.schema.json').write_text(json.dumps({'$defs': {'source': {'properties': {
+        key: {} for key in ('id', 'origin', 'title', 'publisher', 'file', 'permission', 'context',
+                           'context_note', 'source_date', 'accessed_at', 'version', 'original_file')}}}}))
     result = tool.Research(runtime=runtime, run=SynthesisStandIn())
     result._fixture = holder
     return result

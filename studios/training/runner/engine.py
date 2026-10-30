@@ -760,6 +760,11 @@ class Engine(Reviewing):
         """Every copy the training asks for, with why one could not be made."""
         return self.copies.wanted(root, (record.get('copies') or {}).get('problems') or {})
 
+    def _document_entries(self, root: Path, record: dict) -> list[dict]:
+        """Legacy uploads and verified captures already confirmed on the Start form."""
+        return [*self.documents.listed(root),
+                *research_sources.document_entries(root, record.get('research_inputs'))]
+
     def _survey(self, root: Path, record: dict, copies=None) -> pipeline.Survey:
         """Where a training is, with its copies and the person's documents looked at.
         `copies` saves looking at the copies again when the caller just has."""
@@ -771,14 +776,14 @@ class Engine(Reviewing):
             source_index = home.read_json(root / documents_kept.INDEX, {}) if record.get('documents') else {}
             supplied = source_index.get('documents', [])
             return pipeline.survey(root, record, self._wanted(root, record) if copies is None else copies, supplied, None)
-        supplied = self.documents.listed(root) if record.get('documents') else ()
+        supplied = self._document_entries(root, record) if record.get('documents') else ()
         copies = self._wanted(root, record) if copies is None else copies
         return pipeline.survey(root, record, copies, supplied, self._deck_here(root, record))
 
     def _survey_files(self, root: Path, record: dict) -> pipeline.Survey:
         """Where a training is, from its files alone: what this computer has for a deck is
         not looked at, so no tool is run and nothing is asked online."""
-        supplied = self.documents.listed(root) if record.get('documents') else ()
+        supplied = self._document_entries(root, record) if record.get('documents') else ()
         return pipeline.survey(root, record, self._wanted(root, record), supplied, None)
 
     def _deck_here(self, root: Path, record: dict | None = None) -> dict | None:
@@ -6747,7 +6752,7 @@ class Engine(Reviewing):
         given = record.get('documents')
         if not given:
             return None
-        added = self.documents.listed(root)
+        added = self._document_entries(root, record)
         types, waiting = list(self.documents.accepts()), found.next.kind == 'documents'
         note = []  # the page itself says where documents are kept
         if '.pdf' in self.documents.TYPES and '.pdf' not in types:
