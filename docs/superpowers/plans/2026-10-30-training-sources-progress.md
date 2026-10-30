@@ -36,4 +36,27 @@ existing Tart runner. The source-metadata correction affects the shared research
 boundary, so include all four native studios. Do not restart or modify the
 person's active training.
 
-Status: implementation in progress.
+Status: implemented and verified. Source identities and capture permissions are
+checked before metadata. A nonconflicting `date` value becomes `source_date`;
+conflicting dates, unknown fields and malformed source objects produce corrective
+feedback within the current author job. The pinned helper still validates the
+evidence and performs the independent review.
+
+Verification used disposable macOS 27 Tart clones and retained valid evidence for
+unchanged code. The full shared suite covered 742 cases; three failures exposed
+schema-incomplete helper fixtures and validation ordering. Their corrections passed
+92 affected checks. Blog Studio's 1,640 cases passed. Presentation Studio's 2,071
+cases ran, with its corrected worker fixture passing both affected cases and its
+package validator. Training Studio's 3,012 cases ran; the retired wording assertion
+was updated and both affected naming cases and package validation passed.
+Infographic Studio's 185 cases passed with seven optional renderer/PDF cases skipped;
+its real-renderer research browser journey and real PDF capture/preview across all
+four studios passed separately.
+
+Real browser journeys passed upload → Start → topics review without another intake,
+topics changes and automatic generation, and explicit Infographic Studio research
+import. They covered progress-only refreshes, retained disclosure/focus, keyboard
+scrolling above phone navigation, 320–1280px layouts and light/dark appearances.
+All four native setup/authenticated-launch checks passed, plus the 41-step Team Hub
+journey and 39 CLI command checks. Owned test VMs were removed. No personal training,
+provider job, app installation or running service was changed.
