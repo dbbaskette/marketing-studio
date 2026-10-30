@@ -181,6 +181,17 @@ elif [[ "${1:-full}" == bundles ]]; then
   bundle="$(find dist -maxdepth 1 -name 'marketing-studio-*-macos-arm64.zip' -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A real Apple Silicon platform bundle is required.' >&2; exit 1; }
   "$python" scripts/ci/bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/bundle-acceptance.log"
+elif [[ "${1:-full}" == yoodli-pdf ]]; then
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/source-picker-graphics" --cache "$work/source-picker-cache")"
+  mkdir -p "$work/source-picker-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/source-picker-browser/"
+  touch "$work/source-picker-npm-user.conf" "$work/source-picker-npm-global.conf"
+  env HOME="$work/source-picker-browser-home" NPM_CONFIG_USERCONFIG="$work/source-picker-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/source-picker-npm-global.conf" \
+    npm ci --prefix "$work/source-picker-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/source-picker-tools.log" 2>&1
+  export NODE_PATH="$work/source-picker-browser/node_modules" PYTHON="$python" TRAINING_PLAN_UI_RESULTS="$results_dir/source-picker-ui"
+  if command -v pdftotext >/dev/null; then export STUDIO_TEST_REAL_PDF=1; fi
+  node studios/training/tests/ui/yoodli_pdf.cjs 2>&1 | tee "$results_dir/source-picker-browser.log"
+  bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == training-plan ]]; then
   # Exercise the real page/engine before the complete native suite, so a browser
   # regression does not waste a full-suite run. All authors and settings are fixtures.

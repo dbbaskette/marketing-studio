@@ -1,92 +1,80 @@
 ![Marketing Studio — one home for your studios](docs/assets/marketing-studio-header.png)
 
-<p align="center">
-  <strong>From your first idea to a blog, a deck, a training, or an infographic.</strong><br>
-  Set up your tools once. Open the studio you need. Keep control of every decision.
-</p>
+# Marketing Studio
 
-<p align="center">
-  <a href="https://github.com/dbbaskette/marketing-studio/releases/latest"><strong>Download</strong></a> &nbsp; • &nbsp;
-  <a href="#get-started">Get started</a> &nbsp; • &nbsp;
-  <a href="#a-command-for-everyday-work">CLI guide</a> &nbsp; • &nbsp;
-  <a href="docs/architecture.md">How it works</a>
-</p>
+A local workbench for technical and product marketing: write or polish a blog,
+build a presentation, develop training, or explain an idea with an infographic.
+Bring the material you have. Let your chosen assistant do the research and
+production work, then review the decisions that matter.
 
-<p align="center">
-  <img alt="Local first" src="https://img.shields.io/badge/Local-first-0a66e4?style=flat-square">
-  <img alt="Python 3.11 or newer" src="https://img.shields.io/badge/Python-3.11%2B-3776ab?style=flat-square">
-  <img alt="macOS and Linux" src="https://img.shields.io/badge/macOS_%26_Linux-supported-1b7032?style=flat-square">
-  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/License-MIT-565a69?style=flat-square"></a>
-</p>
+Marketing Studio brings four independently runnable studios together with shared
+settings, source intake and launching. Your projects stay on your computer.
+Assistant jobs use your signed-in Codex or Claude Code; linked documents and
+optional external research use the services you choose.
 
----
+[Download an installer](https://github.com/dbbaskette/marketing-studio/releases/latest)
+· [Installation guide](docs/installation.md)
+· [Shared settings](docs/shared-setup.md)
+· [Architecture](docs/architecture.md)
 
-## Your studios. One place to begin.
+## Choose the job
 
-Marketing Studio is the home for your writing and presentation tools. It holds
-shared settings and opens the right studio for the job. Each studio also has its
-own launcher and can be installed on its own.
+| Studio | Start with | Work toward |
+| --- | --- | --- |
+| **[Blog Studio](studios/blog)** | A topic, an outline, pasted/uploaded writing, or a Google Doc | A new blog or a polished existing draft. Edit locally, proofread/copy edit/humanize, check facts when needed, and prepare suggestions or comments for the author. |
+| **[Presentation Studio](studios/presentation)** | An idea, reference material or an existing deck | An editable branded deck. Review slide titles, visible text, order and speaker notes before approving design. |
+| **[Training Studio](studios/training)** | A topic, audience, desired depth and reference material | A teaching plan, learner guide, reference brief, deck and practice, at the levels you select. Review the proposed topics once, request changes, then build the selected materials. Optional Yoodli preparation includes its required brief and practice scenarios. |
+| **[Infographic Studio](studios/infographic)** | Supplied documents, notes, links or data | A visual page with diagrams, charts, concise labels and optional artwork. Choose a story, refine the page and approve its exports. |
 
-| You want to… | Open | What you work on |
-| :--- | :--- | :--- |
-| Turn a topic, notes or a draft into a finished blog | **[Blog Studio](studios/blog)** | One writing desk: notes per section, selection edits, versions, and finishing tools before publishing |
-| Build a researched presentation in your brand | **[Presentation Studio](studios/presentation)** | New decks, existing decks, storyboards, and slide reviews |
-| Teach a topic at the right level | **[Training Studio](studios/training)** | Research, teaching plans, learner materials, decks, and practice |
-| Explain supplied information in one page | **[Infographic Studio](studios/infographic)** | Story choices, editable labels/charts, explanatory artwork, review and local exports |
+You can use one studio on its own. Installing or opening Marketing Studio does not
+require you to use all four, and opening a studio does not start an assistant job.
 
-Infographic Studio 0.1.0 is a first-release candidate. Live provider and owner
-illustration acceptance remain [explicit release gates](studios/infographic/docs/acceptance.md);
-it is not yet part of a published release. Its initial acceptance target is macOS
-ARM64, with other renderer/platform combinations tracked separately.
+Infographic Studio is implemented in the source tree, including visual pages,
+file/Google reference intake and local exports. Live image-provider and owner
+visual acceptance remain release gates; a code merge is not a published release.
+See [release readiness](docs/infographic-first-release-readiness.md) and the
+[acceptance checklist](studios/infographic/docs/acceptance.md) for the current limits.
 
-**Your choices carry across the studios:** your name, assistant, work location,
-brand, delivery format, and sharing preference. All four studios read the shared
-assistant, model and reasoning settings.
-Slide previews and your brand skill source are shared too: give a Git repository
-address or choose an installed folder. A repository does not require a folder path.
-Research and slide tools install at the exact, checksum-verified versions locked in
-`pins/companions.json`. An installed copy that meets the minimum requirement
-(`>=1.0.0` for Harness Research and `>=0.16.0` for Harness Slides) is kept, so a
-source install with current tools needs no network. Newer releases are adopted only
-when the locks are refreshed and the research contract tests pass again.
-Downloadable bundles include the same exact versions and install offline; opening a
-studio never updates its tools automatically.
+## Bring your sources
 
-Quick, Main, and Complex model profiles can be configured once in Shared settings. Blog Studio, Presentation Studio and Training Studio save resolved task profiles with new work. Infographic Studio snapshots the shared assistant/model/effort; its Gemini image model is a separate native default. [See model routing](docs/shared-setup.md#models-by-task).
+The studios share a research source panel. Add web URLs, Google Doc links,
+uploaded PDF/Word/text/Markdown/HTML files, or pasted text. Inspect captured text,
+choose Google Doc tabs and resolve unreadable sources before starting research.
+Infographic Studio also accepts CSV data through its native intake.
+
+**External search is a choice.** Use only the material you supplied, or allow
+additional public research and optionally restrict it to approved sites. Google
+links use your existing sign-in and shared account defaults. Source capture does
+not write to the original document.
+
+PDFs need readable text and an installed `pdftotext` reader (provided by Poppler).
+A scan may contain only pictures; encrypted or damaged files may be unreadable.
+The studios explain extraction gaps rather than inventing missing text or silently
+sending the file to an OCR service. See [document tools](docs/installation.md#optional-capabilities).
+
+Research uses the shared Harness Research workflow: up to three investigators,
+followed by synthesis and an independent check. Progress and checked evidence are
+saved so recovery can reuse completed work. Existing saved projects retain the
+workflow and tool contract they started with. See [research and compatibility](docs/research-synthesis.md).
 
 ## Get started
 
-### 1. Get the installer
+### Install
 
-**[Choose a download for your computer](https://github.com/dbbaskette/marketing-studio/releases/latest)**.
-Look for a versioned platform bundle such as `marketing-studio-4.1.0-macos-arm64.zip`.
-Choose `macos-arm64` for Apple Silicon, `macos-x64` for an Intel Mac, or the matching
-`linux-arm64` / `linux-x64` build for a Linux computer using glibc.
+Download a bundle for your operating system and processor from
+[Releases](https://github.com/dbbaskette/marketing-studio/releases/latest), unzip
+it, and run this from the unpacked folder:
 
-Unzip it, open Terminal, and run `bash install.sh` from the unpacked folder.
-A suite bundle installs the studios listed in its manifest. Current source builds can include all four studios.
-Each individual studio download has the same root `install.sh` and installs
-only that studio. To build your own downloads, use the matching root `package.sh`;
-see [package and install the studios](docs/packaging.md).
-This works on macOS and Linux without opening a `.command` file. The macOS
-Finder launcher, **installer/Install Marketing Studio.command**, is also available.
+```sh
+bash install.sh
+```
 
-**Platform bundles bring private Python and Node plus the selected pipelines’ dependencies.** Infographic Studio-only builds add a pinned renderer and omit Research/Slides companions; its pipeline has no image SDK or frontend build.
-There is no npm install or compiler setup. The runtimes stay inside the installed
-version, so you can delete the downloaded folder afterward.
+Platform bundles include private Python/Node runtimes and the selected studios'
+dependencies. Smaller source installers fetch their prerequisites during setup.
+Bring Git and a signed-in Codex or Claude Code assistant. Google access, brand
+skills and PDF/slide-preview tools depend on the work you choose.
 
-Bring **Git and one signed-in assistant: Codex or Claude Code**. Setup reuses what
-is installed and offers to install Git if missing. It detects one assistant; use
-`--target codex` or `--target claude` to choose explicitly. Assistant software and
-sign-in stay under your control. Google delivery and slide preview tools are optional;
-see the [installation guide](docs/installation.md) for their requirements.
-
-If a release lists only the smaller `*-installer.zip` downloads, those are source
-installers: they offer to install Python/Node and fetch shared tools during setup.
-The platform bundles are built separately for each operating system and processor.
-
-<details>
-<summary><strong>Prefer to install from source?</strong></summary>
+To install from source instead:
 
 ```sh
 git clone https://github.com/dbbaskette/marketing-studio.git
@@ -94,151 +82,84 @@ cd marketing-studio
 bash install.sh
 ```
 
-Install just the studio you want:
+Choose a subset with `--studios blog`, `--studios presentation`,
+`--studios training` or `--studios infographic`. Use `--target codex` or
+`--target claude` to select an assistant. Existing work and settings stay in place.
+The [installation guide](docs/installation.md) covers offline options, platforms,
+optional tools and unattended setup; [packaging](docs/packaging.md) covers building
+suite or individual-studio downloads.
 
-```sh
-bash install.sh --studios blog --yes
-bash install.sh --studios presentation --yes
-bash install.sh --studios training --yes
-```
+### Set up once
 
-Use `--target codex` or `--target claude` to choose one assistant. Add `--yes`
-for unattended setup. Assistant CLIs are left untouched by default. Use
-`--companions skip` to skip shared tools. `--prerequisites skip` provides an
-offline path with no package-manager or assistant installs. Existing work and
-settings stay in their current locations.
+Run `marketing-studio` or open **Open Marketing Studio.command**. The command is
+installed in `~/.local/bin`; use `~/.local/bin/marketing-studio` if your shell has
+not added that directory to `PATH`.
 
-</details>
+Choose your name and assistant, a local work folder or shared repository, and
+optional brand/delivery settings. Setup prepares workspaces without starting an
+assistant job. You can complete the same setup in any individual studio; the other
+studios reuse it, including studios installed later.
 
-### 2. Open Marketing Studio
+Shared choices include assistant/model/reasoning settings, Quick/Main/Complex task
+profiles, Google account, brand source, delivery, research sites and sharing
+preferences. Existing projects retain saved choices. Changes to shared settings
+never move an existing workspace automatically.
 
-Double-click **Open Marketing Studio.command** in your **Applications** folder,
-or use the installed command:
+### Make something
 
-```sh
-marketing-studio
-```
+Open a studio and describe the result you want. Add the references it should use.
+The assistant handles the intervening work and shows progress, saved results and
+any decision it needs from you.
 
-The installer puts it in `~/.local/bin`. If your shell cannot find it, run
-`~/.local/bin/marketing-studio`, or add that folder to your current terminal:
+- **Blog Studio:** polish a document directly, or develop a new blog. Research is
+  optional for proofreading and copy editing. Keep edits local until you choose
+  a Google update, suggestions/comments or another delivery action.
+- **Presentation Studio:** ask for changes to the slide text or choose
+  **Approve text & design deck**. Then refine the designed slides.
+- **Training Studio:** review **Here’s what this training will cover**, ask for
+  changes, or choose **Build the training**. It creates your selected materials
+  without a sample lesson or a second default slide-text checkpoint.
+- **Infographic Studio:** review the captured information and story choices,
+  refine the visual page, and explicitly approve the version you want to export.
 
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-```
+Approving a plan is separate from marking finished materials ready or publishing.
+Real missing inputs, limits and requested design walkthroughs can still need you.
 
-Leave the terminal open while you work. Press **Ctrl-C** to stop Marketing Studio
-and the studio processes it opened. Studios opened with their own launchers keep
-running independently. To keep it running without a terminal, use
-`marketing-studio start` instead; see [Start and stop in the background](#start-and-stop-in-the-background).
-
-### 3. Make it yours
-
-The first visit opens a short setup:
-
-1. **You and your assistant.** Your name, assistant, and optional model settings.
-2. **Your workspace.** Local Git on this computer, or an existing shared repository.
-3. **Brand and delivery.** An optional brand skill, slide previews, and your preferred file format.
-
-Each step saves as you go. Finishing setup prepares installed studios without
-starting an assistant job. Later visits take you straight to the studio launch
-page. Open a studio and start your first piece of work there.
-
-Complete setup in Marketing Studio **or any individual studio**. The same setup form
-is available in each. Once finished, opening another studio takes you straight to
-its home page, including a studio installed later. Existing workspaces stay in place.
-
-## A command for everyday work
+## Everyday commands
 
 ```sh
 marketing-studio open blog
 marketing-studio open presentation
 marketing-studio open training
+marketing-studio open infographic
 ```
 
-| Command | What happens |
-| :--- | :--- |
-| `marketing-studio` | Opens the home page |
-| `marketing-studio open infographic` | Opens Infographic Studio and preserves its local workspace |
-| `marketing-studio open presentation` | Opens Presentation Studio; reuses it if already open through Marketing Studio |
-| `marketing-studio serve` | Runs the home server in this terminal without opening a browser, for example over SSH |
-| `marketing-studio serve --lan` | Enables private phone access on your trusted local network |
-| `marketing-studio start --all --lan` | Starts Marketing Studio in the background with every installed studio and phone access |
-| `marketing-studio stop --all` | Stops every studio, then Marketing Studio |
-| `marketing-studio restart --ts` | Restarts Training Studio; `--all` restarts Marketing Studio too |
-| `marketing-studio setup` | Opens shared settings, or first-run setup |
-| `marketing-studio status` | Shows each studio's version and folder, marks Git checkout copies, and says whether shared setup is complete |
-| `marketing-studio doctor` | Checks the tools on this computer, including that your assistant is installed, without contacting providers |
-| `marketing-studio --help` | Shows the command guide |
-| `marketing-studio --version` | Shows the installed suite version |
+| Command | Purpose |
+| --- | --- |
+| `marketing-studio` | Open the home page; keep this terminal open while working |
+| `marketing-studio start --all` | Run in the background with all installed studios |
+| `marketing-studio start --all --lan` | Also enable private phone access on trusted Wi-Fi |
+| `marketing-studio restart --all` | Restart the running studios and home server, preserving phone access and port |
+| `marketing-studio restart --ts` | Restart Training Studio only |
+| `marketing-studio stop --all` | Stop the studios and home server |
+| `marketing-studio setup` | Open shared settings or initial setup |
+| `marketing-studio status` | Show installed studios, locations and setup status |
+| `marketing-studio doctor` | Check local prerequisites without contacting providers |
+| `marketing-studio --help` | Show all commands and options |
 
-For scripts, add `--json` to `status`, `doctor`, `start`, `stop` or `restart`.
+Select studios with `--bs`, `--ps`, `--ts` and `--is`. An active assistant job blocks
+a normal stop/restart so its work is not interrupted. Starting a session prints
+private browser links; `--json` output omits keys. See [lifecycle commands](docs/installation.md)
+and [phone access](docs/local-network.md).
 
-## Start and stop in the background
+For phone use, keep the phone and computer on the same trusted network and open
+the private phone link printed by `start --all --lan`. Launch the studio there.
+Your work and signed-in tools stay on the computer. Private links grant access to
+those tools; do not expose the HTTP ports to the public internet.
 
-`marketing-studio start` runs Marketing Studio in the background, so no terminal
-has to stay open. Choose studios to start with it, or `--all` for every installed one:
+## Local work and optional team sharing
 
-```sh
-marketing-studio start                 # Marketing Studio only
-marketing-studio start --bs --ts       # also Blog Studio and Training Studio
-marketing-studio start --all --lan     # everything, with phone access
-marketing-studio stop --ps             # Presentation Studio only
-marketing-studio stop --all            # every studio, then Marketing Studio
-marketing-studio restart --all         # same phone access and port; restarts the studios that were running
-```
-
-Choose studios with `--bs` (Blog Studio), `--ps` (Presentation Studio), `--ts`
-(Training Studio) and `--is` (Infographic Studio); `-bs`, `--blog` and the like also work, as does putting the
-command last: `marketing-studio --all stop`. In a terminal, `start` prints the
-private link, and the phone link when phone access is on. Through a pipe or with
-`--json` it prints JSON without any key. Its output goes to `home.log` in the
-Marketing Studio data folder.
-
-A studio that is running an assistant job is not stopped or restarted: its work so
-far would be lost. The command names the job and how long it has run, stops
-nothing, and exits with status 1. Wait for the job, or add `--force` to stop it anyway.
-`--force` is only needed while an assistant is working; between steps a run is paused
-safely and resumes when its studio starts again.
-
-If Marketing Studio stopped abruptly and left a studio running, the next start
-stops it, unless it is still running an assistant job; `marketing-studio status`
-then shows it, and `marketing-studio stop --all` stops it. Only studios this
-Marketing Studio data folder recorded are ever stopped.
-
-## Open it on your phone
-
-Connect your phone and computer to the same **trusted Wi-Fi**, then start:
-
-```sh
-marketing-studio start --all --lan
-```
-
-Or keep it in this terminal with `marketing-studio serve --lan`.
-
-Open the **private phone link** printed in the terminal. Once setup is complete,
-Marketing Studio also shows it under **Continue on your phone**. Launch Blog Studio,
-Presentation Studio, Training Studio or Infographic Studio there; their links work on your phone too.
-The layouts adapt to a narrow screen, with touch controls and readable forms.
-Your work, Git repositories, and signed-in assistant stay on the computer.
-
-Network access is off by default. If Marketing Studio is already running, turn it
-on with `marketing-studio restart --all --lan`, or stop its terminal with **Ctrl-C**
-first. Stopping Marketing Studio (`marketing-studio stop --all`, or Ctrl-C in its
-terminal) closes its network listeners and studios. A new session gets new links.
-Use only a trusted network: HTTP is unencrypted, and anyone with a private link can
-use that studio with your local account's permissions. Do not forward these ports
-to the internet.
-
-For address selection, firewall help, and troubleshooting, see
-[local-network access](docs/local-network.md).
-
-## Keep your work local. Share when you choose.
-
-**Local storage is the default. A remote repository is optional.** Blog Studio,
-Presentation Studio and Training Studio record decisions in local Git. Infographic
-Studio keeps immutable local revisions and exports. None requires a GitHub account.
-
-With the default work folder, your projects live here:
+By default, projects live under your chosen work folder:
 
 ```text
 ~/Studios/
@@ -248,130 +169,62 @@ With the default work folder, your projects live here:
 └── infographic-workspace/projects/
 ```
 
-For collaboration in Blog Studio, Presentation Studio and Training Studio, choose
-an existing repository in setup. Each keeps its own clone and content folder. Choose whether to share after each
-decision or only when asked. Setup never changes a repository's visibility.
-Infographic Studio's first release stays local even when a team repository is
-configured; its card explains this and does not offer to connect or push.
+Blog Studio, Presentation Studio and Training Studio keep decisions and versions
+in local Git. They can each join an existing shared repository using their own
+clone and content folder. Sharing can happen after decisions or only when asked.
+Infographic Studio keeps local revisions and exports; its Team library can share
+selected files through a configured repository.
 
-Already using a studio? Its existing workspace stays where it is. Shared choices
-are used for new work; existing items retain their saved choices.
+A changed shared repository setting preserves existing workspaces. Use a studio's
+explicit Connect/Join action to move into the configured team workflow. Setup does
+not change repository visibility or publish your project. Infographic exports,
+Google delivery and publishing each have their own explicit actions.
 
-The Blog Studio, Presentation Studio and Training Studio cards say where their work lives: *Connected
-to* the shared repository, *Local Git on this computer*, or *Not connected to the
-shared repository*. Changing the workspace setting never moves a studio by itself.
-When a studio keeps a different workspace, its card offers **Connect**: the studio
-joins the repository through its own join, carries its blogs, trainings or decks
-over, commits and pushes them, and leaves the earlier workspace in place. A studio
-that is working on an assistant job is not connected until that job is done. An
-empty repository works too: the first studio to connect creates the branch with its
-folder, and the others add theirs beside it.
+Shared preferences live in `~/.config/studios-config.json`. Authentication stays
+with your assistant, Git and Google, outside that preferences file.
 
-## Install, update, or step back
+## Update or troubleshoot
 
-All studios ship from this repository with one shared companion pin set. Platform
-bundles include the full suite or a selection for an individual studio.
-You can install a single studio and use its own launcher without opening Marketing
-Studio first.
-
-To update, download and unpack a newer release, then run:
+Download and unpack a newer release, then use the folder containing `installer/`:
 
 ```sh
 marketing-studio update --from /path/to/unpacked-release --yes
-```
-
-Use the folder containing `installer/`, rather than the ZIP file. Close running
-studios before updating; the installer refuses to interrupt active work.
-
-```sh
 marketing-studio rollback --yes
-marketing-studio uninstall --yes
 ```
 
-Rollback restores the recorded prior launchers and installation pointers.
-Uninstall removes the Marketing Studio launcher and keeps the independently
-installed studios, project content, and settings.
+Opening a studio never installs or updates tools automatically. Companion versions
+are checksum-locked in [`pins/companions.json`](pins/companions.json). Compatible
+installed copies are reused (`>=1.0.0` for Harness Research and
+`>=0.16.0` for Harness Slides). Your brand skill is configured separately.
 
-## Need a hand?
+If an assistant cannot start, complete its sign-in in your own terminal. If a tool
+is missing, use `marketing-studio doctor` and the installation guide. If a studio
+shows older controls after an update, restart it when no assistant job is active
+and reload the page. The launch error names its log file when a studio cannot open.
 
-| What you see | What to do |
-| :--- | :--- |
-| A studio says **Not installed** | Run the installer for that studio. For a custom checkout, set its folder in **Shared settings → Studio installations**. |
-| Git asks who you are | Set `git config --global user.name "Your Name"` and `git config --global user.email "you@example.com"`. |
-| A tool is missing | Run `marketing-studio doctor`, then rerun the downloaded setup script to install missing prerequisites. |
-| A browser cannot open, for example over SSH | Marketing Studio keeps running and prints why with its private link. Open that link in a browser, or start with `marketing-studio serve`. |
-| An assistant cannot start | Open that CLI in your own terminal and complete its sign-in. |
-| A studio does not open | The message names its launch log, `~/.local/share/marketing-studio/logs/<studio>.log`, and shows its last lines. The launch before it is kept as `<studio>.previous.log`. |
-| Another studio changed a setting | Reload the settings page so you can review the current value before saving. |
+## For contributors
 
-Content choices such as a blog’s tone, a deck’s audience, or a training’s level
-belong to the work you create. Time and spending limits, notifications, and update
-preferences have built-in defaults and remain optional studio settings. Missing
-programs, assistant sign-in, or brand skills appear in the studio’s computer check;
-finishing setup does not install software or sign you into services. See the
-[shared setup guide](docs/shared-setup.md) for the settings shared across studios.
-
-Shared preferences live in `~/.config/studios-config.json`. Sign-in stays with
-your assistant, Git, and Google. Marketing Studio does not store authentication
-tokens in that preferences file.
-
-<details>
-<summary><strong>For contributors: layout, tests, and migration details</strong></summary>
+Python 3.11+, standard-library application code, browser JavaScript and no frontend
+build step. Research and slide engines remain separate companion tools.
 
 ```text
-marketing_studio/    Home page and user CLI
-studios/blog/       Blog Studio and its native tests
-studios/presentation/
-studios/training/
-studios/infographic/
-core/studio_core/    Shared infrastructure
-ui-kit/             Shared page assets
-pins/               One companion version set
-installer/          Suite and subset installation
+marketing_studio/    Home page, shared setup and launcher CLI
+studios/            Four independently runnable studio pipelines and tests
+core/studio_core/    Shared settings, sources, research and runner infrastructure
+ui-kit/             Shared browser components and Golden Gate-inspired styling
+installer/          Suite/subset installation and platform packaging
+pins/               Verified companion versions
 ```
 
-Python uses the standard library. There is no frontend build step. Node.js is
-used by companion tools and JavaScript checks.
+Start with the [architecture](docs/architecture.md), [testing guide](docs/testing.md),
+[packaging guide](docs/packaging.md), [saved-work compatibility](docs/saved-work-compatibility.md)
+and [source provenance](docs/provenance.md). Tests use disposable workspaces and
+synthetic material, never personal projects or live provider jobs.
 
 ```sh
 bash scripts/ci/check.sh
-python3 scripts/ci/native_acceptance.py
-python3 scripts/ci/native_launch_acceptance.py
 bash scripts/ci/tart-macos.sh --dry-run
-bash scripts/ci/tart-macos.sh
 ```
 
-Read the [architecture](docs/architecture.md), [installation guide](docs/installation.md), [testing guide](docs/testing.md),
-[migration plan](docs/migration-plan.md), and [source provenance](docs/provenance.md).
-The [Infographic Studio specification](docs/infographic-studio-spec.md)
-defines the first-release candidate for single-page visual explanations from supplied information.
-Its [implementation plan](docs/infographic-studio-implementation-plan.md) includes
-delivery gates, dependencies, acceptance criteria, and the GitHub epic backlog.
-The [execution ledger](docs/superpowers/plans/2026-10-28-infographic-first-release.md)
-records implementation evidence and outstanding acceptance gates.
-Track the epics and tasks in [the Infographic Studio roadmap](https://github.com/dbbaskette/marketing-studio/issues/136).
-Use `presentation-studio-package` to regenerate the local Apple Silicon
-Presentation Studio bundle with Tanzu Brand and its tools; the
-[local packaging guide](docs/local-presentation-bundle.md) covers CLI setup and
-local or Git repository configuration for the companion skills and brand.
-The studios' Git histories are preserved under their new directories. Unfinished
-Blog Studio research work is preserved on a separate migration branch.
-
-</details>
-
----
-
-<p align="center"><strong>Pick a studio. Make something useful.</strong></p>
-
-Research uses a shared purpose-led report and brief, independently reviewed before
-writing or slide work continues. See [research compatibility and the shared helper](docs/research-synthesis.md).
-
-## Update the source checkouts
-
-Copy `sync.cfg.sample` to the ignored `sync.cfg`, then run `bash sync.sh`.
-The config chooses the repository URLs and destination directory; the sample puts
-Marketing Studio and its related checkouts under `~/Projects/`. Missing checkouts
-are cloned, local work is preserved, and failures are reported while the other
-updates continue. See [repository sync](docs/repository-sync.md) for all options.
-
-Saved older work and its retained paths are described in [saved work compatibility](docs/saved-work-compatibility.md).
+For related source checkouts, copy `sync.cfg.sample` to ignored `sync.cfg` and run
+`bash sync.sh`; [repository sync](docs/repository-sync.md) describes the options.

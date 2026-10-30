@@ -69,6 +69,7 @@ Compare the ZIP's SHA-256 with the release checksum before opening it.
 | Capability | Additional tools | When needed |
 | --- | --- | --- |
 | Google Docs or Google Slides | gcloud and the user's Google sign-in | When choosing Google delivery or rendering |
+| PDF source documents in any studio | Poppler's `pdftotext` on the studio process's PATH | To extract selectable text locally; scanned PDFs need a readable text copy |
 | Local slide previews | LibreOffice and Poppler | When choosing local slide rendering |
 | Google slide previews | Poppler | To turn the rendered PDF into preview images |
 | Generated artwork | The selected image provider's setup | Only when requesting generated artwork |

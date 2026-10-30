@@ -121,7 +121,9 @@ const StudioResearch = (() => {
       const addLinks = button('Add links', () => this.links(), 'research-add-links');
       add(panel, add(make('div', 'research-link-entry'), links.wrap, addLinks));
       const file = make('input'); file.type = 'file'; file.multiple = true; file.hidden = true;
-      file.accept = '.pdf,.docx,.txt,.md,.markdown,.html,.htm'; file.addEventListener('change', () => this.files(file.files));
+      file.accept = '.pdf,application/pdf,.docx,.txt,.md,.markdown,.html,.htm';
+      file.setAttribute('aria-label', 'Upload source files');
+      file.addEventListener('change', () => this.files(file.files));
       const actions = add(make('div', 'bar'), button('Choose files', () => file.click(), 'research-files'),
         button(this.pasting ? 'Close pasted text' : 'Paste text', () => { this.pasting = !this.pasting; this.render(); }, 'research-paste'));
       actions.append(button('Use saved research', async () => {

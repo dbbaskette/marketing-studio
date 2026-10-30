@@ -3005,7 +3005,32 @@ class RunnerScreenTests(ScriptedPage, PageCase):
         self.assertIn('Stop', phone['buttons'])
         self.assertNotIn('More', phone['buttons'])
 
-    def test_empty_materials_and_missing_yoodli_dependencies_stay_in_the_form(self):
+    def test_one_yoodli_choice_sends_both_required_materials_and_retains_pdf_selection(self):
+        result = self.run_page(self.answers(**{'POST /api/trainings': [
+            {'status': 409, 'body': {'error': 'Fixture stopped before starting.'}}]}), [
+            {'click': 'New training'},
+            {'fill': 'A short title', 'value': 'Restart practice'},
+            {'fill': 'What should it teach?', 'value': 'Choose a safe restart strategy.'},
+            {'fill': 'Who is it for?', 'value': 'New operators'},
+            {'click': 'No deck'}, {'click': 'Make scenarios for Yoodli'},
+            {'attach': 'Add documents', 'files': [{'name': 'reference.pdf', 'text': '%PDF-synthetic'}]},
+            {'snapshot': 'ready'}, {'click': 'Start'}])
+        posted = self.posts(result)
+        self.assertEqual(len(posted), 1)
+        self.assertTrue(posted[0][1]['yoodli'])
+        self.assertEqual(posted[0][1]['materials'], ['brief', 'scenario'])
+        self.assertIn('reference.pdf', result['snapshots']['ready']['text'])
+
+    def test_turning_yoodli_off_keeps_its_visible_materials(self):
+        result = self.run_page(self.answers(), [
+            {'click': 'New training'}, {'click': 'Make scenarios for Yoodli'},
+            {'click': 'Make scenarios for Yoodli'}, {'snapshot': 'off'}])
+        selected = result['snapshots']['off']['chosen']
+        self.assertNotIn('Make scenarios for Yoodli', selected)
+        self.assertIn('Reference brief', selected)
+        self.assertIn('Practice scenarios', selected)
+
+    def test_yoodli_includes_its_materials_and_explains_removing_a_dependency(self):
         result = self.run_page(self.answers(), [
             {'click': 'New training'},
             {'fill': 'A short title', 'value': 'Restart practice'},
@@ -3013,13 +3038,16 @@ class RunnerScreenTests(ScriptedPage, PageCase):
             {'fill': 'Who is it for?', 'value': 'New operators'},
             {'click': 'No deck'}, {'click': 'Start'}, {'snapshot': 'empty'},
             {'click': 'Reference brief'}, {'click': 'Make scenarios for Yoodli'},
-            {'snapshot': 'dependency'}, {'click': 'Practice scenarios'},
+            {'snapshot': 'dependency'}, {'click': 'Practice scenarios'}, {'snapshot': 'removed'},
             {'click': 'Learner guide'}, {'snapshot': 'ready'}])
         shots = result['snapshots']
-        self.assertIn('Select Reference brief and Practice scenarios first', shots['dependency']['text'])
+        self.assertIn('Included Reference brief and Practice scenarios for Yoodli.', shots['dependency']['text'])
         self.assertIn('Choose at least one material', shots['empty']['sheet'])
         self.assertEqual(shots['empty']['focus'], 'Learner guide')
-        self.assertNotIn('Make scenarios for Yoodli', shots['dependency']['chosen'])
+        for label in ('Make scenarios for Yoodli', 'Reference brief', 'Practice scenarios'):
+            self.assertIn(label, shots['dependency']['chosen'])
+        self.assertNotIn('Make scenarios for Yoodli', shots['removed']['chosen'])
+        self.assertIn('Yoodli scenarios turned off because Practice scenarios was removed.', shots['removed']['text'])
         self.assertIn('Learner guide', shots['ready']['text'])
         self.assertEqual(self.posts(result), [])
 

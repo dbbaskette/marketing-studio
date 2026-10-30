@@ -4810,6 +4810,20 @@ function retell() {
   if (view.draft && view.draft.retell) view.draft.retell();
 }
 
+function yoodliNotice(draft, text) {
+  draft.yoodliNote = text;
+  say(byId('new-yoodli-note'), text);
+}
+
+function syncMaterialChoices(draft) {
+  for (const control of byId('sheet').querySelectorAll('.chip')) {
+    if (control.dataset.key.startsWith('material ')) {
+      control.setAttribute('aria-pressed', String(draft.materials.includes(control.dataset.key.slice(9))));
+    }
+    if (control.dataset.key === 'practice yoodli') control.setAttribute('aria-pressed', String(draft.yoodli));
+  }
+}
+
 function materialChoices(draft) {
   const node = make('div', 'chips material-choices');
   node.setAttribute('role', 'group');
@@ -4818,11 +4832,12 @@ function materialChoices(draft) {
     node.append(chip(label, draft.materials.includes(id), (selected) => {
       draft.materials = MATERIALS.map(([key]) => key)
         .filter((key) => key === id ? selected : draft.materials.includes(key));
-      // Yoodli's knowledge and scenario dependencies are explicit selections.
+      // Removing an included material is an explicit choice to stop preparing Yoodli.
       if (!selected && ['brief', 'scenario'].includes(id)) {
+        const wasOn = draft.yoodli;
         draft.yoodli = false;
-        const yoodli = Array.from(byId('sheet').querySelectorAll('.chip')).find((item) => item.dataset.key === 'practice yoodli');
-        if (yoodli) yoodli.setAttribute('aria-pressed', 'false');
+        syncMaterialChoices(draft);
+        if (wasOn) yoodliNotice(draft, 'Yoodli scenarios turned off because ' + label + ' was removed.');
       }
       say(byId('new-problem'), '');
       retell();
@@ -4866,6 +4881,9 @@ function shapeStep(draft) {
     option.disabled = true;
     option.classList.add('seg-absent');
   }
+  const yoodliNote = make('p', 'quiet field-hint', draft.yoodliNote || '');
+  yoodliNote.id = 'new-yoodli-note'; yoodliNote.setAttribute('role', 'status');
+  yoodliNote.hidden = !draft.yoodliNote;
   return [
     make('p', 'quiet', 'Choose only what you need. Research and a blueprint connect every selected material.'),
     chips('Levels', LEVELS.map((level) => [level, level]),
@@ -4875,19 +4893,20 @@ function shapeStep(draft) {
     materialChoices(draft),
     chips('Practice', [['yoodli', 'Make scenarios for Yoodli']], () => draft.yoodli,
       (value, on) => {
-        if (on && !['brief', 'scenario'].every((id) => draft.materials.includes(id))) {
-          const control = Array.from(byId('sheet').querySelectorAll('.chip')).find((node) => node.dataset.key === 'practice yoodli');
-          if (control) control.setAttribute('aria-pressed', 'false');
-          say(byId('new-problem'), 'Select Reference brief and Practice scenarios first. Yoodli uses both.');
-          draft.yoodli = false;
-          return;
+        if (on) {
+          draft.materials = MATERIALS.map(([id]) => id)
+            .filter((id) => draft.materials.includes(id) || ['brief', 'scenario'].includes(id));
         }
         draft.yoodli = on;
+        syncMaterialChoices(draft);
+        yoodliNotice(draft, on ? 'Included Reference brief and Practice scenarios for Yoodli.'
+          : 'Reference brief and Practice scenarios remain selected.');
         say(byId('new-problem'), '');
         retell();
       }, 'practice', 'Prepares Yoodli scenarios to copy into Yoodli and a reference brief to '
-        + 'upload. It needs the Reference brief and Practice scenarios. Nothing is posted to '
+        + 'upload. Includes Reference brief and Practice scenarios. Nothing is posted to '
         + 'Yoodli.'),
+    yoodliNote,
     deck,
     able ? null : make('p', 'quiet', 'A deck needs a brand skill. You can make the other '
       + 'materials now; Status explains what this computer needs for slides.'),

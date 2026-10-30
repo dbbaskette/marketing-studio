@@ -31,7 +31,7 @@ const DESK_WORDS = {
 // shared kit asks for.
 const DESK_SHEETS = ['desk-download', 'desk-copies', 'desk-kit'];
 // The files the runner reads as documents (runner/documents.py).
-const DESK_TYPES = ['.txt', '.md', '.html', '.htm', '.docx'];
+const DESK_TYPES = ['.txt', '.md', '.html', '.htm', '.docx', '.pdf'];
 // The desk's routes, as the shared kit names them: `view` is one card with its parts (the
 // whole desk is `drafts`). Note, revise, selection and the rest are served once their jobs
 // and Finishing come.
@@ -531,7 +531,7 @@ function documentsPart(draft, changed = retell) {
         changed();
         focusKey('new-documents');
       },
-      accept: DESK_TYPES.join(','), hint: DESK_WORDS.documentsHint }),
+      accept: DESK_TYPES.join(',') + ',application/pdf', hint: DESK_WORDS.documentsHint }),
     files.length ? add(make('div', 'card-part'), make('p', 'row-title',
       count(files.length, 'document', 'documents') + ' to add'), items) : null,
     make('p', 'quiet', DESK_WORDS.kept));
