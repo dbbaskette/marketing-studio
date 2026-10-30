@@ -63,7 +63,16 @@ Publication and restart remain separate actions.
 
 ## Completion record
 
-Native single/multi-level, changes, duplicate/version, restart and authentication
-journeys pass at the first implementation milestone. Real desk-script checks cover
-one primary action, note preservation and exact decision payloads. Integrated
-verification remains in progress.
+Complete. The native single/multi-level, changes, duplicate/version, restart,
+authentication and parallel-research journeys pass. Actual desk-script checks cover
+one primary action, note preservation and exact decision payloads. Real native-page
+browser journeys pass at phone and desktop widths, including requesting changes,
+approving the revised plan and completing the materials. The page waits for the
+revised plan to finish refreshing before the browser takes its next action.
+
+The complete Training Studio suite passes (3,006 tests), as do package validation,
+19 relevant shared-UI/core checks, all four independent setup/launch journeys and
+the existing 41-step Blog Studio Hub and 39-command shared-studio CLI journeys.
+Verification uses synthetic authors and disposable macOS settings/workspaces.
+No live provider or Google delivery was tested. Existing user runs were untouched;
+publication and activation in the running app were not part of this change.

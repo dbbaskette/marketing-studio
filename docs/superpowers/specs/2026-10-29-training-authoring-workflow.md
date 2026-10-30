@@ -1,6 +1,6 @@
 # Training Studio: review the topics, then build the training
 
-Status: approved direction, corrected to one lightweight review and automatic generation.
+Status: implemented and verified; one lightweight review and automatic generation.
 
 ## Outcome
 

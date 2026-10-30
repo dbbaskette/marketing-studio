@@ -27,6 +27,7 @@ class PlanTests(DeckCase):
         result = training_plan.decide(self.engine, root, plan['expected'], 'approve')
         self.assertIsNone(result['training_plan'])
         self.assertFalse(result['problem'])
+        self.assertEqual(result['state'], 'done')
         self.assertTrue(self.workers.of('document'))
         self.assertTrue(self.workers.of('section'))
         self.assertFalse((result.get('outline') or {}).get('waiting'))
@@ -57,6 +58,7 @@ class PlanTests(DeckCase):
         result = training_plan.decide(self.engine, root, plan['expected'], 'approve')
         self.assertFalse(result['problem'])
         self.assertFalse(result['training_plan_pending'])
+        self.assertEqual(result['state'], 'done')
 
     def test_active_work_and_paused_state_cannot_be_approved(self):
         root = self.start_plan()
