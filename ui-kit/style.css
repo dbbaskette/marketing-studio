@@ -3633,3 +3633,8 @@ body[data-pilot="liquid"] .ig-outline-value { fill: var(--studio-color); font: 2
 .slide-text-item { padding: 1rem 0; border-bottom: 1px solid var(--line, #d5d9df); overflow-wrap: anywhere; }
 .slide-text-review .input { width: 100%; max-width: 100%; box-sizing: border-box; }
 .slide-text-review .bar { flex-wrap: wrap; }
+
+/* Intent headings within the shared optional review tool list. */
+.desk-tool-group{grid-column:1/-1;margin:.6rem 0 0;font-size:.9rem;color:var(--quiet)}
+
+.desk-reading-part .desk-part-head{flex-wrap:wrap;gap:.5rem}

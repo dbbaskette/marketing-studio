@@ -115,6 +115,7 @@ const StudioResearch = (() => {
       const panel = make('div', 'research-sources paper');
       add(panel, make('h3', 'card-title', this.a.label || 'Your sources'));
       if (this.a.primarySummary) panel.append(make('p', 'quiet', this.a.primarySummary));
+      if (!this.a.policyOnly) {
       const links = field('Web pages or Google Docs links', this.urls, 'research-urls', true);
       links.input.placeholder = 'Paste one or several links'; links.input.addEventListener('input', () => this.urls = links.input.value);
       add(links.wrap, make('p', 'field-hint', 'Uses your existing Google sign-in and shared defaults.'));
@@ -140,7 +141,8 @@ const StudioResearch = (() => {
       const list = make('ul', 'research-source-list'); for (const source of array(state && state.sources)) list.append(this.source(source));
       if (!state || !state.sources.length) list.append(make('li', 'quiet', state ? 'Add material here, or allow external search below.' : 'Loading the source draft…'));
       add(panel, list); this.node.append(panel);
-      if (this.saved) {
+      }
+      if (this.saved && !this.a.policyOnly) {
         const choices = add(make('section', 'paper stack'), make('h3','card-title','Saved research'));
         choices.append(make('p','quiet','Choose a reviewed result as reference material. Its original audience, purpose and qualifications are kept. Research for a different purpose is checked again.'));
         for(const item of array(this.saved.items)) choices.append(button(item.name+' · '+item.purpose, async()=>{

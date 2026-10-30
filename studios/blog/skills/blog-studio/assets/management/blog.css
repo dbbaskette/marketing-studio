@@ -182,7 +182,21 @@
 
 /* More stays inside the toolbar row even when its button is near the phone's left edge. */
 @media(max-width:52rem){
+  .desk-reading-controls>.field{flex-basis:100%}.desk-reading-controls>.bar>.button{flex:1 1 8rem}.desk-reading-part{padding:1rem}
   #studio-toolbar .toolbar-actions{position:relative;flex-basis:100%;width:100%;justify-content:flex-start}
   #studio-toolbar .toolbar-actions .menu{position:static}
   #studio-toolbar .toolbar-actions .menu-list{left:0;right:auto;min-width:0;width:min(20rem,100%);box-sizing:border-box}
 }
+
+/* The manuscript stays opaque; navigation and contextual tools share a quiet row. */
+.desk-reading-controls{display:flex;flex-wrap:wrap;align-items:end;gap:.75rem;margin-bottom:1.1rem}
+.desk-reading-controls>.field{flex:1 1 16rem;min-width:0;margin:0}
+.desk-reading-controls>.bar{flex-basis:100%}
+.desk-reading-part{padding:1.2rem;scroll-margin-top:10rem;overflow-wrap:anywhere}
+.desk-reading-part>.doc{line-height:1.7;max-width:72ch}
+.desk-reading-part+.desk-reading-part{border-top:1px solid var(--hair)}
+.desk-reading-part .doc img{max-width:100%;height:auto}
+
+.desk-reading-document{padding:.3rem}
+.desk-suggestion-summary{padding:.7rem 1.2rem;border-bottom:1px solid var(--hair)}
+.desk-suggestion-summary>p{margin:0 0 .35rem}

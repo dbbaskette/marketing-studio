@@ -40,6 +40,13 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
  assert.equal(editor.urls,'draft link stays');assert.equal(editor.text,'Unsubmitted source text');assert.equal(editor.choice().web,true);assert.equal(document.activeElement.dataset.key,'research-external');
  assert.ok(!requests.some(r=>['start','generate','publish','google-write'].includes(r.action)));
  state.sources[0].status='needs-attention';editor.value=state;assert.equal(editor.valid(),false);state.sources[0].status='excluded';assert.equal(editor.valid(),true);
+ // A native inventory can own intake while this adapter retains shared policy.
+ const policy=new kit.Editor({request,value:{...state,sources:[],external:false},policyOnly:true});
+ assert.equal(all(policy.node).some(n=>n.type==='file'),false,'policy-only adapters have no duplicate upload picker');
+ assert.equal(key(policy,'research-urls'),undefined);assert.equal(key(policy,'research-paste'),undefined);
+ assert.ok(key(policy,'research-external'));assert.ok(key(policy,'research-workers'));
+ assert.equal(policy.valid(true),true);assert.equal(policy.choice(true).documents,true);
+ assert.equal(policy.valid(false),false,'external-only policy cannot invent a primary source');
  const progress=kit.progress({phase:'review',streams:[{id:'area1',questions:['Synthetic area'],status:'kept'}]}, {stop:()=>{}});assert.ok(all(progress).some(n=>n.textContent==='Independent check'));assert.ok(all(progress).some(n=>n.dataset.key==='research-stop'));
  for(const [phase,current] of [['investigate',0],['synthesize',1],['review',2],['complete',-1],['paused',-1],['stopped',-1],['needs-attention',-1]]){
   const controls=new Node('div');controls.append(new Node('button'));

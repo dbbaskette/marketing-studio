@@ -145,6 +145,7 @@ async function check(){
   await deskSaveReorder();
   await oneNameEach();
   await deskStartOrder();
+  await blogReadingAndUnifiedSources();
   await deskPasteAndUpload();
   await deskPublishKeeps();
   await deskGoogleDoc();
@@ -161,7 +162,7 @@ async function check(){
   const checks=['Review mode with suggestions that meet: a cut beside a word another fix changes keeping that word as context and still accepted, two that add the same word at one place never both landing, and Accept all leaving a rewrite that would retire a flagged fix','Review mode’s Accept all sending what is shown and not flagged from both sets in one request, a hidden fix never accepted, the toast counting what was accepted, carried and no longer fits, and a retired suggestion naming the one that changed its words; keys that carry their set; the Consistency label; a choice made while a paragraph is open closing it; Fix, Dismiss, the filter and the checkbox keeping focus across a redraw; Quick check read again after a pause, not on every save; and a dismissed finding staying dismissed when text before it moves','Review mode with human-sounding suggestions: the polish start’s checkbox with a strength shown in place, Copy edit then Humanize with Stop and the line for each, the fixes acted on while Humanize works, both tools’ suggestions in reading order with their labels and one count, a wording fix’s alternatives picked then accepted, a rewrite of words an accepted fix changed retiring and naming the fix, the Show filter, Accept all leaving flagged ones from both, Quick check’s findings listed with Fix and Dismiss, Check again rerunning both, the choice in Review mode’s own first check, and the paragraph being edited kept while Humanize lands','a save that finds sections reordered elsewhere draws them, the field typed in kept','Review mode, the polish start’s Check spelling and grammar: Copy edit queued and a calm line with Stop while it checks, the draft as readable text with its headings and an image thumbnail, each fix marked inline with its reason, Accept and Reject, Accept all leaving a flagged fix, Reject all, a paragraph edited in place with a fix that no longer fits dropping out, Check again, Review Google changes previewing suggestions and comments before a single Send action, a new paragraph, a removed one and a comment listed, none said to stay here, Copy and Download otherwise, Open the full desk and back, and the fixes stacked on a phone','typing on the desk while a poll and a job land: the title, the opening, a section’s text, section notes, the whole-draft note, an Outline brief, Finishing’s edit box and Review mode’s paragraph editor keep focus, caret and words, a field focused while its own section was rewritten shows the rewrite and types on from it, a section added meanwhile is drawn around the field, and a card the job changed is drawn again once focus leaves it','images on the desk: each part’s text shows its references as typed and no field holds image data, thumbnails under the parts that refer to them, an image kept nowhere said to be missing, the images read once and kept, autosaves free of image data, a pasted image shown as its reference, and Copy and Download with the images back at the end','Apply a voice in Finishing: a voice guide chosen, retired ones left out, each part before and after, Apply all leaving a part that changes a fact, code or its shape, and Skip','voice guides: the sidebar screen, a guide written by hand, one made from samples then read and edited, one being made discarded, and a saved one edited or retired','the voice switch: off by default, no Write as, Default voice, Change the voice, voice learning, Create voices for every author or voice-sample choices; kinds of post on their own screen with Back; on, each returns','Finishing on the desk: every tool listed with Copy edit first and Quick check in place of Proofread, Copy edit opening Review mode, Humanize previewed before and after with Apply, Edit, Skip and Apply all (a flagged change left), Quick check with Fix, facts with Add a source and Keep it, facts never applied all at once, headline alternatives, feedback in place and added to a typed note, the pre-publish check, a repurposed copy as a new blog, the Google Doc send with every change a suggestion or a comment, a full-screen sheet on a phone, a sheet opened from the panel on top on a phone and a tablet, a redraw on turning the screen, and no redraw under a focused control','an interview’s outline, a saved blog’s details and the old wizard’s address opening the desk start, the old Polish, paste and Google Doc addresses opening its polishing screen, a saved draft brought as it is','polishing a draft on one screen: no kind of post or step tabs, Check spelling and grammar by default with its line and no style, landing in Review mode, no silent Proofread and tighten, feedback first, a kind only to reshape, optional tone and sources, and A draft switching to it','desk starts: a kind of post, a topic with three editable angles, an outline written from or shaped first, sources and research ticks, the progress screen with its clock, Stop and Retry, the draft opening on its own, an overrun said as such, the Outline tab reordering, writing a section and the draft, bringing back a removed section, and Add a source with a file, a library post and a link, kept with the blog unless ticked','Open on the desk from Home’s finished drafts, Blogs and the manuscript editor','the writing desk: a pasted draft started, typing saved with its revision and session, a section note rewritten while its card works, a selection shortened, History compared and restored, a stale save, a whole-draft note, and a finished run opened on the desk','keep or not, file by file','review aside open by default and folded per blog','Apply the review’s findings, confirmed, three jobs','Open as a Google Doc, confirmed, private, once','starts on Home: a topic, an outline or notes, a draft, and the Done card’s Pre-publish and Repurpose','feedback','access and memory kinds','request ownership','curation conflicts','article/finding disclosures',
     'historical import preview/batching and source controls','diff-only saves and explicit ready/published confirmation',
     'analysis disclosure and per-operation choice','unreadable-blog notes','badge class whitelist','busy state',
-    'refresh with a new selection','guided run decisions and handoff controls','a Google Doc already a blog here reopening on the desk from the polishing start, an unreadable answer said there with the link kept','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start asks what you are writing, then what you have, then sources and settings','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','a desk start that stopped on another computer: who drives it, Take over or Take this blog with the desk’s version, then Retry','no page code nothing calls: the brand notice, the old run renderers, the Writing runs view and unused mode descriptions','element ids'];
+    'refresh with a new selection','guided run decisions and handoff controls','a Google Doc already a blog here reopening on the desk from the polishing start, an unreadable answer said there with the link kept','review selection, preserved wording, late reads and in-flight saves','manual feedback and comments-only completion','brand skill inputs and confirmation','shared settings refusal/reload/retry, with the default voice','Interview me writes as a chosen voice','stops, now line, honest retry, note and phone toolbar','where new work stops, in Settings','one name for each thing','copy that says what the gates do','finish, done card, typed-title delete, restore and idea picks','your files on the desk start: one request, per-file text and roles, a refused role said, kept with the blog unless ticked, a Google Doc; an older run’s angle picks, none of these and check detail lines','voice samples from a list of links: suggested author, scope check, one site, batches, byline keep and learning','add to the library: files, links and a Doc checked then added, each post’s own author grouped, renamed, merged and completed, marked as samples and learned from with the usual confirmation','the library screen: role, kind and author filters, a selection, and its three actions','select all on the page and every match through the server, kept across filters','create voices for every author: two readable posts, one confirmation, updates not duplicates, each job reviewed, who was not queued, and a batch of at most the server’s limit','create a voice: links, uploads, a LinkedIn export and library posts in one samples list','moved controls: each view’s one primary action, Refresh Hub, Import, Upload and More filters','a name that might be one person: suggested, confirmed as the same person or kept apart, and an author edited in Review details','from the library on the desk start, with a learned style’s samples pre-ticked','Length on the desk start, for new writing only','voices and kinds of post sheet, style learning and the LinkedIn export','sample candidates and pending sources','a run’s voice and kind of post, with a confirmed change','Tools and Voices and kinds of post in plain sight','a refused research case listed by kind and verdict, kept on this computer','research rounds under way, what the last attempt took and what Try again does','Continue without research, confirmed, and the run’s stops line','Finish confirmed at every review level, naming the team library','failures that say what to do: Status and what the assistant said, where the time limit lives, setup that shows an assistant is missing','the desk start’s research ticks following Settings, changed for one blog','your sites on the desk start: the shared list prefilled, a site for one blog checked by the server, none ticked refused; the sites named at an older run’s research gate','a desk blog another computer drives: read only, Take over, Take this blog and Hand over, each with the desk’s version','a stopped desk start: Try again with more time, Continue without research confirmed, Open Status with what the assistant said, Retry and Delete this start','Make a Google Doc on the desk, confirmed, then Google Doc and suggestions; a Doc an older run links offers Open its run','Mark as published on the desk keeps the draft in the team library, and says so','the paste field up to 200,000 characters, and a library upload edited on the desk with the file’s text','the desk start puts the idea and one source inventory before optional writing preferences','one name each, and page sentences that name the page: first pass, Tools, kinds of post, voice guides, Settings, Home, Sources and a desk blog’s details','a desk start that stopped on another computer: who drives it, Take over or Take this blog with the desk’s version, then Retry','no page code nothing calls: the brand notice, the old run renderers, the Writing runs view and unused mode descriptions','element ids'];
   console.log(JSON.stringify({status:'passed',checks:checks.join('; ')}));
 }
 function controlled(){
@@ -1532,9 +1533,9 @@ async function filesJourney(){
   f.loadRunner();
   const nodes=()=>descendants(f.get('studio-page')),text=()=>nodes().map(e=>e.textContent),byId=id=>nodes().find(e=>e.id===id);
   await f.run("sDeskBegin({have:'topic'})");
-  await nodes().find(e=>e.className==='pick-card'&&e.textContent==='Something else').listeners.click();
+  // No mandatory post-type selection before intake.
   // Sources and settings is the third step, after what you have.
-  f.run('studio.deskStart.step=2');await f.run('sDeskStart()');
+  f.run('studio.deskStart.step=0');await f.run('sDeskStart()');
   const picker=byId('files-input');
   assert.equal(picker.type,'file');assert.equal(picker.multiple,true);assert.match(picker.accept,/\.pdf/);
   assert.equal(byId('files-keep').checked,false,'files stay with this blog by default');
@@ -1990,7 +1991,7 @@ async function libraryScreen(){
   // A blog from library items starts on the desk's start, with the items as its sources.
   assert.equal(f.run('studio.screen'),'desk-start');
   assert.deepEqual(JSON.parse(f.run('JSON.stringify(studio.deskStart.files.map(file=>[file.id,file.role,file.library]))')),[['a','inspiration',true],['b','inspiration',true]],'the items are the blog’s files, each an example');
-  f.run("studio.deskStart.kind='';studio.deskStart.step=2");await f.run('sDeskStart()');
+  f.run("studio.deskStart.kind='';studio.deskStart.step=0");await f.run('sDeskStart()');
   const nodes=()=>descendants(f.get('studio-page'));
   assert.equal(nodes().find(e=>e.id==='files-role-a').value,'inspiration');
   assert.ok(nodes().some(e=>/900 characters/.test(e.textContent)),'with how much text each has');
@@ -2028,7 +2029,7 @@ async function libraryPicker(){
     return {items:[],total:0};});
   f.loadRunner();
   const nodes=()=>descendants(f.get('studio-page')),byId=id=>nodes().find(e=>e.id===id),texts=()=>nodes().map(e=>e.textContent);
-  const kind=async name=>{f.run('studio.deskStart.step=0;sDeskStart()');await nodes().find(e=>e.className==='pick-card'&&e.textContent===name).listeners.click();};
+  const kind=async name=>{f.run('studio.deskStart.step=1;sDeskStart()');const field=byId('desk-kind');field.value=field.children.find(e=>e.textContent===name).value;field.listeners.change();};
   const submit=()=>nodes().find(e=>e.tagName==='form').listeners.submit({preventDefault(){}});
   const files=()=>JSON.parse(f.run('JSON.stringify((studio.deskStart.files||[]).map(file=>[file.id,file.role,!!file.library]))'));
   await f.run("sDeskBegin({have:'topic'})");
@@ -2037,7 +2038,7 @@ async function libraryPicker(){
   assert.ok(files().every(([,role,library])=>role==='inspiration'&&library),'each as an example from the library');
   await kind('Product announcement');assert.deepEqual(files(),[],'a starter pre-ticks nothing');
   await kind('Field notes');assert.equal(files().length,8);
-  f.run('studio.deskStart.step=2');await f.run('sDeskStart()');
+  f.run('studio.deskStart.step=0');await f.run('sDeskStart()');
   assert.ok(texts().some(t=>t==='Sample s8'),'the sources step lists them: '+texts().join('|'));
   assert.ok(texts().some(t=>t==='From the library'),'as library items');
   assert.ok(texts().some(t=>/needs text, so it is not read/.test(t)),'a sample without text says so');
@@ -2063,7 +2064,7 @@ async function libraryPicker(){
   byId('files-role-lib1').value='inspiration';await byId('files-role-lib1').listeners.change();
   assert.equal(requests.some(r=>r.url==='/api/source-role'),false,'a library item changes its role for this blog only');
   // Start asks for what you have first, on its own step, then starts.
-  await submit();assert.equal(f.run('studio.deskStart.step'),1);
+  await submit();assert.equal(f.run('studio.deskStart.step'),0);
   byId('desk-title').value='A synthetic blog';byId('desk-title').listeners.input();byId('desk-point').value='Explain';byId('desk-point').listeners.input();
   await submit();await submit();
   const sent=requests.filter(r=>r.url==='/api/desk-create').at(-1).data;
@@ -2076,7 +2077,7 @@ async function libraryPicker(){
 async function deskLength(){
   const t=deskStartFixture();
   await t.f.run("sDeskBegin({have:'topic'})");
-  await t.nodes().find(n=>n.className==='pick-card'&&n.textContent==='Something else').listeners.click();
+  /* Default post type follows the supplied idea. */
   assert.equal(t.byId('desk-length'),undefined,'Length waits for what you have');
   t.type('desk-title','A topic');t.type('desk-point','A point.');await t.submit();
   const select=t.byId('desk-length'),chosen=()=>select.children.find(o=>o.value===select.value)?.textContent;
@@ -2697,6 +2698,7 @@ async function deskJourneys(){
   // Left as it is, the draft opens on the full desk (Check spelling and grammar opens Review mode).
   await nodes().find(n=>n.tagName==='button'&&n.textContent==='Leave it as it is').listeners.click();
   await nodes().find(n=>n.tagName==='form').listeners.submit({preventDefault(){}});
+  await f.run("sDeskChoose(studio.desk,'full')");
   const created=requests.find(r=>r.url==='/api/desk-create').data;
   assert.match(created.operation,/^[0-9a-f]{32}$/);assert.equal(created.first_pass,'leave');assert.equal(created.style,'');assert.equal(created.tone,'Clear');assert.match(created.manuscript,/## First part/);
   assert.equal(f.run('studio.screen'),'desk');
@@ -2778,7 +2780,7 @@ async function deskJourneys(){
 }
 async function deskLeaveShares(){
   const requests=[];const f=fixture((url,options)=>{requests.push({url,options,data:options?.body?JSON.parse(options.body):null});if(url.startsWith('/api/desk?'))return deskView();return {items:[],total:0,settings:{defaults:{}},sources:[]};});
-  f.loadRunner();await f.run("sRoute('desk','desk-blog')");
+  f.loadRunner();await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   await f.run("sRoute('blogs')");await new Promise(r=>setImmediate(r));
   const share=requests.find(r=>r.url==='/api/desk-share');
   assert.deepEqual(share?.data,{id:'desk-blog'});assert.equal(share.options.keepalive,true);assert.equal(share.options.method,'POST');
@@ -2792,16 +2794,16 @@ async function deskReturnAndGoogle(){
   f.loadRunner();f.set('setTimeout',fn=>{timers.push(fn);return timers.length;});f.set('clearTimeout',()=>{});
   const nodes=()=>descendants(f.get('studio-page')),card=part=>nodes().find(n=>n.dataset?.part===part);
   // Typing, leaving before it saves, and coming back: the desk shows what the server has.
-  await f.run("sRoute('desk','desk-blog')");
+  await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   const text=descendants(card('cccccccc')).find(n=>n.tagName==='textarea');text.value='Typed, then left.';text.listeners.input();
   timers.length=0;f.run("studio.desk.pending.cccccccc.timer=0");
   await f.run("studio.screen='blogs';studio.desk.pending={cccccccc:{text:'Typed, then left.'}}");
-  await f.run("sRoute('desk','desk-blog')");
+  await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   assert.equal(descendants(card('cccccccc')).find(n=>n.tagName==='textarea').value,'Third text.');
   assert.deepEqual(JSON.parse(f.run('JSON.stringify(studio.desk.pending)')),{});
   // A Google Doc already brought in as a desk blog opens that desk.
   await f.run("sRoute('desk-start')");
-  await nodes().find(n=>n.className==='pick-card'&&n.textContent==='Something else').listeners.click();
+  /* Post type is optional. */
   await nodes().find(n=>n.textContent==='A draft').listeners.click();
   await nodes().find(n=>n.textContent==='Google Doc').listeners.click();
   const url=nodes().find(n=>n.id==='desk-google');url.value='https://docs.google.com/document/d/abc/edit';url.listeners.input();
@@ -2912,21 +2914,10 @@ async function deskTopicStart(){
   await t.click('Write from a topic or my documents');
   assert.equal(t.f.run('studio.screen'),'desk-start');assert.equal(t.f.run('studio.deskStart.have'),'topic');
   assert.equal(t.f.get('title').textContent,'New blog');
-  // 1. A card per kind of post, with its usual shape; a retired one is not offered.
-  const kinds=t.nodes().filter(n=>n.className==='pick-card').map(n=>n.textContent);
-  assert.deepEqual(kinds,['How-to and tutorial','Something else']);
-  assert.ok(t.nodes().some(n=>n.textContent==='Prerequisites, numbered steps with checkpoints, a finished state, troubleshooting.'));
-  await t.nodes().find(n=>n.className==='pick-card'&&n.textContent==='How-to and tutorial').listeners.click();
-  // 2. What do you have: a topic, typed; then Continue.
-  assert.equal(t.f.run('studio.deskStart.step'),1);
-  assert.ok(!t.byId('files-input'),'sources come after what you have');
+  assert.equal(t.f.run('studio.deskStart.step'),0);
+  assert.ok(t.byId('files-input'),'one source inventory beside the idea');
   t.type('desk-title','Retries');t.type('desk-audience','Operators');t.type('desk-point','Keep the work.');
-  await t.submit();
-  // 3. Sources and settings: sources stay with this blog unless kept; research off by default.
-  assert.equal(t.f.run('studio.deskStart.step'),2);
-  assert.equal(t.byId('files-keep').checked,false,'files stay with this blog by default');
-  assert.ok(t.byId('files-link'),'a link');assert.ok(t.nodes().some(n=>n.textContent==='What the roles mean'),'the roles in a fold');
-  assert.ok(!t.nodes().some(n=>/^Applies to files you add next/.test(n.textContent)),'one short line under Keep');
+  assert.equal(t.byId('files-keep').checked,false);
   assert.equal(t.byId('desk-sites').checked,false);assert.equal(t.byId('desk-web').checked,false);
   const picker=t.byId('files-input');picker.files=[{name:'notes.md',size:20,arrayBuffer:async()=>new TextEncoder().encode('Synthetic notes.').buffer}];await picker.listeners.change();
   assert.equal(t.requests.find(r=>r.url==='/api/upload').data.keep,false,'saved with this blog only');
@@ -2937,11 +2928,11 @@ async function deskTopicStart(){
   t.byId('desk-sites').checked=true;t.byId('desk-sites').listeners.change();
   assert.ok(t.nodes().some(n=>n.textContent==='docs.example.com'),'the saved site list');
   t.byId('desk-web').checked=true;t.byId('desk-web').listeners.change();
-  t.type('desk-length','deep');t.type('desk-tone','Warm');
-  // Back to What do you have: three angles that read the sources chosen since.
-  await t.click('2. What do you have?');
-  assert.equal(t.f.run('studio.deskStart.step'),1);
-  assert.ok(!t.nodes().some(n=>n.textContent==='Add sources first'));
+  await t.submit();assert.equal(t.f.run('studio.deskStart.step'),1);
+  t.type('desk-kind','how-to');t.type('desk-length','deep');t.type('desk-tone','Warm');
+  assert.equal(t.byId('files-input'),undefined,'preferences never ask for sources again');
+  await t.click('1. Idea and sources');
+  assert.equal(t.f.run('studio.deskStart.step'),0);
   await t.click('Suggest three angles');
   const asked=t.requests.find(r=>r.url==='/api/desk-angles').data;
   assert.match(asked.operation,/^[0-9a-f]{32}$/);
@@ -2959,7 +2950,7 @@ async function deskTopicStart(){
   await t.click('Suggest three more');
   assert.equal(t.requests.filter(r=>r.url==='/api/desk-angles').at(-1).data.replaces,asked.operation,'the earlier angles are let go');
   await t.tick();await descendants(t.nodes().filter(n=>/\bdesk-angle\b/.test(n.className))[1]).find(n=>n.textContent==='Use this angle').listeners.click();
-  await t.submit();assert.equal(t.f.run('studio.deskStart.step'),2);
+  await t.submit();assert.equal(t.f.run('studio.deskStart.step'),1);
   await t.submit();
   assert.ok(!t.requests.some(r=>r.url==='/api/source-keep'),'the server keeps a ticked file once the blog is made, not the page before');
   const made=t.requests.find(r=>r.url==='/api/desk-create').data;
@@ -2971,7 +2962,7 @@ async function deskOutlineStarts(){
   const t=deskStartFixture((url)=>{if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};if(url.startsWith('/api/desk?'))return startView();return null;});
   for(const [way,label] of [['outline','Write from my outline'],['shape','Shape an outline with me first']]){
     await t.f.run("sDeskBegin({have:'outline'})");
-    await t.nodes().find(n=>n.className==='pick-card'&&n.textContent==='Something else').listeners.click();
+    /* Default post type follows the supplied idea. */
     assert.ok(t.nodes().some(n=>n.textContent==='Write from my outline')&&t.nodes().some(n=>n.textContent==='Shape an outline with me first'),'both co-author choices');
     t.type('desk-outline','# A synthetic outline\n\n## One\n\nBrief one.\n\n## Two\n');
     await t.click(label);
@@ -2981,7 +2972,7 @@ async function deskOutlineStarts(){
   }
   // An outline with neither a title nor a # line is stopped on the page.
   await t.f.run("sDeskBegin({have:'outline'})");
-  await t.nodes().find(n=>n.className==='pick-card'&&n.textContent==='Something else').listeners.click();
+  /* Default post type follows the supplied idea. */
   t.type('desk-outline','Some notes.');await t.submit();
   assert.ok(t.nodes().some(n=>n.className==='problem'&&/# title line/.test(n.textContent)));
 }
@@ -2999,7 +2990,7 @@ async function deskOtherWaysIn(){
     if(url==='/api/desk-create')return {...deskView({id:'saved'}),first_pass_problem:null};
     return null;
   });
-  const throughKinds=async()=>{await t.nodes().find(n=>n.className==='pick-card'&&n.textContent==='Something else').listeners.click();};
+  const throughKinds=async()=>{/* Default post type follows the supplied idea. */};
   // An interview's outline: a desk start from the outline, with the interview's title.
   await t.f.run("sInterview('interviewed')");
   await t.click('Review outline and start a draft');
@@ -3114,8 +3105,8 @@ async function deskPolishStart(){
   sent=made();assert.equal(sent.first_pass,'leave');assert.equal(sent.style,'');assert.deepEqual(sent.sources,['s1']);assert.equal(sent.keep,undefined,'kept only if ticked');
   // From the stepped start, choosing A draft switches to the one screen.
   await t.f.run("sDeskBegin({have:'topic'})");
-  await t.nodes().find(n=>n.className==='pick-card'&&n.textContent==='How-to and tutorial').listeners.click();
-  assert.equal(t.f.run('studio.deskStart.step'),1,'What do you have? comes right after the kind');
+  t.f.run("studio.deskStart.kind='how-to'");
+  assert.equal(t.f.run('studio.deskStart.step'),0,'the task comes first');
   await t.click('A draft');
   single();assert.deepEqual(pressed(),['Check spelling and grammar']);
   paste();await t.submit();
@@ -3142,8 +3133,8 @@ async function deskResearchSites(){
     return null;});
   const text=()=>t.nodes().map(n=>n.textContent),add=()=>t.byId('desk-research-add');
   await t.f.run("sDeskBegin({have:'topic'})");
-  await t.nodes().find(n=>n.className==='pick-card'&&n.textContent==='Something else').listeners.click();
-  t.type('desk-title','Sites');t.type('desk-point','Read only what is ours.');await t.submit();
+  /* Default post type follows the supplied idea. */
+  t.type('desk-title','Sites');t.type('desk-point','Read only what is ours.');
   t.byId('desk-sites').checked=true;t.byId('desk-sites').listeners.change();
   assert.deepEqual([0,1].map(at=>t.byId('desk-research-site-'+at).checked),[true,true],'the shared list is prefilled');
   assert.ok(text().includes('blogs.vmware.com/tanzu')&&text().includes('docs.example.com'));
@@ -3158,13 +3149,13 @@ async function deskResearchSites(){
   assert.equal(t.byId('desk-research-site-2').checked,true,'an added site is ticked');
   assert.ok(text().includes(' · this piece of work only'));
   let prevented=false;add().listeners.keydown({key:'Enter',preventDefault(){prevented=true;}});assert.equal(prevented,true,'Return adds the site');
-  assert.equal(t.f.run('studio.deskStart.step'),2,'and never moves on');
+  assert.equal(t.f.run('studio.deskStart.step'),0,'and never moves on');
   // Your sites with none ticked: the shared sentence, and the start does not go on.
   for(const at of [0,2]){t.byId('desk-research-site-'+at).checked=false;t.byId('desk-research-site-'+at).listeners.change();}
-  await t.submit();
-  assert.ok(text().includes(words.no_sites),text().join('|'));assert.equal(t.f.run('studio.deskStart.step'),2);
+  await t.submit();await t.submit();
+  assert.ok(text().includes(words.no_sites),text().join('|'));assert.equal(t.f.run('studio.deskStart.step'),0);
   t.byId('desk-research-site-2').checked=true;t.byId('desk-research-site-2').listeners.change();
-  await t.submit();
+  await t.submit();await t.submit();
   assert.deepEqual(t.requests.find(r=>r.url==='/api/desk-create').data.research_from,{sites:['https://extra.example.org/guide'],web:false},'the added site goes with this blog');
   assert.deepEqual(t.requests.filter(r=>r.data).map(r=>r.url),['/api/research-site','/api/research-site','/api/desk-create'],'the shared list is not changed');
 }
@@ -3178,14 +3169,14 @@ async function deskResearchDefault(){
     if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};
     if(url.startsWith('/api/desk?'))return startView();
     return null;});
-  const begin=async()=>{t.f.run('studio.options=null');await t.f.run("sDeskBegin({have:'topic'})");await t.nodes().find(n=>n.className==='pick-card'&&n.textContent==='Something else').listeners.click();t.type('desk-title','Defaults');t.type('desk-point','Start where Settings says.');await t.submit();};
+  const begin=async()=>{t.f.run('studio.options=null');await t.f.run("sDeskBegin({have:'topic'})");/* Default post type follows the supplied idea. */t.type('desk-title','Defaults');t.type('desk-point','Start where Settings says.');};
   const ticks=()=>[t.byId('desk-sites').checked,t.byId('desk-web').checked];
   await begin();
   assert.deepEqual(ticks(),[true,true],'both ticked as in Settings');
   assert.ok(t.nodes().some(n=>n.textContent==='docs.example.com'),'with the shared list open');
-  assert.ok(t.nodes().some(n=>n.textContent==='Ticked as in Settings, for this blog only. It runs before the outline, with no stop for you.'));
+  assert.ok(t.byId('desk-research-on'),'research remains optional');
   t.byId('desk-web').checked=false;t.byId('desk-web').listeners.change();
-  await t.submit();
+  await t.submit();await t.submit();
   assert.deepEqual(t.requests.filter(r=>r.url==='/api/desk-create').at(-1).data.research_from,{sites:['https://docs.example.com'],web:false},'changed for this blog only');
   // Your documents only: both off, and nothing researched.
   research={documents:true,sites:false,web:false};await begin();
@@ -3244,7 +3235,7 @@ async function deskOutlineTab(){
     if(url==='/api/desk-unremove'){view={...view,revision:view.revision+1,removed:[]};return view;}
     return null;
   });
-  await t.f.run("sRoute('desk','desk-blog')");
+  await t.f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   await t.click('Outline');
   assert.equal(t.byId('desk-outline-heading-0').value,'First part');assert.equal(t.byId('desk-outline-brief-0').value,'Say what stops.');
   await t.nodes().find(n=>n.attributes['aria-label']==='Move down · First part').listeners.click();
@@ -3312,7 +3303,7 @@ async function deskFocusJourney(){
     assert.equal(field.value,text,name+' keeps its words');
     assert.deepEqual([field.selectionStart,field.selectionEnd],[text.length-3,text.length-3],name+' keeps its caret');
   };
-  await f.run("sRoute('desk','desk-blog')");
+  await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   const fields=[
     ['the title',()=>inside(card('title'),n=>n.tagName==='input')],
     ['the opening',()=>inside(card('opening'),n=>n.tagName==='textarea')],
@@ -4025,7 +4016,7 @@ async function deskSaveReorder(){
     return null;
   });
   const {f,nodes,tick}=t;
-  await f.run("sRoute('desk','desk-blog')");
+  await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   const cards=()=>nodes().filter(n=>/(^| )desk-part( |$)/.test(n.className)).map(n=>n.dataset.part);
   assert.deepEqual(cards(),['title','opening','aaaaaaaa','bbbbbbbb','cccccccc']);
   const title=descendants(nodes().find(n=>/desk-part/.test(n.className)&&n.dataset.part==='title')).find(n=>n.tagName==='input'||n.tagName==='textarea');
@@ -4060,7 +4051,7 @@ async function deskFinishing(){
   const inItem=(id,label)=>descendants(item(id)).find(n=>n.textContent===label&&n.listeners.click);
   const card=part=>nodes().find(n=>n.dataset?.part===part);
   const last=url=>requests.filter(r=>r.url===url).at(-1)?.data;
-  await f.run("sRoute('desk','desk-blog')");
+  await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   // 1. Finishing opens beside the draft and lists every tool, Apply a voice among them.
   const opener=descendants(f.get('actions')).find(n=>n.textContent==='Finishing');
   assert.equal(opener.disabled,false);
@@ -4320,7 +4311,7 @@ async function deskImages(){
   const settle=()=>new Promise(r=>setImmediate(r)),tick=async()=>{for(const fn of timers.splice(0))await fn();await settle();};
   const nodes=()=>descendants(f.get('studio-page')),card=part=>nodes().find(n=>n.dataset?.part===part),thumbs=part=>descendants(card(part)).filter(n=>n.tagName==='img');
   const fields=()=>nodes().filter(n=>['textarea','input'].includes(n.tagName));
-  await f.run("sRoute('desk','desk-blog')");await settle();
+  await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");await settle();
   // The text shows each reference as typed, and no field holds image data.
   assert.equal(descendants(card('opening')).find(n=>n.tagName==='textarea').value,opening);
   assert.ok(fields().length>3&&fields().every(n=>!/data:image/.test(n.value||'')),'no form field holds image data');
@@ -4370,7 +4361,7 @@ async function deskAddSource(){
     if(url==='/api/desk-sources'){view={...view,revision:2,source_names:[{id:'s1',name:'Notes',purposes:['reference']}]};return view;}
     return null;
   });
-  await t.f.run("sRoute('desk','desk-blog')");
+  await t.f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   await t.click('Add a source');
   assert.equal(t.f.get('sheet').children[0].children[0].textContent,'Add a source');
   assert.ok(t.sheet().some(n=>n.id==='files-input'),'files, Google Docs, links and the library, as the start takes them');
@@ -4388,7 +4379,7 @@ async function deskAddSource(){
   assert.ok(t.nodes().some(n=>n.textContent==='Notes'),'the sources panel names the new source');
   // On a phone the start still runs in its three steps.
   t.f.run("window.matchMedia=()=>({matches:true})");await t.f.run("sDeskBegin()");
-  assert.ok(t.nodes().some(n=>n.className==='pick-card'&&n.textContent==='Something else'));
+  assert.ok(t.byId('files-input'),'phone starts with the single source inventory');
 }
 // A desk blog another computer drives: read only, with Take over; nobody driving offers
 // Take this blog; our own offers Hand over. Each confirms with the desk's version.
@@ -4400,7 +4391,7 @@ async function deskTakeOver(){
     return {items:[],total:0};});
   f.loadRunner();
   const nodes=()=>descendants(f.get('studio-page')),actions=()=>descendants(f.get('actions')),sheet=()=>descendants(f.get('sheet'));
-  await f.run("sRoute('desk','desk-blog')");
+  await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   assert.equal(f.get('above').textContent,'Ana · driving on another computer');
   assert.ok(nodes().some(n=>n.textContent===view.elsewhere),'the desk says why it is read only');
   // Nothing on the desk can be changed before it is taken.
@@ -4422,13 +4413,13 @@ async function deskTakeOver(){
   assert.ok(!nodes().some(n=>/desk-driver/.test(n.className)));
   // Nobody running it.
   view={...view,driver:null,elsewhere:'Nobody is running this blog. Take it to carry on with it from this computer.'};
-  await f.run("sRoute('desk','desk-blog')");
+  await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   assert.equal(f.get('above').textContent,'Nobody is running this blog');
   await actions().find(n=>n.textContent==='Take this blog').listeners.click();
   await sheet().find(n=>n.textContent==='Confirm').listeners.click();
   assert.deepEqual(requests.find(r=>r.url==='/api/team-take').data,{id:'desk-blog',expected:'session-v1',confirmed:true});
   // A workspace with no team shows none of it.
-  view=deskView();await f.run("sRoute('desk','desk-blog')");
+  view=deskView();await f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   assert.ok(!actions().some(n=>['Take over','Take this blog','Hand over'].includes(n.textContent)));
   assert.equal(f.get('above').textContent,'On the desk');
 }
@@ -4484,7 +4475,7 @@ async function deskGoogleDoc(){
     return null;
   });
   const actions=()=>descendants(t.f.get('actions'));
-  await t.f.run("sRoute('desk','desk-blog')");
+  await t.f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
   assert.ok(!actions().some(n=>n.textContent==='Google Doc ↗'));
   const make=actions().find(n=>n.textContent==='Make a Google Doc');assert.ok(make,'Make a Google Doc is on the toolbar');assert.equal(make.disabled,false);
   // Before publishing says it can make one too.
@@ -4647,7 +4638,7 @@ async function deskPublishKeeps(){
   const actions=()=>descendants(t.f.get('actions')),toasts=()=>descendants(t.f.get('toasts')).map(n=>n.textContent);
   for(const [kept,said] of [[{id:'kept',revision:1},'Recorded as published. Nothing was posted anywhere. Its draft is kept in the team library.'],[{reason:'it could not be saved here.'},'Recorded as published. Nothing was posted anywhere. Not kept in the team library: it could not be saved here.']]){
     library=kept;view=deskView();t.f.get('toasts').replaceChildren();
-    await t.f.run("sRoute('desk','desk-blog')");
+    await t.f.run("sRoute('desk','desk-blog').then(()=>sDeskChoose(studio.desk,'full'))");
     await actions().find(n=>n.textContent==='Mark as published').listeners.click();
     assert.ok(t.sheet().some(n=>n.textContent==='Record where this blog was published. The current text is the published one. Its draft is kept in the team library as a reference and an example of its kind of post. Marking it again updates that item.'));
     assert.ok(t.sheet().some(n=>n.textContent==='Cancel'));
@@ -4702,36 +4693,20 @@ async function deskPasteAndUpload(){
 // A topic or an outline: What are you writing?, then What do you have?, then Sources and
 // settings with research and Length for what was brought. A draft goes to its one screen.
 async function deskStartOrder(){
-  const t=deskStartFixture((url,data)=>{
-    if(url==='/api/desk-create')return {...startView(),first_pass_problem:null};
-    if(url.startsWith('/api/desk?'))return startView();
-    return null;
-  });
-  await t.f.run("sDeskBegin()");
-  const tabs=()=>t.nodes().find(n=>n.className==='workflow-steps').children.map(n=>n.textContent);
-  assert.deepEqual(tabs(),['1. What are you writing?','2. What do you have?','3. Sources and settings']);
-  await t.nodes().find(n=>n.className==='pick-card'&&n.textContent==='Something else').listeners.click();
-  assert.equal(t.f.run('studio.deskStart.step'),1);
-  assert.ok(t.nodes().some(n=>n.textContent==='What do you have?'),'step 2 asks what you have');
-  assert.ok(!t.byId('desk-web'),'no research before what you have is known');
-  // A topic, then Continue to sources and settings, with research and Length.
-  t.type('desk-title','A synthetic topic');t.type('desk-point','Retries save work.');
-  await t.submit();
-  assert.equal(t.f.run('studio.deskStart.step'),2);
-  assert.ok(t.byId('desk-web'),'research for new writing');assert.ok(t.byId('desk-length'),'Length for new writing');
-  await t.submit();
-  const made=t.requests.filter(r=>r.url==='/api/desk-create').at(-1).data;
-  assert.equal(made.way,'topic');assert.equal(made.point,'Retries save work.');
-  // A step-2 problem is said there, before sources and settings.
-  await t.f.run("sDeskBegin()");
-  await t.nodes().find(n=>n.className==='pick-card'&&n.textContent==='Something else').listeners.click();
-  await t.submit();
-  assert.equal(t.f.run('studio.deskStart.step'),1);
+  const t=deskStartFixture(url=>url==='/api/desk-create'||url.startsWith('/api/desk?')?startView():null);
+  await t.f.run('sDeskBegin()');
+  const steps=()=>t.nodes().find(n=>n.className==='workflow-steps').children.map(n=>n.textContent);
+  assert.deepEqual(steps(),['1. Idea and sources','2. Writing preferences']);
+  assert.ok(t.byId('files-input'));assert.equal(t.byId('desk-kind'),undefined);
+  await t.submit();assert.equal(t.f.run('studio.deskStart.step'),0);
   assert.ok(t.nodes().some(n=>n.textContent==='Add a working title and the point to make, or pick an angle.'));
-  // A draft in step 2 switches to the one polishing screen, with no research ticks.
-  await t.nodes().find(n=>n.textContent==='A draft').listeners.click();
-  assert.equal(t.f.get('title').textContent,'Polish a draft');
-  assert.ok(!t.byId('desk-web'));assert.ok(!t.byId('desk-length'));
+  t.type('desk-title','A synthetic topic');t.type('desk-point','Retries save work.');
+  await t.submit();assert.equal(t.f.run('studio.deskStart.step'),1);
+  assert.equal(t.byId('files-input'),undefined);assert.ok(t.byId('desk-length'));
+  assert.deepEqual(t.byId('desk-kind').children.map(n=>n.value),['','how-to'],'post type is optional and retired kinds are excluded');
+  await t.submit();assert.equal(t.requests.find(r=>r.url==='/api/desk-create').data.style,'');
+  await t.f.run('sDeskBegin()');await t.click('A draft');assert.equal(t.f.get('title').textContent,'Polish a draft');
+  assert.equal(t.byId('desk-research-on'),undefined,'polishing does not ask for research');
 }
 // One name for each thing, and sentences that say what this page does (piece 1's names).
 async function oneNameEach(){
@@ -4761,7 +4736,7 @@ async function oneNameEach(){
   const actions=descendants(f.get('actions')).map(e=>e.textContent);
   assert.ok(actions.includes('Open A stopped start'),actions.join('|'));assert.ok(!actions.includes('Review A stopped start'));
   // The Sources panel says research was read, with how many sources it drew on.
-  f.set('researched',deskView({research:{sources:3}}));f.run("studio.screen='desk';studio.desk={id:'desk-blog',view:researched,session:'s',pending:{}};sDeskRender(studio.desk)");
+  f.set('researched',deskView({research:{sources:3}}));f.run("studio.screen='desk';studio.desk={id:'desk-blog',view:researched,session:'s',reading:'full',pending:{}};sDeskRender(studio.desk)");
   assert.ok(text().includes('Research was read for this draft: 3 sources.'),text().join('|'));
   assert.ok(!text().some(t=>/No sources were given/.test(t)));
   // A desk blog's details say it is on the desk, with no requested stop and no chat.
@@ -4851,4 +4826,85 @@ async function unfinishedMigration(){
   t.f.run('sRunOnDesk(migrated)');
   assert.ok(t.nodes().some(n=>n.textContent.includes('Unfinished steps remain incomplete')));
   assert.ok(!t.nodes().some(n=>n.textContent.includes('It was finished here')));
+}
+
+async function blogReadingAndUnifiedSources(){
+  let view=deskView();
+  const t=deskStartFixture((url,data)=>{
+    if(url.startsWith('/api/desk?'))return view;
+    if(url==='/api/desk-save'){view={...view,revision:view.revision+1,sections:view.sections.map(row=>row.id===data.part?{...row,text:data.text}:row)};return view;}
+    if(url==='/api/research-sources'&&data.action==='saved')return {items:[{id:'saved-result',revision:'checked-v1',name:'Checked research',purpose:'An earlier synthetic purpose'}]};
+    if(url.startsWith('/api/source-preview?'))return {excerpt:'The captured source text.',limitation:'Only the linked tab was captured.',truncated:false};
+    if(url==='/api/upload')return {files:[{filename:'Pasted notes.txt',source:{id:'pasted'},state:'ready',chars:40}]};
+    return null;
+  });
+  // The default path exercises reading, not the explicit expert-mode regressions above.
+  await t.f.run("sRoute('desk','desk-blog')");
+  assert.equal(t.f.run('studio.desk.reading'),'read');
+  assert.equal(t.nodes().filter(n=>n.tagName==='textarea').length,0,'reading has no rewrite forms');
+  assert.ok(t.nodes().some(n=>n.textContent==='First text here.'),'saved manuscript is readable');
+  await t.click('Edit Second part');
+  assert.equal(t.nodes().filter(n=>n.dataset.part).length,1,'only the chosen part is edited');
+  const input=t.nodes().find(n=>n.attributes['aria-label']==='Text of Second part');
+  input.value='A corrected second part.';input.listeners.input();
+  await t.f.run("sDeskChoose(studio.desk,'read')");
+  assert.equal(t.requests.filter(r=>r.url==='/api/desk-save').at(-1).data.text,'A corrected second part.');
+  assert.ok(t.nodes().some(n=>n.textContent==='A corrected second part.'));
+  await t.f.run("sDeskChoose(studio.desk,'edit','aaaaaaaa')");
+  await t.f.run('sDeskFinishOpen(studio.desk)');
+  assert.ok(t.nodes().some(n=>n.textContent==='Polish the writing'));
+  assert.ok(t.nodes().some(n=>n.textContent==='Send and download'));
+  await t.f.run('DESK_KIT.finishClose(studio.desk)');
+  assert.equal(t.f.run('studio.desk.activePart'),'aaaaaaaa');
+  assert.equal(t.nodes().find(n=>n.attributes['aria-label']==='Text of First part').focused,true,'closing tools returns to the edited section');
+  // A failed save cannot navigate away or replace the failure with a Saved message.
+  t.f.run("const saveApi=api;api=async(route,data)=>{if(route==='desk-save')throw new Error('Synthetic save unavailable');return saveApi(route,data)}");
+  const unsaved=t.nodes().find(n=>n.attributes['aria-label']==='Text of First part');unsaved.value='Unsaved words stay here.';unsaved.listeners.input();
+  await t.f.run("sDeskChoose(studio.desk,'read')");
+  assert.equal(t.f.run('studio.desk.reading'),'edit');
+  assert.equal(t.nodes().find(n=>n.attributes['aria-label']==='Text of First part').value,'Unsaved words stay here.');
+  assert.ok(t.nodes().some(n=>n.textContent.includes('Synthetic save unavailable')));
+  t.f.run('api=saveApi');
+  await t.f.run("sDeskChoose(studio.desk,'read')");
+  await t.f.run("sDeskToNote(studio.desk,{id:'whole-feedback',part:'title',comment:'Clarify the title.',quote:''})");
+  assert.equal(t.f.run('studio.desk.reading'),'full','whole-draft feedback opens its note instead of targeting an absent reading control');
+  assert.ok(t.nodes().some(n=>n.tagName==='textarea'&&n.value==='Clarify the title.'));
+  await t.f.run("sDeskChoose(studio.desk,'read')");
+  await t.f.run("sDeskToNote(studio.desk,{id:'section-feedback',part:'aaaaaaaa',comment:'Give this section an example.',quote:''})");
+  assert.equal(t.f.run('studio.desk.reading'),'edit');
+  assert.equal(t.f.run('studio.desk.activePart'),'aaaaaaaa');
+  assert.equal(t.nodes().filter(n=>n.dataset.part).length,1);
+  assert.ok(t.nodes().some(n=>n.tagName==='textarea'&&n.value==='Give this section an example.'));
+  await t.f.run("sDeskBegin({files:[{id:'ref1',filename:'Reference tab',state:'ready',role:'material'}]})");
+  assert.equal(t.nodes().filter(n=>n.type==='file'&&n.id==='files-input').length,1);
+  await t.nodes().find(n=>n.attributes['aria-label']==='Preview Reference tab').listeners.click();
+  assert.ok(t.nodes().some(n=>n.textContent==='The captured source text.'));
+  assert.ok(t.nodes().some(n=>n.textContent==='Only the linked tab was captured.'));
+  assert.equal(t.requests.filter(r=>r.url==='/api/upload').length,0,'preview reads saved text without recapturing');
+  t.f.set('Blob',Blob);t.f.run("studio.deskStart.sourceText='Notes with a literal source value.'");
+  await t.click('Add pasted text');
+  assert.equal(t.requests.filter(r=>r.url==='/api/upload').length,1);
+  assert.equal(t.requests.filter(r=>r.url==='/api/upload')[0].data.analyze,false);
+  assert.equal(t.f.run('studio.deskStart.files.length'),2);
+  // Saved research is retained as a source in the same inventory, with its pin and
+  // explicit purpose recheck, rather than disappearing with the duplicate picker.
+  t.f.set('capturedSaved',null);
+  t.f.run("studio.deskStart.sourceEditor={value:{sources:[]},source:s=>sNode('li','row',s.name),act:async(action,data)=>{capturedSaved={action,...data};studio.deskStart.sourceEditor.value.sources.push({id:'selected-result',name:'Checked research',status:'ready'});return true}}");
+  await t.f.run('sSavedResearchPicker(studio.deskStart,()=>{})');
+  await t.sheet().find(n=>n.textContent==='Checked research · An earlier synthetic purpose').listeners.click();
+  assert.deepEqual(JSON.parse(t.f.run('JSON.stringify(capturedSaved)')),{action:'capture',kind:'saved',source:'saved-result',revision:'checked-v1'});
+  assert.equal(t.f.run('studio.deskStart.researchOn'),true,'a reviewed result is checked for the new purpose');
+  t.f.run("sPage(sFilesCard(studio.deskStart,sNode('p'),()=>{},()=>{}))");
+  assert.ok(t.nodes().some(n=>n.textContent==='Checked research'),'saved research is in the same visible inventory');
+  // Turning off the shared scope overrides inherited legacy settings; defaults cannot
+  // silently re-enable public search after the user unticks it.
+  t.f.run("studio.deskStart.researchOn=false;studio.deskStart.title='Policy test';studio.deskStart.point='Explain';studio.deskStart.searchWeb=true;studio.deskStart.sourceEditor={value:{sources:[]},choice:()=>({documents:true,sites:[],web:false}),valid:()=>true,spec:()=>({id:'policy',expected:'r1'})}");
+  t.f.set('createReply',deskView());t.f.set('capturedPolicyStart',null);t.f.run("const policyStart=studio.deskStart;const originalApi=api;api=async(route,data)=>route==='desk-create'?(capturedPolicyStart=data,createReply):originalApi(route,data)");
+  await t.f.run('sDeskGo(studio.deskStart)');
+  assert.equal(t.f.run('capturedPolicyStart.research_from'),undefined,'an unticked scope never falls back to old public-web defaults');
+  assert.equal(t.f.run('capturedPolicyStart.research_inputs'),undefined);
+  t.f.run('policyStart.researchOn=true');await t.f.run('sDeskGo(policyStart)');
+  assert.deepEqual(JSON.parse(t.f.run('JSON.stringify(capturedPolicyStart.research_inputs)')),{id:'policy',expected:'r1'});
+  assert.equal(t.f.run('capturedPolicyStart.sources.length'),2,'the shared policy uses the existing source inventory once');
+
 }
