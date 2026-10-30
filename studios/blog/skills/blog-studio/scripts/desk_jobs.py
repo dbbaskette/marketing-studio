@@ -1491,21 +1491,34 @@ def humanize_level(value):
     return value
 
 
-def review(root, ident, seen, humanize=PINNED):
+def review(root, ident, seen, humanize=PINNED, voice_guide=PINNED):
     """Queue Check spelling and grammar: Copy edit, then Humanize at the pinned strength.
     One job runs at a time per blog; the second is queued when the first settles."""
     record = review_record(root, ident)
     level = record.get('humanize') if humanize is PINNED else humanize_level(humanize)
     if level not in HUMANIZE_LEVELS:
         level = None
+    voice = record.get('voice_guide') if voice_guide is PINNED else voice_guide
+    if voice is not None:
+        import desk_finish
+
+        desk_finish._guide(root, voice)  # Refuse invalid/retired guides before replacing the check.
     _busy(root, ident)  # A check under way keeps its own record.
-    record = {'humanize': level}
+    record = {'humanize': level, **({'voice_guide': voice} if voice else {})}
     studio.write_json(_review_path(root, ident), record)  # The choice stays either way.
     chain = secrets.token_hex(8)
     job = finish(
-        root, ident, seen, 'copyedit', chain={'review': chain, **({'then': level} if level else {})}
+        root,
+        ident,
+        seen,
+        'copyedit',
+        guide=voice,
+        chain={'review': chain, **({'then': level} if level else {})},
     )
     record.update(chain=chain, copyedit=job['id'], next=None, ended=not level, problem='')
+    if voice:
+        meta = job['metadata']['desk']
+        record.update(voice_name=meta['guide_name'], voice_revision=meta['guide_revision'])
     studio.write_json(_review_path(root, ident), record)
     return job
 
@@ -1527,6 +1540,12 @@ def _review_next(root, job):
         kind, payload, guidance, extra = desk_finish.request(
             root, ident, draft, 'humanize', meta['then']
         )
+        if job['payload'].get('voice_guide'):
+            payload['voice_guide'] = dict(job['payload']['voice_guide'])
+            guidance += '\n\n' + desk_finish.POLISH_VOICE
+            extra.update(
+                {key: meta[key] for key in ('guide', 'guide_name', 'guide_revision') if key in meta}
+            )
         made = _create(
             root,
             ident,
@@ -1576,6 +1595,17 @@ def review_view(root, ident):
     level = record.get('humanize')
     return {
         'humanize': level if level in HUMANIZE_LEVELS else None,
+        **(
+            {
+                'voice_guide': {
+                    'id': record['voice_guide'],
+                    'name': record.get('voice_name', ''),
+                    'revision': record.get('voice_revision'),
+                }
+            }
+            if record.get('voice_guide')
+            else {}
+        ),
         'problem': str(record.get('problem') or '')[:1000],
     }
 

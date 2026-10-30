@@ -146,6 +146,8 @@ async function check(){
   await oneNameEach();
   await deskStartOrder();
   await blogReadingAndUnifiedSources();
+  await polishVoiceChoice();
+  await polishVoiceInFirstReviewAndLinkedDoc();
   await deskPasteAndUpload();
   await deskPublishKeeps();
   await deskGoogleDoc();
@@ -3854,7 +3856,7 @@ async function deskReviewHumanize(){
   f.set('next',{...view,working:null,finishing:{},review:{humanize:'strong',problem:''}});await f.run('studio.desk.view=next;studio.desk.review.ask=null;sDeskReview(studio.desk)');
   const ask=nodes().find(n=>n.id==='review-humanize');assert.equal(ask.checked,true,'the pinned choice is ticked');
   ask.checked=false;ask.listeners.change();
-  await press(head(),'Check spelling and grammar');assert.deepEqual(last('/api/desk-review'),{id:'review-blog',seen:view.revision,humanize:null},'turned off');
+  await press(head(),'Check spelling and grammar');assert.deepEqual(last('/api/desk-review'),{id:'review-blog',seen:view.revision,humanize:null,voice_guide:null},'turned off');
 }
 // Review mode's fixes from its review: Accept all sends what is shown and not flagged, from both
 // sets in one request, and says what it accepted, carried and retired, each retired one naming
@@ -4143,7 +4145,7 @@ async function deskFinishing(){
   assert.equal(f.run('studio.desk.mode'),'review');assert.equal(f.run('studio.desk.finish'),null,'the panel steps aside');
   assert.ok(nodes().some(n=>/review-paper/.test(n.className)));
   await nodes().find(n=>n.textContent==='Check spelling and grammar'&&n.listeners.click).listeners.click();
-  assert.deepEqual(last('/api/desk-review'),{id:'desk-blog',seen:view.revision,humanize:null},'Check spelling and grammar, with no human-sounding wording unless ticked');
+  assert.deepEqual(last('/api/desk-review'),{id:'desk-blog',seen:view.revision,humanize:null,voice_guide:null},'Check spelling and grammar, with no human-sounding wording unless ticked');
   view={...view,working:null};f.set('next',view);
   await f.run('studio.desk.view=next');await descendants(f.get('actions')).find(n=>n.textContent==='Open the full desk').listeners.click();
   await descendants(f.get('actions')).find(n=>n.textContent==='Finishing').listeners.click();
@@ -4907,4 +4909,53 @@ async function blogReadingAndUnifiedSources(){
   assert.deepEqual(JSON.parse(t.f.run('JSON.stringify(capturedPolicyStart.research_inputs)')),{id:'policy',expected:'r1'});
   assert.equal(t.f.run('capturedPolicyStart.sources.length'),2,'the shared policy uses the existing source inventory once');
 
+}
+
+async function polishVoiceChoice(){
+  const made=deskView({id:'voice-blog',review:{humanize:null,voice_guide:{id:'plain',name:'Plain',revision:1}},working:{id:'voice-job',kind:'finish-copyedit',part:'finishing',status:'queued',busy:true}});
+  const t=deskStartFixture((url)=>{
+    if(url==='/api/voice-guides')return {guides:[{id:'plain',name:'Plain',says:'Plain words.',status:'confirmed'},{id:'retired',name:'Retired',status:'retired'}]};
+    if(url==='/api/desk-create'||url.startsWith('/api/desk?'))return made;
+    return null;
+  });
+  await t.f.run("sDeskBegin({have:'draft'})");t.type('desk-manuscript','# Synthetic draft\n\nA paragraph to polish.');
+  assert.equal(t.requests.some(r=>r.url==='/api/voice-guides'),false,'disabled voice choice loads no guide');
+  const toggle=t.byId('polish-voice');toggle.checked=true;toggle.listeners.change();
+  for(let n=0;n<20;n++)await Promise.resolve();
+  assert.deepEqual(t.byId('polish-voice-guide').children.map(n=>n.value),['','plain']);
+  assert.match(t.byId('desk-manuscript').value,/A paragraph to polish/,'catalog loading preserves the draft');
+  await t.submit();assert.equal(t.requests.some(r=>r.url==='/api/desk-create'),false,'a guide must be chosen');
+  t.type('polish-voice-guide','plain');await t.submit();
+  assert.equal(t.requests.find(r=>r.url==='/api/desk-create').data.voice_guide,'plain');
+  assert.ok(t.nodes().some(n=>n.textContent.includes('Voice guide: Plain')));
+  assert.equal(t.requests.some(r=>r.url==='/api/desk-finish'),false,'voice uses the polish pass, not another assistant job');
+  await t.f.run("sDeskBegin({have:'draft'})");t.type('desk-manuscript','A second synthetic draft.');await t.submit();
+  assert.equal(t.requests.filter(r=>r.url==='/api/desk-create').at(-1).data.voice_guide,undefined,'voice is opt-in for each new draft');
+}
+
+async function polishVoiceInFirstReviewAndLinkedDoc(){
+  const shown=deskView({id:'linked-voice',review:{humanize:null},jobs:[],finishing:{},working:null});
+  const t=deskStartFixture(url=>{
+    if(url==='/api/voice-guides')return {guides:[{id:'plain',name:'Plain',says:'Plain words.',status:'confirmed'}]};
+    if(url==='/api/google-preview')return {status:'already-linked',id:shown.id};
+    if(url==='/api/desk-review')return {...shown,review:{humanize:null,voice_guide:{id:'plain',name:'Plain',revision:1}}};
+    if(url.startsWith('/api/desk?'))return shown;
+    return null;
+  });
+  await t.f.run("sDeskBegin({have:'draft',source:'google',url:'https://docs.google.com/document/d/synthetic/edit'})");
+  t.byId('polish-voice').checked=true;t.byId('polish-voice').listeners.change();
+  for(let n=0;n<20;n++)await Promise.resolve();t.type('polish-voice-guide','plain');
+  await t.submit();
+  assert.equal(t.f.run('studio.screen'),'desk');
+  assert.ok(t.nodes().some(n=>n.textContent.includes('Plain. This Doc was already on the desk')));
+  assert.equal(t.requests.some(r=>r.url==='/api/desk-review'),false,'reopening a linked Doc never silently starts a second check');
+  await t.click('Polish with the selected voice');
+  assert.deepEqual(t.requests.find(r=>r.url==='/api/desk-review').data,{id:'linked-voice',seen:shown.revision,humanize:null,voice_guide:'plain'});
+  // A draft that enters Review before its first check offers the same voice choice.
+  await t.f.run("sRoute('desk','linked-voice','review')");
+  assert.ok(t.byId('review-voice'));
+  t.byId('review-voice').checked=true;t.byId('review-voice').listeners.change();
+  for(let n=0;n<20;n++)await Promise.resolve();t.type('review-voice-guide','plain');
+  await t.click('Check spelling and grammar');
+  assert.equal(t.requests.filter(r=>r.url==='/api/desk-review').at(-1).data.voice_guide,'plain');
 }

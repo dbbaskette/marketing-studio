@@ -87,7 +87,9 @@ Once the page is open, use its controls to drive the work:
    should happen first**: **Check spelling and grammar** (the default: each fix is marked
    in your text to accept or reject, and nothing changes until you accept; tick **Also
    suggest more human-sounding wording** to mix in Humanize's rewrites, at Light, Medium
-   or Strong), **Just give
+   or Strong). **Use a voice guide** optionally adds wording suggestions from a saved
+   voice to the same copy-edit pass. Choose the guide; facts, quotations and structure
+   stay protected, and you accept or reject every change. **Just give
    feedback** (comments beside each part, nothing rewritten), **Reshape to fit a kind of
    post** (only this asks for a kind) or **Leave it as it is**. **Tone** and **Check facts
    against your sources** are optional folds. A draft's headings start its sections at

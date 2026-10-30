@@ -1566,3 +1566,25 @@ class HeadingMigrationTests(DeskCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class PolishVoiceRouteTests(RouteCase):
+    def test_voice_choice_is_validated_before_create_and_retried_without_a_second_job(self):
+        import article_tools
+        import tool_jobs
+
+        with self.assertRaisesRegex(ValueError, 'voice guide'):
+            self.start(first_pass='copyedit', voice_guide='missing')
+        self.assertEqual(list((self.root / 'articles').iterdir()), [])
+        guide = article_tools.save_profile(
+            self.root,
+            {'name': 'Plain', 'guide': 'Plain words.', 'status': 'confirmed', 'confirmed': True},
+        )['profile']
+        made = self.start(first_pass='copyedit', voice_guide=guide)
+        job = tool_jobs.read(self.root, made['working']['id'])
+        self.assertEqual(job['metadata']['desk']['guide'], guide)
+        self.assertEqual(
+            self.start(first_pass='copyedit', voice_guide=guide)['working']['id'], job['id']
+        )
+        with self.assertRaisesRegex(ValueError, 'changed'):
+            self.start(first_pass='copyedit')
