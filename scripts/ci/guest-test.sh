@@ -241,10 +241,13 @@ elif [[ "${1:-full}" == training-plan || "${1:-full}" == training-sources-progre
     } 2>&1 | tee "$results_dir/training-plan-tests.log"
     bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
   fi
-elif [[ "${1:-full}" == slide-text-final ]]; then
+elif [[ "${1:-full}" == slide-text-final || "${1:-full}" == training-workspace-final ]]; then
   # All relevant full suites ran; retain passing classes and verify the last
   # saved-run response compatibility repair before browser/CLI acceptance.
   (cd studios/training && PYTHONPATH=tests "$python" -m unittest test_runner_deck.PageTests test_runner_deck.ReviewToolTests test_slide_text_workflow -v && "$python" skills/training-studio/scripts/validate_package.py) 2>&1 | tee "$results_dir/slide-text-final.log"
+  if [[ "${1:-full}" == training-workspace-final ]]; then
+    (cd studios/training && PYTHONPATH=tests "$python" -m unittest test_desk_migration.MigrationPageTests test_desk.TrainingDeskScreenTests test_training_plan -v) 2>&1 | tee "$results_dir/training-workspace-final.log"
+  fi
   export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/slide-graphics" --cache "$work/slide-graphics-cache")"
   mkdir -p "$work/slide-browser"
   cp studios/infographic/tests/ui/package*.json "$work/slide-browser/"
@@ -253,6 +256,10 @@ elif [[ "${1:-full}" == slide-text-final ]]; then
     npm ci --prefix "$work/slide-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/slide-browser-tools.log" 2>&1
   export NODE_PATH="$work/slide-browser/node_modules" SLIDE_TEXT_UI_RESULTS="$results_dir/slide-text-ui"
   node tests/slide_text_browser.cjs 2>&1 | tee "$results_dir/slide-text-browser.log"
+  if [[ "${1:-full}" == training-workspace-final ]]; then
+    PYTHON="$python" TRAINING_WORKSPACE_UI_RESULTS="$results_dir/training-workspace-ui" \
+      node studios/training/tests/ui/training_workspace.cjs 2>&1 | tee "$results_dir/training-workspace-browser.log"
+  fi
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == slide-text-finish ]]; then
   {

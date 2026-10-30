@@ -910,7 +910,8 @@ function deskCard(found) {
   };
   const bar = make('div', 'bar');
   const levelCards = list(deskHeld(view.path).view?.cards).filter(one => (one.level || '') === (found.level || ''));
-  if (actions.includes('ready') && levelCanBeReviewed(levelCards)) {
+  if (actions.includes('ready') && (deskHeld(view.path).view?.execution === 'conversation'
+    || levelCanBeReviewed(levelCards))) {
     bar.append(press('Mark ready', 'ready', { name: found.name, seen: found.seen },
       'desk-ready ' + found.name));
   }
@@ -1910,7 +1911,8 @@ function paintDesk(fresh) {
   if (notice) notice.setAttribute('role', 'alert');
   const available = shown.filter(one => one.state !== 'left-out');
   if (!available.some(one => one.name === held.material[level])) {
-    held.material[level] = (available.find(one => ['needs', 'held'].includes(one.state)) || available[0])?.name;
+    held.material[level] = (available.find(one => one.seen && ['needs', 'held'].includes(one.state))
+      || available.find(one => one.seen) || available[0])?.name;
   }
   const selected = held.sources ? 'sources' : held.material[level];
   const options = [...available.map(one => ({id: one.name, label: cardTitle(one) + ' · '
