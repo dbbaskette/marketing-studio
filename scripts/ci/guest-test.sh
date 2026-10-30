@@ -256,6 +256,7 @@ elif [[ "${1:-full}" == slide-text-final ]]; then
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == slide-text-finish ]]; then
   {
+    PYTHONPATH=tests "$python" -m unittest test_ui_consistency -v
     (cd studios/presentation && PYTHONPATH=tests "$python" -m unittest test_runner_page.RuleTests test_desk_page.ProgressTests test_deck_desk.DeskViewTests test_slide_text_workflow -v && "$python" skills/presentation-studio/scripts/validate_package.py)
     (cd studios/training && bash scripts/ci/check.sh "$python")
   } 2>&1 | tee "$results_dir/slide-text-finish.log"
@@ -267,6 +268,8 @@ elif [[ "${1:-full}" == slide-text-finish ]]; then
     npm ci --prefix "$work/slide-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/slide-browser-tools.log" 2>&1
   export NODE_PATH="$work/slide-browser/node_modules" SLIDE_TEXT_UI_RESULTS="$results_dir/slide-text-ui"
   node tests/slide_text_browser.cjs 2>&1 | tee "$results_dir/slide-text-browser.log"
+  PYTHON="$python" TRAINING_WORKSPACE_UI_RESULTS="$results_dir/training-workspace-ui" \
+    node studios/training/tests/ui/training_workspace.cjs 2>&1 | tee "$results_dir/training-workspace-browser.log"
   bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == slide-text-first ]]; then
   {

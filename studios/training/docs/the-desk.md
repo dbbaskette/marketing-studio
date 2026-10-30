@@ -11,19 +11,21 @@ cover** lists the topics, order, depth and timing across all selected levels. Ex
 Examples and exercises for more detail. **Ask for changes** revises the plans without
 repeating research; describe the emphasis, depth or practical work you want.
 **Build the training** generates the selected materials automatically. There is no
-sample lesson or second default slide-text approval. Materials remain drafts until
+sample lesson. If you requested a deck, **Review slide text** shows its words and
+speaker notes before design starts. Ask for changes or choose **Approve text & design deck**
+for that exact version. Materials remain drafts until
 you mark them Ready, and sending to Google or publishing remains your decision.
 Older saved trainings keep their original flow.
 
 ## Read and change materials
 
-Open the training on the desk. Each level has its own plan and materials; research is shared. Open a card to read its parts. You can type in an editable part, add a note asking for a change, or select a passage and ask for a change to just that passage. Review the result as it arrives. History keeps earlier versions and lets you restore one. Your own typing is saved, and a result does not overwrite a part you changed while it was working.
+Open the training on the desk. Each level has its own plan and materials; research is shared. Choose a material tab to read it, then a section tab to edit one part. Sources has its own tab; the other materials stay available without filling the page. You can type in an editable part, add a note asking for a change, or select a passage and ask for a change to just that passage. Review the result as it arrives. History keeps earlier versions and lets you restore one. Your own typing is saved, and a result does not overwrite a part you changed while it was working.
 
 Sources collects the findings and references used in the training. A guide or brief's Sources section is maintained from its citations; change references in the text instead of typing into that section. You can read the research and plan, and decide how changes should reach the materials that depend on them.
 
 ## The deck
 
-The deck card shows its slides, words, look and review findings. You can edit slide words and speaker notes, choose a look, and request changes to a slide or the whole deck. A slide note redraws its section; other slides are kept. Review findings are proposals: **Apply** shows the price and requests a change, while **Skip** records that you read the finding. There are no automatic repair rounds on the desk. A grave finding still blocks **Mark ready**, even if skipped.
+The deck card shows one slide at a time. Choose a slide in **Slide to review**; slides with review suggestions are marked. Expand **Edit slide text and speaker notes** to change its words. Detailed review notes stay collapsed on the deck card. You can edit slide words and speaker notes, choose a look, and request changes to a slide or the whole deck. A slide note redraws its section; other slides are kept. Review findings are proposals: **Apply fix to this slide** requests a change at the displayed price, while **Dismiss suggestion** records that you read the finding. There are no automatic repair rounds on the desk. A grave finding still blocks **Mark ready**, even if skipped.
 
 Harness Slides 0.16 requires your explicit approval of its design questions when a word change affects an approved drawing. The desk shows the questions and submits your answers. A proposal alone does not approve the change. If the change cannot be checked or rendered, the previous deck remains. Speaker notes do not require this design approval.
 
