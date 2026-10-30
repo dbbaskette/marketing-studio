@@ -355,3 +355,13 @@ previous full-content view; reference documents keep their approval information.
 For CLI manuscript captures, use `google_roundtrip.py capture --manuscript` and
 keep that option on later captures of the same blog. Omit it for an existing
 baseline that used the full document. The page remembers this choice itself.
+
+### Author-facing review comments
+
+New review comments lead with the actual current and proposed wording, or the requested
+formatting or source check, followed by a useful rationale when one is available. Generic
+writing-desk placeholders are omitted. Native suggestions and fallback comments end with
+`blog-studio v<installed version>`. A separate Reference footer retains the tracking IDs
+needed for duplicate prevention and uncertain-write recovery. The version is pinned when
+the plan is prepared; saved older plans retain their original comment format so they can
+still be verified and resumed safely. Existing Google comments are not rewritten.

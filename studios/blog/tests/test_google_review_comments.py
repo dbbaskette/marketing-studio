@@ -692,3 +692,37 @@ class CommentTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class VersionedCommentTests(unittest.TestCase):
+    setUp = CommentTests.setUp
+    findings = CommentTests.findings
+    plan = CommentTests.plan
+
+    def test_fallback_comments_explain_changes_and_tag_every_comment(self):
+        findings = self.findings()
+        findings[0]['reason'] = 'Wording changed on the writing desk.'
+        saved = self.plan(findings)
+        for comment in saved['comment_plan']['comments']:
+            self.assertTrue(comment['content'].endswith('blog-studio v' + gs.VERSION))
+        first = saved['comment_plan']['comments'][0]['content']
+        self.assertIn('Current: delay\nProposed: wait', first)
+        self.assertNotIn('Wording changed on the writing desk.', first)
+        with patch.object(gs, 'VERSION', '99.0.0'):
+            result = gs.apply(self.client, self.root, saved)
+        self.assertEqual(result['status'], 'verified-comments')
+        with self.assertRaisesRegex(gd.GoogleError, 'already attempted'):
+            gs.apply(self.client, self.root, saved)
+        self.assertEqual(gs.verify(self.client, self.root, saved)['status'], 'verified-comments')
+        self.assertEqual(self.client.creates, 3)
+
+    def test_legacy_comment_plan_still_resumes_without_reformatting(self):
+        saved = self.plan()
+        saved.pop('comment_version')
+        inline = self.client.native_read('fixture-doc', inline=True)
+        saved.update(gs.build(inline, saved['findings'], saved['tab_ids'], comment_version=None))
+        saved['comment_plan'] = review.build(
+            inline, saved['findings'], saved['tab_ids'], comment_version=None
+        )
+        self.assertNotIn('blog-studio v', saved['comment_plan']['comments'][0]['content'])
+        self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-comments')

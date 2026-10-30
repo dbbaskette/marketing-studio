@@ -1323,3 +1323,51 @@ class ParagraphSuggestionTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class AuthorFacingCommentTests(unittest.TestCase):
+    setUp = SuggestionsTests.setUp
+    findings = SuggestionsTests.findings
+    plan = SuggestionsTests.plan
+
+    def test_native_comment_explains_the_change_and_pins_installed_version(self):
+        findings = self.findings()
+        findings[0]['reason'] = 'Wording changed on the writing desk.'
+        saved = self.plan(findings)
+        note = saved['comments'][0]['content']
+        self.assertTrue(note.startswith('Current: delay\nProposed: wait'))
+        self.assertNotIn('Wording changed on the writing desk.', note)
+        self.assertTrue(note.endswith('blog-studio v' + gs.VERSION))
+        self.assertIn('\n\nReference: [Blog Studio proof-1]\n', note)
+        self.assertTrue(
+            all(
+                comment['content'].endswith('blog-studio v' + gs.VERSION)
+                for comment in saved['comments']
+            )
+        )
+        with patch.object(gs, 'VERSION', '99.0.0'):
+            self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-pending')
+
+    def test_legacy_native_plan_keeps_its_exact_comment_requests(self):
+        saved = self.plan()
+        saved.pop('comment_version')
+        saved.update(
+            gs.build(
+                self.client.native_read('fixture-doc', inline=True, comments=True),
+                saved['findings'],
+                saved['tab_ids'],
+                comment_version=None,
+            )
+        )
+        from google_review_comments import build
+
+        saved['comment_plan'] = build(
+            self.client.native_read('fixture-doc', inline=True, comments=True),
+            saved['findings'],
+            saved['tab_ids'],
+            comment_version=None,
+        )
+        self.assertEqual(
+            saved['comments'][0]['content'], '[Blog Studio proof-1] Use a plainer word.'
+        )
+        self.assertEqual(gs.apply(self.client, self.root, saved)['status'], 'verified-pending')

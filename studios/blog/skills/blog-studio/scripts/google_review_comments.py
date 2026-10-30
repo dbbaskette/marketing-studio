@@ -42,7 +42,7 @@ def section_names(doc, paragraphs):
     return sections
 
 
-def comment_body(items):
+def comment_body(items, comment_version=gs.VERSION):
     """The text of one review comment for one finding, or for a group of minor fixes in a paragraph."""
     first = items[0]
     numbers = [entry['number'] for entry in items]
@@ -54,19 +54,39 @@ def comment_body(items):
         body += 'Current: ' + finding['before'] + '\n'
         if finding['kind'] == 'edit':
             body += 'Proposed: ' + (finding['after'] or '(delete this text)') + '\n'
-        body += 'Why: ' + finding['reason'] + '\n'
+        reason = gs.review_reason(finding) if comment_version is not None else finding['reason']
+        if reason:
+            body += 'Why: ' + reason + '\n'
     editable = [entry['number'] for entry in items if entry['finding']['kind'] == 'edit']
     if editable:
         body += '\nReview in Blog Studio: “Apply edits ' + ', '.join(map(str, editable)) + '.”\n'
     else:
         body += '\nDiscuss this feedback before deciding on wording.\n'
-    return body + '\n'.join(marker(entry['finding']['id']) for entry in items)
+    references = (
+        '\n'.join(marker(entry['finding']['id']) for entry in items)
+        if comment_version is None
+        else '\n'.join(
+            dict.fromkeys(
+                mark
+                for entry in items
+                for mark in (
+                    marker(entry['finding']['id']),
+                    *re.findall(r'\[Blog Studio [A-Za-z0-9_-]+\]', entry['finding']['reason']),
+                )
+            )
+        )
+    )
+    return body + (
+        references
+        if comment_version is None
+        else 'Reference: ' + references + '\nblog-studio v' + comment_version
+    )
 
 
-def build(doc, findings, selected_tabs, start=1):
+def build(doc, findings, selected_tabs, start=1, comment_version=gs.VERSION):
     """Numbered, readable comments. Numbers continue across a blog's review batches."""
     # Reuse exact-quote, overlap, scope, style and native-index validation.
-    gs.validate(doc, findings, selected_tabs)
+    gs.validate(doc, findings, selected_tabs, comment_version)
     paragraphs = rt.paragraphs(doc)
     sections = section_names(doc, paragraphs)
     titles = {
@@ -104,7 +124,7 @@ def build(doc, findings, selected_tabs, start=1):
     comments = []
 
     def render(items):
-        body = comment_body(items)
+        body = comment_body(items, comment_version)
         if len(body.encode()) > 2048:
             if len(items) > 1:
                 for entry in items:
@@ -238,7 +258,13 @@ def current(client, saved):
     if gs.signature(accepted) != saved['before_sha256']:
         raise GoogleError('Google changed; refresh the review before posting comments.')
     if (
-        build(inline, saved['findings'], saved['tab_ids'], first_number(saved))
+        build(
+            inline,
+            saved['findings'],
+            saved['tab_ids'],
+            first_number(saved),
+            comment_version=saved.get('comment_version'),
+        )
         != saved['comment_plan']
     ):
         raise GoogleError(
