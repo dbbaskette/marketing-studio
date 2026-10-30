@@ -68,21 +68,19 @@ Once the page is open, use its controls to drive the work:
    tone and step time limit. You can change these later in **Settings**. Under **Brand
    skill**, enter its repository and release or choose an installed skill, just as in
    Training Studio. See [brand setup](docs/runner.md#your-brand-skill).
-2. **Choose New blog.** Every new blog is made on the writing desk, in three steps:
-   - **What are you writing?** Pick a kind of post, such as a product announcement or a
-     how-to, or **Something else**.
-   - **Sources and settings.** Add files, links, Google Docs and team library posts. Say
-     what each is for: facts that may be quoted, approved messaging (the product's own
-     claims), or an example of the kind of post (its shape, never its facts). They stay
-     with this blog unless you tick **Keep in the team library**. **Search my sites** and
-     **Search the web too** research before the writing; they start as ticked under
-     **Settings → Writing preferences** (off unless you tick them there), and you can change
-     them for each blog. Choose a **Length**
-     and a **Tone**.
-   - **What do you have?** **A topic** (a title, who it is for and the point, or
-     **Suggest three angles** to pick and edit one), **An outline or notes** (**Write
-     from my outline**, or **Shape an outline with me first**), or **A draft**, which
-     switches to the polishing screen below.
+2. **Choose New blog.** New writing starts with two steps:
+   - **Idea and sources.** Give the topic, audience and point, or bring an outline or
+     notes. Add each source once: files (including PDF), pasted notes, Google Docs,
+     web links or team library posts. The library choice also offers saved research,
+     retaining its original purpose and rechecking it for the new blog. Preview captured text and choose each source's
+     role: facts, attributed product messaging, or a writing example that supplies no
+     factual evidence. Sources stay with this blog unless you choose to keep them in
+     the team library. **Suggest three angles** uses this same inventory.
+   - **Writing preferences.** Optionally choose a kind of post, length and tone.
+     There is no second source picker. On the first step, **Research these sources
+     before writing** requests supplied-source research; **Search for additional
+     external sources** separately permits web or approved-site research. Leave both
+     off to write directly from the material you supplied.
 
    To polish or review a draft, choose **Edit or polish a draft** on Home. It is one
    screen with no kind of post: your draft (pasted, uploaded or a Google Doc), then **What
@@ -109,15 +107,17 @@ Once the page is open, use its controls to drive the work:
    **Download**. **Open the full desk** has everything else.
 3. **Press Start.** Nothing is needed from you after that. The page shows each step and
    opens the draft on the desk when it is ready.
-4. **Edit on the desk.** The draft is one page: the title, the opening, and a card per
-   section. Type in any card; it saves as you go. Under each section, say how it should
-   change and press **Rewrite**; only what you asked for changes. **Write again** writes
-   the section fresh. A **Note for the whole draft** revises every section in turn. Select
-   text to **Rephrase**, **Shorten**, **Expand**, **Fix** or **Ask…**. **History** on each
-   part keeps earlier versions, with a comparison and **Restore**. The **Outline** tab
-   renames, reorders, adds and removes sections and writes the draft or one section from
-   it. **Add a source** takes more sources at any time.
-5. **Finish before publishing.** **Finishing** opens a panel of tools that suggest changes:
+4. **Read and edit.** The desk opens with the manuscript as a readable document.
+   Use **Go to section** or **Edit** beside a heading to work on one section. Changes
+   save as you type; changing views saves pending text first. **Full desk** keeps the
+   all-sections editor available. A note on a section rewrites that section; **Revise
+   the whole draft** is a separate disclosure. Select text in an editor for **Rephrase**,
+   **Shorten**, **Expand**, **Fix** or **Ask…**. **History** compares and restores earlier
+   versions. The **Outline** tab manages sections and their briefs. **Sources** adds
+   material without rewriting what you already have.
+5. **Finish before publishing.** **Polish**, **Check claims**, **Tone and voice** and
+   **Send and download** open contextual tools. **Finishing** groups the full tool list
+   by purpose. Pending suggestions appear above the manuscript and remain optional:
    **Copy edit** (opens Review mode: grammar and wording fixes marked in your text to
    accept or reject), **Humanize** (light,
    medium or strong), **Quick check** (dashes, machine-sounding words and repetition, with

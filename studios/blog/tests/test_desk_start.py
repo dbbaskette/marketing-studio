@@ -1260,6 +1260,53 @@ class SecondReviewTests(SourcesStayWithTheBlogTests):
 
 
 class SharedSourcesTests(StartCase):
+    def test_preview_of_a_private_source_is_bounded_and_does_not_make_it_a_library_item(self):
+        import management
+
+        ident = self.source('Synthetic preview. ' * 800, 'material')
+        directory, record = studio.item(self.root, 'sources', ident)
+        before = {p.name: p.read_bytes() for p in directory.iterdir() if p.is_file()}
+        shown = management.view(self.root, 'source-preview', {'id': [ident]})
+        self.assertEqual(len(shown['excerpt']), 8000)
+        self.assertTrue(shown['truncated'])
+        self.assertIn('Saved local capture', shown['limitation'])
+        self.assertEqual(studio.item(self.root, 'sources', ident)[1], record)
+        self.assertEqual(
+            {p.name: p.read_bytes() for p in directory.iterdir() if p.is_file()}, before
+        )
+        with self.assertRaises(ValueError):
+            management.view(self.root, 'source-preview', {'id': ['../../outside']})
+
+    def test_one_native_inventory_feeds_supplied_research_without_recapture(self):
+        from studio_core import research_sources
+
+        native = self.source('A selected native reference.', 'reference')
+        policy = research_sources.Sources(self.root / '.research-sources').create()
+        made = self.start(
+            way='topic',
+            point='Explain the reference',
+            sources=[native],
+            research_inputs={'id': policy['id'], 'expected': policy['revision']},
+        )
+        start = desk.read_start(self.root, made['id'])
+        self.assertEqual(start['research_from'], {'documents': True, 'sites': [], 'web': False})
+        self.assertEqual(start['research_inputs']['count'], 0)
+        self.assertEqual(desk.read(self.root, made['id'])['sources'][0]['source_id'], native)
+        self.assertEqual(start['steps'], ['research', 'outline', 'draft'])
+
+    def test_examples_alone_cannot_authorize_factual_research(self):
+        from studio_core import research_sources
+
+        example = self.source('A writing example, not factual evidence.', 'inspiration')
+        policy = research_sources.Sources(self.root / '.research-sources').create()
+        with self.assertRaisesRegex(ValueError, 'Add a source or allow'):
+            self.start(
+                way='topic',
+                point='Explain',
+                sources=[example],
+                research_inputs={'id': policy['id'], 'expected': policy['revision']},
+            )
+
     def test_selected_only_research_keeps_shared_scope_and_sources(self):
         from studio_core import research_sources
 

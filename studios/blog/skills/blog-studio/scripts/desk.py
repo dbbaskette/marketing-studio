@@ -450,11 +450,6 @@ def _start(root, data, way, title, tone, length, style, author, brand):
     what is known so far; desk/start.json the steps that write the rest, with no stops."""
     from studio_core import research_contract, research_sources, research_session
 
-    selected = (
-        research_sources.prepare_start(root, data['research_inputs'])
-        if data.get('research_inputs')
-        else None
-    )
     point, audience = data.get('point') or '', data.get('audience') or ''
     if not isinstance(point, str) or len(point) > 2000:
         raise ValueError('Say the point to make in up to 2,000 characters.')
@@ -501,6 +496,21 @@ def _start(root, data, way, title, tone, length, style, author, brand):
     if brand:
         record['brand'] = brand
     _attach(root, data, record)
+    # The native source inventory owns roles, library pins and selected Google tabs.
+    # The shared editor can supply research policy without capturing those files again.
+    import synthesis_research
+
+    primary = any(
+        synthesis_research.offered(
+            {**studio.item(root, 'sources', entry['source_id'])[1], 'purposes': entry['purposes']}
+        )
+        for entry in record['sources']
+    )
+    selected = (
+        research_sources.prepare_start(root, data['research_inputs'], primary=primary)
+        if data.get('research_inputs')
+        else None
+    )
     found = (
         selected['research_from']
         if selected

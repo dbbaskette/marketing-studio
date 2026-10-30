@@ -1000,6 +1000,23 @@ class CurationConflict(ValueError):
     """An inspected source changed; the proposal must not be applied implicitly."""
 
 
+def source_preview(root, ident):
+    """Read an already captured project source without adding it to the team library."""
+    folder, record = studio.item(root, 'sources', ident)
+    path = studio.inside(folder, 'content.md')
+    text = ''
+    if record['status'] == 'ready' and path.is_file():
+        with path.open() as stream:
+            text = stream.read(8001)
+    return {
+        'excerpt': text[:8000],
+        'truncated': len(text) > 8000,
+        'limitation': 'Saved local capture; no links were fetched.'
+        if text
+        else 'This source needs readable text before it can be used.',
+    }
+
+
 def source_detail(root, ident, location='local'):
     if location not in ('local', 'hub'):
         raise ValueError('Choose a local or shared source.')
@@ -2614,6 +2631,8 @@ def view(root, name, query):
             studio.read_json(current)['preview'] if current.exists() else None
         )
         return library_preview_state(root, ident) if ident else {'available': False}
+    if name == 'source-preview':
+        return source_preview(root, arg('id'))
     if name == 'source':
         return source_detail(root, arg('id'), arg('location', 'local'))
     if name == 'article':
