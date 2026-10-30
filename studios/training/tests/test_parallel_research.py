@@ -59,6 +59,15 @@ class ParallelNativeTests(StudioCase):
             self.assertFalse(refused[0], 'Unknown source fields must be refused inside the same job')
             self.assertIn('unsupported_note', refused[1])
             value['sources'][0].pop('unsupported_note')
+        if getattr(self, 'fact_kind_correction', False) and 'questions' in payload:
+            value['facts'][0]['kind'] = 'inference'
+            refused = tools.submit_artifact('research-result', json.dumps(value))
+            self.assertFalse(refused[0], 'Collection-only fact fields must be rejected before the job finishes')
+            self.assertIn('Unknown fact field: kind', refused[1])
+            self.assertIn('Do not remove a kind label to turn an inference into a fact', refused[1])
+            # The scripted author rechecks this quoted assertion; production never
+            # discards the classification on its behalf.
+            value['facts'][0].pop('kind')
         accepted = tools.submit_artifact('research-result', json.dumps(value))
         self.assertTrue(accepted[0], accepted)
 
@@ -100,6 +109,16 @@ class ParallelNativeTests(StudioCase):
         self.assertTrue(facts['sources'])
         self.assertTrue(all(source.get('source_date') == '2026-10-01' for source in facts['sources']))
         self.assertTrue(all('date' not in source and 'unsupported_note' not in source for source in facts['sources']))
+        self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize', 'review'])
+
+    def test_fact_kind_correction_stays_in_the_same_investigator_invocation(self):
+        self.fact_kind_correction = True
+        root = self.start()
+        shown = self.view(root)
+        self.assertIsNone(shown['problem'], shown['problem'])
+        facts, _ = contract.read_bundle(root / 'research')
+        self.assertTrue(facts['review']['accepted'])
+        self.assertTrue(all('kind' not in fact for fact in facts['facts']))
         self.assertCountEqual(self.phases, ['investigate'] * 3 + ['synthesize', 'review'])
 
     def test_parallel_research_prepares_one_topics_review_before_materials(self):

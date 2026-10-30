@@ -26,6 +26,9 @@ RECORD_SCHEMA = 5  # Training Studio's new execution record; other adapters vers
 PENDING = 'Synthesis and independent review are pending.'
 EVIDENCE = ('Investigate only your assigned questions within the supplied task and source policy. '
             'Return schema 2 JSON containing only sources, facts and gaps (an array of strings). '
+            'Each fact contains only id, statement, author and citations. Each citation contains '
+            'source, quote and optional locator. kind belongs to synthesis prose, never a fact '
+            'or citation. Put unsupported or inferred material in gaps; never upgrade it to a fact. '
             'Preserve counterevidence and limitations. Set every fact author to this worker ID. '
             'The host registers your actual invocation and capture receipts. You cannot register '
             'permissions or approve your own evidence. ' + rc.CAPTURED + ' ' + rc.SOURCE_IDS)
@@ -97,6 +100,13 @@ def preparation(value, spec):
                 raise ValueError(f'Return {name} as a nonempty array.')
         return {**copy.deepcopy(spec['evidence_base']), **value}
     return value
+
+
+def evidence_gaps(value):
+    """The exact gap strings sent in a collection packet, including prepared evidence."""
+    return value.get('gaps') or [block['text'] for section in value.get('sections', [])
+        for block in section.get('blocks', []) if block.get('kind') == 'gap'
+        and not (section.get('id') == 'collection' and block.get('text') == PENDING)]
 
 
 def check_frozen(value, spec):
@@ -403,9 +413,7 @@ class Workflow:
                                     'role': 'discovered', 'origin': source['origin'], 'permission': 'public',
                                     'outcome': 'captured', 'capture_file': source['file'], 'accessed_at': now()})
                             self.command(case, 'collection', 'capture', {**terminal, 'source': source})
-                    gaps = value.get('gaps') or [b['text'] for s in value.get('sections', [])
-                        for b in s.get('blocks', []) if b.get('kind') == 'gap'
-                        and not (s.get('id') == 'collection' and b.get('text') == PENDING)]
+                    gaps = evidence_gaps(value)
                     packet = {'schema': 1, 'request_digest': registered['request_digest'],
                         'generation': registered['generation'], **terminal, 'sources': value['sources'],
                         'facts': value['facts'], 'limitations': [], 'gaps': gaps}

@@ -206,6 +206,16 @@ elif [[ "${1:-full}" == yoodli-pdf ]]; then
   if command -v pdftotext >/dev/null; then export STUDIO_TEST_REAL_PDF=1; fi
   node studios/training/tests/ui/yoodli_pdf.cjs 2>&1 | tee "$results_dir/source-picker-browser.log"
   bash scripts/ci/check.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
+elif [[ "${1:-full}" == research-packet-preflight ]]; then
+  # This change is confined to shared evidence validation and its transport
+  # instructions. Reuse unchanged UI/material-generation acceptance evidence.
+  {
+    "$python" -m unittest discover -s tests -v
+    (cd studios/training && "$python" scripts/ci/run_tests.py --jobs 4 test_parallel_research test_synthesis_integration test_runner_worker_tools.ResearchCitationTests test_source_start && "$python" skills/training-studio/scripts/validate_package.py)
+    (cd studios/presentation && "$python" scripts/ci/run_tests.py --jobs 4 test_parallel_research test_synthesis_integration test_runner_worker_tools.ResearchCitationTests && "$python" skills/presentation-studio/scripts/validate_package.py)
+    (cd studios/blog && PYTHONPATH=tests "$python" -m unittest test_synthesis_integration -v)
+    PYTHONPATH=studios/infographic/tests "$python" -m unittest test_research_jobs test_research -v
+  } 2>&1 | tee "$results_dir/research-packet-tests.log"
 elif [[ "${1:-full}" == training-plan || "${1:-full}" == training-sources-progress ]]; then
   # Exercise the real page/engine before the complete native suite, so a browser
   # regression does not waste a full-suite run. All authors and settings are fixtures.
