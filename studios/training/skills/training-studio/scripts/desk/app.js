@@ -4754,7 +4754,7 @@ function topicStep(draft) {
     field('new-title', 'A short title', draft, 'title',
       { hint: 'What it is called in every list, for example “Rolling restarts”.' }),
     field('new-topic', 'What should it teach?', draft, 'topic', { long: true,
-      hint: 'Describe a task they should perform or a decision they should make afterward. A sentence or two is enough.' }),
+      hint: 'Describe what learners should be able to do, the depth you want, and any topics or examples to include. A sentence or two is enough.' }),
     field('new-audience', 'Who is it for?', draft, 'audience', { long: true,
       hint: 'Their role, and what they already know.' }),
     choice('What it is for', PURPOSES, draft.purpose, (index) => {

@@ -223,7 +223,7 @@ READS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/
          '/api/download', '/api/slide', '/api/status', '/api/published', '/api/delete', '/api/deck-draft-ticket',
          DRAFTS, CARD, VERSIONS, f'{DRAFTS}/update-preview', f'{DRAFTS}/slide-versions', f'{DRAFTS}/source-price',
          f'{DRAFTS}/proofread', f'{DRAFTS}/migration-preview')
-WRITES = ('/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+WRITES = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
           '/api/documents', '/api/copies', '/api/share', '/api/outline', '/api/review', '/api/drive',
           '/api/publish', '/api/adopt', '/api/fetch', '/api/delete', '/api/companions',
           '/api/asset', '/api/upgrade', '/api/restart', '/api/versions', '/api/redesign',
@@ -947,6 +947,11 @@ class RunnerPage(desk.Page):
                 desk.text(sent, 'path'), desk.text(sent, 'expected'),
                 desk.text(sent, 'decision'), desk.text(sent, 'target', False),
                 desk.text(sent, 'note', False), self.requests(sent), looks))
+        if path == '/api/training-plan':
+            from runner import training_plan
+            return desk.as_json(HTTPStatus.OK, training_plan.decide(
+                self.engine, desk.text(sent, 'path'), desk.text(sent, 'expected'),
+                desk.text(sent, 'decision'), desk.text(sent, 'note', False)))
         if path == '/api/outline':
             return desk.as_json(HTTPStatus.OK, self.outline(sent))
         if path == '/api/look':

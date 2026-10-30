@@ -4,6 +4,17 @@ Conversation can create, inspect and save the same desk records with `studio des
 
 The desk is where you read, change and finish a new training as Training Studio makes it. Start with **New training**: describe the learning goal and audience, choose materials and research sources, then check the summary and start. You can leave and return while work continues. Progress shows what is being made, time and cost, and anything that needs you; pause, resume or stop work from the run.
 
+## Check the topics, then build
+
+New trainings first research and plan what to teach. **Here’s what this training will
+cover** lists the topics, order, depth and timing across all selected levels. Expand
+Examples and exercises for more detail. **Ask for changes** revises the plans without
+repeating research; describe the emphasis, depth or practical work you want.
+**Build the training** generates the selected materials automatically. There is no
+sample lesson or second default slide-text approval. Materials remain drafts until
+you mark them Ready, and sending to Google or publishing remains your decision.
+Older saved trainings keep their original flow.
+
 ## Read and change materials
 
 Open the training on the desk. Each level has its own plan and materials; research is shared. Open a card to read its parts. You can type in an editable part, add a note asking for a change, or select a passage and ask for a change to just that passage. Review the result as it arrives. History keeps earlier versions and lets you restore one. Your own typing is saved, and a result does not overwrite a part you changed while it was working.

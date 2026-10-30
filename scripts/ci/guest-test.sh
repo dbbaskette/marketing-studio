@@ -181,6 +181,22 @@ elif [[ "${1:-full}" == bundles ]]; then
   bundle="$(find dist -maxdepth 1 -name 'marketing-studio-*-macos-arm64.zip' -print -quit)"
   [[ -n "$bundle" ]] || { echo 'A real Apple Silicon platform bundle is required.' >&2; exit 1; }
   "$python" scripts/ci/bundle_acceptance.py "$bundle" 2>&1 | tee "$results_dir/bundle-acceptance.log"
+elif [[ "${1:-full}" == training-plan ]]; then
+  # Exercise the real page/engine before the complete native suite, so a browser
+  # regression does not waste a full-suite run. All authors and settings are fixtures.
+  export INFOGRAPHIC_STUDIO_TEST_RENDERER="$("$python" scripts/ci/infographic-renderer.py --output "$work/training-graphics" --cache "$work/training-graphics-cache")"
+  mkdir -p "$work/training-browser"
+  cp studios/infographic/tests/ui/package*.json "$work/training-browser/"
+  touch "$work/training-npm-user.conf" "$work/training-npm-global.conf"
+  env HOME="$work/training-browser-home" NPM_CONFIG_USERCONFIG="$work/training-npm-user.conf" NPM_CONFIG_GLOBALCONFIG="$work/training-npm-global.conf" \
+    npm ci --prefix "$work/training-browser" --ignore-scripts --no-audit --no-fund > "$results_dir/training-browser-tools.log" 2>&1
+  export NODE_PATH="$work/training-browser/node_modules" PYTHON="$python" TRAINING_PLAN_UI_RESULTS="$results_dir/training-plan-ui"
+  node studios/training/tests/ui/training_plan.cjs 2>&1 | tee "$results_dir/training-plan-browser.log"
+  {
+    PYTHONPATH=tests "$python" -m unittest test_ui_consistency test_network_static test_suite.CoreTests -v
+    (cd studios/training && bash scripts/ci/check.sh "$python")
+  } 2>&1 | tee "$results_dir/training-plan-tests.log"
+  bash scripts/ci/acceptance.sh "$python" "$results_dir/checks" 2>&1 | tee "$results_dir/tests.log"
 elif [[ "${1:-full}" == slide-text-final ]]; then
   # All relevant full suites ran; retain passing classes and verify the last
   # saved-run response compatibility repair before browser/CLI acceptance.

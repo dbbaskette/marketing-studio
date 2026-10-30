@@ -44,7 +44,7 @@ LISTED = [{'name': 'gpt-6-sol', 'label': 'GPT-6-Sol (gpt-6-sol)', 'family': None
           {'name': 'gpt-6-luna', 'label': 'GPT-6-Luna (gpt-6-luna)', 'family': None,
            'about': None, 'default_level': None, 'levels': ['low', 'medium', 'high']}]
 GETS = ('/api/capabilities', '/api/setup', '/api/agents', '/api/models', '/api/run')
-POSTS = ('/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
+POSTS = ('/api/training-plan', '/api/research-sources', '/api/setup/check', '/api/setup', '/api/trainings', '/api/run', '/api/answer',
          '/api/documents', '/api/copies', '/api/share', '/api/companions', '/api/asset',
          '/api/upgrade', '/api/restart', '/api/versions', '/api/brand', '/api/brand/install', '/api/review',
          '/api/note', '/api/research-site')
@@ -210,7 +210,7 @@ class RuleTests(PageCase):
     def setUp(self):
         super().setUp()
         self.path = self.saved_started()
-        self.bodies = {'/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
+        self.bodies = {'/api/training-plan': {'path':'nowhere', 'expected':'none', 'decision':'approve'}, '/api/research-sources': {'action':'create'}, '/api/setup/check': {'path': str(self.base / 'elsewhere')},
                        '/api/setup': {'limits': {'parallel': 4}},
                        '/api/trainings': {**FORM, 'title': 'Health checks'},
                        '/api/run': {'path': self.path, 'action': 'stop'},

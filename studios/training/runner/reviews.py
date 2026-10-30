@@ -308,7 +308,7 @@ class Reviewing:
         return {**account, 'outside': said} if account and said else account
 
     def _review_view(self, root, record, found):
-        if found.next.kind != 'review':
+        if found.next.kind != 'review' or found.next.step.id == 'review:training-plan':
             return None
         phase = found.next.step.id.partition(':')[2]
         items = []
@@ -418,6 +418,8 @@ class Reviewing:
                 raise WorkspaceError('This training is not waiting for a combined review.')
             phase = found.next.step.id.partition(':')[2]
             view = self._review_view(root, record, found)
+            if view is None:
+                raise WorkspaceError('Review the training topics on the desk.')
             if not expected or expected != view['expected']:
                 raise WorkspaceError('The materials changed. Read the latest review before deciding.')
             if decision == 'approve':

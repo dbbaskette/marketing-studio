@@ -1302,6 +1302,9 @@ def survey(root: Path, run: dict | None = None, copies=(), supplied=(),
     if review_policy.level(run) != 'step_by_step' and not drafts.on_desk(run):
         from runner import reviews
         listed, done = reviews.group(root, session, run, listed, done)
+    from runner import training_plan
+    if drafts.on_desk(run):
+        listed, done = training_plan.group(root, session, run, listed, done)
     first = next((step for step in listed if step.id not in done), None)
     return Survey(session, state, listed, done,
                   _next(first, session, state, asked, found, decks,

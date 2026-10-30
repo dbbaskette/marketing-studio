@@ -224,6 +224,7 @@ import computer
 import checks
 import home
 from studio_core import deck_content
+from runner import training_plan
 from studio_core import brand_guidance, critic, deck_direction, deck_flow, model_profiles, review_policy, research_contract, research_session as research_parallel, research_transport as research_parallel_native, research_timing, research_sources, research_view, research_sites, step_times, stops
 import hub
 import workspace
@@ -426,19 +427,23 @@ def read_record(root: Path) -> dict | None:
     record = workspace.read_run(root)
     if record is None:
         return None
-    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA) \
+    if not isinstance(record, dict) or record.get('schema') not in (SCHEMA, 2, 3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA, training_plan.RECORD_SCHEMA) \
             or not isinstance(record.get('steps'), dict):
         raise WorkspaceError(f'The run record in {root.name} cannot be read, so the runner '
                              'will not drive this training.')
     if record.get('schema') == 2 and not record.get('review_policy'):
         raise WorkspaceError('This run is missing its saved review level. Restore its run record.')
+    if record.get('schema') == training_plan.RECORD_SCHEMA and not (training_plan.enabled(record) and drafts.on_desk(record)):
+        raise WorkspaceError('This training is missing its saved topics-review workflow.')
     contracted = (record.get('research_contract') or {}).get('schema') == 2
     # Runner desk records require a contract; focused conversations may be contract-free.
     if record.get('schema') == drafts.SCHEMA:
         contracted = drafts.on_desk(record) and (contracted or drafts.in_conversation(record))
-    if record.get('schema') == research_parallel.RECORD_SCHEMA and not research_parallel.protocol(record):
+    if (record.get('schema') == research_parallel.RECORD_SCHEMA or
+            record.get('schema') == training_plan.RECORD_SCHEMA and 'research_execution' in record) \
+            and not research_parallel.protocol(record):
         raise WorkspaceError('This run is missing its saved parallel research protocol. Restore its run record.')
-    if record.get('schema') in (3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA) and not contracted:
+    if record.get('schema') in (3, drafts.SCHEMA, research_parallel.RECORD_SCHEMA, training_plan.RECORD_SCHEMA) and not contracted:
         raise WorkspaceError('This run is missing its saved research contract. Restore its run record.')
     return record
 
@@ -622,7 +627,7 @@ class Engine(Reviewing):
 
     def __init__(self, adapters=None, research=None, background: bool = True,
                  at_once: int = AT_ONCE, documents=None, copies=None, index=None,
-                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True):
+                 slides=None, brand=None, notifier=None, parallel_research=True, content_first=True, plan_first=True):
         self.adapters = dict(adapters or agents.AGENTS)
         self.notifier = notifier or team.Notifier()
         self.upkeep = None    # what `studio serve` keeps of the skills here; see `upkeep`
@@ -646,6 +651,7 @@ class Engine(Reviewing):
         self.background, self.at_once = background, at_once
         self.parallel_research = parallel_research
         self.content_first = content_first
+        self.plan_first = plan_first
         self.files = ProcessRLock(gitstate.write_lock_path, refusal=WorkspaceError)
         self._preparing_decks: dict[Path, deck_edit.PreparedEdit] = {}
         # What was typed on each desk and not committed yet, by the training's folder:
@@ -1429,7 +1435,7 @@ class Engine(Reviewing):
                 if contract:
                     record['research_contract'] = contract
                     record['schema'] = 3
-                if desk and self.content_first and not form.get('walkthrough'):
+                if desk and self.content_first and not self.plan_first and not form.get('walkthrough'):
                     record['deck_content'] = deck_content.PROTOCOL
                 if desk:
                     record.update(schema=drafts.SCHEMA, flow=drafts.FLOW, drafts={
@@ -1437,6 +1443,8 @@ class Engine(Reviewing):
                 parallel = research_parallel.execution(self.research().runtime) if contract and self.parallel_research else None
                 if parallel:
                     record.update(schema=research_parallel.RECORD_SCHEMA, research_execution=parallel)
+                if desk and self.plan_first:
+                    record.update(schema=training_plan.RECORD_SCHEMA, training_plan={'schema': 1, 'revision': 0})
                 if selected_sources:
                     record['research_inputs'] = research_sources.install(selected_sources, root)
                     if parallel:
@@ -1459,7 +1467,7 @@ class Engine(Reviewing):
                 raise
             self._claimed(root, space)
         if _source_start is not None:
-            _source_start.keep({'path': str(root), 'id': root.name, 'gates': 0})
+            _source_start.keep({'path': str(root), 'id': root.name, 'gates': 1 if training_plan.enabled(record) else 0})
         self.wake(root)
         needs = self.deck_needs()
         drawn = bool(form['deck_target'] and form['brand']) and not needs['missing'] \
@@ -1472,7 +1480,7 @@ class Engine(Reviewing):
         decks = max(1, len(form['levels'])) if drawn else 0
         balanced = 2 if pipeline.planned_from_form(record) else 3
         return {'path': str(root), 'id': root.name, 'gates': (
-            0 if desk else pipeline.gates(form, drawn) if chosen == 'step_by_step'
+            (1 if training_plan.enabled(record) else 0) if desk else pipeline.gates(form, drawn) if chosen == 'step_by_step'
             else (balanced if chosen == 'balanced' else 1) + decks)}
 
     def _claimed(self, root: Path, space: gitstate.Workspace) -> None:
@@ -6884,6 +6892,9 @@ class Engine(Reviewing):
             'research_from': self._research_view(record),
             'copies': self._copies(found, (record.get('copies') or {}).get('remote')),
             'outline': outline,
+            **({'training_plan': training_plan.view(root, found, record),
+                'training_plan_pending': (record['training_plan'].get('approved') or {}).get('signature')
+                    != training_plan.signature(root, found.session, record)} if training_plan.enabled(record) else {}),
             'look': pipeline.look_view(root, found, level) if drawing else None,
             'deck': (pipeline.deck_view(root, found, level, self._live(run, drawing),
                                         self._given_up(record, drawing))
