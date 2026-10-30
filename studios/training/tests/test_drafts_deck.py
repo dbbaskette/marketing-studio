@@ -1,6 +1,7 @@
 """The Training Studio desk's scoped deck changes."""
 import copy
 import json
+from pathlib import Path
 from unittest import mock
 
 from test_runner_deck import DeckCase, MAJOR, PageCase
@@ -30,7 +31,9 @@ class SlideNoteTests(DeckCase):
         self.assertIn('what the person asked', [entry['name'] for entry in section_job['inputs']])
         self.assertEqual(set(section_job['artifacts']['section']['frozen']), {'the-objection'})
         self.assertEqual(len(self.workers.of('review')), reviews + 1)
-        self.assertEqual([slide['id'] for slide in job[2]['review']['slides']], ['check-yourself'])
+        self.assertEqual([slide['id'] for slide in job[2]['review']['slides']],
+                         [slide['id'] for slide in after['rounds'][-1]['slides']],
+                         'The current critic requires complete inspection; only drawing is scoped.')
         self.assertTrue(self.engine.deck_proposals(root, None)['review']['items'])
         self.assertEqual(workspace.person_statuses(root, workspace.load(root))['deck'], 'draft')
         self.assertEqual((root / pipeline.WORK / after['sections']['section-1']['file']).read_bytes(), drawing)
@@ -178,7 +181,16 @@ class SlideNoteTests(DeckCase):
             self.engine.slide_note(root, None, 'check-yourself', 'Enlarge it.', seen)
         self.assertFalse(self.engine._load(root)['deck'][''].get('notes'))
 
-    def test_a_review_keeps_findings_on_untouched_slides(self):
+    def test_a_legacy_partial_review_keeps_findings_on_untouched_slides(self):
+        preview = self.slides.preview
+        def legacy(*args, **kwargs):
+            made = preview(*args, **kwargs)
+            file = Path(made['critic']) if made.get('critic') else Path(args[1]) / 'critic.json'
+            packet = self.slides._read(file)
+            packet['schema'] = 1
+            file.write_text(json.dumps(packet))
+            return made
+        self.slides.preview = legacy
         self.workers.found = [[MAJOR], []]
         root = self.begin(flow='desk')
         self.to_end(root)

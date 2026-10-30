@@ -2214,6 +2214,12 @@ def review_work(root: Path, found: Survey, step: Step, error: str | None) -> Wor
     earlier = (mine.rounds[-2].get('review') or {}).get('findings') \
         if len(mine.rounds) > 1 else None
     scope = last.get('review_slides')
+    packet = home.read_json(work / last['preview'] / 'critic.json', {})
+    if not last.get('judged') and packet.get('schema') == 2:
+        # The current critic verifies the whole render. Old rounds do not retain
+        # reusable per-slide inspections, so inspect the full inventory rather
+        # than inventing passing answers for peers outside a repair's scope.
+        scope = None
     if last.get('judged') and len(mine.rounds) > 1 and not (
             (mine.rounds[-2].get('review') or {}).get('judgements')):
         scope = None  # Older reviews did not keep their per-criterion answers.

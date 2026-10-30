@@ -282,7 +282,9 @@ class RuleTests(PageCase):
         self.assertEqual(page.DECKS_LIMIT, 120_000_000)
         self.assertEqual(self.page.body_limit('/api/decks', without), server.BODY_LIMIT)
         self.assertEqual(self.page.body_limit('/api/decks?x=1', with_key), page.DECKS_LIMIT)
-        for target in set(POSTS) - {'/api/decks', '/api/picture', '/api/desk-source'}:
+        self.assertEqual(self.page.body_limit('/api/research-sources', with_key), 12_000_000)
+        self.assertEqual(self.page.body_limit('/api/research-sources', without), server.BODY_LIMIT)
+        for target in set(POSTS) - {'/api/decks', '/api/picture', '/api/desk-source', '/api/research-sources'}:
             self.assertEqual(self.page.body_limit(target, with_key), server.BODY_LIMIT, target)
 
     def test_a_source_added_on_the_desk_may_be_large_only_with_the_key(self):

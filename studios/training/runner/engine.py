@@ -3243,6 +3243,9 @@ class Engine(Reviewing):
         with self.files:
             rounds = list(pipeline.read_built(root, level).get('rounds') or ())
             scoped = rounds[-1].get('review_slides')
+            inspected = {slide['id'] for slide in (assessed.get('inspection') or {}).get('slides', [])}
+            if inspected == {slide['id'] for slide in rounds[-1]['slides']}:
+                scoped = None  # A full current-render inspection supersedes earlier findings.
             earlier = (rounds[-2].get('review') or {}) if scoped and len(rounds) > 1 else {}
             if rounds[-1].get('judged') and scoped and not earlier.get('judgements'):
                 scoped, earlier = None, {}

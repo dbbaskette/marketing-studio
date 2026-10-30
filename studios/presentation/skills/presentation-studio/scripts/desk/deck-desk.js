@@ -29,7 +29,8 @@
     'new-minutes', 'new-title', 'new-file', 'new-text', 'new-link'];
   // The levels of an existing deck whose looks are drawn, for the person to pick from.
   const LOOKED_LEVELS = ['redesign', 'rework'];
-  const NOTHING_NEEDED = 'Drafting the slide text. You will approve it before design starts.';
+  const NOTHING_NEEDED = 'Nothing needed from you. The deck opens here when it is ready.';
+  const CONTENT_NEXT = 'Drafting the slide text. You will approve it before design starts.';
   const NO_RECORD = 'This computer has no record yet of how long that takes.';
   const LOOK_PAUSE = 'One thing needs you: pick the look. The deck is drawn in it.';
   const DESK_LEDE = 'A card for each slide. A note on a slide redraws only its section; '
@@ -489,11 +490,12 @@
     const asked = Boolean(run.question || (run.problem && run.problem.action));
     if (run.state === 'working' && !asked) {
       const left = found.minutes_left;
-      const timed = typeof left === 'number' && left > 0;
+      const pending = run.desk.content_pending;
+      const timed = !pending && typeof left === 'number' && left > 0;
       const lede = make('p', 'lede', timed && kit ? kit.estimate({ minutes_left: left },
-        'The deck') : NOTHING_NEEDED);
+        'The deck') : pending ? CONTENT_NEXT : NOTHING_NEEDED);
       lede.setAttribute('role', 'status');
-      h.add(node, lede, timed ? null : make('p', 'quiet', NO_RECORD));
+      h.add(node, lede, timed || pending ? null : make('p', 'quiet', NO_RECORD));
     } else if (run.state === 'paused') {
       h.add(node, make('p', 'lede', 'Paused. Nothing more is started until you resume it. '
         + 'Everything made so far is kept.'));

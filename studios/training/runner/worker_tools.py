@@ -1218,7 +1218,8 @@ class WorkerTools:
         if problems:
             return self._refused(problems, left)
         home.write_json(self.folder / 'accepted' / 'assessment.json',
-                        {'findings': kept, 'weakest': named})
+                        {'findings': kept, 'weakest': named,
+                         'inspection': home.read_json(recorded, {}).get('coverage')})
         return True, (f'Recorded: {len(kept)} finding{"" if len(kept) == 1 else "s"}.{said} '
                       'Now say which slides address each objective, with submit_coverage.')
 

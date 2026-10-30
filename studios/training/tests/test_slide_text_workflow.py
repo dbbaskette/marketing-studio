@@ -36,3 +36,29 @@ class ContentPageTests(PageCase):
         self.assertFalse(self.workers.of('section'))
         self.post('outline', body)
         self.assertTrue(self.workers.of('section'))
+
+import json
+from pathlib import Path
+from test_runner_deck import MAJOR
+from studio_core import critic
+
+class CurrentCriticRepairTests(DeckCase):
+    def test_changed_section_gets_a_complete_review_without_retaining_old_peer_findings(self):
+        preview = self.slides.preview
+        def current(*args, **kwargs):
+            made = preview(*args, **kwargs)
+            packet = Path(made['critic']) if made.get('critic') else Path(args[1]) / 'critic.json'
+            packet.write_text(json.dumps({'schema': 2, 'questions': list(critic.LEGACY),
+                'slides': made['slides'], 'deckSha256': made['deckSha256']}))
+            return made
+        self.slides.preview = current
+        self.workers.found = [[MAJOR], []]
+        root = self.begin(flow='desk')
+        self.to_end(root)
+        seen = self.engine._load(root)['deck']['']['saved']['sha256']
+        self.assertTrue(self.built(root)['rounds'][-1]['review']['findings'])
+        self.engine.slide_note(root, None, 'check-yourself', 'Make this diagram clearer.', seen)
+        self.to_end(root)
+        job = [spec for kind, _, spec in self.workers.jobs if kind == 'review'][-1]
+        self.assertEqual(len(job['review']['slides']), 6)
+        self.assertEqual(self.built(root)['rounds'][-1]['review']['findings'], [])

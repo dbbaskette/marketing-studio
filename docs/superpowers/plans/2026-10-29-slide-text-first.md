@@ -37,6 +37,7 @@ moved out of the companion skills.
 | Duplicate approval | Native waiting-state guard refuses old decision | Existing native decision guards |
 | Old saved run / explicit design walkthrough | Retain original gates and work | Historical fixture suites |
 | Current rendered review submitted | Full matrix, exact slide inventory and findings | Shared bridge and Training Studio regression |
+| Current critic after a partial redraw | Inspect full render and supersede older peer findings; never invent uninspected passes | Training Studio repair regression |
 | Old rendered review submitted | Legacy packet payload retained | Bridge and native suites |
 
 ## Verification
