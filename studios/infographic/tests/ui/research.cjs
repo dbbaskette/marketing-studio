@@ -28,6 +28,8 @@ const path=require('node:path'),fs=require('node:fs'),assert=require('node:asser
   await page.getByText('Pasted notes',{exact:true}).first().waitFor();
   await page.getByRole('button',{name:'Start research',exact:true}).click();
   await page.getByRole('button',{name:'Use research',exact:true}).waitFor({timeout:45000});
+  assert.equal(await page.locator('.research-agent-count').innerText(),'0');
+  await page.getByText('All agents finished',{exact:true}).waitFor();
   assert.deepEqual((await page.evaluate(()=>request('/api/fixture-calls'))).calls,['investigate','synthesize','review']);
   assert.equal(await page.evaluate(()=>held.project.sources.length),0,'Research is not automatically imported');
   assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Phone view must not overflow');

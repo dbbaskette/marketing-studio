@@ -951,7 +951,7 @@ class RunnerPage(desk.Page):
             from runner import training_plan
             return desk.as_json(HTTPStatus.OK, training_plan.decide(
                 self.engine, desk.text(sent, 'path'), desk.text(sent, 'expected'),
-                desk.text(sent, 'decision'), desk.text(sent, 'note', False)))
+                desk.text(sent, 'decision'), desk.text(sent, 'note', False), sent.get('levels')))
         if path == '/api/outline':
             return desk.as_json(HTTPStatus.OK, self.outline(sent))
         if path == '/api/look':

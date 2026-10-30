@@ -710,8 +710,7 @@ def start_minutes(root: Path, record: dict, found) -> int:
 
 ACTIONS = ('ready', 'update', 'keep', 'send', 'download')
 STATES = ('writing', 'draft', 'ready', 'held', 'needs', 'left-out')
-NOTHING_NEEDED = ('Nothing needed from you. Each material opens here as it is ready, in '
-                  'about {n} {minutes}.')
+NOTHING_NEEDED = 'Nothing needed from you. Each material opens here as it is ready.'
 WRITING = 'Being written. It opens here when it is ready.'
 UPDATING = 'Being made again from what it is built from now.'
 DRAFT = 'A draft. Nothing is ready until you mark it.'
@@ -864,7 +863,6 @@ def view(engine, root) -> dict:
             needed += [desk.plainly_on_desk(reason) for reason in report['blocking']]
     running = state == 'working'
     parallel = (record.get('research_execution') or {}).get('progress')
-    minutes = max(1, start_minutes(root, record, found)) if running else None
     doing = ''
     if running:
         doing = (PUTTING.format(it=pipeline.subject(found.next.step))
@@ -877,10 +875,9 @@ def view(engine, root) -> dict:
         **({'execution': record.get('execution'), 'saved_status': record.get('migration_saved_status')} if record.get('unfinished_migration') else {}),
         'flow': FLOW, 'title': session['title'], 'levels': [level or '' for level in levels],
         'progress': {'running': running, 'doing': doing,
-                     'started_at': record.get('started_at'), 'minutes': minutes,
+                     'started_at': record.get('started_at'), 'minutes': None,
                      # Said only while nothing on the desk needs the person.
-                     'line': NOTHING_NEEDED.format(
-                         n=minutes, minutes='minute' if minutes == 1 else 'minutes')
+                     'line': NOTHING_NEEDED
                      if running and not needed and not (parallel and parallel.get('phase') != 'complete') else ''},
         'needs': needed, 'cards': cards,
         'sources': {'account': research_view.account(root / 'research', questions),

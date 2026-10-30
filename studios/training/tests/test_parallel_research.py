@@ -100,6 +100,23 @@ class ParallelNativeTests(StudioCase):
         self.assertNotIn('research_execution', self.engine._load(root))
         self.assertEqual(len(self.workers.of('research-result')), 2)
 
+    def test_stop_keeps_terminal_agent_observation_without_accepting_research(self):
+        from unittest.mock import patch
+        def stopping(root, task, invoke, sources, **options):
+            tell = options['progress']
+            tell({'phase':'investigate','agents':{'count':1,'active':[]}})
+            self.engine._run(root).stop.set()
+            tell({'phase':'investigate','agents':{'count':1,'active':[]}})
+            self.assertEqual(self.engine._load(root)['research_execution']['progress']['phase'], 'stopping')
+            tell({'phase':'investigate','agents':{'count':0,'active':[]}})
+            raise InterruptedError('Synthetic confirmed stop')
+        with patch.object(parallel.Workflow, 'run', side_effect=stopping):
+            root = self.start()
+        progress = self.view(root)['research_progress']
+        self.assertEqual(progress['phase'], 'stopped')
+        self.assertEqual(progress['agents']['count'], 0)
+        self.assertFalse((root/'research/output.json').exists())
+
     def test_source_metadata_is_checked_before_the_helper_registry_without_recollecting(self):
         self.source_metadata_alias = True
         root = self.start()

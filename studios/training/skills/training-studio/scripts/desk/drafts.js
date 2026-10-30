@@ -845,6 +845,11 @@ function headingId(name) {
   return 'desk-card-' + String(name).replace(/[^A-Za-z0-9_-]/g, '-');
 }
 
+function levelCanBeReviewed(cards) {
+  const selected = list(cards).filter(one => one.state !== 'left-out');
+  return selected.length > 0 && selected.every(one => one.seen && ['draft', 'ready'].includes(one.state));
+}
+
 // What was checked for you, from the checks that take milliseconds.
 function checkedPart(checks) {
   const passed = Number(checks && checks.passed) || 0;
@@ -878,7 +883,8 @@ function deskCard(found) {
     return control;
   };
   const bar = make('div', 'bar');
-  if (actions.includes('ready')) {
+  const levelCards = list(deskHeld(view.path).view?.cards).filter(one => (one.level || '') === (found.level || ''));
+  if (actions.includes('ready') && levelCanBeReviewed(levelCards)) {
     bar.append(press('Mark ready', 'ready', { name: found.name, seen: found.seen },
       'desk-ready ' + found.name));
   }
@@ -1581,7 +1587,14 @@ function progressPart(found, held, lead) {
   // The line is blank while something on the desk needs the person.
   const line = progress.line ? make('p', '', progress.line) : null;
   if (line) line.setAttribute('role', 'status');
-  return add(make('div'), callout('', line, controls.childNodes.length ? controls : null, progress.doing ? make('p', 'row-says', progress.doing) : null,
+  const building = progress.running ? make('h3', 'card-title', progress.doing || 'Preparing your training') : null;
+  const materials = list(found.cards).filter(one => one.state !== 'left-out');
+  const available = materials.filter(one => one.seen).length;
+  const status = progress.running ? make('p', 'quiet', run.training_plan_pending
+    ? 'Next: review the topics and teaching plan before the materials are built.'
+    : materials.length ? available + ' of ' + materials.length + ' drafts available. New drafts appear below as they finish.'
+      : 'Preparing the first material. It will appear here when it is ready.') : null;
+  return add(make('div'), callout('', building, line, status, controls.childNodes.length ? controls : null,
     run.timing ? (!run.research_progress || run.research_progress.phase === 'complete' ? measuredTime(run) : null) : progress.started_at ? make('p', 'quiet desk-clock', deskKit.clock(progress))
       : null), researchActivity(run));
 }
@@ -1759,6 +1772,23 @@ function trainingPlanReview(plan, held) {
   input.dataset.key = 'training-plan-note';
   input.addEventListener('input', () => { held.planNote = input.value; });
   add(label, make('span', 'field-label', 'Anything to change?'), input);
+  const levels = list(plan.levels).map(level => level.level).filter(Boolean);
+  const scope = make('label', 'field');
+  const select = make('select', 'input'); select.dataset.key = 'training-plan-scope';
+  select.setAttribute('aria-label', 'Apply changes to');
+  select.setAttribute('aria-describedby', 'training-plan-scope-help');
+  for (const [value, text] of [['auto', 'Automatic — from my request'], ...levels.map(level => [level, 'Level ' + level + ' only']), ['all', 'All levels']]) {
+    const option = make('option', '', text); option.value = value; select.append(option);
+  }
+  select.value = held.planScope || 'auto';
+  const scopeNote = make('p', 'field-hint');
+  scopeNote.id = 'training-plan-scope-help';
+  const scopeChanged = () => {
+    held.planScope = select.value;
+    scopeNote.textContent = select.value === 'auto' ? 'Name a level in your request to revise only that plan. Choose All levels for broader changes.' : select.value === 'all' ? 'Revise every level’s plan. The research is kept.' : 'Revise only level ' + select.value + '. Other levels and the research are kept.';
+  };
+  select.addEventListener('change', scopeChanged); scopeChanged();
+  add(scope, make('span', 'field-label', 'Apply changes to'), select, scopeNote);
   const problem = make('p', 'problem'); problem.setAttribute('role', 'alert');
   const change = capsule('Ask for changes', '', () => decide('changes'), 'training-plan-changes');
   const build = capsule('Build the training', 'filled', () => decide('approve'), 'training-plan-build');
@@ -1768,14 +1798,15 @@ function trainingPlanReview(plan, held) {
     view.busy = true; build.disabled = change.disabled = true; problem.textContent = '';
     try {
       const run = await send('training-plan', {path, expected: plan.expected, decision,
-        note: decision === 'changes' ? input.value.trim() : null});
+        note: decision === 'changes' ? input.value.trim() : null,
+        ...(decision === 'changes' && select.value !== 'auto' ? {levels: select.value === 'all' ? levels : [select.value]} : {})});
       if (view.turn !== turn) return;
-      held.planNote = ''; view.run = run;
+      held.planNote = ''; held.planScope = 'auto'; view.run = run;
     } catch (error) { problem.textContent = error.message; }
     finally { view.busy = false; build.disabled = change.disabled = false; }
     if (view.turn === turn && !problem.textContent) await drawDesk(true);
   }
-  return add(box, label, problem, add(make('div', 'bar'), change, build));
+  return add(box, label, levels.length > 1 ? scope : null, problem, add(make('div', 'bar'), change, build));
 }
 
 function paintDesk(fresh) {
@@ -1804,7 +1835,7 @@ function paintDesk(fresh) {
   const waitingPlan = ours && run.training_plan && run.state === 'waiting';
   const preparingPlan = ours && run.training_plan_pending && !list(found.cards).some(one => one.kind !== 'blueprint' && one.seen);
   const actions = [];
-  if (ours && !conversation && lead !== 'slide-text' && !preparingPlan && !waitingPlan) {
+  if (ours && !conversation && lead !== 'slide-text' && !preparingPlan && !waitingPlan && levelCanBeReviewed(shown)) {
     const mark = capsule(named.length ? 'Mark this level ready' : 'Mark every material ready',
       lead === 'ready' ? 'filled' : '', () => markLevel(level, shown, mark), 'desk-level-ready');
     actions.push(mark);

@@ -46,13 +46,31 @@ const key=(editor,k)=>all(editor.node).find(n=>n.dataset.key===k);
   const box=kit.progress({phase,streams:[{id:'kept',questions:['First question','Second question'],status:'kept'},{id:'busy',questions:['Another question'],status:'working'},{id:'failed',questions:['Retry question'],status:'failed'}]}, {controls,timing:{elapsed_seconds:60,active_seconds:1,assistant_seconds:null}});
   const nodes=all(box),stages=nodes.find(n=>n.className==='research-stages');
   assert.equal(stages.children.findIndex(n=>n['aria-current']==='step'),current);
+  if(current>=0)assert.ok(nodes.some(n=>n.textContent==='Research · Stage '+(current+1)+' of 3'));
+  assert.equal(nodes.filter(n=>n.className==='research-stage-state'&&n.textContent==='Working now').length,current>=0?1:0);
+  assert.ok(nodes.some(n=>n.className.split(' ').includes('research-next')),'Every phase explains what remains');
   assert.ok(nodes.some(n=>n.textContent==='1 minute elapsed · 1 second actively working'));
   assert.ok(nodes.some(n=>n.textContent==='Evidence kept'));assert.ok(nodes.some(n=>n.textContent==='Needs retry'));
   assert.ok(nodes.some(n=>n.dataset.key==='research-area-kept-toggle'));
   assert.ok(nodes.some(n=>n.textContent==='Second question'),'Full questions remain available');
   assert.ok(nodes.includes(controls),'Native controls belong to the same progress surface');
+  assert.equal(nodes.some(n=>n.className==='research-collected'),['synthesize','review'].includes(phase),'Keep completed evidence subordinate while report/check work continues');
   const meter=nodes.find(n=>n.tagName==='progress');
   assert.equal(Boolean(meter),phase==='investigate');if(meter){assert.equal(meter.value,1);assert.equal(meter.max,3);}
  }
+ for(const [count,phase] of [[3,'investigate'],[1,'synthesize'],[1,'review'],[0,'complete']]){
+  const nodes=all(kit.progress({phase,agents:{count,active:count?[{phase,id:'synthetic',stream:phase==='investigate'?'area1':null}]:[]}}));
+  assert.equal(nodes.find(n=>n.className==='research-agent-count').textContent,String(count));
+  assert.equal(nodes.filter(n=>n.className==='research-agent-robot').length,Math.max(1,count));
+  assert.ok(nodes.some(n=>n.dataset.key==='research-agents-toggle'));
+ }
+ for(const agents of [undefined,{count:null,unconfirmed:1,active:[{phase:'investigate',status:'termination-unconfirmed'}]}]){
+  const nodes=all(kit.progress({phase:'needs-attention',agents}));
+  assert.equal(nodes.find(n=>n.className==='research-agent-count').textContent,'—','Unknown activity must not be displayed as zero');
+ }
+ const corrected=all(kit.progress({phase:'synthesize',round:2,round_limit:3,agents:{count:1},correction:{areas:[],notes:['Synthetic prose correction']}}));
+ assert.ok(corrected.some(n=>n.textContent==='Correction round 2 of 3'));
+ assert.ok(corrected.some(n=>n.textContent.includes('sources are not being researched again')));
+ assert.ok(corrected.some(n=>n.textContent==='Synthetic prose correction'));
  console.log('PASS shared source editor: explicit scope, mixed links, validation, draft/focus preservation, progress, no provider actions');
 })().catch(error=>{console.error(error);process.exitCode=1;});

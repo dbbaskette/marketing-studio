@@ -3030,19 +3030,17 @@ class DeskPageTests(PageCase):
         seen = []
 
         def writing(tools, job):
-            seen.append(self.get('drafts', path=str(root)))
+            with mock.patch.object(drafts, 'start_minutes', side_effect=AssertionError('Live status must not estimate completion')):
+                seen.append(self.get('drafts', path=str(root)))
             return self.workers.document(tools, job)
 
         self.workers.then('document', writing)
         self.desk(levels=['101'], materials=['document', 'brief'])
         progress = seen[0]['progress']
         self.assertTrue(progress['running'])
-        self.assertTrue(progress['line'].startswith(
-            'Nothing needed from you. Each material opens here as it is ready, in about'),
-            progress)
         self.assertEqual(progress['line'], 'Nothing needed from you. Each material opens '
-                         f"here as it is ready, in about {progress['minutes']} minutes.")
-        self.assertIsInstance(progress['minutes'], int)
+                         'here as it is ready.')
+        self.assertIsNone(progress['minutes'], 'Live progress must not manufacture a countdown')
         self.assertEqual(progress['started_at'], self.record(root)['started_at'])
         self.assertTrue(progress['doing'])
         cards = {card['name']: card for card in seen[0]['cards']}

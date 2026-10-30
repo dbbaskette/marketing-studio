@@ -164,8 +164,9 @@ function sDeskPolish(held){
   const style=held.first_pass==='reshape'?held.kind||'':'';if(held.style!==style){held.style=style;sStyleSamples(held);}
   sFrame('Polish a draft',[],'Writing desk',()=>sRoute('home'));
   const form=sNode('form','narrow desk-start'),problem=sNode('p','problem',held.problem||'');problem.setAttribute('role','alert');delete held.problem;
-  const again=()=>sDeskStartAgain(held),reading=held.source==='google'&&!held.preview;
-  const go=sNode('button','button button-filled',reading?'Read Google Doc':'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
+  const again=()=>sDeskStartAgain(held);
+  const googleAction={copyedit:'Read and polish',feedback:'Read and review',reshape:'Read and reshape',leave:'Open Google Doc'}[held.first_pass];
+  const go=sNode('button','button button-filled',held.source==='google'?googleAction:'Start');go.type='submit';go.disabled=studio.busy||!access.actions.edit;
   const first=sCard('What should happen first',sChoice('When the desk opens',DESK_POLISH_FIRST,held,'first_pass',()=>again()),sNode('p','quiet field-hint',DESK_POLISH_SAYS[held.first_pass]));
   // Check spelling and grammar may also suggest more human-sounding wording, at a strength,
   // mixed in with the fixes. Ticking it shows the strength in place, so focus stays put.
@@ -178,10 +179,12 @@ function sDeskPolish(held){
   const linked=held.linkedRun;delete held.linkedRun;const run=linked?sButton('Open its run',()=>sRoute('run',linked)):null;
   sAdd(form,...sDeskDraftIn(held),first,tone,facts,sAdd(sNode('div','form-foot'),problem,sAdd(sNode('div','bar'),go,run)),['saved','upload'].includes(held.source)?null:instead);
   form.addEventListener('submit',async event=>{
-    event.preventDefault();if(!access.actions.edit||studio.busy)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
+    event.preventDefault();if(!access.actions.edit||studio.busy||held.starting)return;const said=sDeskHaveProblem(held);if(said){problem.textContent=said;return;}
     // A read that fails again says so as a new answer, so pressing the button visibly reads.
-    const failed=problem.textContent;problem.textContent='';
-    await busy(go,reading?'Reading…':'Starting…',async()=>{try{if(reading)await sDeskReadGoogle(held);else await sDeskGo(held);}catch(error){problem.textContent=(reading&&failed?'Read again, and still: ':'')+error.message+(reading?' Your link is kept here; change the Doc or try again.':' Your choices are kept here.');}});
+    const failed=problem.textContent,needsRead=held.source==='google'&&!held.preview;problem.textContent='';
+    held.starting=true;const unlock=sFreezeControls(form);
+    try{await busy(go,needsRead?'Reading and starting…':'Starting…',async()=>{try{if(needsRead)await sDeskReadGoogle(held,{start:true});else await sDeskGo(held);}catch(error){const readFailed=needsRead&&!held.preview;problem.textContent=(readFailed&&failed?'Read again, and still: ':'')+error.message+(readFailed?' Your link is kept here; change the Doc or try again.':' Your choices and captured draft are kept here.');}});}
+    finally{held.starting=false;unlock();}
   });
   sPage(sNode('p','lede','Bring your draft and choose what happens first. No kind of post needed.'),form);
 }
@@ -262,13 +265,13 @@ function sDeskDraftIn(held){
     file.addEventListener('change',()=>{held.file=file.files?.[0]||null;note.textContent=held.file?'Selected: '+held.file.name:'Choose a draft.';});
     card.append(file,note);
   }else{
-    card.append(sField('desk-google','Google Doc link or document ID',held,'url',{required:true,max:2000,hint:'For a Doc with multiple tabs, open the tab you want and paste its address. Only that tab is imported; the Doc is not changed.',changed:()=>{held.preview=null;}}));
+    card.append(sField('desk-google','Google Doc link or document ID',held,'url',{required:true,max:2000,hint:'Your chosen pass starts after the Doc is read locally. For a Doc with multiple tabs, paste the address of the tab you want. Only that tab is imported; the Doc is not changed.',changed:()=>{held.preview=null;}}));
     if(held.preview){const paper=sNode('article','paper doc');paper.setAttribute('aria-label','Google Doc preview');paper.append(window.StudioMarkdown?window.StudioMarkdown.render(held.preview.content):sNode('p','',held.preview.content));const tab=held.preview.summary.selected_tab;card.append(sNode('p','',tab?'Only the tab “'+tab.title+'” is included. Other tabs are not imported. Check the text below, then start.':'Check the text below, then start.'));if(held.preview.summary.excluded_approval_blocks)card.append(sNode('p','quiet','Leading approval fields are left out of this editing copy. They stay in the Google Doc. Check that the blog below is complete.'));card.append(paper);}
   }
   card.append(sField('desk-title','Title (optional)',held,'title',{max:500,hint:'Blank uses the draft’s # heading or the Doc’s name.'}));
   return [card];
 }
-async function sDeskReadGoogle(held){
+async function sDeskReadGoogle(held,{start=false}={}){
   const turn=studio.turn,found=await api('google-preview',{url:held.url.trim()});if(turn!==studio.turn)return;
   if(found?.status==='already-linked'&&found.id){
     // The Doc is already a blog here: open it on the desk, or bring it there.
@@ -277,7 +280,9 @@ async function sDeskReadGoogle(held){
     if(!made){created=true;try{made=await api('desk-create',{operation:held.operation,style:held.style,tone:held.tone,first_pass:held.first_pass,...sDeskHumanize(held),sources:sDeskUploads(held.files),library:sDeskLibraryPicks(held.files),...sDeskKept(held.files),article:found.id});}catch(error){if(!/step-by-step run/.test(error.message))throw error;if(turn!==studio.turn)return;held.problem=error.message;held.linkedRun=found.id;return sDeskStart();}}
     if(turn!==studio.turn)return;studio.deskStart=null;studio.desk={id:made.id,view:made,session:operationId()};return sRoute('desk',made.id,created&&held.first_pass==='copyedit'?'review':null);
   }
-  held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;sDeskStart();
+  held.preview=sGooglePreview(found);if(!held.title.trim())held.title=found.title;
+  if(start){const made=await sDeskGo(held);if(made&&studio.screen==='desk'&&studio.id===made.id){const summary=held.preview.summary,notes=[];if(summary.selected_tab)notes.push('Opened only the tab “'+summary.selected_tab.title+'”.');if(summary.excluded_approval_blocks)notes.push('Leading approval fields stay in the original Google Doc.');if(notes.length)sToast(notes.join(' '));}return made;}
+  sDeskStart();
 }
 // Check spelling and grammar's strength of human-sounding suggestions, or null for none.
 function sDeskHumanize(held){return held.first_pass==='copyedit'?{humanize:held.humanizeOn?held.humanizeLevel:null}:{};}
@@ -322,6 +327,7 @@ async function sDeskGo(held){
   if(made.keep_problem)sToast(made.keep_problem);
   // Check spelling and grammar lands in Review mode; every other start on the full desk.
   studio.desk={id:made.id,view:made,session:operationId()};await sRoute('desk',made.id,held.have==='draft'&&held.first_pass==='copyedit'?'review':null);
+  return made;
 }
 
 // Add a source on the desk: the same files card, saved with this blog; a kept one goes to
@@ -1058,8 +1064,8 @@ function sReviewGoogle(held){
     out.push(sNode('p','',sDeskGoogleSaid(g.plan)),disclosure('What would be sent',changes),sAdd(sNode('div','bar'),send,sButton('Cancel',()=>{g.plan=null;sReviewHeadShow(held);})));
     return out;
   }
-  const plan=sButton('Send accepted changes to Google Doc',async button=>{await busy(button,'Checking…',async()=>{try{await sReviewFlush(held);g.plan=await api('desk-google-plan',{id:held.id,mode:'auto'});g.problem='';}catch(error){g.plan=null;g.problem=error.message;}sReviewHeadShow(held);});},'filled');plan.disabled=!sDeskCan(held);
-  out.push(sNode('p','quiet','Sends every difference from the Google Doc as it was read: the fixes you accepted and any edits you made. Rejected fixes are never sent.'),sAdd(sNode('div','bar'),plan));
+  const plan=sButton('Review Google changes',async button=>{await busy(button,'Checking…',async()=>{try{await sReviewFlush(held);g.plan=await api('desk-google-plan',{id:held.id,mode:'auto'});g.problem='';}catch(error){g.plan=null;g.problem=error.message;}sReviewHeadShow(held);});},'filled');plan.disabled=!sDeskCan(held);
+  out.push(sNode('p','quiet','Review the fixes you accepted and any edits you made before sending them to Google. Nothing is sent during this check; the next screen shows what will be sent and has the Send button. Rejected fixes are never sent.'),sAdd(sNode('div','bar'),plan));
   return out;
 }
 function sReviewLede(state){

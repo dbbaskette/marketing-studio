@@ -278,22 +278,26 @@ class Workflow:
             payload = copy.deepcopy(payload)
             payload.setdefault('_execution', {}).setdefault('invocation', 'research-invocation-' + secrets.token_hex(16))
             invocation = payload['_execution']['invocation']
-            attempt = {'phase': phase, 'invocation': invocation, 'worker': payload['worker'], 'started_at': now()}
+            attempt = {'phase': phase, 'invocation': invocation, 'worker': payload['worker'],
+                       'stream': payload['_execution'].get('stream'), 'started_at': now(), 'status': 'working'}
             with host_lock:
                 host['attempts'].append(attempt)
                 rc.write(case, host_file, json.dumps(host))
             confirmed = True
             try:
+                report()
                 return original_invoke(phase, guidance, payload, offered, fetch)
             except BaseException as error:
                 confirmed = getattr(error, 'terminal_confirmed', True)
                 raise
             finally:
-                if confirmed:
-                    with host_lock:
+                with host_lock:
+                    attempt['status'] = 'finished' if confirmed else 'termination-unconfirmed'
+                    if confirmed:
                         attempt['ended_at'] = now()
                         attempt['seconds'] = max(0, research_timing.stamp(attempt['ended_at']) - research_timing.stamp(attempt['started_at']))
-                        rc.write(case, host_file, json.dumps(host))
+                    rc.write(case, host_file, json.dumps(host))
+                report()
         invoke = execute
         request = {'schema': 1, **{k: task[k] for k in rc.TASK_FIELDS},
                    'execution_mode': 'parallel' if limit > 1 else 'sequential',
@@ -316,8 +320,10 @@ class Workflow:
         held = json.loads(bytes_of(state_file))
         if any(a.get('started_at') and not a.get('ended_at') for s in held['workstreams'] for a in s['attempts']):
             raise ValueError('An earlier research invocation has no confirmed terminal observation. Confirm it ended before retrying; saved evidence is kept.')
-        tracked = {'schema': 1, 'phase': 'investigate', 'round': 1, 'streams': [
-            {'id': a['id'], 'questions': request['workstreams'][i]['questions'], 'status': 'waiting'} for i, a in enumerate(areas)]}
+        kept = {s['id'] for s in status['workstreams'] if s['status'] == 'accepted'}
+        tracked = {'schema': 1, 'phase': 'investigate', 'round': 1, 'round_limit': rc.ROUNDS, 'streams': [
+            {'id': a['id'], 'questions': request['workstreams'][i]['questions'],
+             'status': 'kept' if a['id'] in kept else 'waiting'} for i, a in enumerate(areas)]}
         state_lock = threading.RLock()
 
         def report(phase=None, stream=None, state=None):
@@ -327,6 +333,12 @@ class Workflow:
                     if area['id'] == stream: area['status'] = state
                 with host_lock:
                     timing = research_timing.account(host['started'], host['attempts'])
+                    active = [{'id': a['worker'], 'phase': a['phase'], 'stream': a.get('stream'),
+                               'status': a.get('status', 'working')}
+                              for a in host['attempts'] if not a.get('ended_at')]
+                unconfirmed = sum(a['status'] == 'termination-unconfirmed' for a in active)
+                tracked['agents'] = {'count': None if unconfirmed else len(active),
+                                     'unconfirmed': unconfirmed, 'active': active}
                 if timing['incomplete']:
                     timing.update(active_seconds=None, assistant_seconds=None)
                 tracked['timing'] = timing
@@ -363,7 +375,8 @@ class Workflow:
                 saved = next(s for s in status['workstreams'] if s['id'] == area['id'])
                 if saved['status'] == 'accepted': report(stream=area['id'], state='kept')
                 else: pending.append((area, saved))
-            report('investigate')
+            # Do not paint a fresh investigation when only synthesis prose needs repair.
+            if pending: report('investigate')
 
             def collect(area, saved):
                 require()
@@ -491,4 +504,12 @@ class Workflow:
             for stream in corrections(review, registry):
                 self.command(case, 'collection', 'retry', {'workstream': stream, 'reason': 'The independent review requested evidence correction.'})
                 report(stream=stream, state='waiting')
+            affected = sorted(corrections(review, registry))
+            notes = [item['note'] for item in review.get('facts', [])
+                     if item.get('verdict') not in ('supported', 'pending') and item.get('note')]
+            assessment = review.get('assessment') or {}
+            if assessment.get('note'): notes.append(assessment['note'])
+            with state_lock:
+                tracked['correction'] = {'areas': affected, 'notes': notes}
+            report('needs-revision')
         raise rc.ReviewRefused(rc.objections(case), rc.ROUNDS, rc.grouped(case))

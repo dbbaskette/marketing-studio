@@ -6895,8 +6895,7 @@ DESK_KINDS = (('blueprint', 'blueprint'), ('document', 'learner guide'), ('brief
               ('deck', 'slide deck'), ('scenario:main', 'practice scenario'))
 DESK_LEDE = ('Each level’s materials, built from the shared research. Edit any part. '
              'Nothing is ready until you mark it.')
-NOTHING_NEEDED = ('Nothing needed from you. Each material opens here as it is ready, in '
-                  'about {n} minutes.')
+NOTHING_NEEDED = 'Nothing needed from you. Each material opens here as it is ready.'
 A_DRAFT = 'A draft. Nothing is ready until you mark it.'
 DESK_START_STEPS = ['1. Goal and audience', '2. Materials and levels', '3. Sources and settings']
 
@@ -7528,7 +7527,9 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertIn('Researching', shot['text'])
         self.assertEqual(shot['pressed'], ['101'])
         self.assertIn('201', shot['buttons'])
-        self.assertEqual(shot['parts'][:5], ['Plan', 'Guide', 'Brief', 'Deck', 'Practice'])
+        self.assertEqual(shot['parts'][:6], ['Researching', 'Plan', 'Guide', 'Brief', 'Deck', 'Practice'])
+        self.assertIn('10 of 10 drafts available.', shot['text'])
+        self.assertNotIn('in about 12 minutes', shot['text'])
         self.assertIn('Sources', shot['parts'])
         self.assertEqual(shot['filled'], ['Mark this level ready'])
         self.assertEqual([control['name'] for control in shot['toolbar']],
@@ -7542,6 +7543,15 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
         self.assertEqual(result['snapshots']['other']['pressed'], ['201'])
         # Each card is marked ready on its own, with the version shown on it.
         self.assertGreaterEqual(shot['buttons'].count('Mark ready'), 5)
+
+    def test_readiness_is_not_offered_while_a_level_material_is_being_written(self):
+        plan = a_card('blueprint@101')
+        guide = a_card('document@101', state='writing', says='Being written.', seen=None, actions=[])
+        result = self.open_desk(self.on_desk(a_desk(plan, guide, levels=('101',))), [{'snapshot':'building'}])
+        shot = result['snapshots']['building']
+        self.assertNotIn('Mark this level ready', shot['buttons'])
+        self.assertNotIn('Mark ready', shot['buttons'])
+        self.assertIn('Being written.', shot['text'])
 
     def editable(self, name='document@101', **extra):
         material = a_card(name.replace('yoodli:', 'scenario:'))
@@ -8061,7 +8071,7 @@ class TrainingDeskScreenTests(ScriptedPage, PageCase):
             {'snapshot': 'cards'}, {'click': 'Sources'}, {'snapshot': 'sources'}], narrow=True)
         cards, sources = result['snapshots']['cards'], result['snapshots']['sources']
         self.assertIn('Sources', cards['buttons'])
-        self.assertEqual(cards['parts'][:5], ['Plan', 'Guide', 'Brief', 'Deck', 'Practice'])
+        self.assertEqual(cards['parts'][:6], ['Researching', 'Plan', 'Guide', 'Brief', 'Deck', 'Practice'])
         self.assertNotIn('Sources', cards['parts'])
         self.assertEqual(sources['pressed'], ['Sources'])
         self.assertIn('Sources', sources['parts'])
