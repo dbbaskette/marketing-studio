@@ -1166,7 +1166,7 @@ function sFilesCard(draft,problem,again,lock,about={}){
     const preview=sButton('Preview text',async button=>{await busy(button,'Reading saved text…',async()=>{try{const found=await api((file.library?'source?':'source-preview?')+new URLSearchParams({id:file.id,location:file.location||'local'}));draft.sourcePreview={name:file.filename,text:found.excerpt||'',note:[found.limitation,found.truncated?'Showing the first 8,000 characters.':''].filter(Boolean).join(' ')};again();}catch(error){problem.textContent=error.message;}});});preview.setAttribute('aria-label','Preview '+file.filename);row.append(preview);
     // A library item's role is for this blog only; an uploaded file's role is saved with it.
     {const was=file.role||'material';row.append(sField('files-role-'+file.id,'Used as',file,'role',{options:roles,short:true,changed:async value=>{if(file.library)return;let failed=false;studio.busy=true;lock(true);try{await api('source-role',{id:file.id,role:FILE_ROLES[value]||'facts'});problem.textContent='';}catch(error){failed=true;file.role=was;draft.problem=error.message;}finally{studio.busy=false;lock(false);}if(failed)again();}}));}
-    if(!file.library){const title=file.kept?'Keep it to this blog':'Keep in the team library';const move=sButton(title,()=>{if(studio.busy)return;file.kept=!file.kept;again();});move.setAttribute('aria-label',title+' · '+file.filename);row.append(move);}
+    if(!file.library&&!file.shared){const title=file.kept?'Keep it to this blog':'Keep in the team library';const move=sButton(title,()=>{if(studio.busy)return;file.kept=!file.kept;again();});move.setAttribute('aria-label',title+' · '+file.filename);row.append(move);}
     {const drop=sButton('Remove',()=>{draft.files=draft.files.filter(other=>other!==file);again();});drop.setAttribute('aria-label','Remove '+file.filename);row.append(drop);}
     list.append(row);}
   const reviewed=draft.sourceEditor?.value?.sources||[];for(const source of reviewed)list.append(draft.sourceEditor.source(source));
@@ -1174,7 +1174,7 @@ function sFilesCard(draft,problem,again,lock,about={}){
   // A public page, read now and saved with this blog like a file.
   let linkField;
   {const linkInput=sNode('input','input');linkInput.id='files-link';linkInput.type='url';linkInput.inputMode='url';linkInput.autocomplete='off';linkInput.placeholder='https://…';const linkLabel=sNode('label','field-label','Or add a link');linkLabel.htmlFor=linkInput.id;const linkAdd=sButton('Add the link',async button=>{const link=linkInput.value.trim();if(!/^https:\/\/\S+$/.test(link)){problem.textContent='Paste a public https link first.';linkInput.focus();return;}if(draft.files.length>=20){problem.textContent='Use up to 20 files for one blog.';return;}await busy(button,'Reading the page…',async()=>{studio.busy=true;try{const result=await api('upload',{operation:operationId(),files:[{link,purpose:draft.role}],purpose:'material',keep:false,analyze:false});const added=(result.files||[])[0];remember(result);problem.textContent='';studio.busy=false;sToast(added?'Added '+added.filename+'.':'Added the page.');again();}catch(error){problem.textContent=error.message;linkInput.focus();}finally{studio.busy=false;}});});linkAdd.id='files-link-add';linkField=sAdd(sNode('div','field'),linkLabel,sAdd(sNode('div','bar'),linkInput,linkAdd),sNode('p','quiet field-hint','A public page, read once.'));}
-  const fromLibrary=sAdd(sNode('div','field'),sAdd(sNode('div','bar'),sButton('From the library',()=>sLibraryPicker(draft,again))),sNode('p','quiet field-hint','Posts already in the team library, each with its role.'));
+  const fromLibrary=sAdd(sNode('div','field'),sAdd(sNode('div','bar'),sButton('From the library',()=>sLibraryPicker(draft,again)),sButton('From the Document Library',()=>sDocumentLibrary(draft,again,problem))),sNode('p','quiet field-hint','Posts already in the team library, each with its role. The Document Library holds uploads and finished work from every studio on this computer; what you choose there stays with this blog.'));
   if(draft.sourceEditor)fromLibrary.append(sButton('Use saved research',()=>sSavedResearchPicker(draft,again)));
   // Keep comes before the picker: it applies to the files added next, and each row says where its file went.
   const keep=sCheck('files-keep','Keep in the team library',draft,'keep',about.keepWhen||'Ticked ones go to the team library when you start.');
@@ -1189,6 +1189,23 @@ function sFilesCard(draft,problem,again,lock,about={}){
   for(const [key,input]of Object.entries(inputs))input.hidden=key!==draft.fileMethod;
   let preview=null;if(draft.sourcePreview){const shown=draft.sourcePreview;preview=sCard(shown.name,sNode('p','quiet',shown.note),sNode('pre','source-excerpt',shown.text),sButton('Close source preview',()=>{draft.sourcePreview=null;again();}));}
   return sCard('Sources for this blog',sNode('p','quiet','Add each source once. Readable sources are used by the writing and, when requested, research. Examples guide style and are never factual evidence.'),draft.files.length||reviewed.length?list:sNode('p','quiet','No sources yet. You can write from your idea or outline alone.'),preview,sChoice('Add a source',methods,draft,'fileMethod',again),disclosure('Role and library options for new sources',roleField,sNode('p','quiet',meaning),keep),...Object.values(inputs));
+}
+
+// The shared Document Library (library.js): chosen revisions come back as files for this
+// blog only, each with the role picked for it, and are used as any uploaded file is.
+// Choosing starts nothing and sends nothing to an assistant.
+function sDocumentLibrary(draft,again,problem){
+  if(!window.StudioLibrary){problem.textContent='The Document Library could not be loaded. Reload the page.';return;}
+  const roles=[['facts','Facts (may be quoted)'],['messaging','Approved messaging'],['example','Example of the kind of post']];
+  const asRole={facts:'material',messaging:'messaging',example:'inspiration'};
+  window.StudioLibrary.pick({studio:'blog',roles,max:Math.max(1,20-draft.files.length),title:'Add from the Document Library',
+    post:(route,body)=>api('document-'+route,body),
+    use:async picks=>{
+      if(picks.length+draft.files.length>20)throw new Error('Use up to 20 files for one blog.');
+      const result=await api('document-library-take',{operation:operationId(),picks});
+      for(const row of result.files||[])if(!draft.files.some(file=>file.id===row.source.id))draft.files.push({id:row.source.id,filename:row.filename,state:row.state,chars:row.chars||0,note:row.note||'',link:'',role:asRole[row.role]||'material',kept:false,shared:true});
+      sToast(picks.length===1?'Added 1 document to this blog.':'Added '+picks.length+' documents to this blog.');again();
+    }});
 }
 
 async function sSavedResearchPicker(draft,again){

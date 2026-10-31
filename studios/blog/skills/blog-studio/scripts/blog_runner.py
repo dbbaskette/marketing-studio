@@ -1830,6 +1830,13 @@ def keep_finished(root, directory, record, run):
         run['library'] = {'reason': reason}
         return 'not kept in the team library: ' + reason
     run['library'] = {'id': source['id'], 'revision': source['revision']}
+    import shared_library
+
+    # Kept in the shared Document Library too, for every studio on this computer: local
+    # only, and never in the way of the approval.
+    shared = shared_library.keep_blog(root, record, text, source)
+    if shared['state'] != 'kept':
+        return 'kept in the team library; ' + shared_library.describe(shared)
     return 'kept in the team library'
 
 
