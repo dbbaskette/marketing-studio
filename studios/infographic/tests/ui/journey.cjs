@@ -86,6 +86,36 @@ const assert = require('node:assert/strict');
     await page.getByRole('button',{name:'Save words',exact:true}).click();
     await page.getByText(/^Saved Page takeaway as revision \d+\./).waitFor();
     assert.equal(await page.evaluate(()=>document.activeElement.id),'ig-words');
+    // Saving unchanged words makes no revision.
+    const unchangedAt=await page.evaluate(()=>held.project.revision);
+    await page.getByRole('button',{name:'Save words',exact:true}).click();
+    await page.getByText(/^Nothing changed, so no revision was made\./).waitFor();
+    assert.equal(await page.evaluate(()=>held.project.revision),unchangedAt);
+    // Unsaved words survive opening another infographic and coming back.
+    const first=await page.evaluate(()=>({id:held.project.id,title:held.project.brief.title,text:held.elements.find(e=>e.label==='Section 1 text').text}));
+    await page.getByLabel('Element',{exact:true}).selectOption({label:'Section 1 text'});
+    await page.getByLabel('Words for Section 1 text',{exact:true}).fill('Others keep serving.');
+    await page.evaluate(async()=>{
+      let b=(await request('/api/projects',{title:'Second synthetic page',preset:'digital',direction:'direct'})).project;
+      const text=(await request('/api/fixture-source')).text;
+      b=(await request('/api/action',{action:'source',id:b.id,expected_revision:b.revision,data:btoa(unescape(encodeURIComponent(text))),kind:'text',name:'Pasted notes'})).result;
+      await request('/api/action',{action:'suggest',id:b.id,expected_revision:b.revision});
+      b=(await request('/api/project?id='+b.id)).project;
+      b=(await request('/api/action',{action:'select',id:b.id,expected_revision:b.revision,story_id:b.stories[0].id})).result;
+      await request('/api/brand-current',{id:b.id,expected_revision:b.revision});
+      b=(await request('/api/project?id='+b.id)).project;
+      await request('/api/action',{action:'build',id:b.id,expected_revision:b.revision,request_id:requestId()});
+      await openProject(b.id);
+    });
+    await page.getByRole('heading',{name:'Second synthetic page',exact:true}).waitFor();
+    await page.locator('#ig-words').waitFor();
+    assert.equal(await page.locator('#ig-element option').evaluateAll(n=>n.filter(o=>o.textContent.endsWith('(unsaved)')).length),0,'Another infographic has its own words');
+    await page.getByRole('button',{name:'Infographics',exact:true}).first().click();
+    await page.getByRole('button',{name:'Open '+first.title,exact:true}).click();
+    await page.getByLabel('Words for Section 1 text',{exact:true}).waitFor();
+    assert.equal(await page.getByLabel('Words for Section 1 text',{exact:true}).inputValue(),'Others keep serving.');
+    assert.equal(await page.getByLabel('Element',{exact:true}).evaluate(n=>n.selectedOptions[0].textContent),'Section 1 text (unsaved)');
+    await page.getByLabel('Words for Section 1 text',{exact:true}).fill(first.text);
     await page.locator('#actions').getByRole('button',{name:'Create preview',exact:true}).click();
     await page.getByRole('heading',{name:'Draft page',exact:true}).waitFor();
     await page.getByRole('button',{name:'Inspect page with assistant',exact:true}).click();

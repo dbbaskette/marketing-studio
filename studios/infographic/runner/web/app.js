@@ -342,16 +342,23 @@ function renderProject() {
 }
 // The visual editor keeps its place across saves, reloads and other actions in this tab:
 // the selected element, unsaved words for each element, and the last saved confirmation.
-let bench={project:'',element:'',drafts:{},saved:null,failed:'',focus:false,scroll:null};
-try{const kept=JSON.parse(sessionStorage.getItem('infographic-studio-bench')||'null');if(kept&&typeof kept==='object'&&kept.drafts&&typeof kept.drafts==='object')bench={...bench,project:String(kept.project||''),element:String(kept.element||''),drafts:kept.drafts};}catch(f){}
-function keepBench(){try{sessionStorage.setItem('infographic-studio-bench',JSON.stringify({project:bench.project,element:bench.element,drafts:bench.drafts}));}catch(f){}}
+let bench={project:'',element:'',drafts:{},saved:null,failed:'',unchanged:false,focus:false,scroll:null};
+// Every infographic's unsaved words and selected element, by project then element.
+let benchStore={drafts:{},elements:{}};
+try{const kept=JSON.parse(sessionStorage.getItem('infographic-studio-bench')||'null');
+  if(kept&&typeof kept==='object'&&kept.drafts&&typeof kept.drafts==='object'&&!Array.isArray(kept.drafts))benchStore={drafts:kept.drafts,elements:kept.elements&&typeof kept.elements==='object'?kept.elements:{}};}catch(f){}
+function keepBench(){
+  if(bench.project){benchStore.elements[bench.project]=bench.element;if(Object.keys(bench.drafts).length)benchStore.drafts[bench.project]=bench.drafts;else delete benchStore.drafts[bench.project];}
+  try{sessionStorage.setItem('infographic-studio-bench',JSON.stringify(benchStore));}catch(f){}
+}
+function unsavedFor(id){return Object.keys(benchStore.drafts[id]||{}).length>0;}
 function when(value){const date=value?new Date(value):null;return date&&!isNaN(date)?date.toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'';}
 function ledgerItem(name,words,state,detail){
   const bead=make('span','bead');bead.dataset.state=state;bead.setAttribute('aria-hidden','true');
   return add(make('div','ig-ledger-item'),make('span','quiet',name),add(make('strong','state'),bead,document.createTextNode(words)),detail?make('span','quiet ig-ledger-detail',detail):null);
 }
 function workbench(p,delivery){
-  if(bench.project!==p.id){bench={project:p.id,element:'',drafts:{},saved:null,failed:'',focus:false,scroll:null};keepBench();}
+  if(bench.project!==p.id){keepBench();bench={project:p.id,element:String(benchStore.elements[p.id]||''),drafts:{...(benchStore.drafts[p.id]||{})},saved:null,failed:'',unchanged:false,focus:false,scroll:null};}
   const names=held.elements||[];
   const approvedFiles=held.deliveries.find(d=>!d.draft);
   const ledger=add(make('div','ig-ledger'),
@@ -403,6 +410,7 @@ function inspector(p,names,img,mark){
   function pending(){
     const chosen=names.find(n=>n.id===bench.element),unsaved=words.input.value!==chosen.text;
     if(bench.failed){state.className='ig-save-state problem';state.textContent=bench.failed+' Your words are kept here.';return;}
+    if(bench.unchanged&&!unsaved){state.className='ig-save-state';state.textContent='Nothing changed, so no revision was made. These words are already in revision '+held.project.revision+'.';return;}
     if(bench.saved&&!unsaved&&bench.saved.revision===held.project.revision){
       const stale=!held.deliveries.find(d=>d.current);state.className='ig-save-state';
       state.replaceChildren(document.createTextNode('Saved '+bench.saved.label+' as revision '+bench.saved.revision+'. '+(stale?'The preview still shows an earlier revision. Update it to see this change before review.':'')));
@@ -411,13 +419,13 @@ function inspector(p,names,img,mark){
     }
     state.className='ig-save-state quiet';state.textContent=unsaved?'Unsaved words. Saving makes a new revision; approval is never carried over.':'Saving makes a new revision. Approval is never carried over.';
   }
-  choice.input.addEventListener('change',()=>{bench.element=choice.input.value;bench.saved=null;bench.failed='';keepBench();show();});
-  words.input.addEventListener('input',()=>{const chosen=names.find(n=>n.id===bench.element);if(words.input.value===chosen.text)delete bench.drafts[chosen.id];else bench.drafts[chosen.id]=words.input.value;bench.failed='';keepBench();options();pending();});
+  choice.input.addEventListener('change',()=>{bench.element=choice.input.value;bench.saved=null;bench.failed='';bench.unchanged=false;keepBench();show();});
+  words.input.addEventListener('input',()=>{const chosen=names.find(n=>n.id===bench.element);if(words.input.value===chosen.text)delete bench.drafts[chosen.id];else bench.drafts[chosen.id]=words.input.value;bench.failed='';bench.unchanged=false;keepBench();options();pending();});
   if(img){
     img.addEventListener('click',event=>{
       const box=img.getBoundingClientRect(),x=(event.clientX-box.left)/box.width,y=(event.clientY-box.top)/box.height;
       const hit=names.filter(n=>x>=n.bounds[0]&&x<=n.bounds[0]+n.bounds[2]&&y>=n.bounds[1]&&y<=n.bounds[1]+n.bounds[3]).sort((a,b)=>a.bounds[2]*a.bounds[3]-b.bounds[2]*b.bounds[3])[0];
-      if(!hit)return;bench.element=hit.id;bench.saved=null;bench.failed='';keepBench();options();show();words.input.focus();
+      if(!hit)return;bench.element=hit.id;bench.saved=null;bench.failed='';bench.unchanged=false;keepBench();options();show();words.input.focus();
     });
     img.title='Select words on the page to edit them';
   }
@@ -427,9 +435,10 @@ function inspector(p,names,img,mark){
 }
 async function saveWords(){
   const chosen=(held.elements||[]).find(n=>n.id===bench.element),input=$('ig-words');if(!chosen||!input)return;
-  const text=input.value;bench.scroll=window.scrollY;bench.saved=null;bench.failed='';
-  const result=await action('edit-text',{element_id:chosen.id,text});
-  if(result&&typeof result.revision==='number'){delete bench.drafts[chosen.id];bench.saved={revision:result.revision,label:chosen.label};}
+  const text=input.value;bench.scroll=window.scrollY;bench.saved=null;bench.failed='';bench.unchanged=false;
+  if(text===chosen.text){delete bench.drafts[chosen.id];bench.unchanged=true;keepBench();bench.focus=true;renderProject();return;}
+  const before=held.project.revision,result=await action('edit-text',{element_id:chosen.id,text});
+  if(result&&typeof result.revision==='number'){delete bench.drafts[chosen.id];if(result.revision>before)bench.saved={revision:result.revision,label:chosen.label};else bench.unchanged=true;}
   else{bench.drafts[chosen.id]=text;bench.failed=$('notice').textContent||'These words could not be saved.';}
   keepBench();bench.focus=true;if(held?.project.id===bench.project)renderProject();
 }
@@ -532,7 +541,7 @@ if (homeLink) {
 }
 async function startDesk() {
   let id='';try{id=sessionStorage.getItem('infographic-studio-project')||'';}catch(f){}
-  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id)),desk=await request('/api/desk?id='+encodeURIComponent(id));const unsaved=bench.project===id&&Object.keys(bench.drafts).length>0;if(progress.activity?.state==='running'||desk.planning_response?.available||desk.recovery?.length||unsaved){await openProject(id);return;}}catch(f){}}
+  if(id){try{const progress=await request('/api/activity?id='+encodeURIComponent(id)),desk=await request('/api/desk?id='+encodeURIComponent(id));const unsaved=unsavedFor(id);if(progress.activity?.state==='running'||desk.planning_response?.available||desk.recovery?.length||unsaved){await openProject(id);return;}}catch(f){}}
   await home();
 }
 $('sheet').addEventListener('close',paintWork);

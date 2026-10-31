@@ -115,8 +115,8 @@ its name (Page heading, Section 2 heading, Section 1, step 3 label) or select it
 page; it is outlined on the preview and its place is described. Element IDs are under
 Advanced. Saving keeps the element, focus and scroll position, confirms the new revision
 and says whether the preview is out of date, with **Update preview**. Unsaved words are
-kept per element in that browser tab, including across a reload, and a refused save
-keeps them. Three states stay distinct: current work, the rendered preview and the last
+kept for each infographic and element in that browser tab, including across a reload,
+opening another infographic and a refused save. Saving unchanged words makes no revision. Three states stay distinct: current work, the rendered preview and the last
 approved delivery. **Saved files** keeps every rendered revision's downloads; approved
 files never change. **History** says what each revision did (for example Edited words,
 Ran checks, Approved this exact revision, Restored an earlier revision), what it

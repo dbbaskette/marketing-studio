@@ -48,8 +48,8 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   edited one after the other.
 - **Which revision is which.** Current work, the rendered preview and the last approved
   delivery are shown separately. A save confirms its new revision, says when the preview
-  is out of date and offers Update preview. Unsaved words are kept for each element in
-  the tab, across a reload and after a refused save.
+  is out of date and offers Update preview. Unsaved words are kept for each infographic
+  and element in the tab, across a reload, another infographic and a refused save.
 - **History in words.** Each revision says what it did, what it changed and when, beside
   its number and exact identity. Saved files keep every rendered revision's downloads;
   approved files never change, and edits and restores never carry an approval over.

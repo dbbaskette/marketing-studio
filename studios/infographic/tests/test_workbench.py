@@ -97,3 +97,17 @@ class WorkbenchTests(Isolated):
                          (approved['revision'], 'Approved: ready to export and deliver'))
         fresh = self.store.create('Synthetic empty brief')
         self.assertEqual(progress.readiness(fresh)['summary'], 'Brief saved: add information')
+
+    def test_history_fingerprints_each_revision_once_per_page(self):
+        from unittest import mock
+        from runner import labels as named
+        project = self.current()
+        for number in range(30):
+            project = self.engine.edit_text(self.ident, 'b1_heading', 'Edit ' + str(number),
+                                            expected_revision=project['revision'])
+        with mock.patch.object(named, '_content', side_effect=named._content) as counted:
+            entries = history.entries(self.store, self.ident)
+        self.assertEqual(len(entries), project['revision'] + 1)
+        # One fingerprint per saved revision plus at most two per entry, not one per pair.
+        self.assertLessEqual(counted.call_count, 3 * len(entries) + 1)
+        self.assertTrue(entries[0]['summary'].startswith('Edited words'))

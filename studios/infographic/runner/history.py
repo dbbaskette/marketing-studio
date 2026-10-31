@@ -11,15 +11,20 @@ def entries(store, ident, *, before=None):
     # One older revision explains the oldest entry on this page.
     saved = store.history(ident, before=before, limit=101)
     shown = saved[-100:]
+    # Each revision's content fingerprint once; `older` grows as the page is walked.
+    contents = [_content(p) for p in saved]
+    first = len(saved) - len(shown)
+    older = set(contents[:max(0, first - 1)])
     result = []
     for index, p in enumerate(shown):
-        position = len(saved) - len(shown) + index
+        position = first + index
         previous = saved[position - 1] if position else None
-        older = {_content(o) for o in saved[:max(0, position - 1)]}
+        if position >= 2:
+            older.add(contents[position - 2])
         fingerprint = digest(p)
         result.append({'revision': p['revision'], 'sha256': fingerprint, 'title': p['brief']['title'],
                        'scene_id': (p['scene'] or {}).get('id'), 'approved': p['approval'] is not None,
-                       **change(previous, p, older), 'saved_at': store.saved_at(ident, p['revision'], fingerprint)})
+                       **change(previous, p, older, contents[position]), 'saved_at': store.saved_at(ident, p['revision'], fingerprint)})
     return list(reversed(result))
 
 

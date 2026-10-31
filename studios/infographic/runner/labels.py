@@ -86,10 +86,11 @@ def _content(project):
     return digest({key: project[key] for key in _CONTENT})
 
 
-def change(previous, current, earlier=()):
+def change(previous, current, earlier=(), fingerprint=None):
     """What one saved revision did, in words, with the content it affected.
 
-    `earlier` holds content fingerprints of older revisions to recognise a restore.
+    `earlier` holds content fingerprints of older revisions to recognise a restore;
+    `fingerprint` is this revision's own, when the caller already has it.
     """
     if previous is None:
         return {'summary': 'Created the infographic', 'affected': []}
@@ -98,7 +99,8 @@ def change(previous, current, earlier=()):
     lost = previous['approval'] is not None and current['approval'] is None
     if current['approval'] is not None and previous['approval'] is None:
         summary = 'Approved this exact revision'
-    elif changed and _content(current) in earlier and _content(current) != _content(previous):
+    elif changed and (fingerprint or _content(current)) in earlier:
+        # Content equal to an older revision: a restore, or words typed back exactly.
         summary = 'Restored an earlier revision as new work'
     elif changed == ['scene'] and previous['scene'] and current['scene']:
         summary, affected = _scene_change(previous, current)
