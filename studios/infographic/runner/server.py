@@ -135,7 +135,7 @@ class Page(shared.Page):
                 raise Invalid(str(error)) from None
         if path == '/api/action':
             try:
-                configured = not self.injected and isinstance(sent, dict) and sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'art-direct', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'repair', 'revise-story')
+                configured = not self.injected and isinstance(sent, dict) and sent.get('action') in ('visual-layout', 'image-recover', 'suggest', 'art-direct', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'repair', 'revise-story', 'approve', 'review')
                 verb = sent.get('action') if isinstance(sent, dict) else None
                 if isinstance(verb, str) and verb in activity.LABELS:
                     self.store.read(sent.get('id'))
