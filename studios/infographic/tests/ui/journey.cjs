@@ -132,6 +132,8 @@ const assert = require('node:assert/strict');
     await page.getByRole('heading',{name:'Approved delivery',exact:true}).waitFor();
     assert.equal(await page.getByRole('button',{name:'Download SVG draft',exact:true}).count(),0);
     await page.getByText(/^Downloads: Approved files for revision \d+: PNG, PDF, SVG and text\.$/).waitFor();
+    // The approved page's text and PDF are kept in the Document Library from the saved files.
+    await page.getByText('Kept in the Document Library with its text and PDF (library revision 1).',{exact:true}).waitFor();
     await page.getByRole('button',{name:'Actual pixels',exact:true}).click();
     assert(await page.locator('.ig-preview-scroll').evaluate(n=>n.scrollWidth>n.clientWidth));
     assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
@@ -174,6 +176,31 @@ const assert = require('node:assert/strict');
       assert.deepEqual(targets,[],'Small controls at '+width);
     }
     const output=process.env.INFOGRAPHIC_UI_RESULTS;if(output){fs.mkdirSync(output,{recursive:true});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(output,'desktop-dark.png'),fullPage:false});await page.setViewportSize({width:390,height:844});await page.emulateMedia({colorScheme:'light'});await page.evaluate(()=>scrollTo(0,0));await page.screenshot({path:path.join(output,'phone-light.png'),fullPage:false});}
+    // Add from library: Cancel changes nothing; Use selected makes the document a source and
+    // returns focus to Add from library. Nothing is started.
+    await page.setViewportSize({width:390,height:844});
+    const sourcesAt=await page.evaluate(()=>held.project.sources.length);
+    await page.getByText('Sources and facts',{exact:true}).click();
+    await page.getByRole('button',{name:'Add from library',exact:true}).click();
+    const sheet=page.getByRole('dialog',{name:'Add from library'});
+    await sheet.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).waitFor();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.getByRole('dialog',{name:'Add from library'}).count(),0);
+    assert.equal(await page.evaluate(()=>held.project.sources.length),sourcesAt,'Cancel changes nothing');
+    await page.getByRole('button',{name:'Add from library',exact:true}).click();
+    await sheet.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).click();
+    await sheet.getByRole('checkbox',{name:'Selected: Synthetic capacity notes'}).waitFor();
+    await sheet.getByRole('button',{name:'Use selected',exact:true}).click();
+    // This infographic has facts, a page and an approval: it asks before clearing them.
+    const confirm=page.getByRole('dialog',{name:'Add Synthetic capacity notes'});
+    await confirm.getByText(/^This clears this infographic’s facts, story, page, approval\./).waitFor();
+    assert.equal(await page.evaluate(()=>held.project.sources.length),sourcesAt,'Nothing changes before Add as sources');
+    await confirm.getByRole('button',{name:'Add as sources',exact:true}).click();
+    await page.getByText(/^The document is a source now\./).waitFor();
+    assert.equal(await page.evaluate(()=>held.project.sources.length),sourcesAt+1);
+    await page.getByText('From the Document Library (Marketing Studio), revision 1.',{exact:true}).waitFor();
+    assert.equal(await page.evaluate(()=>document.activeElement.dataset.key),'ig-library-add');
+    assert(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
     const cdp=await page.context().newCDPSession(page);await cdp.send('Emulation.setEmulatedMedia',{features:[{name:'prefers-reduced-transparency',value:'reduce'},{name:'prefers-reduced-motion',value:'reduce'}]});
     assert.equal(await page.locator('.toolbar').evaluate(n=>getComputedStyle(n).backdropFilter),'none');
     await page.getByRole('button',{name:'Infographics',exact:true}).first().click();
@@ -182,8 +209,17 @@ const assert = require('node:assert/strict');
     await page.keyboard.press('Tab');assert(await page.getByRole('dialog').evaluate(n=>n.contains(document.activeElement)));
     await page.keyboard.press('Escape');await page.getByRole('button',{name:'New infographic',exact:true}).click();
     assert.equal(await page.getByLabel('Working title',{exact:true}).inputValue(),'Retained intake');
+    // A new infographic starts with no library documents; one chosen here waits for Save brief.
+    assert.equal(await page.getByText('It becomes a source when you save the brief.',{exact:false}).count(),0);
+    await page.getByRole('button',{name:'Add from library',exact:true}).click();
+    const picker=page.getByRole('dialog',{name:'Add from library'});
+    await picker.getByRole('checkbox',{name:'Select Synthetic capacity notes'}).click();
+    await picker.getByText('1 selected',{exact:true}).waitFor();
+    await picker.getByRole('button',{name:'Use selected',exact:true}).click();
+    await page.getByRole('heading',{name:'Synthetic capacity notes',exact:true}).waitFor();
+    assert.equal(await page.getByLabel('Working title',{exact:true}).inputValue(),'Retained intake');
     await page.keyboard.press('Escape');
     assert.deepEqual(errors,[],'Browser runtime errors');
-    console.log('PASS: phone intake → source-backed story → actual render → focused edit → pixel review → checks → approval → SVG download; history comparison; 320/390/1280 light/dark/reduced-motion; no browser errors or horizontal overflow. Providers are injected.');
+    console.log('PASS: phone intake → source-backed story → actual render → focused edit → pixel review → checks → approval → SVG download → kept in the Document Library; history comparison; Add from library on the desk and a new brief; 320/390/1280 light/dark/reduced-motion; no browser errors or horizontal overflow. Providers are injected.');
   }catch(f){console.error(JSON.stringify({browser_errors:errors,text:page?await page.locator('body').innerText():''}));if(page&&process.env.INFOGRAPHIC_UI_RESULTS)await page.screenshot({path:path.join(process.env.INFOGRAPHIC_UI_RESULTS,'failure.png'),fullPage:true});throw f;}finally{if(browser)await browser.close();child.kill('SIGTERM');await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve();},5000);child.once('exit',()=>{clearTimeout(timer);resolve();});});}
 })().catch(e=>{console.error(e.message);process.exitCode=1;});

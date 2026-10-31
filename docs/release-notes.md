@@ -92,6 +92,35 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
   doesn't move if the work folder changes later. Nothing in it is shared with your
   team or the Team Hub.
 
+## Unreleased: the Document Library in Infographic Studio
+
+- **Add from library.** Infographic Studio's **Sources and facts** and the **New
+  infographic** sheet have **Add from library**, with the same sheet as the other
+  studios. Every chosen revision is checked, then all of them become sources of that
+  infographic in one revision, or none do. Each keeps its readable text, and an
+  upload keeps its original file. The infographic keeps them if the library changes
+  or is gone. A source says which library revision it came from, shows its
+  extraction gaps, and says when it can't be found on this computer (for example,
+  when a teammate added it). **Use revision N** takes exactly that revision, only
+  when you press it.
+- **Same input rules, said first.** Like any new source, a library document clears
+  the facts, story, page and approval built from the earlier sources. A line beside
+  **Add from library** and **Use revision N** says so, and when there is work to
+  clear the page asks before anything changes. A document with extraction gaps is
+  added only after you confirm using only its readable text. Choosing
+  documents starts no research, grants no web access and sends nothing to an
+  assistant. It is refused while the infographic is working, while an image request
+  is pending or uncertain, or while research runs.
+- **Approved infographics are kept.** After **Approve revision N and prepare
+  files**, the approved page's accessible text and its PDF are kept in the library
+  as an Infographic, read from the saved files. Preparing the same files again adds
+  no revision. Only the approved, visually checked current revision is kept. If the
+  library save fails, the approval and files stand, and **Keep in library again**
+  retries it without rendering, uploading or starting a provider. Approved files
+  from before this release can be kept with **Keep in Document Library**.
+- **Selected studio material is unchanged.** **Import selected studio material**
+  still works as before.
+
 ## Unreleased: shorter shared setup, clear ownership and readiness
 
 - **Four everyday choices first.** Shared settings leads with you and your assistant,

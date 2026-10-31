@@ -58,6 +58,10 @@ def parser():
     extra=commands.add_parser('research-task');extra.add_argument('id');extra.add_argument('--source-mode',choices=('selected','mixed','public'),default='selected')
     extra=commands.add_parser('research-preview');extra.add_argument('id');extra.add_argument('--case',type=Path,required=True);extra.add_argument('--source-mode',choices=('selected','mixed','public'),default='selected')
     extra=commands.add_parser('team');extra.add_argument('--operation',choices=('status','connect','sync','claim','take','retry'),default='status');extra.add_argument('--file',type=Path,help='Exact JSON claim/head arguments for explicit operations.')
+    browse = commands.add_parser('library-browse', help='List the shared Document Library; chooses nothing and writes nothing.')
+    browse.add_argument('--query', default='')
+    browse.add_argument('--kind', choices=('upload', 'blog', 'presentation', 'training', 'infographic'))
+    browse.add_argument('--offset', type=int, default=0)
     remote = commands.add_parser('remote-preview', help='Explicitly read one Google Doc or public page into a local preview.')
     remote.add_argument('--kind', choices=('google-doc', 'url'), required=True)
     remote.add_argument('--url', required=True)
@@ -70,24 +74,29 @@ def parser():
     preview.add_argument('--selection', type=Path)
     for name in ('source', 'source-import', 'facts', 'stories', 'brand', 'image-brief', 'select', 'layout', 'suggest',
                  'build', 'preview', 'check', 'inspect-images', 'approve', 'export', 'restore',
-                 'google-deliver', 'edit-text', 'review', 'image-start', 'image-cancel', 'image-recover', 'visual-layout', 'revise-art', 'revise-story', 'repair'):
+                 'google-deliver', 'edit-text', 'review', 'image-start', 'image-cancel', 'image-recover', 'visual-layout', 'revise-art', 'revise-story', 'repair',
+                 'library', 'library-update', 'library-keep'):
         operation = commands.add_parser(name, help='Checked ' + name + ' action; existing work is preserved on failure.')
         operation.add_argument('id')
         operation.add_argument('--expected-revision', required=True, type=int)
         if name in ('source', 'facts', 'stories', 'brand', 'image-brief'):
             operation.add_argument('--file', required=True, type=Path)
+        if name == 'library':
+            operation.add_argument('--file', required=True, type=Path,
+                                   help='JSON list of {"id", "revision"} chosen from library-browse.')
         if name == 'source':
             operation.add_argument('--selection', type=Path, help='Confirmed CSV scope JSON, after csv-preview.')
             operation.add_argument('--replace-id')
         if name == 'source-import':
             operation.add_argument('--capture-id', required=True)
             operation.add_argument('--replace-id')
-        if name in ('source', 'source-import'):
+        if name in ('source', 'source-import', 'library', 'library-update'):
             operation.add_argument('--acknowledge-warnings', action='store_true')
         fields = {'select': ('story-id',), 'build': ('request-id',), 'repair': ('request-id',),
                   'restore': ('revision',), 'edit-text': ('element-id', 'text'),
                   'image-start': ('brief-id', 'provider', 'request-id'), 'image-cancel': ('request-id',), 'image-recover': ('request-id',),
-                  'revise-art': ('change', 'preserve', 'request-id'), 'revise-story': ('story-id', 'instruction')}
+                  'revise-art': ('change', 'preserve', 'request-id'), 'revise-story': ('story-id', 'instruction'),
+                  'library-update': ('document', 'revision'), 'library-keep': ('export-id',)}
         for field in fields.get(name, ()):
             operation.add_argument('--' + field, required=True, type=int if field == 'revision' else str)
         if name == 'google-deliver':
@@ -128,6 +137,10 @@ def main(argv=None):
             elif args.operation=='retry':value=team.retry_pending(**values)
             else:
                 store=Store.current();ident=values.pop('id');value=(team.claim if args.operation=='claim' else team.take)(store,ident,**values)
+        elif args.command == 'library-browse':
+            from studio_core.document_library import context as library_context
+            value = library_context.answer('/api/library', {'filters': {'query': args.query, 'kind': args.kind},
+                                           'offset': args.offset, 'limit': 25}, 'infographic')
         elif args.command == 'remote-preview':
             from runner import remote_sources
             value = remote_sources.google(args.url, account=args.account, tabs=args.tabs) if args.kind == 'google-doc' else remote_sources.public(args.url)
@@ -223,6 +236,7 @@ def main(argv=None):
                         kind, raw = sources.read_file(args.file)
                         sent.update(data=base64.b64encode(raw).decode(), kind=kind, name=args.file.name)
                         if args.selection: sent['selection'] = api.load_json(args.selection)
+                    elif args.command == 'library': sent['picks'] = api.load_json(args.file)
                     else: sent['data'] = api.load_json(args.file)
                 costly = args.command in ('visual-layout', 'image-recover', 'suggest', 'build', 'image-start', 'preview', 'export', 'inspect-images', 'revise-art', 'revise-story', 'repair')
                 value = api.action(api.engine(store) if costly else Engine(store), sent)

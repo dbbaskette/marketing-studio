@@ -165,6 +165,15 @@ files locally straight after. A refused check keeps the review; a failed prepara
 keeps the approval and reports `problem`, and `export` retries it. Neither combined
 step starts an assistant, image provider or Google write.
 
+After the approved files are prepared (`approve` with `then_export`, or `export`), their
+accessible text and PDF are kept in the shared Document Library as an Infographic,
+read from the saved files against their hashes. The `approve` result's `library` says
+how that went, and `inspect ID` reports it under `library.kept`. A failure never undoes
+the approval or the files. `library-keep ID --export-id EXPORT --expected-revision N`
+retries it from the saved files alone; it is refused unless that export is the
+approved, visually checked current revision, and it never renders, uploads or starts a
+provider.
+
 Exports are immutable PNG, exactly one-page PDF, editable SVG and accessible text.
 Embedded artwork remains raster, with exact text and chart marks editable. Font
 licenses/availability affect portability; no font binaries are exported. Export
@@ -207,6 +216,9 @@ python3 runner/studio.py source-import ID --capture-id PREVIEW --expected-revisi
 python3 runner/studio.py source-show ID --source-id SOURCE
 python3 runner/studio.py handoff-inventory --root /absolute/blogs --studio blog
 python3 runner/studio.py handoff-preview --root /absolute/blogs --studio blog --file ITEM/DRAFT.md --expected-sha256 HASH
+python3 runner/studio.py library-browse --query capacity --kind blog
+python3 runner/studio.py library ID --file picks.json --expected-revision REV
+python3 runner/studio.py library-update ID --document LIBRARY_ID --revision N --expected-revision REV
 python3 runner/studio.py research-task ID --source-mode selected
 python3 runner/studio.py research-preview ID --case /absolute/reviewed-case --source-mode selected
 ```
@@ -216,6 +228,24 @@ When a preview names extraction gaps, inspect them before adding
 refresh. The raw and normalized capture, locations and origin revision are immutable;
 replacement clears dependent story/page approval. Google Docs and Slides links use the existing default Google sign-in. `--account` is optional for a deliberate override; import and delivery do not ask for email. Shared Marketing Studio output selects the initial delivery choice. Google tab/slide selection uses repeated
 `--tab TAB_ID`; leaving it empty includes all tabs. Pasted links do not trigger a fetch.
+
+`library-browse` lists the shared Document Library and chooses nothing. `library` takes
+a JSON list of `{"id", "revision"}` from it: every revision is checked (present, readable,
+matching its hashes) before the infographic changes, then all are captured as `handoff`
+sources in one new revision, or none are. The source keeps the library's readable
+Markdown and an upload's original bytes, with `provenance.library` naming the ID,
+revision and hashes, so the infographic keeps working if the library changes. Like any
+source change it clears the facts, story, page and approval built from earlier sources,
+so tell the person before adding to work that has them. A revision with extraction gaps
+is refused until the person has reviewed them and you add `--acknowledge-warnings`; the
+gaps stay with the source. A document already chosen is refused. `inspect ID` lists
+`library.sources` with each one's newest revision on this computer and a `state`
+(`current`, `update`, `unreadable`, `not-here` when it was added on another computer,
+`no-library`). `library-update` takes exactly `--revision N`, only when it is newer than
+the pinned one and only when asked. Both are refused while a
+page action, an image request (pending or uncertain) or research is running. Neither
+starts research, grants web access, changes research settings or sends text to an
+assistant.
 
 After current checks, visual review, user approval and final local export:
 

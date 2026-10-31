@@ -59,7 +59,7 @@ try {
 if(location.hash)history.replaceState(null,'',location.pathname);
 const $ = id => document.getElementById(id);
 let held = null, busy = false, picture = null, preferences = null;
-const draft = {research_first:false, materials: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
+const draft = {research_first:false, materials: [], library: [], imported: [], step: 0, title: '', text: '', direction: 'suggest', audience: '', purpose: '', must: '', locked: '', exclusions: '', preset: 'a4'};
 const error = message => { $('notice').textContent = message; $('notice').hidden = !message; for(const node of document.querySelectorAll('[data-work-error]')){node.textContent=$('sheet').open?message:'';node.hidden=!message||!$('sheet').open;} };
 const toast = message => { const p = make('p', 'toast', message); $('toasts').replaceChildren(p); };
 function button(label, action, primary=false) { const node = make('button', 'button' + (primary ? ' button-filled' : ''), label); node.type = 'button'; node.addEventListener('click', action); return node; }
@@ -230,6 +230,13 @@ async function newSheet() {
     const researchFirst=make('input');researchFirst.type='checkbox';researchFirst.checked=!!draft.research_first;researchFirst.addEventListener('change',()=>{draft.research_first=researchFirst.checked;});
     form.append(add(make('label','check'),researchFirst,document.createTextNode('Research this topic first')),make('p','quiet','You can save a topic and brief without source material, then choose references and optional external search.'));
     form.append(button('Import selected studio material',()=>handoffSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
+    const fromLibrary=button('Add from library',()=>libraryPick(draftLibrary).then(done=>{if(done){closeSheet();newSheet();}}));fromLibrary.dataset.key='ig-new-library';form.append(fromLibrary);
+    for(const chosen of draft.library){
+      const kept=card(chosen.title,make('p','quiet','From the Document Library, revision '+chosen.revision+' · '+chosen.characters+' readable characters. It becomes a source when you save the brief.'),list(chosen.gaps));
+      if(chosen.gaps.length){const ack=make('input');ack.type='checkbox';ack.checked=chosen.acknowledged;ack.addEventListener('change',()=>{chosen.acknowledged=ack.checked;});kept.append(add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only the readable text.')));}
+      kept.append(button('Remove '+chosen.title,()=>{draft.library=draft.library.filter(one=>one!==chosen);closeSheet();newSheet();}));
+      form.append(kept);
+    }
     form.append(button('Add a Google Doc, Slides or public page',()=>remoteSheet(preview=>{draft.materials.push({preview,acknowledged:false});newSheet();})));
     if(draft.upload)form.append(button('Remove selected CSV',()=>{draft.upload=null;draft.csv=null;draft.selection=null;newSheet();}));
     for (const material of draft.materials) {
@@ -256,9 +263,9 @@ async function newSheet() {
   }
   const go=button(draft.step===2?'Save brief':'Continue',()=>{},true);go.type='submit';
   form.addEventListener('submit',async event=>{event.preventDefault();problem.textContent='';
-    if(draft.step===0 && (!draft.title.trim() || (!draft.research_first && !draft.text.trim() && !draft.upload && !draft.materials.length))) {problem.textContent='Give a title and some usable information.';return;}
-    if(draft.materials.some(m=>!m.preview.readable || (m.preview.warnings.length&&!m.acknowledged))) {problem.textContent='Review the file previews and acknowledge readable-only coverage, or remove unreadable files.';return;}
-    if(draft.step===0 && draft.materials.reduce((n,m)=>n+m.preview.characters, draft.text.length)>120000){problem.textContent='Choose smaller files or explicit excerpts within 120,000 readable characters for one story-planning job. Nothing was sent to an assistant.';return;}
+    if(draft.step===0 && (!draft.title.trim() || (!draft.research_first && !draft.text.trim() && !draft.upload && !draft.materials.length && !draft.library.length))) {problem.textContent='Give a title and some usable information.';return;}
+    if(draft.materials.some(m=>!m.preview.readable || (m.preview.warnings.length&&!m.acknowledged)) || draft.library.some(one=>one.gaps.length&&!one.acknowledged)) {problem.textContent='Review the file previews and acknowledge readable-only coverage, or remove unreadable files.';return;}
+    if(draft.step===0 && draft.materials.reduce((n,m)=>n+m.preview.characters, draft.library.reduce((n,one)=>n+one.characters,draft.text.length))>120000){problem.textContent='Choose smaller files or explicit excerpts within 120,000 readable characters for one story-planning job. Nothing was sent to an assistant.';return;}
     if(draft.upload?.kind==='csv' && !draft.selection) {problem.textContent='Preview and confirm the CSV selection first.';return;}
     if(draft.step<2) {draft.step++;closeSheet();newSheet();return;}
     go.disabled=true;
@@ -270,6 +277,10 @@ async function newSheet() {
         p=(await request('/api/action',{action:'source-import',id:p.id,expected_revision:p.revision,capture_id:material.preview.id,acknowledge_warnings:material.acknowledged})).result;
         draft.created=p; draft.imported.push(material.preview.id);
       }
+      if (draft.library.length && !draft.library_added) {
+        p=(await request('/api/action',{action:'library',id:p.id,expected_revision:p.revision,picks:draft.library.map(({id,revision})=>({id,revision})),acknowledge_warnings:draft.library.some(one=>one.gaps.length)})).result;
+        draft.created=p; draft.library_added=true;
+      }
       if (draft.upload) {
         p=(await request('/api/action',{action:'source',id:p.id,expected_revision:p.revision,...draft.upload,selection:draft.selection})).result;
         draft.created=p;
@@ -279,7 +290,7 @@ async function newSheet() {
         draft.created=p; draft.notes_text=draft.text; draft.notes_source=p.sources.find(source=>source.name==='Pasted notes').id;
       }
       const researchFirst=draft.research_first;
-      closeSheet();Object.assign(draft,{research_first:false, materials:[],imported:[],notes_text:null,notes_source:null,step:0,request_id:null,created:null,upload:null,selection:null,csv:null,title:'',text:'',direction:'suggest',audience:'',purpose:'',must:'',locked:'',exclusions:'',preset:'a4'});await openProject(p.id);if(researchFirst)await researchSheet();else toast('Brief saved. Choose Find the story when you are ready to use your assistant.');
+      closeSheet();Object.assign(draft,{research_first:false, materials:[],library:[],library_added:false,imported:[],notes_text:null,notes_source:null,step:0,request_id:null,created:null,upload:null,selection:null,csv:null,title:'',text:'',direction:'suggest',audience:'',purpose:'',must:'',locked:'',exclusions:'',preset:'a4'});await openProject(p.id);if(researchFirst)await researchSheet();else toast('Brief saved. Choose Find the story when you are ready to use your assistant.');
     }catch(failure){problem.textContent=failure.message+' Your answers are still here.';}finally{go.disabled=false;}
   });
   add(form,problem,draft.created||draft.request_id?button('Open the saved draft',()=>{closeSheet();openProject(draft.created?.id||draft.request_id);}):null,add(make('div','create-foot bar'),go,draft.step?button('Back',()=>{draft.step--;closeSheet();newSheet();}):null,button('Cancel',closeSheet))); sheet('New infographic',form);
@@ -355,7 +366,7 @@ function renderProject() {
   if(held.visual_review)parts.push(detail('Visual review: '+held.visual_review.status,list(held.visual_review.observations),...held.visual_review.findings.map(f=>card(f.region_id+': '+(f.blocking?'Needs correction':'Suggestion'),make('p','',f.message),make('p','',f.correction)))));
   if(p.checks.length)parts.push(card('Checks for this page',...p.checks.map(c=>add(make('div','stack'),make('strong','',({'coverage':'Required content','facts':'Factual support','layout':'Page layout','brand-accessibility':'Brand and accessibility','visual':'Visual review'}[c.kind]||c.kind)+': '+c.status),list(c.findings || [])))));
   parts.push(detail('Brief and requirements',button('Edit brief',briefSheet),make('p','',p.brief.audience||'Audience not specified'),list(p.brief.must_show.map(r=>r.text))));
-  parts.push(detail('Sources and facts',button('Add or update supplied information',sourceSheet),button('Import selected studio material',()=>handoffSheet(preview=>sourceImportSheet(preview))),button('Research this topic',researchSheet),...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
+  parts.push(detail('Sources and facts',button('Add or update supplied information',sourceSheet),button('Import selected studio material',()=>handoffSheet(preview=>sourceImportSheet(preview))),libraryAddButton(),make('p','quiet',LIBRARY_CLEARS),button('Research this topic',researchSheet),...p.sources.map(s=>card(s.name||s.id,make('p','quiet',s.characters+' captured characters'),...libraryNote(s),button('Review '+(s.name||s.id),()=>sourceTextSheet(s)))),list(held.source_findings.map(f=>f.message)),...p.facts.map(f=>card(f.statement,make('p','quiet','Supplied assertion; not independently corroborated.'),list((f.evidence||[]).map(q=>q.source_id+' ['+q.start+'–'+q.end+']: '+(q.quote||'')))))));
   if(held.image_history?.length)parts.push(detail('Image requests and usage',...held.image_history.map(a=>add(make('div','stack'),make('p','',a.provider+' · '+a.operation+' · '+a.state),make('p','quiet',a.usage?'Reported tokens: '+(a.usage.input_tokens??'unknown')+' in / '+(a.usage.output_tokens??'unknown')+' out. Cost: '+(a.usage.cost??'not reported')+'.':'Usage not reported; no estimate was invented.'),button('Inspect saved image request',()=>imageRequestSheet(a.id))))));
   if(held.deliveries.length)parts.push(detail('Saved files',make('p','quiet','Every rendered revision keeps its files. Approved files never change; an edit makes a new draft.'),...held.deliveries.map(savedFiles)));
   parts.push(detail('History',make('p','quiet','Each saved revision is kept. Restoring makes new work and never brings back an approval.'),add(make('div','desk-versions'),...held.history.map((v,i)=>historyEntry(v,i===0))),held.history.length>=100&&held.history.at(-1).revision>0?button('Older revisions',olderHistory):null));
@@ -402,9 +413,11 @@ function workbench(p,delivery){
     const tools=add(make('div','ig-page-tools'),fit,actual);
     for(const format of ['png','pdf','svg','text'])tools.append(button('Download '+format.toUpperCase()+(delivery.draft?' draft':''),async()=>{try{await download(delivery,format);}catch(f){error(f.message);}}));
     if(delivery.approved_current)tools.append(button('Deliver Google Doc or PDF',()=>deliverySheet(delivery)),button('Share selected files with team',()=>shareSheet(delivery)));
+    const kept=delivery.approved_current?keptPart(delivery):null;
     view.append(make('p','quiet',delivery.current?'Shows revision '+delivery.revision+'. Select words on the page to edit them.':'Shows revision '+delivery.revision+'. Your current work is revision '+p.revision+'.'));
     if(!delivery.current&&p.scene)view.append(button('Update preview',()=>action('preview'),true));
     view.append(scroll,tools);
+    if(kept)view.append(kept);
     showPicture(delivery,img,p.id);
   }else if(p.scene)view.append(make('p','','No preview yet. Rendering is local and starts no assistant or image request.'),button('Create preview',()=>action('preview'),true));
   const parts=[ledger,view];
@@ -508,6 +521,93 @@ function finishCard(p,delivery,checked,approved){
 async function approveRevision(){
   const result=await action('approve',{then_export:true});
   if(result?.approved&&result.problem)error('Revision '+result.revision+' is approved, but its files are not ready: '+result.problem+' Choose Prepare approved files to try again on this computer.');
+  else if(result?.approved&&result.library?.state==='failed')error('Revision '+result.revision+' is approved and its files are ready, but they were not kept in the Document Library: '+result.library.problem+' Choose Keep in library again.');
+}
+// The shared Document Library (library.js). Add from library makes chosen revisions sources
+// of this infographic, Use revision N takes a newer one only when pressed, and approved files
+// say whether their text and PDF were kept there. Choosing documents starts no research,
+// assistant or image work and changes no research setting.
+function libraryPick(use){
+  if(!window.StudioLibrary){error('The library could not be loaded. Reload the page.');return Promise.resolve(false);}
+  return window.StudioLibrary.pick({studio:'infographic',max:40,post:(route,body)=>request('/api/'+route,body),use,
+    refocus:()=>{const found=document.querySelector('[data-key="ig-library-add"]')||document.querySelector('[data-key="ig-new-library"]');if(found)found.closest('details')?.setAttribute('open','');return found;}});
+}
+async function libraryRows(picks){
+  // Each choice is read once to show its title and extraction gaps before anything changes.
+  const rows=[];
+  for(const pick of picks){
+    const found=await request('/api/library-document',{id:pick.id,revision:pick.revision});
+    if(!found.readable)throw Error('"'+found.title+'" cannot be added: '+(found.problem||'it has no readable text.'));
+    rows.push({id:pick.id,revision:pick.revision,title:found.title,characters:found.characters,gaps:found.gaps||[]});
+  }
+  return rows;
+}
+async function draftLibrary(picks){
+  // Before there is an infographic nothing can be cleared; choices are checked again, all or
+  // none, when the brief is saved.
+  if(picks.some(pick=>draft.library.some(one=>one.id===pick.id)))throw Error('A chosen document is already listed for this infographic.');
+  draft.library.push(...(await libraryRows(picks)).map(row=>({...row,acknowledged:false})));
+}
+const LIBRARY_CLEARS='Adding or updating a source clears the facts, story, page and approval built from the earlier sources. Earlier work stays in History, and nothing starts by itself.';
+function libraryClears(){
+  const p=held.project;
+  return [p.facts.length?'facts':'',p.stories.length?'story':'',p.scene?'page':'',p.approval?'approval':''].filter(Boolean);
+}
+// Says what will be cleared and asks first when there is work to clear, and asks the person
+// to confirm readable-only coverage when a document has extraction gaps; otherwise runs.
+function libraryConfirm(title,label,rows,run){
+  const clears=libraryClears(),gaps=rows.some(row=>row.gaps.length);
+  if(!clears.length&&!gaps){run(false);return;}
+  const problem=make('p','problem');problem.setAttribute('role','alert');
+  const ack=make('input');ack.type='checkbox';
+  const parts=[];
+  if(clears.length)parts.push(make('p','','This clears this infographic’s '+clears.join(', ')+'. Earlier work stays in History. Nothing starts by itself; find the story again when you are ready.'));
+  for(const row of rows)parts.push(card(row.title,make('p','quiet','Revision '+row.revision+' · '+row.characters+' readable characters'),row.gaps.length?list(row.gaps):make('p','quiet','No extraction gaps.')));
+  if(gaps)parts.push(add(make('label','check'),ack,document.createTextNode('I reviewed these gaps. Use only the readable text.')));
+  sheet(title,...parts,problem,add(make('div','create-foot bar'),button(label,()=>{if(gaps&&!ack.checked){problem.textContent='Review the gaps and confirm using only the readable text first.';return;}run(gaps);},true),button('Cancel',closeSheet)));
+}
+function libraryAddButton(){
+  let rows=null;
+  const node=button('Add from library',()=>libraryPick(async picks=>{
+    if(busy)throw Error('This infographic is still working. Add from the library once it has finished.');
+    rows=await libraryRows(picks);
+  }).then(done=>{
+    if(!done||!rows)return;
+    const chosen=rows;rows=null;
+    libraryConfirm(chosen.length===1?'Add '+chosen[0].title:'Add '+chosen.length+' documents','Add as sources',chosen,async acknowledged=>{
+      const result=await action('library',{picks:chosen.map(({id,revision})=>({id,revision})),acknowledge_warnings:acknowledged},null,{quiet:true});
+      if(result)toast((chosen.length===1?'The document is a source now.':chosen.length+' documents are sources now.')+' Nothing was started; find the story again when you are ready.');
+      const again=document.querySelector('[data-key="ig-library-add"]');if(again){again.closest('details')?.setAttribute('open','');again.focus();}
+    });
+  }));
+  node.dataset.key='ig-library-add';return node;
+}
+function libraryNote(s){
+  const pinned=held.library?.sources?.[s.id];
+  if(!pinned)return [];
+  const from='From the Document Library'+(s.provenance?.studio?' ('+s.provenance.studio+')':'')+', revision '+pinned.revision;
+  const words=pinned.update?from+'. Revision '+pinned.head+' is available.':pinned.note?from+'. '+pinned.note:from+'.';
+  const parts=[make('p','quiet',words),list(s.coverage?.warnings||[])];
+  if(pinned.update)parts.push(button('Use revision '+pinned.head+' of '+(s.name||s.id),async()=>{
+    try{
+      const rows=await libraryRows([{id:pinned.id,revision:pinned.head}]);
+      libraryConfirm('Use revision '+pinned.head+' of '+(s.name||s.id),'Use revision '+pinned.head,rows,async acknowledged=>{
+        const result=await action('library-update',{document:pinned.id,revision:pinned.head,acknowledge_warnings:acknowledged},null,{quiet:true});
+        if(result)toast('Revision '+pinned.head+' is the source now. Nothing was started.');
+      });
+    }catch(failure){error(failure.message);}
+  }),make('p','quiet',LIBRARY_CLEARS));
+  return parts;
+}
+function keptPart(delivery){
+  const kept=held.library?.kept;
+  if(kept&&kept.export===delivery.id&&kept.state==='kept')return make('p','quiet','Kept in the Document Library with its text and PDF (library revision '+kept.library_revision+').');
+  const again=button(kept&&kept.export===delivery.id?'Keep in library again':'Keep in Document Library',async()=>{
+    const result=await action('library-keep',{export_id:delivery.id},null,{quiet:true});
+    if(result?.state==='kept')toast('Kept in the Document Library.');else if(result?.problem)error('Not kept in the Document Library: '+result.problem);
+  });
+  if(kept&&kept.export===delivery.id)return add(make('div','stack'),make('p','problem','Not kept in the Document Library: '+kept.problem),again);
+  return add(make('div','stack'),make('p','quiet','These approved files are not in the Document Library yet.'),again);
 }
 function receiptCard(title,state,words,...controls){
   const bead=make('span','bead');bead.dataset.state=state;bead.setAttribute('aria-hidden','true');

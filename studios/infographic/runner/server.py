@@ -6,6 +6,7 @@ from copy import copy
 from pathlib import Path
 
 from studio_core import server as core
+from studio_core.document_library import context as library_context
 
 from .contracts import PRODUCT, Invalid
 from . import activity, api, computer, exports, history, settings, sources
@@ -23,7 +24,7 @@ shared = core.for_product(
      '/research.js': ('research.js', 'text/javascript; charset=utf-8')},
     None, Invalid, reads=('/api/status', '/api/projects', '/api/project', '/api/asset',
                          '/api/desk', '/api/activity', '/api/source', '/api/preferences', '/api/computer', '/api/download', '/api/history', '/api/history-before', '/api/image-request', '/api/team', '/api/team-download', '/api/research-task', '/api/research-status'),
-    writes=('/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current'))
+    writes=('/api/research-job', '/api/research-control', '/api/research-sources', '/api/projects', '/api/project', '/api/action', '/api/preferences', '/api/csv-preview', '/api/csv-selection', '/api/source-preview', '/api/remote-preview', '/api/handoff-inventory', '/api/handoff-preview', '/api/research-preview', '/api/team', '/api/brand-current', *library_context.ROUTES))
 
 
 class Page(shared.Page):
@@ -110,6 +111,12 @@ class Page(shared.Page):
         raise shared.Refusal(HTTPStatus.NOT_FOUND, 'Nothing is served here.')
 
     def write(self, path, sent):
+        if path in library_context.ROUTES:
+            # Browsing the shared Document Library chooses nothing and changes no infographic.
+            try:
+                return shared.as_json(HTTPStatus.OK, library_context.answer(path, sent, 'infographic'))
+            except ValueError as error:
+                raise Invalid(str(error)) from None
         if path not in ('/api/preferences', '/api/csv-preview', '/api/csv-selection'):
             require(self.store is not None, 'Finish shared setup before creating infographic work.')
         if path == '/api/research-job':
@@ -144,6 +151,12 @@ class Page(shared.Page):
                         found.progress = report
                         result = api.action(found, sent)
                         self.activity.outcome(sent['id'], result)
+                elif verb in ('library', 'library-update'):
+                    # Context never changes under work this page is running.
+                    found = copy(self.engine)
+                    found.research = self.research
+                    found.activity = self.activity.snapshot(sent.get('id')) if isinstance(sent.get('id'), str) else None
+                    result = api.action(found, sent)
                 else:
                     result = api.action(self.engine, sent)
                 return shared.as_json(HTTPStatus.OK, {'result': result})

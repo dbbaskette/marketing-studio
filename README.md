@@ -53,11 +53,12 @@ The studios explain extraction gaps rather than inventing missing text or silent
 sending the file to an OCR service. See [document tools](docs/installation.md#optional-capabilities).
 
 **Keep a document once, use it anywhere.** The shared Document Library holds
-uploads you add on Marketing Studio's **Library** screen, finished blogs and
-delivered decks. It lives in `library/` under your work folder (normally
-`~/Studios/library`) and stays on this computer. In Presentation Studio and Blog
-Studio, **Add from library** copies chosen revisions into that one deck or blog,
-which keeps them even if the library changes. Choosing a document starts nothing:
+uploads you add on Marketing Studio's **Library** screen, finished blogs,
+delivered decks and approved infographics (their text and PDF). It lives in
+`library/` under your work folder (normally `~/Studios/library`) and stays on this
+computer. In Presentation Studio, Blog Studio and Infographic Studio, **Add from
+library** copies chosen revisions into that one deck, blog or infographic, which
+keeps them even if the library changes. Choosing a document starts nothing:
 no research, no web access and no assistant job. **Add existing work to library**
 on the Library screen previews what Blog Studio's team library already holds and
 adds it only when you confirm. See

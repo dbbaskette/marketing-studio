@@ -64,8 +64,9 @@ lives with `studio_core` rather than `ui-kit/`, so packaged studios carry it. It
 styles are in `ui-kit/style.css`.
 
 Projects pin revisions through each studio's own source contract: the shared
-supplied documents for Presentation Studio, and project-local material for Blog
-Studio.
+supplied documents for Presentation Studio, project-local material for Blog
+Studio, and captured `handoff` sources for Infographic Studio (`runner/library.py`,
+which hands `context.pin` its own documents adapter).
 
 Add existing work to library (`adopt.py`) is offered only on Marketing Studio's
 Library screen. The home passes it the workspace each studio remembers
