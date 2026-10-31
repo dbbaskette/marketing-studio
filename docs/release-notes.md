@@ -34,6 +34,31 @@ Signing in to an assistant, your organisation's brands and fonts, and optional G
 - **Home during the topics review** reports only that decision, and with several
   trainings waiting, the toolbar's review names the training it opens.
 
+## Unreleased: Infographic Studio asks before clearing finished work
+
+- **Renaming keeps everything.** Changing only an infographic's working title keeps
+  its story, page, checks and approval. Its earlier approved files keep the old title
+  and stay downloadable; **Prepare approved files** makes files with the new title on
+  this computer.
+- **Brief changes ask first.** Changing the audience, takeaway, must-show ideas, exact
+  wording or exclusions clears the story, page and approval built from the earlier
+  brief. When they exist, the page says so and asks first; **Cancel** changes nothing.
+  Captured facts stay. The toast and History name the change, for example "Edited the
+  brief: audience; cleared the story, page and approval".
+- **Every source change asks first.** **Add or update supplied information** (pasted
+  notes or an uploaded file), a Google Doc or page, studio material and research
+  previews now ask before clearing facts, a story, a page or an approval, just as
+  **Add from library** does. With nothing to clear, nothing extra appears, and focus
+  returns to the control that started the action.
+- **The earlier page says what to do next.** With no current page, the page card reads
+  "Earlier page (revision N)" and names the next step, such as **Find the story**,
+  instead of an **Update preview** that cannot run. Its downloads say they are earlier
+  approved files.
+- **Not its own source.** **Add from library** shows an infographic's own approved
+  export as unavailable ("This infographic"), and the server refuses it.
+- **Plain wording.** The confirmation reads "facts, story, page and approval", and the
+  shared **Add from library** sheet uses each studio's own word, such as "infographic".
+
 ## Unreleased: a list-first Library screen, safe uploads and Remove from library
 
 - **Documents first.** Marketing Studio's **Library** screen opens on its list.
