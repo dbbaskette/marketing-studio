@@ -24,7 +24,6 @@ EMPTY = 'Choose where research may look: your documents, your sites or the publi
 NO_DOCUMENTS = ('No documents were given, so choose your sites or the public web for '
                 'research, or add documents.')
 NO_SITES = 'Choose at least one of your sites, or turn your sites off.'
-STALE = 'Another studio changed your research sites. Reload the page and try again.'
 
 LEGACY_DOCUMENTS = ('supplied-only', 'documents', 'selected')
 LEGACY_BOTH = ('web-allowed', 'public', 'public-web', 'both', 'mixed')

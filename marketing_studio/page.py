@@ -102,7 +102,9 @@ class Home(server.Page):
                 'shared': values, 'shared_problem': problem, 'setup': {**preferences, 'done': not problem and self.configured(values)},
                 'computer': self.computer(False), 'efforts': validation.EFFORTS,
                 'assistant_default': runtime.assistant_default(state.data_root()),
-                'network': self.launcher.network.snapshot() if self.launcher.network else None}
+                # The private link is this computer's to show; the phone already holds it.
+                'network': self.launcher.network.snapshot(private=not getattr(self.caller, 'remote', False))
+                if self.launcher.network else None}
 
     def read(self, path, one):
         if path == '/api/models':
@@ -114,12 +116,13 @@ class Home(server.Page):
             return server.as_json(200, self.snapshot() if path == '/api/home'
                                   else {'computer': self.computer(False)})
 
-    def change(self, url, host, headers, body):
-        """A change, remembering whether the network bridge carried it. Only the bridge adds
-        its header, and a loopback caller that sends it only gets the network link."""
+    def answer(self, target, headers, method='GET', body=None):
+        """A request, remembering whether the network bridge carried it. Only the bridge adds
+        its header, and a loopback caller that sends it only gets the network's answers: the
+        studio's bridge link, and the home snapshot without the private link."""
         self.caller.remote = headers.get(VIA_HEADER) == 'network'
         try:
-            return super().change(url, host, headers, body)
+            return super().answer(target, headers, method, body)
         finally:
             self.caller.remote = False
 

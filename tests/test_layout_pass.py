@@ -376,6 +376,50 @@ class SharedSetupJourneyTests(PageLayoutTests):
         self.assertEqual(last['seen'], newer['shared'])
         self.assertEqual(last['changes'], {'person': {'name': 'Bea'}, 'output': 'google'})
 
+    def test_load_newer_settings_shows_each_field_the_refusal_names(self):
+        # Tab A edits a model profile; another tab changes the assistant; A's save is refused
+        # for the assistant, which A never edited. Load newer settings shows it too.
+        load = 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'
+        newer = {**self.shown(), 'efforts': {'claude': [], 'codex': [], '': []},
+                 'shared': {**self.OVERRIDES, 'assistant': {**self.OVERRIDES['assistant'], 'agent': 'codex'}}}
+        refused = {'error': '“Assistant” was changed in another tab or studio while this page was open, so '
+                            'nothing was saved. Choose Load newer settings to compare; your other edits stay on the form.',
+                   'conflict': {'fields': ['assistant.agent']}}
+        probe = ("$('#probe').textContent = JSON.stringify({model: form.elements['models.quick.model'].value,"
+                 " agent: form.elements['assistant.agent'].value,"
+                 " notes: conflictNotes.map(held => held.note.children[0].textContent),"
+                 " uses: conflictNotes.map(held => held.note.children.length)});")
+        shots = self.page([
+            {'run': load}, {'show': 'settings'},
+            {'run': "form.elements['models.quick.model'].value = 'synthetic-large'; form.fire('input');"},
+            {'responses': {'shared': refused}}, {'submit': True},
+            {'responses': {'home': newer}}, {'press': '#problem-newer'}, {'run': probe},
+            {'snapshot': 'loaded', 'ids': ['save-state'], 'read': ['#probe']}])
+        loaded = shots['loaded']
+        form = json.loads(loaded['read']['#probe']['text'])
+        self.assertEqual((form['model'], form['agent']), ('synthetic-large', 'codex'))
+        self.assertEqual(form['notes'], ['Changed in another tab or studio from “claude” to “codex”. Your edits '
+                                         'that depend on it are kept: check them before you save.'])
+        self.assertEqual(form['uses'], [1], 'the saved value is already on the form: no Use the saved value')
+        self.assertEqual(loaded['words']['save-state'], 'Unsaved changes')
+        self.assertEqual(loaded['focused'], 'assistant-agent')
+        self.assertTrue(any(toast.startswith('Newer settings loaded, and your other edits kept. Check ')
+                            for toast in loaded['toasts']))
+
+    def test_a_late_problem_waits_for_the_screen_its_action_started_on(self):
+        load = 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'
+        shots = self.page([
+            {'run': load}, {'show': 'settings'},
+            {'run': "form.elements['person.name'].value = 'Bea'; form.fire('input');"},
+            {'responses': {'shared': {'defer': 'save'}}}, {'run': "form.fire('submit');"},
+            {'show': 'computer'},
+            {'release': 'save', 'answer': {'error': 'The shared settings file could not be written.'}},
+            {'snapshot': 'away', 'read': ['#problem', '#problem-text']},
+            {'show': 'settings'}, {'snapshot': 'back', 'read': ['#problem', '#problem-text']}])
+        self.assertTrue(shots['away']['read']['#problem']['hidden'], 'not shown on This computer')
+        self.assertFalse(shots['back']['read']['#problem']['hidden'])
+        self.assertEqual(shots['back']['read']['#problem-text']['text'], 'The shared settings file could not be written.')
+
     def test_busy_buttons_stay_focusable_and_say_what_runs(self):
         load = 'snapshot = ' + json.dumps(self.shown()) + '; setup = false; fill(); renderHome(); markSaved();'
         look = {'checked_at': '2026-10-30T12:00:00+00:00', 'ready': True, 'items': []}

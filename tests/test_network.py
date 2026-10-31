@@ -55,7 +55,12 @@ class NetworkTests(unittest.TestCase):
         self.assertEqual(self.request()[0], 403)
         status, _, body = self.request(headers=self.auth)
         self.assertEqual(status, 200)
-        self.assertEqual(json.loads(body)['network']['url'], self.link)
+        # The phone is given the home without the private link; this computer's home has it.
+        self.assertEqual(json.loads(body)['network'], {'address': self.link.split('#')[0]})
+        with contextlib.closing(http.client.HTTPConnection('127.0.0.1', self.desk.port, timeout=3)) as direct:
+            direct.request('GET', '/api/home', headers={server.TOKEN_HEADER: self.desk.token,
+                                                         'Host': f'127.0.0.1:{self.desk.port}'})
+            self.assertEqual(json.loads(direct.getresponse().read())['network']['url'], self.link)
         self.assertNotIn('url', self.lan.snapshot(private=False))
         self.assertNotIn(self.desk.token, json.dumps(self.lan.snapshot(private=False)))
         # Enabling network access does not relax the native loopback Host rules.
@@ -356,8 +361,11 @@ class BridgeLimitTests(unittest.TestCase):
                 self.assertEqual(status, 413)
                 self.assertIn('too large to send over the private network link', answer['error'])
                 self.assertIn('Send something smaller, or do this on the computer.', answer['error'])
-        self.assertIn('at most 64 KB', network.too_large(network.SHARED_LIMIT))
-        self.assertIn('at most 28 MB', network.too_large(28_000_000))
+        # Said in file terms: a page sends a file base64-encoded, a third larger.
+        self.assertIn('a file of at most about 48 KB', network.too_large(network.SHARED_LIMIT))
+        self.assertIn('a file of at most about 21 MB', network.too_large(28_000_000))
+        self.assertIn('a file of at most about 9 MB', network.too_large(12_000_000))
+        self.assertIn('a file of at most about 750 KB', network.too_large(1_000_000))
 
     def test_blog_studios_long_routes_wait_as_long_as_their_google_and_link_work(self):
         upstream = Upstream(delay=0.4)

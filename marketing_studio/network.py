@@ -62,10 +62,14 @@ def body_limit(identifier, path):
 
 
 def too_large(limit):
-    """A bridge 413 as a sentence a person can act on."""
-    size = f'{limit // 1_000_000} MB' if limit >= 1_000_000 else f'{limit // 1000} KB'
-    return (f'This is too large to send over the private network link, which takes at most {size} '
-            'here. Send something smaller, or do this on the computer.')
+    """A bridge 413 as a sentence a person can act on. Pages send files base64-encoded, a
+    third larger than the file, so the size said is the file's: three quarters of the limit."""
+    file = limit * 3 // 4
+    size = f'{file // 1_000_000} MB' if file >= 1_000_000 else f'{file // 1000} KB'
+    return (f'This is too large to send over the private network link, which takes a file of at most '
+            f'about {size} here. Send something smaller, or do this on the computer.')
+
+
 STATIC = frozenset(('/', '/index.html', '/app.js', '/style.css', '/home.css',
                     '/blog.css', '/runner.js', '/desk.js', '/drafting.js', '/markdown.js', '/research.js',
                     '/deck.css', '/infographic.css', '/favicon.ico',

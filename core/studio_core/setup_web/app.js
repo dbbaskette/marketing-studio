@@ -50,11 +50,14 @@ let modelRequest = 0;
 const calm = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 // The problem notice belongs to the screen that raised it: it clears when the person leaves
 // that screen or its action next succeeds, and Dismiss clears it by hand. `newer` offers Load
-// newer settings, for a save someone else's change refused.
-let problemView = null;
-function inform(message, error = false, newer = false) {
+// newer settings, for a save someone else's change refused. `where` is the screen the action
+// started on: a problem that arrives after the person left it waits until they return there.
+let problemView = null, heldProblem = null, conflictFields = [];
+function inform(message, error = false, newer = false, where = view) {
   if (error) {
-    problemView = view;
+    if (where !== view) { heldProblem = {message, newer, where}; return; }
+    heldProblem = null;
+    problemView = where;
     $('#problem-text').textContent = message;
     $('#problem-newer').hidden = !newer;
     $('#problem').hidden = false;
@@ -63,6 +66,11 @@ function inform(message, error = false, newer = false) {
   // Toasts are timed as they are in every studio; anything with a link stays in #message.
   const node = element('p', message, 'toast glass'); $('#toasts').append(node);
   setTimeout(() => { node.classList.add('toast-leaving'); setTimeout(() => node.remove(), calm() ? 0 : 260); }, 4200);
+}
+// A refused request's problem, on the screen its action started on (api() records it).
+function problem(error, newer = false) {
+  conflictFields = newer ? error.answer?.conflict?.fields || [] : [];
+  inform(error.message, true, newer, error.where || view);
 }
 function clearProblem() {
   problemView = null;
@@ -117,19 +125,22 @@ function resumeStep(shared) {
   return at;
 }
 async function api(path, body) {
+  // The screen this request was made from, so its problem is shown there.
+  const where = view;
   let response;
   try {
     response = await fetch(`${standalone ? "/onboarding" : ""}/api/${path}`, { method: body === undefined ? 'GET' : 'POST',
       headers: { [tokenHeader]: token, ...(body === undefined ? {} : {'Content-Type': 'application/json'}) },
       ...(body === undefined ? {} : {body: JSON.stringify(body)}) });
   } catch (error) {
-    throw new Error(`This page has lost touch with ${product}, so it cannot read or save anything. Run ${standalone ? 'the studio command' : 'marketing-studio'} again in your terminal and use the new link.`);
+    const failure = new Error(`This page has lost touch with ${product}, so it cannot read or save anything. Run ${standalone ? 'the studio command' : 'marketing-studio'} again in your terminal and use the new link.`);
+    failure.where = where; throw failure;
   }
   const result = await response.json();
   if (!response.ok) {
     // The refusal's other words, such as which settings conflict, stay with it.
     const failure = new Error(result.error || 'This request could not be completed.');
-    failure.answer = result; throw failure;
+    failure.answer = result; failure.where = where; throw failure;
   }
   return result;
 }
@@ -154,6 +165,8 @@ function show(next) {
   view = setup ? 'settings' : next;
   // A problem describes the screen that raised it, and is not carried to another.
   if (problemView !== null && problemView !== view) clearProblem();
+  // A problem that arrived after the person left its screen is shown on their return.
+  if (heldProblem?.where === view) { const held = heldProblem; inform(held.message, true, held.newer, held.where); }
   if(view==='home'&&previousView!=='home'&&snapshot)void refreshHomeStatus();
   // Leaving the form keeps what was typed on it; say so, since nothing was saved.
   if (previousView === 'settings' && view !== 'settings' && unsaved()) inform('Your shared settings changes are not saved yet. They stay on the Shared settings page until you save or reload.');
@@ -642,7 +655,7 @@ function renderHome(refreshPaths = true) {
           const done = snapshot.connected; renderHome();
           const message = $('#message'); message.textContent = connectedWords(done); message.hidden = false;
           $(`#studio-list [data-studio="${studio.id}"] .button`)?.focus();
-        } catch (error) { inform(error.message, true); connect.disabled = false; connect.textContent = 'Connect'; }
+        } catch (error) { problem(error); connect.disabled = false; connect.textContent = 'Connect'; }
       });
       actions.append(connect);
     }
@@ -655,7 +668,7 @@ function renderHome(refreshPaths = true) {
         if (inThisTab((query) => window.matchMedia(query).matches)) {
           button.disabled = true; button.textContent = 'Opening…'; clearProblem();
           try { location.href = withHome((await api('open', {studio: studio.id})).link, true); }
-          catch (error) { inform(error.message, true); button.disabled = false; button.textContent = words; }
+          catch (error) { problem(error); button.disabled = false; button.textContent = words; }
           return;
         }
         let blocked = false;
@@ -673,7 +686,7 @@ function renderHome(refreshPaths = true) {
           snapshot = await api('home'); renderHome();
           // The card was rebuilt, so put focus back on its button, unless the link above has it.
           if (!blocked) $(`#studio-list [data-studio="${studio.id}"] .button`)?.focus();
-        } catch (error) { if (tab && tab.location.href === 'about:blank') tab.close(); inform(error.message, true); }
+        } catch (error) { if (tab && tab.location.href === 'about:blank') tab.close(); problem(error); }
         finally { button.disabled = false; button.textContent = words; }
       }); actions.append(button);
     } else {
@@ -787,7 +800,7 @@ form.addEventListener('submit', async event => {
     // One save: the folders go after the shared settings, and a refusal says what was kept.
     if (folders) {
       try { snapshot = await api('paths', {paths: folders}); }
-      catch (error) { fill(); renderHome(); markSaved(); inform(`Your shared settings were saved. The installation folders were not: ${error.message}`, true); return; }
+      catch (error) { fill(); renderHome(); markSaved(); inform(`Your shared settings were saved. The installation folders were not: ${error.message}`, true, false, error.where || view); return; }
     }
     if (setup && step < 2) { step++; rememberStep(); show('settings'); }
     else if (setup) { snapshot = await api('setup', {done: true, prepare: true}); if (standalone) return openNative(); setup = false; rememberStep(); fill(); renderHome(); markSaved(); show('home'); showNotices(); inform('Your studios are ready.'); }
@@ -796,7 +809,7 @@ form.addEventListener('submit', async event => {
       const words = savedWords(); if (words !== 'Shared settings saved.') inform(words); }
   } catch (error) {
     if (error.field) markInvalid(error.field, error.message);
-    else inform(error.message, true, Boolean(error.answer?.conflict));
+    else problem(error, Boolean(error.answer?.conflict));
   }
   finally { done(); save.textContent = saveWords(); saveState(); }
 });
@@ -844,7 +857,17 @@ function focusable(control) {
   if (control?.focus) return control;
   return control?.length ? [...control].find(item => item.checked) || control[0] : null;
 }
-function showConflict({name, theirs, mine}) {
+// The form control a refused field names: person.name is the control person.name, a model
+// profile's leaf is models.<profile>.<leaf>, and research.sites is the research list.
+function fieldControlName(path) {
+  const parts = String(path).split('.');
+  if (parts[0] === 'research') return 'research';
+  if (parts[0] === 'models' && parts[1] === 'profiles' && parts.length === 4) return `models.${parts[2]}.${parts[3]}`;
+  return path === 'models.agent' ? null : path;
+}
+// `edited` is a value both sides changed: both are shown, and the person may take the saved
+// one. Otherwise only the other side changed it, and the person's edits rest on it.
+function showConflict({name, theirs, mine, edited = true}) {
   const control = name === 'research' ? $('#research-site-input') : form.elements[name];
   const anchor = name === 'storage' ? $('#remote-fields') : name === 'research' ? $('#research-site-table') : control;
   if (!control || !anchor) return;
@@ -852,16 +875,20 @@ function showConflict({name, theirs, mine}) {
   else if (control.closest?.('details')) control.closest('details').open = true;
   const id = `conflict-${name.replaceAll('.', '-')}`, label = fieldLabel(name, control);
   const note = element('div', '', 'paper callout conflict-note'); note.id = id; note.dataset.kind = 'yours';
-  note.append(element('p', `Saved in another tab or studio: ${shownValue(control, theirs)}. Yours: ${shownValue(control, mine)}. Save settings keeps yours.`));
-  const bar = element('div', '', 'bar'), use = element('button', 'Use the saved value', 'button');
-  use.type = 'button'; use.setAttribute('aria-label', `Use the saved value for ${label}`);
-  use.addEventListener('click', () => {
-    if (name === 'research') { researchSites = [...theirs]; renderSites(); } else applyControls({[name]: theirs});
-    note.remove(); conflictNotes = conflictNotes.filter(held => held.note !== note);
-    (focusable(control) || $('#save')).focus();
-    saveState();
-  });
-  bar.append(use); note.append(bar);
+  if (!edited) {
+    note.append(element('p', `Changed in another tab or studio from ${shownValue(control, mine)} to ${shownValue(control, theirs)}. Your edits that depend on it are kept: check them before you save.`));
+  } else {
+    note.append(element('p', `Saved in another tab or studio: ${shownValue(control, theirs)}. Yours: ${shownValue(control, mine)}. Save settings keeps yours.`));
+    const bar = element('div', '', 'bar'), use = element('button', 'Use the saved value', 'button');
+    use.type = 'button'; use.setAttribute('aria-label', `Use the saved value for ${label}`);
+    use.addEventListener('click', () => {
+      if (name === 'research') { researchSites = [...theirs]; renderSites(); } else applyControls({[name]: theirs});
+      note.remove(); conflictNotes = conflictNotes.filter(held => held.note !== note);
+      (focusable(control) || $('#save')).focus();
+      saveState();
+    });
+    bar.append(use); note.append(bar);
+  }
   (name === 'storage' ? anchor.before.bind(anchor) : anchor.after.bind(anchor))(note);
   const described = focusable(control);
   if (described) {
@@ -897,17 +924,33 @@ async function loadNewer() {
       if (input && mine[2][index] !== base[2][index]) input.value = mine[2][index];
     });
     if (mine[3] !== base[3]) { profileAgent = mine[3]; profilesChanged(); }
+    // Each value the refusal named is shown too, even one the person did not edit here: a
+    // model profile edit is refused when the assistant it was made for changed.
+    const unseen = new Set();
+    for (const field of conflictFields) {
+      const name = fieldControlName(field);
+      if (name === null) { unseen.add('Models and reasoning'); continue; }
+      if (conflicts.some(conflict => conflict.name === name)) continue;
+      const [before, after] = name === 'research' ? [base[1], theirs[1]] : [was[name], held[name]];
+      if (JSON.stringify(before) !== JSON.stringify(after)) conflicts.push({name, theirs: after, mine: before, edited: false});
+      else unseen.add(fieldLabel(name, name === 'research' ? null : form.elements[name]));
+    }
+    conflictFields = [];
     clearProblem(); saveState();
     conflicts.forEach(showConflict);
     const names = conflictNotes.map(held => held.label);
+    for (const label of unseen) if (!names.includes(label)) names.push(label);
     if (names.length) {
-      inform(`Newer settings loaded, and your other edits kept. Compare ${names.join(' and ')}, then save.`);
-      (focusable(conflictNotes[0].control) || $('#save')).focus();
+      inform(`Newer settings loaded, and your other edits kept. Check ${names.join(' and ')}, then save.`);
+      (focusable(conflictNotes[0]?.control) || $('#save')).focus();
     } else {
       inform(unsaved() ? 'Newer settings loaded, and your edits kept. Save when you are ready.' : 'Newer settings loaded.');
       $('#save').focus();
     }
-  } catch (error) { inform(error.message, true, true); }
+  } catch (error) {
+    // The refusal's fields are kept for the next try.
+    inform(error.message, true, true, error.where || view);
+  }
   finally { done(); }
 }
 $('#problem-newer').addEventListener('click', () => void loadNewer());
@@ -964,7 +1007,7 @@ async function checkComputer(toResults = false) {
     renderComputer(result.computer); renderReadinessSummary();
     $('#announce').textContent = `Check finished. ${$('#computer-summary').textContent}`;
     if (toResults && view === 'computer') $('#computer-results-heading').focus();
-  } catch (error) { inform(error.message, true); } finally { done(); }
+  } catch (error) { problem(error); } finally { done(); }
 }
 $('#check').addEventListener('click', () => void checkComputer());
 // Its data-view shows This computer first; the look runs there, where its results are listed.
@@ -1045,12 +1088,12 @@ async function openLibrary() {
             link.href = URL.createObjectURL(new Blob([bytes], {type: found.media}));
             link.download = found.name; document.body.append(link); link.click(); link.remove();
             setTimeout(() => URL.revokeObjectURL(link.href), 1000);
-          } catch (error) { inform(error.message, true); }
+          } catch (error) { problem(error); }
         },
       }, {onChange: () => libraryIntake(libraryCatalog && libraryCatalog.answer)});
       $('#library-catalog').replaceChildren(libraryCatalog.node);
     } else void libraryCatalog.load();
-  } catch (error) { inform(error.message, true); }
+  } catch (error) { problem(error); }
 }
 // The Library's two sheets. Escape and Close return focus to what opened them; neither
 // closes while its work is landing.
@@ -1248,7 +1291,7 @@ $('#refresh-models').addEventListener('click', () => loadModels(true));
     const part = setup ? '' : launchPart(launchOptions, [...document.querySelectorAll('[data-part]')].map(button => button.dataset.part));
     if (part) { if (view !== 'settings') show('settings'); goToPart(part); }
   }
-  catch (error) { $('#loading').hidden = true; inform(error.message, true); }
+  catch (error) { $('#loading').hidden = true; problem(error); }
 })();
 
 // Local inventory only: never launches studios, reads credentials or starts providers.

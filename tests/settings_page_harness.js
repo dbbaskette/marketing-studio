@@ -22,7 +22,8 @@
 // words, within: selector} the button with those words under it, settling what it starts.
 // The plan may also set {hostname} for the page's address, {session} for tab storage and
 // {responses} answered from the start; an answer {hold: true} never arrives, so a step can
-// look at a busy button; {wait: true} settles what the page started. Every snapshot has
+// look at a busy button; an answer {defer: name} arrives when a later step {release: name,
+// answer} gives it; {wait: true} settles what the page started. Every snapshot has
 // `focused`, the element focus was last moved to, and `session`; `read` gives `disabled` and
 // `attributes` too. The form's named controls and its parts with a
 // setup step are read from index.html, so fill(), show() and the saved state see them all.
@@ -89,6 +90,7 @@ form.querySelectorAll = selector => selector === 'input[name], select[name]' ? [
 const deep = node => (node.textContent || '') + (node.children || []).map(deep).join('');
 const early = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));
 let responses = early.responses || {};
+const deferred = new Map();
 const session = new Map(Object.entries(early.session || {}));
 const document = {
   body: { dataset: { standalone: String(Boolean(early.standalone)),
@@ -111,6 +113,8 @@ const context = {
     const answer = route in responses ? responses[route]
       : answers[sent.site] || { error: 'Not in this plan.' };
     if (answer.hold) return new Promise(() => {});   // still working when the next step looks
+    if (answer.defer) return new Promise(resolve => deferred.set(answer.defer, given =>
+      resolve({ ok: !given.error, json: async () => given })));
     return { ok: !answer.error, json: async () => answer };
   },
 };
@@ -136,6 +140,9 @@ for (const step of steps) {
   } else if (step.home) {
     context.homeSnapshot = step.home;
     run('snapshot = homeSnapshot; renderHome();');
+  } else if (step.release) {
+    deferred.get(step.release)(step.answer);
+    for (let i = 0; i < 12; i += 1) await settle();
   } else if (step.wait) {
     for (let i = 0; i < 12; i += 1) await settle();
   } else if (step.run) {
