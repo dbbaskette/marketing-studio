@@ -179,7 +179,18 @@ const deskKit = Drafting.kit({
       else if (held.editSeen) delete held.editSeen[part];
       if (!held.pending[part] && held.recoveredParts) delete held.recoveredParts[part];
       keepDeskRecovery(deskItem(held.id).path);
-      if (held.view.desk) deskHeld(deskItem(held.id).path).view = held.view.desk;
+      if (held.view.desk) {
+        // A save to a Ready material makes it a draft again: said once, as it happens.
+        const desk = deskHeld(deskItem(held.id).path), name = deskItem(held.id).name;
+        const was = list(desk.view?.cards).find((one) => one.name === name);
+        const now = list(held.view.desk.cards).find((one) => one.name === name);
+        desk.view = held.view.desk;
+        if (was?.state === 'ready' && now && now.state !== 'ready') {
+          toast(backToDraftWords(now, held.view.desk));
+          // Drawn again at once, the typing kept where it is, so the card says Draft.
+          deskMaterialChanged(held);
+        }
+      }
     },
     render: (held) => deskMaterialChanged(held),
     refresh: (held) => deskMaterialChanged(held),
@@ -924,6 +935,17 @@ function headingId(name) {
   return 'desk-card-' + String(name).replace(/[^A-Za-z0-9_-]/g, '-');
 }
 
+// What a material is called in a sentence: "this guide", "the plan".
+function deskNoun(found) {
+  return { blueprint: 'plan', document: 'guide', brief: 'brief', deck: 'deck',
+    scenario: 'scenario', yoodli: 'Yoodli layout' }[found.kind] || 'material';
+}
+
+// What Mark this level ready would mark: the level's drafts, each with the version shown.
+function levelWaiting(cards) {
+  return list(cards).filter(one => one.state === 'draft' && one.seen);
+}
+
 function levelCanBeReviewed(cards) {
   const selected = list(cards).filter(one => one.state !== 'left-out');
   return selected.length > 0 && selected.every(one => one.seen && ['draft', 'ready'].includes(one.state));
@@ -972,6 +994,16 @@ function deskCard(found) {
     || levelMaterialsAvailable(levelCards))) {
     bar.append(press('Mark ready', 'ready', { name: found.name, seen: found.seen },
       'desk-ready ' + found.name));
+  }
+  // The way back from Ready, on purpose: quiet, and bound to the version shown. What the
+  // Document Library keeps is said beside it.
+  if (actions.includes('draft')) {
+    const back = capsule('Return to draft', 'quiet', () => deskDecide('draft',
+      { seen: { [found.name]: found.seen } }, back), 'desk-draft ' + found.name);
+    if ((deskHeld(view.path).view?.library || {})[found.name]?.state === 'kept') {
+      back.setAttribute('aria-describedby', headingId(found.name) + '-library');
+    }
+    bar.append(back);
   }
   if (actions.includes('update')) {
     const update = capsule(updateLabel(found), '', () => {
@@ -1284,6 +1316,7 @@ function deckParts(found) {
     history.disabled = !slide.history;
     node.append(history);
     const words = add(make('details', 'card-part'), make('summary', '', 'Edit slide text and speaker notes'));
+    if (found.state === 'ready' && ours && found.local) words.append(readyEditWarning(found));
     const fields = [['title', 'Title'], ['subtitle', 'Subtitle']];
     list(slide.points).forEach((point, i) => fields.push(
       ['points[' + i + '].label', 'Point ' + (i + 1) + ' label'],
@@ -1572,7 +1605,8 @@ function materialParts(held, found) {
   status.setAttribute('role', 'status');
   held.status = status;
   const toggle = editToggle(held, found, editing);
-  add(area, toggle ? add(make('div', 'bar'), toggle) : null, status,
+  add(area, toggle ? add(make('div', 'bar'), toggle) : null,
+    editing && found.state === 'ready' ? readyEditWarning(found) : null, status,
     editing ? deskKit.selectionBar(held) : null, held.view.readonly
       ? make('p', 'quiet', held.view.readonly) : null);
   if (editing) {
@@ -1674,6 +1708,22 @@ function materialParts(held, found) {
   if (held.stale) deskKit.stale(held);
   if (!hasDeskRecovery(held)) deskKit.watch(held);
   return area;
+}
+
+// Said as a Ready material opens for editing, before anything is typed: a saved change
+// makes it a draft again, and what the Document Library keeps meanwhile.
+function readyEditWarning(found) {
+  const kept = (deskHeld(view.path).view?.library || {})[found.name];
+  return make('p', 'desk-ready-edit', 'Saving a change returns this ' + deskNoun(found)
+    + ' to Draft.' + (kept && kept.state === 'kept' ? ' The Document Library keeps revision '
+      + kept.revision + ' until you mark it ready again.' : ''));
+}
+
+// Said once a save made a Ready material a draft again, with what the library keeps.
+function backToDraftWords(found, desk) {
+  const kept = (desk.library || {})[found.name];
+  return capital(cardTitle(found)) + ' is back to Draft. Mark it ready again once you have read it.'
+    + (kept && kept.state === 'earlier' ? ' ' + libraryEarlier(found, kept) : '');
 }
 
 function materialPart(held, part) {
@@ -2011,7 +2061,16 @@ function deskLibraryKept(found) {
   const kept = (deskHeld(view.path).view?.library || {})[found.name];
   if (!kept) return null;
   if (kept.state === 'kept') {
-    return make('p', 'quiet', 'Kept in the Document Library as Markdown, revision ' + kept.revision + '.');
+    // Return to draft keeps the revision: nothing in the library is removed.
+    const line = make('p', 'quiet', 'Kept in the Document Library as Markdown, revision '
+      + kept.revision + '.' + (list(found.actions).includes('draft')
+        ? ' Return to draft leaves that revision in the library.' : ''));
+    line.id = headingId(found.name) + '-library';
+    return line;
+  }
+  // A draft again, after an edit, Undo or Return to draft: the library still has it.
+  if (kept.state === 'earlier') {
+    return make('p', 'quiet', libraryEarlier(found, kept));
   }
   const said = kept.state === 'failed'
     ? make('p', 'problem', 'Not kept in the Document Library: ' + kept.problem)
@@ -2022,6 +2081,12 @@ function deskLibraryKept(found) {
   return add(make('div', 'card-part'), said, add(make('div', 'bar'), again));
 }
 
+// What the Document Library holds of a guide or brief that is a draft again.
+function libraryEarlier(found, kept) {
+  return 'The Document Library keeps revision ' + kept.revision + ' of this '
+    + deskNoun(found) + ' until you mark it ready again.';
+}
+
 function deskLead(run, held, ours) {
   if (view.sheet || view.after || !ours) return '';
   if (held.unsent) return 'unsent';
@@ -2030,7 +2095,9 @@ function deskLead(run, held, ours) {
   if (adding(run)) return 'documents';
   if (run.training_plan && run.state === 'waiting') return 'training-plan';
   if (run.outline?.content_first && run.outline.waiting) return 'slide-text';
-  return 'ready';
+  // Mark this level ready leads only while something of the level waits for it.
+  const shown = list(held.view?.cards).filter((one) => (one.level || '') === (held.level || ''));
+  return levelCanBeReviewed(shown) && levelWaiting(shown).length ? 'ready' : '';
 }
 
 function slideTextReview(outline, held) {
@@ -2132,8 +2199,9 @@ function paintDesk(fresh) {
   if (!run || !found) return;
   const ours = deskOurs();
   const conversation = found.execution === 'conversation';
-  const lead = deskLead(run, held, ours);
+  // The level is settled first: what leads depends on what of it waits for Mark ready.
   const tabs = deskTabs(found, held);
+  const lead = deskLead(run, held, ours);
   const drawn = JSON.stringify([found, run.state, run.question, run.problem, run.documents,
     run.mine, run.driver, run.taken, run.notice, run.outline, run.training_plan, run.training_plan_pending,
     run.research_progress, run.timing, held.level, held.sources, held.material, held.said,
@@ -2147,9 +2215,13 @@ function paintDesk(fresh) {
   const waitingPlan = ours && run.training_plan && run.state === 'waiting';
   const preparingPlan = ours && run.training_plan_pending && !list(found.cards).some(one => one.kind !== 'blueprint' && one.seen);
   const actions = [];
-  if (ours && !conversation && lead !== 'slide-text' && !preparingPlan && !waitingPlan && levelCanBeReviewed(shown)) {
+  // Offered only while something of the level waits for it, and confirmed in a sheet that
+  // names each material, whether it was opened, and what the Document Library keeps.
+  const waiting = levelWaiting(shown);
+  if (ours && !conversation && lead !== 'slide-text' && !preparingPlan && !waitingPlan
+      && levelCanBeReviewed(shown) && waiting.length) {
     const mark = capsule(named.length ? 'Mark this level ready' : 'Mark every material ready',
-      lead === 'ready' ? 'filled' : '', () => markLevel(level, shown, mark), 'desk-level-ready');
+      lead === 'ready' ? 'filled' : '', () => confirmLevel(level, waiting), 'desk-level-ready');
     actions.push(mark);
   }
   // The toolbar's Download is the whole level's; each material's own is on its card.
@@ -2169,6 +2241,9 @@ function paintDesk(fresh) {
       || available.find(one => one.seen) || available[0])?.name;
   }
   const selected = held.sources ? 'sources' : held.material[level];
+  // The version of each material shown here, for the Mark this level ready sheet.
+  const opened = !held.sources && available.find((one) => one.name === selected);
+  if (opened && opened.seen) (held.opened ||= {})[opened.name] = opened.seen;
   const options = [...available.map(one => ({id: one.name, label: cardTitle(one) + ' · '
     + (DESK_WORDS.tabs[one.state] || 'Draft')})),
     {id: 'sources', label: 'Research & sources'}];
@@ -2228,18 +2303,22 @@ async function deskDecide(route, sent, pressed, { flush = true } = {}) {
   held.said = '';
   if (pressed) pressed.disabled = true;
   let answer = null;
+  // What was Ready before, so a change that makes one a draft again says so.
+  const wasReady = new Set(list(held.view?.cards).filter((one) => one.state === 'ready')
+    .map((one) => one.name));
   try {
     if (flush) await flushDesk(held);
     if (sent.seen && typeof sent.seen === 'string' && held.materials[sent.name]) {
       sent = { ...sent, seen: held.materials[sent.name].view.seen };
     }
-    if (route === 'level-ready') {
+    if (route === 'level-ready' || (route === 'draft' && !sent.undo)) {
       sent = { ...sent, seen: { ...sent.seen } };
       for (const name of Object.keys(sent.seen)) {
         if (held.materials[name]) sent.seen[name] = held.materials[name].view.seen;
       }
     }
-    answer = await send('drafts/' + route, { path, ...sent });
+    const { undo, ...body } = sent;
+    answer = await send('drafts/' + route, { path, ...body });
     if (turn === view.turn) held.view = answer;
   } catch (failure) {
     if (turn === view.turn) held.said = failure.message;
@@ -2248,11 +2327,12 @@ async function deskDecide(route, sent, pressed, { flush = true } = {}) {
   if (turn !== view.turn) return null;
   if (answer && route === 'level-ready') {
     if (answer.stopped) held.said = answer.stopped.said;
-    else if (list(answer.marked).length) {
-      toast(count(answer.marked.length, 'material is', 'materials are') + ' marked ready.');
-    } else toast('Nothing here was waiting to be marked ready.');
+    if (list(answer.marked).length) readyToast(answer, answer.marked);
+    else if (!answer.stopped) toast('Nothing here was waiting to be marked ready.');
   } else if (answer && route === 'ready') {
-    toast('Marked ready.');
+    readyToast(answer, [sent.name]);
+  } else if (answer && route === 'draft') {
+    draftToast(answer, list(answer.returned), sent.undo);
   } else if (answer && route === 'keep') {
     toast('Kept as it is.');
   } else if (answer && route === 'library-keep') {
@@ -2265,17 +2345,117 @@ async function deskDecide(route, sent, pressed, { flush = true } = {}) {
       ? Object.values(answer.problems).filter(Boolean).map(String) : [];
     toast(problems.length ? problems.join(' ') : 'Sent to its copies.');
   }
+  // Any other change that made a Ready material a draft again, slide words among them.
+  if (answer && route !== 'draft') {
+    for (const one of list(answer.cards)) {
+      if (wasReady.has(one.name) && one.state !== 'ready') toast(backToDraftWords(one, answer));
+    }
+  }
   if (pressed) pressed.disabled = false;
   if (view.sheet && DESK_SHEETS.includes(view.sheet)) drawSheet();
   paintDesk(false);
+  // A card's Mark ready or Return to draft is gone once pressed: the toast's Undo, or the
+  // card's Mark ready again, or its heading, takes the focus.
+  if (answer && route === 'ready' && !focusKey('desk-ready ' + sent.name)) focusKey('desk-undo');
+  if (answer && route === 'draft' && !sent.undo) {
+    const name = Object.keys(sent.seen || {})[0];
+    if (name && !focusKey('desk-ready ' + name)) byId(headingId(name))?.focus();
+  }
   return answer;
 }
 
-// Mark this level ready: every card of the level, each with the version shown on it.
+// Mark this level ready: the drafts the sheet named, each with the version shown on it.
 function markLevel(level, shown, pressed) {
   const seen = {};
   for (const one of shown) if (one.seen) seen[one.name] = one.seen;
   return deskDecide('level-ready', { level, seen }, pressed);
+}
+
+// The confirmation before Mark this level ready: each material it marks, whether it was
+// opened here in the version shown, and which are kept in the Document Library. Nothing is
+// sent until the person confirms; Cancel changes nothing and returns to the button.
+function confirmLevel(level, waiting) {
+  const held = deskHeld(view.path);
+  const opened = held.opened || {};
+  const rows = make('ul', 'rows');
+  const unread = [];
+  for (const one of waiting) {
+    const read = opened[one.name] === one.seen;
+    if (!read) unread.push(cardTitle(one));
+    const open = read ? null : capsule('Open ' + cardTitle(one), 'quiet', () => {
+      closeSheet();
+      held.sources = false;
+      held.material[level] = one.name;
+      paintDesk(true);
+      const heading = byId(headingId(one.name));
+      if (heading) heading.focus();
+    }, 'desk-level-open ' + one.name);
+    rows.append(add(make('li', 'row step'), add(make('div', 'row-text'),
+      make('p', 'step-name', cardTitle(one)), make('p', 'quiet', read ? 'Opened'
+        : opened[one.name] ? 'Changed since you opened it' : 'Not opened yet')), open));
+  }
+  const kept = waiting.filter((one) => ['document', 'brief'].includes(one.kind)).map(cardTitle);
+  const go = capsule('Mark ' + count(waiting.length, 'material', 'materials') + ' ready', 'filled',
+    async () => {
+      const answer = await markLevel(level, waiting, go);
+      if (view.sheet === 'desk-kit') closeSheet();
+      // The button is gone once nothing waits: the toast's Undo is the way back.
+      if (answer && !focusKey('desk-level-ready')) focusKey('desk-undo');
+    }, 'desk-level-ready-confirm');
+  DESK.kitSheet = [sheetTitle(level ? 'Mark level ' + level + ' ready?' : 'Mark every material ready?'),
+    make('p', '', 'Ready is your approval of the version you read.' + (unread.length
+      ? ' Not opened yet: ' + series(unread) + '.' : ' You opened each of them.')),
+    make('h3', 'sheet-part', '1. Materials to mark ready'), rows,
+    make('h3', 'sheet-part', '2. The Document Library'),
+    make('p', '', kept.length ? series(kept) + (kept.length === 1 ? ' is' : ' are')
+      + ' kept in the Document Library as Markdown, as learners read '
+      + (kept.length === 1 ? 'it.' : 'them.')
+      : 'Nothing here goes to the Document Library: only a guide or a brief does.'),
+    add(make('div', 'bar'), go, capsule('Cancel', 'quiet', () => closeSheet(), 'cancel'))];
+  openSheet('desk-kit', 'desk-level-ready')();
+}
+
+// What Mark ready did, said with Undo while each version is the one marked: Undo returns
+// them to exactly what they were, and says what the Document Library keeps.
+function readyToast(answer, names) {
+  const cards = list(answer.cards).filter((one) => list(names).includes(one.name)
+    && one.state === 'ready');
+  if (!cards.length) {
+    toast('Marked ready.');
+    return;
+  }
+  const library = answer.library || {};
+  const kept = cards.filter((one) => (library[one.name] || {}).state === 'kept').map(cardTitle);
+  const text = (cards.length === 1 ? cardTitle(cards[0]) + ' is marked ready.'
+    : count(cards.length, 'material is', 'materials are') + ' marked ready.')
+    + (kept.length ? ' ' + series(kept) + (kept.length === 1 ? ' is' : ' are')
+      + ' kept in the Document Library.' : '');
+  const undoable = cards.filter((one) => list(one.actions).includes('draft'));
+  if (!undoable.length) {
+    toast(text);
+    return;
+  }
+  const seen = Object.fromEntries(undoable.map((one) => [one.name, one.seen]));
+  toast(text, { label: 'Undo', key: 'desk-undo', run: async (control) => {
+    const undone = await deskDecide('draft', { seen, undo: true }, control);
+    if (undone && !focusKey('desk-level-ready')) {
+      if (!focusKey('desk-ready ' + undoable[0].name)) byId('title').focus({ preventScroll: true });
+    }
+  } });
+}
+
+// What Return to draft or Undo did, with what the Document Library still keeps.
+function draftToast(answer, names, undo) {
+  const cards = list(answer.cards).filter((one) => names.includes(one.name));
+  const library = answer.library || {};
+  const text = (undo ? 'Undone. ' : '') + (cards.length === 1
+    ? cardTitle(cards[0]) + ' is a draft again.'
+    : count(cards.length, 'material is a draft', 'materials are drafts') + ' again.')
+    + cards.filter((one) => (library[one.name] || {}).state === 'earlier')
+      .map((one) => ' ' + (cards.length === 1 ? libraryEarlier(one, library[one.name])
+        : 'The Document Library keeps revision ' + library[one.name].revision + ' of '
+          + cardTitle(one) + ' until you mark it ready again.')).join('');
+  toast(text);
 }
 
 // --- the desk's sheets --------------------------------------------------------------------

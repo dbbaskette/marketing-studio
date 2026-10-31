@@ -980,14 +980,39 @@ function calm() {
 }
 
 // A short message that slides in at the bottom right, is read out, and leaves by itself.
-// It is kept clear of the toolbar, so it never covers the main thing to do.
-function toast(text) {
-  const node = make('p', 'toast glass', text);
-  byId('toasts').append(node);
-  window.setTimeout(() => {
+// It is kept clear of the toolbar, so it never covers the main thing to do. One with an
+// action ({label, key, run}, as Undo is) stays longer, and stays while it is pointed at or
+// holds the focus; pressing its button puts it away. Returns the toast's button, or null.
+function toast(text, action) {
+  const node = make('p', 'toast glass' + (action ? ' toast-action' : ''), text);
+  let go = null, over = false;
+  const leave = () => {
+    if (!node.parentNode) return;
+    const focused = node.contains(document.activeElement);
     node.classList.add('toast-leaving');
-    window.setTimeout(() => node.remove(), calm() ? 0 : 260);
-  }, 4200);
+    window.setTimeout(() => {
+      node.remove();
+      if (focused) byId('title').focus({ preventScroll: true });
+    }, calm() ? 0 : 260);
+  };
+  if (action) {
+    // One action at a time: a newer Undo replaces an older one, which no longer applies.
+    for (const old of byId('toasts').querySelectorAll('.toast-action')) old.remove();
+    go = capsule(action.label, 'quiet', () => {
+      leave();
+      return action.run(go);
+    }, action.key);
+    node.append(' ', go);
+    node.addEventListener('mouseenter', () => { over = true; });
+    node.addEventListener('mouseleave', () => { over = false; });
+  }
+  byId('toasts').append(node);
+  const wait = () => window.setTimeout(function leaving() {
+    if (action && (over || node.contains(document.activeElement))) wait();
+    else leave();
+  }, action ? 10000 : 4200);
+  wait();
+  return go;
 }
 
 // --- copying ----------------------------------------------------------------------
@@ -1858,9 +1883,11 @@ function drawHome(fresh) {
     && first.standing.next;
   const gate = first && ((first.waiting || {}).artifact || next) && !asked;
   const outline = first && !(first.waiting || {}).artifact && readsOutline(asked);
-  const lead = !first ? null : outline ? capsule('Review ' + outlineLabel(asked.outline),
+  // With several trainings waiting, the toolbar's review names the one it opens.
+  const whose = first && pick('needs-you').length > 1 ? ' for ' + (first.title || 'Untitled') : '';
+  const lead = !first ? null : outline ? capsule('Review ' + outlineLabel(asked.outline) + whose,
     'filled', () => show('outline', { path: first.path }), 'lead')
-    : capsule(gate ? (next ? next.label : 'Review ' + first.waiting.label)
+    : capsule(gate ? (next ? next.label : 'Review ' + first.waiting.label) + whose
       : 'Open ' + (first.title || 'Untitled'),
       'filled', gate ? reviewAction(first) : openTraining(first), 'lead');
   // With the runner, one button starts a new training. It is the filled one when nothing

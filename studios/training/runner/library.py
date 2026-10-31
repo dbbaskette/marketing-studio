@@ -7,7 +7,8 @@ What a caller needs to know
     library.upload(name, data)             # Keep in library, for an upload: never raises
     library.keep(root, name)               # a guide or brief marked ready: never raises
     library.again(engine, path, name)      # Keep in library (again), for a Ready one
-    library.kept(root, cards)              # what the desk says of each guide and brief
+    library.kept(root, cards)              # what the desk says of each guide and brief,
+                                           # Ready or returned to draft
     library.upload_again(engine, path, name)   # Keep in library again, for an added document
     library.research_sources(store, sent)  # the shared source editor, with Keep in library
 
@@ -33,6 +34,9 @@ Finished material
   its words changed. Decks are not kept: Training Studio cannot export a PDF of one yet.
 - Marking ready never waits on the library: what stops it is recorded, and the desk offers
   Keep in library again. Nothing kept is shared with the team or committed.
+- Returning a material to draft (Return to draft, Undo, or an edit) never removes what the
+  library keeps: the desk says the library keeps revision N until it is marked ready again,
+  and marking the same words ready again adds no revision.
 
 Keep in library
 ---------------
@@ -353,14 +357,20 @@ def again(engine, path, name) -> Path:
 def kept(root, cards) -> dict:
     """For each Ready guide or brief on the desk: {'state': 'kept', 'revision'} when the
     version marked ready is the one kept, {'state': 'failed', 'problem'} when keeping it
-    failed, else {'state': 'not-kept'}."""
+    failed, else {'state': 'not-kept'}. For one that is not Ready now (edited, or returned to
+    draft) but was kept before: {'state': 'earlier', 'revision'}, the revision the library
+    still holds until it is marked ready again. Nothing kept is ever removed here."""
     materials = status(root).get('materials') or {}
     shown_ = {}
     for card in cards:
-        if card.get('state') != 'ready' or card.get('kind') not in KEPT:
+        if card.get('kind') not in KEPT:
             continue
         held = materials.get(card['name']) if isinstance(materials, dict) else None
         held = held if isinstance(held, dict) else {}
+        if card.get('state') != 'ready':
+            if held.get('state') == 'kept' and held.get('revision'):
+                shown_[card['name']] = {'state': 'earlier', 'revision': held['revision']}
+            continue
         if held.get('sha256') and held.get('sha256') != card.get('seen'):
             shown_[card['name']] = {'state': 'not-kept'}
         elif held.get('state') == 'kept':
