@@ -1438,6 +1438,8 @@ ROUTES = {
     'review': {'id', 'seen', 'humanize', 'voice_guide'},
     'apply': {'id', 'seen', 'job', 'items', 'all'},
     'skip': {'id', 'job', 'items'},
+    # Review mode's Undo after Reject: suggestions set aside here are open again.
+    'unskip': {'id', 'job', 'items'},
     # Before publishing: a repurpose result as a new blog, and Google suggestions.
     'repurpose': {'id', 'job', 'title', 'content'},
     'google-plan': {'id', 'mode'},
@@ -1445,7 +1447,7 @@ ROUTES = {
 }
 SESSION = re.compile(r'[a-f0-9]{16,64}')
 # Routes the page's dispatch does not record as a decision on this blog (management.py).
-UNSHARED = ('skip', 'google-plan', 'google-send', 'repurpose')
+UNSHARED = ('skip', 'unskip', 'google-plan', 'google-send', 'repurpose')
 
 
 # First passes that are a Finishing tool: they propose, and the draft is left as it is.
@@ -1623,10 +1625,12 @@ def dispatch(root, action, data):
             data['humanize'] if 'humanize' in data else desk_jobs.PINNED,
             data['voice_guide'] if 'voice_guide' in data else desk_jobs.PINNED,
         )
-    elif action in ('apply', 'skip'):
+    elif action in ('apply', 'skip', 'unskip'):
         import desk_finish
 
-        if action == 'apply':
+        if action == 'unskip':
+            done = desk_finish.unskip(root, ident, data.get('job'), data.get('items'))
+        elif action == 'apply':
             done = desk_finish.apply(
                 root, ident, seen, data.get('job'), data.get('items'), data.get('all', False)
             )

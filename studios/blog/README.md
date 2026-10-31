@@ -112,8 +112,11 @@ Once the page is open, use its controls to drive the work:
 4. **Read and edit.** The desk opens with the manuscript as a readable document.
    Use **Go to section** or **Edit** beside a heading to work on one section. Changes
    save as you type; changing views saves pending text first. **Full desk** keeps the
-   all-sections editor available. A note on a section rewrites that section; **Revise
-   the whole draft** is a separate disclosure. Select text in an editor for **Rephrase**,
+   all-sections editor available. Sections always show in the draft's own order. **Polish**
+   opens Review mode, and **Back** there returns to where you were; the Finishing panel
+   opens from the toolbar's **Finishing**. On a phone, **Go to section** and one **View and
+   tools** fold sit above the text, so the title and the first paragraph show first.
+   A note on a section rewrites that section; **Revise the whole draft** is a separate disclosure. Select text in an editor for **Rephrase**,
    **Shorten**, **Expand**, **Fix** or **Ask…**. **History** compares and restores earlier
    versions. The **Outline** tab manages sections and their briefs. **Sources** adds
    material without rewriting what you already have.

@@ -765,6 +765,26 @@ def skip(root, ident, job, ids):
     return _proposals(root).skip(ident, job, ids)
 
 
+def unskip(root, ident, job, ids):
+    """Review mode's Undo after Reject: the suggestions set aside are open again. Only ones
+    set aside come back; one applied, retired or open stays as it is. Only this computer's
+    waiting set changes, and the text never does."""
+    proposals = _proposals(root)
+    found = proposals.read(ident, job)
+    if not isinstance(ids, list) or not ids or len(ids) > ITEMS:
+        raise ValueError('Choose the suggestions to bring back.')
+    items = {item['id']: item for item in found['items']}
+    if any(not isinstance(name, str) or name not in items for name in ids):
+        raise ValueError('Choose suggestions from this set.')
+    opened = 0
+    for name in set(ids):
+        if items[name]['state'] == 'skipped':
+            items[name]['state'] = 'open'
+            opened += 1
+    proposals.store.write_json(proposals.path(ident, job), found)
+    return {'opened': opened}
+
+
 # Quick check (the route and functions keep the name proofread): mechanical checks in
 # process, no job. Advisory, never an authorship verdict.
 AI_TELLS = ('blogforge', 'voice', 'assets', 'ai-tells')

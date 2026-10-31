@@ -157,6 +157,7 @@ async function check(){
   await deskGoogleStartIsOneActionAndRetrySafe();
   await deskStartReadsAGoogleDocAgainAfterAFailure();
   await deskReviewDocSuggestions();
+  await deskOrderAndOnePath();
   await oldIntakeAddressesOpenTheDeskStart();
   await deskStartRecovery();
   await deskTakeOver();
@@ -3448,6 +3449,117 @@ const REVIEW_FIXES=[
 // Other people's suggestions pending in the Google Doc, in Review mode and on the full desk:
 // marked where they sit, decided in Google Docs, never accepted, rejected, counted or
 // numbered here; a fix over their words is flagged and left out of Accept all.
+// Issue 258: the manuscript in its saved order, whatever its part ids look like, in Read,
+// Edit section, Full desk and Review mode, and after a reorder; one way through Polish and
+// back to the same place; a first check with one action; focus kept and every outcome said
+// after Accept, Reject (with Undo) and Accept all; Humanize's rewrites in Review mode, and a
+// rerun that is quiet while they wait; and a phone that shows the title and text first.
+async function deskOrderAndOnePath(){
+  // Part ids made only of digits: an object keyed by them lists them first, in number order.
+  const sections=[{id:'aaaaaaaa',heading:'Why it matters',brief:'',text:'Why text.'},{id:'12345678',heading:'How it works',brief:'',text:'How text.'},{id:'00000001',heading:'What to try next week',brief:'',text:'Try text.'}];
+  const fixes=[
+    {part:'aaaaaaaa',kind:'spelling',before:'Why text.',after:'Why texts.',note:'One.'},
+    {part:'12345678',kind:'grammar',before:'How text.',after:'How texts.',note:'Two.'},
+    {part:'00000001',kind:'wording',before:'Try text.',after:'Try texts.',note:'Three.'},
+  ];
+  let view=deskView({sections,opening:'An opening paragraph.',finishing:{},doc_suggestions:{count:0,marks:[]}}),unskipped=null;
+  const setState=(ids,state)=>({...view,finishing:{...view.finishing,copyedit:{...view.finishing.copyedit,items:view.finishing.copyedit.items.map(i=>ids.includes(i.id)?{...i,state}:i)}}});
+  const t=focusFixtureWith(()=>view,(url,data)=>{
+    if(url==='/api/desk-skip'){view=setState(data.items,'skipped');return view;}
+    if(url==='/api/desk-unskip'){unskipped=data;view=setState(data.items,'open');return view;}
+    if(url==='/api/desk-apply'){view={...setState(data.items.map(i=>i.id),'applied'),revision:view.revision+1,finished:{applied:data.items.length,left:[]}};return view;}
+    return null;
+  });
+  const {f,page}=t;
+  const order=()=>page().filter(n=>/desk-part/.test(n.className||'')&&n.dataset?.part).map(n=>n.dataset.part);
+  const want=['title','opening','aaaaaaaa','12345678','00000001'];
+  await f.run("sRoute('desk','desk-blog')");
+  assert.deepEqual(order(),want,'Read shows the title, the opening, then the sections as saved');
+  await f.run("sDeskChoose(studio.desk,'full')");
+  assert.deepEqual(order(),want,'so does the full desk');
+  await f.run("sDeskChoose(studio.desk,'edit','00000001')");
+  assert.deepEqual(order(),['00000001'],'Edit section shows the one part');
+  // Reordered elsewhere: the new saved order, in Read and on the full desk.
+  const moved=[sections[2],sections[0],sections[1]];
+  view={...view,revision:view.revision+1,sections:moved};
+  await f.run("(async()=>{const held=studio.desk,before=held.view;held.view=await api('desk?id=desk-blog');held.reading='full';sDeskRefresh(held,before);})()");
+  assert.deepEqual(order(),['title','opening','00000001','aaaaaaaa','12345678'],'after a reorder, the new order');
+  await f.run("sDeskChoose(studio.desk,'read','12345678')");
+  assert.deepEqual(order(),['title','opening','00000001','aaaaaaaa','12345678']);
+  // Polish from Read, at a section and a scroll, then Back: the same view, section and scroll.
+  f.run("window.scrollY=640;window.scrollTo=(x,y)=>{window.scrolledTo=y;}");
+  const pressIn=async(nodes,label)=>{const found=nodes.find(n=>n.textContent===label&&n.listeners.click);assert.ok(found,'no '+label);await found.listeners.click();};
+  assert.ok(!page().some(n=>n.textContent==='Review and share'),'one way to Finishing: the toolbar’s');
+  await pressIn(page(),'Polish');
+  assert.equal(f.run('studio.desk.mode'),'review');
+  // A first check: one action, no "again", and words for a check that has not run.
+  assert.ok(!descendants(f.get('actions')).some(n=>n.textContent==='Check again'),'no Check again before any check');
+  assert.equal(page().find(n=>n.className==='lede').textContent,'Check the draft to see fixes marked in the text. Nothing changes until you accept one.');
+  assert.equal(page().filter(n=>/button-filled/.test(n.className||'')).length,1,'one primary action');
+  for(const label of ['Copy','Download','Mark as published'])assert.ok(descendants(f.get('actions')).some(n=>n.textContent===label),label+' stays in Review mode');
+  assert.deepEqual(page().filter(n=>n.className==='review-part').map(n=>n.dataset.part),['title','opening','00000001','aaaaaaaa','12345678'],'Review mode reads in the same order');
+  await descendants(f.get('toolbar-lead'))[0].listeners.click();
+  assert.equal(f.run('studio.desk.mode'),null);
+  assert.equal(f.run('studio.desk.reading'),'read','Back lands in Read');
+  assert.equal(f.run('studio.desk.activePart'),'12345678','at the same section');
+  assert.equal(f.run('window.scrolledTo'),640,'with the scroll kept');
+  // Three fixes: Reject fix 2 moves focus to fix 3's Accept, says so, and offers Undo.
+  view={...view,sections,jobs:[{id:'c1',kind:'finish-copyedit',status:'ready',applied:true,error:''}],finishing:{copyedit:finishSet('copyedit',fixes)}};
+  await f.run("(async()=>{studio.desk.view=await api('desk?id=desk-blog');sReviewEnter(studio.desk);sDeskRender(studio.desk);})()");
+  assert.ok(descendants(f.get('actions')).some(n=>n.textContent==='Check again'),'Check again once a check has run');
+  const button=label=>page().find(n=>n.attributes?.['aria-label']===label);
+  await button('Reject fix 2').listeners.click();
+  assert.equal(button('Accept fix 3').focused,true,'focus moves to the next fix');
+  const toasts=descendants(f.get('toasts')).filter(n=>/\btoast\b/.test(n.className||''));
+  const said=toasts.at(-1);assert.ok(said,'Reject is said');
+  assert.match(said.textContent,/^Rejected; the text is unchanged\./);
+  await descendants(said).find(n=>n.textContent==='Undo').listeners.click();
+  assert.deepEqual(unskipped,{id:'desk-blog',job:view.finishing.copyedit.job,items:['p2']},'Undo brings it back');
+  assert.ok(button('Reject fix 2'),'fix 2 is open again');
+  assert.equal(button('Accept fix 2').focused,true,'with focus on it');
+  // Accept all: focus lands on the summary, never on the page.
+  const all=page().find(n=>/^Accept all/.test(n.textContent)&&n.listeners.click);await all.listeners.click();
+  const done=page().find(n=>n.dataset?.focus==='done');
+  assert.ok(done&&done.focused,'focus on the summary once nothing is left');
+  // Humanize's rewrites: the chip opens Review mode with them, to accept or reject.
+  const human=finishSet('humanize',[{part:'12345678',before:'How text.',after:'Here is how.',note:'Plainer.'}]);
+  view={...view,jobs:[],finishing:{humanize:human}};
+  await f.run("(async()=>{const held=studio.desk;await sReviewLeave(held);held.view=await api('desk?id=desk-blog');sDeskRender(held);})()");
+  await pressIn(page(),'Humanize · 1 to review');
+  assert.equal(f.run('studio.desk.mode'),'review','Humanize · 1 to review opens Review mode');
+  assert.ok(button('Accept suggestion 1')&&button('Reject suggestion 1'),'with Accept and Reject on the rewrite');
+  // In Finishing, waiting rewrites come first; Find sentences again is quiet and under them.
+  await f.run("(async()=>{const held=studio.desk;await sReviewLeave(held);await sDeskFinishOpen(held,'humanize');})()");
+  const panel=page().filter(n=>n.tagName==='button');
+  const again=panel.find(n=>n.textContent==='Find sentences again'),review=panel.find(n=>n.textContent==='Review them in your text');
+  assert.ok(again&&review,'both are there');
+  assert.ok(!/button-filled/.test(again.className),'the rerun is not the filled button');
+  assert.ok(panel.indexOf(review)<panel.indexOf(again),'and sits under the suggestions');
+  assert.ok(page().some(n=>n.textContent==='Finding sentences again replaces the open suggestion with a new set.'));
+  // A phone: Go to section and one fold before the text; no lede or save line above it.
+  f.run("window.matchMedia=()=>({matches:true})");
+  await f.run("(async()=>{const held=studio.desk;sDeskFinishClose(held);held.reading='read';sDeskRender(held);})()");
+  const top=f.get('studio-page').children;
+  assert.ok(!top.some(n=>n.className==='lede'),'no lede above the text on a phone');
+  const bar=top.find(n=>/desk-compact/.test(n.className||''));assert.ok(bar,'one compact bar');
+  assert.deepEqual(bar.children.map(n=>n.tagName),['div','details'],'Go to section, then View and tools');
+  assert.ok(descendants(bar.children[1]).some(n=>n.textContent==='Polish'),'Polish is in the fold');
+  f.run('delete window.matchMedia');
+}
+function focusFixtureWith(current,answer){
+  const requests=[],timers=[];
+  const f=fixture((url,options)=>{
+    const data=options?.body?JSON.parse(options.body):null;requests.push({url,data});
+    const given=answer(url,data);if(given!==null&&given!==undefined)return given;
+    if(url.startsWith('/api/desk?'))return current();
+    if(url==='/api/desk-share')return {id:data.id,shared:true};
+    if(url.startsWith('/api/desk-images'))return {id:'desk-blog',images:[]};
+    return {items:[],total:0};
+  });
+  f.loadRunner();f.set('setTimeout',fn=>{timers.push(fn);return timers.length;});f.set('clearTimeout',()=>{});
+  const page=()=>descendants(f.get('studio-page'));
+  return {f,requests,timers,page};
+}
 async function deskReviewDocSuggestions(){
   const sentence='Timing and context is everything.',lead='A workflow coordinate agents.\n\n![][image1]\n\n';
   // Theirs: "coordinate" for "links" where no fix of ours sits, and "context" under fix 4.

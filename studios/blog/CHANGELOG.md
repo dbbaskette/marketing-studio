@@ -5,6 +5,22 @@ changes for authors first, then what changes for maintainers.
 
 ## Unreleased
 
+- **The manuscript in its order, and one path through Polish and Review (#258).** Read,
+  Edit section, Full desk and Review mode always show the title, the opening, then the
+  sections as saved: a section whose id was all digits could show above the title.
+  **Polish** opens Review mode and **Back** there returns to the view, section and scroll
+  you came from; Review mode keeps **Copy**, **Download**, the **Google Doc** and **Mark as
+  published**, and shows **Check again** only once a check has run, with a first-run
+  sentence before it. The desk's **Review and share** button is gone: the toolbar's
+  **Finishing** is the one way to the panel. After **Accept**, **Reject** or **Accept all**
+  focus moves to the next suggestion or the summary; **Reject** is said, with **Undo**.
+  **Humanize · N to review** opens Review mode with the rewrites to accept or reject; in
+  Finishing, waiting rewrites come first and **Find sentences again** is quiet, under them,
+  saying it replaces them. On a phone, Go to section and one **View and tools** fold come
+  before the text. Maintainers: the `desk-unskip` route (`desk_finish.unskip`), and Review
+  mode's `reviewFrom`, `reviewHuman` and `focusAfter`. Presentation Studio and Training
+  Studio list their parts from arrays, so their desks were not affected.
+
 - **Document Library: Update available and Keep in library.** A desk source taken
   from the shared Document Library shows **Update available** when the library has
   a newer revision, and **Use revision N** takes it as a new source revision the blog

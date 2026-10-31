@@ -417,17 +417,23 @@ function sDeskTeam(view){
   team.disabled=!access.actions.edit;return team;
 }
 function sDeskElsewhere(view){return view.elsewhere?sNode('p','decision-notice desk-driver',view.elsewhere):null;}
-function sDeskToolbar(held){
+// The blog's own actions, on the desk's toolbar and on Review mode's: Copy, Download, its
+// Google Doc and Mark as published.
+function sDeskShareActions(held){
   const view=held.view,editable=sDeskCan(held);
-  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));});
-  const download=sButton('Download',async()=>{const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
+  const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');if(held.mode==='review')await sReviewFlush(held);const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));});
+  const download=sButton('Download',async()=>{if(held.mode==='review')await sReviewFlush(held);const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
   const google=view.google?.url?link(view.google.url,'Google Doc ↗'):sButton('Make a Google Doc',()=>sDeskMakeDoc(held));if(view.google?.url)google.className='button';else google.disabled=!editable;
   const publish=sButton(view.publication?'Published':'Mark as published',()=>sDeskPublish(held));publish.disabled=!editable;
+  return [copy,download,google,publish];
+}
+function sDeskToolbar(held){
+  const view=held.view;
   const finishing=sButton('Finishing',()=>held.finish?sDeskFinishClose(held):sDeskFinishOpen(held));finishing.setAttribute('aria-pressed',String(!!held.finish));
-  const review=held.review?sButton('Review fixes',async()=>{await sDeskFlush(held);await sDeskOutlineFlush(held);held.finish=null;held.mode='review';sDeskRender(held);sDeskWatch(held);}):null;
+  const review=held.review?sButton('Review fixes',async()=>{await sDeskFlush(held);await sDeskOutlineFlush(held);sReviewEnter(held);sDeskRender(held);sDeskWatch(held);}):null;
   const stop=held.view.working?sButton('Stop',async button=>{await busy(button,'Stopping…',async()=>{const before=held.view;held.view=await api('desk-stop',{id:held.id,job:held.view.working.id});sDeskRefresh(held,before);});}):null;
   const team=sDeskTeam(view);
-  sFrame(view.title,sFold([team,stop,review,copy,download,google,publish,finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||'On the desk',()=>sRoute('blogs'));
+  sFrame(view.title,sFold([team,stop,review,...sDeskShareActions(held),finishing]),held.view.working?sDeskStatusWords(held):sDeskDriverWords(view)||'On the desk',()=>sRoute('blogs'));
 }
 // Reading is the default; editing mounts only the selected part. The full desk remains
 // available for experienced authors. URL choices contain navigation only, never text.
@@ -441,13 +447,21 @@ async function sDeskChoose(held,reading,part=held.activePart){
   const selected=held.cards?.[held.activePart];if(reading==='read')selected?.scrollIntoView?.({block:'start',behavior:'instant'});
   else selected?.deskInput?.focus();
 }
-function sDeskReadingControls(held){
+// Finishing opens from the toolbar only: Polish goes to Review mode, the one place fixes are
+// accepted or rejected in the text. On a phone the view, the buttons and the page's sentence
+// fold into one bar beside Go to section, so the title and the first paragraph come first.
+function sDeskReadingControls(held,lede){
   const choices=sChoice('Manuscript view',[['read','Read'],['edit','Edit section'],['full','Full desk']],held,'reading',value=>sDeskChoose(held,value));
   const picker=sField('desk-part-picker','Go to section',held,'activePart',{options:[['title','Title'],['opening','Opening'],...held.view.sections.map(section=>[section.id,deskHeading(section.heading)])],changed:value=>sDeskChoose(held,held.reading,value)});
-  return sAdd(sNode('div','desk-reading-controls'),choices,picker,sAdd(sNode('div','bar'),sButton('Polish',()=>sDeskFinishOpen(held,'copyedit'),'filled'),sButton('Review and share',()=>sDeskFinishOpen(held)),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);})));
+  const actions=sAdd(sNode('div','bar'),sButton('Polish',()=>sDeskFinishOpen(held,'copyedit'),'filled'),sButton('Sources',()=>sDeskSourcesSheet(held)),sButton('Outline',async()=>{await sDeskFlush(held);held.tab='outline';sDeskRender(held);}));
+  if(!sNarrow())return sAdd(sNode('div','desk-reading-controls'),choices,picker,actions);
+  const fold=sNode('details','desk-tools-fold');fold.open=!!held.toolsOpen;fold.addEventListener('toggle',()=>{held.toolsOpen=fold.open;});
+  fold.append(sNode('summary','button','View and tools'),sAdd(sNode('div','desk-tools-list'),lede,choices,actions));
+  return sAdd(sNode('div','desk-reading-controls desk-compact'),picker,fold);
 }
 function sDeskReviewQueue(held){
-  const rows=[];for(const tool of DESK_TOOLS){const n=(held.view.finishing?.[tool.key]?.items||[]).filter(item=>item.state==='open').length;if(!n)continue;rows.push(sButton(tool.name+' · '+n+' to review',()=>sDeskFinishOpen(held,tool.key)));}
+  // Humanize's located rewrites open Review mode, as Copy edit's fixes do: one place to accept or reject them.
+  const rows=[];for(const tool of DESK_TOOLS){const open=(held.view.finishing?.[tool.key]?.items||[]).filter(item=>item.state==='open'),n=open.length;if(!n)continue;rows.push(sButton(tool.name+' · '+n+' to review',()=>tool.key==='humanize'&&open.some(item=>item.present&&'after' in item)?sReviewHuman(held):sDeskFinishOpen(held,tool.key)));}
   if(!rows.length)return null;
   return sAdd(sNode('section','desk-suggestion-summary'),sNode('p','quiet','Optional suggestions to review'),sAdd(sNode('div','bar'),...rows));
 }
@@ -467,7 +481,8 @@ function sDeskRender(held){
   if(held.mode==='review')return sDeskReview(held);
   const view=held.view;held.reading=held.reading||'read';sDeskParts(held);held.shownReading=held.reading;held.shownPart=held.activePart;sDeskToolbar(held);held.layout=sDeskLayout();
   const status=sNode('p','quiet desk-save-state');status.setAttribute('role','status');status.setAttribute('aria-live','polite');held.status=status;
-  if(held.stale)sDeskStale(held);else status.textContent=held.saved||'Changes save as you type.';
+  const narrow=sNarrow()&&held.tab!=='outline';
+  if(held.stale)sDeskStale(held);else status.textContent=held.saved||(narrow?'':'Changes save as you type.');
   const column=sNode('div','desk-column'+(held.tab!=='outline'&&held.reading==='read'?' paper desk-reading-document':''));held.tab=held.tab||'draft';held.shownTab=held.tab;
   held.problemSlot=sNode('div','desk-problem-slot');const problem=sDeskProblem(held);if(problem)held.problemSlot.append(problem);
   held.cards={};
@@ -478,7 +493,9 @@ function sDeskRender(held){
     for(const part of sDeskParts(held))held.cards[part]=sDeskPart(held,part);
     const whole=held.wholeCard?(held.reading==='full'?held.wholeCard:disclosure('Revise the whole draft',held.wholeCard)):null;
     held.queueSlot=sNode('div','desk-review-queue');const queue=sDeskReviewQueue(held);if(queue)held.queueSlot.append(queue);
-    column.append(held.problemSlot,held.queueSlot,...[whole].filter(Boolean),...Object.values(held.cards));
+    // In reading order: an object keyed by part ids lists all-digit ids first, so the cards are
+    // placed by the parts' own order, never by the object's.
+    column.append(held.problemSlot,held.queueSlot,...[whole].filter(Boolean),...sDeskParts(held).map(part=>held.cards[part]));
     held.noSections=view.sections.length?null:sDeskNoSections();if(held.noSections)column.append(held.noSections);
   }
   held.bar=sDeskSelectionBar(held);held.aside=sDeskAside(held);
@@ -486,7 +503,8 @@ function sDeskRender(held){
   const finishing=!!held.finish,sheet=finishing&&sNarrow();
   held.panel=finishing?sDeskPanel(held):null;held.panelKey=finishing?sDeskPanelKey(held):null;
   const lede=held.tab==='outline'?'Rename, reorder, add and remove sections and say what each must do. Write the draft from the outline, or one section at a time.':'Read your manuscript, or choose a section to edit. Polish and checks offer suggestions; nothing changes until you accept.';
-  sPage(sNode('p','lede',lede),sDeskElsewhere(view),status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
+  const said=sNode('p','lede',narrow?lede+' Changes save as you type.':lede);
+  sPage(narrow?null:said,sDeskElsewhere(view),status,held.tab==='outline'?sDeskTabs(held):null,held.tab==='outline'?null:sDeskReadingControls(held,said),sAdd(sNode('div','desk-layout'+(finishing&&!sheet?' desk-finishing':'')),column,finishing&&!sheet?held.panel:held.aside),sheet?held.panel:null,held.bar);
   sDeskImagesLoad(held);
 }
 // After a job starts, moves on or ends: redraw only the cards it changed, so the part the
@@ -732,7 +750,7 @@ const DESK_VERDICTS={supported:'Supported','not-in-sources':'Not in your sources
 const DESK_ASPECTS={shape:'Shape',argument:'Argument',audience:'Audience',claims:'Claims'};
 const DESK_TOOLS=[
   {key:'copyedit',name:'Copy edit',says:'Grammar, spelling, punctuation, consistency and wordy sentences, each fix marked in your text to accept or reject. Voice, facts, quotes and links are kept.',run:'Find fixes',doing:'Finding grammar, spelling and wording fixes…',open:held=>sDeskCopyEdit(held),applyAll:true,empty:'Nothing to fix.'},
-  {key:'humanize',name:'Humanize',says:'Sentences that read as machine-written, each with a rewrite. Numbers, names, quotes and links are kept.',run:'Find sentences',doing:'Finding sentences that read as machine-written…',start:{level:'light'},options:(held,f)=>[sChoice('Intensity',DESK_LEVELS,f,'level')],data:f=>({level:f.level}),applyAll:true},
+  {key:'humanize',name:'Humanize',says:'Sentences that read as machine-written, each with a rewrite. Numbers, names, quotes and links are kept.',run:'Find sentences',doing:'Finding sentences that read as machine-written…',start:{level:'light'},options:(held,f)=>[sChoice('Intensity',DESK_LEVELS,f,'level')],data:f=>({level:f.level}),applyAll:true,view:held=>sDeskHumanizeView(held)},
   {key:'proofread',name:'Quick check',says:'Dashes, repetition, source IDs, editorial notes and passages carried over from examples, checked at once with no assistant.',view:held=>DESK_KIT.proofView(held),opened:(held,first)=>first||!held.finish.proof?sDeskProofread(held):undefined},
   {key:'facts',name:'Check facts against sources',says:'Each claim marked supported, not in your sources, or contradicted, with the passage.',run:'Check facts',doing:'Checking each claim against your sources…',options:held=>sDeskFactsOptions(held),verdicts:DESK_VERDICTS,counted:[' claim checked',' claims checked'],empty:'No claims to check.',source:held=>sDeskSourcesSheet(held)},
   {key:'geo',name:'GEO: retrieval readiness',says:'Proposals for direct answers, clear entities and useful evidence. Preview each change, then apply or skip it.',run:'Review retrieval readiness',doing:'Reviewing retrieval readiness…',applyAll:true,empty:'No retrieval changes suggested.',said:(set,said)=>{const summary=(set.summary||'').trim().replace(/\.+$/,'');if(summary)said.push(summary);}},
@@ -752,7 +770,18 @@ function sDeskFinishOpen(held,tool=null){const input=held.cards?.[held.activePar
 function sDeskFinishClose(held){return DESK_KIT.finishClose(held);}
 function sDeskReturnFocus(held){const saved=held.returnFocus,input=saved&&held.cards?.[saved.part]?.deskInput;if(input){input.focus();input.setSelectionRange?.(saved.start,saved.end);}if(typeof window.scrollTo==='function')window.scrollTo(0,held.returnScroll||0);}
 // Copy edit is reviewed in the text itself: it opens Review mode, where the check starts.
-async function sDeskCopyEdit(held){await sDeskFlush(held);await sDeskOutlineFlush(held);held.finish=null;held.mode='review';sDeskRender(held);sDeskWatch(held);}
+async function sDeskCopyEdit(held){await sDeskFlush(held);await sDeskOutlineFlush(held);sReviewEnter(held);sDeskRender(held);sDeskWatch(held);}
+// Review mode, entered from the desk, remembers the view, the part, the tab and the scroll it
+// came from; Back returns there. Entered from its address (a reload, a start), Back opens Read.
+function sReviewEnter(held){if(held.mode!=='review')held.reviewFrom={reading:held.reading||'read',part:held.activePart||'opening',tab:held.tab||'draft',scroll:typeof window.scrollY==='number'?window.scrollY:0};held.finish=null;held.mode='review';}
+async function sReviewLeave(held,reading){
+  await sReviewFlush(held);const from=held.reviewFrom||{reading:'read',part:held.activePart||'opening',tab:'draft',scroll:0};
+  held.reviewFrom=null;held.reviewHuman=false;held.mode=null;held.reading=reading||from.reading;held.activePart=from.part;held.tab=reading?'draft':from.tab;
+  sDeskModeUrl(held);sDeskViewUrl(held);sDeskRender(held);sDeskWatch(held);
+  if(!reading&&typeof window.scrollTo==='function')window.scrollTo(0,from.scroll||0);
+}
+// Humanize's rewrites reviewed in the text, with Accept and Reject, as Copy edit's fixes are.
+async function sReviewHuman(held){await sDeskFlush(held);await sDeskOutlineFlush(held);if(Object.keys(held.pending||{}).length)return;sReviewEnter(held);held.reviewHuman=true;sDeskRender(held);sDeskWatch(held);}
 function sDeskFinishTool(held,tool){return DESK_KIT.finishTool(held,tool);}
 // One optional saved guide in both Polish intake and a first review. Loading only this
 // region preserves the draft and keyboard focus while the catalog arrives.
@@ -806,6 +835,25 @@ function sDeskFactsOptions(held){
   return [sAdd(sNode('div','decision-notice desk-problem'),sNode('p','','Facts are checked against your sources, and this draft has none yet.'),add)];
 }
 function sDeskProposals(held,key,set){return DESK_KIT.proposals(held,key,set);}
+// Humanize in Finishing. With nothing open it is the kit's tool: Find sentences, filled. With
+// rewrites waiting, finishing them comes first: Review them in your text (Accept and Reject,
+// as Copy edit's fixes), the list with Apply all, and Find sentences again last and quiet,
+// saying that a new look replaces the open set.
+function sDeskHumanizeView(held){
+  const tool=deskTool('humanize'),view=held.view,f=held.finish,set=(view.finishing||{}).humanize,working=view.working;
+  const open=set?set.items.filter(item=>item.state==='open'):[],located=open.filter(item=>item.present&&'after' in item).length;
+  const run=sButton(set?tool.run+' again':tool.run,button=>sDeskJob(held,button,'desk-finish',{tool:'humanize',...tool.data(f)}),open.length?'':'filled');run.disabled=!sDeskCan(held)||!!working;
+  const said=[];
+  if(working&&working.kind==='finish-humanize'){const note=sNode('p','desk-working-note',tool.doing);note.setAttribute('role','status');said.push(note);}
+  else if(working)said.push(sNode('p','quiet','Another change is under way. This can run when it ends.'));
+  const last=(view.jobs||[]).filter(job=>job.kind==='finish-humanize').at(-1);
+  if(last&&!last.busy&&last.error&&(!set||set.job!==last.id))said.push(sNode('p','problem',last.error));
+  const head=[sNode('p','quiet',tool.says),...tool.options(held,f)];
+  if(!open.length)return [...head,sAdd(sNode('div','bar'),run),...said,...(set?sDeskProposals(held,'humanize',set):[])];
+  const review=sButton('Review them in your text',()=>sReviewHuman(held),'filled');review.disabled=!located||!sDeskCan(held);
+  return [head[0],...said,sAdd(sNode('div','bar'),review),sNode('p','quiet','In your text each rewrite is accepted or rejected; here Apply takes it and Skip leaves the sentence as it is. Either way the earlier text stays in History.'),...sDeskProposals(held,'humanize',set),
+    sNode('h3','sheet-part','Look again'),...head.slice(1),sAdd(sNode('div','bar'),run),sNode('p','quiet',open.length===1?'Finding sentences again replaces the open suggestion with a new set.':'Finding sentences again replaces the '+open.length+' open suggestions with a new set.')];
+}
 // Before and after side by side: struck words only before, marked words only after.
 function deskSides(before,after){return DESK_KIT.sides(before,after);}
 function sDeskProposal(held,set,item,key){return DESK_KIT.proposal(held,set,item,key);}
@@ -1001,7 +1049,9 @@ function reviewBlocks(text,marks){
 // suggestion keeps its number while its set is shown, so a number still names the one
 // accepted: a retired suggestion says which one changed its words, a carried one which it fits.
 function sReviewState(held){
-  const view=held.view,finishing=view.finishing||{},human=view.review?.humanize||null,r=held.review||{};
+  // Humanize is shown with Copy edit when the review asked for it, or when its rewrites from
+  // Finishing were opened here to accept or reject.
+  const view=held.view,finishing=view.finishing||{},human=view.review?.humanize||(held.reviewHuman&&finishing.humanize?finishing.humanize.level||'light':null),r=held.review||{};
   const kind=view.working?.kind,working=kind==='finish-copyedit'||kind==='finish-humanize'?view.working:null;
   const parts=['title','opening',...(view.sections||[]).map(section=>section.id)];
   // While Copy edit checks, nothing from the check before is shown; while Humanize looks, the
@@ -1049,11 +1099,13 @@ function sReviewState(held){
 }
 // Drawn again only when what it shows changes, so a poll never swaps a button being pressed.
 function sReviewToolbar(held,state,force=false){
-  const key=JSON.stringify([held.view.title,state.working?.kind||null,!!held.view.working,sDeskCan(held),sNarrow()]);
+  const ran=state.any||!!state.working||state.failed.length>0,view=held.view;
+  const key=JSON.stringify([view.title,state.working?.kind||null,!!view.working,sDeskCan(held),sNarrow(),ran,view.google?.url||'',!!view.google_suggestions,view.publication||'']);
   if(!force&&held.review?.toolbarKey===key&&studio.screen==='desk')return;if(held.review)held.review.toolbarKey=key;
-  const again=sButton('Check again',button=>sReviewCheck(held,button));again.disabled=!sDeskCan(held)||!!held.view.working;
-  const full=sButton('Open the full desk',async()=>{await sReviewFlush(held);held.mode=null;held.reading='full';sDeskModeUrl(held);held.tab='draft';sDeskRender(held);sDeskWatch(held);});
-  sFrame(held.view.title,sFold([again,full]),state.working?sReviewDoing(state):'Check spelling and grammar',()=>sRoute('blogs'));
+  // Before any check there is one way to start it, in the page: no Check again.
+  const again=ran?sButton('Check again',button=>sReviewCheck(held,button)):null;if(again)again.disabled=!sDeskCan(held)||!!view.working;
+  const full=sButton('Open the full desk',()=>sReviewLeave(held,'full'));
+  sFrame(view.title,sFold([again,full,...sDeskShareActions(held)]),state.working?sReviewDoing(state):'Check spelling and grammar',()=>sReviewLeave(held));
 }
 // What the check under way is doing, said in the toolbar and above the draft.
 function sReviewDoing(state){return state.working?.kind==='finish-humanize'?REVIEW_HUMAN:REVIEW_CHECKING;}
@@ -1064,7 +1116,7 @@ function sDeskReview(held){
   held.review.head=sReviewHead(held,state);held.review.headKey=sReviewHeadKey(held,state);held.review.paper=sReviewPaper(held,state);
   held.review.lede=sNode('p','lede',sReviewLede(state));
   sPage(held.review.lede,status,held.review.head,held.review.paper);
-  sDeskImagesLoad(held);sReviewProof(held);
+  sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held);
 }
 // What needs the person first: the check under way, a problem, the count with Accept all and
 // Reject all, or, once nothing is left, where the draft goes next.
@@ -1122,7 +1174,8 @@ function sReviewShown(held,value){
 function sReviewDone(held,state){
   const noun=state.human?['suggestion','suggestions']:['fix','fixes'];
   const said=state.total?'Accepted '+state.applied+' of '+state.total+' '+noun[state.total===1?0:1]+'.':'No '+noun[1]+' were needed.';
-  const card=sCard('Nothing left to review',sNode('p','',said+' Every accepted '+noun[0]+' kept the earlier text in History.'));card.className+=' review-done';
+  const summary=sReviewMark(sNode('p','',said+' Every accepted '+noun[0]+' kept the earlier text in History.'),'done');summary.tabIndex=-1;
+  const card=sCard('Nothing left to review',summary);card.className+=' review-done';
   if(held.view.google_suggestions)return sAdd(card,...sReviewGoogle(held));
   const copy=sButton('Copy',async()=>{if(typeof navigator==='undefined'||!navigator.clipboard?.writeText)throw new Error('Download the draft and copy it from there.');const found=await sDeskMarkdown(held);await navigator.clipboard.writeText(found.markdown);sToast(deskWithout('Markdown copied',found.missing));},'filled');
   const download=sButton('Download',async()=>{const found=await sDeskMarkdown(held);await sDownload({content:found.markdown,name:'DRAFT.md'});if(found.missing.length)sToast(deskWithout('Downloaded',found.missing));});
@@ -1146,6 +1199,7 @@ function sReviewGoogle(held){
   return out;
 }
 function sReviewLede(state){
+  if(!state.any&&!state.working&&!state.failed.length)return 'Check the draft to see fixes marked in the text. Nothing changes until you accept one.';
   if(state.working?.kind==='finish-humanize')return 'The fixes are marked in your text while the wording check looks for sentences that read as machine-written. Accept or reject them meanwhile.';
   if(state.working)return state.human?'Copy edit is reading your draft for spelling, grammar and wordy sentences, then the wording check looks for sentences that read as machine-written. Read or edit it meanwhile.':'Copy edit is reading your draft for spelling, grammar and wordy sentences. Read or edit it meanwhile.';
   if(state.any&&!state.pending.length&&!state.failed.length)return (state.human?'Every suggestion is reviewed.':'Every fix is reviewed.')+' Click any paragraph to keep editing, or Check again for the latest text.';
@@ -1165,14 +1219,25 @@ function sReviewHeadReplace(held,state,key){
   const again=sReviewFind(head,was)||(/^(fix|dismiss):/.test(was)?sReviewFind(head,'quick'):null)||sReviewFirst(head)||sReviewFind(head,'count');
   if(again&&typeof again.focus==='function')again.focus();
 }
+// After Accept, Reject, Accept all or Reject all, focus goes to the next suggestion's Accept,
+// or to the count, or to the summary once nothing is left: never to the page itself.
+function sReviewFocusNext(held,state,item){
+  const at=item?state.pending.findIndex(row=>row.key===item.key):-1,next=at<0?null:state.pending[at+1]||state.pending[at-1];
+  held.review.focusAfter=next?'accept:'+next.key:'count';
+}
+function sReviewFocusAfter(held){
+  const r=held.review,key=r?.focusAfter;if(!key||!sDeskCurrent(held))return;r.focusAfter=null;
+  const find=name=>{for(const scope of [r.head,r.paper]){const node=sReviewFind(scope,name);if(node&&!node.disabled&&!node.hidden)return node;}return null;};
+  const node=find(key)||find('count')||find('done')||sReviewFirst(r.head);if(node&&typeof node.focus==='function')node.focus();
+}
 function sReviewFirst(node){for(const child of node?.children||[]){if(child.hidden)continue;if(['button','input','select','textarea','summary'].includes(String(child.tagName).toLowerCase())&&!child.disabled)return child;const found=sReviewFirst(child);if(found)return found;}return null;}
 function sReviewFind(node,key){if(!node)return null;if(node.dataset?.focus===key)return node;for(const child of node.children||[]){const found=sReviewFind(child,key);if(found)return found;}return null;}
 function sReviewMark(node,key){if(node)node.dataset.focus=key;return node;}
 // The reading surface: the title, the opening and each section, every paragraph with its
 // fixes marked, opaque like any document.
 function sReviewPaper(held,state){
-  const paper=sNode('article','paper review-paper');paper.setAttribute('aria-label','Your draft with its fixes marked');held.review.parts={};
-  for(const part of state.parts){const box=sReviewPart(held,part,state);if(box){held.review.parts[part]=box;paper.append(box);}}
+  const paper=sNode('article','paper review-paper');paper.setAttribute('aria-label','Your draft with its fixes marked');held.review.parts={};held.review.order=[];
+  for(const part of state.parts){const box=sReviewPart(held,part,state);if(box){held.review.parts[part]=box;held.review.order.push(part);paper.append(box);}}
   return paper;
 }
 function sReviewKey(held,part,state){const editing=held.review.editing;return JSON.stringify([deskTextOf(held.view,part),(state.doc?.marks||[]).filter(mark=>mark.part===part),state.pending.filter(item=>item.part===part&&item.docFlag).map(item=>item.key),!!state.working,sReviewFree(held),state.shown.filter(item=>item.part===part).map(item=>[item.key,item.number,item.at,item.before,item.after,item.flag,item.note,item.picked??null,item.carriedBy||null]),state.gone.filter(item=>item.part===part).map(item=>[item.key,item.state,item.byNumber??null]),editing&&editing.part===part?editing.start:null,(held.view.sections||[]).find(section=>section.id===part)?.heading||'']);}
@@ -1238,8 +1303,8 @@ function sReviewFixes(held,items,loose){
     if(item.carriedBy?.length){const known=item.carriedBy.filter(Boolean);row.append(sNode('p','quiet review-carried',known.length?'Updated to fit accepted suggestion '+known.map(n=>'#'+n).join(', ')+'.':'Updated to fit an accepted suggestion.'));}
     if(item.alternatives?.length)row.append(sReviewChoices(held,item));
     if(loose)row.append(deskSides(item.before,item.after));
-    const accept=sButton('Accept',button=>sReviewAccept(held,item,button));accept.disabled=!editable;accept.setAttribute('aria-label','Accept '+what+item.number);
-    const reject=sButton('Reject',button=>sReviewReject(held,item.job,[item.id],button));reject.disabled=!sDeskCan(held);reject.setAttribute('aria-label','Reject '+what+item.number);
+    const accept=sButton('Accept',button=>sReviewAccept(held,item,button));accept.disabled=!editable;accept.setAttribute('aria-label','Accept '+what+item.number);sReviewMark(accept,'accept:'+item.key);
+    const reject=sButton('Reject',button=>sReviewReject(held,item.job,[item.id],button,item));reject.disabled=!sDeskCan(held);reject.setAttribute('aria-label','Reject '+what+item.number);sReviewMark(reject,'reject:'+item.key);
     row.append(sAdd(sNode('div','bar'),accept,reject));list.append(row);
   }
   return list;
@@ -1275,7 +1340,8 @@ function sDeskReviewRefresh(held,before){
   if(held.review.lede)held.review.lede.textContent=sReviewLede(state);
   // Sections added or taken away, or an opening that appears or goes: drawn again whole,
   // unless a paragraph is being edited, when it waits for the editor to close.
-  const drawn=Object.keys(held.review.parts).join(','),wanted=state.parts.filter(part=>held.review.parts[part]||part!=='opening'||deskTextOf(held.view,part).trim()).join(',');
+  // The order drawn, kept as drawn: the parts object lists all-digit ids first.
+  const drawn=(held.review.order||[]).join(','),wanted=state.parts.filter(part=>held.review.parts[part]||part!=='opening'||deskTextOf(held.view,part).trim()).join(',');
   if(drawn!==wanted){if(!held.review.editing)sDeskReview(held);return;}
   // A part with the paragraph being edited, or a choice with focus, is kept as it is: a
   // second job landing never takes the caret or the words.
@@ -1286,7 +1352,7 @@ function sDeskReviewRefresh(held,before){
     const box=sReviewPart(held,part,state);if(!box)continue;
     old.replaceWith(box);held.review.parts[part]=box;
   }
-  sDeskImagesLoad(held);sReviewProof(held);
+  sDeskImagesLoad(held);sReviewProof(held);sReviewFocusAfter(held);
 }
 function sReviewEditor(held,editing){
   const title=editing.part==='title',box=sNode(title?'input':'textarea','input review-editor');
@@ -1343,11 +1409,12 @@ async function sReviewCheck(held,button,humanize,voiceGuide){
 async function sReviewAccept(held,item,button){
   await busy(button,'Accepting…',async()=>{try{
     await sReviewFlush(held);if(held.stale)return;
+    sReviewFocusNext(held,sReviewState(held),item);
     const before=held.view;held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:item.job,items:[sReviewPick(item)]});
     if(held.review){held.review.google=null;delete held.review.picks[item.key];}
     sToast('Accepted. The earlier text is in History.'+deskFinishedSaid(held.view.finished));
     sDeskRefresh(held,before);
-  }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
+  }catch(error){if(held.review)held.review.focusAfter=null;if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}});
 }
 // Accept all: every shown suggestion that still fits and is not flagged, from both tools in one
 // request. The server lands them in reading order, each checked against the text the ones
@@ -1360,25 +1427,40 @@ async function sReviewAcceptAll(held,keys,button){
     try{
       await sReviewFlush(held);if(held.stale)return;
       const chosen=sReviewState(held).ready.filter(item=>keys.includes(item.key));if(!chosen.length)return;
+      held.review.focusAfter='count';
       held.view=await api('desk-apply',{id:held.id,seen:held.view.revision,job:chosen[0].job,items:chosen.map(item=>({job:item.job,...sReviewPick(item)})),all:true});
       for(const item of chosen)delete held.review.picks[item.key];
       if(held.review)held.review.google=null;
       const done=held.view.finished||{applied:chosen.length,left:[]},left=(done.left||[]).length,waits=left?' '+left+(left===1?' is':' are')+' left for you to decide.':'';
       if(done.applied)sToast((done.applied===1?'Accepted.':'Accepted '+done.applied+'.')+' The earlier text is in History.'+deskFinishedSaid(done)+waits);
       else if(left)sToast('Nothing was accepted: '+(left===1?'1 is':left+' are')+' left for you to decide.');
-    }catch(error){if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}
+    }catch(error){if(held.view===before&&held.review)held.review.focusAfter=null;if(/changed since/.test(error.message)){held.stale=true;sDeskStale(held);}else notice(error.message,true);}
     if(held.view!==before)sDeskRefresh(held,before);
   });
 }
-async function sReviewReject(held,job,ids,button){
-  await busy(button,'Rejecting…',async()=>{try{await sReviewFlush(held);const before=held.view;held.view=await api('desk-skip',{id:held.id,job,items:ids});sDeskRefresh(held,before);}catch(error){notice(error.message,true);}});
+async function sReviewReject(held,job,ids,button,item){
+  await busy(button,'Rejecting…',async()=>{try{
+    await sReviewFlush(held);if(item)sReviewFocusNext(held,sReviewState(held),item);
+    const before=held.view;held.view=await api('desk-skip',{id:held.id,job,items:ids});
+    sReviewUndoToast(held,ids.length===1?'Rejected; the text is unchanged.':'Rejected '+ids.length+'; the text is unchanged.',[{job,ids}],item);
+    sDeskRefresh(held,before);
+  }catch(error){if(held.review)held.review.focusAfter=null;notice(error.message,true);}});
+}
+// A rejection is said, with Undo for a short while: the suggestions are open again, and focus
+// goes back to the one brought back. Nothing in the text changed either way.
+function sReviewUndoToast(held,words,sets,item){
+  const toast=sNode('p','toast glass',words+' ');let used=false;
+  const undo=sButton('Undo',async button=>{if(used)return;used=true;await busy(button,'Bringing back…',async()=>{try{const before=held.view;for(const set of sets)held.view=await api('desk-unskip',{id:held.id,job:set.job,items:set.ids});toast.remove();sToast('Brought back to review.');if(held.review)held.review.focusAfter=item?'accept:'+item.key:'count';sDeskRefresh(held,before);}catch(error){used=false;notice(error.message,true);}});});
+  undo.className+=' button-quiet';toast.append(undo);$('toasts').append(toast);setTimeout(()=>toast.remove(),8000);
 }
 // Reject all: every open suggestion shown, set by set.
 async function sReviewRejectAll(held,open,button){
   await busy(button,'Rejecting…',async()=>{
     const before=held.view;
-    try{await sReviewFlush(held);for(const job of [...new Set(open.map(item=>item.job))])held.view=await api('desk-skip',{id:held.id,job,items:open.filter(item=>item.job===job).map(item=>item.id)});}
+    const sets=[];
+    try{await sReviewFlush(held);held.review.focusAfter='count';for(const job of [...new Set(open.map(item=>item.job))]){const ids=open.filter(item=>item.job===job).map(item=>item.id);held.view=await api('desk-skip',{id:held.id,job,items:ids});sets.push({job,ids});}}
     catch(error){notice(error.message,true);}
+    if(sets.length)sReviewUndoToast(held,open.length===1?'Rejected; the text is unchanged.':'Rejected '+open.length+'; the text is unchanged.',sets,null);
     if(held.view!==before)sDeskRefresh(held,before);
   });
 }

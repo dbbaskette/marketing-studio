@@ -155,6 +155,21 @@ class ProposalStoreTests(FinishCase):
         with self.assertRaisesRegex(ValueError, 'already applied or skipped'):
             self.act('apply', seen=1, job=job, items=[{'id': 'p1'}])
 
+    def test_undo_after_reject_opens_only_what_was_set_aside(self):
+        # Review mode's Undo: a rejected suggestion is open again; an applied one stays applied.
+        job = self.offer([self.edit(), self.edit(self.second, 'Second text.', 'Two.')])
+        self.act('skip', job=job, items=['p1'])
+        self.act('apply', seen=1, job=job, items=[{'id': 'p2'}])
+        before = self.tracked()
+        shown = self.act('unskip', job=job, items=['p1', 'p2'])
+        self.assertEqual(shown['finished'], {'opened': 1})
+        self.assertEqual(
+            [i['state'] for i in shown['finishing']['humanize']['items']], ['open', 'applied']
+        )
+        self.assertEqual(self.tracked(), before, 'only this computer’s waiting set changes')
+        with self.assertRaisesRegex(ValueError, 'Choose suggestions from this set'):
+            self.act('unskip', job=job, items=['p9'])
+
     def test_unknown_sets_and_items_are_refused_readably(self):
         job = self.offer([self.edit()])
         with self.assertRaisesRegex(ValueError, 'no longer here'):

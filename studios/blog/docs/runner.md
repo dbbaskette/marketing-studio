@@ -185,7 +185,19 @@ deciding on each fix, with the full desk one click away.
   Rejected fixes are never sent. Other blogs offer **Copy** and **Download**.
 - **Open the full desk** shows the notes, the Outline tab and the whole Finishing panel;
   **Review fixes** there comes back. The address keeps Review mode (`stage=review`), so a
-  reload stays in it.
+  reload stays in it. **Back** returns to the view, section and scroll you came from
+  (Read, when Review mode was opened from its address). Review mode's toolbar keeps the
+  blog's own actions: **Copy**, **Download**, its **Google Doc** and **Mark as published**.
+- **Before the first check** there is one action, **Check spelling and grammar**, and no
+  **Check again**.
+- **After each decision** focus moves to the next suggestion's **Accept**, or to the count,
+  or to the summary once nothing is left. **Reject** says "Rejected; the text is
+  unchanged." with **Undo** for a few seconds; Undo brings the suggestion back to review.
+- **Humanize · N to review**, on the desk, opens Review mode with Humanize's rewrites marked
+  in the text, to accept or reject like Copy edit's fixes. In Finishing, while rewrites
+  wait, **Review them in your text** comes first, then the list (where the same choice is
+  **Apply** or **Skip**), and **Find sentences again** is last and quiet: a new look
+  replaces the open rewrites.
 
 ## The writing desk
 
