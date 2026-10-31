@@ -93,6 +93,45 @@ def advance(project: dict, changes: dict, *, expected_revision: int, owner: str)
     return result
 
 
+def renaming(project: dict, brief) -> bool:
+    """True when a sent brief differs from the saved one in its working title alone."""
+    if not isinstance(brief, dict) or brief == project['brief'] or 'title' not in brief:
+        return False
+    rest = lambda value: {key: item for key, item in value.items() if key != 'title'}
+    return rest(brief) == rest(project['brief'])
+
+
+def renamed(project: dict, title: str, review: dict | None = None, *, sequence: int = 0):
+    """A rename as the next revision. Only the working title changes, so nothing is cleared:
+    the page's pixels and checks are unchanged, and the checks, the latest visual review and
+    the approval move to the renamed revision, each marked with the revision the person
+    reviewed or approved.
+    Returns (renamed project, carried review or None). The approved files of the earlier
+    revision stay as they are; files with the new title are prepared again on request."""
+    from .validation import validate_project
+    validate_project(project)
+    result = deepcopy(project)
+    result['brief']['title'] = title
+    result['revision'] += 1
+    before, after = basis(project), basis(result)
+    moved = {'from_revision': project['revision'], 'reason': 'rename'}
+    carried = None
+    if review is not None and review.get('basis') == before:
+        carried = {**deepcopy(review), 'basis': after, 'carried': review.get('carried') or moved,
+                   'sequence': max(sequence, review.get('sequence', 0)) + 1}
+    for check in result['checks']:
+        if check['basis'] == before:
+            check['basis'] = after
+            if carried is not None and check.get('review_digest') == digest(review):
+                check['review_digest'] = digest(carried)
+    if result['approval'] is not None:
+        # The revision the person approved stays named across later renames.
+        result['approval'].update(revision=result['revision'], basis=after,
+                                  carried=result['approval'].get('carried') or moved)
+    validate_project(result)
+    return result, carried
+
+
 def can_land(project: dict, *, attempt_id: str, expected_revision: int,
              input_basis: dict[str, str], owner: str) -> bool:
     """A cancelled, outdated, or foreign worker result cannot become current work."""

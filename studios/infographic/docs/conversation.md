@@ -35,8 +35,13 @@ Choose exact rows/columns with the user; don't infer types, units or missing val
 
 `edit-brief ID --file brief.json --expected-revision N` edits the complete existing
 brief. Preserve its fields; change title, audience, purpose, must_show `[{id,text}]`,
-locked_words, exclusions, direction or preset explicitly. Sources, facts and story
-choices are invalidated when their inputs change, while all earlier revisions remain.
+locked_words, exclusions, direction or preset explicitly. A change to the title alone is a
+rename that clears nothing: the story, page, checks, visual review and approval move to
+the new revision, and `approval.carried` names the revision the person approved. Its
+earlier approved files keep the old title and stay unchanged; `export ID --expected-revision REV`
+prepares files with the new title on this computer. Any other change clears the story,
+page and approval built from the earlier brief (captured facts stay), so tell the person
+what will be cleared and ask before saving when they exist. Earlier revisions remain.
 
 ## Author directly in this conversation
 
@@ -226,7 +231,8 @@ python3 runner/studio.py research-preview ID --case /absolute/reviewed-case --so
 When a preview names extraction gaps, inspect them before adding
 `--acknowledge-warnings` to `source-import`. Use `--replace-id SOURCE` for an explicit
 refresh. The raw and normalized capture, locations and origin revision are immutable;
-replacement clears dependent story/page approval. Google Docs and Slides links use the existing default Google sign-in. `--account` is optional for a deliberate override; import and delivery do not ask for email. Shared Marketing Studio output selects the initial delivery choice. Google tab/slide selection uses repeated
+adding or replacing a source clears the facts, story, page and approval built from the
+earlier sources, so tell the person and ask first when they exist. Google Docs and Slides links use the existing default Google sign-in. `--account` is optional for a deliberate override; import and delivery do not ask for email. Shared Marketing Studio output selects the initial delivery choice. Google tab/slide selection uses repeated
 `--tab TAB_ID`; leaving it empty includes all tabs. Pasted links do not trigger a fetch.
 
 `library-browse` lists the shared Document Library and chooses nothing. `library` takes
@@ -238,7 +244,9 @@ revision and hashes, so the infographic keeps working if the library changes. Li
 source change it clears the facts, story, page and approval built from earlier sources,
 so tell the person before adding to work that has them. A revision with extraction gaps
 is refused until the person has reviewed them and you add `--acknowledge-warnings`; the
-gaps stay with the source. A document already chosen is refused. `inspect ID` lists
+gaps stay with the source. A document already chosen is refused, and so is this
+infographic's own kept export (`inspect ID` names it as `library.own`): its approved
+page cannot be a source for its own facts. `inspect ID` lists
 `library.sources` with each one's newest revision on this computer and a `state`
 (`current`, `update`, `unreadable`, `not-here` when it was added on another computer,
 `no-library`). `library-update` takes exactly `--revision N`, only when it is newer than

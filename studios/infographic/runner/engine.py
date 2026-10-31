@@ -39,7 +39,8 @@ class Engine:
                 'visual_review': review, 'review_checked': review_checked,
                 'google_deliveries': listing(self.store, ident), 'deliveries': deliveries,
                 'library': {'sources': library.marked(self.store, project),
-                            'kept': library.status(self.store, ident)},
+                            'kept': library.status(self.store, ident),
+                            'own': library.own(self.store, ident)},
                 'elements': labels.elements(project), 'readiness': progress.readiness(project),
                 'roadmap': progress.roadmap(project, deliveries, review=review, review_checked=review_checked)}
 
