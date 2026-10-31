@@ -28,6 +28,8 @@ class Isolated(unittest.TestCase):
         self.environment = mock.patch.dict(os.environ, {
             'HOME': str(self.home), 'PATH': os.environ.get('PATH', ''),
             'INFOGRAPHIC_STUDIO_DATA': str(self.data), 'STUDIOS_CONFIG': str(self.settings),
+            # The shared Document Library is a disposable folder too: never a person's own.
+            'STUDIOS_LIBRARY': str(self.temp / 'library'),
             'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': str(self.home / 'gitconfig'),
         }, clear=True)
         self.environment.start()

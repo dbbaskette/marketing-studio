@@ -28,6 +28,7 @@ class Engine:
         project = self.store.read(ident)
         from .image_jobs import Jobs
         from .google_delivery import listing
+        from . import library
         review, review_checked, deliveries = (visual_review.latest(self.store, project),
                                               visual_review.checked(self.store, project), self.deliveries(ident))
         return {'project': project, 'history': history.entries(self.store, ident),
@@ -37,6 +38,8 @@ class Engine:
                 'image_history': Jobs(self.store, self.adapters).history(ident),
                 'visual_review': review, 'review_checked': review_checked,
                 'google_deliveries': listing(self.store, ident), 'deliveries': deliveries,
+                'library': {'sources': library.marked(self.store, project),
+                            'kept': library.status(self.store, ident)},
                 'elements': labels.elements(project), 'readiness': progress.readiness(project),
                 'roadmap': progress.roadmap(project, deliveries, review=review, review_checked=review_checked)}
 
@@ -310,8 +313,15 @@ class Engine:
         require(self.executable is not None or self.renderer is not None,
                 'Configure an installed pinned renderer before preview or export. Nothing is downloaded automatically.')
         kwargs = {'renderer': self.renderer} if self.renderer else {}
-        return exports.build(self.store, ident, expected_revision=expected_revision,
-                             executable=self.executable, draft=draft, **kwargs)
+        manifest = exports.build(self.store, ident, expected_revision=expected_revision,
+                                 executable=self.executable, draft=draft, **kwargs)
+        if not draft:
+            # Approved files are kept in the Document Library from the saved bytes alone;
+            # whatever the library does, the approval and the files stand.
+            from . import library
+            self.progress('Keeping the approved files in the Document Library')
+            library.keep(self.store, ident, manifest['id'])
+        return manifest
 
     def manual_review(self, ident, export_id, observations, *, expected_revision):
         require(isinstance(observations, list) and bool(observations)
@@ -369,7 +379,8 @@ class Engine:
         Approval is the person's explicit decision and is saved first. Preparing files
         uses only the local renderer, never an assistant, image provider or Google. If
         preparation fails, the approval is kept, no approved file is advertised, and the
-        result says so; preparing again is a local retry.
+        result says so; preparing again is a local retry. Prepared files are kept in the
+        Document Library; `library` says how that went.
         """
         self.progress('Approving this exact revision')
         approved = self.approve(ident, expected_revision=expected_revision)
@@ -380,7 +391,9 @@ class Engine:
         except Exception:
             return {'approved': True, 'revision': approved['revision'], 'export': None,
                     'problem': 'The approved files could not be prepared. Your approval is kept; prepare the files again.'}
-        return {'approved': True, 'revision': approved['revision'], 'export': manifest, 'problem': None}
+        from . import library
+        return {'approved': True, 'revision': approved['revision'], 'export': manifest, 'problem': None,
+                'library': library.status(self.store, ident)}
 
     def approve(self, ident, *, expected_revision):
         with self.store.locked():

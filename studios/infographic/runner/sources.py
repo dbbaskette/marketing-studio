@@ -133,6 +133,22 @@ def capture(store, ident: str, raw: bytes, *, kind='text', name='Pasted informat
 def capture_extracted(store, ident, raw, extracted, *, kind, name, expected_revision,
                       replace_id=None, acknowledge_warnings=False, selection=None, provenance=None):
     """Internal capture boundary for deterministic local or explicitly retrieved snapshots."""
+    record, normalized = captured(raw, extracted, kind=kind, name=name, selection=selection,
+                                  provenance=provenance, acknowledge_warnings=acknowledge_warnings)
+    with store.locked():
+        project = store.read(ident)
+        store.expect(project, expected_revision)
+        if replace_id is not None:
+            require(any(s['id'] == replace_id for s in project['sources']), 'Choose an existing source to replace.')
+        sources = [s for s in project['sources'] if s['id'] not in (replace_id, record['id'])]
+        sources.append(record)
+        store.write_blob(ident, record['file'], raw)
+        store.write_blob(ident, record['normalized_file'], normalized)
+        return store.change_locked(project, {'sources': sources})
+
+
+def captured(raw, extracted, *, kind, name, selection=None, provenance=None, acknowledge_warnings=False):
+    """One checked source record and its normalized text bytes, before anything is saved."""
     require(kind in SOURCE_KINDS and type(raw) is bytes and 0 < len(raw) <= MAX_SOURCE_BYTES,
             'Supply a supported captured source within 16 MB.')
     require(text(name, limit=200) and '/' not in name and '\\' not in name,
@@ -160,16 +176,7 @@ def capture_extracted(store, ident, raw, extracted, *, kind, name, expected_revi
     if provenance:
         record['provenance'] = provenance
         record['id'] = 's_' + digest({'original': raw_hash, 'normalized': normalized_hash, 'provenance': provenance})[:24]
-    with store.locked():
-        project = store.read(ident)
-        store.expect(project, expected_revision)
-        if replace_id is not None:
-            require(any(s['id'] == replace_id for s in project['sources']), 'Choose an existing source to replace.')
-        sources = [s for s in project['sources'] if s['id'] not in (replace_id, record['id'])]
-        sources.append(record)
-        store.write_blob(ident, record['file'], raw)
-        store.write_blob(ident, record['normalized_file'], normalized)
-        return store.change_locked(project, {'sources': sources})
+    return record, normalized
 
 
 def read(store, project: dict, source: dict) -> str:

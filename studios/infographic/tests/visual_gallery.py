@@ -135,6 +135,7 @@ def main():
                 "PATH": os.environ.get("PATH", ""),
                 "INFOGRAPHIC_STUDIO_DATA": str(root / "data"),
                 "STUDIOS_CONFIG": str(root / "settings.json"),
+                "STUDIOS_LIBRARY": str(root / "library"),
                 "GIT_CONFIG_GLOBAL": os.devnull,
                 "GIT_CONFIG_NOSYSTEM": "1",
             },
