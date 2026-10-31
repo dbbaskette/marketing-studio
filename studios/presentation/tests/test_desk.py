@@ -113,6 +113,18 @@ class PageFileTests(unittest.TestCase):
         self.assertNotRegex(styles, r'#[0-9a-fA-F]{3,6}\b|rgb\(')
         self.assertNotIn('backdrop-filter', styles)
 
+    def test_a_sheet_heading_hides_what_scrolls_under_it(self):
+        # #255: it reached only the sheet's content, was 96% opaque, and a segmented
+        # control's options (z-index 1, later on the page) were drawn over it.
+        rule = re.search(r'\.sheet > \.sheet-heading:first-child \{(.*?)\}',
+                         self.read('style.css'), re.DOTALL)[1]
+        self.assertIn('top: -1.1rem;', rule)
+        self.assertIn('margin: -1.1rem -1.2rem 0;', rule)
+        self.assertIn('z-index: 2;', rule)
+        self.assertIn('var(--paper)', rule)
+        sheet = re.search(r'\n\.sheet \{(.*?)\}', self.read('style.css'), re.DOTALL)[1]
+        self.assertIn('padding: 1.1rem 1.2rem 1.2rem;', sheet)
+
 
 def tags(tree, found=None) -> list:
     found = [] if found is None else found

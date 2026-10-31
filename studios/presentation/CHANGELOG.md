@@ -5,6 +5,18 @@ making decks first, then what changes for maintainers.
 
 ## Unreleased
 
+- **The New deck heading hides what scrolls under it.** The sheet's sticky
+  heading was slightly see-through, left a gap above it, and was drawn under
+  choices such as **Pick it when the samples are drawn**, so text showed
+  through it at every width. It is now opaque in light and dark, reaches the
+  sheet's top and sides, and sits above those choices. Every sheet with a
+  heading, in Blog Studio and Training Studio too, gets the same fix.
+
+  For maintainers: `ui-kit/style.css` adds `.sheet > .sheet-heading:first-child`
+  (negative `top` and margins equal to the sheet's padding, `z-index: 2` over
+  `.seg-option`, and the sheet fill over `--paper`). The `.sheet-heading` rule
+  itself is unchanged. Part of #255.
+
 - **Start a deck with Research first again.** With **Research first** on,
   **Start** did nothing, for a deck from an idea or from a document, with
   sources or without. It now starts the deck, and its research runs. With no
