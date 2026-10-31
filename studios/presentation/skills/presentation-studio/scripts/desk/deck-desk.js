@@ -33,10 +33,10 @@
   const CONTENT_NEXT = 'Drafting the slide text. You will approve it before design starts.';
   const NO_RECORD = 'This computer has no record yet of how long that takes.';
   const LOOK_PAUSE = 'One thing needs you: pick the look. The deck is drawn in it.';
-  const DESK_LEDE = 'A card for each slide. A note on a slide redraws only its section; '
-    + 'Deliver sends the deck.';
-  const OWN_LEDE = 'A card for each slide of your deck. Change its words here, or note a slide '
-    + 'to plan its changes again: only a copy is changed, and Deliver sends it.';
+  const DESK_LEDE = 'Choose a slide to read it and change it. A note on a slide redraws only '
+    + 'its section; Deliver sends the deck.';
+  const OWN_LEDE = 'Choose a slide of your deck to read it and change its words, or note it to '
+    + 'plan its changes again: only a copy is changed, and Deliver sends it.';
   // A slide's words, each a box on its card, in the order the slide reads: the field the
   // runner names it by, and what its box is called.
   const WORD_FIELDS = [['title', 'Title'], ['subtitle', 'Subtitle'], ['detail', 'Detail'],
@@ -87,8 +87,8 @@
   // drawn again, because the deck moved on, still has it.
   const held = { notes: {}, deck: {}, previews: {}, looks: {}, outlines: {}, tabs: {},
     // Typed words not saved yet, by deck, slide and field; the words selected now; the
-    // History sheet's slide and what it read.
-    edits: {}, selection: null, history: null,
+    // History sheet's slide and what it read; and the slide chosen on the desk, by deck.
+    edits: {}, selection: null, history: null, slide: {},
     // A source being added, the findings ticked to leave out, and Finishing: the panel's
     // state as the shared kit holds it, the proposal whose price is shown before it is
     // applied, and the words of a proposal being edited.
@@ -871,24 +871,270 @@
     return h.pageHead(DESK_LEDE, [tabs]);
   }
 
-  // --- the Slides tab: the whole-deck note, then each section's cards -------------------------
+  // --- the Slides tab: the workbench -----------------------------------------------------------
+  // What stands before Deliver, in a short summary whose lines go to their slides; then the
+  // navigator, every slide by its number, title and picture, beside (or, on a narrow screen,
+  // above) the one slide chosen, read first and changed in place; and last, folded away, the
+  // note for the whole deck. The slide chosen is kept for each deck: it stays through the
+  // Outline tab, Finishing, History and Deliver, and through a reload, where the browser keeps
+  // it with the screen. Words typed on a slide stay typed when another slide is chosen.
+
+  // Every slide of the deck in order, each with the section it is in.
+  function deckCards(run) {
+    return h.list(run.desk.sections).flatMap((part) => h.list(part.slides)
+      .filter((one) => one && typeof one.number === 'number')
+      .map((one) => ({ one, part })));
+  }
+
+  // The brand check's blockers on one slide: what Deliver lists, by its slide.
+  function blockersOn(run, one) {
+    return h.list(run.desk.blockers).filter((line) => line.number === one.number);
+  }
+
+  // A fix proposed by the review or the brand check for one slide, still to apply or skip.
+  // The brand check's are only those made from the last render's check, as Finishing shows.
+  function proposalsOn(run, one) {
+    const found = run.desk;
+    const sets = found.finishing || {};
+    return ['brand', 'review'].flatMap((key) => {
+      const set = sets[key];
+      if (!set || (key === 'brand' && !found.brand_current)) return [];
+      return h.list(set.items).filter((item) => item.state === 'open' && item.present
+        && item.number === one.number).map((item) => ({ key, set, item }));
+    });
+  }
+
+  // The words typed on a slide and not saved yet, on this page.
+  function unsavedOn(path, one) {
+    return Object.values(held.edits).some((edit) => edit.path === path
+      && edit.number === one.number);
+  }
+
+  // What a slide asks of the person, what is under way on it, and what is worth a look, each
+  // said in a few words. Blockers come first; a warning never reads as one.
+  function marksOf(run, one) {
+    const path = h.view.path;
+    const blocks = blockersOn(run, one);
+    const waits = [];
+    if (one.unfit) waits.push('words that do not fit: redraw or discard them');
+    if (unsavedOn(path, one)) waits.push('words not saved yet');
+    if (one.note && one.note.status === 'waiting') waits.push('your note waits to be drawn');
+    const proposals = proposalsOn(run, one);
+    if (proposals.length) {
+      waits.push(h.count(proposals.length, 'fix', 'fixes') + ' to apply or skip');
+    }
+    const looks = [];
+    const findings = h.list(one.findings).length;
+    if (findings) looks.push(h.count(findings, 'review finding', 'review findings'));
+    const warnings = h.list(one.audit).filter((line) => line.kind !== 'error').length;
+    if (warnings) looks.push(h.count(warnings, 'brand warning', 'brand warnings'));
+    const busy = Boolean(one.busy) || Boolean(one.note && one.note.status === 'drawing');
+    return { blocks, waits, looks, busy,
+      tag: blocks.length ? 'Blocks delivery' : busy ? 'Redrawing' : waits.length ? 'Waits for you'
+        : looks.length ? 'Worth a look' : '' };
+  }
+
+  // The slide chosen: the one kept for this deck, by its ID, else by its number (an outline
+  // saved since may have moved it), else the first that asks something of the person, else
+  // the first.
+  function activeOf(run, cards) {
+    const path = h.view.path;
+    if (!held.slide[path]) {
+      const saved = window.history && window.history.state;
+      if (saved && saved.path === path && saved.deskSlide) {
+        held.slide[path] = { id: saved.deskSlide, number: saved.deskNumber };
+      }
+    }
+    const kept = held.slide[path];
+    const found = kept && (cards.find(({ one }) => one.id === kept.id)
+      || cards.find(({ one }) => one.number === kept.number));
+    if (found) return found;
+    return cards.find(({ one }) => one.unfit || blockersOn(run, one).length) || cards[0] || null;
+  }
+
+  // The browser keeps the slide with the screen, so a reload opens the deck at it.
+  function remember(path, one) {
+    held.slide[path] = { id: one.id, number: one.number };
+    try {
+      const now = window.history.state;
+      if (now && now.path === path && now.deskSlide !== one.id) {
+        window.history.replaceState({ ...now, deskSlide: one.id, deskNumber: one.number }, '');
+      }
+    } catch (failure) {
+      // A browser that keeps nothing with the screen keeps the slide for this page only.
+    }
+  }
+
+  // Go to a slide. The focus goes where it was asked to: the control that was pressed, kept
+  // by its key, or the slide itself, for a line of the summary.
+  function choose(one, focus) {
+    remember(h.view.path, one);
+    if (!(held.selection && held.selection.asking)) {
+      held.selection = null;
+      const selection = h.byId('desk-selection');
+      if (selection) selection.hidden = true;
+    }
+    h.paintDeck(false);
+    if (focus === 'slide') {
+      const heading = h.byId('desk-slide-title');
+      if (heading) heading.focus();
+    } else if (focus) {
+      h.focusKey(focus);
+    }
+  }
 
   function slideParts(run, can, working) {
     const found = run.desk;
-    // Selected changes changes only the slides you name: there is no whole-deck note.
+    const path = h.view.path;
+    const cards = deckCards(run);
+    const active = activeOf(run, cards);
+    const marks = cards.map(({ one }) => [one.number, one.id, one.words && one.words.title,
+      one.image, marksOf(run, one).tag]);
+    const proposals = active ? proposalsOn(run, active.one).map(({ item }) => item) : [];
     return [
-      can && found.level !== 'selected' ? ['whole', [found.expected, found.deck_price, working],
-        () => wholePart(run, working)] : null,
-      ...h.list(found.sections).map((part, index) => ['section ' + index,
-        [part, found.expected, can, working], () => sectionPart(run, part, can)]),
+      ['summary', [marks, cards.map(({ one }) => marksOf(run, one)), found.blockers,
+        found.reviewed, found.deliverable, found.working, found.drawn_here, found.expected,
+        run.output, h.googleReady(), Boolean(found.delivered), found.revision, h.theirs(run),
+        run.execution], () => summaryPart(run, cards)],
+      cards.length ? ['desk-bench', [], () => make('div', 'desk-bench'),
+        (inner) => h.fit(inner, [
+          ['navigator', [marks, active.one.id, found.expected],
+            () => navigatorPart(run, cards, active)],
+          ['slide', [active.one, active.part.slides.map((one) => one.number), found.expected,
+            can, working, found.words_locked, found.notes_locked, proposals,
+            held.confirm[path] || '', h.theirs(run)],
+          () => slideCard(run, active.one, active.part, can)],
+        ], false)] : null,
+      can && found.level !== 'selected' ? ['whole', [found.expected, found.deck_price, working,
+        cards.length, h.list(found.sections).filter((part) => !part.lead).length],
+      () => wholePart(run, working, cards)] : null,
     ];
   }
 
-  function wholePart(run, working) {
+  // --- the summary: what stands before Deliver ----------------------------------------------
+
+  // A line of the summary that goes to its slide.
+  function jump(one, words) {
+    const go = h.button('Slide ' + one.number, 'link', () => choose(one, 'slide'),
+      'desk-jump ' + one.id);
+    go.setAttribute('aria-label', 'Go to slide ' + one.number);
+    return h.add(make('li'), go, ': ' + words);
+  }
+
+  function summaryList(title, says, lines) {
+    if (!lines.length) return null;
+    return h.add(make('div', 'desk-summary-part'), make('p', 'row-title', title),
+      says ? make('p', 'quiet', says) : null, h.add(make('ul', 'plain'), ...lines));
+  }
+
+  function summaryPart(run, cards) {
+    const found = run.desk;
+    const read = h.theirs(run);
+    const conversation = run.execution === 'conversation';
+    const node = h.card('Before you deliver', 'desk-summary');
+    const blockers = h.list(found.blockers);
+    const marked = cards.map(({ one }) => ({ one, marks: marksOf(run, one) }));
+    const waiting = marked.filter(({ marks }) => marks.waits.length || marks.busy);
+    const looks = marked.filter(({ marks }) => marks.looks.length);
+    const ready = deliverableNow(found);
+    h.add(node, make('p', '', !found.drawn_here ? 'Nothing can be delivered from this computer '
+      + 'until the deck is drawn here.' : !ready ? NOT_DELIVERABLE : blockers.length
+      ? h.count(blockers.length, 'problem blocks', 'problems block') + ' delivery. Deliver '
+        + 'asks you before it sends the deck anyway.'
+      : 'Nothing blocks delivery.'));
+    const byNumber = new Map(cards.map(({ one }) => [one.number, one]));
+    h.add(node,
+      summaryList('Blocks delivery', 'The brand check found these on the last render.',
+        blockers.map((line) => (byNumber.has(line.number) ? jump(byNumber.get(line.number),
+          line.says) : make('li', '', line.says)))),
+      summaryList('Waiting for you', '', waiting.map(({ one, marks }) => jump(one,
+        h.capital([...(marks.busy ? ['being redrawn'] : []), ...marks.waits].join('; '))
+          + '.'))),
+      summaryList('Worth a look', 'These do not block delivery.', looks.map(({ one, marks }) =>
+        jump(one, marks.looks.join(' and ') + '.'))));
+    if (!read && !conversation && !found.delivered) {
+      h.add(node, summaryList('What Deliver will use', '', [
+        make('li', '', 'The slides as they are drawn now: ' + h.count(cards.length, 'slide',
+          'slides') + '.'),
+        make('li', '', found.reviewed ? 'The deck was reviewed as it is drawn now.'
+          : 'The deck has not been reviewed. Its brand check ran; Review the deck, in '
+            + 'Finishing, is yours to ask for.'),
+        make('li', '', deliveredAs(run)),
+        make('li', '', 'Nothing is sent until you confirm it in Deliver.')]));
+    }
+    return node;
+  }
+
+  // Where Deliver sends the deck, as its sheet says it.
+  function deliveredAs(run) {
+    const google = run.output === 'google';
+    return google && h.googleReady() ? 'It goes to Google Slides.'
+      : google ? 'Google is not connected on this computer, so delivering makes a '
+        + 'PowerPoint file. Send it to Google Slides once you are signed in.'
+        : 'It is made a PowerPoint file, to download from here.';
+  }
+
+  // --- the navigator --------------------------------------------------------------------------
+  // Every slide, by its number, its title and its picture, with a word for what it asks of
+  // you. Previous and Next step through them; the arrow keys, Home and End do in the list.
+
+  function navigatorPart(run, cards, active) {
+    const node = make('nav', 'desk-navigator');
+    node.setAttribute('aria-label', 'Slides');
+    const at = cards.indexOf(active);
+    const to = (index, focus) => {
+      const next = cards[Math.max(0, Math.min(cards.length - 1, index))];
+      if (next && next !== active) choose(next.one, focus);
+    };
+    const earlier = h.capsule('Previous', '', () => to(at - 1, 'desk-previous'),
+      'desk-previous');
+    const later = h.capsule('Next', '', () => to(at + 1, 'desk-next'), 'desk-next');
+    earlier.setAttribute('aria-label', 'Previous slide');
+    later.setAttribute('aria-label', 'Next slide');
+    earlier.setAttribute('aria-disabled', String(at === 0));
+    later.setAttribute('aria-disabled', String(at === cards.length - 1));
+    const now = make('p', 'slide-now', 'Slide ' + active.one.number + ' of ' + cards.length);
+    now.setAttribute('role', 'status');
+    const strip = make('ol', 'strip desk-nav-list');
+    const keys = { ArrowDown: 1, ArrowRight: 1, ArrowUp: -1, ArrowLeft: -1 };
+    cards.forEach(({ one }, index) => {
+      const words = one.words || {};
+      const tag = marksOf(run, one).tag;
+      const item = h.button('', 'strip-item', () => {
+        if (index !== at) choose(one, 'desk-go ' + one.id);
+      }, 'desk-go ' + one.id);
+      item.setAttribute('aria-label', h.slideName({ number: one.number, title: words.title })
+        + (one.hidden ? ', hidden' : '') + (tag ? ', ' + h.lower(tag) : ''));
+      if (index === at) item.setAttribute('aria-current', 'true');
+      item.addEventListener('keydown', (event) => {
+        const by = keys[event.key];
+        const target = event.key === 'Home' ? 0 : event.key === 'End' ? cards.length - 1
+          : by ? index + by : -1;
+        if (target < 0 || target >= cards.length || target === index) return;
+        if (event.preventDefault) event.preventDefault();
+        choose(cards[target].one, 'desk-go ' + cards[target].one.id);
+      });
+      h.add(strip, h.add(make('li'), h.add(item,
+        one.image ? h.picture(one.image, h.slideName({ number: one.number,
+          title: words.title }), run.desk.expected) : null,
+        make('span', 'strip-number', String(one.number)),
+        make('span', 'strip-title', words.title || ''),
+        tag ? make('span', 'tag', tag) : null)));
+    });
+    return h.add(node, h.add(make('div', 'bar slide-moves'), earlier, later, now), strip);
+  }
+
+  // --- the whole-deck note: a second, folded way to change the deck ---------------------------
+
+  function wholePart(run, working, cards) {
     const path = h.view.path;
     const kept = held.deck[path] || (held.deck[path] = { note: '' });
     const id = 'desk-deck-note';
-    const node = h.card('The whole deck');
+    const sections = h.list(run.desk.sections).filter((part) => !part.lead).length;
+    const node = make('details', 'card desk-whole');
+    node.dataset.key = 'desk-whole';
+    // A note typed and not sent keeps it open.
+    if (kept.note) node.open = true;
     const box = noteField(id, 'How should the whole deck change?', kept, '');
     const go = h.capsule('Redraw every section', '', async () => {
       const note = kept.note.trim();
@@ -902,28 +1148,27 @@
     }, 'desk-deck-redraw');
     go.disabled = working;
     box.querySelector('textarea').disabled = working;
-    return h.add(node, box, bar(go), make('p', 'quiet', run.desk.deck_price || ''));
+    const summary = make('summary', '', 'Change the whole deck');
+    summary.dataset.key = 'desk-whole-summary';
+    return h.add(node, summary,
+      make('p', '', 'This redraws every section of the deck: ' + h.count(sections, 'section',
+        'sections') + ', ' + h.count(cards.length, 'slide', 'slides') + '. To change one '
+        + 'slide, note that slide instead: only its section is redrawn.'),
+      box, bar(go), make('p', 'quiet', run.desk.deck_price || ''));
   }
 
-  function sectionPart(run, part, can) {
-    const node = make('section', 'deck-desk-section');
-    if (!part.lead && part.number) {
-      const heading = make('h2', 'deck-desk-section-title', 'Section ' + part.number);
-      heading.id = 'desk-section-' + part.number;
-      node.setAttribute('aria-labelledby', heading.id);
-      h.add(node, heading);
-    }
-    for (const one of h.list(part.slides)) h.add(node, slideCard(run, one, can));
-    return node;
-  }
+  // --- the slide chosen ----------------------------------------------------------------------
+  // Its picture first, then what the brand check and the review found on it, with a fix to
+  // apply or skip where one is proposed, then its words and speaker notes, its note, and its
+  // caveat and source, folded.
 
-  function slideCard(run, one, can) {
+  function slideCard(run, one, part, can) {
     const kind = one.lead && one.kind ? ' · ' + h.capital(h.spoken(one.kind)) : '';
     const words = one.words || {};
     const found = run.desk;
     // A slide of your own deck at Selected changes: its words are those of each part of it.
     const own = Array.isArray(one.objects);
-    const node = make('section', 'card shine deck-desk-slide' + (one.busy ? ' desk-working'
+    const node = make('section', 'card deck-desk-slide' + (one.busy ? ' desk-working'
       : ''));
     const editing = can && !h.theirs(run);
     const history = editing && !own ? h.capsule('History', 'quiet', () => openHistory(run, one),
@@ -934,34 +1179,92 @@
     saved.setAttribute('role', 'status');
     // At Brand only and Polish the slide keeps your own deck's words: they are read here.
     const locked = !own && found.words_locked;
-    h.add(node, make('h3', 'card-title', 'Slide ' + one.number + kind
-      + (one.hidden ? ' · Hidden' : '')),
+    const heading = make('h2', 'card-title', 'Slide ' + one.number + kind
+      + (!part.lead && part.number ? ' · Section ' + part.number : '')
+      + (one.hidden ? ' · Hidden' : ''));
+    heading.id = 'desk-slide-title';
+    heading.tabIndex = -1;
+    node.setAttribute('aria-labelledby', heading.id);
+    h.add(node, heading,
       picturesPart(run, one),
+      one.busy && !own ? h.add(make('p', 'desk-working-note'), h.state('current',
+        'Redrawing…')) : null,
+      one.note ? noteSaid(one.note) : null,
+      foundPart(run, one),
+      editing && one.unfit ? unfitPart(run, one) : null,
       own ? (editing ? objectBoxes(one) : objectWords(one))
-        : editing && !locked ? wordBoxes(one) : wordsPart(words),
+        : editing && !locked ? wordBoxes(one)
+          : wordsPart({ ...words, caveat: null, source: null }),
       locked ? make('p', 'quiet', found.words_locked) : null,
       own ? make('p', 'quiet', found.notes_locked || '')
         : editing ? notesBox(one)
           : one.notes ? h.add(make('p', 'quiet'), make('strong', '', 'Speaker notes: '),
             one.notes) : null,
-      editing ? saved : null,
-      editing && one.unfit ? unfitPart(run, one) : null,
-      history ? bar(history) : null,
-      h.list(one.findings).length ? h.findingItems(one.findings) : null,
-      h.list(one.audit).length ? auditPart(one.audit) : null,
-      one.busy && !own ? h.add(make('p', 'desk-working-note'), h.state('current',
-        'Redrawing…')) : null,
-      one.note ? noteSaid(one.note) : null);
+      editing ? saved : null);
     if (!one.lead && can) h.add(node, ...noteBox(run, one));
-    return node;
+    return h.add(node, own || one.lead ? null : advancedPart(one, editing && !locked),
+      history ? bar(history) : null);
+  }
+
+  // What the brand check and the review found on the slide, in their words, blockers first,
+  // and each fix proposed for it, to apply or skip here as in Finishing.
+  function foundPart(run, one) {
+    const audit = h.list(one.audit);
+    const findings = h.list(one.findings);
+    const proposals = h.theirs(run) ? [] : proposalsOn(run, one);
+    if (!audit.length && !findings.length && !proposals.length) return null;
+    return h.add(make('div', 'desk-found'),
+      make('p', 'row-title', 'What was found on this slide'),
+      audit.length ? auditPart(audit) : null,
+      findings.length ? h.findingItems(findings) : null,
+      ...proposals.map(({ key, set, item }) => locatedFix(run, key, set, item)));
+  }
+
+  // A fix proposed for the slide: what it is, then Apply, which says what it redraws before
+  // anything is sent, or Skip.
+  function locatedFix(run, key, set, item) {
+    const path = h.view.path;
+    const found = run.desk;
+    const node = make('div', 'desk-located');
+    node.dataset.item = item.id;
+    const from = key === 'brand' ? 'Proposed by the brand check' : 'Proposed by the review';
+    const tag = key === 'brand' ? KIND_TAGS[item.kind] : item.severity
+      ? h.capital(item.severity) : '';
+    h.add(node, h.add(make('p', ''), make('strong', '', from), tag ? ' ' : null,
+      tag ? make('span', 'tag', tag) : null),
+    make('p', '', key === 'brand' ? item.says : item.note),
+    item.fix ? make('p', 'quiet', 'Suggested: ' + item.fix) : null);
+    const skip = h.capsule('Skip', 'quiet', () => act('desk-skip', { path, set: set.job,
+      ids: [item.id] }, skip, 'Skipped. Nothing changed.'), 'desk-slide-skip ' + item.id);
+    if ('comment' in item) return h.add(node, bar(skip));
+    if (held.confirm[path] === set.job + '\n' + item.id) {
+      const go = h.capsule('Apply and redraw slide ' + item.number, '', () => apply(run, set,
+        { id: item.id }, go, 'Slide ' + item.number + ' is being redrawn with the note. Every '
+        + 'other part of the deck stays exactly as it is.'), 'desk-slide-apply-go ' + item.id);
+      go.disabled = Boolean(found.working);
+      const back = h.capsule('Cancel', 'quiet', () => {
+        delete held.confirm[path];
+        h.paintDeck(false);
+      }, 'desk-slide-apply-cancel ' + item.id);
+      return h.add(node, make('p', '', item.price || 'This redraws its slide’s section.'),
+        bar(go, back));
+    }
+    const fix = h.capsule('Apply', '', () => {
+      held.confirm[path] = set.job + '\n' + item.id;
+      h.paintDeck(false);
+      h.focusKey('desk-slide-apply-go ' + item.id);
+    }, 'desk-slide-apply ' + item.id);
+    fix.disabled = Boolean(found.working);
+    return h.add(node, bar(fix, skip));
   }
 
   // The slide's picture now and, for an existing deck, the slide as it was in your deck
-  // before it, each said in words.
+  // before it, each said in words. The picture of the slide chosen is fetched first.
   function picturesPart(run, one) {
     const words = one.words || {};
-    const now = one.image ? h.picture(one.image, h.slideName({ number: one.number,
-      title: words.title }), run.desk.expected)
+    const now = one.image ? h.pictureAt(h.pictureOf(h.view.path, one.image),
+      h.slideName({ number: one.number, title: words.title }), run.desk.expected,
+      { first: true, again: true })
       : make('p', 'quiet', 'There is no picture of this slide on this computer yet.');
     if (!one.before) return h.add(make('div', 'deck-desk-picture'), now);
     return h.add(make('div', 'pair deck-desk-pair'),
@@ -1006,6 +1309,29 @@
       words.source ? make('p', 'quiet', 'Source: ' + words.source) : null);
   }
 
+  // The slide's caveat and source, folded under its other words: boxes where its words are
+  // edited here, read otherwise. It opens by itself where words in it are typed and not saved,
+  // or did not fit.
+  function advancedPart(one, editable) {
+    const words = one.words || {};
+    const fields = WORD_FIELDS.slice(3);
+    const unfit = one.unfit ? fieldKey(one.unfit.field) : '';
+    const shown = fields.filter(([field]) => words[field] || unfit === field);
+    if (!shown.length) return null;
+    const node = make('details', 'desk-advanced');
+    node.dataset.key = 'desk-advanced ' + one.id;
+    node.open = shown.some(([field]) => unfit === field
+      || held.edits[editKey(h.view.path, one.number, field)]);
+    const summary = make('summary', '', 'Caveat and source');
+    summary.dataset.key = 'desk-advanced-summary ' + one.id;
+    if (!editable) {
+      return h.add(node, summary, wordsPart({ caveat: words.caveat, source: words.source }));
+    }
+    const boxes = make('div', 'fields deck-desk-words');
+    for (const [field, label] of shown) h.add(boxes, wordBox(one, field, label, words[field]));
+    return h.add(node, summary, boxes);
+  }
+
   // The brand check on this slide: what blocks delivery first, then what it warns of.
   function auditPart(audit) {
     const ordered = audit.slice().sort((one, other) => (one.kind === 'error' ? 0 : 1)
@@ -1014,7 +1340,8 @@
     for (const one of ordered) {
       h.add(items, h.add(make('li'), one.kind === 'error'
         ? h.state('late', 'The brand check: ' + one.says + ' It blocks delivery.')
-        : h.state('none', 'The brand check: ' + one.says)));
+        : h.state('none', 'The brand check: ' + one.says + ' A warning: it does not block '
+          + 'delivery.')));
     }
     return items;
   }
@@ -1027,18 +1354,18 @@
       : said + '“' + String(note.note || '') + '”' + (note.whole ? ' (for the whole deck)' : ''));
   }
 
-  // The note box of a content slide: Redraw slide N, its price under it, and where words
-  // change.
+  // The note box of a content slide: Redraw slide N, and under it its price, which names the
+  // section it redraws and the slides in it.
   function noteBox(run, one) {
     const path = h.view.path;
     const key = path + '\n' + one.number;
     const kept = held.notes[key] || (held.notes[key] = { note: '' });
     const id = 'desk-note-' + one.number;
     const box = noteField(id, 'How should this slide change?', kept, 'Slide ' + one.number);
-    const input = box.querySelector('textarea');
     // On your own deck at Selected changes, a note plans the slide's changes again: nothing
     // is redrawn.
     const own = Array.isArray(one.objects);
+    const input = box.querySelector('textarea');
     const go = h.capsule((own ? 'Change slide ' : 'Redraw slide ') + one.number, '', async () => {
       const note = kept.note.trim();
       if (!note) {
@@ -1056,7 +1383,8 @@
     }, (own ? 'desk-change ' : 'desk-redraw ') + one.number);
     input.disabled = Boolean(one.busy);
     go.disabled = Boolean(one.busy);
-    return [box, bar(go), one.price ? make('p', 'quiet', one.price) : null];
+    return [make('p', 'row-title', own ? 'Change this slide' : 'Change how it is drawn'), box,
+      bar(go), one.price ? make('p', 'quiet', one.price) : null];
   }
 
   // --- the desk's aside: Sources and Research --------------------------------------------------
@@ -1448,10 +1776,10 @@
       }
     };
     boxes(WORD_FIELDS.slice(0, 3));
-    // A lead slide has no points, caveat or source: no composer draws it.
+    // A lead slide has no points, caveat or source: no composer draws it. The caveat and the
+    // source are folded under the slide's other words (`advancedPart`).
     if (one.lead) return node;
     addPoints(node, one, words);
-    boxes(WORD_FIELDS.slice(3));
     return node;
   }
 
@@ -1532,6 +1860,8 @@
           h.refresh();
         }, 'desk-reload ' + edit.number) : null;
         saySaved(edit.number, failure.message + ' Your words are kept here.', again);
+        // The navigator and the summary say the slide's words are not saved yet.
+        if (h.view.screen === 'deck' && h.view.path === edit.path) h.paintDeck(false);
       } finally {
         edit.sending = false;
       }
