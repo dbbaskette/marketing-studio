@@ -188,6 +188,24 @@ class KeepTests(LibraryCase):
         self.assertIn('no slide outline', found['problem'])
 
 
+class KeepUploadTests(LibraryCase):
+    """Keep in library, for a file added on the desk: the same file is one library document."""
+
+    def test_the_same_file_sent_again_is_kept_once(self):
+        keep = desk_actions.DeskActions._keep_upload
+        data = b'# Runbook\n\nTwo batches at a time.\n'
+        first = keep('runbook.md', data, None)
+        self.assertEqual(first['state'], 'kept')
+        # A retried request, or the source removed and added again: the same document.
+        self.assertEqual(keep('runbook.md', data, None), first)
+        self.assertEqual(self.library.catalog(kind='upload')['total'], 1)
+        # Another file, or the same name with other words, is another document.
+        other = keep('runbook.md', data + b'\nThree on Fridays.\n', None)
+        self.assertNotEqual(other['id'], first['id'])
+        self.assertNotEqual(keep('steps.md', data, None)['id'], first['id'])
+        self.assertEqual(self.library.catalog(kind='upload')['total'], 3)
+
+
 PDF = b'%PDF-1.7\n% the render of the delivered deck\n%%EOF\n'
 
 
@@ -242,11 +260,32 @@ class PdfTests(LibraryCase):
     def test_a_delivery_from_before_it_recorded_its_deck_claims_no_pdf(self):
         delivered = self.delivered()
         del delivered['deck_sha256']
-        self.kept_without_pdf(delivered, library_keep.NO_PDF)
+        self.kept_without_pdf(delivered, library_keep.PDF_UNRECORDED)
 
-    def test_another_deck_than_the_last_round_claims_no_pdf(self):
+    def test_a_deck_made_on_another_computer_claims_no_pdf(self):
         self.kept_without_pdf({**self.delivered(), 'deck_sha256': 'f' * 64},
                               library_keep.NO_PDF)
+
+    def test_a_deck_drawn_again_after_delivery_claims_no_pdf(self):
+        delivered = self.delivered()
+        state = build.read_state(self.root)
+        state['rounds'].append({**state['rounds'][0], 'deck': 'e' * 64, 'pdf': 'd' * 64})
+        build.write_state(self.root, state)
+        self.kept_without_pdf(delivered, library_keep.PDF_REDRAWN)
+
+    def test_a_deck_delivered_with_selected_changes_claims_no_pdf(self):
+        found = library_keep.keep(self.root, {'title': 'Launch deck', 'route': 'existing',
+                                              'form': {'level': 'selected'}}, self.delivered())
+        self.assertEqual((found['pdf'], found['pdf_note']),
+                         ('needs-export', library_keep.PDF_SELECTED))
+
+    def test_each_reason_says_why_and_that_the_deck_is_unchanged(self):
+        reasons = (library_keep.NO_PDF, library_keep.PDF_UNRECORDED, library_keep.PDF_SELECTED,
+                   library_keep.PDF_REDRAWN, library_keep.PDF_CHANGED, library_keep.PDF_LARGE)
+        self.assertEqual(len(set(reasons)), len(reasons))
+        for said in reasons:
+            self.assertTrue(said.endswith('The delivered deck itself is unchanged.'), said)
+            self.assertNotIn('PDF saved', said)
 
     def test_a_pdf_changed_since_it_was_rendered_is_not_kept(self):
         delivered = self.delivered()

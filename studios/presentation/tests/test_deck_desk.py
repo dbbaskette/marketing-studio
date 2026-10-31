@@ -1417,8 +1417,9 @@ class OpenOnDeskTests(DeskCase):
         self.assertEqual(self.record(root)['flow'], 'desk')
         # Its changed copy was pictured without a PDF being kept: none is claimed.
         from runner import decks, library_keep
-        self.assertEqual(library_keep.rendered_pdf(root, decks.delivered(root)),
-                         (None, library_keep.NO_PDF))
+        self.assertEqual(library_keep.rendered_pdf(root, decks.delivered(root),
+                                                   self.record(root)),
+                         (None, library_keep.PDF_SELECTED))
         self.assertNotEqual(library_keep.status(root).get('pdf'), 'saved')
 
     def test_a_selected_changes_deck_without_its_copy_here_says_so(self):

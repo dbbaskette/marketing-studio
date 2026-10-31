@@ -3,6 +3,7 @@
 Every test uses a disposable HOME, studios config and library folder. Nothing here starts a
 studio, an assistant, a reader program or the network.
 """
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -222,6 +223,49 @@ class RecordTests(LibraryCase):
         (place / 'content.pdf').write_bytes(b'%PDF-1.7\n% changed\n')
         with self.assertRaisesRegex(library.LibraryError, 'changed'):
             made.download(saved['document'], 2, 'pdf')
+
+    def test_a_kept_pdf_that_went_missing_or_changed_is_kept_again(self):
+        made = self.made()
+        exported = b'%PDF-1.7\n% the deck\n%%EOF\n'
+
+        def keep():
+            return made.retain('presentation:deck-2', 'presentation', 'presentation', 'Deck',
+                               '# Deck\n', pdf={'state': 'saved', 'data': exported})
+
+        first = keep()
+        place = made.root / 'documents' / first['document'] / 'revisions' / '1'
+        (place / 'content.pdf').unlink()
+        healed = keep()
+        self.assertEqual((healed['document'], healed['revision'], healed['changed']),
+                         (first['document'], 2, True))
+        self.assertEqual(made.download(first['document'], 2, 'pdf')[2], exported)
+        (made.root / 'documents' / first['document'] / 'revisions' / '2' / 'content.pdf') \
+            .write_bytes(b'%PDF-1.7\n% edited\n')
+        self.assertEqual(keep()['revision'], 3)
+        self.assertEqual(keep(), {'document': first['document'], 'revision': 3, 'changed': False})
+
+    def test_only_a_saved_pdf_may_be_larger_than_markdown_and_originals(self):
+        made = self.made()
+        large = b'%PDF-1.7\n' + b'0' * 30_000_000 + b'\n%%EOF\n'
+        kept = made.retain('presentation:big-deck', 'presentation', 'presentation', 'Big deck',
+                           '# Big deck\n', pdf={'state': 'saved', 'data': large})
+        self.assertEqual(made.download(kept['document'], 1, 'pdf')[2], large)
+        with self.assertRaisesRegex(library.LibraryError, 'longer than the library keeps'):
+            made.retain('presentation:big-text', 'presentation', 'presentation', 'Big text',
+                        '#' + 'x' * 30_000_000)
+        # A 30 MB Markdown file is refused even with a matching hash: only content.pdf is read
+        # up to the PDF limit.
+        place = made.root / 'documents' / kept['document'] / 'revisions' / '1'
+        grown = b'x' * 30_000_000
+        (place / 'content.md').write_bytes(grown)
+        said = json.loads((place / 'revision.json').read_text())
+        said['markdown']['sha256'] = hashlib.sha256(grown).hexdigest()
+        (place / 'revision.json').write_text(json.dumps(said))
+        with self.assertRaisesRegex(library.LibraryError, 'changed'):
+            made.download(kept['document'], 1, 'markdown')
+        with self.assertRaisesRegex(library.LibraryError, 'larger than the library keeps'):
+            made.retain('presentation:huge', 'presentation', 'presentation', 'Huge', '# Huge\n',
+                        pdf={'state': 'saved', 'data': b'%PDF-' + b'0' * (library.LIMITS['pdf'])})
         with self.assertRaises(library.LibraryError):
             made.retain('blog:x', 'presentation', 'blog', 'X', 'text')   # key names another studio
 

@@ -39,14 +39,21 @@ from pathlib import Path
 import home
 from workspace import WorkspaceError, write_atomic
 
-from runner import decks
+from runner import decks, desk
 from runner.steps import build
 from runner.steps import outline as outlines
 from studio_core import document_library
 
 STATUS = Path('sources') / 'library.json'
-NO_PDF = ('Harness Slides left no PDF of this delivered deck on this computer, so only its '
-          'slide Markdown is kept. The delivered deck itself is unchanged.')
+KEPT_ONLY = ' Only its slide Markdown is kept. The delivered deck itself is unchanged.'
+NO_PDF = ('There is no PDF of this delivered deck on this computer: it was delivered or '
+          'previewed elsewhere.' + KEPT_ONLY)
+PDF_UNRECORDED = ('This deck was delivered before Presentation Studio recorded which deck '
+                  'file it delivered, so no PDF can be matched to it.' + KEPT_ONLY)
+PDF_SELECTED = ('This deck was delivered with Selected changes: your own deck was changed '
+                'where it was, and no PDF of it was rendered.' + KEPT_ONLY)
+PDF_REDRAWN = ('This deck was drawn again after it was delivered, so the PDF here is of '
+               'another version of it.' + KEPT_ONLY)
 PDF_CHANGED = ('The PDF Harness Slides rendered no longer matches the delivered deck, so only '
                'its slide Markdown is kept. The delivered deck itself is unchanged.')
 PDF_LARGE = ('The PDF of this deck is larger than the library keeps, so only its slide '
@@ -81,19 +88,26 @@ def _plain_file(path: Path) -> bool:
     return not path.is_symlink() and path.is_file()
 
 
-def rendered_pdf(root, delivered: dict) -> tuple[bytes | None, str | None]:
+def rendered_pdf(root, delivered: dict, run: dict | None = None
+                 ) -> tuple[bytes | None, str | None]:
     """The PDF Harness Slides rendered of exactly the delivered deck, found on this computer
     and checked, with nothing rendered now: (its bytes, None), or (None, why there is none
-    to keep)."""
+    to keep). `run` is the deck's record, which says whether it is at Selected changes."""
     root = Path(root)
+    if isinstance(run, dict) and desk.selected(run):
+        return None, PDF_SELECTED
     wanted = delivered.get('deck_sha256') if isinstance(delivered, dict) else None
     if not isinstance(wanted, str) or not SHA.match(wanted):
-        return None, NO_PDF
+        return None, PDF_UNRECORDED
     rounds = build.read_state(root).get('rounds') or []
     last = rounds[-1] if isinstance(rounds, list) and rounds else None
-    if not isinstance(last, dict) or last.get('deck') != wanted \
-            or not isinstance(last.get('preview'), str):
+    if not isinstance(last, dict) or not isinstance(last.get('preview'), str):
         return None, NO_PDF
+    if last.get('deck') != wanted:
+        # An earlier round here made the delivered deck: it was drawn again since. No round
+        # here made it: it was made on another computer.
+        made_here = any(isinstance(one, dict) and one.get('deck') == wanted for one in rounds)
+        return None, PDF_REDRAWN if made_here else NO_PDF
     try:
         folder = root / last['preview']
         inside = (root / 'work').resolve()
@@ -136,7 +150,7 @@ def keep(root, run: dict, delivered: dict) -> dict:
             done.update(state='failed', problem=NO_OUTLINE)
         else:
             title = run.get('title') or root.name
-            data, why = rendered_pdf(root, delivered)
+            data, why = rendered_pdf(root, delivered, run)
             library = document_library.opened(create=True)
             kept = library.retain(
                 key=done['key'], studio='presentation', kind='presentation',

@@ -1475,6 +1475,8 @@
     const problem = make('p', 'problem');
     problem.id = 'desk-source-problem';
     problem.hidden = true;
+    // A file the library did not keep stays said, however often the card is drawn again.
+    if (kept.notKept) h.say(problem, kept.notKept);
     const go = h.capsule('Add the pasted text', '', async () => {
       if (!kept.text.trim()) {
         h.refuse('desk-source-text', NO_TEXT);
@@ -1499,7 +1501,7 @@
         (index) => { kept.library = index === 0; }, 'desk-source-keep', KEEP_SAYS),
       h.field('desk-source-file', 'A file', {}, 'file', { accept: SOURCE_TYPES,
         hint: 'Text, Markdown, a web page, a Word document or a PDF, up to 8 MB.',
-        picked: (input) => addFile(input, problem, kept.library) }),
+        picked: (input) => addFile(input, problem, kept) }),
       h.field('desk-source-text', 'Or paste its text', kept, 'text', { long: true, rows: 4,
         limit: 1000000 }),
       h.field('desk-source-title', 'Its title', kept, 'title', {}),
@@ -1550,9 +1552,12 @@
     return parts;
   }
 
-  async function addFile(input, problem, library) {
+  // `form` is the card's held state: whether to keep the file in the library, and what the
+  // library said when it did not, which every drawing of the card shows until the next file.
+  async function addFile(input, problem, form) {
     const file = Array.from(input.files || [])[0];
     if (!file) return;
+    form.notKept = '';
     if (file.size > 8000000) {
       h.say(problem, file.name + ' is larger than 8 MB. Add a shorter version of it.');
       return;
@@ -1565,11 +1570,12 @@
       return;
     }
     const found = await act('desk-source', { path: h.view.path, name: file.name, content,
-      library: Boolean(library) }, null, null, problem);
+      library: Boolean(form.library) }, null, null, problem);
     if (!found) return;
     const kept = found.library_upload;
     if (kept && kept.state === 'failed') {
-      // The card was drawn again with the new source: say it on the card as it is now.
+      // Held, so the card drawn again by act's repaint or a later refresh still says it.
+      form.notKept = kept.problem;
       h.say(h.byId('desk-source-problem') || problem, kept.problem);
       return;
     }

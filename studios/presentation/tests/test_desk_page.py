@@ -1663,13 +1663,20 @@ class FinishingPageTests(DeskPageCase):
         view = self.run_of(path)
         upload = {'name': 'limits.md', 'text': '# Limits\n\nForty at most.\n'}
         failed = {**view, 'library_upload': {'state': 'failed', 'problem': 'Not kept: busy.'}}
+        # Every refresh after the opening answers with other sources, so the card is drawn
+        # again after the failure: what the library said must still be there.
+        polled = copy.deepcopy(view)
+        polled['desk']['sources'] = [{'name': 'other.md', 'title': 'other', 'readable': True}]
         result = self.open_deck(path, view, [
             {'click': 'Only this project'}, {'snapshot': 'chosen'},
             {'attach': 'A file', 'files': [upload]}, {'polls': 1},
             {'click': 'Keep in library'},
             {'attach': 'A file', 'files': [{**upload, 'name': 'other.md'}]}, {'polls': 1},
-            {'snapshot': 'failed'}],
-            **{'POST /api/desk-source': [ok(view), ok(failed)]})
+            {'poll': True}, {'snapshot': 'failed'}],
+            **{'POST /api/desk-source': [ok(view), ok(failed)],
+               'GET /api/run': [ok(view), ok(polled)]})
+        self.assertIn('other', result['snapshots']['failed']['text'].split('\n'),
+                      'the card was drawn again from the refresh')
         self.assertEqual([name for name in result['snapshots']['chosen']['pressed']
                           if name in KEEP_CHOICES], ['Only this project'])
         (_, only), (_, keep) = self.posts(result)

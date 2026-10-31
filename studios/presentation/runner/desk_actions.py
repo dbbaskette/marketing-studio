@@ -16,6 +16,7 @@ What a caller needs to know
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import secrets
 from pathlib import Path
@@ -1404,10 +1405,16 @@ class DeskActions:
     def _keep_upload(name, data, title) -> dict:
         """Keep a file the deck was just given in the Document Library as well:
         {'state': 'kept', 'id', 'revision'} or {'state': 'failed', 'problem'}. The deck keeps
-        its source whatever the library does."""
+        its source whatever the library does. The same file, under the same name and title,
+        sent again (a retried request, or a source removed and added again) is the same
+        library document: its operation ID is made from them."""
         try:
+            operation = hashlib.sha256(
+                b'presentation-upload\0' + str(name).encode('utf-8') + b'\0'
+                + str(title or '').encode('utf-8') + b'\0'
+                + hashlib.sha256(data).digest()).hexdigest()[:32]
             row = document_library.opened(create=True).add_upload(
-                name, data, title=title, studio='presentation')
+                name, data, title=title, operation=operation, studio='presentation')
         except (LibraryError, OSError) as failure:
             return {'state': 'failed', 'problem': NOT_KEPT.format(why=str(failure)[:300])}
         return {'state': 'kept', 'id': row['id'], 'revision': row['revision']}
